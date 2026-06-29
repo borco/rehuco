@@ -1,0 +1,129 @@
+# rehuco — Claude Code guidance
+
+## Key documents
+
+- **Architecture:** `docs/specs/architecture-design.md` — full design, all sections referenced as §N.
+- **Implementation plan:** `docs/specs/implementation-plan.md` — milestone breakdown, tracer-bullet
+  methodology, sequencing gates, honest caveats.
+
+Read both before any non-trivial task. Section references in the form §N.M point into
+`architecture-design.md`.
+
+## Repository
+
+- **GitHub:** <https://github.com/borco/rehuco> (private)
+- **PyPI names reserved** (0.0.0 stub packages published 2026-06-29):
+  - <https://pypi.org/project/rehuco-core/>
+  - <https://pypi.org/project/rehuco-node/>
+  - <https://pypi.org/project/rehuco-agent/>
+
+## Monorepo layout
+
+```text
+packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
+packages/rehuco-node/     # headless REST node (FastAPI); low requires-python for QNAP
+apps/rehuco-agent/        # PySide6 desktop GUI
+```
+
+Root `pyproject.toml` is a **virtual workspace** — no `[project]` table, only
+`[tool.uv.workspace]`.
+
+## Hardware compatibility
+
+The QNAP TS-230 is the lowest-spec *target* (not a hard requirement). `rehuco-node`'s
+`requires-python` floor and dependency choices are kept compatible with it where possible.
+
+## Code conventions
+
+### Visibility
+
+Public or private (`__`). No protected (`_`) unless the class is explicitly designed for
+inheritance. This makes the public API unambiguous.
+
+### Constants
+
+`Final` without an explicit type when the type can be inferred.
+
+### Overrides
+
+`@override` on every method that overrides a base-class method.
+
+### Docstrings
+
+Sphinx-style on all functions, including private ones.
+One-line summary + `:param:` / `:returns:` / `:raises:` as needed.
+No multi-paragraph docstrings or multi-line comment blocks for routine code.
+
+### Comments
+
+Only when the *why* is non-obvious: hidden constraint, subtle invariant, bug workaround,
+surprising behavior. No narration of what the code does.
+
+### Line length
+
+120 characters (ruff enforced).
+
+## Tooling
+
+| Tool | Role |
+| --- | --- |
+| `uv` | workspace + package manager |
+| `ruff` | formatter + linter (replaces black, isort, flake8, pyupgrade) |
+| `pylint` | static analysis |
+| `pytest` | test runner |
+| `pytest-mock` | mocking |
+| `pytest-qt` | Qt widget / event-loop testing |
+| `pytest-cov` | coverage |
+| `pytest-benchmark` | benchmarking |
+| `pytest-freezer` | time freezing |
+| `pytest-explicit` | explicit test markers |
+| `mkdocs` | documentation site |
+
+VSCode workspace is configured to use ruff for formatting and linting. pylint and black are
+disabled in favour of ruff.
+
+## Makefile targets
+
+| Target | Action |
+| --- | --- |
+| `make sync` | install all workspace packages in dev mode |
+| `make test` | run pytest |
+| `make format` | run ruff format + ruff check --fix |
+| `make pylint` | run pylint |
+| `make qa` | format + test + pylint |
+| `make docs-serve` | serve mkdocs locally |
+
+## Model strategy
+
+Use `opusplan` as the default (Opus for plan mode, Sonnet for execution).
+
+**Manually switch to Opus (`/model opus`) for these specific sections** — they are
+reasoning-dense and a subtle error silently corrupts data:
+
+- **Sync engine** — version vector, activity log, conflict/merge, tombstones (§7).
+- **Plugin block save invariant** — live/inert/claim-then-abandon rule (§13.1a).
+- **Registry resolution & serve-after-resync** — preferred-authority, chatter, version-marker
+  comparison (§6.6, §6.10).
+- **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.12).
+
+## Commit and branch policy
+
+**Always wait for explicit user approval before committing or pushing.** Do not commit
+automatically at the end of a task.
+
+Work is done on feature branches named `issue/NNN/some-short-slug` (e.g.
+`issue/42/add-field-toolkit`), where NNN is the GitHub issue number. Branching from a
+feature branch is fine. Merges always use `--no-ff`.
+
+Commit type prefixes in use: `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`, `test:`.
+
+## Development methodology
+
+Agile cadence + tracer-bullet first slices + occasional spikes.
+
+- **Tracer bullet** — minimal but real, production-grade, kept. Proves layers connect end-to-end.
+- **Spike** — throwaway, answers one sharp technical question. Delete after; keep only the lesson.
+
+Current phase: **Pre-work** (monorepo setup, pyqtads+QML integration spike, QNAP glibc canary).
+Next milestone: **A0** — double-click a `.rehu` → single-instance agent opens → reads file →
+renders common fields + Markdown + image strip → edit one field → atomic-save back.
