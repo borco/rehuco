@@ -25,9 +25,9 @@ Key design properties:
 ```text
 rehuco/
 ├── packages/
-│   ├── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
-│   └── rehuco-node/          # headless REST service; runs on QNAP and other headless boxes
+│   └── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
 ├── apps/
+│   ├── rehuco-node/          # headless REST service; runs on QNAP and other headless boxes
 │   └── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
 └── docs/
     └── specs/

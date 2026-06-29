@@ -22,7 +22,7 @@ Read both before any non-trivial task. Section references in the form §N.M poin
 
 ```text
 packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
-packages/rehuco-node/     # headless REST node (FastAPI); low requires-python for QNAP
+apps/rehuco-node/         # headless REST node (FastAPI); low requires-python for QNAP
 apps/rehuco-agent/        # PySide6 desktop GUI
 ```
 
