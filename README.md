@@ -24,21 +24,21 @@ Key design properties:
 
 ```text
 rehuco/
-├── packages/
-│   └── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
 ├── apps/
-│   ├── rehuco-node/          # headless REST service; runs on QNAP and other headless boxes
-│   └── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
-└── docs/
-    └── specs/
-        ├── architecture-design.md
-        └── implementation-plan.md
+│   ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
+│   └── rehuco-node/          # headless REST service; runs on QNAP and other headless boxes
+├── docs/
+│   └── specs/
+│       ├── architecture-design.md
+│       └── implementation-plan.md
+└── packages/
+    └── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
 ```
 
+`rehuco-agent` is the PySide6 desktop GUI; it is a node client for swarm operations.
 `rehuco-core` is a shared library.
 `rehuco-node` is the headless service (FastAPI + uvicorn); it has a low `requires-python` floor
-to remain installable on the QNAP TS-230.
-`rehuco-agent` is the PySide6 desktop GUI; it is a node client for swarm operations.
+to remain installable on a QNAP TS-230.
 
 ## File formats
 

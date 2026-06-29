@@ -21,9 +21,9 @@ Read both before any non-trivial task. Section references in the form §N.M poin
 ## Monorepo layout
 
 ```text
-packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
-apps/rehuco-node/         # headless REST node (FastAPI); low requires-python for QNAP
 apps/rehuco-agent/        # PySide6 desktop GUI
+apps/rehuco-node/         # headless REST node (FastAPI); low requires-python for QNAP
+packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
 ```
 
 Root `pyproject.toml` is a **virtual workspace** — no `[project]` table, only
