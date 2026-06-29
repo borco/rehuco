@@ -1,16 +1,15 @@
 # rehuco
 
 A personal, distributed catalog for tutorials, references, and creative assets.
-
 The name is the stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehusw`.
 
 ## What it is
 
 rehuco manages a large, heterogeneous personal media collection spread across multiple machines —
 local video tutorials, online course registrations, zip archives of reference images, Daz3D plugins,
-3D objects, and more. It replaces a YAML sidecar file (`info.tc`) per tutorial folder with
-`info.rehu` (JSON), adds a distributed node model, and supports offline use, multi-user access
-control, and a web interface for tablet access.
+3D objects, and more. Each resource is described by a `.rehu` (JSON) sidecar file alongside it. The system
+adds a distributed node model and supports offline use, multi-user access control, and a web
+interface for tablet access.
 
 Key design properties:
 
