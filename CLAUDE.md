@@ -12,6 +12,7 @@ Read both before any non-trivial task. Section references in the form §N.M poin
 ## Repository
 
 - **GitHub:** <https://github.com/borco/rehuco> (private)
+- **Project board:** <https://github.com/users/borco/projects/5>
 - **PyPI names reserved** (0.0.0 stub packages published 2026-06-29):
   - <https://pypi.org/project/rehuco-core/>
   - <https://pypi.org/project/rehuco-node/>

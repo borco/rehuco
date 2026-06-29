@@ -49,6 +49,10 @@ to remain installable on the QNAP TS-230.
 | `.rehudb` | SQLite catalog cache. Derived; rebuildable. |
 | `.rehusw` | Swarm state: membership, users + salted hashes, access rules. Durable. |
 
+## Project board
+
+Issues and milestones are tracked at <https://github.com/users/borco/projects/5>.
+
 ## History
 
 | Project | Host | First Commit | Last Commit | Duration | Language | Qt |
