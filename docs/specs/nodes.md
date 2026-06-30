@@ -8,9 +8,9 @@ Nodes need to support, at minimum:
 - Accepting metadata/state updates (write, subject to ownership rules in §7)
 - Accepting an async "please checksum these files and report back" job, pollable for progress
 - Accepting a lightweight "re-read this specific resource, it changed" notification (§9.5)
-- **Browsing the node's own local filesystem** (list directories/files) so the admin app can build folder selections against the *node's* reality, not the app's machine (§5.1, §9.10)
-- Accepting and reporting **benchmark jobs** (§9.11) and **safe-move jobs** (§9.12)
-- Dropping/creating **fingerprint files** and reporting found fingerprints for auto-mapping (§9.9)
+- **Browsing the node's own local filesystem** (list directories/files) so the admin app can build folder selections against the *node's* reality, not the app's machine (§5.1, §9.11)
+- Accepting and reporting **benchmark jobs** (§9.12) and **safe-move jobs** (§9.13)
+- Dropping/creating **fingerprint files** and reporting found fingerprints for auto-mapping (§9.10)
 
 ## §5.1 Two roles: node (service) and agent (desktop GUI)
 
@@ -33,7 +33,7 @@ The app must be usable before swarm chatter settles. The mistake to avoid is a s
 - **Local cache** → waits only on the local `.rehudb` load (or shows results progressively as it loads), never on the network. Browsing/searching the catalog is stale-but-local until background sync refines it.
 - **Current access rules** → the *only* tier the serve-after-resync gate (§6.11) blocks, and only for **serving access-controlled resources to a user**, and only when there is genuinely newer access data to catch up to (the version-marker check). A node that missed nothing, or a single node (§8.1), satisfies it instantly.
 
-All swarm activity — discovery, registry resync, fingerprint mapping (§9.9), instance reconciliation, propagation — runs **async in the background** (in the task queue, §3) and surfaces *status* ("syncing" / "offline, showing last-known" / "up to date"), never a blocking splash. The app opens interactive on local/cached data and refines as sync lands.
+All swarm activity — discovery, registry resync, fingerprint mapping (§9.10), instance reconciliation, propagation — runs **async in the background** (in the task queue, §3) and surfaces *status* ("syncing" / "offline, showing last-known" / "up to date"), never a blocking splash. The app opens interactive on local/cached data and refines as sync lands.
 
 ## §5.3 Local-file mode vs. swarm mode
 

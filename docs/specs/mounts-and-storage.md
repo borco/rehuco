@@ -57,7 +57,23 @@ The same share can legitimately be mounted by several machines at once (e.g. the
 - **Retained copies are read-only stand-ins.** They reflect the v1 rule (§7): you can browse them offline and attach your own per-user notes, but you cannot edit the *resource metadata* of a retained copy until its real owner is reachable. (For genuinely write-once sources like sealed CD/DVD, the metadata is never editable on the source at all; edits live on a separate mutable instance, §10.1.)
 - **Staleness is resolved by version comparison, not blind overwrite.** When a retained source becomes reachable, compare the stored `resource_version`/timestamp against the live one; re-pull only if it moved.
 
-## §9.9 Self-mapping via fingerprint files
+## §9.9 Tolerating offline mounts without blocking
+
+A node may run continuously (e.g. the always-on Linux node) while the boxes whose shares it mounts — the TS-230 in particular, but any source box — are powered off or unreachable for long stretches. A configured mount is therefore frequently **present in `.rehuco` but currently dead**, and the node must keep serving everything else without stalling on it.
+
+The hazard is concrete: on a dead SMB/NFS mount, ordinary filesystem calls (`stat`, `open`, directory listing) **block for the mount's timeout** — tens of seconds, or indefinitely with a hard mount — so a node that naively touches a mounted path while serving a request would wedge that request, and potentially a whole worker, on storage that simply isn't there.
+
+Rules:
+
+- **Treat every mounted root as possibly-offline.** Reachability is runtime state, not config; never assume a mount is live just because it is declared.
+- **Probe reachability cheaply and out-of-band.** Check liveness with a single bounded-timeout operation (a `stat` of the mount root or its fingerprint file, §9.10) run in the task queue (§3), not on the request-serving path. Cache the up/down result and **back off** before re-probing, so a dead mount is consulted rarely and a flapping one doesn't cause churn.
+- **All mount I/O is timeout-wrapped and off the hot path.** File reads through a mount run in worker threads with their own deadlines, so one dead mount can never block request handling or another mount's traffic.
+- **Offline ⇒ serve last-known, read-only.** When a mount is offline, the node falls back to retained metadata (§9.8) and reports status `offline, showing last-known`, exactly as it does when no live route remains (§9.2) — it does not hang waiting for the mount to return.
+- **Recovery is a version-marker re-pull, not a rescan.** When a probe succeeds again, reconcile via the §9.8 version comparison (re-pull only what moved); the mount coming back does not force a full rescan.
+
+Deployment note: mount the shares **soft / with short timeouts** so failed syscalls return an error quickly rather than hanging. Hard mounts defeat this discipline and should be avoided for swarm storage.
+
+## §9.10 Self-mapping via fingerprint files
 
 UUID-matching (§9.2) resolves overlaps *per resource, reactively*. Fingerprinting resolves the **topology of shared storage proactively** — it discovers that nodeA's `foo/1` + `foo/2` and nodeB's mounted `foo/` are the same underlying storage, and how their paths map, without waiting to observe per-resource UUID collisions. Mechanism:
 
@@ -65,18 +81,18 @@ UUID-matching (§9.2) resolves overlaps *per resource, reactively*. Fingerprinti
 2. All nodes do a fast, shallow scan looking for *other nodes'* fingerprint files.
 3. If nodeB finds nodeA's fingerprint inside what nodeB calls `foo/`, then nodeB's `foo/` and nodeA's root are the same storage, and the **relative paths reveal the mapping** (nodeA's `foo/1` = nodeB's `foo/1` under the shared root). This reconstructs cross-node path-mapping automatically, including asymmetric cases (A maps two subdirs separately; B mounts the parent whole).
 
-Requirements: the fingerprint file must be content-unique per node-root (UUID inside), and the scan must handle **multiple fingerprints in one tree** (B's `foo/` may contain A's *and* C's fingerprints if three boxes share it). This same map is what detects the double-primary misconfiguration (§9.10): if two nodes both claim primary for storage the fingerprints prove is shared, the swarm flags it.
+Requirements: the fingerprint file must be content-unique per node-root (UUID inside), and the scan must handle **multiple fingerprints in one tree** (B's `foo/` may contain A's *and* C's fingerprints if three boxes share it). This same map is what detects the double-primary misconfiguration (§9.11): if two nodes both claim primary for storage the fingerprints prove is shared, the swarm flags it.
 
-## §9.10 Folder-add: declaring primary/local vs. remote/mounted ownership
+## §9.11 Folder-add: declaring primary/local vs. remote/mounted ownership
 
 When the admin adds a folder root to a node (via that node's `.rehuco`, edited through the node per §5.1), it must be tagged as one of:
 
 - **Primary/local** — this node owns the files and is the authoritative metadata writer (§7).
 - **Remote/mounted** — this node serves files it reaches via a mount but does *not* own them; some other node is primary.
 
-This flag is the concrete source of truth for §7's single-writer guarantee. **Hard constraint: exactly one node may be primary for any given storage.** Two nodes both marking the same (fingerprint-proven shared) storage as primary is a misconfiguration that breaks the single-writer guarantee; the self-mapping function (§9.9) is what detects and flags this.
+This flag is the concrete source of truth for §7's single-writer guarantee. **Hard constraint: exactly one node may be primary for any given storage.** Two nodes both marking the same (fingerprint-proven shared) storage as primary is a misconfiguration that breaks the single-writer guarantee; the self-mapping function (§9.10) is what detects and flags this.
 
-## §9.11 Node benchmarking and grading
+## §9.12 Node benchmarking and grading
 
 An explicit, user-triggered task (§3) that produces per-node performance grades to feed the dispatch decisions in §4.5/§9.7 (currently described only qualitatively as "the fast box" / "the weak box"):
 
@@ -85,13 +101,13 @@ An explicit, user-triggered task (§3) that produces per-node performance grades
 
 Caveat to record: dropping disk caches is disruptive and **platform-specific** (mechanism differs across Linux/macOS/QNAP and may need privileges). The benchmark must therefore be occasional and explicit, never automatic, and must **degrade gracefully** where cold-cache measurement isn't permitted (fall back to warm-cache numbers, flagged as such).
 
-## §9.12 Self-determined fastest/safest move/rename
+## §9.13 Self-determined fastest/safest move/rename
 
 > [!NOTE]
 > **Implement the cross-filesystem move with Opus, not the auto-switched Sonnet.** The copy → verify-checksum-on-target → delete-source-only-if-verified sequence (and keeping the source's instance-registry entry until verification passes) is data-loss-sensitive: a wrong ordering or a skipped verification can delete the only good copy. Override to `/model opus` for the cross-FS path.
 
 The system chooses *how* to perform a move/rename rather than assuming:
 
-- A rename/move **within one filesystem** is a near-instant metadata operation — but only when performed by something with **direct local access to that filesystem**. The fingerprint map (§9.9) identifies which node is local to the files' storage; the move is **delegated to that node**, which does the instant in-place rename.
+- A rename/move **within one filesystem** is a near-instant metadata operation — but only when performed by something with **direct local access to that filesystem**. The fingerprint map (§9.10) identifies which node is local to the files' storage; the move is **delegated to that node**, which does the instant in-place rename.
 - The same rename issued **over SMB from a remote mount** may not be recognized as in-place and can silently degrade into copy-then-delete (slow, briefly doubles disk use). The design routes *around* needing to predict Samba's behavior: same-FS moves are delegated to a local node; anything else is treated as a cross-filesystem move.
 - **Cross-filesystem moves are checksum-gated (hard rule):** copy → generate/verify checksum on the *target* (preferably by the node local to the target FS) → delete the source **only if verification passes**. The source retains its instance-registry entry (§10.2) until target verification succeeds, so an interrupted move is always recoverable and never loses data.

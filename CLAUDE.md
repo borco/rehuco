@@ -41,7 +41,7 @@ consistent as new ones are added:
 
 ```text
 apps/rehuco-agent/        # PySide6 desktop GUI
-apps/rehuco-node/         # headless REST node (FastAPI); low requires-python for QNAP
+apps/rehuco-node/         # headless REST node (FastAPI)
 packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
 ```
 
@@ -144,7 +144,7 @@ reasoning-dense and a subtle error silently corrupts data:
 - **Plugin block save invariant** — live/inert/claim-then-abandon rule (§13.2).
 - **Registry resolution & serve-after-resync** — preferred-authority, chatter, version-marker
   comparison (§6.6, §6.11).
-- **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.12).
+- **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.13).
 
 ## Commit and branch policy
 

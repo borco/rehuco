@@ -22,10 +22,13 @@
         "PyPI",
         "pyqtads",
         "pyside",
+        "glibc",
+        "monorepo",
         "qnap",
         "rehu",
         "rehuco",
         "shiboken",
+        "syscalls",
         "uvicorn",
         "zeroconf"
     ],
