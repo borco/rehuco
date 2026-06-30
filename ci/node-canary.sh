@@ -52,23 +52,14 @@ echo "=== Installed versions ==="
 uv pip list --python "$VENV/bin/python"
 echo
 
-# Write a markdown table to /out/summary.md for the GitHub Actions job summary.
-# /out is a host-mounted directory provided by the CI workflow; skipped on local runs.
-if [ -d /out ]; then
-  GLIBC_VER=$(ldd --version | head -1 | awk '{print $NF}')
-  PYTHON_VER=$("$VENV/bin/python" --version | awk '{print $2}')
-  {
-    printf "## rehuco-node dependencies\n\n"
-    printf "manylinux2014\\_aarch64 · Python %s · glibc %s\n\n" "$PYTHON_VER" "$GLIBC_VER"
-    printf "| Package | Version |\n"
-    printf "| --- | --- |\n"
-    uv pip list --python "$VENV/bin/python" | tail -n +4 | awk '{print "| " $1 " | " $2 " |"}'
-  } > /out/summary.md
-fi
-
 echo "=== Smoke imports ==="
+# Verifies the key packages import correctly and writes the CI job summary to
+# /out/summary.md if /out is mounted (provided by the CI workflow; skipped locally).
 "$VENV/bin/python" - <<'EOF'
-from importlib.metadata import version
+import os
+import platform
+import sys
+from importlib.metadata import distributions, version
 
 import fastapi
 import uvicorn
@@ -89,4 +80,16 @@ print(f"  starlette      {version('starlette')}")
 print(f"  anyio          {version('anyio')}")
 print()
 print("All imports OK")
+
+if os.path.isdir("/out"):
+    py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    libc, libc_ver = platform.libc_ver()
+    pkgs = sorted((d.name.lower().replace("_", "-"), d.version) for d in distributions())
+    with open("/out/summary.md", "w", encoding="utf-8") as f:
+        f.write("## rehuco-node dependencies\n\n")
+        f.write(f"manylinux2014\\_aarch64 · Python {py_ver} · {libc} {libc_ver}\n\n")
+        f.write("| Package | Version |\n")
+        f.write("| --- | --- |\n")
+        for name, ver in pkgs:
+            f.write(f"| {name} | {ver} |\n")
 EOF
