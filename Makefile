@@ -1,4 +1,4 @@
-.PHONY: sync tests format pylint qa docs-serve
+.PHONY: sync tests format pylint qa docs-serve publish
 
 sync:
 	uv sync
@@ -17,3 +17,7 @@ qa: format tests pylint
 
 docs-serve:
 	uv run mkdocs serve
+
+publish:
+	uv build --all-packages
+	uv publish --check-url https://pypi.org/simple/ dist/*
