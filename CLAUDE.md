@@ -2,12 +2,16 @@
 
 ## Key documents
 
-- **Architecture:** `docs/specs/architecture-design.md` — full design, all sections referenced as §N.
+- **Design specs:** `docs/specs/` — the design is split across topic files, one per
+  section range. `docs/specs/README.md` is the **document map** (which `§N` lives in which
+  file) and records the section-numbering convention. Start at
+  `docs/specs/architecture-design.md` for the high-level overview (§1–§3).
 - **Implementation plan:** `docs/specs/implementation-plan.md` — milestone breakdown, tracer-bullet
   methodology, sequencing gates, honest caveats.
 
-Read both before any non-trivial task. Section references in the form §N.M point into
-`architecture-design.md`.
+Read both before any non-trivial task. Section references use global numbers in the form
+§N.M; resolve any number to its file via `docs/specs/README.md`. Numbers are global and may
+be renumbered on insert (no letter suffixes) — see the convention in that README.
 
 ## Repository
 
@@ -25,7 +29,7 @@ consistent as new ones are added:
 
 ### Labels
 
-- `Spike` — throwaway exploration answering one sharp technical question (keep the lesson,
+- `spike` — throwaway exploration answering one sharp technical question (keep the lesson,
   delete the code; see *Development methodology* below).
 
 ### Milestones
@@ -130,9 +134,9 @@ Use `opusplan` as the default (Opus for plan mode, Sonnet for execution).
 reasoning-dense and a subtle error silently corrupts data:
 
 - **Sync engine** — version vector, activity log, conflict/merge, tombstones (§7).
-- **Plugin block save invariant** — live/inert/claim-then-abandon rule (§13.1a).
+- **Plugin block save invariant** — live/inert/claim-then-abandon rule (§13.2).
 - **Registry resolution & serve-after-resync** — preferred-authority, chatter, version-marker
-  comparison (§6.6, §6.10).
+  comparison (§6.6, §6.11).
 - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.12).
 
 ## Commit and branch policy
