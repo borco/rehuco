@@ -157,7 +157,8 @@ feature branch is fine. Merges always use `--no-ff`.
 
 Commit type prefixes in use: `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`, `test:`.
 
-When a commit is tied to a GitHub issue, prefix the message with `refs #NNN:` before the type prefix:
+When committing on a feature branch (`issue/NNN/...`), prefix the message with `refs #NNN:` before the type prefix.
+Commits directly on `master` carry no prefix.
 
 ```text
 refs #5: docs: record QNAP/glibc canary result in §16.5.1
