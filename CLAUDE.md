@@ -11,12 +11,27 @@ Read both before any non-trivial task. Section references in the form §N.M poin
 
 ## Repository
 
-- **GitHub:** <https://github.com/borco/rehuco> (private)
+- **GitHub:** <https://github.com/borco/rehuco> (public)
 - **Project board:** <https://github.com/users/borco/projects/5>
 - **PyPI names reserved** (0.0.0 stub packages published 2026-06-29):
   - <https://pypi.org/project/rehuco-core/>
   - <https://pypi.org/project/rehuco-node/>
   - <https://pypi.org/project/rehuco-agent/>
+
+## GitHub labels and milestones
+
+Issues live on the [project board](https://github.com/users/borco/projects/5). Keep these
+consistent as new ones are added:
+
+### Labels
+
+- `Spike` — throwaway exploration answering one sharp technical question (keep the lesson,
+  delete the code; see *Development methodology* below).
+
+### Milestones
+
+- `Pre-work` — monorepo setup, integration spikes, and de-risking done before/around the
+  first tracer-bullet slice.
 
 ## Monorepo layout
 
