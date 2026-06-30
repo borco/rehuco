@@ -18,8 +18,7 @@ plugins:
 theme:
   name: material
   favicon: assets/images/favicon.svg
-  icon:
-    logo: material/bookshelf
+  logo: assets/images/favicon.svg
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
