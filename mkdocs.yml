@@ -6,6 +6,9 @@ repo_url: https://github.com/borco/rehuco
 repo_name: borco/rehuco
 edit_uri: edit/master/docs/
 
+exclude_docs: |
+  *.afdesign
+
 extra:
   generator: false
 
