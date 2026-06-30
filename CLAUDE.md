@@ -157,6 +157,12 @@ feature branch is fine. Merges always use `--no-ff`.
 
 Commit type prefixes in use: `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`, `test:`.
 
+When a commit is tied to a GitHub issue, prefix the message with `refs #NNN:` before the type prefix:
+
+```text
+refs #5: docs: record QNAP/glibc canary result in §16.5.1
+```
+
 ## Development methodology
 
 Agile cadence + tracer-bullet first slices + occasional spikes.
