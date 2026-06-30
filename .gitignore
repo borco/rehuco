@@ -9,7 +9,7 @@ __pycache__/
 *.so
 *.egg
 *.egg-info/
-dist/
+.dist/
 build/
 wheels/
 sdist/
@@ -27,7 +27,7 @@ uv.lock
 .pytest_cache/
 .coverage
 .coverage.*
-htmlcov/
+.htmlcov/
 
 # mypy / pyright
 .mypy_cache/
@@ -35,7 +35,7 @@ htmlcov/
 pyrightconfig.json
 
 # mkdocs
-site/
+.site/
 
 # IDEs
 .idea/

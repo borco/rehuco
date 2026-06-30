@@ -1,4 +1,5 @@
 site_name: rehuco
+site_dir: .site
 site_description: Distributed resource management system for tutorials and reference images
 site_url: https://borco.github.io/rehuco/
 repo_url: https://github.com/borco/rehuco

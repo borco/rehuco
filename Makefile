@@ -19,5 +19,5 @@ docs-serve:
 	uv run mkdocs serve
 
 publish:
-	uv build --all-packages
-	uv publish --check-url https://pypi.org/simple/ dist/*
+	uv build --all-packages --out-dir .dist
+	uv publish --check-url https://pypi.org/simple/ .dist/*

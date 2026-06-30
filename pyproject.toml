@@ -44,3 +44,6 @@ markers = [
     "slow: marks tests that are slow to run",
     "disk: marks tests that perform real disk I/O (no mocks)",
 ]
+
+[tool.coverage.html]
+directory = ".htmlcov"
