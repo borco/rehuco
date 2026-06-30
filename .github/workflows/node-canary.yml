@@ -26,6 +26,7 @@ jobs:
       - name: Run node canary
         run: |
           mkdir -p "${{ runner.temp }}/canary-out"
+          chmod 777 "${{ runner.temp }}/canary-out"
           # --tmpfs /tmp:rw,size=64m mimics the TS-230's 64 MB RAM disk /tmp exactly,
           # so the TMPDIR workaround in node-canary.sh is exercised under the same
           # constraint that triggered the issue on real hardware.
