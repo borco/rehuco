@@ -8,12 +8,15 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "pyside6", "qt"]
+keywords = ["rehuco", "resource-management", "rehu", "pyside6", "qt", "desktop", "gui"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: End Users/Desktop",
+    "Environment :: X11 Applications :: Qt",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Desktop Environment",
 ]
 requires-python = ">=3.14"
 dependencies = [

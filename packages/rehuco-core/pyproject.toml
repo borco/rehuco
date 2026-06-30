@@ -8,12 +8,14 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management"]
+keywords = ["rehuco", "resource-management", "rehu", "sync", "library"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries",
 ]
 requires-python = ">=3.14"
 dependencies = []

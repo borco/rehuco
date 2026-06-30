@@ -8,12 +8,15 @@ license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "fastapi", "rest"]
+keywords = ["rehuco", "resource-management", "rehu", "fastapi", "rest", "nas", "server", "zeroconf", "mdns"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: System Administrators",
+    "Environment :: No Input/Output (Daemon)",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
 ]
 requires-python = ">=3.14"
 dependencies = [
