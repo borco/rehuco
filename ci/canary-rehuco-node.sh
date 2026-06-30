@@ -35,8 +35,12 @@ echo
 
 VENV="$HOME/canary-venv"
 
-echo "=== Creating venv (Python 3.13) ==="
-uv venv --python 3.13 "$VENV"
+echo "=== Installing Python 3.14 (uv-managed) ==="
+uv python install 3.14
+echo
+
+echo "=== Creating venv (Python 3.14) ==="
+uv venv --python-preference managed --python 3.14 "$VENV"
 echo "Python: $("$VENV/bin/python" --version)"
 echo
 
@@ -56,6 +60,7 @@ echo "=== Smoke imports ==="
 # Verifies the key packages import correctly and writes the CI job summary to
 # /out/summary.md if /out is mounted (provided by the CI workflow; skipped locally).
 "$VENV/bin/python" - <<'EOF'
+import datetime
 import os
 import platform
 import sys
@@ -92,4 +97,5 @@ if os.path.isdir("/out"):
         f.write("| --- | --- |\n")
         for name, ver in pkgs:
             f.write(f"| {name} | {ver} |\n")
+        f.write(f"\n*Recorded on: {datetime.date.today()}*\n")
 EOF

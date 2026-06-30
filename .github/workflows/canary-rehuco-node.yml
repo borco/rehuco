@@ -1,10 +1,10 @@
-name: Node glibc canary (manylinux2014 aarch64)
+name: "Canary: rehuco-node glibc (manylinux2014 aarch64)"
 
 on:
   push:
     paths:
-      - ci/node-canary.sh
-      - .github/workflows/node-canary.yml
+      - ci/canary-rehuco-node.sh
+      - .github/workflows/canary-rehuco-node.yml
   schedule:
     # Weekly on Monday at 06:00 UTC
     - cron: "0 6 * * 1"
@@ -36,7 +36,7 @@ jobs:
             -v "${{ github.workspace }}/ci:/ci:ro" \
             -v "${{ runner.temp }}/canary-out:/out" \
             quay.io/pypa/manylinux2014_aarch64 \
-            bash /ci/node-canary.sh
+            bash /ci/canary-rehuco-node.sh
 
       - name: Write job summary
         if: always()
