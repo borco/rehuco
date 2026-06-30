@@ -52,6 +52,20 @@ echo "=== Installed versions ==="
 uv pip list --python "$VENV/bin/python"
 echo
 
+# Write a markdown table to /out/summary.md for the GitHub Actions job summary.
+# /out is a host-mounted directory provided by the CI workflow; skipped on local runs.
+if [ -d /out ]; then
+  GLIBC_VER=$(ldd --version | head -1 | awk '{print $NF}')
+  PYTHON_VER=$("$VENV/bin/python" --version | awk '{print $2}')
+  {
+    printf "## rehuco-node dependencies\n\n"
+    printf "manylinux2014\\_aarch64 · Python %s · glibc %s\n\n" "$PYTHON_VER" "$GLIBC_VER"
+    printf "| Package | Version |\n"
+    printf "| --- | --- |\n"
+    uv pip list --python "$VENV/bin/python" | tail -n +4 | awk '{print "| " $1 " | " $2 " |"}'
+  } > /out/summary.md
+fi
+
 echo "=== Smoke imports ==="
 "$VENV/bin/python" - <<'EOF'
 from importlib.metadata import version

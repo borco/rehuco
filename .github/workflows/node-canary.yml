@@ -25,20 +25,18 @@ jobs:
 
       - name: Run node canary
         run: |
-          set -o pipefail
+          mkdir -p "${{ runner.temp }}/canary-out"
           # --tmpfs /tmp:rw,size=64m mimics the TS-230's 64 MB RAM disk /tmp exactly,
           # so the TMPDIR workaround in node-canary.sh is exercised under the same
           # constraint that triggered the issue on real hardware.
           docker run --rm \
             --platform linux/arm64 \
             --tmpfs /tmp:rw,size=64m \
-            -v "${{ github.workspace }}/ci:/ci" \
+            -v "${{ github.workspace }}/ci:/ci:ro" \
+            -v "${{ runner.temp }}/canary-out:/out" \
             quay.io/pypa/manylinux2014_aarch64 \
-            bash /ci/node-canary.sh | tee canary-output.txt
+            bash /ci/node-canary.sh
 
-      - name: Upload canary versions
+      - name: Write job summary
         if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: canary-versions
-          path: canary-output.txt
+        run: cat "${{ runner.temp }}/canary-out/summary.md" >> "$GITHUB_STEP_SUMMARY"
