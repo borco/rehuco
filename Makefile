@@ -1,4 +1,9 @@
-.PHONY: sync tests format pylint qa docs-serve publish
+.PHONY: sync tests format pylint qa docs-serve publish setup-git
+
+setup-git:
+	git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+	git config --add remote.origin.fetch "^refs/heads/gh-pages"
+	git branch -dr origin/gh-pages 2>/dev/null || true
 
 sync:
 	uv sync
