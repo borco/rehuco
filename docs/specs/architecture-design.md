@@ -45,7 +45,7 @@ This pushes the design toward a **distributed system with eventual consistency**
 **Core principle — the agent (desktop GUI) is a node client for swarm operations; "admin" is a logged-in user's privilege, not a separate app (§5.1).** The desktop GUI talks to a node rather than touching the catalog filesystem itself, removing "local path vs. remote node" special-casing. The bare single-file viewer is the one exception — it opens a local `.rehu` off disk with no node and no login (§5.3).
 
 | Component | Role |
-|---|---|
+| --- | --- |
 | **Agent** (PySide6 desktop GUI) | Tray icon, viewer/editor, catalog/admin UI. A node client (§5.1). Exposes admin functions only when an admin *user* is logged in (§6.7) — there is no separate "admin build". Runs only on machines with a display. |
 | **Local viewer/editor** (part of the agent) | Views/edits a single `.rehu` file. Registered as the default `.rehu` handler in File Explorer (double-click opens it, §5.4). Works in local-file mode with no node/login (§5.3). Behavior is supplied by the resource's **plugin** (§13). |
 | **Node** | Headless service: watches folder roots, serves `.rehu` data over REST, participates in the swarm, runs jobs. Runs on every machine including headless ones (QNAP). No GUI. Multiple per machine (different config/data dirs, ports). Per root, **primary/local** (owns files, authoritative writer) or **remote/mounted** (serves a mount it doesn't own) — chosen at folder-add (§9.10). Independent lifecycle from the agent (§5.1). |
@@ -120,7 +120,7 @@ Scanning is load-bearing (§2, §9.5) but the *strategy* was previously undefine
 Each node keeps three files of the same basename, sitting together, with sharply different roles and lifecycles:
 
 | File | Holds | Category | Lifecycle |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `.rehuco` | Per-machine config: folder roots, mounts, primary/remote ownership flags (§9.10), plugin list (§13), retention opt-ins (§9.8), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
 | `.rehudb` | The SQLite catalog cache | Derived cache | Rebuildable within the §2 boundary; disposable/regenerable |
 | `.rehusw` | Swarm info: membership, users + salted hashes, access rules | Swarm-identical, *propagated* | **Durable, not disposable** — updated by resync, never regenerated from scratch |
@@ -320,7 +320,7 @@ So the correct rule is **"catch up to the most-current swarm-info source you can
 Two different kinds of data live in `.rehu`, with different natural owners:
 
 | Data | Examples | Owner | Conflict risk |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Resource metadata | author, duration, description, screenshots | The node administering the files (per `.rehuco`, §9.3) | None — only one logical owner ever writes it; others hold cached, version-stamped copies |
 | Per-user state | view progress, notes, bookmarks, borrow records, deletion/archival actions (logged, §7) | The user | Real, but narrow in scope |
 
@@ -589,7 +589,7 @@ Resource types (tutorial, reference images, Daz3D, and future types) are impleme
 ### 13.1 Split between core and plugin-owned responsibility
 
 | Core (same for every resource type) | Plugin-owned (varies per type) |
-|---|---|
+| --- | --- |
 | UUID, instance tracking, checksums, swarm sync | Schema extension — custom fields beyond the common set (§4.1) |
 | Tasks/job queue, node communication, REST plumbing | Viewer layout and behavior |
 | Permissions/access grants | Editor layout and behavior |

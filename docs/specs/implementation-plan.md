@@ -62,7 +62,7 @@ In this plan, **A0/B0/C0 are tracer bullets** (kept spines). The items flagged *
 These unblock or de-risk everything after; small but high-leverage.
 
 | Task | Kind | Why now | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Stand up the monorepo (uv workspaces) | setup (kept) | The dev environment for everything; fixes the venv-confusion immediately (§16) | Root virtual workspace + `packages/rehuco-core`, `apps/rehuco-agent`; add `rehuco-node` later when Milestone B starts |
 | Decide the **tutorial** and **reference-image** field lists | decision | Specific-field rendering is the one thing blocked on schema (§17.2) | The generic editor does *not* need this; only the rich per-type view does. Decide enough to start, refine later |
 | Decide access-rule grammar | decision | Not needed for Milestones A/B (single user, local) | Can defer to Milestone C-ish; noted so it's not forgotten |
