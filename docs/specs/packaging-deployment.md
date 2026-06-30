@@ -119,7 +119,7 @@ Cold-import time on TS-230 ARM hardware is ~3.3 s — expected, not a compatibil
 
 ### §16.5.2 Automated canary: three-tier verification
 
-- [ ] [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
+- [x] [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
 
 The canary runs at three tiers, ordered fastest → most authoritative:
 
