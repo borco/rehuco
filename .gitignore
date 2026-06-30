@@ -57,3 +57,6 @@ desktop.ini
 .env
 .env.*
 !.env.example
+
+# Affinity Designer lock
+*.afdesign~lock~
