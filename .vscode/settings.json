@@ -1,0 +1,46 @@
+{
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports.ruff": "explicit"
+        }
+    },
+    "ruff.enable": true,
+    "cSpell.words": [
+        "aarch",
+        "Borcoman",
+        "Calin",
+        "hatchling",
+        "iborco",
+        "Ioan",
+        "manylinux",
+        "mkdocs",
+        "pylint",
+        "PyPI",
+        "pyqtads",
+        "pyside",
+        "qnap",
+        "rehu",
+        "rehuco",
+        "shiboken",
+        "uvicorn",
+        "zeroconf"
+    ],
+    "yaml.customTags": [
+        "tag:yaml.org,2002:python/name:material.extensions.emoji.twemoji scalar",
+        "tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg scalar"
+    ],
+    "mypy-type-checker.enabled": false,
+    "black-formatter.enabled": false,
+    "python.formatting.provider": "none",
+    "better-todo-tree.general.showActivityBarBadge": true,
+    "better-todo-tree.general.showIconsInsteadOfTagsInStatusBar": true,
+    "better-todo-tree.general.statusBar": "total",
+    "better-todo-tree.filtering.excludeGlobs": [
+        "**/node_modules/*/**",
+        "**/*.md"
+    ],
+    "better-todo-tree.filtering.ignoreGitSubmodules": true
+}
