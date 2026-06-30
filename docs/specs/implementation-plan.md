@@ -1,4 +1,15 @@
-# rehuco — Implementation Plan (Tracer-Bullet First Slices)
+# rehuco — Implementation Plan
+
+> [!NOTE]
+> **Tracer-Bullet First Slices**
+>
+> Each milestone opens with a **tracer bullet** — the thinnest real, kept, production-grade path through every
+> layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking the
+> working spine. This counters the failure mode of building layers deeply in isolation before anything works
+> as a whole. A0, B0, and C0 are the tracer bullets; everything else thickens them.
+>
+> *Concept from [The Pragmatic Programmer](https://en.wikipedia.org/wiki/The_Pragmatic_Programmer)
+> (Thomas & Hunt); further discussion at [wiki.c2.com](https://wiki.c2.com/?TracerBullets).*
 
 Companion to `architecture-design.md`. This plan covers the **near-term build** scoped to the stated personal priorities:
 
