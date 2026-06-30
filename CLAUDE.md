@@ -79,6 +79,19 @@ surprising behavior. No narration of what the code does.
 
 120 characters (ruff enforced).
 
+## Markdown conventions
+
+Docs under `docs/` are markdownlint-checked (`.markdownlint.json` sets MD013 line length 120,
+tables exempt). Beyond that:
+
+- **Headings and lists are surrounded by blank lines** (MD022/MD032).
+- **Inside a blockquote, the separating blank line must itself be a quote line** — write an
+  empty `>` (i.e. add a `>\n` line), not a truly blank line, or the list/paragraph isn't
+  separated within the quote.
+- **Table delimiter rows are spaced** — `| --- | --- |`, not `|---|---|` (header and data
+  cells padded with single spaces too).
+- **No emphasis-as-heading** (MD036) — use real `###` headings, not bold text.
+
 ## Tooling
 
 | Tool | Role |

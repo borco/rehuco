@@ -48,6 +48,7 @@ In this plan, **A0/B0/C0 are tracer bullets** (kept spines). The items flagged *
 > **Use `opusplan` as the default** (set `/model opusplan` at the start of each session). It ties model choice to mode: **Opus in plan mode** (architecture, edge cases, tradeoffs), then **automatically switches to Sonnet in execution mode** for code generation. For ~90% of rehuco — field widgets, UI wiring, REST endpoints, web templates, migration tooling — this gives Opus-quality planning and Sonnet-speed execution with no micromanagement, and it's *better* than hand-switching for routine work.
 >
 > **Its one blind spot matters for this app:** `opusplan` switches on *mode*, not on *how hard the code is*. It assumes "execution = mechanical." But rehuco has a few cores where the *implementation itself* is reasoning-dense and a subtle error silently corrupts data. For those, **manually switch to Opus (`/model opus`) even while implementing** — context carries over, so you can drop back to `opusplan`/Sonnet after. These cores are marked with `> [!NOTE]` blocks in `architecture-design.md`; they are:
+>
 > - **Sync engine** — version vector + activity log, conflict/merge, tombstones (§7).
 > - **Plugin block save invariant** — the live/inert/claim-then-abandon rule (§13.1a).
 > - **Registry resolution & serve-after-resync** — preferred-authority/chatter, version-marker comparison (§6.6, §6.10).
