@@ -1,0 +1,34 @@
+[project]
+name = "rehuco-core"
+dynamic = ["version"]
+description = "rehuco shared library: models, .rehu I/O, sync primitives"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Ioan Calin", email = "iborco@gmail.com" },
+]
+keywords = ["rehuco", "resource-management"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.urls]
+Homepage = "https://borco.github.io/rehuco/"
+Repository = "https://github.com/borco/rehuco/tree/master/packages/rehuco-core"
+Issues = "https://github.com/borco/rehuco/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/rehuco_core/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rehuco_core"]
