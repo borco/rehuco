@@ -1,0 +1,43 @@
+name: "Canary: rehuco-node glibc (manylinux2014 aarch64)"
+
+on:
+  push:
+    paths:
+      - ci/canary-rehuco-node.sh
+      - .github/workflows/canary-rehuco-node.yml
+  schedule:
+    # Weekly on Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  canary:
+    name: manylinux2014_aarch64 wheel check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up QEMU (aarch64 emulation)
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Run node canary
+        run: |
+          mkdir -p "${{ runner.temp }}/canary-out"
+          chmod 777 "${{ runner.temp }}/canary-out"
+          # --tmpfs /tmp:rw,size=64m mimics the TS-230's 64 MB RAM disk /tmp exactly,
+          # so the TMPDIR workaround in node-canary.sh is exercised under the same
+          # constraint that triggered the issue on real hardware.
+          docker run --rm \
+            --platform linux/arm64 \
+            --tmpfs /tmp:rw,size=64m \
+            -v "${{ github.workspace }}/ci:/ci:ro" \
+            -v "${{ runner.temp }}/canary-out:/out" \
+            quay.io/pypa/manylinux2014_aarch64 \
+            bash /ci/canary-rehuco-node.sh
+
+      - name: Write job summary
+        if: always()
+        run: cat "${{ runner.temp }}/canary-out/summary.md" >> "$GITHUB_STEP_SUMMARY"
