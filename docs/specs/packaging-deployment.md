@@ -63,6 +63,37 @@ Verifying the node runs on glibc 2.23 is testing the **artifact**, not the works
 - **Dev/iteration and the main test suite** run on capable machines: `uv run --package rehuco-node pytest`.
 - **A separate, early, recurring step builds `rehuco-node` and installs + smoke-tests it on the actual TS-230** (or a glibc-2.23 container that mimics it), exactly as it will really be installed. This is the dependency canary flagged as a risk in §17.2: if any node dependency (FastAPI, uvicorn, zeroconf, cryptography, pydantic-core, …) lacks a glibc-2.23-compatible wheel, this surfaces it — and it's a *node*-dependency problem to solve (e.g. an older pydantic), entirely independent of the agent's PySide6, which never enters the node's picture. Running this continuously keeps the QNAP-compatibility promise verified rather than discovered late.
 
+> [!NOTE] rehuco-node dependencies
+>
+> | Package | TS-230 version | Canary version |
+> | --- | --- | --- |
+> | annotated-doc | 0.0.4 | 0.0.4 |
+> | annotated-types | 0.7.0 | 0.7.0 |
+> | anyio | 4.14.1 | 4.14.1 |
+> | cffi | 2.0.0 | 2.0.0 |
+> | click | 8.4.2 | 8.4.2 |
+> | cryptography | 49.0.0 | 49.0.0 |
+> | fastapi | 0.138.2 | 0.138.2 |
+> | h11 | 0.16.0 | 0.16.0 |
+> | httptools | — | 0.8.0 |
+> | idna | 3.18 | 3.18 |
+> | ifaddr | 0.2.0 | 0.2.0 |
+> | pycparser | 3.0 | 3.0 |
+> | pydantic | 2.13.4 | 2.13.4 |
+> | pydantic-core | 2.46.4 | 2.46.4 |
+> | python-dotenv | — | 1.2.2 |
+> | pyyaml | — | 6.0.3 |
+> | starlette | 1.3.1 | 1.3.1 |
+> | typing-extensions | 4.15.0 | 4.15.0 |
+> | typing-inspection | 0.4.2 | 0.4.2 |
+> | uvicorn | 0.49.0 | 0.49.0 |
+> | uvloop | — | 0.22.1 |
+> | watchfiles | — | 1.2.0 |
+> | websockets | — | 16.0 |
+> | zeroconf | 0.150.0 | 0.150.0 |
+>
+> *Recorded on: 2026-06-30*
+
 ### §16.5.1 Initial canary result (2026-06-30)
 
 - [x] [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
@@ -83,29 +114,26 @@ All target packages installed from PyPI wheels (`manylinux2014_aarch64`) and imp
 >
 > Normal `uv` operation (venv creation, package install) does not need `TMPDIR`.
 
-| Package | Version |
-| --- | --- |
-| fastapi | 0.138.2 |
-| uvicorn | 0.49.0 |
-| zeroconf | 0.150.0 |
-| pydantic-core | 2.46.4 |
-| cryptography | 49.0.0 |
-| pydantic | 2.13.4 |
-| starlette | 1.3.1 |
-| anyio | 4.14.1 |
-| h11 | 0.16.0 |
-| cffi | 2.0.0 |
-| annotated-types | 0.7.0 |
-| click | 8.4.2 |
-| idna | 3.18 |
-| ifaddr | 0.2.0 |
-| pycparser | 3.0 |
-| typing-extensions | 4.15.0 |
-| typing-inspection | 0.4.2 |
-| annotated-doc | 0.0.4 |
-
 **Conclusion:** no glibc constraint on any of the node's planned dependencies at current versions.
 Cold-import time on TS-230 ARM hardware is ~3.3 s — expected, not a compatibility issue.
+
+### §16.5.2 Automated canary: three-tier verification
+
+- [ ] [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
+
+The canary runs at three tiers, ordered fastest → most authoritative:
+
+1. **Local / Mac mini** — native aarch64, no QEMU overhead. Run `ci/node-canary.sh` inside the container
+   locally (`--platform linux/arm64` is a no-op on M-series hardware). Fast feedback when bumping dependencies.
+2. **GitHub Actions** — QEMU emulation of aarch64 on an x86_64 runner (`.github/workflows/node-canary.yml`).
+   Triggers on push to canary-related files and on a weekly schedule. Keeps the compatibility promise
+   continuously verified without manual effort.
+3. **Physical TS-230 (`ssh nas`)** — ground-truth on real glibc 2.23 hardware. On-demand only; see §16.5.1
+   for initial run notes and the `TMPDIR` warning.
+
+`ci/node-canary.sh` installs rehuco-node's direct PyPI dependencies inside
+`quay.io/pypa/manylinux2014_aarch64` (glibc 2.17 floor, more conservative than the TS-230's 2.23) and
+smoke-imports each one. A missing `manylinux2014_aarch64` wheel or a glibc-version mismatch exits non-zero.
 
 ## §16.6 Migrating existing repos
 
