@@ -95,6 +95,13 @@ tables exempt). Beyond that:
 - **Table delimiter rows are spaced** — `| --- | --- |`, not `|---|---|` (header and data
   cells padded with single spaces too).
 - **No emphasis-as-heading** (MD036) — use real `###` headings, not bold text.
+- **Issue links under spec section headings** — when a section has a corresponding GitHub issue, list it
+  immediately below the heading as a task-list item. Closed issues are checked; open ones are unchecked.
+  Use `[#N: title](url)` so the number is scannable and the title gives context. Multiple issues can be listed.
+
+  ```markdown
+  - [x] [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
+  ```
 
 ## Tooling
 
