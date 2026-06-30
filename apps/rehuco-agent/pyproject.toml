@@ -1,0 +1,43 @@
+[project]
+name = "rehuco-agent"
+dynamic = ["version"]
+description = "rehuco PySide6 desktop GUI"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Ioan Calin", email = "iborco@gmail.com" },
+]
+keywords = ["rehuco", "resource-management", "rehu", "pyside6", "qt", "desktop", "gui"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Environment :: X11 Applications :: Qt",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Desktop Environment",
+]
+requires-python = ">=3.14"
+dependencies = [
+    "rehuco-core",
+    "PySide6>=6.9",
+]
+
+[project.urls]
+Homepage = "https://borco.github.io/rehuco/"
+Repository = "https://github.com/borco/rehuco/tree/master/apps/rehuco-agent"
+Issues = "https://github.com/borco/rehuco/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/rehuco_agent/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rehuco_agent"]
+
+[tool.uv.sources]
+rehuco-core = { workspace = true }

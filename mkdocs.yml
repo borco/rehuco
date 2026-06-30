@@ -1,0 +1,90 @@
+site_name: rehuco
+site_dir: .site
+site_description: Distributed resource management system for tutorials and reference images
+site_url: https://borco.github.io/rehuco/
+repo_url: https://github.com/borco/rehuco
+repo_name: borco/rehuco
+edit_uri: edit/master/docs/
+
+extra:
+  generator: false
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+theme:
+  name: material
+  favicon: assets/images/favicon.svg
+  icon:
+    logo: material/bookshelf
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: teal
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: teal
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.tracking
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+
+markdown_extensions:
+  - admonition
+  - github-callouts
+  - attr_list
+  - md_in_html
+  - footnotes
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+nav:
+  - Home: index.md
+  - Design Specs:
+      - Document Map: specs/README.md
+      - Overview: specs/architecture-design.md
+      - Data Model: specs/data-model.md
+      - Node Communication: specs/nodes.md
+      - Discovery & Trust: specs/discovery-trust-access.md
+      - Sync & Conflicts: specs/sync.md
+      - Multiplicity: specs/multiplicity.md
+      - Mounts & Storage: specs/mounts-and-storage.md
+      - Identity & Dedup: specs/instances-and-dedup.md
+      - Borrowing: specs/borrowing.md
+      - Offline Editing: specs/offline-editing.md
+      - Plugins: specs/plugins.md
+      - Requirements: specs/requirements.md
+      - Acquisition Tooling: specs/acquisition-tooling.md
+      - Packaging & Deployment: specs/packaging-deployment.md
+      - Open Questions: specs/open-questions.md
+  - Implementation Plan: specs/implementation-plan.md
+  - Packages: packages.md

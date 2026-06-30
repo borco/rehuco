@@ -1,0 +1,49 @@
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "apps/*",
+]
+
+[dependency-groups]
+dev = [
+    "markdown-callouts>=0.4",
+    "mkdocs>=1.6",
+    "mkdocs-exclude>=1.0",
+    "mkdocs-material>=9.5",
+    "pylint>=3.3",
+    "pytest>=8.3",
+    "pytest-benchmark>=5.1",
+    "pytest-cov>=6.1",
+    "pytest-explicit>=1.0",
+    "pytest-freezer>=0.4",
+    "pytest-mock>=3.14",
+    "pytest-qt>=4.4",
+    "ruff>=0.11",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pylint.main]
+jobs = 0
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.messages_control]
+disable = ["fixme"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers"
+testpaths = ["packages", "apps"]
+markers = [
+    "slow: marks tests that are slow to run",
+    "disk: marks tests that perform real disk I/O (no mocks)",
+]
+
+[tool.coverage.html]
+directory = ".htmlcov"

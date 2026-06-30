@@ -1,4 +1,4 @@
-name: "Canary: rehuco-node glibc (manylinux2014 aarch64)"
+name: "canary: rehuco-node glibc (manylinux2014 aarch64)"
 
 on:
   push:

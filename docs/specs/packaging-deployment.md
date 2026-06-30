@@ -63,7 +63,8 @@ Verifying the node runs on glibc 2.23 is testing the **artifact**, not the works
 - **Dev/iteration and the main test suite** run on capable machines: `uv run --package rehuco-node pytest`.
 - **A separate, early, recurring step builds `rehuco-node` and installs + smoke-tests it on the actual TS-230** (or a glibc-2.23 container that mimics it), exactly as it will really be installed. This is the dependency canary flagged as a risk in §17.2: if any node dependency (FastAPI, uvicorn, zeroconf, cryptography, pydantic-core, …) lacks a glibc-2.23-compatible wheel, this surfaces it — and it's a *node*-dependency problem to solve (e.g. an older pydantic), entirely independent of the agent's PySide6, which never enters the node's picture. Running this continuously keeps the QNAP-compatibility promise verified rather than discovered late.
 
-> [!NOTE] rehuco-node dependencies
+> [!NOTE]
+> **rehuco-node dependencies**
 >
 > | Package | TS-230 version | Canary version |
 > | --- | --- | --- |
