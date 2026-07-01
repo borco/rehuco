@@ -1,33 +1,32 @@
 [project]
-name = "rehuco-agent"
+name = "borco-pyside"
 dynamic = ["version"]
-description = "rehuco PySide6 desktop GUI"
+description = "Generic reusable PySide6/Qt classes and utilities"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "rehu", "pyside6", "qt", "desktop", "gui"]
+keywords = ["borco", "pyside6", "qt", "gui", "library", "utilities"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
-    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
     "Environment :: X11 Applications :: Qt",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Desktop Environment",
+    "Topic :: Software Development :: Libraries",
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "rehuco-core",
-    "borco-pyside",
+    "borco-core",
     "PySide6>=6.9",
 ]
 
 [project.urls]
 Homepage = "https://borco.github.io/rehuco/"
-Repository = "https://github.com/borco/rehuco/tree/master/apps/rehuco-agent"
+Repository = "https://github.com/borco/rehuco/tree/master/packages/borco-pyside"
 Issues = "https://github.com/borco/rehuco/issues"
 
 [build-system]
@@ -35,11 +34,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/rehuco_agent/__init__.py"
+path = "src/borco_pyside/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rehuco_agent"]
+packages = ["src/borco_pyside"]
 
 [tool.uv.sources]
-rehuco-core = { workspace = true }
-borco-pyside = { workspace = true }
+borco-core = { workspace = true }
