@@ -1,0 +1,1767 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/implementation-plan/">
+      
+      
+        <link rel="prev" href="../open-questions/">
+      
+      
+        <link rel="next" href="../../packages/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Implementation Plan - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rehuco-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../packages/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Packages
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-create-the-monorepo-one-time-cheap-nowcostly-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you create the monorepo (one-time, cheap-now/costly-later)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#methodology-agile-cadence-tracer-bullet-spines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology: agile cadence, tracer-bullet spines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Methodology: agile cadence, tracer-bullet spines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spikes-vs-tracer-bullets-a-related-but-different-distinction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spikes vs. tracer bullets (a related but different distinction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model strategy (Claude Code): opusplan backbone, manual escalation for the hard cores
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-work-do-beforearound-the-first-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-work (do before/around the first slice)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-a-local-viewedit-no-node-no-swarm-no-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone A — Local view/edit (no node, no swarm, no login)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone A — Local view/edit (no node, no swarm, no login)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a1an-thicken-the-spine-iterations-each-shippable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A1–An — Thicken the spine (iterations, each shippable)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-b-watch-a-tutorial-from-a-tabletlocal-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone B — Watch a tutorial from a tablet/local browser
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone B — Watch a tutorial from a tablet/local browser">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#b0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b1bn-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B1–Bn — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-c-borrow-a-local-copy-for-offline-viewing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone C — Borrow a local copy for offline viewing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone C — Borrow a local copy for offline viewing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#c0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c1cn-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C1–Cn — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-deferred-past-these-three" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately deferred past these three
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing-gates-decide-before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing gates (decide-before-you-start)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest caveats
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-create-the-monorepo-one-time-cheap-nowcostly-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you create the monorepo (one-time, cheap-now/costly-later)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#methodology-agile-cadence-tracer-bullet-spines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology: agile cadence, tracer-bullet spines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Methodology: agile cadence, tracer-bullet spines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spikes-vs-tracer-bullets-a-related-but-different-distinction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spikes vs. tracer bullets (a related but different distinction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model strategy (Claude Code): opusplan backbone, manual escalation for the hard cores
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-work-do-beforearound-the-first-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-work (do before/around the first slice)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-a-local-viewedit-no-node-no-swarm-no-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone A — Local view/edit (no node, no swarm, no login)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone A — Local view/edit (no node, no swarm, no login)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#a0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a1an-thicken-the-spine-iterations-each-shippable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A1–An — Thicken the spine (iterations, each shippable)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-b-watch-a-tutorial-from-a-tabletlocal-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone B — Watch a tutorial from a tablet/local browser
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone B — Watch a tutorial from a tablet/local browser">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#b0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#b1bn-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        B1–Bn — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-c-borrow-a-local-copy-for-offline-viewing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone C — Borrow a local copy for offline viewing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Milestone C — Borrow a local copy for offline viewing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#c0-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C0 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#c1cn-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        C1–Cn — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-deferred-past-these-three" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately deferred past these three
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing-gates-decide-before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing gates (decide-before-you-start)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest caveats
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rehuco-implementation-plan">rehuco — Implementation Plan</h1>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Tracer-Bullet First Slices</strong></p>
+<p>Each milestone opens with a <strong>tracer bullet</strong> — the thinnest real, kept, production-grade path through every
+layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking the
+working spine. This counters the failure mode of building layers deeply in isolation before anything works
+as a whole. A0, B0, and C0 are the tracer bullets; everything else thickens them.</p>
+<p><em>Concept from <a href="https://en.wikipedia.org/wiki/The_Pragmatic_Programmer">The Pragmatic Programmer</a>
+(Thomas &amp; Hunt); further discussion at <a href="https://wiki.c2.com/?TracerBullets">wiki.c2.com</a>.</em></p>
+</div>
+<p>Companion to <code>architecture-design.md</code>. This plan covers the <strong>near-term build</strong> scoped to the stated personal priorities:</p>
+<ol>
+<li>View/edit local <code>.rehu</code> for basic tutorials and reference images.</li>
+<li>Watch a tutorial from a tablet/local browser.</li>
+<li>(later) Borrow a local copy for offline viewing on leave.</li>
+</ol>
+<h2 id="before-you-create-the-monorepo-one-time-cheap-nowcostly-later">Before you create the monorepo (one-time, cheap-now/costly-later)</h2>
+<p>These are settled; listed so nothing is forgotten at <code>uv init</code>:</p>
+<ul>
+<li><strong>Name: <code>rehuco</code></strong> (decided). It propagates into package names (<code>rehuco-core</code>, <code>rehuco-node</code>, <code>rehuco-agent</code>), PyPI namespace, import paths, file extensions (<code>.rehu</code>/<code>.rehuco</code>/<code>.rehudb</code>/<code>.rehusw</code>), config dirs, and the swarm-ID scheme — which is exactly why it's chosen before init.</li>
+<li><strong>Reserve PyPI names</strong> via throwaway <code>0.0.0</code> stub repos (the same move used for <code>pyside6-scintilla</code>/<code>-lexilla</code>): claim <code>rehuco</code>, <code>rehuco-core</code>, <code>rehuco-node</code>, <code>rehuco-agent</code> before anyone squats them.</li>
+<li><strong>Root <code>pyproject.toml</code> is a <em>virtual</em> workspace</strong> — no <code>[project]</code> table, only <code>[tool.uv.workspace]</code> (§16.2). Decided.</li>
+<li><strong><code>rehuco-node</code> <code>requires-python</code> floor</strong> — set at creation; no constraint from the TS-230 since the node runs on capable hardware (§16.4).</li>
+<li><strong>Fresh git history</strong> — start clean, old repos kept read-only as archive (§16.6). Decided.</li>
+</ul>
+<h2 id="methodology-agile-cadence-tracer-bullet-spines">Methodology: agile cadence, tracer-bullet spines</h2>
+<p><strong>Agile</strong> and <strong>tracer bullets</strong> are not alternatives — agile is the <em>cadence</em> (short iterations, something usable each cycle, adjust as you learn), tracer bullets are a <em>technical strategy</em> used within it (build a thin, real, kept end-to-end skeleton through every layer first, then thicken). This plan uses <strong>agile iterations whose first slice of each milestone is a tracer bullet.</strong></p>
+<p>Why tracer bullets specifically fit here:</p>
+<ul>
+<li>The risk is <strong>integration, not features</strong> — the architecture doc shows the features are understood; what's unproven is that the layers <em>connect</em> (agent↔node client split, the field/block model rendering end-to-end). <strong>UI approach: both QML and QtWidgets</strong>, each where it's strongest — QWidgets (with pyqtads docking) for dense sortable/filterable tables and trees (the browsers, §13.4) and the app shell; QML for the image grid and animated lightbox. This needs the pyqtads-hosts-QML integration to hold (the spike below). Note: the "NVIDIA overlay" prompt seen on app start is the GeForce/NVIDIA App <strong>in-game overlay</strong> reacting to the GPU context — a per-machine NVIDIA-software setting to toggle off, <em>not</em> an app concern and not a rendering problem; it imposes no architectural constraint.</li>
+<li>It <strong>counters the prior failure mode</strong> — earlier versions built layers deeply (a full field/type system in TutCatalog5) without reaching a usable end-to-end whole. A tracer bullet keeps a usable-if-minimal thing alive from iteration one.</li>
+<li>Tracer bullets are <strong>kept production code</strong>, not throwaway prototypes — exactly the discipline wanted after three discarded attempts.</li>
+</ul>
+<p><strong>Rule for every milestone:</strong> the first iteration is the thinnest end-to-end path that <em>works and is kept</em>. Later iterations thicken one part without breaking the working spine.</p>
+<h3 id="spikes-vs-tracer-bullets-a-related-but-different-distinction">Spikes vs. tracer bullets (a related but different distinction)</h3>
+<p>A third term, <strong>spike</strong> (from XP), is often confused with a tracer bullet. They're distinguished by <strong>what you keep</strong>, which follows from <strong>what question each answers</strong>:</p>
+<ul>
+<li><strong>Spike</strong> — answers <em>"I don't know how/whether X works — let me find out."</em> Time-boxed, quick-and-dirty, <strong>throwaway by intent.</strong> Its product is <em>knowledge</em>; the code is deleted afterward (keep the lesson, not the toy).</li>
+<li><strong>Tracer bullet</strong> — answers <em>"do my layers connect end-to-end?"</em> Minimal but <strong>real, production-grade, and kept.</strong> Its product is a <em>working skeleton</em> you build on.</li>
+<li><strong>Prototype</strong> — like a spike (throwaway), but broader/UX-exploratory rather than one sharp technical question.</li>
+</ul>
+<p><strong>The trap:</strong> letting a spike quietly become load-bearing — building on quick-and-dirty exploration code written <em>before</em> you understood the problem. Decide up front which you're writing and honor it. Quick test: <em>"if this works, do I keep the code or just the lesson?"</em> Keep the code → tracer bullet (write it properly). Keep the lesson → spike (write it fast and <strong>delete it</strong>).</p>
+<p><strong>They sequence:</strong> for a layer with genuine unknowns → <strong>spike</strong> (learn, discard) → <strong>tracer bullet</strong> (build the thin real spine, now informed) → <strong>thicken</strong> (iterations). Skip the spike where there are no real unknowns.</p>
+<p>In this plan, <strong>A0/B0/C0 are tracer bullets</strong> (kept spines). The items flagged <em>(spike)</em> below are throwaway — keep the lesson, delete the code.</p>
+<h3 id="model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores">Model strategy (Claude Code): <code>opusplan</code> backbone, manual escalation for the hard cores</h3>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Use <code>opusplan</code> as the default</strong> (set <code>/model opusplan</code> at the start of each session). It ties model choice to mode: <strong>Opus in plan mode</strong> (architecture, edge cases, tradeoffs), then <strong>automatically switches to Sonnet in execution mode</strong> for code generation. For ~90% of rehuco — field widgets, UI wiring, REST endpoints, web templates, migration tooling — this gives Opus-quality planning and Sonnet-speed execution with no micromanagement, and it's <em>better</em> than hand-switching for routine work.</p>
+<p><strong>Its one blind spot matters for this app:</strong> <code>opusplan</code> switches on <em>mode</em>, not on <em>how hard the code is</em>. It assumes "execution = mechanical." But rehuco has a few cores where the <em>implementation itself</em> is reasoning-dense and a subtle error silently corrupts data. For those, <strong>manually switch to Opus (<code>/model opus</code>) even while implementing</strong> — context carries over, so you can drop back to <code>opusplan</code>/Sonnet after. These cores are marked with <code>&gt; [!NOTE]</code> blocks in <code>architecture-design.md</code>; they are:</p>
+<ul>
+<li><strong>Sync engine</strong> — version vector + activity log, conflict/merge, tombstones (§7).</li>
+<li><strong>Plugin block save invariant</strong> — the live/inert/claim-then-abandon rule (§13.2).</li>
+<li><strong>Registry resolution &amp; serve-after-resync</strong> — preferred-authority/chatter, version-marker comparison (§6.6, §6.11).</li>
+<li><strong>Cross-filesystem safe move</strong> — checksum-gated, data-loss-sensitive (§9.13).</li>
+</ul>
+<p>Don't micro-manage beyond that — constant hand-switching for ordinary work wastes effort; the point of <code>opusplan</code> is to handle the common case so attention goes only to these few exceptions. Feeding the relevant <code>§</code> section into context makes even Sonnet reliable on the routine parts and Opus more reliable on the hard ones. (Model names/aliases shift over time and by plan/provider — verify the current <code>/model</code> list in Claude Code; the <em>strategy</em> is stable regardless of version numbers.)</p>
+</div>
+<hr />
+<h2 id="pre-work-do-beforearound-the-first-slice">Pre-work (do before/around the first slice)</h2>
+<p>These unblock or de-risk everything after; small but high-leverage.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Kind</th>
+<th>Why now</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stand up the monorepo (uv workspaces)</td>
+<td>setup (kept)</td>
+<td>The dev environment for everything; fixes the venv-confusion immediately (§16)</td>
+<td>Root virtual workspace + <code>packages/rehuco-core</code>, <code>apps/rehuco-agent</code>; add <code>rehuco-node</code> later when Milestone B starts</td>
+</tr>
+<tr>
+<td>Decide the <strong>tutorial</strong> and <strong>reference-image</strong> field lists</td>
+<td>decision</td>
+<td>Specific-field rendering is the one thing blocked on schema (§A01.2)</td>
+<td>The generic editor does <em>not</em> need this; only the rich per-type view does. Decide enough to start, refine later</td>
+</tr>
+<tr>
+<td>Decide access-rule grammar</td>
+<td>decision</td>
+<td>Not needed for Milestones A/B (single user, local)</td>
+<td>Can defer to Milestone C-ish; noted so it's not forgotten</td>
+</tr>
+<tr>
+<td><strong>pyqtads + QML integration (regression check)</strong></td>
+<td><strong>spike</strong></td>
+<td>Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions</td>
+<td>QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that <strong>detaches to a floating window and re-docks</strong> without glitches (the classic QML cross-window trouble spot), a <strong>QWidgets dock and QML dock coexisting</strong> in one layout, and <strong>layout save/restore</strong> with a QML dock present — including <strong>whether closed/hidden docks restore their size</strong> (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to <strong>keep QML surfaces in non-detachable docks or reduce the QML footprint</strong> — <em>not</em> switch to KDDockWidgets, which is foreclosed by its GPL license (architecture §16.7). pyqtads stays (LGPL, prebuilt PySide6 bindings). <strong>Result:</strong> approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a <code>splitterSizes</code> stash/reapply workaround — carried into A0. Recorded in §16.7.1</td>
+</tr>
+<tr>
+<td><strong>QNAP/glibc dependency canary</strong></td>
+<td><strong>spike</strong></td>
+<td>De-risks Milestone B's node deps early</td>
+<td>Build a glibc-2.23 container; confirm FastAPI/uvicorn/zeroconf/pydantic-core/cryptography wheels load. Keep the lesson (a pinned compatible-versions list); the container/script is throwaway</td>
+</tr>
+<tr>
+<td><strong>File association + app identity</strong></td>
+<td><strong>spike</strong></td>
+<td>De-risks A0's "double-click → opens" before A0 depends on it (§16.8)</td>
+<td>macOS: a minimal <code>.app</code> (built via Briefcase) that's the default opener for <code>.rehu</code> and delivers the path as a <strong><code>QFileOpenEvent</code></strong> into a single running PySide6 instance (§5.4) — macOS does <em>not</em> pass it as <code>argv</code>. Windows: an HKCU <strong>ProgID</strong> for default double-click + an explicit <strong>AUMID</strong> (<code>SetCurrentProcessExplicitAppUserModelID</code>) so a pinned taskbar button shows the app's icon and lights up as running (the gap <code>resource-hub</code> only papered over with a PyInstaller exe), with <code>DefaultIcon</code> from a shipped <code>.ico</code>. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="milestone-a-local-viewedit-no-node-no-swarm-no-login">Milestone A — Local view/edit (no node, no swarm, no login)</h2>
+<p><strong>Goal:</strong> a standalone, usable tool that opens, displays, and edits a local <code>.rehu</code> for tutorials and reference images. This is the agent's local-file mode (§5.3), and a genuinely useful product on its own.</p>
+<h3 id="a0-tracer-bullet-the-spine">A0 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>Double-click a <code>.rehu</code> in File Explorer → single-instance agent opens → reads the file off disk → renders common fields + Markdown + a basic image strip → edit one field → atomic-save back.</p>
+</blockquote>
+<p>Deliberately minimal: one resource shown via the <strong>generic field editor</strong> (not yet a rich plugin), no field toolkit depth, no block lifecycle, no cache. It only has to prove the spine: <strong>file-association → single-instance forward → read → render → edit → atomic-write.</strong> Keep this code.</p>
+<p>Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.3 (local-file mode), §13.3 (generic editor), §13.5 (Markdown + image strip).</p>
+<h3 id="a1an-thicken-the-spine-iterations-each-shippable">A1–An — Thicken the spine (iterations, each shippable)</h3>
+<ul>
+<li><strong>A1 — Field toolkit.</strong> Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path, image-count) with editor/viewer variants — the shared toolkit plugins compose from (§13.1). (TutCatalog5 has prior art here to draw on as a <em>design</em> reference.)</li>
+<li><strong>A2 — <code>.rehu</code> format + versioning.</strong> JSON read/write, per-file format-version field, preserve-unknown-fields rule (§4.10). Bring <code>.tc</code>→<code>.rehu</code> migration in as "format v0" (§15.3) — opening a <code>.tc</code> offers migration + screenshot-name normalization.</li>
+<li><strong>A3 — Plugin block model.</strong> Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with carry/map/drop (§13.2/§13.3). This is the genuinely new core logic.</li>
+<li><strong>A4 — Tutorial plugin (rich).</strong> Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next, hideable strip, ESC), folder-rename-from-suggestions (§13.5).</li>
+<li><strong>A5 — Reference-images plugin (basic).</strong> Type + fields + viewer; defer redaction/slideshow/search to later (they're §13.6 richness, not needed for "view/edit").</li>
+<li><strong>A6 — Checksums.</strong> Generate/verify with algorithm-tagging, as task-queue jobs (§4.5) — pairs naturally with migration.</li>
+<li><strong>A7 — Tray + polish.</strong> Close-to-tray/explicit-quit (§5.4), preferences.</li>
+</ul>
+<p><strong>Exit criteria:</strong> open any tutorial or ref-image <code>.rehu</code> (or migrate a <code>.tc</code>), view it richly, edit and atomic-save, generate/verify checksums. Standalone, no infrastructure.</p>
+<p><strong>Rough size:</strong> ~3–5 focused dev-weeks (front-loaded refactoring against prior-version design knowledge, not greenfield).</p>
+<hr />
+<h2 id="milestone-b-watch-a-tutorial-from-a-tabletlocal-browser">Milestone B — Watch a tutorial from a tablet/local browser</h2>
+<p><strong>Goal:</strong> from the iPad (thin browser client, §11.5), browse tutorials a node serves and watch one, with progress recorded. Single node, on the LAN — <strong>no swarm, no pairing, no multi-node sync, no auth-propagation</strong> (single-node base case, §8.1).</p>
+<blockquote>
+<p>Note: this introduces the <strong>node</strong> and the <strong>agent-as-node-client</strong> refactor (§5.1) — the first architecturally new spine beyond Milestone A.</p>
+</blockquote>
+<h3 id="b0-tracer-bullet-the-spine">B0 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>A single headless node serves an HTTP page listing one configured tutorial → tap it → browser plays the video → progress is recorded server-side and survives a reload.</p>
+</blockquote>
+<p>Minimal: one node, one hard-configured folder, no catalog DB yet (or the simplest possible), no auth, plain video serving. Proves the spine: <strong>node serves → browser lists → browser plays → progress persists.</strong></p>
+<p>Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/Pico — new skill), §13.5 web/follow, progress write (§7/§9.6 minimal).</p>
+<h3 id="b1bn-thicken">B1–Bn — Thicken</h3>
+<ul>
+<li><strong>B1 — Agent-as-node-client refactor.</strong> Move the agent's catalog reads to go through a node (§5.1). The local-file viewer (Milestone A) stays node-free; only catalog/swarm operations route through the node. (<code>rehuco-node</code> package created now.)</li>
+<li><strong>B2 — SQLite cache + incremental scan.</strong> The node builds <code>.rehudb</code> from <code>.rehu</code> files, version-aware incremental scan (§4.7, §4.8).</li>
+<li><strong>B3 — Generic + tutorial browsers.</strong> Table view with common columns + tutorial columns (duration, progress); click opens viewer; click-to-filter on tag/author/publisher (§13.4). (Desktop first; web browser view can mirror it.)</li>
+<li><strong>B4 — Web follow mode.</strong> Sequential playback, progress/duration tracking, notes, bookmarks in the browser (§13.5 web).</li>
+<li><strong>B5 — Progress sync frequency + handoff basics.</strong> Frequent progress writes so a reload/resume is current (§9.6) — even single-node benefits.</li>
+<li><strong>B6 — Minimal auth (optional this milestone).</strong> Even single-user, a login gate for the web UI (§6.8) if you want the tablet to require it; can defer if it's just you on a trusted LAN.</li>
+</ul>
+<p><strong>Exit criteria:</strong> open the web UI on the iPad over the LAN, see your tutorials, watch one, progress is remembered across sessions and devices.</p>
+<p><strong>Rough size:</strong> ~4–6 focused dev-weeks, much of it the web-stack learning curve (new to you) rather than architecture. The node runs on a capable box (Mac mini or always-on Linux node); the TS-230 is accessed via its existing SMB share (§16.4).</p>
+<hr />
+<h2 id="milestone-c-borrow-a-local-copy-for-offline-viewing">Milestone C — Borrow a local copy for offline viewing</h2>
+<p><strong>Goal:</strong> before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node, §11.5); sync progress/notes back on return. This is a <strong>two-party</strong> sync (home node ↔ laptop), far simpler than general swarm sync.</p>
+<h3 id="c0-tracer-bullet-the-spine">C0 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>Mark a tutorial "borrow" → its files + <code>.rehu</code> copy onto the laptop, borrow recorded in the user meta block (§11.4) → laptop node serves it offline → on return, progress/notes reconcile back.</p>
+</blockquote>
+<p>Touches, thinly: §11 (borrow as instance role), §10.2 (instance tracking), §7/§12 (two-party reconcile), §11.4 (borrow-in-meta).</p>
+<h3 id="c1cn-thicken">C1–Cn — Thicken</h3>
+<ul>
+<li><strong>C1 — Instance registry (minimal).</strong> Track where a UUID's copies live + roles; enough for borrow/return (§10.2).</li>
+<li><strong>C2 — Version-vector + activity-log sync.</strong> The real reconcile machinery (§7), scoped to two parties first.</li>
+<li><strong>C3 — Return/reconcile UI.</strong> Merge progress/notes; handle the borrow-vs-changed cases (§11.6) if they arise.</li>
+<li><strong>C4 — Scheduled archival.</strong> Borrow→archive-on-return, full or selective (§11.3).</li>
+</ul>
+<p><strong>Exit criteria:</strong> borrow → go offline → watch + take notes → return → changes reconciled.</p>
+<p><strong>Rough size:</strong> ~3–5 focused dev-weeks in the minimal (laptop + one home node) topology.</p>
+<hr />
+<h2 id="what-is-deliberately-deferred-past-these-three">What is deliberately deferred past these three</h2>
+<p>Everything that isn't on the personal critical path, per the architecture doc's own scoping:</p>
+<ul>
+<li><strong>Full swarm</strong> (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) — §6, §9.10–9.13. Defer until single-node + borrow is serving you daily; you may want it less than expected.</li>
+<li><strong>Acquisition tooling</strong> (LLM URL extraction, image-drag, HTML→Markdown) — §15. Explicitly deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap enough to slip into Milestone A if convenient.)</li>
+<li><strong>Reference-image richness</strong> (redaction, tag/semantic search, sketch slideshow, drawing critique) — §13.6.</li>
+<li><strong>Daz3D, 3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.</strong></li>
+<li><strong>Native end-user installers + auto-update</strong> — Briefcase-built installers with declarative file association / icon / AUMID, MSIX later, and self-update against a public release oracle (§16.8/§16.9). <code>uv tool install</code> covers the author's own machines until then; the file-association <em>mechanics</em> are proven earlier by the Pre-work spike, but packaging-for-distribution and update delivery (incl. code-signing/notarization) wait.</li>
+</ul>
+<h2 id="sequencing-gates-decide-before-you-start">Sequencing gates (decide-before-you-start)</h2>
+<ul>
+<li><strong>Before A1:</strong> enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).</li>
+<li><strong>Before A0 commits to the mixed QML/QWidgets UI:</strong> the pyqtads + QML integration <em>spike</em> (pre-work) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current versions.</li>
+<li><strong>Before A0 relies on "double-click → opens":</strong> the file-association + app-identity <em>spike</em> (pre-work) — macOS <code>.app</code>/<code>QFileOpenEvent</code> and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work; also settles Briefcase as the end-user packager.</li>
+<li><strong>Before B (serving NAS content):</strong> no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB (§16.4). The glibc canary findings (§16.5) are kept as a reference if direct QNAP deployment is ever reconsidered.</li>
+<li><strong>Before B web work:</strong> a short FastAPI/HTMX/Pico <strong>spike</strong>, since it's a new stack — answer "can I build the follow-mode page the way I need?", keep the lesson, discard the toy.</li>
+<li><strong>Before C:</strong> nothing new architecturally — it reuses §7's reconcile, scoped to two parties.</li>
+</ul>
+<h2 id="honest-caveats">Honest caveats</h2>
+<ul>
+<li>Estimates are <em>focused dev-weeks</em> (uninterrupted equivalent), not calendar time, and assume the design holds under implementation — building always surfaces changes (as the design conversation itself repeatedly showed). Treat them as ordering and relative-size guidance, not promises.</li>
+<li>The prior versions de-risk <strong>design</strong> (you know what you want, you've tried approaches) more than they supply <strong>droppable code</strong> — especially since only the oldest (TutCatalog4, C++/Qt5) reached "usable," and the Python ones are ideas/scaffolding to redesign.</li>
+<li>Personal-priority path (Milestones A+B) to a genuinely useful tool: <strong>~7–11 focused dev-weeks</strong>, with a <em>standalone-usable</em> result already at the end of Milestone A.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../open-questions/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Open Questions">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Open Questions
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../packages/" class="md-footer__link md-footer__link--next" aria-label="Next: Packages">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Packages
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

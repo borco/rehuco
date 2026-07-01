@@ -1,0 +1,1986 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/field-schema/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>§17. Field Schema (v1, .tc-compatible) - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#17-field-schema-v1-tc-compatible" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              §17. Field Schema (v1, .tc-compatible)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../packages/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Packages
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#171-scope-and-intent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.1 Scope and intent
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#172-field-mapping-tc4-tc-rehuco" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2 Field mapping: tc4 .tc → rehuco
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§17.2 Field mapping: tc4 .tc → rehuco">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1721-resource-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.1 Resource types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1722-per-user-vs-shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.2 Per-user vs shared
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1723-sources-multi-title-publisher-url" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.3 Sources (multi title / publisher / URL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1724-the-online-flag-and-local-backup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.4 The online flag and local backup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1725-record-timestamps" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.5 Record timestamps
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1726-boolean-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.2.6 Boolean flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#173-duration-and-size-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.3 Duration and size model
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§17.3 Duration and size model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1731-canonical-unit-and-the-millisecond-leak-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.3.1 Canonical unit and the millisecond-leak history
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1732-human-readable-duration-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.3.2 Human-readable duration format
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#174-field-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.4 Field types
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#175-tc4-viewer-layout-reference-for-the-v1-view" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.5 tc4 viewer layout (reference for the v1 view)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#176-deferred-open-items" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.6 Deferred / open items
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#177-example-rehu-files-validation-fixtures" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §17.7 Example .rehu files (validation fixtures)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§17.7 Example .rehu files (validation fixtures)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#tutorial-multi-source-multi-collection-split-duration-year-month-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Tutorial — multi-source, multi-collection, split duration, year-month date
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#referenceimages-empty-images_count-no-duration-full-date" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReferenceImages — empty images_count, no duration, full date
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#collection-common-core-only-year-only-date-field-set-provisional-1721" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Collection — common core only, year-only date (field set provisional, §17.2.1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="17-field-schema-v1-tc-compatible">§17. Field Schema (v1, <code>.tc</code>-compatible)</h1>
+<ul>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/6">#6: decision: tutorial and reference-image field lists</a></li>
+</ul>
+<p>The concrete starting field set for rehuco, derived from the fields a real tutcatalog4 (tc4)
+<code>.tc</code> file carries. §4.1 settles the <em>scope</em> of the <code>.rehu</code> schema and defers the detail here.</p>
+<h2 id="171-scope-and-intent">§17.1 Scope and intent</h2>
+<p>The first release must <strong>double-click an existing <code>.tc</code> and view it</strong>. That goal — not a
+speculative ideal schema — fixes the starting field set: rehuco has to accommodate whatever
+tc4 actually stored.</p>
+<ul>
+<li><strong>Ground truth is tc4</strong>, the only predecessor actually used to view and edit <code>.tc</code> files.
+  Its data model (<code>Tutorial</code>) and viewer (<code>Viewer.qml</code>) are the reference, not the later
+  tc5/resource-hub rewrites (design drafts, never shipped for this purpose).</li>
+<li><strong><code>.tc</code> is YAML; <code>.rehu</code> is JSON</strong> (§4.1). v1 reads <code>.tc</code> through an adapter into rehuco's
+  model; it does not write <code>.tc</code>. No line of the old reader survives verbatim — only its
+  field list drives the mapping.</li>
+<li><strong>View-only defers editing-era calls</strong> (e.g. whether dropped flags resurface as tags), but
+  the schema is modeled at its <strong>target shape</strong> where that costs nothing — notably <code>sources</code>
+  (title + publisher + URL per platform, §17.2.3), which a legacy <code>.tc</code> fills as one primary
+  entry. The <code>collections</code> / <code>learning_paths</code> membership fields are modeled too (§17.2.3); only
+  the Collection <em>type</em>'s field set stays deferred (§17.2.1).</li>
+</ul>
+<h2 id="172-field-mapping-tc4-tc-rehuco">§17.2 Field mapping: tc4 <code>.tc</code> → rehuco</h2>
+<p>Every key a tc4 <code>.tc</code> carries, with its rehuco disposition. "Group" is the common/plugin split
+(§4.1, §13) and says <strong>where the field lives on disk</strong>: <code>common</code> at the top level, everything
+else under the type's plugin block (§17.2.1). The boundary can be refined post-v1 since the
+generic editor (§13.1b) does not depend on it.</p>
+<table>
+<thead>
+<tr>
+<th><code>.tc</code> key</th>
+<th>tc4 label</th>
+<th>rehuco field</th>
+<th>type</th>
+<th>group</th>
+<th>shape</th>
+<th>disposition</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code></td>
+<td>—</td>
+<td><em>(type selector)</em></td>
+<td>enum</td>
+<td>—</td>
+<td>Tutorial / ReferenceImages / Collection</td>
+<td>keep — selects resource type / plugin</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td>Title</td>
+<td><code>sources[].title</code></td>
+<td>text</td>
+<td>common</td>
+<td>record + primary¹</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>publisher</code></td>
+<td>Publisher</td>
+<td><code>sources[].publisher</code></td>
+<td>text</td>
+<td>common</td>
+<td>record¹</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>url</code></td>
+<td>Homepage</td>
+<td><code>sources[].url</code></td>
+<td>URL</td>
+<td>common</td>
+<td>record¹</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>author</code></td>
+<td>Authors</td>
+<td><code>authors</code></td>
+<td>text list</td>
+<td>common</td>
+<td>multi</td>
+<td>keep, rename to <code>authors</code>; stays separate²</td>
+</tr>
+<tr>
+<td><code>released</code></td>
+<td>Released</td>
+<td><code>released</code></td>
+<td>date</td>
+<td>common</td>
+<td>partial-precision</td>
+<td>keep — Y / Y-M / Y-M-D; content publication date</td>
+</tr>
+<tr>
+<td>—</td>
+<td><em>(none in tc4)</em></td>
+<td><code>created</code></td>
+<td>datetime</td>
+<td>common</td>
+<td>scalar</td>
+<td><strong>new</strong> — record created; seed from file timestamp on import</td>
+</tr>
+<tr>
+<td>—</td>
+<td><em>(none in tc4)</em></td>
+<td><code>updated</code></td>
+<td>datetime</td>
+<td>common</td>
+<td>scalar</td>
+<td><strong>new</strong> — record last edited; seed from file mtime on import</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td><em>(bottom pane)</em></td>
+<td><code>description</code></td>
+<td>Markdown</td>
+<td>common</td>
+<td>scalar</td>
+<td>keep — embeds sibling <code>infoXX</code> images</td>
+</tr>
+<tr>
+<td><code>tags</code></td>
+<td>Tags</td>
+<td><code>advertised_tags</code></td>
+<td>text list</td>
+<td>common</td>
+<td>multi</td>
+<td>keep, rename — web-scraped</td>
+</tr>
+<tr>
+<td><code>extraTags</code></td>
+<td>Exta Tags <em>(sic)</em></td>
+<td><code>extra_tags</code></td>
+<td>text list</td>
+<td>common</td>
+<td>multi</td>
+<td>keep, rename to snake_case — personal edits</td>
+</tr>
+<tr>
+<td><code>original_size</code></td>
+<td>Original size</td>
+<td><code>original_size</code></td>
+<td>size (bytes)</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — see §17.3</td>
+</tr>
+<tr>
+<td><code>current_size</code></td>
+<td>Current size</td>
+<td><code>current_size</code></td>
+<td>size (bytes)</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — see §17.3</td>
+</tr>
+<tr>
+<td><code>complete</code></td>
+<td>Complete</td>
+<td><code>complete</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — "all files present"; default <code>true</code></td>
+</tr>
+<tr>
+<td><code>online</code></td>
+<td>Online</td>
+<td><code>online</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — "source still available online" (§17.2.4)</td>
+</tr>
+<tr>
+<td><code>rating</code></td>
+<td>Rating</td>
+<td><code>rating</code></td>
+<td>rating (int)</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — <strong>per-user</strong>; may be negative</td>
+</tr>
+<tr>
+<td><code>viewed</code></td>
+<td>Viewed</td>
+<td><code>viewed</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — <strong>per-user</strong></td>
+</tr>
+<tr>
+<td><code>todo</code></td>
+<td>To Do</td>
+<td><code>todo</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — <strong>per-user</strong></td>
+</tr>
+<tr>
+<td><code>keep</code></td>
+<td>Keep</td>
+<td><code>keep</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td>keep — <strong>per-user</strong></td>
+</tr>
+<tr>
+<td>—</td>
+<td><em>(new)</em></td>
+<td><code>favorite</code></td>
+<td>bool</td>
+<td>Tutorial, RefImages</td>
+<td>scalar</td>
+<td><strong>new</strong> — <strong>per-user</strong>; separate UI (§17.2.6)</td>
+</tr>
+<tr>
+<td><code>collection</code></td>
+<td>Collection</td>
+<td><code>collections[].title</code></td>
+<td>text</td>
+<td>Tutorial, RefImages</td>
+<td>record³</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>collection_index</code></td>
+<td>Index</td>
+<td><code>collections[].index</code></td>
+<td>int</td>
+<td>Tutorial, RefImages</td>
+<td>record³</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>learning_paths</code></td>
+<td>Learning Paths</td>
+<td><code>learning_paths[].title</code> (+ <code>.index</code>)</td>
+<td>record</td>
+<td>Tutorial, RefImages</td>
+<td>multi, user-defined⁴</td>
+<td>keep — see §17.2.3</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>Duration</td>
+<td><code>original_duration</code> (+ <code>current_duration</code>, <code>advertised_duration</code>)</td>
+<td>duration (seconds)</td>
+<td>Tutorial</td>
+<td>scalar</td>
+<td>keep, split — see §17.3</td>
+</tr>
+<tr>
+<td><code>level</code></td>
+<td>Level</td>
+<td><code>level</code></td>
+<td>multi-choice</td>
+<td>Tutorial</td>
+<td>multi</td>
+<td>keep — beginner / intermediate / advanced / any</td>
+</tr>
+<tr>
+<td>—</td>
+<td><em>(none in tc4)</em></td>
+<td><code>images_count</code></td>
+<td>int</td>
+<td>ReferenceImages</td>
+<td>scalar</td>
+<td><strong>new</strong> — empty on import (not from <code>duration</code>), filled by scanning (§17.6)</td>
+</tr>
+</tbody>
+</table>
+<p>¹ <code>sources</code> is a list; each item is <code>{ title, publisher, url, primary? }</code>. The item with
+<code>primary: true</code> (or the first item if none is flagged) is canonical — its <strong>title</strong> is the
+display title and the basis for folder/file-name suggestions (§17.2.3).
+² <strong><code>authors</code> stays one shared list</strong>, not per-source — a differing author set signals a
+<em>different</em> tutorial, not another source of the same one (§17.2.3).
+³ one <strong>collection membership</strong> = <code>{ title, index, url? }</code>; a resource may belong to several
+series (§17.2.3).
+⁴ <strong>learning paths</strong> are <code>{ title, index, visibility }</code>; <code>visibility</code> is the UI <code>public</code> /
+<code>private</code> toggle; the owner is implicit by per-user block (§17.2.3).</p>
+<p>Values tc4 derives rather than stores (not <code>.tc</code> keys): the folder/parent path (from the file
+location), canonical folder-name suggestions, and the transient "Computed" duration/size from a
+disk scan (which in rehuco feed <code>current_duration</code> / <code>current_size</code> — see §17.3).</p>
+<h3 id="1721-resource-types">§17.2.1 Resource types</h3>
+<p><code>type</code> selects one of three. Fields fall into tiers so "common" means <em>common to all types</em>
+only:</p>
+<ul>
+<li><strong>Common core (all types)</strong> — <code>sources</code> (title/publisher/url), <code>authors</code>, <code>released</code>,
+  <code>description</code>, <code>advertised_tags</code>, <code>extra_tags</code>, <code>created</code>, <code>updated</code>.</li>
+<li><strong>Resource fields (Tutorial + ReferenceImages)</strong> — the size pair, <code>rating</code>, the boolean flags
+  (<code>complete</code>, <code>online</code>, <code>viewed</code>, <code>todo</code>, <code>keep</code>, <code>favorite</code>; §17.2.6), and the <code>collections</code> /
+  <code>learning_paths</code> memberships (§17.2.3). A <strong>Collection</strong> declares none of these.</li>
+<li><strong>Tutorial only</strong> — <code>original_duration</code> / <code>current_duration</code> / <code>advertised_duration</code> and
+  <code>level</code>.</li>
+<li><strong>ReferenceImages only</strong> — <code>images_count</code>; declares <strong>no</strong> duration (§17.3), so the value
+  that leaked as <code>720</code> in tc4 has nowhere to land.</li>
+<li><strong>Collection</strong> — a series/grouping node; its <strong><code>title</code> is the series name</strong> that members
+  reference via <code>collections[].title</code>. <strong>Which fields it shows/edits is deferred</strong> until a real
+  collection is in hand (§17.6), including whether it carries a recomputed member-stats cache
+  (in tc4 the extra fields it held were only such a cache, sparing a descent into member
+  subfolders). This is separate from the <code>collections</code> membership fields, which are settled
+  (§17.2.3).</li>
+</ul>
+<p><strong>On disk:</strong> the common core is top-level; every non-common field is nested under a <strong>plugin
+block keyed by <code>type</code></strong> (<code>tutorial</code>, <code>reference_images</code>), each carrying its own <code>format_version</code>
+(§4.10, §13.2), so the file already has the plugin shape and won't need restructuring when
+plugins land. A block <code>format_version</code> of <strong>0 means "no plugin yet"</strong> — the fields live there
+but no plugin owns them; the first real plugin bumps it to <code>1</code>. Fields shared by Tutorial and
+ReferenceImages (the size pair, <code>rating</code>, the boolean flags, <code>collections</code>, <code>learning_paths</code>)
+live inside whichever plugin block the file has. Collection has no block yet. See the §17.7
+fixtures.</p>
+<h3 id="1722-per-user-vs-shared">§17.2.2 Per-user vs shared</h3>
+<p><code>rating</code>, the per-user boolean flags (<code>viewed</code>, <code>todo</code>, <code>keep</code>, <code>favorite</code>), and <strong>private</strong>
+<code>learning_paths</code> are <strong>per-user</strong> state, not properties of the resource. v1 is single-user/local
+so this is invisible, but the schema must keep them separable from shared fields so the
+multi-user model (§7, §4.1's per-user <code>progress</code>) does not have to relocate them later. The
+shared flags (<code>complete</code>, <code>online</code>) and a learning path toggled <strong>public</strong> (or curated by the
+admin) are propagated swarm state instead (§17.2.3, §17.2.6). For now, with no user management,
+per-user keys live <strong>inline</strong> in the plugin block (polluting the current scope); a dedicated
+per-user block waits on the swarm/user model (§17.6).</p>
+<h3 id="1723-sources-multi-title-publisher-url">§17.2.3 Sources (multi title / publisher / URL)</h3>
+<p>One resource can be published in several places — the same tutorial sold on more than one
+platform under slightly different names and links (§4.1). This is modeled as <code>sources</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">sources</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="w"> </span><span class="nv">title</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">publisher</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">url</span><span class="p p-Indicator">,</span><span class="nt"> primary</span><span class="p">:</span><span class="w"> </span><span class="nv">true</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="w"> </span><span class="nv">title</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">publisher</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">url</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<ul>
+<li><code>sources</code> is a <strong>list</strong>; each item binds a <code>{ title, publisher, url }</code> for one platform,
+  replacing tc4's scalar <code>title</code> / <code>publisher</code> / <code>url</code> (the "Homepage").</li>
+<li>The item flagged <strong><code>primary: true</code></strong> is canonical (an inline marker, not a positional index).
+  Its <strong>title</strong> is the display title and the basis for the folder/file-name suggestion widget
+  (§4.1).</li>
+<li><strong>Resolution is permissive.</strong> Normally exactly one item is flagged. If <strong>none</strong> is, the
+  <strong>first item</strong> is primary; if <strong>several</strong> are, the <strong>first</strong> flagged one wins. Neither should
+  happen — <code>.rehu</code> is not hand-written — but the reader tolerates it rather than erroring.</li>
+<li><strong><code>authors</code> are not part of a source</strong> — one shared list serves the resource. The same course
+  under a slightly different name elsewhere is still the same course; a <em>different</em> author set
+  means it is probably a <em>different</em> tutorial, not another source of this one.</li>
+<li><strong>Legacy import</strong> — a scalar <code>title</code> / <code>publisher</code> / <code>url</code> becomes a single <code>sources</code> entry,
+  marked <code>primary: true</code>.</li>
+</ul>
+<p>Collections and learning paths are <strong>membership lists</strong> (settled — distinct from the Collection
+<em>type</em>, below). tc4's scalar <code>collection</code> + <code>collection_index</code> become a list, since a resource
+may belong to several series, each with its own order and optional link:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">collections</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;CollectionA&quot;</span><span class="p p-Indicator">,</span><span class="nt"> index</span><span class="p">:</span><span class="w"> </span><span class="nv">1</span><span class="p p-Indicator">,</span><span class="nt"> url</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;xxx&quot;</span><span class="w"> </span><span class="p p-Indicator">}</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> title</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;CollectionB&quot;</span><span class="p p-Indicator">,</span><span class="nt"> index</span><span class="p">:</span><span class="w"> </span><span class="nv">10</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<ul>
+<li>Each entry is <code>{ title, index, url? }</code>. <code>title</code> is the series name (it matches a
+  <code>type: Collection</code> record's <code>title</code>); <code>index</code> is the position within that series; <code>url</code>
+  optionally links the series' own page. <strong>Publisher-defined.</strong></li>
+<li><strong><code>learning_paths</code></strong> use the <code>{ title, index, visibility }</code> shape and render apart from the tag
+  fields (a plain tag can't carry an order). <strong><code>visibility</code> is a <code>public</code> / <code>private</code> toggle in the
+  UI</strong>: <em>private</em> = only its owner sees it; <em>public</em> = shared with the swarm (the admin can also
+  curate public ones, §6). The <strong>owner stays implicit</strong> — a personal path lives in that user's
+  per-user block (§17.2.2), so we store the <strong><code>visibility</code> flag, not a <code>user</code> field</strong>. Public
+  paths are propagated swarm state; private ones stay per-user, mirroring <code>rating</code> / <code>viewed</code> /
+  <code>progress</code> (§7). v1 is single-user, so the public/private split only bites once there's a
+  swarm.</li>
+<li><strong>Legacy import</strong> — scalar <code>collection</code> + <code>collection_index</code> become one entry; the flat
+  <code>learning_paths</code> names become entries with <code>index</code> by stored order.</li>
+</ul>
+<p>Only the <strong>Collection <em>type</em></strong> stays deferred — which fields a <code>type: Collection</code> record
+shows/edits, and whether it carries a recomputed member-stats cache (§17.2.1, §17.6). The
+membership <em>fields</em> above are settled.</p>
+<h3 id="1724-the-online-flag-and-local-backup">§17.2.4 The <code>online</code> flag and local backup</h3>
+<p><code>online</code> means <strong>the original source is still available online</strong> — not "this is an online-only
+resource" (the ambiguity §4.1 warns against). The driving case: many Udemy-style courses are
+kept as just a <code>.rehu</code> with screenshots plus a pointer to the source (the primary listing's
+<code>url</code>); the point of the flag is that the course can still be reached at that source.</p>
+<p>It is <strong>independent of whether the content is stored locally.</strong> A resource can be
+online-and-backed-up, online-but-screenshots-only (no local content), or offline-but-archived.
+Local presence is read from <code>current_size</code> / <code>complete</code>, not from <code>online</code>. The tc4 name
+<strong><code>online</code> is kept</strong> — with the meaning documented here there is no competing "online-only"
+sense to disambiguate against, so the finer <code>source_online</code> / <code>available_online</code> rename is not
+worth it.</p>
+<h3 id="1725-record-timestamps">§17.2.5 Record timestamps</h3>
+<p><code>created</code> and <code>updated</code> are <strong>new</strong> full datetime values (not the partial-precision <code>released</code>, which
+is the <em>content's</em> publication date): when the <code>.rehu</code> record was first written and last
+edited. tc4 stored neither; on import they seed from the file's timestamps. They are shared
+record state (an edit that syncs updates <code>updated</code>), and relate to the <code>resource_version</code> /
+timestamp markers used for staleness detection and sync (§4.7).</p>
+<h3 id="1726-boolean-flags">§17.2.6 Boolean flags</h3>
+<p>For v1 the tc4 boolean flags stay <strong>individual booleans</strong>, as in tc4 — <code>complete</code>, <code>online</code>
+(§17.2.4), <code>viewed</code>, <code>todo</code>, <code>keep</code> — plus a new <code>favorite</code>. Import is 1:1 (each tc4 bool maps
+to the same-named bool); <code>favorite</code>, absent from tc4, defaults to <code>false</code>.</p>
+<ul>
+<li><strong><code>favorite</code> is kept separate</strong>, not lumped with the rest: it carries different semantics (it
+  can drive behavior beyond a display flag) and its control may sit in a different place in the
+  UI.</li>
+<li><strong>Scope.</strong> <code>complete</code> and <code>online</code> are shared/objective; <code>viewed</code>, <code>todo</code>, <code>keep</code>, <code>favorite</code>
+  are <strong>per-user</strong> (§17.2.2) — inline for now (§17.6).</li>
+<li><strong>Deferred: a <code>default_tags</code> toggle set.</strong> Folding the fixed-vocabulary bools
+  (<code>complete</code>/<code>online</code>/<code>viewed</code>/<code>todo</code>/<code>keep</code>) into one list rendered as UI toggles, with a
+  vocabulary from <code>.rehuco</code> or defaults, was considered and <strong>deferred</strong> (§17.6): its payoff
+  needs the plugin/config system, and §4.10's per-block versioning makes the bool-to-list
+  migration safe to do in a later revision. <code>favorite</code> would stay separate regardless. <code>rating</code>
+  never folds in (it is an integer, not a toggle).</li>
+</ul>
+<h2 id="173-duration-and-size-model">§17.3 Duration and size model</h2>
+<p>Two orthogonal axes govern both duration and size — <strong>how the value is known</strong> (measured by
+scanning files vs claimed by a publisher) and <strong>what it covers</strong> (the complete resource vs
+what is still on disk). The second axis exists because the original tracking method was to
+<strong>delete files as they were watched</strong>, so "what's left on disk" shrinks over time.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>measured (scan)</th>
+<th>claimed (web)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>original</strong> (complete resource)</td>
+<td><code>original_duration</code>, <code>original_size</code></td>
+<td><code>advertised_duration</code></td>
+</tr>
+<tr>
+<td><strong>current</strong> (files still on disk)</td>
+<td><code>current_duration</code>, <code>current_size</code></td>
+<td>— <em>(nobody advertises a remaining amount)</em></td>
+</tr>
+</tbody>
+</table>
+<p>Fields, and the purpose each serves:</p>
+<ul>
+<li><code>original_duration</code> — measured total of the complete download. Denominator for progress.</li>
+<li><code>current_duration</code> — measured total of files still present; shrinks as watched files are
+  deleted. <code>current_duration ÷ original_duration</code> ⇒ "how much is left."</li>
+<li><code>advertised_duration</code> — the coarse web claim, kept to verify the download was complete
+  (<code>original_duration</code> vs <code>advertised_duration</code> ⇒ "did I get everything").</li>
+<li><code>original_size</code> — disk footprint when complete. The reference for judging whether an
+  alternative source is better or worse: same content across archive schemes stays in the
+  same ballpark, so 200 MB stored vs a 500 MB–1 GB candidate reads clearly as higher quality.</li>
+<li><code>current_size</code> — disk currently used by this copy.</li>
+</ul>
+<p>There is <strong>no <code>advertised_size</code></strong>: sites publish duration, not tutorial size. The comparison
+against an alternative source is done at decision time against <code>original_size</code>; the candidate's
+size is never stored.</p>
+<p><code>current_*</code> describes <strong>this physical copy</strong>, not a person — distinct from the future per-user
+<code>progress</code> (§4.1). The delete-to-track-progress method does not generalize to the swarm, where
+remaining-on-disk (per-node) and watch-progress (per-user) become two different things; the
+schema keeps room for a separate <code>progress</code> so recording "watched" never again requires
+deleting files.</p>
+<p><code>duration</code> does not apply to <strong>ReferenceImages</strong> — for that type it is an unknown field, not a
+blank one, so it is simply not declared (which is what should have hidden the leaked value in
+tc4's shared viewer). The leaked <code>720</code> is <strong>not</strong> reinterpreted as <code>images_count</code>: on import of
+a reference-images <code>.tc</code> the old <code>duration</code> is dropped and <code>images_count</code> is left <strong>empty</strong>,
+to be filled later by scanning (§17.6) rather than by guessing it was ever an image count.</p>
+<h3 id="1731-canonical-unit-and-the-millisecond-leak-history">§17.3.1 Canonical unit and the millisecond-leak history</h3>
+<ul>
+<li><strong>Duration is stored as integer seconds.</strong> At tutorial scale (minutes to hundreds of hours)
+  sub-second precision is meaningless; milliseconds buy nothing and caused the historical bug.</li>
+<li><strong>The old bug was ms-vs-seconds, not a <code>×60</code> error.</strong> MediaInfo reports track durations in
+  <strong>milliseconds</strong>; a single <code>round(ms / 1000)</code> is the only conversion to seconds. A build
+  that omitted it stored milliseconds — a 1000× inflation — so a legacy catalog can hold a
+  <strong>mix</strong> of seconds and stray milliseconds with no marker. Compounding it, precision was lost
+  by reconstructing the stored number from the coarse display string.</li>
+<li><strong>Two rules prevent recurrence:</strong> (a) when scanning, sum in native precision and round to
+  seconds <strong>once at the end</strong>, never per file; (b) the formatted string is <strong>output only</strong> —
+  editing edits the underlying seconds; the stored number is never re-derived from the display.</li>
+<li><strong>Legacy <code>.tc</code> durations are untrusted.</strong> On import, map the single <code>duration</code> into the
+  <code>original_duration</code> slot (what tc4 displayed) and treat it as advisory until a real scan
+  overwrites it. No "if it looks too big, divide by 1000" heuristic — that would corrupt
+  genuinely long collections.</li>
+</ul>
+<h3 id="1732-human-readable-duration-format">§17.3.2 Human-readable duration format</h3>
+<p>Carried over verbatim from tc4 (it already matches the desired behavior). For a value <code>d</code> in
+seconds:</p>
+<div class="highlight"><pre><span></span><code>h = d // 3600 ;  m = (d % 3600) // 60 ;  s = d % 60
+parts = []
+if h:            parts += &quot;{h}h&quot;
+if m:            parts += &quot;{m}m&quot;
+if s and h == 0: parts += &quot;{s}s&quot;     # seconds are noise once hours are present
+render &quot; &quot;.join(parts)               # d == 0 → &quot;&quot; (not &quot;0s&quot;)
+</code></pre></div>
+<ul>
+<li><code>2h 15m</code>, <code>2h</code> (minutes zero), <code>45m</code>, <code>45m 30s</code>, <code>30s</code>.</li>
+<li>Hours are <strong>never</strong> rolled into days — large values read as <code>123h 45m</code>, not a time of day.</li>
+</ul>
+<p>Size renders base-1000 (macOS-Finder style) with two decimals, e.g. <code>1.50 GB</code>; <code>0</code> renders
+empty.</p>
+<h2 id="174-field-types">§17.4 Field types</h2>
+<p>The distinct value types the viewer must handle:</p>
+<table>
+<thead>
+<tr>
+<th>type</th>
+<th>notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>text</td>
+<td>single line</td>
+</tr>
+<tr>
+<td>text list</td>
+<td>comma-joined for display, deduplicated; <code>authors</code>, <code>tags</code>, <code>extra_tags</code>, <code>learning_paths</code></td>
+</tr>
+<tr>
+<td>url</td>
+<td>rendered as an external hyperlink</td>
+</tr>
+<tr>
+<td>date</td>
+<td><strong>partial precision</strong> — year, year+month, or full date; sorts/compares across mixed precision</td>
+</tr>
+<tr>
+<td>duration</td>
+<td>integer seconds; rendered per §17.3.2</td>
+</tr>
+<tr>
+<td>size</td>
+<td>integer bytes; rendered base-1000</td>
+</tr>
+<tr>
+<td>rating</td>
+<td>integer, may be negative; star-style widget</td>
+</tr>
+<tr>
+<td>bool</td>
+<td>yes/no; <code>complete</code> shows a warning color when false</td>
+</tr>
+<tr>
+<td>multi-choice</td>
+<td advanced_="advanced," any="any" beginner_="beginner," intermediate_="intermediate,">fixed value set; <code>level</code> ∈</td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td>rich text; resolves embedded image paths relative to the file's folder</td>
+</tr>
+<tr>
+<td>int</td>
+<td>plain integer; <code>collection_index</code>, <code>images_count</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="175-tc4-viewer-layout-reference-for-the-v1-view">§17.5 tc4 viewer layout (reference for the v1 view)</h2>
+<p>The exact field order, labels, and widgets from tc4's <code>Viewer.qml</code>, as the concrete reference
+for the v1 rendering. One shared layout served all types (which is why an inapplicable field
+could leak); rehuco instead shows only the fields a type declares.</p>
+<p>Field order, in the three groups the layout separates:</p>
+<ul>
+<li><strong>Header/metadata:</strong> folder-name link → location link → publisher → collection / index
+  <em>(hidden for Collection type or when empty)</em> → title → authors → released → duration
+  <em>(formatted + Computed/Compute buttons)</em> → level → homepage <em>(link)</em>.</li>
+<li><strong>State/size:</strong> current size <em>(formatted + Computed/Compute)</em> → original size →
+  rating <em>(stars)</em> → complete <em>(yes/no, red when false)</em> → to-do → viewed → keep → online →
+  tags → extra tags → learning paths.</li>
+<li><strong>Description:</strong> Markdown rendered as rich text.</li>
+</ul>
+<h2 id="176-deferred-open-items">§17.6 Deferred / open items</h2>
+<ul>
+<li><strong>Common/plugin boundary</strong> — the §17.2 tiers (common core / resource fields / per-type) are a
+  first cut; finalize when the field toolkit (A1) and plugin blocks (§13) land. The generic
+  editor does not depend on it.</li>
+<li><strong>Collection <em>type</em> — deferred</strong> (§17.2.1) — which fields a <code>type: Collection</code> record
+  shows/edits, and whether it re-gains a <strong>recomputed</strong> member-stats cache. Decide when a real
+  collection is in hand. <em>(The <code>collections</code> membership fields are settled, §17.2.3.)</em></li>
+<li><strong>Membership by identity</strong> — <code>collections[].title</code> links to a series by name today; move to
+  resource identity (§4.2) once UUIDs are minted.</li>
+<li><strong>Per-user block</strong> — until user management exists, per-user keys (<code>rating</code>, the per-user
+  boolean flags, private <code>learning_paths</code>) live <strong>inline</strong> in the plugin block; move them to a
+  dedicated per-user block with the swarm/user model (§7, §17.2.2).</li>
+<li><strong>Learning-path visibility storage</strong> — the <code>public</code> / <code>private</code> toggle (§17.2.3): confirm
+  whether a public user path stays in the owner's per-user block (owner implicit) or moves to
+  the shared record on toggle. Swarm-era, not v1.</li>
+<li><strong><code>default_tags</code> consolidation — deferred</strong> (§17.2.6) — a later revision may fold the
+  fixed-vocabulary bools (<code>complete</code>/<code>online</code>/<code>viewed</code>/<code>todo</code>/<code>keep</code>) into one toggle-set list
+  with a vocabulary from <code>.rehuco</code> (scope, labels/icons), migrated via a plugin-block
+  <code>format_version</code> bump (§4.10). <code>favorite</code> stays separate. v1 keeps individual bools.</li>
+<li><strong><code>images_count</code> on import</strong> — left <strong>empty</strong> for a reference-images <code>.tc</code> (the old <code>duration</code>
+  is not assumed to be a count); fill later by scanning the sibling <code>infoXX.*</code> set or the
+  content zip.</li>
+<li><strong><code>created</code> / <code>updated</code> seeding</strong> — confirm which file timestamp seeds <code>created</code> on import
+  (ctime is unreliable cross-platform; mtime is the safer floor).</li>
+<li><strong>Description image resolution</strong> — confirm sibling-relative path handling matches §4.6's
+  screenshot model.</li>
+<li><strong>UUID (§4.2) and per-block format version (§4.10, §13.2)</strong> — minted/added when writing
+  <code>.rehu</code>; not present in legacy <code>.tc</code>, so they are an import concern, not a view concern.</li>
+</ul>
+<h2 id="177-example-rehu-files-validation-fixtures">§17.7 Example <code>.rehu</code> files (validation fixtures)</h2>
+<p>Concrete <code>.rehu</code> documents (JSON, §4.1) that exercise the field set above — usable as
+parser/schema validation fixtures.</p>
+<ul>
+<li><strong>Common core</strong> sits at the top level; everything a type owns is nested under a <strong>plugin block
+  keyed by <code>type</code></strong> (<code>tutorial</code> / <code>reference_images</code>), each with its own <code>format_version</code>
+  (§4.10, §13.2) — <strong><code>0</code> = no plugin yet</strong>, bumped to <code>1</code> by the first real plugin — so the
+  layout already matches the future plugin structure. A <strong>Collection</strong> has no block yet
+  (deferred, §17.2.1) and carries only common core.</li>
+<li><code>sources</code> is a list; exactly one item carries <code>primary: true</code>.</li>
+<li><strong>Per-user</strong> fields (<code>rating</code>, the per-user boolean flags, private <code>learning_paths</code>) live
+  <strong>inline</strong> in the plugin block for now — without user management a separate per-user block is
+  impractical, so they pollute the current scope (§17.2.2, §17.6).</li>
+<li>Values are illustrative; each example stresses the edge case named in its heading.</li>
+</ul>
+<h3 id="tutorial-multi-source-multi-collection-split-duration-year-month-date">Tutorial — multi-source, multi-collection, split duration, year-month date</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;550e8400-e29b-41d4-a716-446655440000&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Tutorial&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-15T09:30:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;updated&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-20T14:12:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;sources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Intro to Sculpting&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;publisher&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Example Publisher&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/intro-sculpting&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;primary&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Sculpting, Extended Cut&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;publisher&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Second Platform&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://second.example/sculpting&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;authors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;First Author&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;Second Author&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;released&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025-03&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;advertised_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sculpting&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;3d&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;modeling&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;extra_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;rework&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;tutorial&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;collections&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Sculpting Series&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/series&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Bundle 2025&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;learning_paths&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;My Sculpting Path&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;index&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;visibility&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;private&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;original_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5368709120</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;current_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1073741824</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;original_duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">71220</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;current_duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">18000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;advertised_duration&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">72000</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;level&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;intermediate&quot;</span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;complete&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;online&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;viewed&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;todo&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;keep&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;favorite&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rating&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="referenceimages-empty-images_count-no-duration-full-date">ReferenceImages — empty <code>images_count</code>, no duration, full date</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;6ba7b810-9dad-11d1-80b4-00c04fd430c8&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ReferenceImages&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-01T11:00:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;updated&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-01T11:00:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;sources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Anatomy Reference Pack&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;publisher&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Example Publisher&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/anatomy-pack&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;primary&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;authors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;Third Author&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;released&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2024-11-08&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Anatomy reference images.&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;advertised_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;reference&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;anatomy&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;extra_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">  </span><span class="nt">&quot;reference_images&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;collections&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">    </span><span class="nt">&quot;learning_paths&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span>
+<span class="w">    </span><span class="nt">&quot;original_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2147483648</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;current_size&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2147483648</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;images_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;complete&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;online&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;viewed&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;todo&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;keep&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;favorite&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;rating&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<h3 id="collection-common-core-only-year-only-date-field-set-provisional-1721">Collection — common core only, year-only date (field set provisional, §17.2.1)</h3>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;format_version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;3f2504e0-4f89-41d3-9a0c-0305e82c3301&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Collection&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;created&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-10T08:00:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;updated&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-01-10T08:00:00Z&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;sources&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;title&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Sculpting Series&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;publisher&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Example Publisher&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;url&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;https://example.com/series&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;primary&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;authors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;First Author&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;released&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2025&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;description&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;The full sculpting series.&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;advertised_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;sculpting&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;series&quot;</span><span class="p">],</span>
+<span class="w">  </span><span class="nt">&quot;extra_tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span>
+<span class="p">}</span>
+</code></pre></div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

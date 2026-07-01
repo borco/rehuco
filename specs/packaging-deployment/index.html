@@ -1,0 +1,1710 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/packaging-deployment/">
+      
+      
+        <link rel="prev" href="../acquisition-tooling/">
+      
+      
+        <link rel="next" href="../open-questions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Packaging & Deployment - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#16-code-organization-packaging-and-deployment" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Packaging & Deployment
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../packages/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Packages
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#161-why-uv-workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.1 Why uv workspaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#162-three-packages-mapping-onto-the-nodeagentshared-library-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.2 Three packages, mapping onto the node/agent/shared-library split
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#163-pypi-publishing-and-uv-tool-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.3 PyPI publishing and uv tool install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#164-the-ts-230-as-nas-smb-mount-not-a-node-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.4 The TS-230 as NAS: SMB mount, not a node host
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#165-ts-230-glibc-canary-historical-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5 TS-230 glibc canary — historical findings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§16.5 TS-230 glibc canary — historical findings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1651-initial-canary-result-2026-06-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5.1 Initial canary result (2026-06-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1652-automated-canary-three-tier-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5.2 Automated canary: three-tier verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#166-migrating-existing-repos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.6 Migrating existing repos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#167-dependency-licensing-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.7 Dependency licensing policy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§16.7 Dependency licensing policy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1671-qml-in-pyqtads-regression-check-spike-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.7.1 QML-in-pyqtads regression check (spike #4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#168-desktop-distribution-file-association-and-app-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.8 Desktop distribution, file association, and app identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#169-auto-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.9 Auto-update
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#161-why-uv-workspaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.1 Why uv workspaces
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#162-three-packages-mapping-onto-the-nodeagentshared-library-split" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.2 Three packages, mapping onto the node/agent/shared-library split
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#163-pypi-publishing-and-uv-tool-install" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.3 PyPI publishing and uv tool install
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#164-the-ts-230-as-nas-smb-mount-not-a-node-host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.4 The TS-230 as NAS: SMB mount, not a node host
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#165-ts-230-glibc-canary-historical-findings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5 TS-230 glibc canary — historical findings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§16.5 TS-230 glibc canary — historical findings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1651-initial-canary-result-2026-06-30" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5.1 Initial canary result (2026-06-30)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1652-automated-canary-three-tier-verification" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.5.2 Automated canary: three-tier verification
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#166-migrating-existing-repos" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.6 Migrating existing repos
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#167-dependency-licensing-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.7 Dependency licensing policy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§16.7 Dependency licensing policy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1671-qml-in-pyqtads-regression-check-spike-4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.7.1 QML-in-pyqtads regression check (spike #4)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#168-desktop-distribution-file-association-and-app-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.8 Desktop distribution, file association, and app identity
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#169-auto-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §16.9 Auto-update
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="16-code-organization-packaging-and-deployment">§16. Code Organization, Packaging, and Deployment</h1>
+<p>A monorepo with <strong>uv workspaces</strong> is the chosen structure, driven by three concrete pains: refactoring code between the shared library and the apps (currently a multi-repo/submodule dance of coupled commits), tooling confusion over <em>which</em> <code>.venv</code> is active (a multi-root VSCode layout has one venv per root, and tools — including AI coding assistants — guess wrong), and independent PyPI publishing of the shared libraries.</p>
+<h2 id="161-why-uv-workspaces">§16.1 Why uv workspaces</h2>
+<ul>
+<li><strong>One shared <code>.venv</code> at the workspace root</strong>, containing every member as an editable install. This eliminates the "which venv?" ambiguity at its source: there is exactly one environment, every package is always importable from it, nothing to guess. (This is the strongest single reason for the move.)</li>
+<li><strong>Atomic cross-package refactors.</strong> Moving a widget from an app into the shared library becomes one commit in one repo, instead of a commit in the submodule plus a pointer-bump commit in the consumer.</li>
+<li><strong>Single lockfile, consistent versions</strong> across members — which for a set of sibling PySide6 apps sharing a library is a benefit (it forces version compatibility), not a limitation.</li>
+</ul>
+<p>The one real constraint workspaces impose: all members resolve against <strong>one dependency set</strong>, so two members needing conflicting versions of the same package would fail to resolve. For this project (all the author's own apps over a shared Qt-era stack) that's acceptable and even desirable.</p>
+<h2 id="162-three-packages-mapping-onto-the-nodeagentshared-library-split">§16.2 Three packages, mapping onto the node/agent/shared-library split</h2>
+<ul>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/12">#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside</a></li>
+</ul>
+<p>The packaging boundary mirrors the architecture's node/agent split (§5.1):</p>
+<div class="highlight"><pre><span></span><code>rehuco/                   # monorepo root
+  pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
+  uv.lock                 # single lockfile
+  .venv/                  # the one shared environment (development only)
+  packages/
+    rehuco-core/          # shared library: field toolkit, .rehu model, plugin base — PUBLISHABLE
+    borco-core/           # generic, non-rehuco utilities (no GUI dep) — temporary guest, moving out
+    borco-pyside/         # generic, non-rehuco PySide widgets/utilities — temporary guest, moving out
+    pyside6-scintilla/    # PUBLISHABLE
+    pyside6-lexilla/      # PUBLISHABLE
+  apps/
+    rehuco-node/          # headless service: depends on rehuco-core + FastAPI/uvicorn/zeroconf
+    rehuco-agent/         # desktop GUI: depends on rehuco-core + PySide6/scintilla/ads
+</code></pre></div>
+<p>The <strong>virtual workspace root</strong> (no <code>[project]</code> table, only <code>[tool.uv.workspace]</code>) is a pure organizational container — it can't itself be published and holds no app code, keeping the root clean. Shared libraries are publishable leaf packages (they depend only on PyPI packages, never on the apps, so they carry no workspace-internal dependencies that would block publishing).</p>
+<p>The <code>borco-*</code> packages (<code>borco-core</code>, <code>borco-pyside</code>) are <strong>generic, non-rehuco</strong> utilities under the author's own <code>borco</code> namespace — a home for reusable code with no rehuco coupling. They are <strong>temporary guests</strong> in this monorepo, hosted here only while their APIs settle, and are <strong>scheduled to move to their own repository</strong> (or a separate generic monorepo) later; nothing rehuco should assume they stay here. <code>borco-core</code> is GUI-free; <code>borco-pyside</code> carries the Qt-dependent pieces and depends on <code>borco-core</code>. Together they are the successor of the earlier planned generic PySide package and of the old standalone PySide utility library. The first piece to land is <code>borco_pyside.core.ApplicationSingleton</code> — the single-instance guard consumed by <code>rehuco-agent</code> (§16.2 tree).</p>
+<h2 id="163-pypi-publishing-and-uv-tool-install">§16.3 PyPI publishing and <code>uv tool install</code></h2>
+<ul>
+<li>Each member has its own <code>pyproject.toml</code> (name, version, build backend) and <strong>publishes to PyPI independently</strong> — <code>uv build --package rehuco-core &amp;&amp; uv publish</code>. The monorepo structure is invisible to PyPI; it just sees a normal wheel.</li>
+<li>The node and agent are installable as tools: <strong><code>uv tool install rehuco-node</code></strong> (ideal — headless service, console entry point) and <strong><code>uv tool install rehuco-agent</code></strong> (works for the GUI; native installers / file-association registration are a later polish for wider distribution (§16.8), not needed for the author's own machines).</li>
+<li><strong>Three packages, not one-package-with-extras.</strong> Extras were considered (<code>rehuco[node]</code> / <code>rehuco[app]</code>) but rejected: extras are <em>additive and cannot subtract a base dependency</em>, so any GUI dependency reachable from the base would still be pulled by <code>rehuco[node]</code> — adding unwanted GUI overhead to a headless service. Separate packages make "the node has no GUI dependencies" <strong>structural rather than carefully-maintained</strong>, and let each package carry its own <code>requires-python</code> floor.</li>
+</ul>
+<h2 id="164-the-ts-230-as-nas-smb-mount-not-a-node-host">§16.4 The TS-230 as NAS: SMB mount, not a node host</h2>
+<p>The QNAP TS-230 is used as a <strong>NAS</strong>, not as a compute host. It serves its storage over the existing Samba (SMB) share. <code>rehuco-node</code> runs on capable hardware (Mac mini, always-on Linux box) and accesses TS-230 content via that SMB mount — treating it as a local path. No node needs to run on the TS-230 itself, and the glibc constraint (§16.5) plays no role in deployment.</p>
+<p>This is already an option the architecture anticipated (§9.3): the box owning the disks doesn't need to run its own node if another always-on machine covers the serving role via a mount. Choosing it as the default simplifies deployment significantly. Because the always-on node keeps running while the TS-230 may be powered off for long stretches, the node must tolerate the mount being offline without blocking — see §9.9.</p>
+<p><strong>Atomic-save invariant over SMB (§4.9):</strong> an SMB <code>rename</code> is a server-side operation — the server executes it locally; no data crosses the network. The temp file must be written into the same directory as the target so that source and destination are on the same server-side filesystem. With that constraint, the write-temp-then-rename pattern is correct and cheap over SMB.</p>
+<p><strong>The monorepo workspace remains the development environment only</strong> — it is never synced to a remote host. Deployment installs individual published packages: <code>uv tool install rehuco-node</code> on any capable box, <code>uv tool install rehuco-agent</code> on GUI machines.</p>
+<h2 id="165-ts-230-glibc-canary-historical-findings">§16.5 TS-230 glibc canary — historical findings</h2>
+<p>Since the node does not run on the TS-230 (§16.4), the glibc canary is <strong>not an active requirement</strong>. The findings below are kept as a reference in case direct QNAP deployment is ever reconsidered.</p>
+<p>The initial canary confirmed that all planned node dependencies install and import successfully on glibc 2.23 / aarch64 — so the QNAP-as-node option remains technically viable. The automated CI canary (§16.5.2) has been <strong>suspended</strong> as it guards a deployment model that is no longer in use.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>rehuco-node dependencies</strong></p>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>TS-230 version</th>
+<th>Canary version</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>annotated-doc</td>
+<td>0.0.4</td>
+<td>0.0.4</td>
+</tr>
+<tr>
+<td>annotated-types</td>
+<td>0.7.0</td>
+<td>0.7.0</td>
+</tr>
+<tr>
+<td>anyio</td>
+<td>4.14.1</td>
+<td>4.14.1</td>
+</tr>
+<tr>
+<td>cffi</td>
+<td>2.0.0</td>
+<td>2.0.0</td>
+</tr>
+<tr>
+<td>click</td>
+<td>8.4.2</td>
+<td>8.4.2</td>
+</tr>
+<tr>
+<td>cryptography</td>
+<td>49.0.0</td>
+<td>49.0.0</td>
+</tr>
+<tr>
+<td>fastapi</td>
+<td>0.138.2</td>
+<td>0.138.2</td>
+</tr>
+<tr>
+<td>h11</td>
+<td>0.16.0</td>
+<td>0.16.0</td>
+</tr>
+<tr>
+<td>httptools</td>
+<td>—</td>
+<td>0.8.0</td>
+</tr>
+<tr>
+<td>idna</td>
+<td>3.18</td>
+<td>3.18</td>
+</tr>
+<tr>
+<td>ifaddr</td>
+<td>0.2.0</td>
+<td>0.2.0</td>
+</tr>
+<tr>
+<td>pycparser</td>
+<td>3.0</td>
+<td>3.0</td>
+</tr>
+<tr>
+<td>pydantic</td>
+<td>2.13.4</td>
+<td>2.13.4</td>
+</tr>
+<tr>
+<td>pydantic-core</td>
+<td>2.46.4</td>
+<td>2.46.4</td>
+</tr>
+<tr>
+<td>python-dotenv</td>
+<td>—</td>
+<td>1.2.2</td>
+</tr>
+<tr>
+<td>pyyaml</td>
+<td>—</td>
+<td>6.0.3</td>
+</tr>
+<tr>
+<td>starlette</td>
+<td>1.3.1</td>
+<td>1.3.1</td>
+</tr>
+<tr>
+<td>typing-extensions</td>
+<td>4.15.0</td>
+<td>4.15.0</td>
+</tr>
+<tr>
+<td>typing-inspection</td>
+<td>0.4.2</td>
+<td>0.4.2</td>
+</tr>
+<tr>
+<td>uvicorn</td>
+<td>0.49.0</td>
+<td>0.49.0</td>
+</tr>
+<tr>
+<td>uvloop</td>
+<td>—</td>
+<td>0.22.1</td>
+</tr>
+<tr>
+<td>watchfiles</td>
+<td>—</td>
+<td>1.2.0</td>
+</tr>
+<tr>
+<td>websockets</td>
+<td>—</td>
+<td>16.0</td>
+</tr>
+<tr>
+<td>zeroconf</td>
+<td>0.150.0</td>
+<td>0.150.0</td>
+</tr>
+</tbody>
+</table>
+<p><em>Recorded on: 2026-06-30</em></p>
+</div>
+<h3 id="1651-initial-canary-result-2026-06-30">§16.5.1 Initial canary result (2026-06-30)</h3>
+<ul>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/5">#5: spike: QNAP/glibc dependency canary</a></li>
+</ul>
+<p>Tested on the physical TS-230: glibc 2.23, aarch64, Python 3.14.6 (uv-managed).
+All target packages installed from PyPI wheels (<code>manylinux2014_aarch64</code>) and imported successfully.</p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p><strong>Always export <code>TMPDIR</code> before running the uv installer on the TS-230.</strong> <code>/tmp</code> is a 64 MB RAM disk shared
+with system processes; exhausting it causes system errors and stops the RAM disk — a reboot is required to
+recover. Set up a persistent tmp first:</p>
+<div class="highlight"><pre><span></span><code>mkdir<span class="w"> </span>-p<span class="w"> </span>~/tmp
+<span class="nb">export</span><span class="w"> </span><span class="nv">TMPDIR</span><span class="o">=</span>~/tmp
+curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+</code></pre></div>
+<p>Normal <code>uv</code> operation (venv creation, package install) does not need <code>TMPDIR</code>.</p>
+</div>
+<p><strong>Conclusion:</strong> no glibc constraint on any of the node's planned dependencies at current versions.
+Cold-import time on TS-230 ARM hardware is ~3.3 s — expected, not a compatibility issue.</p>
+<h3 id="1652-automated-canary-three-tier-verification">§16.5.2 Automated canary: three-tier verification</h3>
+<ul>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/9">#9: feat: container canary + CI workflow for node glibc compatibility</a></li>
+</ul>
+<p>The canary runs at three tiers, ordered fastest → most authoritative:</p>
+<ol>
+<li><strong>Local / Mac mini</strong> — native aarch64, no QEMU overhead. Run <code>ci/node-canary.sh</code> inside the container
+   locally (<code>--platform linux/arm64</code> is a no-op on M-series hardware). Fast feedback when bumping dependencies.</li>
+<li><strong>GitHub Actions</strong> — QEMU emulation of aarch64 on an x86_64 runner (<code>.github/workflows/node-canary.yml</code>).
+   Triggers on push to canary-related files and on a weekly schedule. Keeps the compatibility promise
+   continuously verified without manual effort.</li>
+<li><strong>Physical TS-230 (<code>ssh nas</code>)</strong> — ground-truth on real glibc 2.23 hardware. On-demand only; see §16.5.1
+   for initial run notes and the <code>TMPDIR</code> warning.</li>
+</ol>
+<p><code>ci/node-canary.sh</code> installs rehuco-node's direct PyPI dependencies inside
+<code>quay.io/pypa/manylinux2014_aarch64</code> (glibc 2.17 floor, more conservative than the TS-230's 2.23) and
+smoke-imports each one. A missing <code>manylinux2014_aarch64</code> wheel or a glibc-version mismatch exits non-zero.</p>
+<h2 id="166-migrating-existing-repos">§16.6 Migrating existing repos</h2>
+<p><strong>Decided: start the monorepo fresh.</strong> Per-repo git history of the old apps isn't valued enough to preserve (the author is comfortable starting clean — "what's another repo"). The old rehuco-predecessor repos (<code>resource-hub</code>, <code>tutcatalog5</code>, <code>tutcatalog4</code>) are not grafted in. This avoids the <code>git subtree</code>/<code>git-filter-repo</code> fiddliness entirely. The generic PySide utilities that used to live in a standalone package are likewise reintroduced fresh as the <code>borco-*</code> packages (§16.2) rather than grafted in — no old clone or remote needs to survive.</p>
+<h2 id="167-dependency-licensing-policy">§16.7 Dependency licensing policy</h2>
+<p><strong>Principle: the choice of the final application's license must stay with the author, not be forced by a dependency.</strong> GPL is fine <em>by deliberate choice</em> for a final app; being <em>compelled</em> into GPL by a linked library is not acceptable — it removes the author's freedom and entangles the reusable libraries (<code>rehuco-core</code>, <code>pyside_ibo</code>, etc.) that are meant to be independently publishable under whatever license the author picks. (This principle is already evidenced by the author writing an MIT-licensed <code>pyside6-scintilla</code> rather than depending on a copyleft alternative.)</p>
+<p>Concrete consequence for <strong>docking</strong>:</p>
+<ul>
+<li><strong>Use <code>pyqtads</code> (Qt-Advanced-Docking-System), not KDDockWidgets.</strong> Both are mature and feature-comparable (detach/float/nest/auto-hide/delete-on-close), and KDDockWidgets is in some respects the more capable <em>framework</em> (KDAB pedigree, native QML docks, deeper customization). But:</li>
+<li><strong>KDDockWidgets is GPL 2.0/3.0</strong> (or paid commercial). Linking it makes the <em>entire agent</em> a GPL combined work — cascading into the publish plan (§16.3) and risking entanglement of the reusable libraries. This is a property of the license, not something the binding/packaging can engineer around.</li>
+<li><strong><code>pyqtads</code> is permissively licensed (LGPL)</strong> — it can be linked from an app of any license without forcing the app's license — <strong>and ships prebuilt PySide6/PyQt6/PyQt5 bindings on PyPI</strong>, so it drops into the uv workspace as a normal dependency with no build step.</li>
+<li>The packaging objection to KDDockWidgets (no PyPI wheel; bindings must be built from source via shiboken+CMake+libclang) is one the author <em>could</em> solve — the same CI-built-binding work already done for <code>pyside6-scintilla</code> (shiboken) and <code>pyside6-lexilla</code> (nanobind). So bindings are <strong>not</strong> the blocker. <strong>The license is the blocker</strong>, and it is not solvable by effort.</li>
+<li>KDDockWidgets is therefore foreclosed for this project. The QML-in-<code>pyqtads</code> approach (QQuickWidget hosted in a widget dock) was <strong>re-verified on current versions</strong> by spike #4 (§16.7.1) and holds; the fallback — constraining how QML is used (non-detachable docks, reduced QML footprint) — is held in reserve, <strong>not</strong> needed, and switching to KDDockWidgets stays foreclosed regardless.</li>
+</ul>
+<h3 id="1671-qml-in-pyqtads-regression-check-spike-4">§16.7.1 QML-in-<code>pyqtads</code> regression check (spike #4)</h3>
+<ul>
+<li>[ ] <a href="https://github.com/borco/rehuco/issues/4">#4: spike: pyqtads + QML integration regression check</a></li>
+</ul>
+<p>Spike #4 re-verified the QML-in-<code>pyqtads</code> approach on <strong>PySide6 6.11.1 + pyside6-qtads 5.0.0</strong> (a
+major bump from <code>resource-hub</code>'s 4.5.0.4). All three parts A0 depends on hold:</p>
+<ul>
+<li><strong>Detach/re-dock</strong> — a <code>QQuickWidget</code> dock detaches to a floating window and re-docks with no
+  rendering glitches; the injected context object stays live across the cycle (both Python→QML
+  property reads and QML→Python slot calls keep working before, during, and after the undock).</li>
+<li><strong>Coexistence</strong> — a QML dock and QWidget docks share one <code>CDockManager</code> layout.</li>
+<li><strong>Layout save/restore</strong> — <code>saveState()</code>/<code>restoreState()</code> round-trips the layout blob.</li>
+</ul>
+<p><strong>One caveat A0 must carry:</strong> the layout blob does <strong>not</strong> restore a <em>closed</em> dock's size — QtAds
+reopens it at a minimal size. A0's dock manager must stash the containing splitter's sizes on
+<code>closeRequested</code> (<code>CDockManager.splitterSizes(area)</code>, keyed by dock object name) and re-apply them
+via <code>setSplitterSizes(area, sizes)</code> on <code>viewToggled(True)</code>. The three-line wiring snippet and this
+workaround live in <code>spikes/pyqtads-qml/</code> as a working reference until A0 consumes them (then the
+spike is deleted and this issue closed).</p>
+<h2 id="168-desktop-distribution-file-association-and-app-identity">§16.8 Desktop distribution, file association, and app identity</h2>
+<p>Distribution splits by audience, structurally (as the package split does, §16.2):</p>
+<ul>
+<li><strong><code>rehuco-core</code> and <code>rehuco-node</code> are pure PyPI</strong> (§16.3) — a library and a headless service; no GUI identity, no file association.</li>
+<li><strong><code>rehuco-agent</code> is dual-channel.</strong> <code>uv tool install</code> suffices for the author's own machines and developers (§16.3); wider end-user distribution additionally needs a <strong>native app identity</strong> — icon, file association, taskbar pin/running indicator, an installer — that a bare install cannot provide.</li>
+</ul>
+<p>Two design facts shape the choice:</p>
+<ul>
+<li><strong>File association is OS-specific, and macOS is the binding constraint.</strong> Only a real application bundle can be a document type's default handler there, and the opened path is delivered as an in-process event rather than a command-line argument — so it must reach the already-running single instance (§5.4). Windows and Linux register the association declaratively and need no elevation.</li>
+<li><strong>Windows app identity (icon / pin / running) is an identity-registration concern, not a "must be a compiled binary" one.</strong> A prior version (<code>resource-hub</code>) achieved a correct taskbar icon/pin/running indicator only from a frozen PyInstaller build, but the real requirement is a stable per-application identity plus an ordinary per-app launcher — both available without freezing (the standard entry-point launcher already serves). Freezing the app into a single binary is therefore <strong>not</strong> required.</li>
+</ul>
+<p><strong>Decision: package end-user builds with Briefcase, not PyInstaller.</strong> Briefcase does not freeze — it pairs a thin launcher with an embedded interpreter and the app's source, and declares icon, identity, file association, and installer from <code>pyproject.toml</code>, so the OS-specific registration is generated rather than hand-maintained. The deciding reasons are <strong>reduced fragility and declarative app identity</strong>, not build speed. MSIX is a possible later upgrade for the strongest Windows identity. This is wider-distribution polish — not needed for A0 or the author's own machines — and the file-association and single-instance mechanics it rests on are de-risked by a dedicated spike (plan: Pre-work) before A0 relies on "double-click opens."</p>
+<h2 id="169-auto-update">§16.9 Auto-update</h2>
+<p>The agent should detect a newer release, flag it, and offer to install. Design positions:</p>
+<ul>
+<li><strong>Version checking is cheap and uses a public source.</strong> The repo is public, so either GitHub Releases or the PyPI metadata serves as the version oracle, via a small periodic poll.</li>
+<li><strong>Applying an update is the hard, OS-specific part</strong>, with real prerequisites: a running application cannot overwrite itself in place, system-level installs need elevation, and signed/notarized artifacts are required or the OS blocks the download. The chosen approach is to <strong>delegate the privileged install to the platform's installer</strong> rather than hand-write a self-replacing updater.</li>
+<li>For the <code>uv tool</code> / pip channel, "update" is simply re-installing the newer package.</li>
+</ul>
+<p>Code-signing / notarization is an unpriced prerequisite (§A01.2). Auto-update is end-user polish on the same track as §16.8, deferred past the personal critical path (plan: deferred).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../acquisition-tooling/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Acquisition Tooling">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Acquisition Tooling
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../open-questions/" class="md-footer__link md-footer__link--next" aria-label="Next: Open Questions">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Open Questions
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

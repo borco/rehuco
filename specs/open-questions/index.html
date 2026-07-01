@@ -1,0 +1,1254 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/open-questions/">
+      
+      
+        <link rel="prev" href="../packaging-deployment/">
+      
+      
+        <link rel="next" href="../implementation-plan/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Open Questions - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#a01-explicitly-out-of-scope-not-yet-designed" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Open Questions
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../packages/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Packages
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a011-resolved-or-scoped-since-the-first-consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §A01.1 Resolved or scoped since the first consolidation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a012-still-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §A01.2 Still open
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#a011-resolved-or-scoped-since-the-first-consolidation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §A01.1 Resolved or scoped since the first consolidation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a012-still-open" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §A01.2 Still open
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="a01-explicitly-out-of-scope-not-yet-designed">§A01. Explicitly Out of Scope / Not Yet Designed</h1>
+<p>Flagging gaps so they're a deliberate choice rather than an oversight.</p>
+<h2 id="a011-resolved-or-scoped-since-the-first-consolidation">§A01.1 Resolved or scoped since the first consolidation</h2>
+<ul>
+<li><strong>Metadata-conflict during offline editing</strong> — previously an unacknowledged contradiction between §7 ("single writer, no conflict") and §12 ("cache stays editable offline"). Resolved for v1 by making resource metadata online-only-editable (§7); only per-user state is offline-editable. The hard multi-writer-metadata merge is a future hook, not v1 work.</li>
+<li><strong>Instance-registry / offline-instance persistence</strong> — the rebuild-from-scratch model was imprecise. Now bounded (§2): retained metadata copies (§9.8) survive rebuild by rescan; transient instances re-register on reconnect; borrows persist via the user meta block (§11.4).</li>
+<li><strong>Per-image metadata location</strong> — clarified (§4.6): app-managed mutable metadata alongside <code>.rehu</code>, never inside the immutable checksummed zip.</li>
+<li><strong>Scanning strategy</strong> — incremental, version-aware reconciliation is now the normal mode; full rescan demoted to recovery (§4.7).</li>
+<li><strong>Node identity scheme</strong> — replaced the pairing-secret design with Syncthing-style cert-hash device IDs (§6.4), where identity <em>is</em> the key and the introducer model (§6.5) matches the existing hub-and-spoke choice.</li>
+<li><strong>App/filesystem coupling</strong> — resolved by making the Qt app always a node client (§5.1), removing the local-vs-remote dual code path.</li>
+<li><strong>Cross-node storage topology</strong> — was reactive per-resource UUID matching only; now also proactive via fingerprint self-mapping (§9.10), which additionally guards the single-primary rule (§9.11).</li>
+<li><strong>Deletion / tombstone propagation</strong> — resolved (§7): deletion is an ordinary logged action whose tombstone is its position in the version vector, so offline nodes apply it on reconnect and rescans don't resurrect. Delete-vs-concurrent-edit surfaces in the verdict queue (§10.5) rather than silently applying. Borrow-vs-delete/archive has an explicit resolution (§11.6).</li>
+<li><strong>Clock skew / ordering</strong> — resolved (§7): ordering is by per-node-counter version vector, clock-independent; wall-clock timestamps are no longer load-bearing. History is a separate, prunable activity log.</li>
+<li><strong>Per-user authentication</strong> — resolved (§6.8): salted Argon2id hashes propagated to every node (since any node can serve a login), passwords never stored/transmitted; thin tablet logs in via session against its serving node.</li>
+<li><strong>Visitors / cross-swarm sharing</strong> — resolved (§6.9): visitors never join as nodes (guest account or stripped export/import instead); no cross-swarm federation.</li>
+<li><strong>Access control model</strong> — resolved (§6.10): rules are swarm-wide propagated config (not per-machine <code>.rehuco</code>), enforced server-side at the serving node, with tag-grants evaluated dynamically. Remaining work is the concrete rule grammar/schema, not the model.</li>
+<li><strong>Local file layout</strong> — resolved (§4.8): <code>.rehuco</code> (per-machine config), <code>.rehudb</code> (disposable cache), <code>.rehusw</code> (durable, propagated swarm info).</li>
+<li><strong>Startup consistency for access rules</strong> — resolved (§6.11): serve-after-resync, stated as "catch up to the most-current reachable source, else serve last-known," with a <code>.rehusw</code> version marker making "more current" decidable. Resync source resolved by §6.6.</li>
+<li><strong>Registry home</strong> — resolved (§6.6): preferred authority (always-on box) when reachable, else chatter for highest version, else last-known; single node is the degenerate case. Single-writer admin config + version markers means no consensus protocol needed.</li>
+<li><strong>Single-node / bootstrap operation</strong> — resolved (§8.1): the lone node is the base case — its own registry authority, serves immediately without waiting for peers; create-swarm and single-node-forever are the same path.</li>
+<li><strong>Node vs. agent split</strong> — resolved (§5.1): node = headless service (runs everywhere incl. QNAP); agent = desktop GUI (tray + viewer/editor + catalog), a node client, GUI machines only. Independent lifecycles; quitting the agent leaves the node serving. "Admin" is a logged-in user's privilege, not a separate build.</li>
+<li><strong>App readiness / responsiveness</strong> — resolved (§5.2): per-operation readiness, not one global gate; local-file and cached operations never block on swarm sync; all swarm chatter is async background (task queue) surfaced as status.</li>
+<li><strong>Local-file vs. swarm mode / no-node viewing</strong> — resolved (§5.3): the single-file viewer needs no node or login (viewing a local file isn't access-controlled); swarm mode enriches when a node/session is present.</li>
+<li><strong>Single-instance &amp; file association</strong> — resolved (§5.4): bind-or-forward single-instance, one main agent hosts both scopes, forwarded opens never block on login, stale-socket reclaim, socket scoped per-user-and-swarm.</li>
+<li><strong>Login persistence</strong> — resolved (§6.8): agent caches a session token (not the password) in the OS secure store; revocation reaches the agent when the token fails.</li>
+<li><strong><code>.rehu</code> write integrity</strong> — resolved (§4.9): universal atomic temp-then-rename; managed files route exclusively through the owning node (single writer); unmanaged files written directly by the agent; import is the explicit unmanaged→managed hand-off.</li>
+<li><strong><code>.rehu</code> schema format versioning</strong> — resolved (§4.10): per-file format-version field; newer reader upgrades older files, older reader preserves unknown fields rather than dropping them; import is an upgrade point.</li>
+<li><strong>Plugin block model</strong> — resolved (§13.2/§13.3): plugin fields in separate keyed, independently-versioned blocks; exactly one live block per <code>type</code> (installed-ness doesn't promote inert blocks); save-persistence invariant (live type, or never-claimed foreign payload) with claim-then-abandon dropping on save; generic fallback editor with carry/map/drop and provenance-aware flagging; discards logged.</li>
+<li><strong>Plugin spectrum (declarative ↔ code)</strong> — resolved (§13.1): simple types are declarative field-lists over a shared field toolkit (no code, no trust surface); rich types are code plugins using the same toolkit plus custom widgets/actions. Unifies the code-plugin and TutCatalog5 <code>.rehuco</code>-declared-fields ideas.</li>
+<li><strong>Resource browsers</strong> — resolved (§13.4): generic browser (common columns) + per-type browsers (plugin-contributed columns + cover rendering), table/shelf modes, click-to-filter on tag/author/publisher restored from TutCatalog4.</li>
+<li><strong>Acquisition &amp; migration tooling</strong> — specced (§15): three drag-drop aids (HTML→Markdown, image→screenshot, URL→extract), local-LLM extraction with constrained decoding, <code>.tc</code>→<code>.rehu</code> migration as format-v0. Deferred until after the tutorial web viewer.</li>
+<li><strong>Code organization, packaging &amp; deployment</strong> — resolved (§16): monorepo with uv workspaces (single <code>.venv</code> fixes the venv-confusion and makes cross-package refactors atomic); three published packages (<code>rehuco-core</code>, <code>rehuco-node</code>, <code>rehuco-agent</code>) mapping onto the shared-lib/node/agent split; <code>uv tool install</code> for node and agent; TS-230 installs the node <em>artifact</em> (never the workspace), with platform markers on agent GUI deps and a continuous TS-230 install-canary making the glibc constraint structural rather than careful.</li>
+<li><strong>Offline revocation limitation</strong> — acknowledged as a deliberate accepted boundary (§6.11): revocation can't reach an already-held local copy that never reconnects; trusting household members who kept a copy is an explicit non-goal. Revocation does apply on reconnect.</li>
+<li><strong>Desktop distribution, file association &amp; app identity</strong> — analyzed (§16.8/§16.9): the agent is dual-channel (<code>uv tool</code> for the author's own machines/devs; a native installer for wider reach); file association is OS-specific with macOS as the binding constraint; Windows taskbar identity is an identity-registration matter, not a reason to freeze the app; <strong>Briefcase</strong> is chosen for end-user installers over PyInstaller, with MSIX a possible later upgrade; auto-update checks a public version oracle and delegates installation to the platform installer. All wider-distribution polish, off the personal critical path; the OS mechanics are still to be proven (§A01.2).</li>
+</ul>
+<h2 id="a012-still-open">§A01.2 Still open</h2>
+<ul>
+<li><strong>Full <code>.rehu</code> schema</strong> — field ownership (common vs. plugin) is settled (§4.1, §13.1); the complete field list/types per plugin is being designed separately. Archival is a tag (§11.3), not a schema state. The schema must now also carry the version vector and activity log (§7) and the user/auth records (§6.8).</li>
+<li><strong>Access-rule grammar/schema</strong> — the <em>model</em> is settled (§6.10: swarm-propagated, server-enforced, full/per-resource/dynamic-tag grants). What's not yet specified is the concrete representation: how a grant is written, how per-resource and tag-grants combine (additive? can a deny override an allow?), and where exactly it sits in the propagated registry.</li>
+<li><strong>Remote (off-LAN) access</strong> — <em>deliberately out of scope, not a gap.</em> The whole trust/discovery model (§6) is LAN-local by design. The app provides no remote-access mechanism and will not put a personal media catalog on the public internet. A user who needs access from outside, without standing up their own mobile node, should <strong>VPN into the home network</strong> (WireGuard/Tailscale/etc.) — at which point they are "on the LAN" and everything works unchanged. This cleanly delegates remote-access security to mature purpose-built software instead of reinventing it in the app; the app stays simple and LAN-trusting, the VPN decides who may reach the network at all.</li>
+<li><strong>Instance-registry replication detail</strong> — the <em>home</em> is resolved (§6.6: it lives with the preferred authority / propagates like the rest of the registry). What's not yet detailed is the concrete shape of the instance registry's own propagation and how transient instances (active checkouts) register/expire within it — the location question is settled, the replication mechanics aren't fully drawn.</li>
+<li><strong>Activity-log pruning policy</strong> — the mechanism is decided (prune by age X / count Y, never dropping the current state-defining event, §7); the actual default thresholds and whether they're per-resource or global aren't set.</li>
+<li><strong>Export/import mechanics</strong> — the rules are decided (keep UUID, scrub vector/log/per-user-state/instance entries, §6.9); the concrete on-disk export format and the import-side UUID-collision handling aren't designed.</li>
+<li><strong>Block-level transfer for re-copies</strong> — noted (Syncthing's chunk-hash-and-transfer-only-diffs approach) as worth borrowing <em>narrowly</em> for refreshing a backup/move where a prior version exists at the destination; no help for first-time copies. Not designed; lower priority.</li>
+<li><strong>Admin identity permanence</strong> — flagged in §6.7, not resolved (distinct from registry home, which is decided).</li>
+<li><strong>Online-only and mixed local/online resources</strong> — needs schema representation; not detailed.</li>
+<li><strong>Udemy integration</strong> — registered courses are hard to track; no scraping/API/import approach discussed.</li>
+<li><strong>3D objects as a resource category</strong> — mentioned alongside Daz3D but not mapped to a plugin design.</li>
+<li><strong>Shared timed-presentation capability</strong> — identified as worth extracting (§13.8) but not designed.</li>
+<li><strong>Drawing comparison/critique pipeline</strong> — exploratory (§13.6); needs prototyping before being committed.</li>
+<li><strong>Borrow automation</strong> — manual vs. automated power-down of the source box is unresolved (§11.2).</li>
+<li><strong>File-association + app-identity verification</strong> — the <em>direction</em> is decided (§16.8), but the OS mechanics aren't yet proven on current versions: a macOS application bundle actually delivering the opened file into the bind-or-forward single instance (§5.4), and a Windows default-handler + per-app identity actually producing double-click-open plus taskbar pin/running. Slated as a Pre-work spike (plan). <strong>Code-signing / notarization</strong> (Apple Developer ID, Windows certificate) is an unpriced prerequisite for shipping updates (§16.9), not yet committed.</li>
+<li><strong>First build slice</strong> — not yet chosen.</li>
+<li><strong>Concrete technology stack</strong> — PySide6 (+ <code>pyside6-scintilla</code>, <code>pyqtads</code> for docking — chosen over KDDockWidgets on licensing grounds, §16.7 — selective QQuickWidget use for QML surfaces), SQLite + SQLAlchemy for the cache, FastAPI + HTMX + Pico CSS for the web UI, zeroconf for discovery, <code>uv</code> for environment management — strong candidates. The QNAP's old glibc (2.23) remains a per-dependency risk, but it is now <em>structurally contained</em>: the node is a separate package with no GUI deps, deployed as an artifact (not the workspace), with a continuous TS-230 install-canary (§16.4, §16.5). Specific node-dependency wheel compatibility (pydantic-core, cryptography, etc.) on glibc 2.23 still needs the actual canary run to confirm. Stack not yet finalized.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../packaging-deployment/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Packaging &amp; Deployment">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Packaging & Deployment
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../implementation-plan/" class="md-footer__link md-footer__link--next" aria-label="Next: Implementation Plan">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Implementation Plan
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,1485 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/discovery-trust-access/">
+      
+      
+        <link rel="prev" href="../nodes/">
+      
+      
+        <link rel="next" href="../sync/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Discovery & Trust - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#6-discovery-swarm-identity-and-trust" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Discovery & Trust
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../packages/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Packages
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#61-two-separate-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.1 Two separate questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#62-swarm-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.2 Swarm ID
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#63-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.3 Discovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#64-node-identity-and-pairing-syncthing-style-trust-on-first-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.4 Node identity and pairing (Syncthing-style, trust-on-first-use)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#65-membership-model-hub-and-spoke-not-full-mesh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.5 Membership model: hub-and-spoke, not full mesh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#66-registry-home-preferred-authority-with-chatter-fallback-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.6 Registry home: preferred authority with chatter fallback (decided)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#67-admin-app-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.7 Admin app portability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#68-user-authentication-distinct-from-node-trust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.8 User authentication (distinct from node trust)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#69-visitors-and-cross-swarm-sharing-no-federation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.9 Visitors and cross-swarm sharing (no federation)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#610-access-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.10 Access control
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#611-serve-after-resync-startup-gating-on-swarm-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.11 Serve-after-resync (startup gating on swarm info)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#61-two-separate-questions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.1 Two separate questions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#62-swarm-id" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.2 Swarm ID
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#63-discovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.3 Discovery
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#64-node-identity-and-pairing-syncthing-style-trust-on-first-use" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.4 Node identity and pairing (Syncthing-style, trust-on-first-use)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#65-membership-model-hub-and-spoke-not-full-mesh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.5 Membership model: hub-and-spoke, not full mesh
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#66-registry-home-preferred-authority-with-chatter-fallback-decided" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.6 Registry home: preferred authority with chatter fallback (decided)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#67-admin-app-portability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.7 Admin app portability
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#68-user-authentication-distinct-from-node-trust" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.8 User authentication (distinct from node trust)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#69-visitors-and-cross-swarm-sharing-no-federation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.9 Visitors and cross-swarm sharing (no federation)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#610-access-control" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.10 Access control
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#611-serve-after-resync-startup-gating-on-swarm-info" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §6.11 Serve-after-resync (startup gating on swarm info)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="6-discovery-swarm-identity-and-trust">§6. Discovery, Swarm Identity, and Trust</h1>
+<h2 id="61-two-separate-questions">§6.1 Two separate questions</h2>
+<ul>
+<li><strong>"Is this node even part of my network?"</strong> → answered by <strong>swarm identity</strong>.</li>
+<li><strong>"Do I trust this specific node?"</strong> → answered by <strong>pairing/approval</strong>.</li>
+</ul>
+<p>These must be separate gates. Without the first, the second alone would let any installation of the same software (a neighbor's, a stranger's, even another household's identical setup) discover and attempt to pair with the user's nodes, since zeroconf advertises to anything listening.</p>
+<h2 id="62-swarm-id">§6.2 Swarm ID</h2>
+<ul>
+<li>Generated once, randomly, when the very first node is created ("create new swarm" vs. "join existing swarm" at first run).</li>
+<li>Carried in every zeroconf announcement. Nodes ignore announcements with a non-matching swarm ID outright — a foreign node never even becomes a pairing candidate.</li>
+<li>This also directly enables <strong>running multiple independent swarms</strong> on the same LAN (e.g. a real household swarm and a separate test/dev swarm), since they simply never see each other's traffic.</li>
+</ul>
+<h2 id="63-discovery">§6.3 Discovery</h2>
+<p><strong>Zeroconf (mDNS/Bonjour)</strong> for finding nodes on the LAN — the right tool for zero-config local discovery, and lightweight enough for the QNAP.</p>
+<h2 id="64-node-identity-and-pairing-syncthing-style-trust-on-first-use">§6.4 Node identity and pairing (Syncthing-style, trust-on-first-use)</h2>
+<p>Node identity follows the Syncthing model, which is cleaner than a separate pairing-secret scheme because the human-visible identity and the cryptographic identity are the <em>same object</em>:</p>
+<ul>
+<li><strong>A node's identity is the hash of its own self-signed TLS certificate's public key</strong> (a "device ID"). The identity <em>is</em> the key — self-certifying, no certificate authority needed. All later traffic is mutual TLS in which each side verifies the other's presented cert hashes to the expected device ID.</li>
+<li><strong>Pairing is mutual approval of device IDs.</strong> A new node announces (over zeroconf, gated by swarm ID §6.2) its device ID. The admin app shows the join request and its device ID; the user <strong>independently verifies</strong> it against the device ID shown on the node's own console/log (the side-channel check that defeats a rogue device claiming a fake identity — the same trust model as confirming an SSH host key). On approval, the node's device ID is recorded as trusted.</li>
+<li>Because identity is just the cert hash, there is <strong>no separate long-lived secret to store or rotate</strong> — the keypair <em>is</em> the standing credential, and "compare the fingerprint" reduces to "compare the device ID," with nothing else to get wrong.</li>
+<li>For headless boxes (QNAP), the device ID is surfaced the same way a fingerprint was: printed to console where there's a screen, written to a log readable over SSH as the guaranteed fallback, and echoed in the admin app's join request for side-channel comparison.</li>
+</ul>
+<p>(This supersedes an earlier design that used a short-lived randomly-generated pairing secret exchanged for a long-lived credential. The cert-hash identity achieves the same trust-on-first-use property more simply, and the swarm-ID gate of §6.2 still sits in front of it.)</p>
+<h2 id="65-membership-model-hub-and-spoke-not-full-mesh">§6.5 Membership model: hub-and-spoke, not full mesh</h2>
+<p>The <strong>admin is the sole authority for swarm membership</strong>. When the admin approves a new node:</p>
+<ul>
+<li>The admin records the new node's public identity in its registry.</li>
+<li>The admin <strong>pushes the updated membership list to all other already-known nodes</strong>, so every node trusts the new member without having to independently re-verify it.</li>
+<li>Any node only ever needs to trust one thing: the admin's say on who belongs. This avoids O(N²) pairing dances as the swarm grows, at a scale where a privileged admin role already exists naturally.</li>
+<li>A node that's offline when a new member joins picks up the update next time it reconnects.</li>
+</ul>
+<p>This is the same pattern Syncthing calls an <strong>introducer</strong> — a trusted device that vouches for others to its peers — which independently validates the hub-and-spoke choice. The admin is the introducer; ordinary nodes trust the admin's vouching rather than re-verifying each new member themselves.</p>
+<h2 id="66-registry-home-preferred-authority-with-chatter-fallback-decided">§6.6 Registry home: preferred authority with chatter fallback (decided)</h2>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Implement the registry-resolution and serve-after-resync logic (§6.6 + §6.11) with Opus, not the auto-switched Sonnet.</strong> The startup sequence (preferred-authority → chatter-for-highest-version → last-known), the version-marker comparison, and the "serve only after catching up, unless nothing newer is reachable" gate have several edge cases (single node, cold start, partial power-up, vacation laptop) where a wrong default either deadlocks startup or serves stale access rules. Override to <code>/model opus</code> for both sections.</p>
+</div>
+<p>The propagated swarm registry (<code>.rehusw</code>, §4.8 — membership, users, hashes, access rules) and the instance registry (§10.2) are global state that isn't derivable from any single <code>.rehu</code>, so they need a defined place to resync <em>from</em>. The model is a <strong>preferred authority with a chatter fallback</strong>:</p>
+<ul>
+<li>A swarm may designate a <strong>preferred authority</strong> — the most reliably always-on box (e.g. the QNAP or the always-on Linux node). When reachable, it is the canonical resync source: a node that has caught up to it <em>knows</em> it is current.</li>
+<li>If <strong>no preferred authority is defined</strong>, or it is <strong>unreachable</strong>, or the node is <strong>away from the swarm</strong> (vacation laptop), nodes fall back to <strong>chatter</strong> — gossip with whatever peers are reachable, take the highest registry version-marker (§6.11), and serve on that. This is "current among who's reachable," accepting it may transiently lag until a higher-versioned holder appears.</li>
+<li>The <strong>single node</strong> is the degenerate case (§8.1): no peers, no authority needed — it is trivially current and serves immediately, never waiting on a discovery timeout.</li>
+</ul>
+<p>So startup registry resolution is a simple sequence: <strong>try the preferred authority → else chatter with reachable peers, take highest version → else serve last-known <code>.rehusw</code>.</strong> Certainty when the authority is up; functional (if briefly-stale) when it isn't; no distributed consensus needed, because swarm config has a single writer (the admin, §6.5) and ordering is by version-marker, not agreement. The concrete lookup <em>sequence</em> above is the design; only its wire-level details are implementation.</p>
+<h2 id="67-admin-app-portability">§6.7 Admin app portability</h2>
+<p>The agent must run identically on any machine — it holds no unique local state beyond a cached session token (§6.8):</p>
+<ul>
+<li>The <strong>authoritative registry lives on the preferred authority node</strong> (above), not on whichever machine the agent last ran on. The agent resolves and pulls the current registry on launch via the sequence above.</li>
+<li>The agent's user identity travels as a session token in the OS secure store (§6.8), not tied to one machine's disk.</li>
+<li><strong>Open question, still unresolved:</strong> should the <em>admin</em> identity be a permanent "master key," or revocable/replaceable like an ordinary node identity, in case it's lost or compromised? (This is distinct from registry home, which is now decided.)</li>
+</ul>
+<h2 id="68-user-authentication-distinct-from-node-trust">§6.8 User authentication (distinct from node trust)</h2>
+<p>§6.1–6.6 authenticate <em>nodes</em> to each other. Authenticating <em>humans</em> is separate and necessary because any node can act as an HTTPS server a user logs into (including the thin tablet's server, §11.5):</p>
+<ul>
+<li><strong>Passwords are never stored, transmitted, or propagated — only salted slow-hashes are.</strong> Each user record holds <code>hash = Argon2id(password + per-user salt)</code> (bcrypt/scrypt acceptable). A node authenticates a login by re-running the KDF on what the user typed and comparing. The plaintext password exists only momentarily at the login.</li>
+<li><strong>The user list (usernames + salted hashes + permissions) is shared swarm state</strong>, propagated to every node the same way membership is (§6.5). Every node caches it because every node may be the server a user logs into — there is no central auth bottleneck, and offline login works on any node (e.g. the vacation laptop).</li>
+<li><strong>Accepted trade-off:</strong> every node therefore holds all users' hashes, so a compromised node exposes them to offline cracking. At household scale (family + occasional lost laptop, not a determined adversary) this is acceptable, and it's bounded by the fact that <strong>only nodes ever hold hashes, and visitors never become nodes</strong> (§6.9).</li>
+<li><strong>The thin tablet logs in via a session</strong> against whatever node serves it (which holds the hash and issues a session token/cookie). No credential is stored on the tablet.</li>
+<li><strong>The desktop agent caches a session token, never the password.</strong> On login the serving node issues a session token (the same kind the tablet gets); the agent persists <em>that token</em> in the OS secure store (Keychain / Windows Credential Manager / Secret Service), so the user isn't re-prompted every launch. The plaintext password and any hash never touch the client. An expired or revoked token simply fails on next use and re-prompts — which is also how user-deletion/revocation reaches the agent, with no special-casing. Logout discards the token (and ideally invalidates it server-side). Login/logout are explicit menu actions in the agent.</li>
+</ul>
+<h2 id="69-visitors-and-cross-swarm-sharing-no-federation">§6.9 Visitors and cross-swarm sharing (no federation)</h2>
+<p>A visitor is never allowed to join the swarm as a node. Two clean paths instead:</p>
+<ul>
+<li><strong>Guest account</strong> — a normal user record (username + hash + view-only permissions), propagated like any user. The visitor logs into <em>your</em> node's web UI as a dumb browser client (same as the tablet); their device never becomes a node and never holds hashes or swarm state.</li>
+<li><strong>Export / import</strong> — the way to share content with someone who has <em>their own</em> swarm. Copy resources to a disk, <strong>stripped of swarm-bookkeeping</strong>, and the visitor imports them into their own swarm. There is deliberately <strong>no cross-swarm federation or trust</strong> — that would be a large complexity tax for no household benefit; sharing is a deliberate, manual, identity-scrubbing copy.</li>
+<li>An exported resource <strong>keeps its UUID</strong> (harmless, occasionally useful for later re-import/compare) but is <strong>stripped of the version vector, activity log, per-user state, and instance-registry entries</strong> — those are the originating swarm's private bookkeeping and would leak usage or corrupt ordering in the destination swarm. Export = resource content + <code>.rehu</code> metadata + screenshots, scrubbed of all swarm bookkeeping.</li>
+</ul>
+<h2 id="610-access-control">§6.10 Access control</h2>
+<p>Access rules (which users may see which resources) are <strong>swarm-wide config</strong>, authored by the admin and propagated to every node exactly like membership (§6.5) and the user list (§6.8).</p>
+<p><strong>Important separation from <code>.rehuco</code>.</strong> Although it's tempting to put access rules in <code>.rehuco</code>, that file is deliberately <em>per-machine</em> (§9.3) — it holds mounts and ownership flags that legitimately differ box to box. Access rules, the user list, and hashes are the opposite: <strong>swarm-identical, must be the same on every node</strong>. So they do <em>not</em> ride in the per-machine <code>.rehuco</code>; they belong with the propagated swarm registry (the same data and propagation path as membership/users, §6.5–6.7), whether implemented as a registry section or a clearly-marked propagated sibling file. Putting machine-specific and swarm-identical data in one propagation bucket would force the system to either wrongly propagate mounts or wrongly fail to propagate grants. Concrete consequence: because grants propagate like membership, a node offline when a grant is made catches up on reconnect — so access is consistent regardless of which node a user logs into.</p>
+<p><strong>Enforcement is server-side, at the serving node — never client-side.</strong> Because the web client is a dumb browser (§11.5) and the Qt app is just a node client (§5.1), the only trustworthy filter is the node answering the request: it knows who the user is (authenticated session, §6.8), holds the propagated access rules, and <strong>filters the catalog before sending anything back</strong>. The user never receives a full list with disallowed items merely hidden in the UI — the node simply never returns what the user isn't entitled to. This is precisely why the user+access data must live on <em>every</em> node: each node enforces locally for whoever it serves.</p>
+<p><strong>Grant types</strong> (per §14): full access, per-resource, or by-tag. Tag-based grants are <strong>evaluated dynamically at query time</strong>, not expanded into a static list — if a user is granted "everything tagged <code>blender</code>" and a resource is later retagged, that resource automatically enters or leaves the user's view with no explicit grant edit. This is the one part of access that is <em>computed</em> rather than a static lookup, and it makes grant-by-category cheap and self-maintaining.</p>
+<h2 id="611-serve-after-resync-startup-gating-on-swarm-info">§6.11 Serve-after-resync (startup gating on swarm info)</h2>
+<p>A node that was offline while users/permissions changed must not serve on stale access rules — it could grant access that was revoked, or deny access that was granted. So a node gates serving user-facing requests on first bringing its <code>.rehusw</code> (§4.8) up to date. The rule must be stated carefully, because taken literally ("don't serve until resynced with the rest of the swarm") it would make the swarm un-startable:</p>
+<ul>
+<li><strong>The vacation laptop</strong> boots as the only node in reach — there is <em>no one</em> to resync with. An unconditional rule would mean it never serves, destroying the core offline use case.</li>
+<li><strong>Cold start at home</strong> (e.g. after a power cut) boots every node at once; if each refuses to serve until it has resynced with the others — who are also all refusing — you get a startup deadlock or a fragile race.</li>
+</ul>
+<p>So the correct rule is <strong>"catch up to the most-current swarm-info source you can reach, then serve; if no more-current source is reachable, serve on last-known <code>.rehusw</code>":</strong></p>
+<ul>
+<li>On startup, the node attempts to resync <code>.rehusw</code> from the registry home (§6.6) or any reachable peer.</li>
+<li>If it reaches a <strong>more-current</strong> source, it must finish pulling the updated users/access <strong>before</strong> serving — the strict rule, intact, for the normal "briefly-offline node rejoins a running swarm" case.</li>
+<li>If it <strong>cannot reach anyone</strong>, it falls back to its durable last-known <code>.rehusw</code> and serves on that basis. For the vacation laptop this is correct and safe: it's <em>your</em> device, <em>your</em> account, on a network you control — the same LAN-local trust posture the whole design assumes — and refusing to serve would simply be useless.</li>
+</ul>
+<p><strong>Deciding "more current" requires a version marker on <code>.rehusw</code>.</strong> The admin is the sole writer of swarm config (§6.5), so a simple monotonic admin-side counter (or the same version-vector machinery as §7) suffices: a node compares its <code>.rehusw</code> version N against a reachable source's version M; if M &gt; N, pull and apply before serving; otherwise serve immediately (so a node that missed nothing is never delayed). This makes the gate block <em>only</em> when there's genuinely something to catch up on.</p>
+<p><strong>Resync source:</strong> the place to resync <em>from</em> is resolved by the preferred-authority-with-chatter model (§6.6) — preferred authority if reachable, else chatter for the highest version, else last-known.</p>
+<p><strong>Accepted limitation — offline revocation cannot reach a copy already in hand.</strong> A consequence of allowing offline access: if you borrow a resource onto a laptop and go offline, and the admin then revokes your access or deletes your account, your laptop keeps serving that resource to you for as long as it never rejoins the swarm — and you could even export it (§6.9) out of the admin's reach. This is a <em>fundamental</em> property of any system permitting offline use, not a flaw specific to this design; the only "fixes" are time-bombed DRM-style local copies (fighting the device's own owner) or server-held decryption keys (which turn every offline access back into an online checkout, killing the offline use case). Both trade away the core capability the design exists to provide, to defend against a threat that barely exists at household scale — the "attacker" is a household member who already had legitimate access and kept a complete local copy. So this is a <strong>deliberate, accepted boundary</strong>: revocation is effective for future swarm access but cannot reach an already-held complete local copy; the design trusts swarm members, and defending against a member who kept a copy is an explicit non-goal. <strong>Partial mitigation, free from §6.11:</strong> revocation <em>does</em> take effect the instant that laptop rejoins the swarm (its <code>.rehusw</code> resync pulls the updated rules and it enforces from then on) — the hole is specifically a copy that <em>never reconnects</em>; any node that ever comes back online closes its own hole on next sync.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../nodes/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Node Communication">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Node Communication
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../sync/" class="md-footer__link md-footer__link--next" aria-label="Next: Sync &amp; Conflicts">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Sync & Conflicts
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
