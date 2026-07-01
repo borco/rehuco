@@ -1,6 +1,6 @@
 # §17. Field Schema (v1, `.tc`-compatible)
 
-- [ ] [#6: decision: tutorial and reference-image field lists](https://github.com/borco/rehuco/issues/6)
+- [x] [#6: decision: tutorial and reference-image field lists](https://github.com/borco/rehuco/issues/6)
 
 The concrete starting field set for rehuco, derived from the fields a real tutcatalog4 (tc4)
 `.tc` file carries. §4.1 settles the *scope* of the `.rehu` schema and defers the detail here.
