@@ -1,6 +1,10 @@
 # Claude Code
 /.claude/settings.local*
 
+# Qt generated files
+*_rc.py
+*_ui.py
+
 # Python
 __pycache__/
 *.py[cod]

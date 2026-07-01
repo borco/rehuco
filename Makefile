@@ -1,4 +1,19 @@
-.PHONY: sync tests cov format bandit pyright pylint qa docs-serve publish setup-git
+.PHONY: sync tests cov format bandit pyright pylint qa docs-serve publish setup-git uis qrcs
+
+SEARCH_DIRS := apps packages spikes
+PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' ';' | sed 's/;$$//')
+UI_FILES  := $(patsubst %.ui,%_ui.py,$(shell find $(SEARCH_DIRS) -name '*.ui'  -print 2>/dev/null))
+QRC_FILES := $(patsubst %.qrc,%_rc.py,$(shell find $(SEARCH_DIRS) -name '*.qrc' -print 2>/dev/null))
+
+uis: qrcs $(UI_FILES)
+
+qrcs: $(QRC_FILES)
+
+%_ui.py: %.ui
+	uv run pyside6-uic $< --absolute-imports --python-paths "$(PYTHON_PATHS)" -o $@
+
+%_rc.py: %.qrc
+	uv run pyside6-rcc $< -o $@
 
 setup-git:
 	git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
