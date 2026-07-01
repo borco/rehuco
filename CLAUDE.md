@@ -189,6 +189,12 @@ Work is done on feature branches named `issue/NNN/some-short-slug` (e.g.
 `issue/42/add-field-toolkit`), where NNN is the GitHub issue number. Branching from a
 feature branch is fine. Merges always use `--no-ff`.
 
+**Stash unrelated working-tree changes before a `--no-ff` merge**, then commit them on top —
+`git stash push <file>` → `git merge --no-ff` → `git stash pop` → commit. Committing an
+unrelated change *before* the merge buries it beneath the merge commit and puts the merge on a
+dirty base. Get the order right up front: a merge commit's parents are immutable, so fixing it
+afterward needs reset + re-merge + cherry-pick, not a simple reset.
+
 Commit type prefixes in use: `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`, `test:`.
 
 When committing on a feature branch (`issue/NNN/...`), prefix the message with `refs #NNN:` before the type prefix.
