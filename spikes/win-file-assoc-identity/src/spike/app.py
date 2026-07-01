@@ -21,7 +21,8 @@ from typing import Final
 from borco_pyside.core.application_singleton import ApplicationSingleton
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QMainWindow, QPlainTextEdit, QVBoxLayout, QWidget
-from registry import register_folder_open, register_progid, unregister_folder_open, unregister_progid
+
+from .registry import register_folder_open, register_progid, unregister_folder_open, unregister_progid
 
 # ---------------------------------------------------------------------------
 # Spike constants
@@ -44,8 +45,13 @@ future agent process running on the same machine.
 PROGID: Final = "Rehuco.SpikeFile"
 EXTENSION: Final = "rehuspike"
 
-_SPIKE_DIR: Final = Path(__file__).parent
+# With an editable install, __file__ is the real source path:
+# .../spikes/win-file-assoc-identity/src/spike/app.py
+_SPIKE_DIR: Final = Path(__file__).parents[2]
 ICO_PATH: Final = _SPIKE_DIR / "rehuco-spike.ico"
+
+# The entry-point exe sits next to python.exe in the venv's Scripts directory.
+EXE_PATH: Final = Path(sys.executable).parent / "rehuco-spike.exe"
 
 logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
 
@@ -117,20 +123,29 @@ def main() -> int:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--register", action="store_true", help="write HKCU ProgID and extension binding, then exit")
     group.add_argument("--unregister", action="store_true", help="remove HKCU ProgID and extension binding, then exit")
+    parser.add_argument(
+        "--exe-path",
+        default="",
+        help="override which exe is registered as the handler (default: the uv entry-point launcher next to python.exe)",
+    )
     parser.add_argument("file", nargs="?", default="", help="file path passed by Explorer on double-click")
     args = parser.parse_args()
 
-    python_exe = str(Path(sys.executable).resolve())
-    script = str(Path(__file__).resolve())
-
     if args.register:
+        exe_path = Path(args.exe_path).resolve() if args.exe_path else EXE_PATH
         if not ICO_PATH.exists():
             print(f"ERROR: icon not found at {ICO_PATH}", file=sys.stderr)
             print("Run the magick convert command from the README first.", file=sys.stderr)
             return 1
-        register_progid(PROGID, python_exe, script, str(ICO_PATH), EXTENSION, AUMID, "Rehuco File")
-        register_folder_open("Open with Rehuco", str(ICO_PATH), python_exe, script)
-        print(f"Registered .{EXTENSION} → {PROGID} and folder context menu")
+        if not exe_path.exists():
+            print(f"ERROR: launcher not found at {exe_path}", file=sys.stderr)
+            if not args.exe_path:
+                print("Run: uv pip install --python .venv/Scripts/python.exe -e .", file=sys.stderr)
+            return 1
+        register_progid(PROGID, str(exe_path), str(ICO_PATH), EXTENSION, AUMID, "Rehuco File")
+        register_folder_open("Open with Rehuco", str(ICO_PATH), str(exe_path))
+        print(f"Registered .{EXTENSION} -> {PROGID} and folder context menu")
+        print(f"Launcher: {exe_path}")
         return 0
 
     if args.unregister:
@@ -155,4 +170,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())

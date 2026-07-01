@@ -2,3 +2,8 @@
 logo.svg
 rehuco-spike.ico
 *.rehuspike
+*.egg-info/
+windows/
+launcher/build/
+launcher/launcher.rc
+rehuco-launcher.exe

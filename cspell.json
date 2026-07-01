@@ -60,6 +60,15 @@
     "ProgID",
     "SHCNE",
     "SHCNF",
-    "winreg"
+    "winreg",
+    "magick",
+    "uv",
+    "venv",
+    "dir",
+    "gitignored",
+    "Py",
+    "Rehuco",
+    "rcedit",
+    "distlib"
   ]
 }
