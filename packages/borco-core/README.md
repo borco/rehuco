@@ -6,6 +6,8 @@
 
 *Generic, reusable Python classes with no GUI dependencies.*
 
+[View on PyPI](https://pypi.org/project/borco-core/) · [View on GitHub](https://github.com/borco/rehuco)
+
 ## Status
 
 **Pre-alpha.** This package is **not rehuco-specific** — it is a home for generic, reusable code. It currently

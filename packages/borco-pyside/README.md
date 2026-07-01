@@ -6,6 +6,8 @@
 
 *Generic, reusable PySide6/Qt classes and utilities.*
 
+[View on PyPI](https://pypi.org/project/borco-pyside/) · [View on GitHub](https://github.com/borco/rehuco)
+
 ## Status
 
 **Pre-alpha.** This package is **not rehuco-specific** — it is a home for generic, reusable Qt code. It currently
