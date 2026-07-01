@@ -14,9 +14,10 @@ Consolidated list of requirements established across discussion, checked against
 - Seamless node handoff during active playback (§9.6).
 - Web UI usable from an iPad as a thin client served by a node — a household always-on box at home, or the laptop's node while away (§11.5).
 - The Qt app connects to any node on the LAN and always operates as a node client, even on the same machine; editing a node's `.rehuco` browses that node's files (§5.1).
-- Self-mapping of shared storage across nodes via fingerprint files, including detection of double-primary misconfiguration (§9.9, §9.10).
-- Node benchmarking/grading to drive task-dispatch decisions quantitatively (§9.11).
-- Self-determined fastest/safest move/rename, with checksum-gated cross-filesystem moves (§9.12).
+- Tolerating offline mounts without blocking — a node keeps serving when a mounted source box (e.g. the TS-230) is powered off (§9.9).
+- Self-mapping of shared storage across nodes via fingerprint files, including detection of double-primary misconfiguration (§9.10, §9.11).
+- Node benchmarking/grading to drive task-dispatch decisions quantitatively (§9.12).
+- Self-determined fastest/safest move/rename, with checksum-gated cross-filesystem moves (§9.13).
 - Extensible resource types via plugins, with tutorial, reference-images, and Daz3D as the initial set (§13).
 - Scheduled archival of a borrowed resource's video files on return (fully or selectively, keeping chosen files), preserving metadata/images/extras and tagged as archived (§11.3).
 - Durable, configurable local retention of offline-media and remote-node metadata for offline browsing and rebuild survival (§9.8).

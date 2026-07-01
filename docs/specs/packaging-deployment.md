@@ -14,7 +14,7 @@ The one real constraint workspaces impose: all members resolve against **one dep
 
 The packaging boundary mirrors the architecture's node/agent split (§5.1):
 
-```
+```txt
 rehuco/                   # monorepo root
   pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
   uv.lock                 # single lockfile
@@ -35,33 +35,23 @@ The **virtual workspace root** (no `[project]` table, only `[tool.uv.workspace]`
 
 - Each member has its own `pyproject.toml` (name, version, build backend) and **publishes to PyPI independently** — `uv build --package rehuco-core && uv publish`. The monorepo structure is invisible to PyPI; it just sees a normal wheel.
 - The node and agent are installable as tools: **`uv tool install rehuco-node`** (ideal — headless service, console entry point) and **`uv tool install rehuco-agent`** (works for the GUI; native installers / file-association registration are a later polish for wider distribution (§16.8), not needed for the author's own machines).
-- **Three packages, not one-package-with-extras.** Extras were considered (`rehuco[node]` / `rehuco[app]`) but rejected for the key reason below: extras are *additive and cannot subtract a base dependency*, so any GUI dependency reachable from the base would still be pulled by `rehuco[node]` — fatal on the TS-230. Separate packages make "the node has no GUI dependencies" **structural rather than carefully-maintained**, and let each package carry its own `requires-python` floor.
+- **Three packages, not one-package-with-extras.** Extras were considered (`rehuco[node]` / `rehuco[app]`) but rejected: extras are *additive and cannot subtract a base dependency*, so any GUI dependency reachable from the base would still be pulled by `rehuco[node]` — adding unwanted GUI overhead to a headless service. Separate packages make "the node has no GUI dependencies" **structural rather than carefully-maintained**, and let each package carry its own `requires-python` floor.
 
-## §16.4 The TS-230 / old-glibc constraint: deploy artifacts, don't sync the workspace
+## §16.4 The TS-230 as NAS: SMB mount, not a node host
 
-The QNAP TS-230 (glibc 2.23) cannot host the agent's PySide6 stack (no compatible wheels). The workspace's single shared `.venv` means `uv sync` at the root tries to install **everything**, including PySide6 — so the workspace itself must never be synced on the TS-230. The resolution rests on a clean separation:
+The QNAP TS-230 is used as a **NAS**, not as a compute host. It serves its storage over the existing Samba (SMB) share. `rehuco-node` runs on capable hardware (Mac mini, always-on Linux box) and accesses TS-230 content via that SMB mount — treating it as a local path. No node needs to run on the TS-230 itself, and the glibc constraint (§16.5) plays no role in deployment.
 
-- **The monorepo workspace is the *development* environment; it is not what gets deployed.** Development happens in the full workspace on capable machines (where PySide6 installs fine).
-- **Deployment installs individual published packages.** The TS-230 runs `uv tool install rehuco-node` (or installs the built `rehuco-node` wheel into a plain venv) — which pulls `rehuco-node` + `rehuco-core` + server deps and **never references the agent package at all**, because `rehuco-node` doesn't depend on it. The agent isn't "excluded"; it's simply not in the node's dependency tree. The QNAP never sees the workspace.
-- **Platform markers on the agent's GUI dependencies** keep even a full workspace lock resolvable in the presence of a platform that can't host them, and prevent accidental installation where they can't go:
-  ```toml
-  # rehuco-agent/pyproject.toml
-  dependencies = [
-    "rehuco-core",
-    "PySide6; platform_machine != '<ts230-arch>'",   # marker false on the QNAP
-    # …other Qt deps similarly gated
-  ]
-  ```
-  (Exact marker keys on whatever uniquely identifies the TS-230 — `platform_machine` for its CPU arch, or `python_version` if it's pinned to an old interpreter.)
+This is already an option the architecture anticipated (§9.3): the box owning the disks doesn't need to run its own node if another always-on machine covers the serving role via a mount. Choosing it as the default simplifies deployment significantly. Because the always-on node keeps running while the TS-230 may be powered off for long stretches, the node must tolerate the mount being offline without blocking — see §9.9.
 
-- **`rehuco-node` carries its own lower `requires-python`** so it can target the TS-230's older Python independently of the agent's newer floor — something a single-package-with-extras layout could not do (the workspace resolves to the *intersection* of all members' `requires-python`, so the agent's needs would otherwise constrain the node).
+**Atomic-save invariant over SMB (§4.9):** an SMB `rename` is a server-side operation — the server executes it locally; no data crosses the network. The temp file must be written into the same directory as the target so that source and destination are on the same server-side filesystem. With that constraint, the write-temp-then-rename pattern is correct and cheap over SMB.
 
-## §16.5 TS-230 as a deployment-target canary (continuous compatibility check)
+**The monorepo workspace remains the development environment only** — it is never synced to a remote host. Deployment installs individual published packages: `uv tool install rehuco-node` on any capable box, `uv tool install rehuco-agent` on GUI machines.
 
-Verifying the node runs on glibc 2.23 is testing the **artifact**, not the workspace:
+## §16.5 TS-230 glibc canary — historical findings
 
-- **Dev/iteration and the main test suite** run on capable machines: `uv run --package rehuco-node pytest`.
-- **A separate, early, recurring step builds `rehuco-node` and installs + smoke-tests it on the actual TS-230** (or a glibc-2.23 container that mimics it), exactly as it will really be installed. This is the dependency canary flagged as a risk in §17.2: if any node dependency (FastAPI, uvicorn, zeroconf, cryptography, pydantic-core, …) lacks a glibc-2.23-compatible wheel, this surfaces it — and it's a *node*-dependency problem to solve (e.g. an older pydantic), entirely independent of the agent's PySide6, which never enters the node's picture. Running this continuously keeps the QNAP-compatibility promise verified rather than discovered late.
+Since the node does not run on the TS-230 (§16.4), the glibc canary is **not an active requirement**. The findings below are kept as a reference in case direct QNAP deployment is ever reconsidered.
+
+The initial canary confirmed that all planned node dependencies install and import successfully on glibc 2.23 / aarch64 — so the QNAP-as-node option remains technically viable. The automated CI canary (§16.5.2) has been **suspended** as it guards a deployment model that is no longer in use.
 
 > [!NOTE]
 > **rehuco-node dependencies**

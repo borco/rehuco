@@ -24,7 +24,7 @@ These are settled; listed so nothing is forgotten at `uv init`:
 - **Name: `rehuco`** (decided). It propagates into package names (`rehuco-core`, `rehuco-node`, `rehuco-agent`), PyPI namespace, import paths, file extensions (`.rehu`/`.rehuco`/`.rehudb`/`.rehusw`), config dirs, and the swarm-ID scheme — which is exactly why it's chosen before init.
 - **Reserve PyPI names** via throwaway `0.0.0` stub repos (the same move used for `pyside6-scintilla`/`-lexilla`): claim `rehuco`, `rehuco-core`, `rehuco-node`, `rehuco-agent` before anyone squats them.
 - **Root `pyproject.toml` is a *virtual* workspace** — no `[project]` table, only `[tool.uv.workspace]` (§16.2). Decided.
-- **`rehuco-node` gets a low `requires-python` floor** matching the TS-230's Python, set at creation so the workspace intersection (§16.4) never locks the node out of the QNAP. Confirm against what the QNAP actually runs.
+- **`rehuco-node` `requires-python` floor** — set at creation; no constraint from the TS-230 since the node runs on capable hardware (§16.4).
 - **Fresh git history** — start clean, old repos kept read-only as archive (§16.6). Decided.
 
 ## Methodology: agile cadence, tracer-bullet spines
@@ -63,7 +63,7 @@ In this plan, **A0/B0/C0 are tracer bullets** (kept spines). The items flagged *
 > - **Sync engine** — version vector + activity log, conflict/merge, tombstones (§7).
 > - **Plugin block save invariant** — the live/inert/claim-then-abandon rule (§13.2).
 > - **Registry resolution & serve-after-resync** — preferred-authority/chatter, version-marker comparison (§6.6, §6.11).
-> - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.12).
+> - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.13).
 >
 > Don't micro-manage beyond that — constant hand-switching for ordinary work wastes effort; the point of `opusplan` is to handle the common case so attention goes only to these few exceptions. Feeding the relevant `§` section into context makes even Sonnet reliable on the routine parts and Opus more reliable on the hard ones. (Model names/aliases shift over time and by plan/provider — verify the current `/model` list in Claude Code; the *strategy* is stable regardless of version numbers.)
 
@@ -137,7 +137,7 @@ Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/P
 
 **Exit criteria:** open the web UI on the iPad over the LAN, see your tutorials, watch one, progress is remembered across sessions and devices.
 
-**Rough size:** ~4–6 focused dev-weeks, much of it the web-stack learning curve (new to you) rather than architecture. Do the QNAP/glibc canary (pre-work) before relying on the QNAP as the serving node; until then serve from a capable box (the always-on Linux node or Mac mini).
+**Rough size:** ~4–6 focused dev-weeks, much of it the web-stack learning curve (new to you) rather than architecture. The node runs on a capable box (Mac mini or always-on Linux node); the TS-230 is accessed via its existing SMB share (§16.4).
 
 ---
 
@@ -168,7 +168,7 @@ Touches, thinly: §11 (borrow as instance role), §10.2 (instance tracking), §7
 
 Everything that isn't on the personal critical path, per the architecture doc's own scoping:
 
-- **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) — §6, §9.9–9.12. Defer until single-node + borrow is serving you daily; you may want it less than expected.
+- **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) — §6, §9.10–9.13. Defer until single-node + borrow is serving you daily; you may want it less than expected.
 - **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — §15. Explicitly deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap enough to slip into Milestone A if convenient.)
 - **Reference-image richness** (redaction, tag/semantic search, sketch slideshow, drawing critique) — §13.6.
 - **Daz3D, 3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.**
@@ -179,7 +179,7 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 - **Before A1:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
 - **Before A0 commits to the mixed QML/QWidgets UI:** the pyqtads + QML integration *spike* (pre-work) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current versions.
 - **Before A0 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work; also settles Briefcase as the end-user packager.
-- **Before B (serving from QNAP):** the glibc dependency *spike* (pre-work).
+- **Before B (serving NAS content):** no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB (§16.4). The glibc canary findings (§16.5) are kept as a reference if direct QNAP deployment is ever reconsidered.
 - **Before B web work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer "can I build the follow-mode page the way I need?", keep the lesson, discard the toy.
 - **Before C:** nothing new architecturally — it reuses §7's reconcile, scoped to two parties.
 

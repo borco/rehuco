@@ -66,7 +66,7 @@ Each node keeps three files of the same basename, sitting together, with sharply
 
 | File | Holds | Category | Lifecycle |
 | --- | --- | --- | --- |
-| `.rehuco` | Per-machine config: folder roots, mounts, primary/remote ownership flags (§9.10), plugin list (§13), retention opt-ins (§9.8), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
+| `.rehuco` | Per-machine config: folder roots, mounts, primary/remote ownership flags (§9.11), plugin list (§13), retention opt-ins (§9.8), auth-trusted flag | Local, legitimately *different* per box | Authored locally; never propagated |
 | `.rehudb` | The SQLite catalog cache | Derived cache | Rebuildable within the §2 boundary; disposable/regenerable |
 | `.rehusw` | Swarm info: membership, users + salted hashes, access rules | Swarm-identical, *propagated* | **Durable, not disposable** — updated by resync, never regenerated from scratch |
 
@@ -74,7 +74,7 @@ Each node keeps three files of the same basename, sitting together, with sharply
 
 ## §4.9 Write integrity: atomic writes + single-writer-per-managed-file
 
-A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent this — and which applies depends on whether the file is **managed** (a node owns its storage, §9.10) or **unmanaged** (a loose file no node watches — a fresh export being adjusted, a single file received from someone, anything in local-file mode §5.3):
+A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent this — and which applies depends on whether the file is **managed** (a node owns its storage, §9.11) or **unmanaged** (a loose file no node watches — a fresh export being adjusted, a single file received from someone, anything in local-file mode §5.3):
 
 - **Atomic write is universal — every `.rehu` write, by anyone, is temp-then-rename.** Write to a temp file in the same directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`). A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new file — never a torn one. This prevents *torn* files.
 - **Managed files: the owning node is the sole writer.** Any edit to a managed `.rehu` — whether it originates in the agent, in sync reconciliation, or in the node itself — goes *through the owning node*, which serializes all writes to that file. The agent never writes a managed `.rehu` directly; it sends the edit to the node (it is already a node client for swarm operations, §5.1) and the node applies it atomically. This makes racing writers structurally impossible: there is definitionally one writer. (Consequently the §9.5 "agent edits through a mount, then notifies the node to re-read" path is **narrowed/retired for managed files** — the agent asks the node to make the change rather than writing the file the node also writes. The notify-and-rescan path remains only for changes a node wasn't told about, e.g. files dropped in by other means.) This prevents *racing* writers.

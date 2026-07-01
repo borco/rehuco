@@ -6,11 +6,14 @@ members = [
 
 [dependency-groups]
 dev = [
+    "bandit>=1.8",
     "markdown-callouts>=0.4",
     "mkdocs>=1.6",
     "mkdocs-exclude>=1.0",
     "mkdocs-material>=9.5",
+    "pyright>=1.1",
     "pylint>=3.3",
+    "pylint-qt>=0.1",
     "pytest>=8.3",
     "pytest-benchmark>=5.1",
     "pytest-cov>=6.1",
@@ -30,12 +33,23 @@ select = ["E", "F", "I", "UP"]
 
 [tool.pylint.main]
 jobs = 0
+recursive = true
+extension-pkg-allow-list = ["PySide6"]
+load-plugins = ["pylint_qt"]
 
 [tool.pylint.format]
 max-line-length = 120
 
+[tool.pyright]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
 [tool.pylint.messages_control]
 disable = ["fixme"]
+enable = ["useless-suppression"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
@@ -44,6 +58,9 @@ markers = [
     "slow: marks tests that are slow to run",
     "disk: marks tests that perform real disk I/O (no mocks)",
 ]
+
+[tool.coverage.run]
+branch = true
 
 [tool.coverage.html]
 directory = ".htmlcov"

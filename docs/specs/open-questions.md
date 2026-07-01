@@ -10,7 +10,7 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Scanning strategy** — incremental, version-aware reconciliation is now the normal mode; full rescan demoted to recovery (§4.7).
 - **Node identity scheme** — replaced the pairing-secret design with Syncthing-style cert-hash device IDs (§6.4), where identity *is* the key and the introducer model (§6.5) matches the existing hub-and-spoke choice.
 - **App/filesystem coupling** — resolved by making the Qt app always a node client (§5.1), removing the local-vs-remote dual code path.
-- **Cross-node storage topology** — was reactive per-resource UUID matching only; now also proactive via fingerprint self-mapping (§9.9), which additionally guards the single-primary rule (§9.10).
+- **Cross-node storage topology** — was reactive per-resource UUID matching only; now also proactive via fingerprint self-mapping (§9.10), which additionally guards the single-primary rule (§9.11).
 - **Deletion / tombstone propagation** — resolved (§7): deletion is an ordinary logged action whose tombstone is its position in the version vector, so offline nodes apply it on reconnect and rescans don't resurrect. Delete-vs-concurrent-edit surfaces in the verdict queue (§10.5) rather than silently applying. Borrow-vs-delete/archive has an explicit resolution (§11.6).
 - **Clock skew / ordering** — resolved (§7): ordering is by per-node-counter version vector, clock-independent; wall-clock timestamps are no longer load-bearing. History is a separate, prunable activity log.
 - **Per-user authentication** — resolved (§6.8): salted Argon2id hashes propagated to every node (since any node can serve a login), passwords never stored/transmitted; thin tablet logs in via session against its serving node.
