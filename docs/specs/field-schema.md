@@ -28,7 +28,7 @@ tc4 actually stored.
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
 (§4.1, §13) and says **where the field lives on disk**: `common` at the top level, everything
 else under the type's plugin block (§17.2.1). The boundary can be refined post-v1 since the
-generic editor (§13.1b) does not depend on it.
+generic editor (§13.3) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
 | --- | --- | --- | --- | --- | --- | --- |
