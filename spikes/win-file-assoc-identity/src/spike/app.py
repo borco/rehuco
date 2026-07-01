@@ -126,7 +126,7 @@ def main() -> int:
     parser.add_argument(
         "--exe-path",
         default="",
-        help="override which exe is registered as the handler (default: the uv entry-point launcher next to python.exe)",
+        help="override which exe is registered as the handler (default: uv entry-point launcher next to python.exe)",
     )
     parser.add_argument("file", nargs="?", default="", help="file path passed by Explorer on double-click")
     args = parser.parse_args()
