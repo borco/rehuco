@@ -10,11 +10,11 @@ rehuco is published as three separate packages on PyPI.
 
 ## Generic libraries (temporarily hosted)
 
-Two generic, reusable libraries under the author's `borco` namespace live in this monorepo for now. They are
-**not rehuco-specific** and are scheduled to move to their own repository once their APIs settle — do not rely on
-their location here. Not yet published to PyPI.
+Two generic, reusable libraries under the author's `borco` namespace are **not rehuco-specific**. They are
+developed in this monorepo for now and will later move to their own repository. If you install them from PyPI,
+that move is handled automatically.
 
-| Package | Description |
-| --- | --- |
-| `borco-core` | Generic reusable classes with no GUI dependency |
-| `borco-pyside` | Generic reusable PySide6/Qt classes (e.g. `ApplicationSingleton`) |
+| Package | Description | PyPI |
+| --- | --- | --- |
+| [borco-core](https://pypi.org/project/borco-core/) | Generic reusable classes with no GUI dependency | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) |
+| [borco-pyside](https://pypi.org/project/borco-pyside/) | Generic reusable PySide6/Qt classes (e.g. `ApplicationSingleton`) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) |
