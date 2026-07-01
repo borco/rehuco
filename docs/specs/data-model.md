@@ -2,7 +2,8 @@
 
 ## §4.1 `.rehu` format
 
-JSON, replacing the YAML `.tc`. The full schema is being designed separately and isn't detailed here, but its scope is settled:
+JSON, replacing the YAML `.tc`. The full schema is being designed separately (§17, the concrete
+v1 field list derived from the `.tc` format) and isn't detailed here, but its scope is settled:
 
 - **Common fields**, available to every resource type regardless of plugin: `title`, `url`, `size` (on disk), `date`, `description` (Markdown, can embed local images).
 - **Plugin-specific fields**, defined per resource type, e.g.:
