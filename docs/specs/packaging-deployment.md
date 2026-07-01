@@ -145,7 +145,27 @@ Concrete consequence for **docking**:
   - **KDDockWidgets is GPL 2.0/3.0** (or paid commercial). Linking it makes the *entire agent* a GPL combined work — cascading into the publish plan (§16.3) and risking entanglement of the reusable libraries. This is a property of the license, not something the binding/packaging can engineer around.
   - **`pyqtads` is permissively licensed (LGPL)** — it can be linked from an app of any license without forcing the app's license — **and ships prebuilt PySide6/PyQt6/PyQt5 bindings on PyPI**, so it drops into the uv workspace as a normal dependency with no build step.
 - The packaging objection to KDDockWidgets (no PyPI wheel; bindings must be built from source via shiboken+CMake+libclang) is one the author *could* solve — the same CI-built-binding work already done for `pyside6-scintilla` (shiboken) and `pyside6-lexilla` (nanobind). So bindings are **not** the blocker. **The license is the blocker**, and it is not solvable by effort.
-- KDDockWidgets is therefore foreclosed for this project. If the QML-in-`pyqtads` approach (QQuickWidget hosted in a widget dock) proves inadequate, the response is to constrain how QML is used (e.g. keep QML surfaces in non-detachable docks, or reduce the QML footprint) — **not** to switch to KDDockWidgets.
+- KDDockWidgets is therefore foreclosed for this project. The QML-in-`pyqtads` approach (QQuickWidget hosted in a widget dock) was **re-verified on current versions** by spike #4 (§16.7.1) and holds; the fallback — constraining how QML is used (non-detachable docks, reduced QML footprint) — is held in reserve, **not** needed, and switching to KDDockWidgets stays foreclosed regardless.
+
+### §16.7.1 QML-in-`pyqtads` regression check (spike #4)
+
+- [ ] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
+
+Spike #4 re-verified the QML-in-`pyqtads` approach on **PySide6 6.11.1 + pyside6-qtads 5.0.0** (a
+major bump from `resource-hub`'s 4.5.0.4). All three parts A0 depends on hold:
+
+- **Detach/re-dock** — a `QQuickWidget` dock detaches to a floating window and re-docks with no
+  rendering glitches; the injected context object stays live across the cycle (both Python→QML
+  property reads and QML→Python slot calls keep working before, during, and after the undock).
+- **Coexistence** — a QML dock and QWidget docks share one `CDockManager` layout.
+- **Layout save/restore** — `saveState()`/`restoreState()` round-trips the layout blob.
+
+**One caveat A0 must carry:** the layout blob does **not** restore a *closed* dock's size — QtAds
+reopens it at a minimal size. A0's dock manager must stash the containing splitter's sizes on
+`closeRequested` (`CDockManager.splitterSizes(area)`, keyed by dock object name) and re-apply them
+via `setSplitterSizes(area, sizes)` on `viewToggled(True)`. The three-line wiring snippet and this
+workaround live in `spikes/pyqtads-qml/` as a working reference until A0 consumes them (then the
+spike is deleted and this issue closed).
 
 ## §16.8 Desktop distribution, file association, and app identity
 
