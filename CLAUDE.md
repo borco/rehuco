@@ -31,11 +31,18 @@ consistent as new ones are added:
 
 - `spike` — throwaway exploration answering one sharp technical question (keep the lesson,
   delete the code; see *Development methodology* below).
+- `pending-cleanup` — the work is done, but the issue stays open to track a gated teardown
+  step (e.g. deleting retained spike code once a later milestone consumes its lesson). The
+  milestone says *when* it resolves; this label says *why* it's still open despite being done.
+  Not `deferred` (which is for work not started).
 
 ### Milestones
 
 - `Pre-work` — monorepo setup, integration spikes, and de-risking done before/around the
   first tracer-bullet slice.
+- `A0` — the A0 tracer-bullet slice (`implementation-plan.md`): double-click a `.rehu` →
+  single-instance agent → read → render → edit → atomic-save. GH milestone names track the
+  doc's per-slice labels (A0, A1, …), so keep the two in step as slices are added.
 
 ## Monorepo layout
 
