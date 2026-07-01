@@ -74,6 +74,12 @@ Sphinx-style on all functions, including private ones.
 One-line summary + `:param:` / `:returns:` / `:raises:` as needed.
 No multi-paragraph docstrings or multi-line comment blocks for routine code.
 
+- **Closing `"""` placement** — on its own line for a multi-line docstring; on the same
+  line as the text for a single-line docstring.
+- **Constructor args live in the class docstring**, not in `__init__`. Put the `:param:`
+  entries on the class so IDE hover over the class name shows them; `__init__` gets no
+  docstring of its own.
+
 ### Comments
 
 Only when the *why* is non-obvious: hidden constraint, subtle invariant, bug workaround,
@@ -82,6 +88,22 @@ surprising behavior. No narration of what the code does.
 ### Line length
 
 120 characters (ruff enforced).
+
+### Tests
+
+End each test's docstring with a **Test steps:** bullet list spelling out the steps and
+checks the test performs, so its intent is readable without tracing the code:
+
+```python
+"""One-line summary of what is verified.
+
+**Test steps:**
+
+* launch a primary app instance
+* launch a second instance with mocked argv
+* verify the primary receives the second instance's arguments
+"""
+```
 
 ## Markdown conventions
 
@@ -109,7 +131,9 @@ tables exempt). Beyond that:
 | --- | --- |
 | `uv` | workspace + package manager |
 | `ruff` | formatter + linter (replaces black, isort, flake8, pyupgrade) |
+| `pyright` | type checker (standard mode; matches Pylance in VS Code — preferred over mypy for PySide6 + Python 3.14) |
 | `pylint` | static analysis |
+| `bandit` | security scanning |
 | `pytest` | test runner |
 | `pytest-mock` | mocking |
 | `pytest-qt` | Qt widget / event-loop testing |
@@ -119,18 +143,21 @@ tables exempt). Beyond that:
 | `pytest-explicit` | explicit test markers |
 | `mkdocs` | documentation site |
 
-VSCode workspace is configured to use ruff for formatting and linting. pylint and black are
-disabled in favour of ruff.
+VSCode workspace is configured to use ruff for formatting and linting. pylint, mypy, and black are
+disabled in favour of ruff / pyright.
 
 ## Makefile targets
 
 | Target | Action |
 | --- | --- |
 | `make sync` | install all workspace packages in dev mode |
-| `make test` | run pytest |
+| `make tests` | run pytest |
+| `make cov` | run pytest with branch coverage report |
 | `make format` | run ruff format + ruff check --fix |
+| `make bandit` | run bandit security scanner |
+| `make pyright` | run pyright type checker (standard mode) |
 | `make pylint` | run pylint |
-| `make qa` | format + test + pylint |
+| `make qa` | format + cov + bandit + pyright + pylint |
 | `make docs-serve` | serve mkdocs locally |
 
 ## Model strategy

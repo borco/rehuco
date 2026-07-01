@@ -1,4 +1,4 @@
-.PHONY: sync tests format pylint qa docs-serve publish setup-git
+.PHONY: sync tests cov format bandit pyright pylint qa docs-serve publish setup-git
 
 setup-git:
 	git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
@@ -11,14 +11,23 @@ sync:
 tests:
 	uv run pytest
 
+cov:
+	uv run pytest --cov=rehuco_agent --cov=rehuco_core --cov=rehuco_node --cov-report=term-missing
+
 format:
 	uv run ruff format .
 	uv run ruff check --fix .
 
+bandit:
+	uv run bandit -c pyproject.toml -r packages/ apps/
+
+pyright:
+	uv run pyright packages/ apps/
+
 pylint:
 	uv run pylint packages/ apps/
 
-qa: format tests pylint
+qa: format cov bandit pyright pylint
 
 docs-serve:
 	uv run mkdocs serve
