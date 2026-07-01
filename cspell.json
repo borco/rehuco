@@ -51,6 +51,15 @@
     "pyupgrade",
     "shiboken",
     "uvicorn",
-    "zeroconf"
+    "zeroconf",
+    "ASSOCCHANGED",
+    "aumid",
+    "AUMID",
+    "IDLIST",
+    "progid",
+    "ProgID",
+    "SHCNE",
+    "SHCNF",
+    "winreg"
   ]
 }

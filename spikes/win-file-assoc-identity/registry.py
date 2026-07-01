@@ -1,0 +1,150 @@
+"""Windows registry helpers for HKCU ProgID and file-extension association.
+
+All operations target ``HKEY_CURRENT_USER`` only — no elevation required.
+"""
+
+import ctypes
+import logging
+import winreg
+from typing import Final
+
+LOG: Final = logging.getLogger(__name__)
+
+# SHChangeNotify constants so Explorer picks up association changes without logoff.
+__SHCNE_ASSOCCHANGED: Final = 0x08000000
+__SHCNF_IDLIST: Final = 0x0000
+
+__FOLDER_VERB: Final = "rehuco"
+
+
+def register_progid(
+    progid: str,
+    python_exe: str,
+    script: str,
+    ico_path: str,
+    extension: str,
+    aumid: str,
+    friendly_type_name: str,
+) -> None:
+    """Write a HKCU ProgID and default file-type association.
+
+    Registers ``HKCU\\Software\\Classes\\<progid>`` (with a friendly type name as the
+    default value, DefaultIcon, shell\\open\\command, and Application\\AppUserModelId),
+    then binds ``HKCU\\Software\\Classes\\.<extension>`` to that ProgID so Explorer uses
+    it as the default double-click handler when no UserChoice exists for the extension.
+
+    Does **not** touch ``FileExts\\.<extension>\\UserChoice`` — that key is protected by a
+    hash Explorer computes itself and cannot be set reliably by third-party code. Registering
+    the plain ``.ext`` default-value ProgID is the correct, unprivileged approach and works
+    precisely because no UserChoice exists yet for a fresh extension like ``.rehuspike``.
+
+    :param progid: ProgID string, e.g. ``"Rehuco.SpikeFile"``.
+    :param python_exe: absolute path to the Python interpreter to invoke.
+    :param script: absolute path to ``main.py`` of this spike.
+    :param ico_path: absolute path to the ``.ico`` file for ``DefaultIcon``.
+    :param extension: file extension without the leading dot, e.g. ``"rehuspike"``.
+    :param aumid: Application User Model ID string, matching what the process calls
+        ``SetCurrentProcessExplicitAppUserModelID`` with at startup.
+    :param friendly_type_name: human-readable type name shown in Explorer's Type column,
+        e.g. ``"Rehuco File"``.
+    """
+    command = f'"{python_exe}" "{script}" "%1"'
+
+    __set_value(rf"Software\Classes\{progid}", "", friendly_type_name)
+    __set_value(rf"Software\Classes\{progid}\DefaultIcon", "", f"{ico_path},0")
+    __set_value(rf"Software\Classes\{progid}\shell\open\command", "", command)
+    # Empirical open question: does Windows consult this key for pinned/jump-list shortcuts
+    # before the process self-declares the AUMID?  Written here so the manual walkthrough
+    # can settle it — not asserted as definite behavior.
+    __set_value(rf"Software\Classes\{progid}\Application", "AppUserModelId", aumid)
+    __set_value(rf"Software\Classes\.{extension}", "", progid)
+
+    __notify_shell()
+    LOG.info("registered ProgID %r for .%s", progid, extension)
+
+
+def unregister_progid(progid: str, extension: str) -> None:
+    """Remove the HKCU ProgID and, if still pointing at it, the extension binding.
+
+    :param progid: ProgID string that was registered.
+    :param extension: file extension without the leading dot.
+    """
+    __delete_key_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{progid}")
+
+    # Only remove the extension key if it still points at our ProgID.
+    ext_key = rf"Software\Classes\.{extension}"
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, ext_key) as k:
+            value, _ = winreg.QueryValueEx(k, "")
+            if value == progid:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, ext_key)
+                LOG.info("removed extension binding for .%s", extension)
+    except OSError:
+        pass  # already gone or never existed
+
+    __notify_shell()
+    LOG.info("unregistered ProgID %r", progid)
+
+
+def register_folder_open(label: str, ico_path: str, python_exe: str, script: str) -> None:
+    """Write a right-click context menu entry on folders.
+
+    Registers ``HKCU\\Software\\Classes\\Directory\\shell\\rehuco`` so right-clicking any
+    folder in Explorer shows a labelled menu item that invokes the script with
+    ``<folder_path>\\info.rehu`` as the argument.
+
+    :param label: text shown in the context menu, e.g. ``"Open with Rehuco"``.
+    :param ico_path: absolute path to the ``.ico`` file for the menu item icon.
+    :param python_exe: absolute path to the Python interpreter to invoke.
+    :param script: absolute path to ``main.py`` of this spike.
+    """
+    command = f'"{python_exe}" "{script}" "%1\\info.rehu"'
+    __set_value(rf"Software\Classes\Directory\shell\{__FOLDER_VERB}", "", label)
+    __set_value(rf"Software\Classes\Directory\shell\{__FOLDER_VERB}", "Icon", ico_path)
+    __set_value(rf"Software\Classes\Directory\shell\{__FOLDER_VERB}\command", "", command)
+    __notify_shell()
+    LOG.info("registered folder context menu %r", label)
+
+
+def unregister_folder_open() -> None:
+    """Remove the folder right-click context menu entry."""
+    __delete_key_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\Directory\shell\{__FOLDER_VERB}")
+    __notify_shell()
+    LOG.info("unregistered folder context menu")
+
+
+def __set_value(key_path: str, name: str, value: str) -> None:
+    """Create ``key_path`` under HKCU and write a REG_SZ value.
+
+    :param key_path: registry path relative to ``HKEY_CURRENT_USER``.
+    :param name: value name; empty string writes the default value.
+    :param value: string data to write.
+    """
+    with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path) as k:
+        winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
+        LOG.debug("wrote HKCU\\%s[%r] = %r", key_path, name, value)
+
+
+def __delete_key_tree(root: int, path: str) -> None:
+    """Recursively delete ``path`` and all its sub-keys under ``root``.
+
+    :param root: a ``winreg`` root constant, e.g. ``winreg.HKEY_CURRENT_USER``.
+    :param path: registry path relative to ``root``.
+    """
+    try:
+        with winreg.OpenKey(root, path, access=winreg.KEY_ALL_ACCESS) as k:
+            while True:
+                try:
+                    child = winreg.EnumKey(k, 0)
+                    __delete_key_tree(root, rf"{path}\{child}")
+                except OSError:
+                    break
+            winreg.DeleteKey(root, path)
+            LOG.debug("deleted HKCU\\%s", path)
+    except OSError:
+        pass  # already gone
+
+
+def __notify_shell() -> None:
+    """Tell Explorer that file-type associations changed, so it refreshes without a logoff."""
+    ctypes.windll.shell32.SHChangeNotify(__SHCNE_ASSOCCHANGED, __SHCNF_IDLIST, None, None)
