@@ -12,7 +12,7 @@ The one real constraint workspaces impose: all members resolve against **one dep
 
 ## §16.2 Three packages, mapping onto the node/agent/shared-library split
 
-- [ ] [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
+- [x] [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
 
 The packaging boundary mirrors the architecture's node/agent split (§5.1):
 
