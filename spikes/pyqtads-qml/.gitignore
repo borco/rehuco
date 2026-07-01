@@ -1,0 +1,3 @@
+# throwaway venv + runtime artifacts for this spike
+.venv/
+layout_state.bin
