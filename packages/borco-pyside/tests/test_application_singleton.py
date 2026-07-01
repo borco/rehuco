@@ -10,11 +10,11 @@ from collections.abc import Callable
 from typing import Final
 
 import pytest
+from borco_pyside.core import ApplicationSingleton
 from PySide6.QtCore import QCoreApplication, QDeadlineTimer
 from PySide6.QtNetwork import QAbstractSocket, QLocalSocket
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.core import ApplicationSingleton
 
 Factory = Callable[..., ApplicationSingleton]
 
@@ -27,7 +27,7 @@ def unique_app_id() -> str:
 
     :returns: a per-test unique application identifier.
     """
-    return f"rehuco-agent-test-{uuid.uuid4().hex[:8]}"
+    return f"borco-pyside-test-{uuid.uuid4().hex[:8]}"
 
 
 def frame(payload: object) -> bytes:
@@ -213,7 +213,7 @@ def test_malformed_message_is_ignored(qtbot: QtBot, make_singleton: Factory, cap
     body = b"{not valid json"
     payload = struct.pack(LENGTH_PREFIX, len(body)) + body
 
-    with caplog.at_level(logging.WARNING, logger="rehuco_agent.core.application_singleton"):
+    with caplog.at_level(logging.WARNING, logger="borco_pyside.core.application_singleton"):
         with qtbot.assertNotEmitted(primary.other_instance_run, wait=200):
             socket = connect_raw(primary.server_name)
             socket.write(payload)
@@ -235,7 +235,7 @@ def test_non_list_message_is_ignored(qtbot: QtBot, make_singleton: Factory, capl
     primary = make_singleton()
     assert primary.setup(unique_app_id()) is True
 
-    with caplog.at_level(logging.WARNING, logger="rehuco_agent.core.application_singleton"):
+    with caplog.at_level(logging.WARNING, logger="borco_pyside.core.application_singleton"):
         with qtbot.assertNotEmitted(primary.other_instance_run, wait=200):
             socket = connect_raw(primary.server_name)
             socket.write(frame({"not": "a list"}))
@@ -267,7 +267,7 @@ def test_rebind_degrades_when_new_and_old_names_both_fail(mocker: MockerFixture,
 
     # patch QLocalServer so listen() fails for all subsequent calls;
     # __listen() still runs its shutdown() first, which clears server_name
-    mock_cls = mocker.patch("rehuco_agent.core.application_singleton.QLocalServer")
+    mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
     instance = mock_cls.return_value
     instance.listen.return_value = False
     instance.isListening.return_value = False
@@ -356,7 +356,7 @@ def test_listen_failure_runs_degraded(mocker: MockerFixture, make_singleton: Fac
     """
     singleton = make_singleton()
     mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
-    mock_cls = mocker.patch("rehuco_agent.core.application_singleton.QLocalServer")
+    mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
     instance = mock_cls.return_value
     instance.listen.return_value = False
     instance.isListening.return_value = False
@@ -376,7 +376,7 @@ def test_listen_failure_raises_in_strict_mode(mocker: MockerFixture, make_single
     """
     singleton = make_singleton(strict=True)
     mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
-    mock_cls = mocker.patch("rehuco_agent.core.application_singleton.QLocalServer")
+    mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
     instance = mock_cls.return_value
     instance.listen.return_value = False
     instance.isListening.return_value = False
@@ -398,7 +398,7 @@ def test_stale_socket_is_removed_and_listen_is_retried(mocker: MockerFixture, ma
     """
     singleton = make_singleton()
     mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
-    mock_cls = mocker.patch("rehuco_agent.core.application_singleton.QLocalServer")
+    mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
     instance = mock_cls.return_value
     instance.listen.side_effect = [False, True]
     instance.serverError.return_value = QAbstractSocket.SocketError.AddressInUseError
@@ -422,7 +422,7 @@ def test_forwarding_waits_for_disconnect_when_socket_lingers(mocker: MockerFixtu
     mock_socket = mocker.MagicMock()
     mock_socket.waitForConnected.return_value = True
     mock_socket.bytesToWrite.return_value = 0  # flush loop exits immediately
-    mocker.patch("rehuco_agent.core.application_singleton.QLocalSocket", return_value=mock_socket)
+    mocker.patch("borco_pyside.core.application_singleton.QLocalSocket", return_value=mock_socket)
 
     singleton = make_singleton()
     assert singleton.setup("any-id") is False  # primary "exists"

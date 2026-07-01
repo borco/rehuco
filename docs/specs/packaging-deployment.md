@@ -12,6 +12,8 @@ The one real constraint workspaces impose: all members resolve against **one dep
 
 ## §16.2 Three packages, mapping onto the node/agent/shared-library split
 
+- [ ] [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
+
 The packaging boundary mirrors the architecture's node/agent split (§5.1):
 
 ```txt
@@ -21,7 +23,8 @@ rehuco/                   # monorepo root
   .venv/                  # the one shared environment (development only)
   packages/
     rehuco-core/          # shared library: field toolkit, .rehu model, plugin base — PUBLISHABLE
-    pyside_ibo/           # generic PySide widgets/utilities — PUBLISHABLE
+    borco-core/           # generic, non-rehuco utilities (no GUI dep) — temporary guest, moving out
+    borco-pyside/         # generic, non-rehuco PySide widgets/utilities — temporary guest, moving out
     pyside6-scintilla/    # PUBLISHABLE
     pyside6-lexilla/      # PUBLISHABLE
   apps/
@@ -30,6 +33,8 @@ rehuco/                   # monorepo root
 ```
 
 The **virtual workspace root** (no `[project]` table, only `[tool.uv.workspace]`) is a pure organizational container — it can't itself be published and holds no app code, keeping the root clean. Shared libraries are publishable leaf packages (they depend only on PyPI packages, never on the apps, so they carry no workspace-internal dependencies that would block publishing).
+
+The `borco-*` packages (`borco-core`, `borco-pyside`) are **generic, non-rehuco** utilities under the author's own `borco` namespace — a home for reusable code with no rehuco coupling. They are **temporary guests** in this monorepo, hosted here only while their APIs settle, and are **scheduled to move to their own repository** (or a separate generic monorepo) later; nothing rehuco should assume they stay here. `borco-core` is GUI-free; `borco-pyside` carries the Qt-dependent pieces and depends on `borco-core`. Together they are the successor of the earlier planned generic PySide package and of the old standalone PySide utility library. The first piece to land is `borco_pyside.core.ApplicationSingleton` — the single-instance guard consumed by `rehuco-agent` (§16.2 tree).
 
 ## §16.3 PyPI publishing and `uv tool install`
 
@@ -128,7 +133,7 @@ smoke-imports each one. A missing `manylinux2014_aarch64` wheel or a glibc-versi
 
 ## §16.6 Migrating existing repos
 
-**Decided: start the monorepo fresh.** Per-repo git history of the old apps isn't valued enough to preserve (the author is comfortable starting clean — "what's another repo"). The old repos (`resource-hub`, `tutcatalog5`, `tutcatalog4`, `pyside_ibo` as a standalone) are kept read-only as an archive/reference, not grafted in. This avoids the `git subtree`/`git-filter-repo` fiddliness entirely. (`pyside_ibo` moves from submodule to a first-class workspace member, §16.2.)
+**Decided: start the monorepo fresh.** Per-repo git history of the old apps isn't valued enough to preserve (the author is comfortable starting clean — "what's another repo"). The old rehuco-predecessor repos (`resource-hub`, `tutcatalog5`, `tutcatalog4`) are not grafted in. This avoids the `git subtree`/`git-filter-repo` fiddliness entirely. The generic PySide utilities that used to live in a standalone package are likewise reintroduced fresh as the `borco-*` packages (§16.2) rather than grafted in — no old clone or remote needs to survive.
 
 ## §16.7 Dependency licensing policy
 
