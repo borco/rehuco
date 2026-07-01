@@ -169,4 +169,4 @@ The agent should detect a newer release, flag it, and offer to install. Design p
 - **Applying an update is the hard, OS-specific part**, with real prerequisites: a running application cannot overwrite itself in place, system-level installs need elevation, and signed/notarized artifacts are required or the OS blocks the download. The chosen approach is to **delegate the privileged install to the platform's installer** rather than hand-write a self-replacing updater.
 - For the `uv tool` / pip channel, "update" is simply re-installing the newer package.
 
-Code-signing / notarization is an unpriced prerequisite (§17.2). Auto-update is end-user polish on the same track as §16.8, deferred past the personal critical path (plan: deferred).
+Code-signing / notarization is an unpriced prerequisite (§A01.2). Auto-update is end-user polish on the same track as §16.8, deferred past the personal critical path (plan: deferred).

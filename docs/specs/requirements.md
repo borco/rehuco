@@ -8,7 +8,7 @@ Consolidated list of requirements established across discussion, checked against
 - Per-resource notes, view/watch progress, and bookmarking; ability to delete local viewed files on request.
 - Track *why* something was deleted/skipped (via tags/notes), to avoid re-buying or re-downloading it later.
 - Admin-managed users and access control: full access, per-resource grants, or dynamic tag-based grants — swarm-propagated, enforced server-side at the serving node (§6.8, §6.10).
-- No remote/off-LAN access by design; reach the swarm from outside via a VPN into the home network (§17.2).
+- No remote/off-LAN access by design; reach the swarm from outside via a VPN into the home network (§A01.2).
 - Checkout → offline use → sync-back of notes/progress, including the implicit-checkout case when storage itself becomes unreachable (§12), and the deliberate borrow/library-shelf case (§11). In v1, offline editing covers per-user state only; resource metadata is online-only-editable (§7).
 - Borrows recorded in the user's meta block, supporting multiple simultaneous devices and an explicit return step (§11.4).
 - Seamless node handoff during active playback (§9.6).

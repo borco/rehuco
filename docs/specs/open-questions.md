@@ -1,8 +1,8 @@
-# §17. Explicitly Out of Scope / Not Yet Designed
+# §A01. Explicitly Out of Scope / Not Yet Designed
 
 Flagging gaps so they're a deliberate choice rather than an oversight.
 
-## §17.1 Resolved or scoped since the first consolidation
+## §A01.1 Resolved or scoped since the first consolidation
 
 - **Metadata-conflict during offline editing** — previously an unacknowledged contradiction between §7 ("single writer, no conflict") and §12 ("cache stays editable offline"). Resolved for v1 by making resource metadata online-only-editable (§7); only per-user state is offline-editable. The hard multi-writer-metadata merge is a future hook, not v1 work.
 - **Instance-registry / offline-instance persistence** — the rebuild-from-scratch model was imprecise. Now bounded (§2): retained metadata copies (§9.8) survive rebuild by rescan; transient instances re-register on reconnect; borrows persist via the user meta block (§11.4).
@@ -33,9 +33,9 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Acquisition & migration tooling** — specced (§15): three drag-drop aids (HTML→Markdown, image→screenshot, URL→extract), local-LLM extraction with constrained decoding, `.tc`→`.rehu` migration as format-v0. Deferred until after the tutorial web viewer.
 - **Code organization, packaging & deployment** — resolved (§16): monorepo with uv workspaces (single `.venv` fixes the venv-confusion and makes cross-package refactors atomic); three published packages (`rehuco-core`, `rehuco-node`, `rehuco-agent`) mapping onto the shared-lib/node/agent split; `uv tool install` for node and agent; TS-230 installs the node *artifact* (never the workspace), with platform markers on agent GUI deps and a continuous TS-230 install-canary making the glibc constraint structural rather than careful.
 - **Offline revocation limitation** — acknowledged as a deliberate accepted boundary (§6.11): revocation can't reach an already-held local copy that never reconnects; trusting household members who kept a copy is an explicit non-goal. Revocation does apply on reconnect.
-- **Desktop distribution, file association & app identity** — analyzed (§16.8/§16.9): the agent is dual-channel (`uv tool` for the author's own machines/devs; a native installer for wider reach); file association is OS-specific with macOS as the binding constraint; Windows taskbar identity is an identity-registration matter, not a reason to freeze the app; **Briefcase** is chosen for end-user installers over PyInstaller, with MSIX a possible later upgrade; auto-update checks a public version oracle and delegates installation to the platform installer. All wider-distribution polish, off the personal critical path; the OS mechanics are still to be proven (§17.2).
+- **Desktop distribution, file association & app identity** — analyzed (§16.8/§16.9): the agent is dual-channel (`uv tool` for the author's own machines/devs; a native installer for wider reach); file association is OS-specific with macOS as the binding constraint; Windows taskbar identity is an identity-registration matter, not a reason to freeze the app; **Briefcase** is chosen for end-user installers over PyInstaller, with MSIX a possible later upgrade; auto-update checks a public version oracle and delegates installation to the platform installer. All wider-distribution polish, off the personal critical path; the OS mechanics are still to be proven (§A01.2).
 
-## §17.2 Still open
+## §A01.2 Still open
 
 - **Full `.rehu` schema** — field ownership (common vs. plugin) is settled (§4.1, §13.1); the complete field list/types per plugin is being designed separately. Archival is a tag (§11.3), not a schema state. The schema must now also carry the version vector and activity log (§7) and the user/auth records (§6.8).
 - **Access-rule grammar/schema** — the *model* is settled (§6.10: swarm-propagated, server-enforced, full/per-resource/dynamic-tag grants). What's not yet specified is the concrete representation: how a grant is written, how per-resource and tag-grants combine (additive? can a deny override an allow?), and where exactly it sits in the propagated registry.

@@ -26,7 +26,8 @@ truth for what a section number means and which file it lives in.
 | 14 | Functional Requirements Carried Into the Architecture | [requirements.md](requirements.md) |
 | 15 | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
 | 16 | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
-| 17 | Explicitly Out of Scope / Not Yet Designed | [open-questions.md](open-questions.md) |
+| 17 | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
+| A01 | Explicitly Out of Scope / Not Yet Designed | [open-questions.md](open-questions.md) |
 
 The milestone breakdown and build sequencing live separately in
 [implementation-plan.md](implementation-plan.md).
@@ -39,7 +40,8 @@ The milestone breakdown and build sequencing live separately in
   §7 sync.
 - **Storage and identity:** §9 mounts → §10 instances/dedup → §11–§12 borrowing/offline.
 - **Extensibility and delivery:** §13 plugins → §14 requirements → §15 tooling →
-  §16 packaging → §17 open questions.
+  §16 packaging → §17 field schema.
+- **Appendix:** §A01 open questions / out of scope — the always-last catch-all.
 
 ## Section-numbering convention
 
@@ -54,3 +56,9 @@ The milestone breakdown and build sequencing live separately in
   they are allowed to change, and references move with them.
 - **Don't reuse a retired number** for something unrelated — that reintroduces the very
   ambiguity the global scheme exists to prevent.
+- **Appendices are numbered `§A01`, `§A02`, … (`A` for appendix).** They hold open-ended,
+  always-last material — the "out of scope / not yet designed" catch-all being `§A01` — that
+  should never carry an ordinal, because newly designed sections keep getting appended and
+  must sort *before* it. New numbered sections take the next free `§N`; appendices always
+  follow them regardless of how high `N` climbs. Appendix subsections are `§A01.1`, `§A01.2`, …
+  and are referenced like any other (`§A01.2`).
