@@ -1,0 +1,7 @@
+.venv/
+logo.svg
+rehuco-spike.icns
+*.rehuspike
+*.egg-info/
+build/
+logs/
