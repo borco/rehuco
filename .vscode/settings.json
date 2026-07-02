@@ -26,4 +26,5 @@
     ],
     "better-todo-tree.filtering.ignoreGitSubmodules": true,
     "claudeCode.respectGitIgnore": false,
+    "cmake.ignoreCMakeListsMissing": true,
 }

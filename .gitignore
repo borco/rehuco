@@ -5,6 +5,9 @@
 *_rc.py
 *_ui.py
 
+# generated icons (make icons; regenerated from the .svg master)
+*.ico
+
 # Python
 __pycache__/
 *.py[cod]
@@ -14,6 +17,7 @@ __pycache__/
 *.egg
 *.egg-info/
 .dist/
+/.build/
 build/
 wheels/
 sdist/
