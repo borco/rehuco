@@ -1,14 +1,23 @@
-"""Repository-wide pytest configuration: platform-conditional test skipping.
+"""Repository-wide pytest configuration: headless Qt platform + platform-conditional test skipping.
 
 CI runs each platform's test set on that platform's runner before building the matching
 Briefcase package (§16.8), so a marker/platform mismatch here means "not applicable on this
 runner," not a failure.
 """
 
+import os
 import sys
 from typing import Final
 
 import pytest
+
+# Qt tests must run headless. Without an active window server -- CI runners, or macOS over SSH --
+# the cocoa/xcb platform plugin drives a real native event loop and segfaults during
+# QLocalServer/QLocalSocket teardown across tests. The offscreen plugin avoids it. setdefault so a
+# developer can still override (QT_QPA_PLATFORM=cocoa) to watch windows during local GUI debugging.
+# None of the imports above pull in Qt, and pytest-qt builds the QApplication only later (during a
+# test), so setting this here -- before any test module runs -- is early enough.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 PLATFORM_MARKERS: Final = {
     "windows": "win32",
