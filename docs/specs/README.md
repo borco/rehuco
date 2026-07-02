@@ -29,6 +29,7 @@ truth for what a section number means and which file it lives in.
 | 17 | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
 | A01 | Explicitly Out of Scope / Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
 | A02 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| A03 | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
 
 The milestone breakdown and build sequencing live separately in
 [implementation-plan.md](implementation-plan.md).
@@ -42,8 +43,9 @@ The milestone breakdown and build sequencing live separately in
 - **Storage and identity:** §9 mounts → §10 instances/dedup → §11–§12 borrowing/offline.
 - **Extensibility and delivery:** §13 plugins → §14 requirements → §15 tooling →
   §16 packaging → §17 field schema.
-- **Appendix:** §A01 open questions / out of scope, §A02 Windows dev-launcher lessons —
-  always-last catch-alls, stored under [appendices/](https://github.com/borco/rehuco/tree/master/docs/specs/appendices).
+- **Appendix:** §A01 open questions / out of scope, §A02 Windows dev-launcher lessons, §A03
+  Briefcase packaging (native builds, file association, app identity) — always-last catch-alls,
+  stored under [appendices/](https://github.com/borco/rehuco/tree/master/docs/specs/appendices).
 
 ## Section-numbering convention
 
