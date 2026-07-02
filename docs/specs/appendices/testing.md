@@ -98,30 +98,38 @@ when qa runs on macOS/Linux:
 ## §A03.5 Coverage of platform-specific code
 
 Windows-only code can't run on a macOS/Linux qa pass, so it would count as missed: the whole
-`platforms/windows/` package, and `__main__.py`'s two `if sys.platform == "win32":` branches.
-Coverage config can't branch by platform, so two env vars gate it, each with a default that
-*measures* everything (so nothing is silently dropped when unset, e.g. on Windows):
+`platforms/windows/` package, and `__main__.py`'s two `if sys.platform == "win32":` branches. It
+must be dropped from coverage there, but still measured on the Windows runner — and coverage
+config can't branch by platform.
 
-| Env var | pyproject key | Excludes |
-| --- | --- | --- |
-| `COV_OMIT_WIN` | `[tool.coverage.run] omit` (`${COV_OMIT_WIN-__no_such_path__}`) | the whole `platforms/windows/` package |
-| `COV_EXCLUDE_WIN` | `[tool.coverage.report] exclude_also` (`${COV_EXCLUDE_WIN-(?!)}`) | the `__main__` win32 branches |
+The **wrong** way (tried first): gate it with env vars (`${COV_EXCLUDE_WIN-…}` in `exclude_also`,
+`${COV_OMIT_WIN-…}` in `omit`) set from the Makefile and conftest. This fails, because *when*
+coverage reads its config depends on how pytest was launched:
 
-The subtlety: the vars must be set **in two places, for two runners** — because coverage is
-initialized at different times depending on how pytest was launched:
+- `make cov` / CI (plain `pytest --cov`): pytest-cov reads the coverage config **before** the root
+  conftest runs — so a conftest-set var is too late; only a Makefile-exported one works.
+- The VSCode test runner invokes `pytest --cov=. --cov-branch` directly (no `make`), and reads
+  config at yet another moment — so neither the Makefile env nor a timely conftest value is
+  reliably present.
 
-- **`Makefile`** exports them (on non-Windows) for `make cov` and CI, where **pytest-cov reads the
-  coverage config *before* the root conftest runs** — so a conftest-set value would be too late.
-- **`conftest.py`** sets them for the **VSCode / IDE test runner**, which initializes coverage
-  *after* the root conftest loads — so the Makefile env isn't present, but the conftest one is.
+No single env-setting site covers all three runners.
 
-Setting both (via `export` / `os.environ.setdefault`) means whichever runner you use, the vars are
-present before coverage reads its config. On Windows neither is set → defaults → the code is
-measured, since the Windows test set exercises it. Net effect on macOS/Linux: `__main__.py` goes
-42% → 100% and `platforms/windows/` drops out of the report.
+The **right** way: a **coverage configurer plugin** (`coverage_platform.py`, registered via
+`[tool.coverage.run] plugins`). Coverage calls it at its own initialization regardless of how
+pytest was launched, so one mechanism covers `make cov`, a bare `pytest --cov`, and VSCode alike.
+On non-Windows it appends `*/platforms/windows/*` to `run:omit` and the `if sys.platform ==
+"win32":` regex to `report:exclude_lines`; on Windows it does nothing, so that code is measured by
+the Windows test set. Net effect on macOS/Linux: `__main__.py` goes 42% → 100% and
+`platforms/windows/` drops out of the report.
 
-A bare `coverage run` *without* pytest (no conftest, no make) would miss these — not a path this
-project uses, but worth knowing if one is ever added.
+Two implementation notes worth keeping:
+
+- **Append to `report:exclude_lines`, not `report:exclude_also`.** By the time the configurer
+  runs, coverage has already folded `exclude_also` into `exclude_lines` (the list actually matched
+  against source); appending to `exclude_also` then has no effect.
+- **The plugin module must be importable when coverage starts** — very early, in pytest-cov's
+  `pytest_load_initial_conftests`. `[tool.pytest.ini_options] pythonpath = ["."]` puts the repo
+  root on `sys.path` in time; without it the plugin fails with `ModuleNotFoundError`.
 
 ## §A03.6 A build step that broke test *collection*
 

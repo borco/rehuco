@@ -19,16 +19,8 @@ import pytest
 # test), so setting this here -- before any test module runs -- is early enough.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# rehuco_agent's Windows-only code -- the platforms/windows/ package and __main__'s
-# `if sys.platform == "win32":` branches -- can't execute off Windows, so it counts as missed
-# there. On non-Windows, omit/exclude it from coverage; consumed by pyproject.toml's coverage
-# config (${COV_OMIT_WIN-...} and ${COV_EXCLUDE_WIN-...}). Setting it here (not only in the
-# Makefile) makes it apply to a bare `pytest --cov` and the VSCode test runner, which don't go
-# through make. This repo-root conftest is loaded before pytest-cov reads the coverage config on a
-# rootdir invocation. Left unset on Windows, where the Windows test set measures that code.
-if sys.platform != "win32":
-    os.environ.setdefault("COV_OMIT_WIN", "*/platforms/windows/*")
-    os.environ.setdefault("COV_EXCLUDE_WIN", 'if sys.platform == "win32":')
+# (Coverage exclusion of Windows-only code on non-Windows is handled by the coverage_platform
+# plugin, not here -- it's runner-independent, unlike an env var set at conftest import time.)
 
 PLATFORM_MARKERS: Final = {
     "windows": "win32",

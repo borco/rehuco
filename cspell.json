@@ -107,6 +107,9 @@
     "typeshed",
     "unimportable",
     "windll",
+    "configurer",
+    "pythonpath",
+    "conftests",
     "LSHandlerRank",
     "LSItemContentTypes"
   ]
