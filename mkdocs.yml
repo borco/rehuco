@@ -87,6 +87,9 @@ nav:
       - Requirements: specs/requirements.md
       - Acquisition Tooling: specs/acquisition-tooling.md
       - Packaging & Deployment: specs/packaging-deployment.md
-      - Open Questions: specs/open-questions.md
+      - Field Schema: specs/field-schema.md
+      - Appendices:
+          - Open Questions: specs/appendices/open-questions.md
+          - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
   - Implementation Plan: specs/implementation-plan.md
   - Packages: packages.md

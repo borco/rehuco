@@ -1,2 +1,0 @@
-// Icon ID 1 is what Windows uses for the default exe icon (Explorer, taskbar, pins)
-1 ICON "@ICON_ABS_PATH@"
