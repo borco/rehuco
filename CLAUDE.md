@@ -2,47 +2,28 @@
 
 ## Key documents
 
-- **Design specs:** `docs/specs/` — the design is split across topic files, one per
-  section range. `docs/specs/README.md` is the **document map** (which `§N` lives in which
-  file) and records the section-numbering convention. Start at
-  `docs/specs/architecture-design.md` for the high-level overview (§1–§3).
-- **Implementation plan:** `docs/specs/implementation-plan.md` — milestone breakdown, tracer-bullet
-  methodology, sequencing gates, honest caveats.
+Read before any non-trivial task:
 
-Read both before any non-trivial task. Section references use global numbers in the form
-§N.M; resolve any number to its file via `docs/specs/README.md`. Numbers are global and may
-be renumbered on insert (no letter suffixes) — see the convention in that README.
+- **Design specs:** `docs/specs/` — one topic file per global section range. `docs/specs/README.md` is the
+  **document map**: resolve any `§N.M` reference there. Overview (§1–§3) in `docs/specs/architecture-design.md`.
+  Numbers are global and renumber-and-shift on insert (no letter suffixes); the map is authoritative.
+- **Implementation plan:** `docs/specs/implementation-plan.md` — milestones, tracer-bullet methodology, gates.
 
 ## Repository
 
-- **GitHub:** <https://github.com/borco/rehuco> (public)
-- **Project board:** <https://github.com/users/borco/projects/5>
-- **PyPI names reserved** (0.0.0 stub packages published 2026-06-29):
-  - <https://pypi.org/project/rehuco-core/>
-  - <https://pypi.org/project/rehuco-node/>
-  - <https://pypi.org/project/rehuco-agent/>
-
-## GitHub labels and milestones
-
-Issues live on the [project board](https://github.com/users/borco/projects/5). Keep these
-consistent as new ones are added:
+- GitHub: <https://github.com/borco/rehuco> (public) · board: <https://github.com/users/borco/projects/5>
+- PyPI names reserved (0.0.0 stubs, 2026-06-29): `rehuco-core`, `rehuco-node`, `rehuco-agent`.
 
 ### Labels
 
-- `spike` — throwaway exploration answering one sharp technical question (keep the lesson,
-  delete the code; see *Development methodology* below).
-- `pending-cleanup` — the work is done, but the issue stays open to track a gated teardown
-  step (e.g. deleting retained spike code once a later milestone consumes its lesson). The
-  milestone says *when* it resolves; this label says *why* it's still open despite being done.
-  Not `deferred` (which is for work not started).
+- `spike` — throwaway exploration answering one sharp question (keep the lesson, delete the code).
+- `pending-cleanup` — work done; issue open only to track a gated teardown (e.g. deleting retained spike code).
+  Not `deferred` (that's for work not started).
 
 ### Milestones
 
-- `Pre-work` — monorepo setup, integration spikes, and de-risking done before/around the
-  first tracer-bullet slice.
-- `A0` — the A0 tracer-bullet slice (`implementation-plan.md`): double-click a `.rehu` →
-  single-instance agent → read → render → edit → atomic-save. GH milestone names track the
-  doc's per-slice labels (A0, A1, …), so keep the two in step as slices are added.
+`Pre-work` (monorepo setup, integration spikes, de-risking), then `A0`, `A1`, … — GH milestone names track the
+per-slice labels in `implementation-plan.md`; keep the two in step.
 
 ## Monorepo layout
 
@@ -50,167 +31,75 @@ consistent as new ones are added:
 apps/rehuco-agent/        # PySide6 desktop GUI
 apps/rehuco-node/         # headless REST node (FastAPI)
 packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
+packages/borco-core/      # generic non-GUI utilities — temporary guest, moving out (§16.2)
+packages/borco-pyside/    # generic PySide widgets/utilities — temporary guest, moving out (§16.2)
 ```
 
-Root `pyproject.toml` is a **virtual workspace** — no `[project]` table, only
-`[tool.uv.workspace]`.
+Root `pyproject.toml` is a **virtual workspace** — no `[project]` table, only `[tool.uv.workspace]`.
 
-## Hardware compatibility
+## Hardware
 
-The QNAP TS-230 is the lowest-spec *target* (not a hard requirement). `rehuco-node`'s
-`requires-python` floor and dependency choices are kept compatible with it where possible.
+The QNAP TS-230 is a **NAS** (SMB share), not a compute host (§16.4): the node runs on capable hardware and
+mounts the share, so the TS-230 imposes no dependency/glibc constraint (canary findings kept in §16.5). Nodes
+must tolerate the mount being offline (§9.9).
 
 ## Code conventions
 
-### Visibility
-
-Public or private (`__`). No protected (`_`) unless the class is explicitly designed for
-inheritance. This makes the public API unambiguous.
-
-### Constants
-
-`Final` without an explicit type when the type can be inferred.
-
-### Overrides
-
-`@override` on every method that overrides a base-class method.
-
-### Docstrings
-
-Sphinx-style on all functions, including private ones.
-One-line summary + `:param:` / `:returns:` / `:raises:` as needed.
-No multi-paragraph docstrings or multi-line comment blocks for routine code.
-
-- **Closing `"""` placement** — on its own line for a multi-line docstring; on the same
-  line as the text for a single-line docstring.
-- **Constructor args live in the class docstring**, not in `__init__`. Put the `:param:`
-  entries on the class so IDE hover over the class name shows them; `__init__` gets no
-  docstring of its own.
-
-### Comments
-
-Only when the *why* is non-obvious: hidden constraint, subtle invariant, bug workaround,
-surprising behavior. No narration of what the code does.
-
-### Line length
-
-120 characters (ruff enforced).
-
-### Tests
-
-End each test's docstring with a **Test steps:** bullet list spelling out the steps and
-checks the test performs, so its intent is readable without tracing the code:
-
-```python
-"""One-line summary of what is verified.
-
-**Test steps:**
-
-* launch a primary app instance
-* launch a second instance with mocked argv
-* verify the primary receives the second instance's arguments
-"""
-```
+- **Visibility:** public or private (`__`); no protected (`_`) unless the class is designed for inheritance.
+- **Constants:** `Final` without an explicit type when it can be inferred.
+- **Overrides:** `@override` on every method that overrides a base-class method.
+- **Docstrings:** Sphinx-style on all functions, including private ones — one-line summary +
+  `:param:`/`:returns:`/`:raises:` as needed; no multi-paragraph docstrings for routine code. Closing `"""` on
+  its own line for multi-line docstrings, on the same line for single-line ones. Constructor `:param:` entries
+  go on the **class** docstring (IDE hover shows them); `__init__` gets no docstring.
+- **Comments:** only when the *why* is non-obvious (hidden constraint, subtle invariant, bug workaround). No
+  narration of what the code does.
+- **Line length:** 120 (ruff enforced).
+- **Tests:** end each test docstring with a `**Test steps:**` bullet list spelling out the steps and checks, so
+  intent is readable without tracing the code.
 
 ## Markdown conventions
 
-Docs under `docs/` are markdownlint-checked (`.markdownlint.json` sets MD013 line length 120,
-tables exempt). Beyond that:
+Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line length 120, tables exempt). Also:
 
-- **Headings and lists are surrounded by blank lines** (MD022/MD032).
-- **Inside a blockquote, the separating blank line must itself be a quote line** — write an
-  empty `>` (i.e. add a `>\n` line), not a truly blank line, or the list/paragraph isn't
-  separated within the quote.
-- **Table delimiter rows are spaced** — `| --- | --- |`, not `|---|---|` (header and data
-  cells padded with single spaces too).
-- **No emphasis-as-heading** (MD036) — use real `###` headings, not bold text.
-- **Issue links under spec section headings** — when a section has a corresponding GitHub issue, list it
-  immediately below the heading as a task-list item. Closed issues are checked; open ones are unchecked.
-  Use `[#N: title](url)` so the number is scannable and the title gives context. Multiple issues can be listed.
-
-  ```markdown
-  - [x] [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
-  ```
+- Blank lines around headings and lists (MD022/MD032); inside a blockquote the separator is an empty `>` line,
+  not a truly blank line.
+- Spaced table delimiter rows — `| --- | --- |` — and single-space-padded cells.
+- No emphasis-as-heading (MD036) — use real `###` headings.
+- Under a spec section heading, list its GitHub issue(s) as task-list items — `- [x] [#N: title](url)` —
+  checked when closed, unchecked when open.
 
 ## Tooling
 
-| Tool | Role |
-| --- | --- |
-| `uv` | workspace + package manager |
-| `ruff` | formatter + linter (replaces black, isort, flake8, pyupgrade) |
-| `pyright` | type checker (standard mode; matches Pylance in VS Code — preferred over mypy for PySide6 + Python 3.14) |
-| `pylint` | static analysis |
-| `bandit` | security scanning |
-| `pytest` | test runner |
-| `pytest-mock` | mocking |
-| `pytest-qt` | Qt widget / event-loop testing |
-| `pytest-cov` | coverage |
-| `pytest-benchmark` | benchmarking |
-| `pytest-freezer` | time freezing |
-| `pytest-explicit` | explicit test markers |
-| `mkdocs` | documentation site |
+`uv` (workspace + packages), `ruff` (format + lint; replaces black/isort/flake8/pyupgrade), `pyright`
+(standard mode; matches Pylance, preferred over mypy for PySide6 + 3.14), `pylint`, `bandit`, `pytest`
+(+ `pytest-mock`, `-qt`, `-cov`, `-benchmark`, `-freezer`, `-explicit`), `mkdocs`. VSCode is configured for
+ruff formatting/linting; pylint, mypy, and black are disabled there.
 
-VSCode workspace is configured to use ruff for formatting and linting. pylint, mypy, and black are
-disabled in favour of ruff / pyright.
-
-## Makefile targets
-
-| Target | Action |
-| --- | --- |
-| `make sync` | install all workspace packages in dev mode |
-| `make tests` | run pytest |
-| `make cov` | run pytest with branch coverage report |
-| `make format` | run ruff format + ruff check --fix |
-| `make bandit` | run bandit security scanner |
-| `make pyright` | run pyright type checker (standard mode) |
-| `make pylint` | run pylint |
-| `make qa` | format + cov + bandit + pyright + pylint |
-| `make docs-serve` | serve mkdocs locally |
+Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`,
+`qa` (format + cov + bandit + pyright + pylint), `docs-serve`.
 
 ## Model strategy
 
-Use `opusplan` as the default (Opus for plan mode, Sonnet for execution).
-
-**Manually switch to Opus (`/model opus`) for these specific sections** — they are
-reasoning-dense and a subtle error silently corrupts data:
-
-- **Sync engine** — version vector, activity log, conflict/merge, tombstones (§7).
-- **Plugin block save invariant** — live/inert/claim-then-abandon rule (§13.2).
-- **Registry resolution & serve-after-resync** — preferred-authority, chatter, version-marker
-  comparison (§6.6, §6.11).
-- **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.13).
+Default `opusplan` (Opus plans, Sonnet executes). Manually `/model opus` for the reasoning-dense cores where a
+subtle error silently corrupts data: sync engine (§7), plugin block save invariant (§13.2), registry resolution
+& serve-after-resync (§6.6, §6.11), cross-filesystem safe move (§9.13).
 
 ## Commit and branch policy
 
-**Always wait for explicit user approval before committing or pushing.** Do not commit
-automatically at the end of a task.
-
-Work is done on feature branches named `issue/NNN/some-short-slug` (e.g.
-`issue/42/add-field-toolkit`), where NNN is the GitHub issue number. Branching from a
-feature branch is fine. Merges always use `--no-ff`.
-
-**Stash unrelated working-tree changes before a `--no-ff` merge**, then commit them on top —
-`git stash push <file>` → `git merge --no-ff` → `git stash pop` → commit. Committing an
-unrelated change *before* the merge buries it beneath the merge commit and puts the merge on a
-dirty base. Get the order right up front: a merge commit's parents are immutable, so fixing it
-afterward needs reset + re-merge + cherry-pick, not a simple reset.
-
-Commit type prefixes in use: `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`, `test:`.
-
-When committing on a feature branch (`issue/NNN/...`), prefix the message with `refs #NNN:` before the type prefix.
-Commits directly on `master` carry no prefix.
-
-```text
-refs #5: docs: record QNAP/glibc canary result in §16.5.1
-```
+- **Never commit or push without explicit user approval** — no auto-commit at task end.
+- Feature branches: `issue/NNN/short-slug` (branching from a feature branch is fine); merges always `--no-ff`.
+- **Stash unrelated working-tree changes before a `--no-ff` merge**, then pop and commit on top. Committing
+  them first buries them beneath the merge commit — and a merge's parents are immutable, so fixing it afterward
+  needs reset + re-merge + cherry-pick.
+- Message prefixes: type prefixes in use are `repo:`, `config:`, `docs:`, `feat:`, `fix:`, `refactor:`,
+  `test:`. On a feature branch, prepend `refs #NNN:` (e.g. `refs #5: docs: record canary result`); commits
+  directly on `master` carry no `refs` prefix.
 
 ## Development methodology
 
-Agile cadence + tracer-bullet first slices + occasional spikes.
-
-- **Tracer bullet** — minimal but real, production-grade, kept. Proves layers connect end-to-end.
-- **Spike** — throwaway, answers one sharp technical question. Delete after; keep only the lesson.
-
-Current phase: **Pre-work** (monorepo setup, pyqtads+QML integration spike, QNAP glibc canary).
-Next milestone: **A0** — double-click a `.rehu` → single-instance agent opens → reads file →
-renders common fields + Markdown + image strip → edit one field → atomic-save back.
+Agile cadence + tracer-bullet first slices + occasional spikes. **Tracer bullet** — minimal but real,
+production-grade, kept; proves the layers connect end-to-end. **Spike** — throwaway; answers one sharp
+question; keep the lesson, delete the code. Current phase: **Pre-work**. Next milestone: **A0** — double-click
+a `.rehu` → single-instance agent → read → render common fields + Markdown + image strip → edit one field →
+atomic-save.

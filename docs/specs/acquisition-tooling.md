@@ -5,7 +5,7 @@ These features don't belong to the core data/swarm architecture, but they're wha
 ## §15.1 Three drag-and-drop input aids (restored from TutCatalog4)
 
 - **HTML selection → Markdown into the description editor.** Selecting content on a web page and dropping it on the description editor: the drop's `text/html` payload is converted to Markdown by a deterministic library (html2text-style) and inserted at the cursor. No LLM, no per-site logic, no fetching — it just transforms whatever HTML the browser handed over (with a sanitize/clean pass first, since pasted web HTML is messy). The cheapest and lowest-maintenance of the three; restore it early.
-- **Image drag → download, rescale, auto-name screenshot.** Dragging an image from a browser onto a designated widget: download it, rescale to ≤300px wide (Pillow), and save as the next unused `imageXX` screenshot name. No LLM. Pairs with the screenshot-name normalization in migration (§15.3).
+- **Image drag → download, rescale, auto-name screenshot.** Dragging an image from a browser onto a designated widget: download it, rescale to ≤300px wide (Pillow), and save under the next unused basename-derived screenshot name (`infoXX` for a directory-scoped resource, §4.4). No LLM. Pairs with the screenshot-name normalization in migration (§15.3).
 - **URL drop → extract tutorial info.** Dropping a URL: fetch/render the page and extract `{title, author, publisher, duration, description, …}` into the resource's fields. See §15.2 — this is the one with real nuance.
 
 ## §15.2 URL extraction via a local small LLM
@@ -20,7 +20,7 @@ The TutCatalog4 approach (geckodriver + BeautifulSoup + hand-maintained per-site
 
 ## §15.3 Migration: `.tc` → `.rehu` as format-version 0
 
-Opening an old `.tc` file offers migration actions: convert `.tc` (YAML) → `.rehu` (JSON), and normalize the non-uniform screenshot names into the uniform `imageXX` scheme. This is the **first concrete instance of the format-versioning mechanism (§4.10)** rather than a one-off script: `.tc` is simply "format version 0," and migration is the upgrade-on-read/import rule applied to the oldest format. Checksum generate/verify (§4.5) belongs alongside the migration actions in the same tooling.
+Opening an old `.tc` file offers migration actions: convert `.tc` (YAML) → `.rehu` (JSON), and normalize the non-uniform screenshot names into the uniform basename-derived `infoXX` scheme (§4.4). This is the **first concrete instance of the format-versioning mechanism (§4.10)** rather than a one-off script: `.tc` is simply "format version 0," and migration is the upgrade-on-read/import rule applied to the oldest format. Checksum generate/verify (§4.5) belongs alongside the migration actions in the same tooling.
 
 ## §15.4 Deferral
 
