@@ -58,6 +58,29 @@ must tolerate the mount being offline (§9.9).
 - **Tests:** end each test docstring with a `**Test steps:**` bullet list spelling out the steps and checks, so
   intent is readable without tracing the code.
 
+## PySide6 UI conventions
+
+- Window/widget layouts live in `.ui` files, not built up in Python. For a custom widget,
+  prefer a `.ui` too, unless it's trivial (simple layout, or the class only overrides/adds
+  behavior on an existing widget rather than composing a new layout).
+- Collocate a `.ui` with its controller class: `foo_widget.ui`, `foo_widget.py` next to each
+  other; the generated `foo_widget_ui.py` is gitignored and rebuilt via `make uis` — never
+  hand-edit it.
+- A custom widget used inside a `.ui` is placed as a base/`QWidget` placeholder and *promoted*
+  to the real class, not embedded as literal custom XML.
+- Assets go through `.qrc`. Icons are authored in an Affinity Designer master file and
+  exported as `.svg`; `make qrcs` regenerates the gitignored `_rc.py`. A `.ui` referencing a
+  qrc-managed resource (e.g. `windowIcon`) must declare
+  `<resources><include location="....qrc"/></resources>` so `make uis` emits the matching
+  resource import — verify the generated file after adding one.
+- Ask before adding a new asset-conversion pipeline (e.g. deriving `.ico` from the `.svg`
+  master) rather than improvising one inline.
+- Every property/attribute in a `.ui` file must be one Qt Designer's own Property Editor can
+  display and edit. Don't hand-add XML that's schema-valid and works at runtime but isn't
+  something Designer surfaces — a developer opening the file in Designer needs to be able to
+  find and change it there. Anything Designer can't set belongs in the controller class's
+  Python code after `setupUi()`, not in the `.ui`.
+
 ## Markdown conventions
 
 Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line length 120, tables exempt). Also:
