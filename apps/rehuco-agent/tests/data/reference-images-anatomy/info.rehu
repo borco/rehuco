@@ -1,0 +1,35 @@
+{
+  "format_version": 1,
+  "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "type": "ReferenceImages",
+  "created": "2026-02-01T11:00:00Z",
+  "updated": "2026-02-01T11:00:00Z",
+  "sources": [
+    {
+      "title": "Anatomy Reference Pack",
+      "publisher": "Example Publisher",
+      "url": "https://example.com/anatomy-pack",
+      "primary": true
+    }
+  ],
+  "authors": ["Third Author"],
+  "released": "2024-11-08",
+  "description": "Anatomy reference images, see `info01.jpg`/`info02.png`.",
+  "advertised_tags": ["reference", "anatomy"],
+  "extra_tags": [],
+  "original_size": 2147483648,
+  "current_size": 2147483648,
+  "reference_images": {
+    "format_version": 0,
+    "collections": [],
+    "learning_paths": [],
+    "images_count": null,
+    "complete": true,
+    "online": false,
+    "viewed": false,
+    "todo": false,
+    "keep": false,
+    "favorite": false,
+    "rating": 0
+  }
+}

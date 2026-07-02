@@ -1,0 +1,38 @@
+{
+  "format_version": 1,
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "type": "Tutorial",
+  "created": "2026-01-15T09:30:00Z",
+  "updated": "2026-06-20T14:12:00Z",
+  "sources": [
+    {
+      "title": "Intro to Sculpting",
+      "publisher": "Example Publisher",
+      "url": "https://example.com/intro-sculpting",
+      "primary": true
+    }
+  ],
+  "authors": ["First Author", "Second Author"],
+  "released": "2025-03",
+  "description": "# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.",
+  "advertised_tags": ["sculpting", "3d", "modeling"],
+  "extra_tags": ["rework"],
+  "original_size": 5368709120,
+  "current_size": 1073741824,
+  "tutorial": {
+    "format_version": 0,
+    "collections": [],
+    "learning_paths": [],
+    "original_duration": 71220,
+    "current_duration": 18000,
+    "advertised_duration": 72000,
+    "level": ["intermediate"],
+    "complete": true,
+    "online": true,
+    "viewed": false,
+    "todo": false,
+    "keep": false,
+    "favorite": true,
+    "rating": 4
+  }
+}

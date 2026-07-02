@@ -1,0 +1,36 @@
+{
+  "format_version": 1,
+  "id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "type": "Tutorial",
+  "created": "2026-03-05T10:00:00Z",
+  "updated": "2026-03-05T10:00:00Z",
+  "sources": [
+    {
+      "title": "Foo Tutorial",
+      "publisher": "Foo Publisher",
+      "url": "https://example.com/foo",
+      "primary": true
+    }
+  ],
+  "authors": ["Foo Author"],
+  "released": "2026",
+  "description": "# Foo Tutorial\n\nA loose, non `info.rehu`-named fixture, to check a `.rehu` whose basename isn't `info` still loads and renders (its image strip won't pick up `foo01.jpg`/`foo02.jpg`, since §4.4's screenshot convention is keyed to the fixed `info` basename, not the `.rehu`'s own name).",
+  "advertised_tags": ["foo", "sample"],
+  "extra_tags": [],
+  "tutorial": {
+    "format_version": 0,
+    "collections": [],
+    "learning_paths": [],
+    "original_duration": 600,
+    "current_duration": 600,
+    "advertised_duration": 600,
+    "level": ["beginner"],
+    "complete": true,
+    "online": true,
+    "viewed": false,
+    "todo": false,
+    "keep": false,
+    "favorite": false,
+    "rating": 0
+  }
+}
