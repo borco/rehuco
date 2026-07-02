@@ -24,5 +24,6 @@
         "**/node_modules/*/**",
         "**/*.md"
     ],
-    "better-todo-tree.filtering.ignoreGitSubmodules": true
+    "better-todo-tree.filtering.ignoreGitSubmodules": true,
+    "claudeCode.respectGitIgnore": false,
 }

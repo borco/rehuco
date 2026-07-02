@@ -64,6 +64,3 @@ desktop.ini
 
 # Affinity Designer lock
 *.afdesign~lock~
-
-# Agent Continue Prompt
-continue_prompt.*
