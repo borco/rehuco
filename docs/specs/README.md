@@ -27,9 +27,10 @@ truth for what a section number means and which file it lives in.
 | 15 | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
 | 16 | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
 | 17 | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
-| A01 | Explicitly Out of Scope / Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A02 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
-| A03 | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
+| A01 | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
+| A02 | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
+| A03 | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| A04 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 The milestone breakdown and build sequencing live separately in
 [implementation-plan.md](implementation-plan.md).
@@ -43,9 +44,9 @@ The milestone breakdown and build sequencing live separately in
 - **Storage and identity:** §9 mounts → §10 instances/dedup → §11–§12 borrowing/offline.
 - **Extensibility and delivery:** §13 plugins → §14 requirements → §15 tooling →
   §16 packaging → §17 field schema.
-- **Appendix:** §A01 open questions / out of scope, §A02 Windows dev-launcher lessons, §A03
-  Briefcase packaging (native builds, file association, app identity) — always-last catch-alls,
-  stored under [appendices/](https://github.com/borco/rehuco/tree/master/docs/specs/appendices).
+- **Appendix (alphabetical, after all `§N`):** §A01 Briefcase packaging, §A02 open questions /
+  out of scope, §A03 testing & cross-platform QA, §A04 Windows dev-launcher lessons — stored under
+  [appendices/](https://github.com/borco/rehuco/tree/master/docs/specs/appendices).
 
 ## Section-numbering convention
 
@@ -61,9 +62,9 @@ The milestone breakdown and build sequencing live separately in
 - **Don't reuse a retired number** for something unrelated — that reintroduces the very
   ambiguity the global scheme exists to prevent.
 - **Appendices are numbered `§A01`, `§A02`, … (`A` for appendix)** and live under
-  `appendices/`, separate from the numbered `§N` topic files. They hold
-  open-ended, always-last material — the "out of scope / not yet designed" catch-all being
-  `§A01` — that should never carry an ordinal, because newly designed sections keep getting
-  appended and must sort *before* it. New numbered sections take the next free `§N`;
-  appendices always follow them regardless of how high `N` climbs. Appendix subsections are
-  `§A01.1`, `§A01.2`, … and are referenced like any other (`§A01.2`).
+  `appendices/`, after all the numbered `§N` topic files regardless of how high `N` climbs. They
+  are **ordered alphabetically by title**, and each title's first word shares its first letter
+  with its filename (e.g. `§A01` *Briefcase Packaging* ↔ `briefcase-packaging.md`). Inserting one
+  therefore **renumber-and-shifts** the rest, updating every `§A0N` reference in the same change —
+  the same rule as `§N` above. Appendix subsections are `§A01.1`, `§A01.2`, … and are referenced
+  like any other (`§A01.2`).

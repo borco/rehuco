@@ -21,7 +21,7 @@ A resource whose plugin isn't installed/loaded on a given machine should still d
 - **Declarative type** — a type defined purely as a *field list* over the shared field toolkit (text/switch/tag/date/rating/…), no code. Cheap to add (config, not programming), safe (zero code execution), but limited to what the toolkit offers. Good for simple types (e.g. a basic "3D object" with title/tags/format).
 - **Code plugin** — a type that uses the same toolkit fields *plus* its own custom widgets and actions (the Daz3D install action, refimages redaction overlays, the sketch slideshow). Maximally flexible; the only thing that needs real code.
 
-Both produce the same on-disk block (§13.2) — whether a block's fields came from a declaration or from plugin code is purely a rendering detail. This also answers a trust question (§A01.2): **declarative types carry no code-execution risk; only code-plugins are a trust/distribution surface.** "Add a simple new resource type" is a config task; code is needed only for behavior beyond the toolkit.
+Both produce the same on-disk block (§13.2) — whether a block's fields came from a declaration or from plugin code is purely a rendering detail. This also answers a trust question (§A02.2): **declarative types carry no code-execution risk; only code-plugins are a trust/distribution surface.** "Add a simple new resource type" is a config task; code is needed only for behavior beyond the toolkit.
 
 ## §13.2 Plugin blocks: keyed, versioned, single-live-type
 
