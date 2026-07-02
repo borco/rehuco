@@ -29,14 +29,17 @@ def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.Monke
 
     * force ``sys.platform`` to a non-Windows value
     * set ``sys.argv`` to argv[0] plus one ``.rehu`` path, no flags
-    * mock ``run`` and ``SetCurrentProcessExplicitAppUserModelID``
+    * mock ``run`` and ``ctypes.windll`` (absent on non-Windows -- patched with ``create=True``)
     * verify ``run`` was called and the AUMID call was not (it's inside the win32 block)
     """
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "a.rehu"])
-    set_aumid = mocker.patch("ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID", create=True)
+    # ctypes.windll does not exist off Windows; patch the whole attribute (its parent ctypes does
+    # exist, so create=True can add it) rather than the deep shell32.<fn> path, whose intermediate
+    # traversal would AttributeError before create=True ever reaches the leaf.
+    windll = mocker.patch("ctypes.windll", create=True)
     run = mocker.patch("rehuco_agent.__main__.run", return_value=0)
 
     assert main() == 0
     run.assert_called_once_with([str(Path(FAKE_ARGV0).resolve()), "a.rehu"])
-    set_aumid.assert_not_called()
+    windll.shell32.SetCurrentProcessExplicitAppUserModelID.assert_not_called()

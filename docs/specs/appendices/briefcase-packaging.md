@@ -1,4 +1,4 @@
-# §A03. Briefcase Packaging — Native App Builds, File Association, and App Identity
+# §A01. Briefcase Packaging — Native App Builds, File Association, and App Identity
 
 How rehuco uses [Briefcase](https://briefcase.readthedocs.io/) to build `rehuco-agent` into a
 native, double-clickable application with OS-registered file association and app identity — the
@@ -11,21 +11,21 @@ This appendix starts from the macOS half of the file-association spike
 config lands in `apps/rehuco-agent/` and as Windows and Linux packaging are wired up. Where a
 detail is still spike-proven rather than production-shipped, it says so.
 
-## §A03.1 Status
+## §A01.1 Status
 
 - **macOS file association + `QFileOpenEvent` delivery + single-instance routing** — proven end to
-  end on current versions by the #13 spike (§A03.6). The `rehuco-agent` app code it depends on
+  end on current versions by the #13 spike (§A01.6). The `rehuco-agent` app code it depends on
   (`Application.event()`'s `QFileOpenEvent` branch, `ApplicationSingleton`) already exists and
   needs no macOS-specific changes.
 - **Windows ProgID / AUMID default-handler + taskbar identity** — proven by #1; the dev-time story
-  and its hurdles live in §A02 (the C launcher). Briefcase is the confirmed end-user packager
+  and its hurdles live in §A04 (the C launcher). Briefcase is the confirmed end-user packager
   there too.
 - **Production Briefcase config in `apps/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
   wider-distribution polish, deferred past the personal critical path (§16.8, plan: deferred).
   `uv tool install` covers the author's own machines until then.
-- **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A01.2).
+- **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A02.2).
 
-## §A03.2 The Briefcase config
+## §A01.2 The Briefcase config
 
 Briefcase reads everything from `pyproject.toml`; no per-OS manifest is hand-maintained. The
 config below is what the #13 spike used and verified; the production version in `rehuco-agent`
@@ -42,7 +42,7 @@ mime_type = "application/x-rehuco-spike"
 
 [tool.briefcase.app.spike.macOS]
 requires = ["std-nslog~=2.0.0"]
-# PySide6's macOS wheel is macosx_13_0_universal2; Briefcase's 11.0 default is too low (§A03.5).
+# PySide6's macOS wheel is macosx_13_0_universal2; Briefcase's 11.0 default is too low (§A01.5).
 min_os_version = "13.0"
 ```
 
@@ -61,7 +61,7 @@ Briefcase builds the bundle by pip-installing into it and cannot see the uv work
 requires = ["PySide6>=6.9", "../../packages/borco-core", "../../packages/borco-pyside"]
 ```
 
-## §A03.3 The app-side wiring it relies on
+## §A01.3 The app-side wiring it relies on
 
 Briefcase only produces the bundle and its registration; the app must still handle the two macOS
 delivery mechanics. Both already exist in `rehuco-agent` and needed no change for macOS.
@@ -86,7 +86,7 @@ class Application(QApplication):
 and for `python -m ... <path>` during development.
 
 Single-instance routing uses the same `QLocalServer`/`QLocalSocket` mechanism as every platform
-(§5.4) — no macOS-specific code. See §A03.6 for *when* this path actually fires on macOS (it is a
+(§5.4) — no macOS-specific code. See §A01.6 for *when* this path actually fires on macOS (it is a
 fallback there, not the primary route).
 
 ```python
@@ -99,7 +99,7 @@ if not singleton.setup(APP_ID):   # False -> forwarded argv to the existing prim
 singleton.other_instance_run.connect(open_forwarded)
 ```
 
-## §A03.4 Build and iterate
+## §A01.4 Build and iterate
 
 **Icon first.** Briefcase's `icon = "rehuco-spike"` config points at a basename; on macOS it needs
 a matching `.icns` next to `pyproject.toml`. macOS builds one from the `.svg` master with the
@@ -135,7 +135,7 @@ The spike ran this against a throwaway local venv (`uv venv`, then `uv pip insta
 the two `borco-*` editable packages, the app itself, and `briefcase`). In production this becomes
 a Makefile target against the workspace venv.
 
-## §A03.5 Hurdles
+## §A01.5 Hurdles
 
 Recorded in the order they bite when building a Briefcase macOS bundle for a PySide6 app.
 
@@ -165,7 +165,7 @@ build resolver complains.
 like `"MIT license"` — the latter fails validation with an "invalid override value" error. Minor,
 but wastes a scaffolding round-trip if hit.
 
-## §A03.6 Verification recipe (terminal-driven, no GUI session)
+## §A01.6 Verification recipe (terminal-driven, no GUI session)
 
 `open` and `lsregister` drive the *exact same* LaunchServices path Finder uses for a double-click,
 so the whole flow is verifiable over SSH with no screen attached — how the #13 spike was checked.
@@ -192,7 +192,7 @@ log stream --style compact --predicate 'process == "<Formal Name>"'
 "$LSREG" -u "build/<app>/macos/app/<Formal Name>.app"
 ```
 
-## §A03.7 What the #13 spike confirmed
+## §A01.7 What the #13 spike confirmed
 
 Tested on Python 3.14.6, PySide6 6.11.1, Briefcase 0.4.3, macOS 26.5.1 (2026-07-02). All three of
 the spike's acceptance criteria passed:

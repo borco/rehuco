@@ -2,7 +2,15 @@
 	agent-build agent-build-clean agent-register agent-unregister
 
 SEARCH_DIRS := apps packages spikes
-PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' ';' | sed 's/;$$//')
+# pyside6-uic --python-paths uses the OS-native path separator (os.pathsep): ';' on Windows,
+# ':' elsewhere. Hardcoding ';' made uic see one nonexistent path on macOS/Linux, so it could
+# not resolve a .ui's .qrc to its package and fell back to a bare `import <name>_rc`.
+ifeq ($(OS),Windows_NT)
+PATHSEP := ;
+else
+PATHSEP := :
+endif
+PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' '$(PATHSEP)' | sed 's/$(PATHSEP)$$//')
 UI_FILES   := $(patsubst %.ui,%_ui.py,$(shell find $(SEARCH_DIRS) -name '*.ui'  -print 2>/dev/null))
 QRC_FILES  := $(patsubst %.qrc,%_rc.py,$(shell find $(SEARCH_DIRS) -name '*.qrc' -print 2>/dev/null))
 # One app icon, not one-per-svg: icons/ can hold other (toolbar/decorative) svgs that must

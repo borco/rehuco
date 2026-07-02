@@ -51,7 +51,7 @@ The iOS tablet is a **pure thin web client** — deliberately, because no native
 
 - **The tablet can never hold a borrow or any per-user offline state.** It has no local node and no local resource storage; it only ever *views* what a reachable node serves over HTTPS. ("Borrow onto the tablet" is therefore not possible — corrected from an earlier example.)
 - **Away from home, the laptop's own node is the tablet's server.** The canonical vacation topology: the laptop runs a node that holds the borrowed resources *and* serves the web UI over HTTPS to the tablet, reached over LAN or the laptop's hotspot. This means the **laptop node must run the web-server role**, not just the desktop Qt app.
-- This reinforces the off-LAN boundary (§A01.2): there is no "tablet reaches home over the internet" path. The tablet always talks to a *local* node — a household always-on box at home, or the laptop while away.
+- This reinforces the off-LAN boundary (§A02.2): there is no "tablet reaches home over the internet" path. The tablet always talks to a *local* node — a household always-on box at home, or the laptop while away.
 
 ## §11.6 Resolving a borrow when the resource was deleted or archived meanwhile
 
