@@ -3,12 +3,12 @@
 from collections.abc import Callable, Iterator
 from typing import Any
 
-import pytest
 from borco_pyside.core import ApplicationSingleton
+from pytest import fixture
 from pytestqt.qtbot import QtBot
 
 
-@pytest.fixture
+@fixture
 def make_singleton(qtbot: QtBot) -> Iterator[Callable[..., ApplicationSingleton]]:
     """Provide a factory for :class:`ApplicationSingleton` that tears each one down cleanly.
 
