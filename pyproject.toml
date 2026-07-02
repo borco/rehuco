@@ -48,11 +48,21 @@ max-line-length = 120
 [tool.pyright]
 pythonVersion = "3.14"
 typeCheckingMode = "standard"
+# This is a cross-platform project with per-platform modules (Windows winreg/ctypes.windll,
+# macOS/Linux paths). "All" makes platform-gated stdlib symbols resolvable regardless of which
+# OS qa runs on, so e.g. platforms/windows/ type-checks on macOS/Linux instead of erroring.
+pythonPlatform = "All"
 
 [tool.pylint.messages_control]
 # redefined-outer-name: standard false positive for pytest fixtures used as same-file test parameters
 disable = ["fixme", "redefined-outer-name"]
 enable = ["useless-suppression"]
+
+[tool.pylint.typecheck]
+# winreg is Windows-only; on a macOS/Linux qa run pylint can't import it and would raise
+# import-error. A per-line disable can't be used here -- useless-suppression (enabled above)
+# would flag it on Windows, where the import resolves fine. Ignoring the module is platform-safe.
+ignored-modules = ["winreg"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
