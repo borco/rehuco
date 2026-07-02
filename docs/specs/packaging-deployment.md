@@ -152,7 +152,7 @@ Concrete consequence for **docking**:
 - [ ] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
 
 Spike #4 re-verified the QML-in-`pyqtads` approach on **PySide6 6.11.1 + pyside6-qtads 5.0.0** (a
-major bump from `resource-hub`'s 4.5.0.4). All three parts A0 depends on hold:
+major bump from `resource-hub`'s 4.5.0.4). All three parts hold:
 
 - **Detach/re-dock** — a `QQuickWidget` dock detaches to a floating window and re-docks with no
   rendering glitches; the injected context object stays live across the cycle (both Python→QML
@@ -160,12 +160,16 @@ major bump from `resource-hub`'s 4.5.0.4). All three parts A0 depends on hold:
 - **Coexistence** — a QML dock and QWidget docks share one `CDockManager` layout.
 - **Layout save/restore** — `saveState()`/`restoreState()` round-trips the layout blob.
 
-**One caveat A0 must carry:** the layout blob does **not** restore a *closed* dock's size — QtAds
-reopens it at a minimal size. A0's dock manager must stash the containing splitter's sizes on
-`closeRequested` (`CDockManager.splitterSizes(area)`, keyed by dock object name) and re-apply them
-via `setSplitterSizes(area, sizes)` on `viewToggled(True)`. The three-line wiring snippet and this
-workaround live in `spikes/pyqtads-qml/` as a working reference until A0 consumes them (then the
-spike is deleted and this issue closed).
+**One caveat to carry forward:** the layout blob does **not** restore a *closed* dock's size —
+QtAds reopens it at a minimal size. Whichever slice introduces the dock manager must stash the
+containing splitter's sizes on `closeRequested` (`CDockManager.splitterSizes(area)`, keyed by
+dock object name) and re-apply them via `setSplitterSizes(area, sizes)` on `viewToggled(True)`.
+
+The dock manager becomes load-bearing once a resource *browser* exists alongside the viewer
+(§13.4's "clicking a resource opens its viewer dock") — a multi-pane shell, not a single-window
+form. The three-line wiring snippet and the closed-dock-size workaround stay in
+`spikes/pyqtads-qml/` as a working reference until that slice consumes them (then the spike is
+deleted and this issue closed).
 
 ## §16.8 Desktop distribution, file association, and app identity
 

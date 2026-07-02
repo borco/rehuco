@@ -177,7 +177,10 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 ## Sequencing gates (decide-before-you-start)
 
 - **Before A1:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
-- **Before A0 commits to the mixed QML/QWidgets UI:** the pyqtads + QML integration *spike* (pre-work) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current versions.
+- **Before the dock manager + mixed QML/QWidgets UI is adopted, at the first slice with a
+  browser+viewer dock shell (currently B3):** the pyqtads + QML integration *spike* (pre-work,
+  issue #4) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
+  versions.
 - **Before A0 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work; also settles Briefcase as the end-user packager.
 - **Before B (serving NAS content):** no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB (§16.4). The glibc canary findings (§16.5) are kept as a reference if direct QNAP deployment is ever reconsidered.
 - **Before B web work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer "can I build the follow-mode page the way I need?", keep the lesson, discard the toy.
