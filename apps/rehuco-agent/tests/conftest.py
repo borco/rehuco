@@ -1,1 +1,1 @@
-# pytest fixtures for rehuco-agent
+"""pytest fixtures for rehuco-agent."""

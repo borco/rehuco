@@ -62,7 +62,7 @@ Inert blocks (and a live block whose plugin isn't installed here) are shown via 
 
 The catalog is presented through **browsers**, which are the catalog-level counterpart to the plugin block model (§13.2): just as a `.rehu` has common fields plus a type-specific block, a browser has common columns plus type-specific columns.
 
-- **Generic resource browser** — a table of *all* resources, columns = common fields (title, publisher, url, size, change date). The type-agnostic baseline, and the fallback for any type whose plugin isn't installed (mirroring the generic field-editor fallback, §13.3).
+- **Generic resource browser** — a table of *all* resources, columns = the common core (§17.2.1: the primary source's title/publisher/url, released, `current_size`, updated). The type-agnostic baseline, and the fallback for any type whose plugin isn't installed (mirroring the generic field-editor fallback, §13.3).
 - **Per-type browsers** — extend the generic browser with **plugin-contributed type-specific columns**: tutorials add duration / view-progress; reference-images adds image-count; etc. Contributing browser columns (and cover rendering) is a plugin responsibility (§13.1).
 - **Two display modes** — tabular, or **cover/shelf view** (Calibre-style), per browser.
 - **Clicking a resource opens its viewer dock** (§5.3).

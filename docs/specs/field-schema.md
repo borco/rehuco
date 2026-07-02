@@ -28,7 +28,7 @@ tc4 actually stored.
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
 (§4.1, §13) and says **where the field lives on disk**: `common` at the top level, everything
 else under the type's plugin block (§17.2.1). The boundary can be refined post-v1 since the
-generic editor (§13.1b) does not depend on it.
+generic editor (§13.3) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -43,8 +43,8 @@ generic editor (§13.1b) does not depend on it.
 | `description` | *(bottom pane)* | `description` | Markdown | common | scalar | keep — embeds sibling `infoXX` images |
 | `tags` | Tags | `advertised_tags` | text list | common | multi | keep, rename — web-scraped |
 | `extraTags` | Exta Tags *(sic)* | `extra_tags` | text list | common | multi | keep, rename to snake_case — personal edits |
-| `original_size` | Original size | `original_size` | size (bytes) | Tutorial, RefImages | scalar | keep — see §17.3 |
-| `current_size` | Current size | `current_size` | size (bytes) | Tutorial, RefImages | scalar | keep — see §17.3 |
+| `original_size` | Original size | `original_size` | size (bytes) | common | scalar | keep — see §17.3; empty for Collection |
+| `current_size` | Current size | `current_size` | size (bytes) | common | scalar | keep — see §17.3; empty for Collection |
 | `complete` | Complete | `complete` | bool | Tutorial, RefImages | scalar | keep — "all files present"; default `true` |
 | `online` | Online | `online` | bool | Tutorial, RefImages | scalar | keep — "source still available online" (§17.2.4) |
 | `rating` | Rating | `rating` | rating (int) | Tutorial, RefImages | scalar | keep — **per-user**; may be negative |
@@ -79,8 +79,11 @@ disk scan (which in rehuco feed `current_duration` / `current_size` — see §17
 only:
 
 - **Common core (all types)** — `sources` (title/publisher/url), `authors`, `released`,
-  `description`, `advertised_tags`, `extra_tags`, `created`, `updated`.
-- **Resource fields (Tutorial + ReferenceImages)** — the size pair, `rating`, the boolean flags
+  `description`, `advertised_tags`, `extra_tags`, `created`, `updated`, and the measured
+  `original_size` / `current_size` pair (§17.3) — the sizes are core-scanner output, wanted by
+  every file-backed type; a Collection leaves them empty (it may later fill them from member
+  stats — see the Collection bullet below).
+- **Resource fields (Tutorial + ReferenceImages)** — `rating`, the boolean flags
   (`complete`, `online`, `viewed`, `todo`, `keep`, `favorite`; §17.2.6), and the `collections` /
   `learning_paths` memberships (§17.2.3). A **Collection** declares none of these.
 - **Tutorial only** — `original_duration` / `current_duration` / `advertised_duration` and
@@ -99,7 +102,7 @@ block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own 
 (§4.10, §13.2), so the file already has the plugin shape and won't need restructuring when
 plugins land. A block `format_version` of **0 means "no plugin yet"** — the fields live there
 but no plugin owns them; the first real plugin bumps it to `1`. Fields shared by Tutorial and
-ReferenceImages (the size pair, `rating`, the boolean flags, `collections`, `learning_paths`)
+ReferenceImages (`rating`, the boolean flags, `collections`, `learning_paths`)
 live inside whichever plugin block the file has. Collection has no block yet. See the §17.7
 fixtures.
 
@@ -188,6 +191,11 @@ is the *content's* publication date): when the `.rehu` record was first written 
 edited. tc4 stored neither; on import they seed from the file's timestamps. They are shared
 record state (an edit that syncs updates `updated`), and relate to the `resource_version` /
 timestamp markers used for staleness detection and sync (§4.7).
+
+Once the `versions` list lands in the schema (§7 — v1 carries no versions yet), both become
+**derivable**: `created` = the creation entry's date (index 0, which compaction never touches,
+§7) and `updated` = the latest entry's date. A later format version may then drop the stored
+fields in favor of the derived values — §4.10 makes that migration safe.
 
 ### §17.2.6 Boolean flags
 
@@ -291,7 +299,7 @@ The distinct value types the viewer must handle:
 | type | notes |
 | --- | --- |
 | text | single line |
-| text list | comma-joined for display, deduplicated; `authors`, `tags`, `extra_tags`, `learning_paths` |
+| text list | comma-joined for display, deduplicated; `authors`, `advertised_tags`, `extra_tags` |
 | url | rendered as an external hyperlink |
 | date | **partial precision** — year, year+month, or full date; sorts/compares across mixed precision |
 | duration | integer seconds; rendered per §17.3.2 |
@@ -301,6 +309,7 @@ The distinct value types the viewer must handle:
 | multi-choice | fixed value set; `level` ∈ {beginner, intermediate, advanced, any} |
 | Markdown | rich text; resolves embedded image paths relative to the file's folder |
 | int | plain integer; `collection_index`, `images_count` |
+| record list | list of small records; `sources`, `collections`, `learning_paths` (§17.2.3) |
 
 ## §17.5 tc4 viewer layout (reference for the v1 view)
 
@@ -347,6 +356,10 @@ Field order, in the three groups the layout separates:
   screenshot model.
 - **UUID (§4.2) and per-block format version (§4.10, §13.2)** — minted/added when writing
   `.rehu`; not present in legacy `.tc`, so they are an import concern, not a view concern.
+- **Partial-date comparison semantics** — `released` stores ISO-prefix strings (`2025`,
+  `2025-03`, `2025-03-08`); lexicographic sorting already orders them sensibly, but what a
+  comparison or *filter* means for a partial value (treat it as the interval it covers?) is
+  not decided — pin down before filtering lands (§17.4).
 
 ## §17.7 Example `.rehu` files (validation fixtures)
 
@@ -387,6 +400,8 @@ parser/schema validation fixtures.
   "description": "# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.",
   "advertised_tags": ["sculpting", "3d", "modeling"],
   "extra_tags": ["rework"],
+  "original_size": 5368709120,
+  "current_size": 1073741824,
   "tutorial": {
     "format_version": 0,
     "collections": [
@@ -396,8 +411,6 @@ parser/schema validation fixtures.
     "learning_paths": [
       { "title": "My Sculpting Path", "index": 2, "visibility": "private" }
     ],
-    "original_size": 5368709120,
-    "current_size": 1073741824,
     "original_duration": 71220,
     "current_duration": 18000,
     "advertised_duration": 72000,
@@ -435,12 +448,12 @@ parser/schema validation fixtures.
   "description": "Anatomy reference images.",
   "advertised_tags": ["reference", "anatomy"],
   "extra_tags": [],
+  "original_size": 2147483648,
+  "current_size": 2147483648,
   "reference_images": {
     "format_version": 0,
     "collections": [],
     "learning_paths": [],
-    "original_size": 2147483648,
-    "current_size": 2147483648,
     "images_count": null,
     "complete": true,
     "online": false,

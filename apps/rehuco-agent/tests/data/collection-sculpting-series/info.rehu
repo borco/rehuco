@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+  "type": "Collection",
+  "created": "2026-01-10T08:00:00Z",
+  "updated": "2026-01-10T08:00:00Z",
+  "sources": [
+    {
+      "title": "Sculpting Series",
+      "publisher": "Example Publisher",
+      "url": "https://example.com/series",
+      "primary": true
+    }
+  ],
+  "authors": ["First Author"],
+  "released": "2025",
+  "description": "The full sculpting series.",
+  "advertised_tags": ["sculpting", "series"],
+  "extra_tags": []
+}

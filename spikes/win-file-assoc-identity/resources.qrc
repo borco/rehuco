@@ -1,6 +1,0 @@
-<!DOCTYPE RCC>
-<RCC version="1.0">
-    <qresource prefix="/">
-        <file alias="icon.ico">rehuco-spike.ico</file>
-    </qresource>
-</RCC>

@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/">
+        <file>icons/rehuco-agent.ico</file>
+        <file>icons/rehuco-agent.svg</file>
+    </qresource>
+</RCC>

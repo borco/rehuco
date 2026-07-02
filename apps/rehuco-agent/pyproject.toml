@@ -30,6 +30,9 @@ Homepage = "https://borco.github.io/rehuco/"
 Repository = "https://github.com/borco/rehuco/tree/master/apps/rehuco-agent"
 Issues = "https://github.com/borco/rehuco/issues"
 
+[project.scripts]
+rehuco-agent = "rehuco_agent.__main__:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

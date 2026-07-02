@@ -26,15 +26,15 @@ Rather than relying purely on empirical UUID-matching to discover the mount-to-n
 
 The same mounting capability applies to nodes, not just the Qt app — a node can serve a resource it only has access to via a mount from another box, using the same `.rehuco`-declared relationship.
 
-## §9.5 Editing through a mount: explicit change notification, not disk-watching
+## §9.5 Out-of-band changes: notification, verify-on-access, and scan — not disk-watching
 
-Because most editing happens in the Qt app, and the Qt app may often be editing a `.rehu` via a mount rather than by talking to the owning node, the node responsible for that content needs to learn about the change quickly — without requiring a continuously-running filesystem watcher on the node (an unwanted resource cost, especially on the QNAP). Instead:
+Ordinary agent edits to a managed `.rehu` route through the owning node (§4.9, §5.3), so the node sees them by construction. What this section covers is the **out-of-band change** — a write the owning node didn't make: an agent in local-file mode with no route to the node (§5.3), files dropped in by other tools, a bulk copy landing in a watched root. The node must learn of these without a continuously-running filesystem watcher (an unwanted resource cost, especially on weak hardware). Three complementary discovery paths, ordered by immediacy:
 
-1. The Qt app edits the file directly through the mount (fast, no round-trip needed for the write itself).
-2. Knowing — via `.rehuco` — which node administers that path, the Qt app sends a lightweight **"re-read this specific resource"** notification, keyed by UUID/path.
-3. The node re-reads just that file and updates its cache, then propagates the change onward through the swarm as it would for any other metadata update.
-4. If the node is unreachable at that moment, the notification is queued as a retryable task (§3) rather than lost — it is not the Qt app's job to keep retrying by hand, and it is not the node's job to discover the change via a future full rescan (though scanning remains how a node discovers changes it wasn't explicitly told about, e.g. files dropped in by some other means).
-5. A burst of rapid edits to the same resource should be debounced into a single outgoing notification, consistent with the coalescing rule in §7.
+1. **Explicit notification (fast path).** Whoever made the change and knows — via `.rehuco` — which node administers the path sends a lightweight **"re-read this specific resource"** notification, keyed by UUID/path. If the node is unreachable at that moment, the notification is queued as a retryable task (§3) rather than lost — it is not the sender's job to keep retrying by hand. A burst of rapid edits to the same resource is debounced into a single outgoing notification, consistent with the coalescing rule in §7.
+2. **Verify-on-access (lazy path).** The node's cache stores each `.rehu`'s stat signature and content hash at last read (§4.7); opening, browsing to, or serving the resource re-checks it, so an out-of-band edit is reintegrated the moment anyone touches the resource again — no notification and no scan needed.
+3. **Incremental scan (catch-all).** Changes nobody announced and nobody has touched surface at the next version-aware incremental scan (§4.7).
+
+On any of the three, the node re-reads just that file, updates its cache, and propagates the change onward through the swarm as for any other metadata update, with the version-vector comparison deciding fast-forward vs. concurrent (§4.9).
 
 ## §9.6 Node handoff during active viewing
 
@@ -77,8 +77,8 @@ Deployment note: mount the shares **soft / with short timeouts** so failed sysca
 
 UUID-matching (§9.2) resolves overlaps *per resource, reactively*. Fingerprinting resolves the **topology of shared storage proactively** — it discovers that nodeA's `foo/1` + `foo/2` and nodeB's mounted `foo/` are the same underlying storage, and how their paths map, without waiting to observe per-resource UUID collisions. Mechanism:
 
-1. Each node drops a **content-unique fingerprint file** (containing a UUID identifying that node-root) into each top-level root declared in its `.rehuco`.
-2. All nodes do a fast, shallow scan looking for *other nodes'* fingerprint files.
+1. Each node drops a **content-unique fingerprint file** (containing a UUID identifying that node-root) into each top-level root it is **primary** for (§9.11) — never into remote/mounted roots, which it doesn't own and which may be read-only.
+2. All nodes do a fast, shallow scan looking for *other nodes'* fingerprint files, across **all** their roots — primary and mounted alike.
 3. If nodeB finds nodeA's fingerprint inside what nodeB calls `foo/`, then nodeB's `foo/` and nodeA's root are the same storage, and the **relative paths reveal the mapping** (nodeA's `foo/1` = nodeB's `foo/1` under the shared root). This reconstructs cross-node path-mapping automatically, including asymmetric cases (A maps two subdirs separately; B mounts the parent whole).
 
 Requirements: the fingerprint file must be content-unique per node-root (UUID inside), and the scan must handle **multiple fingerprints in one tree** (B's `foo/` may contain A's *and* C's fingerprints if three boxes share it). This same map is what detects the double-primary misconfiguration (§9.11): if two nodes both claim primary for storage the fingerprints prove is shared, the swarm flags it.

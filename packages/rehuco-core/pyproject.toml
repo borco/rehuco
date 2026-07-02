@@ -18,7 +18,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "borco-core",
+]
 
 [project.urls]
 Homepage = "https://borco.github.io/rehuco/"
@@ -34,3 +36,6 @@ path = "src/rehuco_core/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rehuco_core"]
+
+[tool.uv.sources]
+borco-core = { workspace = true }

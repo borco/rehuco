@@ -1,6 +1,13 @@
 # Claude Code
 /.claude/settings.local*
 
+# Qt generated files
+*_rc.py
+*_ui.py
+
+# generated icons (make icons; regenerated from the .svg master)
+*.ico
+
 # Python
 __pycache__/
 *.py[cod]
@@ -10,6 +17,7 @@ __pycache__/
 *.egg
 *.egg-info/
 .dist/
+/.build/
 build/
 wheels/
 sdist/
@@ -60,3 +68,6 @@ desktop.ini
 
 # Affinity Designer lock
 *.afdesign~lock~
+
+# Agent Continue Prompt
+continue_prompt.*
