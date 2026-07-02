@@ -11,6 +11,18 @@ else
 PATHSEP := :
 endif
 PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' '$(PATHSEP)' | sed 's/$(PATHSEP)$$//')
+
+# On non-Windows, drop rehuco_agent's Windows-only code from coverage -- it can't execute here, so
+# it would count as missed. COV_OMIT_WIN omits the whole platforms/windows/ package; COV_EXCLUDE_WIN
+# excludes __main__'s `if sys.platform == "win32":` branches. Consumed by pyproject.toml's coverage
+# config; left unset on Windows so that code is measured there by the Windows test set. conftest.py
+# sets the same vars for the VSCode test runner (which doesn't go through make); the Makefile covers
+# `make cov` / CI, where pytest-cov reads coverage config before conftest runs.
+ifneq ($(OS),Windows_NT)
+export COV_OMIT_WIN := */platforms/windows/*
+export COV_EXCLUDE_WIN := if sys.platform == "win32":
+endif
+
 UI_FILES   := $(patsubst %.ui,%_ui.py,$(shell find $(SEARCH_DIRS) -name '*.ui'  -print 2>/dev/null))
 QRC_FILES  := $(patsubst %.qrc,%_rc.py,$(shell find $(SEARCH_DIRS) -name '*.qrc' -print 2>/dev/null))
 # One app icon, not one-per-svg: icons/ can hold other (toolbar/decorative) svgs that must

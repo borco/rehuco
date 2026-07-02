@@ -84,6 +84,18 @@ omit = [
     # measure production code exercised by tests, not the tests' own lines
     "*/tests/*",
     "*conftest.py",
+    # Windows-only package: omitted on non-Windows via conftest (COV_OMIT_WIN); the default glob
+    # matches nothing, so on Windows it's measured. See conftest.py.
+    "${COV_OMIT_WIN-__no_such_path__}",
+]
+
+[tool.coverage.report]
+exclude_also = [
+    # rehuco_agent.__main__'s `if sys.platform == "win32":` blocks can't execute off Windows, so
+    # they'd count as missed there. The Makefile sets COV_EXCLUDE_WIN on non-Windows to this regex
+    # to exclude them; the default (?!) never matches, so on Windows -- and any direct pytest run --
+    # the branches are measured normally (the Windows test set exercises them on its own runner).
+    '${COV_EXCLUDE_WIN-(?!)}',
 ]
 
 [tool.coverage.html]
