@@ -13,15 +13,22 @@ endif
 PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' '$(PATHSEP)' | sed 's/$(PATHSEP)$$//')
 UI_FILES   := $(patsubst %.ui,%_ui.py,$(shell find $(SEARCH_DIRS) -name '*.ui'  -print 2>/dev/null))
 QRC_FILES  := $(patsubst %.qrc,%_rc.py,$(shell find $(SEARCH_DIRS) -name '*.qrc' -print 2>/dev/null))
-# One app icon, not one-per-svg: icons/ can hold other (toolbar/decorative) svgs that must
-# never become their own standalone .ico, so this is an explicit list, not a glob.
-ICON_FILES := apps/rehuco-agent/src/rehuco_agent/icons/rehuco-agent.ico
+# Brand icons live in a single top-level design/icons/ (issue #29): the Affinity Designer master
+# plus its exports. Consumers reference them in place -- qrc aliases (agent) and CMake (launcher);
+# only the docs site needs copies, since mkdocs can't read outside docs_dir.
+ICON_DIR    := design/icons
+ICON_FILES  := $(ICON_DIR)/rehuco-agent.ico
+DOCS_IMAGES := docs/assets/images
+DOCS_ICONS  := $(DOCS_IMAGES)/favicon.svg $(DOCS_IMAGES)/logo.svg
 
 uis: qrcs $(UI_FILES)
 
-qrcs: icons $(QRC_FILES)
+# qrcs no longer depends on icons: the qrc embeds only the .svg (referenced in place from
+# design/icons via an alias), not the .ico -- so a qrc rebuild doesn't need ImageMagick. The
+# launcher target depends on $(ICON_FILES) directly for the .ico it embeds in the exe.
+qrcs: $(QRC_FILES)
 
-icons: $(ICON_FILES)
+icons: $(ICON_FILES) $(DOCS_ICONS)
 
 %_ui.py: %.ui
 	uv run pyside6-uic $< --absolute-imports --python-paths "$(PYTHON_PATHS)" -o $@
@@ -29,8 +36,18 @@ icons: $(ICON_FILES)
 %_rc.py: %.qrc
 	uv run pyside6-rcc $< -o $@
 
-%.ico: %.svg
-	magick -background none $< -define icon:auto-resize=16,32,48,256 $@
+# .ico is built by downscaling the 1024px PNG master (reliable), not by rasterizing the SVG
+# (ImageMagick's SVG rasterizer is unreliable). The launcher's RC compiler embeds it in the exe.
+%.ico: %.png
+	magick $< -background none -define icon:auto-resize=16,24,32,48,64,128,256 $@
+
+# The docs site can't read outside docs_dir, so copy favicon + logo in. Real file targets give
+# the newer-than behaviour for free: make re-copies only when the design/icons source changed.
+$(DOCS_IMAGES)/favicon.svg: $(ICON_DIR)/favicon.svg
+	cp $< $@
+
+$(DOCS_IMAGES)/logo.svg: $(ICON_DIR)/rehuco-agent.svg
+	cp $< $@
 
 setup-git:
 	git config --replace-all remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"

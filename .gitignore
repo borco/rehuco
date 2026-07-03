@@ -5,7 +5,7 @@
 *_rc.py
 *_ui.py
 
-# generated icons (make icons; regenerated from the .svg master)
+# generated icons (make icons; built from the design/icons PNG master)
 *.ico
 
 # Python

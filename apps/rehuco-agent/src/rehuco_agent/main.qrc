@@ -1,6 +1,5 @@
 <RCC>
     <qresource prefix="/">
-        <file>icons/rehuco-agent.ico</file>
-        <file>icons/rehuco-agent.svg</file>
+        <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
     </qresource>
 </RCC>
