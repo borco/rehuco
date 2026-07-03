@@ -22,10 +22,14 @@ bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
 (which pulls in `qrcs` and `icons`) has to run before `pytest` can even collect tests — on every
 matrix leg, since a CI checkout starts from the same source tree as a fresh clone.
 
-Windows turned out to be the one leg missing a tool for that: checking the
-`actions/runner-images` Windows2022 image, it ships ImageMagick preinstalled (so `magick` needs no
-extra install) and has Chocolatey preinstalled, but has **no GNU Make** and **no Scoop**. Two
-alternatives were rejected:
+Every runner turned out to be missing at least one tool for that. Confirmed by the first real run
+of this workflow (not just the `actions/runner-images` docs): `ubuntu-latest` and `macos-latest`
+have no ImageMagick preinstalled at all — `make: magick: No such file or directory` — so both need
+an explicit install (`apt-get install imagemagick` / `brew install imagemagick`). `windows-latest`
+is the opposite case: it ships ImageMagick but has **no GNU Make** and **no Scoop** (checked
+against the `actions/runner-images` Windows2022 readme ahead of time, since Chocolatey vs. Scoop
+was a real design choice, not just a gap to fill in reactively). Two alternatives to installing
+`make` there were rejected:
 
 - **Bootstrap Scoop** (the package manager `apps/rehuco-agent/launcher/README.md` recommends for a
   developer's own machine) — it isn't present on the runner and would need its own
@@ -35,11 +39,13 @@ alternatives were rejected:
   Makefile already got right for issue #15, creating a second place for that fix to drift out of
   sync.
 
-The workflow instead adds a Windows-only `choco install make` step and then runs `make uis`
-unchanged on all three platforms, keeping the Makefile as the single source of truth for codegen.
-This is the one combination in the whole workflow that hadn't been exercised anywhere in this repo
-before — `choco`-installed `make` driving the Makefile's `$(shell find ...)` codegen under
-Windows — and may need a follow-up fix once the first real CI run confirms it.
+The workflow instead adds one per-OS package-manager step per missing tool (ImageMagick on
+Linux/macOS, `make` on Windows) and then runs `make uis` unchanged on all three platforms, keeping
+the Makefile as the single source of truth for codegen. The Windows leg was the bigger unknown
+going in — `choco`-installed `make` driving the Makefile's `$(shell find ...)` codegen through Git
+Bash's coreutils, a combination never exercised in this repo before — and it passed on the first
+real run; the ImageMagick gap on the other two legs was the one this section's first draft missed
+by trusting the `actions/runner-images` docs for Windows without checking Linux/macOS too.
 
 ## §A02.3 One shell for all three runners
 
