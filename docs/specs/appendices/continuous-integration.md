@@ -88,7 +88,19 @@ whatever a given runner image resolves it to. `astral-sh/setup-uv`'s `python-ver
 overrides that and pins the version `uv` provisions, guaranteeing it matches what `ruff`'s
 `target-version = "py314"` and `pyright`'s `pythonVersion = "3.14"` assume.
 
-## §A02.6 Two things that needed no extra work
+## §A02.6 Pinning `astral-sh/setup-uv` to an immutable release, not a floating major tag
+
+GitHub flagged `astral-sh/setup-uv@v6` as deprecated: it declares `node20`, which Actions is
+retiring, and was silently being run under `node24` anyway. `v7`+ declare `node24`, but
+`astral-sh/setup-uv`'s own v8.0.0 release notes announce it **stopped publishing floating major/minor
+tags** (`@v8`, `@v8.0`) specifically to close the supply-chain risk floating tags create — the same
+class of attack as the 2025 `tj-actions` compromise, where a floating tag got repointed to
+malicious code. Pinned to `@v8.2.0` (the immutable per-release tag) in both this workflow and
+`publish-docs.yml`, rather than following `actions/checkout`'s convention of a floating `@v7`.
+`actions/checkout@v7` and `docker/setup-qemu-action@v4` (`canary-rehuco-node.yml`) already resolve
+to `node24` as floating tags, so neither needed a change.
+
+## §A02.7 Two things that needed no extra work
 
 - **Headless Qt.** `QT_QPA_PLATFORM=offscreen` needs no workflow-level setting — the repo-root
   `conftest.py` already sets it (§A04.2) before any test module can build a `QApplication`.
