@@ -194,3 +194,54 @@ The agent should detect a newer release, flag it, and offer to install. Design p
 - For the `uv tool` / pip channel, "update" is simply re-installing the newer package.
 
 Code-signing / notarization is an unpriced prerequisite (§A03.2). Auto-update is end-user polish on the same track as §16.8, deferred past the personal critical path (plan: deferred).
+
+## §16.10 Design resources
+
+- [x] [#29: single icon master in top-level design/icons](https://github.com/borco/rehuco/issues/29)
+
+Brand icons come from a **single Affinity Designer master**, `design/icons/icons.afdesign`, in a
+**top-level `design/icons/`** folder — discoverable, and deliberately outside both `src/` (which
+hatch ships, §16.2) and `docs_dir` (which mkdocs would otherwise bundle into the built site). The
+master **exports raw assets** (`favicon.svg`, `rehuco-agent.svg`, and a 1024-px `rehuco-agent.png`);
+`make icons` derives the `.ico` and wires each consumer. Those exports are produced by a **manual
+Affinity Designer export** and are **committed to git**, so anyone can build and run the project
+**without Affinity Designer** — only re-exporting the master needs it (`design/icons/README.md` is
+the contributor-facing summary). The rule is **reference the master's exports in place where a
+consumer can reach `design/icons/`, and copy only where it cannot**:
+
+- **Agent (Qt resources).** `main.qrc` references the svg in place with an alias
+  (`../../../../design/icons/rehuco-agent.svg` → `:/icons/rehuco-agent.svg`), so the runtime
+  resource path is stable regardless of the on-disk location. `make qrcs` compiles the qrc into
+  `main_rc.py` (gitignored, regenerated); **the wheel ships that `.py`, not the raw images**, and
+  QML reads the same `qrc:/icons/…`. No copy.
+- **Launcher (§A05).** The dev launcher's `CMakeLists.txt` points the RC compiler at
+  `design/icons/rehuco-agent.ico` in place; it is embedded into the exe's PE resources for the
+  Explorer / taskbar / pin icon. No copy.
+- **Docs site.** mkdocs-material resolves `theme.favicon` / `theme.logo` **relative to `docs_dir`
+  and cannot read outside it**, so this is the one consumer that needs copies: `make icons` copies
+  `favicon.svg` → `docs/assets/images/favicon.svg` and `rehuco-agent.svg` →
+  `docs/assets/images/logo.svg` (each a real make target, so it re-copies only when the source is
+  newer).
+
+**Workflows that touch these assets:**
+
+- **`make icons`** — builds `rehuco-agent.ico` by **downscaling the 1024-px PNG master** to
+  `16,24,32,48,64,128,256` (reliable; rasterizing the SVG via ImageMagick is not — the naive
+  per-SVG `.ico` pitfall is §A05.3), then fan-out copies the docs favicon/logo. The `.ico` is
+  generated, hence gitignored.
+- **`make qrcs`** — `pyside6-rcc` compiles each `.qrc` into `<name>_rc.py`, embedding the aliased
+  svg. It **no longer depends on `make icons`**: the qrc embeds only the svg (referenced from
+  `design/icons/`), not the `.ico`, so a resource rebuild needs no ImageMagick.
+- **`make uis`** — `pyside6-uic` regenerates the `*_ui.py` (which import `*_rc`); depends on
+  `qrcs`.
+
+**Conventions:**
+
+- **SVG export size is irrelevant** — SVG is resolution-independent; keep a **square `viewBox`**
+  and **pure-vector paths** (no embedded rasters). mkdocs sizes the header logo via CSS, not the
+  SVG's intrinsic dimensions, so there is no "logo size" to tune in the export.
+- **Keep the PNG master at 1024 px** — ample for the 256-px `.ico`, and it future-proofs a macOS
+  `.icns` (512/1024).
+- **The `.ico` is derived from the PNG master**, never from the SVG.
+- **Masters stay out of `src/` and `docs_dir`**, so neither the wheel nor the built site bundles
+  the editable `.afdesign`.
