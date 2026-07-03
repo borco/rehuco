@@ -22,7 +22,7 @@ Read before any non-trivial task:
 
 ### Milestones
 
-`Pre-work` (monorepo setup, integration spikes, de-risking), then `A0`, `A1`, … — GH milestone names track the
+`Pre-work` (monorepo setup, integration spikes, de-risking), then `A1`, `A2`, … — GH milestone names track the
 per-slice labels in `implementation-plan.md`; keep the two in step.
 
 ## Monorepo layout
@@ -125,6 +125,6 @@ subtle error silently corrupts data: sync engine (§7), plugin block save invari
 
 Agile cadence + tracer-bullet first slices + occasional spikes. **Tracer bullet** — minimal but real,
 production-grade, kept; proves the layers connect end-to-end. **Spike** — throwaway; answers one sharp
-question; keep the lesson, delete the code. Current phase: **Pre-work**. Next milestone: **A0** — double-click
+question; keep the lesson, delete the code. Current phase: **Milestone A** (local view/edit). The **A1** tracer — double-click
 a `.rehu` → single-instance agent → read → render common fields + Markdown + image strip → edit one field →
-atomic-save.
+atomic-save — is done (#7); next slice is **A2**, the field toolkit (§13.1).

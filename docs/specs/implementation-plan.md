@@ -6,7 +6,7 @@
 > Each milestone opens with a **tracer bullet** — the thinnest real, kept, production-grade path through every
 > layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking the
 > working spine. This counters the failure mode of building layers deeply in isolation before anything works
-> as a whole. A0, B0, and C0 are the tracer bullets; everything else thickens them.
+> as a whole. A1, B1, and C1 are the tracer bullets; everything else thickens them.
 >
 > *Concept from [The Pragmatic Programmer](https://en.wikipedia.org/wiki/The_Pragmatic_Programmer)
 > (Thomas & Hunt); further discussion at [wiki.c2.com](https://wiki.c2.com/?TracerBullets).*
@@ -51,7 +51,7 @@ A third term, **spike** (from XP), is often confused with a tracer bullet. They'
 
 **They sequence:** for a layer with genuine unknowns → **spike** (learn, discard) → **tracer bullet** (build the thin real spine, now informed) → **thicken** (iterations). Skip the spike where there are no real unknowns.
 
-In this plan, **A0/B0/C0 are tracer bullets** (kept spines). The items flagged *(spike)* below are throwaway — keep the lesson, delete the code.
+In this plan, **A1/B1/C1 are tracer bullets** (kept spines). The items flagged *(spike)* below are throwaway — keep the lesson, delete the code.
 
 ### Model strategy (Claude Code): `opusplan` backbone, manual escalation for the hard cores
 
@@ -78,9 +78,48 @@ These unblock or de-risk everything after; small but high-leverage.
 | Stand up the monorepo (uv workspaces) | setup (kept) | The dev environment for everything; fixes the venv-confusion immediately (§16) | Root virtual workspace + `packages/rehuco-core`, `apps/rehuco-agent`; add `rehuco-node` later when Milestone B starts |
 | Decide the **tutorial** and **reference-image** field lists | decision | Specific-field rendering is the one thing blocked on schema (§A03.2) | The generic editor does *not* need this; only the rich per-type view does. Decide enough to start, refine later |
 | Decide access-rule grammar | decision | Not needed for Milestones A/B (single user, local) | Can defer to Milestone C-ish; noted so it's not forgotten |
-| **pyqtads + QML integration (regression check)** | **spike** | Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions | QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that **detaches to a floating window and re-docks** without glitches (the classic QML cross-window trouble spot), a **QWidgets dock and QML dock coexisting** in one layout, and **layout save/restore** with a QML dock present — including **whether closed/hidden docks restore their size** (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to **keep QML surfaces in non-detachable docks or reduce the QML footprint** — *not* switch to KDDockWidgets, which is foreclosed by its GPL license (architecture §16.7). pyqtads stays (LGPL, prebuilt PySide6 bindings). **Result:** approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a `splitterSizes` stash/reapply workaround — carried into A0. Recorded in §16.7.1 |
+| **pyqtads + QML integration (regression check)** | **spike** | Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions | QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that **detaches to a floating window and re-docks** without glitches (the classic QML cross-window trouble spot), a **QWidgets dock and QML dock coexisting** in one layout, and **layout save/restore** with a QML dock present — including **whether closed/hidden docks restore their size** (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to **keep QML surfaces in non-detachable docks or reduce the QML footprint** — *not* switch to KDDockWidgets, which is foreclosed by its GPL license (architecture §16.7). pyqtads stays (LGPL, prebuilt PySide6 bindings). **Result:** approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a `splitterSizes` stash/reapply workaround — carried into A1. Recorded in §16.7.1 |
 | **QNAP/glibc dependency canary** | **spike** | De-risks Milestone B's node deps early | Build a glibc-2.23 container; confirm FastAPI/uvicorn/zeroconf/pydantic-core/cryptography wheels load. Keep the lesson (a pinned compatible-versions list); the container/script is throwaway |
-| **File association + app identity** | **spike** | De-risks A0's "double-click → opens" before A0 depends on it (§16.8) | macOS: a minimal `.app` (built via Briefcase) that's the default opener for `.rehu` and delivers the path as a **`QFileOpenEvent`** into a single running PySide6 instance (§5.4) — macOS does *not* pass it as `argv`. Windows: an HKCU **ProgID** for default double-click + an explicit **AUMID** (`SetCurrentProcessExplicitAppUserModelID`) so a pinned taskbar button shows the app's icon and lights up as running (the gap `resource-hub` only papered over with a PyInstaller exe), with `DefaultIcon` from a shipped `.ico`. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect |
+| **File association + app identity** | **spike** | De-risks A1's "double-click → opens" before A1 depends on it (§16.8) | macOS: a minimal `.app` (built via Briefcase) that's the default opener for `.rehu` and delivers the path as a **`QFileOpenEvent`** into a single running PySide6 instance (§5.4) — macOS does *not* pass it as `argv`. Windows: an HKCU **ProgID** for default double-click + an explicit **AUMID** (`SetCurrentProcessExplicitAppUserModelID`) so a pinned taskbar button shows the app's icon and lights up as running (the gap `resource-hub` only papered over with a PyInstaller exe), with `DefaultIcon` from a shipped `.ico`. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect |
+
+---
+
+## Milestone shape at a glance
+
+The three near-term milestones map one-to-one onto the personal priorities above, ordered so each **climbs exactly one rung up the distribution ladder** and introduces exactly **one new architectural spine** — isolating integration risk (the architecture's thesis is that the risk is *integration, not features*).
+
+| | **A — Local view/edit** | **B — Watch from a tablet** | **C — Borrow offline** |
+| --- | --- | --- | --- |
+| **Use-case** | View/edit a local `.rehu` | Watch a tutorial from a browser | Borrow a copy, watch offline |
+| **Topology** | 1 machine, no network | 1 node + thin browser clients (LAN) | 2 parties (home node ↔ laptop) |
+| **New spine** | Field/block/plugin rendering + local file I/O | The node + agent-as-node-client refactor (§5.1) + web stack | Version-vector + activity-log sync (§7), two-party |
+| **Deliberately absent** | No node, swarm, or login | No swarm, pairing, multi-node sync, or auth-propagation | No general swarm — just two-party reconcile |
+| **New skill / risk** | Rendering the data model end-to-end | Web stack (FastAPI/HTMX/Pico), SQLite cache, video serving | Conflict/merge machinery |
+
+Three principles hold across the split:
+
+- **Monotonically increasing distribution complexity.** A is standalone (no network); B adds a single node serving thin clients; C adds two-party sync — the first real reconcile, but the minimal topology. The full **N-node swarm** (discovery, pairing, registry, safe-move — §6, §9.10–9.13) is deferred *past* all three.
+- **One new integration risk per milestone.** Each isolates a single unproven spine so nothing tackles two at once; within each, the first slice (A1/B1/C1) is a kept **tracer bullet** and the rest thicken it.
+- **Each is independently useful and shippable.** A is a standalone tool even if B/C never ship; B adds tablet watching; C adds offline borrow. Value lands at every milestone boundary.
+
+Everything heavier — full swarm, acquisition/LLM tooling (§15), reference-image richness, Daz3D, multi-user auth, native installers — is deliberately parked past C (see [What is deliberately deferred](#what-is-deliberately-deferred-past-these-three)).
+
+---
+
+## Versioning & releases
+
+Version numbers follow the milestones for the shipped **apps**, but the reusable **libraries** version independently — because a version number is a compatibility contract only for code other projects *import*.
+
+- **`rehuco-agent`, `rehuco-node`, and `rehuco-core`** — **MAJOR = the number of completed milestones.** `0.x` while Milestone A is being built → **`1.0` when Milestone A is complete** (the standalone local tool) → `1.x` through B → **`2.0`** when B is complete → **`3.0`** when C is complete. **MINOR = a shipped slice** within the in-progress milestone (slice `A2` → `0.2`, `A3` → `0.3`, …); **PATCH** = fixes. These three release **in lockstep**; `rehuco-node` simply has no releases until Milestone B, then joins at `1.x`, staying aligned with the agent. Treating MAJOR as "milestone" rather than "breaking change" is acceptable **only because these have no external API consumers** — the apps are end-products and `rehuco-core`'s only consumers are the in-repo apps. If `rehuco-core` ever gains external consumers, it splits off to independent SemVer (below).
+- **`borco-core`, `borco-pyside`** — generic, reusable, and slated to move to their own repository (§16.2), so they *will* have external consumers → **ordinary, independent SemVer**, decoupled from rehuco's milestones. They stay in `0.x` with `0.y` as the compatibility unit (bump **MINOR** `y` for a breaking or notable change, **PATCH** `z` for a fix), and reach **`1.0` on the move-out**, when the public API is frozen. A new `borco-*` release is published alongside a rehuco release only when the library actually changed.
+
+| Milestone complete | `rehuco-agent` / `-node` / `-core` | `borco-core` / `-pyside` |
+| --- | --- | --- |
+| A | `1.0` | independent `0.y` → `1.0` on move-out |
+| B | `2.0` | independent |
+| C | `3.0` | independent |
+
+Automated PyPI publishing is tracked in issue #18 and is not yet wired up — every package is a `0.0.0` stub until then, so this policy is recorded now and applied at first publish.
 
 ---
 
@@ -88,7 +127,7 @@ These unblock or de-risk everything after; small but high-leverage.
 
 **Goal:** a standalone, usable tool that opens, displays, and edits a local `.rehu` for tutorials and reference images. This is the agent's local-file mode (§5.3), and a genuinely useful product on its own.
 
-### A0 — Tracer bullet (the spine)
+### A1 — Tracer bullet (the spine)
 
 > Double-click a `.rehu` in File Explorer → single-instance agent opens → reads the file off disk → renders common fields + Markdown + a basic image strip → edit one field → atomic-save back.
 
@@ -96,15 +135,15 @@ Deliberately minimal: one resource shown via the **generic field editor** (not y
 
 Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.3 (local-file mode), §13.3 (generic editor), §13.5 (Markdown + image strip).
 
-### A1–An — Thicken the spine (iterations, each shippable)
+### A2–An — Thicken the spine (iterations, each shippable)
 
-- **A1 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path, image-count) with editor/viewer variants — the shared toolkit plugins compose from (§13.1). (TutCatalog5 has prior art here to draw on as a *design* reference.)
-- **A2 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule (§4.10). Bring `.tc`→`.rehu` migration in as "format v0" (§15.3) — opening a `.tc` offers migration + screenshot-name normalization.
-- **A3 — Plugin block model.** Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with carry/map/drop (§13.2/§13.3). This is the genuinely new core logic.
-- **A4 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next, hideable strip, ESC), folder-rename-from-suggestions (§13.5).
-- **A5 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're §13.6 richness, not needed for "view/edit").
-- **A6 — Checksums.** Generate/verify with algorithm-tagging, as task-queue jobs (§4.5) — pairs naturally with migration.
-- **A7 — Tray + polish.** Close-to-tray/explicit-quit (§5.4), preferences.
+- **A2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path, image-count) with editor/viewer variants — the shared toolkit plugins compose from (§13.1). (TutCatalog5 has prior art here to draw on as a *design* reference.)
+- **A3 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule (§4.10). Bring `.tc`→`.rehu` migration in as "format v0" (§15.3) — opening a `.tc` offers migration + screenshot-name normalization.
+- **A4 — Plugin block model.** Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with carry/map/drop (§13.2/§13.3). This is the genuinely new core logic.
+- **A5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next, hideable strip, ESC), folder-rename-from-suggestions (§13.5).
+- **A6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're §13.6 richness, not needed for "view/edit").
+- **A7 — Checksums.** Generate/verify with algorithm-tagging, as task-queue jobs (§4.5) — pairs naturally with migration.
+- **A8 — Tray + polish.** Close-to-tray/explicit-quit (§5.4), preferences.
 
 **Exit criteria:** open any tutorial or ref-image `.rehu` (or migrate a `.tc`), view it richly, edit and atomic-save, generate/verify checksums. Standalone, no infrastructure.
 
@@ -118,7 +157,7 @@ Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.
 
 > Note: this introduces the **node** and the **agent-as-node-client** refactor (§5.1) — the first architecturally new spine beyond Milestone A.
 
-### B0 — Tracer bullet (the spine)
+### B1 — Tracer bullet (the spine)
 
 > A single headless node serves an HTTP page listing one configured tutorial → tap it → browser plays the video → progress is recorded server-side and survives a reload.
 
@@ -126,14 +165,14 @@ Minimal: one node, one hard-configured folder, no catalog DB yet (or the simples
 
 Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/Pico — new skill), §13.5 web/follow, progress write (§7/§9.6 minimal).
 
-### B1–Bn — Thicken
+### B2–Bn — Thicken
 
-- **B1 — Agent-as-node-client refactor.** Move the agent's catalog reads to go through a node (§5.1). The local-file viewer (Milestone A) stays node-free; only catalog/swarm operations route through the node. (`rehuco-node` package created now.)
-- **B2 — SQLite cache + incremental scan.** The node builds `.rehudb` from `.rehu` files, version-aware incremental scan (§4.7, §4.8).
-- **B3 — Generic + tutorial browsers.** Table view with common columns + tutorial columns (duration, progress); click opens viewer; click-to-filter on tag/author/publisher (§13.4). (Desktop first; web browser view can mirror it.)
-- **B4 — Web follow mode.** Sequential playback, progress/duration tracking, notes, bookmarks in the browser (§13.5 web).
-- **B5 — Progress sync frequency + handoff basics.** Frequent progress writes so a reload/resume is current (§9.6) — even single-node benefits.
-- **B6 — Minimal auth (optional this milestone).** Even single-user, a login gate for the web UI (§6.8) if you want the tablet to require it; can defer if it's just you on a trusted LAN.
+- **B2 — Agent-as-node-client refactor.** Move the agent's catalog reads to go through a node (§5.1). The local-file viewer (Milestone A) stays node-free; only catalog/swarm operations route through the node. (`rehuco-node` package created now.)
+- **B3 — SQLite cache + incremental scan.** The node builds `.rehudb` from `.rehu` files, version-aware incremental scan (§4.7, §4.8).
+- **B4 — Generic + tutorial browsers.** Table view with common columns + tutorial columns (duration, progress); click opens viewer; click-to-filter on tag/author/publisher (§13.4). (Desktop first; web browser view can mirror it.)
+- **B5 — Web follow mode.** Sequential playback, progress/duration tracking, notes, bookmarks in the browser (§13.5 web).
+- **B6 — Progress sync frequency + handoff basics.** Frequent progress writes so a reload/resume is current (§9.6) — even single-node benefits.
+- **B7 — Minimal auth (optional this milestone).** Even single-user, a login gate for the web UI (§6.8) if you want the tablet to require it; can defer if it's just you on a trusted LAN.
 
 **Exit criteria:** open the web UI on the iPad over the LAN, see your tutorials, watch one, progress is remembered across sessions and devices.
 
@@ -145,18 +184,18 @@ Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/P
 
 **Goal:** before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node, §11.5); sync progress/notes back on return. This is a **two-party** sync (home node ↔ laptop), far simpler than general swarm sync.
 
-### C0 — Tracer bullet (the spine)
+### C1 — Tracer bullet (the spine)
 
 > Mark a tutorial "borrow" → its files + `.rehu` copy onto the laptop, borrow recorded in the user meta block (§11.4) → laptop node serves it offline → on return, progress/notes reconcile back.
 
 Touches, thinly: §11 (borrow as instance role), §10.2 (instance tracking), §7/§12 (two-party reconcile), §11.4 (borrow-in-meta).
 
-### C1–Cn — Thicken
+### C2–Cn — Thicken
 
-- **C1 — Instance registry (minimal).** Track where a UUID's copies live + roles; enough for borrow/return (§10.2).
-- **C2 — Version-vector + activity-log sync.** The real reconcile machinery (§7), scoped to two parties first.
-- **C3 — Return/reconcile UI.** Merge progress/notes; handle the borrow-vs-changed cases (§11.6) if they arise.
-- **C4 — Scheduled archival.** Borrow→archive-on-return, full or selective (§11.3).
+- **C2 — Instance registry (minimal).** Track where a UUID's copies live + roles; enough for borrow/return (§10.2).
+- **C3 — Version-vector + activity-log sync.** The real reconcile machinery (§7), scoped to two parties first.
+- **C4 — Return/reconcile UI.** Merge progress/notes; handle the borrow-vs-changed cases (§11.6) if they arise.
+- **C5 — Scheduled archival.** Borrow→archive-on-return, full or selective (§11.3).
 
 **Exit criteria:** borrow → go offline → watch + take notes → return → changes reconciled.
 
@@ -176,15 +215,15 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 
 ## Sequencing gates (decide-before-you-start)
 
-- **Before A1:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
+- **Before A2:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
 - **Before the dock manager + mixed QML/QWidgets UI is adopted, at the first slice with a
-  browser+viewer dock shell (currently B3):** the pyqtads + QML integration *spike* (pre-work,
+  browser+viewer dock shell (currently B4):** the pyqtads + QML integration *spike* (pre-work,
   issue #4) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
   versions.
-- **Before A0 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work; also settles Briefcase as the end-user packager.
+- **Before A1 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work; also settles Briefcase as the end-user packager.
 - **Before B (serving NAS content):** no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB (§16.4). The glibc canary findings (§16.5) are kept as a reference if direct QNAP deployment is ever reconsidered.
 - **Before B web work:** a short FastAPI/HTMX/Pico **spike**, since it's a new stack — answer "can I build the follow-mode page the way I need?", keep the lesson, discard the toy.
-- **Before B0 promises "browser plays the video":** an iPad-playback **spike** — serve a representative sample of the real catalog to the actual tablet: container/codec coverage (Safari plays H.264/HEVC in MP4/MOV; MKV — common in tutorial catalogs — does not play natively), the self-signed-HTTPS trust story (§A03.2), and HTTP Range seeking. The outcome decides whether Milestone B grows a remux/transcode task-queue job.
+- **Before B1 promises "browser plays the video":** an iPad-playback **spike** — serve a representative sample of the real catalog to the actual tablet: container/codec coverage (Safari plays H.264/HEVC in MP4/MOV; MKV — common in tutorial catalogs — does not play natively), the self-signed-HTTPS trust story (§A03.2), and HTTP Range seeking. The outcome decides whether Milestone B grows a remux/transcode task-queue job.
 - **Before C:** nothing new architecturally — it reuses §7's reconcile, scoped to two parties.
 
 ## Honest caveats
