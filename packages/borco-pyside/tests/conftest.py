@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from borco_pyside.core import ApplicationSingleton
+from PySide6.QtCore import QCoreApplication, QEvent
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 
@@ -29,4 +30,11 @@ def make_singleton(qtbot: QtBot) -> Iterator[Callable[..., ApplicationSingleton]
 
     for singleton in created:
         singleton.shutdown()
+    # shutdown() schedules each QLocalServer and its accepted QLocalSockets for destruction via
+    # deleteLater(). qtbot.wait() runs a nested event loop, but DeferredDelete events posted at a
+    # different loop level are not reliably reaped there; on Linux's glib dispatcher they instead
+    # pile up across tests and later segfault when a server is finally destroyed after a child
+    # socket was already freed. Flush them explicitly so each test disposes of its own Qt objects
+    # (QT_QPA_PLATFORM=offscreen alone is not enough on Linux — see docs testing.md §A04.2).
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
     qtbot.wait(10)

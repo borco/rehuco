@@ -1,4 +1,4 @@
-# §A03. Testing and Cross-Platform QA
+# §A04. Testing and Cross-Platform QA
 
 How rehuco's tests and static checks are structured and run, and the cross-platform gotchas that
 took real time to work through — most of them surfaced by the **first full `make qa` run on
@@ -10,7 +10,7 @@ platform's own runner.** A test that can't apply on the current OS is *skipped*,
 that can't execute on the current OS is *excluded from coverage* there and measured on the runner
 where it does execute.
 
-## §A03.1 The QA gate
+## §A04.1 The QA gate
 
 `make qa` runs, in order: `ruff format` + `ruff check --fix`, then `pytest` with coverage
 (`make cov`), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus `pytest-mock`,
@@ -21,7 +21,7 @@ beside their packages under `packages/*/tests` and `apps/*/tests` (`testpaths` i
 Each test's docstring ends with a `**Test steps:**` bullet list, so intent is readable without
 tracing the code (a project convention, not a pytest feature).
 
-## §A03.2 Qt tests must run headless
+## §A04.2 Qt tests must run headless
 
 **Symptom:** running the Qt-touching tests (`ApplicationSingleton`, the agent app/viewer tests)
 without an active window server — a CI runner, or macOS over SSH — **segfaults** (exit 139) during
@@ -40,7 +40,33 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 to watch windows during GUI debugging. None of conftest's own imports pull in Qt, so setting it at
 conftest import time is early enough.
 
-## §A03.3 Platform-conditional tests
+**Linux needs more than `offscreen`** (surfaced by the cross-platform CI in
+[#14](https://github.com/borco/rehuco/issues/14); the fix above was only ever exercised on macOS,
+where it sufficed). On the `ubuntu-latest` leg the same `test_application_singleton.py` still
+segfaulted (exit 139) with `offscreen` set — this time the C stack ran through
+`QEventDispatcherGlib::processEvents` → `QCoreApplicationPrivate::sendPostedEvents` into a
+`~QLocalServer` → `deleteChildren` → `~QLocalSocket` chain, i.e. a deferred `deleteLater()` firing
+during teardown. Root cause: `ApplicationSingleton.shutdown()` disposes of its `QLocalServer` (and
+the sockets it accepted) via `deleteLater()`, but `qtbot.wait()` runs a *nested* event loop, and
+`DeferredDelete` events posted at a different loop level are not reliably reaped there. On Linux's
+glib dispatcher they instead accumulate across tests and eventually crash when a server is destroyed
+after one of its child sockets was already freed. (macOS's cocoa dispatcher happened to reap them in
+an order that didn't crash, which is why `offscreen` alone looked sufficient there.)
+
+**Fix:** the `make_singleton` fixture's teardown flushes the deferred deletions explicitly, so each
+test disposes of its own Qt objects instead of leaving them for a later test's event loop:
+
+```python
+QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+qtbot.wait(10)
+```
+
+Every `ApplicationSingleton` this fixture builds is `shutdown()`- then-flushed, so no queued
+`deleteLater()` crosses a test boundary. This is a test-harness concern only: a real app runs
+`app.exec()` to completion, whose event loop (and the `QApplication` destructor on exit) reap
+`DeferredDelete` continuously, so nothing accumulates.
+
+## §A04.3 Platform-conditional tests
 
 Two distinct mechanisms, for two distinct needs:
 
@@ -80,7 +106,7 @@ windll.shell32.SetCurrentProcessExplicitAppUserModelID.assert_not_called()
 This works identically on all platforms (on Windows `windll` already exists; `create=True` is then
 a harmless no-op).
 
-## §A03.4 Static analysis across platforms
+## §A04.4 Static analysis across platforms
 
 `win_registration.py` uses Windows-only stdlib (`winreg`, `ctypes.windll`), which the linters flag
 when qa runs on macOS/Linux:
@@ -95,7 +121,7 @@ when qa runs on macOS/Linux:
   is enabled, so it would itself be flagged on Windows, where the import resolves fine. A
   module-level ignore is platform-safe.
 
-## §A03.5 Coverage of platform-specific code
+## §A04.5 Coverage of platform-specific code
 
 Windows-only code can't run on a macOS/Linux qa pass, so it would count as missed: the whole
 `platforms/windows/` package, and `__main__.py`'s two `if sys.platform == "win32":` branches. It
@@ -131,7 +157,7 @@ Two implementation notes worth keeping:
   `pytest_load_initial_conftests`. `[tool.pytest.ini_options] pythonpath = ["."]` puts the repo
   root on `sys.path` in time; without it the plugin fails with `ModuleNotFoundError`.
 
-## §A03.6 A build step that broke test *collection*
+## §A04.6 A build step that broke test *collection*
 
 Not a test issue per se, but it first showed up as one: `pyside6-uic --python-paths` expects the
 OS-native path separator (`;` on Windows, `:` elsewhere). The Makefile hardcoded `;`, so on

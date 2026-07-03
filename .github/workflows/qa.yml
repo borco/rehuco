@@ -1,0 +1,80 @@
+name: QA
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  qa:
+    name: qa (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+
+      # windows-latest ships ImageMagick but not GNU Make; see §A02.2.
+      - name: Install make (Windows)
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress -y
+
+      # ubuntu-latest/macos-latest don't ship ImageMagick; windows-latest already has it.
+      # Ubuntu's `imagemagick` apt package is IM6, which has no unified `magick` binary (that's
+      # IM7-only) -- alias it to the IM6 `convert` command the Makefile's rule is compatible with.
+      # libgl1/libegl1/libxkbcommon0: needed for Qt6Gui to load under QT_QPA_PLATFORM=offscreen for
+      # the test suite -- same package set as the sibling pyside6-scintilla project's CI, which
+      # hits this identical PySide6-on-bare-Linux gap; see §A02.3.
+      - name: Install Linux system dependencies (ImageMagick, Qt runtime libs)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick libgl1 libegl1 libxkbcommon0
+          command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
+
+      # The runner image pre-taps aws/tap; newer Homebrew warns that it's ignoring the untrusted
+      # tap on every `brew install`. We only need the homebrew/core `imagemagick` formula, so drop
+      # the unrelated tap first to keep the install output clean (§A02.2).
+      - name: Install ImageMagick (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install imagemagick
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Generate Qt build artifacts (uic/rcc/icons)
+        run: make uis
+
+      # Non-mutating equivalent of `make format` -- see §A02.1.
+      - name: Check formatting and lint (ruff)
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+
+      - name: Run tests with coverage
+        run: make cov
+
+      - name: bandit
+        run: make bandit
+
+      - name: pyright
+        run: make pyright
+
+      - name: pylint
+        run: make pylint

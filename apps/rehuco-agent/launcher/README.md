@@ -20,7 +20,7 @@ implementation hurdle hit building this launcher, and how each was solved.
 ## Prerequisites
 
 - Visual Studio 2022 (or Build Tools) with the C++ workload.
-- `cmake` on `PATH` -- prefer a recent one (§A02.1 explains why an old bundled CMake
+- `cmake` on `PATH` -- prefer a recent one (§A05.1 explains why an old bundled CMake
   specifically breaks this). `scoop install cmake` is the recommended way to get one:
 
   ```sh
