@@ -51,15 +51,26 @@ Bash's coreutils, a combination never exercised in this repo before — and it p
 real run; the ImageMagick gap on the other two legs was the one this section's first draft missed
 by trusting the `actions/runner-images` docs for Windows without checking Linux/macOS too.
 
-## §A02.3 Bare Linux runners are missing a Qt runtime library, not just a display
+## §A02.3 Bare Linux runners are missing Qt runtime libraries, not just a display
 
 Past `make uis`, `ubuntu-latest` failed again, differently: `pytest` itself crashed with
 `INTERNALERROR> ImportError: libEGL.so.1: cannot open shared object file` while `pytest-qt`
 imported `PySide6.QtGui`. This is unrelated to §A04.2's `QT_QPA_PLATFORM=offscreen` — that setting
 only picks *which* Qt platform plugin loads once `QtGui` is already importable; it doesn't change
 what shared libraries `QtGui` itself links against at import time. A bare `ubuntu-latest` runner
-doesn't ship `libEGL.so.1` at all (macOS and Windows have no equivalent gap, so only the Linux leg
-needs this). Fixed by installing `libegl1` via apt alongside ImageMagick.
+ships none of them (macOS and Windows have no equivalent gap, so only the Linux leg needs this).
+
+Installing just `libegl1` wasn't enough: the next run got past the import but segfaulted
+(`Error 139`) inside `QLocalServer`/`QLocalSocket` teardown in the `ApplicationSingleton` test —
+the same crash signature §A04.2 documents, just not fully eliminated by `offscreen` alone on Linux.
+The sibling `pyside6-scintilla` project hits this identical PySide6-pytest-`offscreen`-on-Linux gap
+in its own CI and has a working fix: `libgl1 libegl1 libxkbcommon0`. A community GitHub Action,
+`tlambert03/setup-qt-libs`, was also checked as a candidate before reaching for that fix — but its
+package list (`libdbus-1-3`, six `libxcb-*` packages, `x11-utils`, `libopengl0`, deprecated in
+favor of `pyvista/setup-headless-display-action`) targets the **xcb** platform plugin, not
+`offscreen`, and adding a third-party action's broader surface for packages this project's own
+Qt/pytest combination doesn't need wasn't worth it. `pyside6-scintilla`'s narrower, already-proven
+set was adopted instead.
 
 ## §A02.4 One shell for all three runners
 
