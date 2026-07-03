@@ -51,6 +51,12 @@ Bash's coreutils, a combination never exercised in this repo before — and it p
 real run; the ImageMagick gap on the other two legs was the one this section's first draft missed
 by trusting the `actions/runner-images` docs for Windows without checking Linux/macOS too.
 
+One cosmetic follow-up on the macOS leg: the runner image pre-taps `aws/tap`, and newer Homebrew
+prints a tap-trust warning that it's ignoring the untrusted tap on every `brew install`. The QA
+job only needs the `homebrew/core` `imagemagick` formula, so the macOS step runs `brew untap
+aws/tap` first (guarded, since the tap may be absent on a future image) to keep the install output
+free of that warning annotation.
+
 ## §A02.3 Bare Linux runners are missing Qt runtime libraries, not just a display
 
 Past `make uis`, `ubuntu-latest` failed again, differently: `pytest` itself crashed with

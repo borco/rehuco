@@ -46,9 +46,14 @@ jobs:
           sudo apt-get install -y imagemagick libgl1 libegl1 libxkbcommon0
           command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
 
+      # The runner image pre-taps aws/tap; newer Homebrew warns that it's ignoring the untrusted
+      # tap on every `brew install`. We only need the homebrew/core `imagemagick` formula, so drop
+      # the unrelated tap first to keep the install output clean (§A02.2).
       - name: Install ImageMagick (macOS)
         if: runner.os == 'macOS'
-        run: brew install imagemagick
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install imagemagick
 
       - name: Install dependencies
         run: uv sync
