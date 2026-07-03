@@ -330,7 +330,7 @@ Field order, in the three groups the layout separates:
 ## §17.6 Deferred / open items
 
 - **Common/plugin boundary** — the §17.2 tiers (common core / resource fields / per-type) are a
-  first cut; finalize when the field toolkit (A1) and plugin blocks (§13) land. The generic
+  first cut; finalize when the field toolkit (A2) and plugin blocks (§13) land. The generic
   editor does not depend on it.
 - **Collection *type* — deferred** (§17.2.1) — which fields a `type: Collection` record
   shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
