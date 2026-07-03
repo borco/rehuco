@@ -3,17 +3,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![QA](https://github.com/borco/rehuco/actions/workflows/qa.yml/badge.svg)](https://github.com/borco/rehuco/actions/workflows/qa.yml)
 [![Coverage](https://img.shields.io/badge/Coverage-blue)](https://codecov.io/gh/borco/rehuco)
-![Windows](https://img.shields.io/codecov/c/github/borco/rehuco?flag=windows&label=Windows)
-![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)
-![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)
+[![Windows](https://img.shields.io/codecov/c/github/borco/rehuco?flag=windows&label=Windows)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=windows)
+[![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=macos)
+[![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
 | Package | Version | Downloads | Python |
 | --- | --- | --- | --- |
-| [rehuco-core](https://pypi.org/project/rehuco-core/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-core?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-core) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-core?label=) |
-| [rehuco-node](https://pypi.org/project/rehuco-node/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-node?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-node) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-node?label=) |
-| [rehuco-agent](https://pypi.org/project/rehuco-agent/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-agent?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-agent) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-agent?label=) |
-| [borco-core](https://pypi.org/project/borco-core/) | ![PyPI](https://img.shields.io/pypi/v/borco-core?label=) | ![Downloads](https://static.pepy.tech/badge/borco-core) | ![Python](https://img.shields.io/pypi/pyversions/borco-core?label=) |
-| [borco-pyside](https://pypi.org/project/borco-pyside/) | ![PyPI](https://img.shields.io/pypi/v/borco-pyside?label=) | ![Downloads](https://static.pepy.tech/badge/borco-pyside) | ![Python](https://img.shields.io/pypi/pyversions/borco-pyside?label=) |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
+| [rehuco-node](https://pypi.org/project/rehuco-node/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
+| [rehuco-agent](https://pypi.org/project/rehuco-agent/) | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) |
+| [borco-core](https://pypi.org/project/borco-core/) | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) | [![Downloads](https://static.pepy.tech/badge/borco-core)](https://pepy.tech/project/borco-core) | [![Python](https://img.shields.io/pypi/pyversions/borco-core)](https://pypi.org/project/borco-core/) |
+| [borco-pyside](https://pypi.org/project/borco-pyside/) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) | [![Downloads](https://static.pepy.tech/badge/borco-pyside)](https://pepy.tech/project/borco-pyside) | [![Python](https://img.shields.io/pypi/pyversions/borco-pyside)](https://pypi.org/project/borco-pyside/) |
 
 A personal, distributed catalog for tutorials, references, and creative assets.
 The name is the stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehusw`.
