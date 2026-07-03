@@ -32,6 +32,10 @@ class RehuDocument:
     """
 
     def __init__(self, data: dict[str, Any], path: Path | None = None) -> None:
+        # Final forbids rebinding __data to a different dict, not mutating this one -- every
+        # setter edits __data (or a dict nested inside it) in place, so it is always current
+        # and save() never needs a separate sync step. __path has no such guarantee: save()
+        # legitimately rebinds it when called with an explicit path.
         self.__data: Final = data
         self.__path = path
 
@@ -114,11 +118,7 @@ class RehuDocument:
 
     @title.setter
     def title(self, value: str) -> None:
-        primary = self.primary_source
-        if primary is None:
-            self.__data.setdefault("sources", []).append({"title": value, PRIMARY_KEY: True})
-        else:
-            primary["title"] = value
+        self.__primary_source_or_create()["title"] = value
 
     @property
     def publisher(self) -> str:
@@ -126,11 +126,31 @@ class RehuDocument:
         primary = self.primary_source
         return str(primary.get("publisher", "")) if primary else ""
 
+    @publisher.setter
+    def publisher(self, value: str) -> None:
+        self.__primary_source_or_create()["publisher"] = value
+
     @property
     def url(self) -> str:
         """The primary source's ``url`` (§17.2.3); empty if none."""
         primary = self.primary_source
         return str(primary.get("url", "")) if primary else ""
+
+    @url.setter
+    def url(self, value: str) -> None:
+        self.__primary_source_or_create()["url"] = value
+
+    def __primary_source_or_create(self) -> dict[str, Any]:
+        """Return the mutable primary source, appending a new flagged entry to ``sources`` if none exists.
+
+        :returns: the primary source dict (§17.2.3), attached by reference to ``sources`` so
+            mutating it in place is reflected on the next :meth:`save`.
+        """
+        primary = self.primary_source
+        if primary is None:
+            primary = {PRIMARY_KEY: True}
+            self.__data.setdefault("sources", []).append(primary)
+        return primary
 
     @property
     def authors(self) -> list[str]:

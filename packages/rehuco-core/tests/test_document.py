@@ -132,6 +132,58 @@ def test_title_setter_creates_primary_source_when_absent() -> None:
     assert doc.sources == [{"title": "Brand New", "primary": True}]
 
 
+def test_publisher_setter_creates_primary_source_when_absent() -> None:
+    """Setting the publisher on a source-less document creates a flagged primary entry.
+
+    **Test steps:**
+
+    * construct a document with no ``sources``
+    * assign a publisher
+    * verify a single primary source with that publisher now exists
+    """
+    doc = RehuDocument({"type": "Tutorial"})
+    doc.publisher = "Brand New Publisher"
+    assert doc.sources == [{"publisher": "Brand New Publisher", "primary": True}]
+
+
+def test_url_setter_creates_primary_source_when_absent() -> None:
+    """Setting the url on a source-less document creates a flagged primary entry.
+
+    **Test steps:**
+
+    * construct a document with no ``sources``
+    * assign a url
+    * verify a single primary source with that url now exists
+    """
+    doc = RehuDocument({"type": "Tutorial"})
+    doc.url = "https://example.com/new"
+    assert doc.sources == [{"url": "https://example.com/new", "primary": True}]
+
+
+def test_publisher_and_url_setters_update_existing_primary_source() -> None:
+    """Setting publisher/url on a document with an existing primary source updates it in place.
+
+    **Test steps:**
+
+    * construct a document with one flagged-primary source and one secondary source
+    * assign a new publisher and url
+    * verify only the primary source changed, and the secondary source is untouched
+    """
+    doc = RehuDocument(
+        {
+            "sources": [
+                {"title": "First", "publisher": "Old Publisher", "url": "https://old.example/x", "primary": True},
+                {"title": "Second", "publisher": "Other Publisher", "url": "https://other.example/x"},
+            ]
+        }
+    )
+    doc.publisher = "New Publisher"
+    doc.url = "https://new.example/x"
+    assert doc.publisher == "New Publisher"
+    assert doc.url == "https://new.example/x"
+    assert doc.sources[1] == {"title": "Second", "publisher": "Other Publisher", "url": "https://other.example/x"}
+
+
 def test_save_without_path_raises() -> None:
     """Calling ``save`` on a pathless document with no explicit target raises.
 
