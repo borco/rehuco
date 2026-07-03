@@ -90,7 +90,9 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
 - Spaced table delimiter rows — `| --- | --- |` — and single-space-padded cells.
 - No emphasis-as-heading (MD036) — use real `###` headings.
 - Under a spec section heading, list its GitHub issue(s) as task-list items — `- [x] [#N: title](url)` —
-  checked when closed, unchecked when open.
+  checked when the issue is closed, unchecked while it is open. You may check the box in the same
+  change that closes the issue (i.e. tick `- [x]` just before running `gh issue close`), rather than
+  waiting for a separate follow-up.
 
 ## Tooling
 
