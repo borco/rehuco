@@ -18,12 +18,12 @@ detail is still spike-proven rather than production-shipped, it says so.
   (`Application.event()`'s `QFileOpenEvent` branch, `ApplicationSingleton`) already exists and
   needs no macOS-specific changes.
 - **Windows ProgID / AUMID default-handler + taskbar identity** — proven by #1; the dev-time story
-  and its hurdles live in §A04 (the C launcher). Briefcase is the confirmed end-user packager
+  and its hurdles live in §A05 (the C launcher). Briefcase is the confirmed end-user packager
   there too.
 - **Production Briefcase config in `apps/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
   wider-distribution polish, deferred past the personal critical path (§16.8, plan: deferred).
   `uv tool install` covers the author's own machines until then.
-- **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A02.2).
+- **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A03.2).
 
 ## §A01.2 The Briefcase config
 

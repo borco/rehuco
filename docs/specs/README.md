@@ -28,9 +28,10 @@ truth for what a section number means and which file it lives in.
 | 16 | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
 | 17 | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
 | A01 | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
-| A02 | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A03 | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
-| A04 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| A02 | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
+| A03 | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
+| A04 | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| A05 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 The milestone breakdown and build sequencing live separately in
 [implementation-plan.md](implementation-plan.md).
@@ -44,8 +45,9 @@ The milestone breakdown and build sequencing live separately in
 - **Storage and identity:** §9 mounts → §10 instances/dedup → §11–§12 borrowing/offline.
 - **Extensibility and delivery:** §13 plugins → §14 requirements → §15 tooling →
   §16 packaging → §17 field schema.
-- **Appendix (alphabetical, after all `§N`):** §A01 Briefcase packaging, §A02 open questions /
-  out of scope, §A03 testing & cross-platform QA, §A04 Windows dev-launcher lessons — stored under
+- **Appendix (alphabetical, after all `§N`):** §A01 Briefcase packaging, §A02 continuous
+  integration, §A03 open questions / out of scope, §A04 testing & cross-platform QA, §A05 Windows
+  dev-launcher lessons — stored under
   [appendices/](https://github.com/borco/rehuco/tree/master/docs/specs/appendices).
 
 ## Section-numbering convention
