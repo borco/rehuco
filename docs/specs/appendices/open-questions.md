@@ -27,9 +27,9 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Login persistence** — resolved (§6.8): agent caches a session token (not the password) in the OS secure store; revocation reaches the agent when the token fails.
 - **`.rehu` write integrity** — resolved (§4.9): universal atomic temp-then-rename; managed files route through the owning node whenever a route exists (single writer), with routeless direct writes tolerated as out-of-band changes reintegrated via notification / verify-on-access / scan (§9.5, §4.7); unmanaged files written directly by the agent; import is the explicit unmanaged→managed hand-off.
 - **`.rehu` schema format versioning** — resolved (§4.10): per-file format-version field; newer reader upgrades older files, older reader preserves unknown fields rather than dropping them; import is an upgrade point.
-- **Plugin block model** — resolved (§13.2/§13.3): plugin fields in separate keyed, independently-versioned blocks; exactly one live block per `type` (installed-ness doesn't promote inert blocks); save-persistence invariant (live type, or never-claimed foreign payload) with claim-then-abandon dropping on save; generic fallback editor with carry/map/drop and provenance-aware flagging; discards logged.
+- **Plugin block model** — resolved (§13.3/§13.4): plugin fields in separate keyed, independently-versioned blocks; exactly one live block per `type` (installed-ness doesn't promote inert blocks); save-persistence invariant (live type, or never-claimed foreign payload) with claim-then-abandon dropping on save; generic fallback editor with carry/map/drop and provenance-aware flagging; discards logged.
 - **Plugin spectrum (declarative ↔ code)** — resolved (§13.1): simple types are declarative field-lists over a shared field toolkit (no code, no trust surface); rich types are code plugins using the same toolkit plus custom widgets/actions. Unifies the code-plugin and TutCatalog5 `.rehuco`-declared-fields ideas.
-- **Resource browsers** — resolved (§13.4): generic browser (common columns) + per-type browsers (plugin-contributed columns + cover rendering), table/shelf modes, click-to-filter on tag/author/publisher restored from TutCatalog4.
+- **Resource browsers** — resolved (§13.5): generic browser (common columns) + per-type browsers (plugin-contributed columns + cover rendering), table/shelf modes, click-to-filter on tag/author/publisher restored from TutCatalog4.
 - **Acquisition & migration tooling** — specced (§15): three drag-drop aids (HTML→Markdown, image→screenshot, URL→extract), local-LLM extraction with constrained decoding, `.tc`→`.rehu` migration as format-v0. Deferred until after the tutorial web viewer.
 - **Code organization, packaging & deployment** — resolved (§16): monorepo with uv workspaces (single `.venv` fixes the venv-confusion and makes cross-package refactors atomic); three published packages (`rehuco-core`, `rehuco-node`, `rehuco-agent`) mapping onto the shared-lib/node/agent split; `uv tool install` for node and agent; the TS-230 serves as a NAS over SMB while the node runs on capable hardware (§16.4), so the glibc constraint is moot (canary findings kept in §16.5 for reference); platform markers keep GUI deps out of the node.
 - **Offline revocation limitation** — acknowledged as a deliberate accepted boundary (§6.11): revocation can't reach an already-held local copy that never reconnects; trusting household members who kept a copy is an explicit non-goal. Revocation does apply on reconnect.
@@ -51,8 +51,16 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Online-only and mixed local/online resources** — needs schema representation; not detailed.
 - **Udemy integration** — registered courses are hard to track; no scraping/API/import approach discussed.
 - **3D objects as a resource category** — mentioned alongside Daz3D but not mapped to a plugin design.
-- **Shared timed-presentation capability** — identified as worth extracting (§13.8) but not designed.
-- **Drawing comparison/critique pipeline** — exploratory (§13.6); needs prototyping before being committed.
+- **Shared timed-presentation capability** — identified as worth extracting (§13.9) but not designed.
+- **Drawing comparison/critique pipeline** — exploratory (§13.7); needs prototyping before being committed.
+- **Where a type's field-list/schema is declared** — the field toolkit (§13.2.1) is settled, but *where
+  the ordered field list for a type is authored* is not. `.rehuco` already declares which plugins load
+  per machine (§9.3) but says nothing about field lists. The original tc5/resource-hub idea was to
+  declare field lists **in `.rehuco` itself**, so different `.rehuco` files (spanning different root
+  folders) could define different field sets for the same type — one machine/root's "Tutorial" need not
+  match another's. For A2.0 the field list is simply a **hardcoded Python constant**, parsed at app
+  start; moving it into `.rehuco` (or an `.ini`, edited via a future fields-editor view) is deferred
+  until it's actually needed, not designed now.
 - **Borrow automation** — manual vs. automated power-down of the source box is unresolved (§11.2).
 - **Code-signing / notarization** (Apple Developer ID, Windows certificate) — an unpriced prerequisite for shipping *downloaded* installers and updates (§16.9), not yet committed. The file-association and app-identity *mechanics* are proven (see the resolved list above, §A01); signing is the remaining gap before a native installer a stranger downloads runs without Gatekeeper/SmartScreen friction. Does not affect `uv tool install` or the author's own machines.
 - **First build slice** — not yet chosen.

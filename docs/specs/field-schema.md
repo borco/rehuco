@@ -28,7 +28,7 @@ tc4 actually stored.
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
 (§4.1, §13) and says **where the field lives on disk**: `common` at the top level, everything
 else under the type's plugin block (§17.2.1). The boundary can be refined post-v1 since the
-generic editor (§13.3) does not depend on it.
+generic editor (§13.4) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -99,7 +99,7 @@ only:
 
 **On disk:** the common core is top-level; every non-common field is nested under a **plugin
 block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own `format_version`
-(§4.10, §13.2), so the file already has the plugin shape and won't need restructuring when
+(§4.10, §13.3), so the file already has the plugin shape and won't need restructuring when
 plugins land. A block `format_version` of **0 means "no plugin yet"** — the fields live there
 but no plugin owns them; the first real plugin bumps it to `1`. Fields shared by Tutorial and
 ReferenceImages (`rating`, the boolean flags, `collections`, `learning_paths`)
@@ -354,7 +354,7 @@ Field order, in the three groups the layout separates:
   (ctime is unreliable cross-platform; mtime is the safer floor).
 - **Description image resolution** — confirm sibling-relative path handling matches §4.6's
   screenshot model.
-- **UUID (§4.2) and per-block format version (§4.10, §13.2)** — minted/added when writing
+- **UUID (§4.2) and per-block format version (§4.10, §13.3)** — minted/added when writing
   `.rehu`; not present in legacy `.tc`, so they are an import concern, not a view concern.
 - **Partial-date comparison semantics** — `released` stores ISO-prefix strings (`2025`,
   `2025-03`, `2025-03-08`); lexicographic sorting already orders them sensibly, but what a
@@ -368,7 +368,7 @@ parser/schema validation fixtures.
 
 - **Common core** sits at the top level; everything a type owns is nested under a **plugin block
   keyed by `type`** (`tutorial` / `reference_images`), each with its own `format_version`
-  (§4.10, §13.2) — **`0` = no plugin yet**, bumped to `1` by the first real plugin — so the
+  (§4.10, §13.3) — **`0` = no plugin yet**, bumped to `1` by the first real plugin — so the
   layout already matches the future plugin structure. A **Collection** has no block yet
   (deferred, §17.2.1) and carries only common core.
 - `sources` is a list; exactly one item carries `primary: true`.

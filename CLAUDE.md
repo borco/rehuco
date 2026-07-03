@@ -107,7 +107,7 @@ Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint
 ## Model strategy
 
 Default `opusplan` (Opus plans, Sonnet executes). Manually `/model opus` for the reasoning-dense cores where a
-subtle error silently corrupts data: sync engine (§7), plugin block save invariant (§13.2), registry resolution
+subtle error silently corrupts data: sync engine (§7), plugin block save invariant (§13.3), registry resolution
 & serve-after-resync (§6.6, §6.11), cross-filesystem safe move (§9.13).
 
 ## Commit and branch policy

@@ -33,7 +33,7 @@ These are settled; listed so nothing is forgotten at `uv init`:
 
 Why tracer bullets specifically fit here:
 
-- The risk is **integration, not features** — the architecture doc shows the features are understood; what's unproven is that the layers *connect* (agent↔node client split, the field/block model rendering end-to-end). **UI approach: both QML and QtWidgets**, each where it's strongest — QWidgets (with pyqtads docking) for dense sortable/filterable tables and trees (the browsers, §13.4) and the app shell; QML for the image grid and animated lightbox. This needs the pyqtads-hosts-QML integration to hold (the spike below). Note: the "NVIDIA overlay" prompt seen on app start is the GeForce/NVIDIA App **in-game overlay** reacting to the GPU context — a per-machine NVIDIA-software setting to toggle off, *not* an app concern and not a rendering problem; it imposes no architectural constraint.
+- The risk is **integration, not features** — the architecture doc shows the features are understood; what's unproven is that the layers *connect* (agent↔node client split, the field/block model rendering end-to-end). **UI approach: both QML and QtWidgets**, each where it's strongest — QWidgets (with pyqtads docking) for dense sortable/filterable tables and trees (the browsers, §13.5) and the app shell; QML for the image grid and animated lightbox. This needs the pyqtads-hosts-QML integration to hold (the spike below). Note: the "NVIDIA overlay" prompt seen on app start is the GeForce/NVIDIA App **in-game overlay** reacting to the GPU context — a per-machine NVIDIA-software setting to toggle off, *not* an app concern and not a rendering problem; it imposes no architectural constraint.
 - It **counters the prior failure mode** — earlier versions built layers deeply (a full field/type system in TutCatalog5) without reaching a usable end-to-end whole. A tracer bullet keeps a usable-if-minimal thing alive from iteration one.
 - Tracer bullets are **kept production code**, not throwaway prototypes — exactly the discipline wanted after three discarded attempts.
 
@@ -61,7 +61,7 @@ In this plan, **A1/B1/C1 are tracer bullets** (kept spines). The items flagged *
 > **Its one blind spot matters for this app:** `opusplan` switches on *mode*, not on *how hard the code is*. It assumes "execution = mechanical." But rehuco has a few cores where the *implementation itself* is reasoning-dense and a subtle error silently corrupts data. For those, **manually switch to Opus (`/model opus`) even while implementing** — context carries over, so you can drop back to `opusplan`/Sonnet after. These cores are marked with `> [!NOTE]` blocks in `architecture-design.md`; they are:
 >
 > - **Sync engine** — version vector + activity log, conflict/merge, tombstones (§7).
-> - **Plugin block save invariant** — the live/inert/claim-then-abandon rule (§13.2).
+> - **Plugin block save invariant** — the live/inert/claim-then-abandon rule (§13.3).
 > - **Registry resolution & serve-after-resync** — preferred-authority/chatter, version-marker comparison (§6.6, §6.11).
 > - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive (§9.13).
 >
@@ -133,15 +133,15 @@ Automated PyPI publishing is tracked in issue #18 and is not yet wired up — ev
 
 Deliberately minimal: one resource shown via the **generic field editor** (not yet a rich plugin), no field toolkit depth, no block lifecycle, no cache. It only has to prove the spine: **file-association → single-instance forward → read → render → edit → atomic-write.** Keep this code.
 
-Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.3 (local-file mode), §13.3 (generic editor), §13.5 (Markdown + image strip).
+Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.3 (local-file mode), §13.4 (generic editor), §13.6 (Markdown + image strip).
 
 ### A2–An — Thicken the spine (iterations, each shippable)
 
-- **A2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path, image-count) with editor/viewer variants — the shared toolkit plugins compose from (§13.1). (TutCatalog5 has prior art here to draw on as a *design* reference.)
+- **A2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path, image-count) with editor/viewer variants — the shared toolkit plugins compose from (§13.1); the toolkit and viewer/editor/both surfaces are designed in §13.2. (TutCatalog5 has prior art here to draw on as a *design* reference.)
 - **A3 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule (§4.10). Bring `.tc`→`.rehu` migration in as "format v0" (§15.3) — opening a `.tc` offers migration + screenshot-name normalization.
-- **A4 — Plugin block model.** Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with carry/map/drop (§13.2/§13.3). This is the genuinely new core logic.
-- **A5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next, hideable strip, ESC), folder-rename-from-suggestions (§13.5).
-- **A6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're §13.6 richness, not needed for "view/edit").
+- **A4 — Plugin block model.** Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with carry/map/drop (§13.3/§13.4). This is the genuinely new core logic.
+- **A5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next, hideable strip, ESC), folder-rename-from-suggestions (§13.6).
+- **A6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're §13.7 richness, not needed for "view/edit").
 - **A7 — Checksums.** Generate/verify with algorithm-tagging, as task-queue jobs (§4.5) — pairs naturally with migration.
 - **A8 — Tray + polish.** Close-to-tray/explicit-quit (§5.4), preferences.
 
@@ -163,14 +163,14 @@ Touches, thinly: §5.4 (single-instance/association), §4.9 (atomic write), §5.
 
 Minimal: one node, one hard-configured folder, no catalog DB yet (or the simplest possible), no auth, plain video serving. Proves the spine: **node serves → browser lists → browser plays → progress persists.**
 
-Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/Pico — new skill), §13.5 web/follow, progress write (§7/§9.6 minimal).
+Touches, thinly: §5 (REST node), §8.1 (single-node), web stack (FastAPI/HTMX/Pico — new skill), §13.6 web/follow, progress write (§7/§9.6 minimal).
 
 ### B2–Bn — Thicken
 
 - **B2 — Agent-as-node-client refactor.** Move the agent's catalog reads to go through a node (§5.1). The local-file viewer (Milestone A) stays node-free; only catalog/swarm operations route through the node. (`rehuco-node` package created now.)
 - **B3 — SQLite cache + incremental scan.** The node builds `.rehudb` from `.rehu` files, version-aware incremental scan (§4.7, §4.8).
-- **B4 — Generic + tutorial browsers.** Table view with common columns + tutorial columns (duration, progress); click opens viewer; click-to-filter on tag/author/publisher (§13.4). (Desktop first; web browser view can mirror it.)
-- **B5 — Web follow mode.** Sequential playback, progress/duration tracking, notes, bookmarks in the browser (§13.5 web).
+- **B4 — Generic + tutorial browsers.** Table view with common columns + tutorial columns (duration, progress); click opens viewer; click-to-filter on tag/author/publisher (§13.5). (Desktop first; web browser view can mirror it.)
+- **B5 — Web follow mode.** Sequential playback, progress/duration tracking, notes, bookmarks in the browser (§13.6 web).
 - **B6 — Progress sync frequency + handoff basics.** Frequent progress writes so a reload/resume is current (§9.6) — even single-node benefits.
 - **B7 — Minimal auth (optional this milestone).** Even single-user, a login gate for the web UI (§6.8) if you want the tablet to require it; can defer if it's just you on a trusted LAN.
 
@@ -209,7 +209,7 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 
 - **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) — §6, §9.10–9.13. Defer until single-node + borrow is serving you daily; you may want it less than expected.
 - **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — §15. Explicitly deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap enough to slip into Milestone A if convenient.)
-- **Reference-image richness** (redaction, tag/semantic search, sketch slideshow, drawing critique) — §13.6.
+- **Reference-image richness** (redaction, tag/semantic search, sketch slideshow, drawing critique) — §13.7.
 - **Daz3D, 3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.**
 - **Native end-user installers + auto-update** — Briefcase-built installers with declarative file association / icon / AUMID, MSIX later, and self-update against a public release oracle (§16.8/§16.9). `uv tool install` covers the author's own machines until then; the file-association *mechanics* are proven earlier by the Pre-work spike, but packaging-for-distribution and update delivery (incl. code-signing/notarization) wait.
 

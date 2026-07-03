@@ -166,7 +166,7 @@ containing splitter's sizes on `closeRequested` (`CDockManager.splitterSizes(are
 dock object name) and re-apply them via `setSplitterSizes(area, sizes)` on `viewToggled(True)`.
 
 The dock manager becomes load-bearing once a resource *browser* exists alongside the viewer
-(§13.4's "clicking a resource opens its viewer dock") — a multi-pane shell, not a single-window
+(§13.5's "clicking a resource opens its viewer dock") — a multi-pane shell, not a single-window
 form. The three-line wiring snippet and the closed-dock-size workaround stay in
 `spikes/pyqtads-qml/` as a working reference until that slice consumes them (then the spike is
 deleted and this issue closed).
