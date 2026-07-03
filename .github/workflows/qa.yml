@@ -1,0 +1,58 @@
+name: QA
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  qa:
+    name: qa (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      # windows-latest ships ImageMagick but not GNU Make; see §A02.2.
+      - name: Install make (Windows)
+        if: runner.os == 'Windows'
+        run: choco install make --no-progress -y
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Generate Qt build artifacts (uic/rcc/icons)
+        run: make uis
+
+      # Non-mutating equivalent of `make format` -- see §A02.1.
+      - name: Check formatting and lint (ruff)
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+
+      - name: Run tests with coverage
+        run: make cov
+
+      - name: bandit
+        run: make bandit
+
+      - name: pyright
+        run: make pyright
+
+      - name: pylint
+        run: make pylint
