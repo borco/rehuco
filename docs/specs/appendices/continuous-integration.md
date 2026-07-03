@@ -51,7 +51,17 @@ Bash's coreutils, a combination never exercised in this repo before — and it p
 real run; the ImageMagick gap on the other two legs was the one this section's first draft missed
 by trusting the `actions/runner-images` docs for Windows without checking Linux/macOS too.
 
-## §A02.3 One shell for all three runners
+## §A02.3 Bare Linux runners are missing a Qt runtime library, not just a display
+
+Past `make uis`, `ubuntu-latest` failed again, differently: `pytest` itself crashed with
+`INTERNALERROR> ImportError: libEGL.so.1: cannot open shared object file` while `pytest-qt`
+imported `PySide6.QtGui`. This is unrelated to §A04.2's `QT_QPA_PLATFORM=offscreen` — that setting
+only picks *which* Qt platform plugin loads once `QtGui` is already importable; it doesn't change
+what shared libraries `QtGui` itself links against at import time. A bare `ubuntu-latest` runner
+doesn't ship `libEGL.so.1` at all (macOS and Windows have no equivalent gap, so only the Linux leg
+needs this). Fixed by installing `libegl1` via apt alongside ImageMagick.
+
+## §A02.4 One shell for all three runners
 
 The job sets `defaults.run.shell: bash`. On `windows-latest` this resolves to the
 Git-for-Windows-backed bash that GitHub Actions already provides there, which bundles the GNU
@@ -60,14 +70,14 @@ coreutils (`find`, `sed`, `tr`) the Makefile's `$(shell find apps packages -maxd
 run under whatever shell each OS defaults to (`pwsh` on Windows), which doesn't have those
 utilities — so every step is written once, not branched per OS.
 
-## §A02.4 Pinning the Python version explicitly
+## §A02.5 Pinning the Python version explicitly
 
 Every package pins `requires-python = ">=3.14"`, which leaves the exact minor/patch version up to
 whatever a given runner image resolves it to. `astral-sh/setup-uv`'s `python-version: "3.14"` input
 overrides that and pins the version `uv` provisions, guaranteeing it matches what `ruff`'s
 `target-version = "py314"` and `pyright`'s `pythonVersion = "3.14"` assume.
 
-## §A02.5 Two things that needed no extra work
+## §A02.6 Two things that needed no extra work
 
 - **Headless Qt.** `QT_QPA_PLATFORM=offscreen` needs no workflow-level setting — the repo-root
   `conftest.py` already sets it (§A04.2) before any test module can build a `QApplication`.

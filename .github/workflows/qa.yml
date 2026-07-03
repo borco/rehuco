@@ -36,11 +36,13 @@ jobs:
       # ubuntu-latest/macos-latest don't ship ImageMagick; windows-latest already has it.
       # Ubuntu's `imagemagick` apt package is IM6, which has no unified `magick` binary (that's
       # IM7-only) -- alias it to the IM6 `convert` command the Makefile's rule is compatible with.
-      - name: Install ImageMagick (Linux)
+      # libegl1 provides libEGL.so.1, which PySide6.QtGui needs to import at all -- unrelated to
+      # QT_QPA_PLATFORM=offscreen (conftest.py), which only picks the platform plugin, not this.
+      - name: Install Linux system dependencies (ImageMagick, Qt runtime libs)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y imagemagick
+          sudo apt-get install -y imagemagick libegl1
           command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
 
       - name: Install ImageMagick (macOS)
