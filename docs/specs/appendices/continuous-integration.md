@@ -25,8 +25,12 @@ matrix leg, since a CI checkout starts from the same source tree as a fresh clon
 Every runner turned out to be missing at least one tool for that. Confirmed by the first real run
 of this workflow (not just the `actions/runner-images` docs): `ubuntu-latest` and `macos-latest`
 have no ImageMagick preinstalled at all — `make: magick: No such file or directory` — so both need
-an explicit install (`apt-get install imagemagick` / `brew install imagemagick`). `windows-latest`
-is the opposite case: it ships ImageMagick but has **no GNU Make** and **no Scoop** (checked
+an explicit install (`apt-get install imagemagick` / `brew install imagemagick`). Ubuntu's
+`imagemagick` apt package resolves to `imagemagick-6.q16` — ImageMagick 6, which has no unified
+`magick` binary at all (that command is IM7-only); the Linux step installs it, then symlinks IM6's
+`convert` to `magick` if the real one isn't present, since `convert` accepts the same flags the
+Makefile's icon rule uses. `windows-latest` is the opposite case: it ships ImageMagick but has **no
+GNU Make** and **no Scoop** (checked
 against the `actions/runner-images` Windows2022 readme ahead of time, since Chocolatey vs. Scoop
 was a real design choice, not just a gap to fill in reactively). Two alternatives to installing
 `make` there were rejected:

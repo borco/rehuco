@@ -34,9 +34,14 @@ jobs:
         run: choco install make --no-progress -y
 
       # ubuntu-latest/macos-latest don't ship ImageMagick; windows-latest already has it.
+      # Ubuntu's `imagemagick` apt package is IM6, which has no unified `magick` binary (that's
+      # IM7-only) -- alias it to the IM6 `convert` command the Makefile's rule is compatible with.
       - name: Install ImageMagick (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+          command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
 
       - name: Install ImageMagick (macOS)
         if: runner.os == 'macOS'
