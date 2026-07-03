@@ -14,7 +14,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # `flag` feeds Codecov's per-OS flag (#19) -- lowercase, matching Codecov's naming
+        # convention; kept alongside `os` here instead of lowercasing `runner.os` at upload time.
+        include:
+          - os: ubuntu-latest
+            flag: linux
+          - os: macos-latest
+            flag: macos
+          - os: windows-latest
+            flag: windows
 
     defaults:
       run:
@@ -69,6 +77,15 @@ jobs:
 
       - name: Run tests with coverage
         run: make cov
+
+      # fail_ci_if_error: false -- this is new plumbing (#19); don't let upload flakiness
+      # (rate limits, transient Codecov outages) fail QA. Tighten once it's proven reliable.
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ matrix.flag }}
+          fail_ci_if_error: false
 
       - name: bandit
         run: make bandit

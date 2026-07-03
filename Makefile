@@ -44,7 +44,7 @@ tests:
 	uv run pytest
 
 cov:
-	uv run pytest --cov=rehuco_agent --cov=rehuco_core --cov=rehuco_node --cov=borco_core --cov=borco_pyside --cov-report=term-missing
+	uv run pytest --cov=rehuco_agent --cov=rehuco_core --cov=rehuco_node --cov=borco_core --cov=borco_pyside --cov-report=term-missing --cov-report=xml
 
 format:
 	uv run ruff format .

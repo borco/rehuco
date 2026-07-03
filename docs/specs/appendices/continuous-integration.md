@@ -120,3 +120,32 @@ to `node24` as floating tags, so neither needed a change.
 - **`fail-fast: false`.** Deliberate, not a default left alone: without it, the first matrix leg to
   fail cancels the other two, hiding whether a failure is OS-specific or universal — defeating the
   point of running the matrix at all.
+
+## §A02.8 Per-OS coverage reporting (Codecov)
+
+`make cov` only ever printed `term-missing` to the job log — nothing was uploaded anywhere, so the
+README's per-OS coverage badges ([#19](https://github.com/borco/rehuco/issues/19)) had no live data
+source. Getting them working needed both account-side setup outside this repo and two workflow-side
+changes.
+
+**Account setup (not git-tracked):** sign up at codecov.io with GitHub OAuth, activate
+`borco/rehuco` in the Codecov dashboard (installs their GitHub App for it), copy the repo's
+upload token from its Codecov settings page, and store it as the `CODECOV_TOKEN` secret under
+`borco/rehuco` → Settings → Secrets and variables → Actions. Public repos can technically upload
+tokenless, but recent `codecov-action` versions have been unreliable (rate-limited) without one, so
+the token was set up regardless rather than relying on that path.
+
+**`Makefile`:** the `cov` target gained `--cov-report=xml` alongside the existing
+`--cov-report=term-missing` — pytest-cov accepts multiple `--cov-report` flags in one invocation, so
+one target still serves both local dev (reads the terminal summary) and CI (uploads the XML), no
+separate CI-only target needed.
+
+**`qa.yml`:** the matrix moved from a flat `os: [...]` list to `include: [{os, flag}, ...]`, adding
+a lowercase `flag` value per leg (`linux`/`macos`/`windows`). `runner.os` itself resolves to
+`Linux`/`macOS`/`Windows` (mixed case), and Codecov flag names are conventionally lowercase;
+computing the mapping once in the matrix avoided a per-step case-conversion. A
+`codecov/codecov-action@v5` step runs right after `make cov`, authenticated via `CODECOV_TOKEN` and
+tagged with `flags: ${{ matrix.flag }}` so Codecov keeps the three OS coverage numbers (and badges)
+separate instead of blending them. It runs with `fail_ci_if_error: false` deliberately: this is
+new, unverified plumbing, and an upload hiccup on a reporting side-channel shouldn't fail the whole
+QA gate — worth revisiting once it's proven reliable across a few runs.
