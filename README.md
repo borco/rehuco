@@ -1,5 +1,20 @@
 # rehuco
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
+[![QA](https://github.com/borco/rehuco/actions/workflows/qa.yml/badge.svg)](https://github.com/borco/rehuco/actions/workflows/qa.yml)
+[![Coverage](https://img.shields.io/badge/Coverage-blue)](https://codecov.io/gh/borco/rehuco)
+![Windows](https://img.shields.io/codecov/c/github/borco/rehuco?flag=windows&label=Windows)
+![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)
+![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)
+
+| Package | Version | Downloads | Python |
+| --- | --- | --- | --- |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-core?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-core) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-core?label=) |
+| [rehuco-node](https://pypi.org/project/rehuco-node/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-node?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-node) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-node?label=) |
+| [rehuco-agent](https://pypi.org/project/rehuco-agent/) | ![PyPI](https://img.shields.io/pypi/v/rehuco-agent?label=) | ![Downloads](https://static.pepy.tech/badge/rehuco-agent) | ![Python](https://img.shields.io/pypi/pyversions/rehuco-agent?label=) |
+| [borco-core](https://pypi.org/project/borco-core/) | ![PyPI](https://img.shields.io/pypi/v/borco-core?label=) | ![Downloads](https://static.pepy.tech/badge/borco-core) | ![Python](https://img.shields.io/pypi/pyversions/borco-core?label=) |
+| [borco-pyside](https://pypi.org/project/borco-pyside/) | ![PyPI](https://img.shields.io/pypi/v/borco-pyside?label=) | ![Downloads](https://static.pepy.tech/badge/borco-pyside) | ![Python](https://img.shields.io/pypi/pyversions/borco-pyside?label=) |
+
 A personal, distributed catalog for tutorials, references, and creative assets.
 The name is the stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehusw`.
 
