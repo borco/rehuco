@@ -83,25 +83,21 @@ class TypedProperty[T](Property):
 class SimpleProperty[T]:
     """Read-write ``QObject`` property that emits a **class-declared** change signal on change.
 
-    Unlike a synthesized signal (which a type checker can't see), the notify signal is an ordinary
-    ``Signal`` **declared on the class** -- so ``obj.<name>_changed.connect(...)`` type-checks with
-    no ``# type: ignore``. Declared at class level on a ``QObject`` subclass; ``__set_name__`` wires,
-    per property:
+    On a ``QObject`` subclass, declare a change ``Signal`` and bind the property to it -- by the
+    ``<name>_changed`` naming convention (the ``notify="auto"`` default) or by passing any signal
+    explicitly as ``notify=``. Then ``obj.<name>`` reads and writes the value, the bound signal fires
+    with the new value on every change (assigning the current value is a no-op), and
+    ``obj.set_<name>(value)`` is a plain method usable as a slot. Because the signal is a real class
+    attribute, connecting to it type-checks with no ``# type: ignore`` -- the ``set_<name>`` helper is
+    the one exception: referencing it as a bare slot needs an inline ``# type: ignore[attr-defined]``.
 
-    - a private backing attribute holding the current value
-    - a ``set_<name>`` helper method, so another object's signal can connect directly to this
-      property's setter (kept synthesized -- referencing ``obj.set_<name>`` as a bare slot is the
-      one spot that still needs an inline ``# type: ignore[attr-defined]``)
-    - a :class:`TypedProperty` replacing this descriptor on the class, so Qt's meta-object system
-      sees an ordinary typed Qt property, wired to notify the declared signal
-
-    ``Signal(object)`` is always valid. A signal matching the value's **own** type is also valid --
-    the native primitives (``int``/``str``/``float``/``bool``) round-trip, and a ``QObject`` subclass
-    is passed by pointer (identity preserved). Any other typed signal is rejected, because a
-    mismatched value-type signal silently coerces on emit (``Signal(int)`` truncates ``3.9`` to
-    ``3``, ``Signal(str)`` turns ``None``/``42`` into ``""``), making the emitted value differ from
-    what the getter returns. The value type is taken from the initial ``value``, so a reference
-    property that defaults to ``None`` is treated as ``object`` -- give it a ``Signal(object)``.
+    Which signal to declare: ``Signal(object)`` is always valid. A signal matching the value's **own**
+    type is also valid -- the native primitives (``int``/``str``/``float``/``bool``) round-trip, and a
+    ``QObject`` subclass is passed by pointer (identity preserved). Any other typed signal is rejected,
+    because a mismatched value-type signal silently coerces on emit (``Signal(int)`` truncates ``3.9``
+    to ``3``, ``Signal(str)`` turns ``None``/``42`` into ``""``), making the emitted value differ from
+    what the getter returns. The value type comes from the initial ``value`` (or ``value_type=``), so a
+    reference property that defaults to ``None`` reads as ``object`` -- give it a ``Signal(object)``.
 
     **Limitation:** every *custom* Python ``QObject`` subclass collapses to the signature
     ``(QObject*)`` (only built-in Qt C++ types like ``QLineEdit`` keep a distinct one), so a mismatch
@@ -109,6 +105,10 @@ class SimpleProperty[T]:
     here. This is harmless: emit still passes the object by pointer with identity preserved, never a
     coerced or copied value, so the invariant "you emit exactly what the getter returns" holds. The
     mismatch is caught statically by the property's own ``SimpleProperty[T]`` type, not at runtime.
+
+    **Runtime cost:** validation and wiring run once per property at class-definition time, never per
+    instance. A read is a Qt-property get plus one Python attribute lookup; a write adds an equality
+    check and, only when the value actually changes, a signal emit -- negligible outside a tight loop.
 
     :param value: the initial value.
     :param notify: ``"auto"`` (default) discovers the class's ``<name>_changed`` signal and raises
@@ -140,7 +140,7 @@ class SimpleProperty[T]:
         item = Item()
         item.title_changed.connect(on_title)        # fully typed, no `# type: ignore`
         item.title = "New Title"                     # updates the value and emits title_changed
-        another_object.some_signal.connect(item.set_title)  # set_<name> helper (synthesized)
+        another_object.some_signal.connect(item.set_title)  # set_<name> slot helper
     """
 
     def __init__(
@@ -173,6 +173,9 @@ class SimpleProperty[T]:
         signal, self.__signal_name = self.__resolve_signal(owner, name)
         self.__check_signal_type(owner, name, signal, value_type)
 
+        # Wire the property onto the owner class: a private backing attribute, a set_<name>(value)
+        # slot helper, and a real Qt Property (TypedProperty) that *replaces* this descriptor -- so
+        # Qt's meta-object sees a typed property and obj.<name> routes through __fget/__fset.
         setattr(owner, self.__private_name, self.__value)
         setattr(owner, f"set_{name}", lambda obj, value: self.__fset(obj, value))  # pylint: disable=unnecessary-lambda
         setattr(owner, name, TypedProperty(value_type, fget=self.__fget, fset=self.__fset, notify=signal))
