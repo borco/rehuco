@@ -33,8 +33,9 @@ set(Python3_EXECUTABLE "${VENV_PYTHON}")
 find_package(Python3 REQUIRED COMPONENTS Development.Embed)
 
 # Embed the absolute icon path so the RC compiler finds it regardless of working dir.
-# Built by `make icons` from the Affinity-Designer-authored svg master -- run that first.
-set(ICON_ABS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../src/rehuco_agent/icons/rehuco-agent.ico")
+# Built by `make icons` from the 1024px PNG master in the top-level design/icons/ (issue #29) --
+# run that first. Referenced in place (no copy into the launcher tree).
+set(ICON_ABS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../../../design/icons/rehuco-agent.ico")
 configure_file(launcher.rc.in "${CMAKE_CURRENT_BINARY_DIR}/launcher.rc")
 
 # WIN32 entry-point = wWinMain, SUBSYSTEM:WINDOWS (no console flash)
