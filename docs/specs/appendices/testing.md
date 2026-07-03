@@ -40,6 +40,32 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 to watch windows during GUI debugging. None of conftest's own imports pull in Qt, so setting it at
 conftest import time is early enough.
 
+**Linux needs more than `offscreen`** (surfaced by the cross-platform CI in
+[#14](https://github.com/borco/rehuco/issues/14); the fix above was only ever exercised on macOS,
+where it sufficed). On the `ubuntu-latest` leg the same `test_application_singleton.py` still
+segfaulted (exit 139) with `offscreen` set — this time the C stack ran through
+`QEventDispatcherGlib::processEvents` → `QCoreApplicationPrivate::sendPostedEvents` into a
+`~QLocalServer` → `deleteChildren` → `~QLocalSocket` chain, i.e. a deferred `deleteLater()` firing
+during teardown. Root cause: `ApplicationSingleton.shutdown()` disposes of its `QLocalServer` (and
+the sockets it accepted) via `deleteLater()`, but `qtbot.wait()` runs a *nested* event loop, and
+`DeferredDelete` events posted at a different loop level are not reliably reaped there. On Linux's
+glib dispatcher they instead accumulate across tests and eventually crash when a server is destroyed
+after one of its child sockets was already freed. (macOS's cocoa dispatcher happened to reap them in
+an order that didn't crash, which is why `offscreen` alone looked sufficient there.)
+
+**Fix:** the `make_singleton` fixture's teardown flushes the deferred deletions explicitly, so each
+test disposes of its own Qt objects instead of leaving them for a later test's event loop:
+
+```python
+QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+qtbot.wait(10)
+```
+
+Every `ApplicationSingleton` this fixture builds is `shutdown()`- then-flushed, so no queued
+`deleteLater()` crosses a test boundary. This is a test-harness concern only: a real app runs
+`app.exec()` to completion, whose event loop (and the `QApplication` destructor on exit) reap
+`DeferredDelete` continuously, so nothing accumulates.
+
 ## §A04.3 Platform-conditional tests
 
 Two distinct mechanisms, for two distinct needs:

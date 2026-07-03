@@ -60,17 +60,24 @@ only picks *which* Qt platform plugin loads once `QtGui` is already importable; 
 what shared libraries `QtGui` itself links against at import time. A bare `ubuntu-latest` runner
 ships none of them (macOS and Windows have no equivalent gap, so only the Linux leg needs this).
 
-Installing just `libegl1` wasn't enough: the next run got past the import but segfaulted
-(`Error 139`) inside `QLocalServer`/`QLocalSocket` teardown in the `ApplicationSingleton` test —
-the same crash signature §A04.2 documents, just not fully eliminated by `offscreen` alone on Linux.
-The sibling `pyside6-scintilla` project hits this identical PySide6-pytest-`offscreen`-on-Linux gap
-in its own CI and has a working fix: `libgl1 libegl1 libxkbcommon0`. A community GitHub Action,
-`tlambert03/setup-qt-libs`, was also checked as a candidate before reaching for that fix — but its
-package list (`libdbus-1-3`, six `libxcb-*` packages, `x11-utils`, `libopengl0`, deprecated in
-favor of `pyvista/setup-headless-display-action`) targets the **xcb** platform plugin, not
-`offscreen`, and adding a third-party action's broader surface for packages this project's own
-Qt/pytest combination doesn't need wasn't worth it. `pyside6-scintilla`'s narrower, already-proven
-set was adopted instead.
+Installing just `libegl1` got `pytest` past that import — but the run then segfaulted (`Error
+139`) inside `QLocalServer`/`QLocalSocket` teardown in the `ApplicationSingleton` test. The Linux
+leg installs the fuller `libgl1 libegl1 libxkbcommon0` set the sibling `pyside6-scintilla` project
+uses for the same PySide6-pytest-`offscreen` combination: it's an already-proven runtime-lib
+baseline and keeps the `QtGui` import robust across runner-image changes. A community GitHub Action,
+`tlambert03/setup-qt-libs`, was also checked as a candidate — but its package list (`libdbus-1-3`,
+six `libxcb-*` packages, `x11-utils`, `libopengl0`, deprecated in favor of
+`pyvista/setup-headless-display-action`) targets the **xcb** platform plugin, not `offscreen`, and
+adding a third-party action's broader surface for packages this project's own Qt/pytest combination
+doesn't need wasn't worth it. `pyside6-scintilla`'s narrower, already-proven set was adopted instead.
+
+That segfault turned out to be a **separate problem from the missing libraries**, and adding the
+fuller Qt-lib set did *not* eliminate it: it reproduced identically on a WSL Ubuntu 24.04 box that
+already had all three libraries present. The real cause is a deferred-`deleteLater()` teardown
+ordering bug in the *test harness*, not a runtime-lib or a workflow gap — the crash signature
+§A04.2 documents was never fully closed by `QT_QPA_PLATFORM=offscreen` on Linux. The fix lives in
+the `make_singleton` fixture (an explicit `DeferredDelete` flush at teardown); see §A04.2 for the
+mechanism. No CI-config change was needed for it beyond the library installs already described.
 
 ## §A02.4 One shell for all three runners
 
