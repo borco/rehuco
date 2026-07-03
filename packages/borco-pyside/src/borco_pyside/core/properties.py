@@ -232,14 +232,6 @@ class SimpleProperty[T]:
                 f"incompatible with a {value_type.__name__} value; use {hint}."
             )
 
-    def __get__(self, obj: object, _: type | None = None) -> T:
-        """Return the current value; exists for type checkers, superseded at runtime by :class:`TypedProperty`."""
-        return self.__fget(obj)
-
-    def __set__(self, obj: object, value: T) -> None:
-        """Set the value; exists for type checkers, superseded at runtime by :class:`TypedProperty`."""
-        self.__fset(obj, value)
-
     def __fget(self, obj: object) -> T:
         return getattr(obj, self.__private_name)  # type: ignore[no-any-return]
 
@@ -248,3 +240,10 @@ class SimpleProperty[T]:
             return
         setattr(obj, self.__private_name, value)
         getattr(obj, self.__signal_name).emit(value)
+
+    if TYPE_CHECKING:
+        # Never invoked at runtime: __set_name__ replaces this descriptor with a TypedProperty on the
+        # class, so obj.<name> / obj.<name> = v go through that (and __fget/__fset above). These stubs
+        # exist only so a type checker resolves access as T, since it can't see the setattr swap.
+        def __get__(self, obj: object, _: type | None = None) -> T: ...
+        def __set__(self, obj: object, value: T) -> None: ...
