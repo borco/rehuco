@@ -1,4 +1,4 @@
-# §A02. Continuous Integration — Design Decisions and Hurdles
+# §A03. Continuous Integration — Design Decisions and Hurdles
 
 [[[appendices.continuous-integration]]]
 
@@ -11,7 +11,7 @@ Why the cross-platform CI workflow ([#14](https://github.com/borco/rehuco/issues
 on the cross-platform QA groundwork in [[appendices.testing#overview]] (issue
 [#15](https://github.com/borco/rehuco/issues/15)).
 
-## §A02.1 `make qa` mutates sources — CI needs a non-mutating equivalent
+## §A03.1 `make qa` mutates sources — CI needs a non-mutating equivalent
 
 [[[appendices.continuous-integration#non-mutating-ci]]]
 
@@ -24,7 +24,7 @@ The workflow instead runs the non-mutating equivalents directly: `ruff format --
 `ruff check .` (no `--fix`), followed by the other `make qa` steps unchanged — `make cov`, `make
 bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
 
-## §A02.2 The Qt build artifacts aren't distributed — CI has to generate them, like any dev checkout
+## §A03.2 The Qt build artifacts aren't distributed — CI has to generate them, like any dev checkout
 
 [[[appendices.continuous-integration#ci-must-build-qt]]]
 
@@ -69,7 +69,7 @@ job only needs the `homebrew/core` `imagemagick` formula, so the macOS step runs
 aws/tap` first (guarded, since the tap may be absent on a future image) to keep the install output
 free of that warning annotation.
 
-## §A02.3 Bare Linux runners are missing Qt runtime libraries, not just a display
+## §A03.3 Bare Linux runners are missing Qt runtime libraries, not just a display
 
 [[[appendices.continuous-integration#missing-qt-libs]]]
 
@@ -102,7 +102,7 @@ the `make_singleton` fixture (an explicit `DeferredDelete` flush at teardown); s
 for the
 mechanism. No CI-config change was needed for it beyond the library installs already described.
 
-## §A02.4 One shell for all three runners
+## §A03.4 One shell for all three runners
 
 [[[appendices.continuous-integration#cross-platform-shell]]]
 
@@ -113,7 +113,7 @@ coreutils (`find`, `sed`, `tr`) the Makefile's `$(shell find apps packages -maxd
 run under whatever shell each OS defaults to (`pwsh` on Windows), which doesn't have those
 utilities — so every step is written once, not branched per OS.
 
-## §A02.5 Pinning the Python version explicitly
+## §A03.5 Pinning the Python version explicitly
 
 [[[appendices.continuous-integration#pin-python]]]
 
@@ -122,7 +122,7 @@ whatever a given runner image resolves it to. `astral-sh/setup-uv`'s `python-ver
 overrides that and pins the version `uv` provisions, guaranteeing it matches what `ruff`'s
 `target-version = "py314"` and `pyright`'s `pythonVersion = "3.14"` assume.
 
-## §A02.6 Pinning `astral-sh/setup-uv` to an immutable release, not a floating major tag
+## §A03.6 Pinning `astral-sh/setup-uv` to an immutable release, not a floating major tag
 
 [[[appendices.continuous-integration#fix-node20-warning]]]
 
@@ -136,7 +136,7 @@ malicious code. Pinned to `@v8.2.0` (the immutable per-release tag) in both this
 `actions/checkout@v7` and `docker/setup-qemu-action@v4` (`canary-rehuco-node.yml`) already resolve
 to `node24` as floating tags, so neither needed a change.
 
-## §A02.7 Two things that needed no extra work
+## §A03.7 Two things that needed no extra work
 
 [[[appendices.continuous-integration#no-extra-work]]]
 
@@ -146,7 +146,7 @@ to `node24` as floating tags, so neither needed a change.
   fail cancels the other two, hiding whether a failure is OS-specific or universal — defeating the
   point of running the matrix at all.
 
-## §A02.8 Per-OS coverage reporting (Codecov)
+## §A03.8 Per-OS coverage reporting (Codecov)
 
 [[[appendices.continuous-integration#per-os-coverage]]]
 

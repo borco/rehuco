@@ -85,6 +85,8 @@ lesson, delete the code.
 
 ### Model strategy (Claude Code): `opusplan` backbone, manual escalation for the hard cores
 
+[[[implementation-plan#model-strategy]]]
+
 > [!NOTE]
 > **Use `opusplan` as the default** (set `/model opusplan` at the start of each session). It ties model choice to mode:
 > **Opus in plan mode** (architecture, edge cases, tradeoffs), then **automatically switches to Sonnet in execution

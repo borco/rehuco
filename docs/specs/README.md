@@ -34,10 +34,11 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | 16 | `packaging-deployment` | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
 | 17 | `field-schema` | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
 | A01 | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
-| A02 | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
-| A03 | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A04 | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
-| A05 | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| A02 | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
+| A03 | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
+| A04 | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
+| A05 | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| A06 | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 **Numbering, briefly:** `§N`/`§N.M` are global and renumber-and-shift on insert (no letter
 suffixes) — update every heading number in the same change, and never reuse a retired number.
@@ -70,8 +71,9 @@ heading, bare `[[doc]]` for the whole document.
 - **Self-resolving.** The doc name is in the token itself (`plugins` in `[[plugins#field-toolkit]]`),
   so no document-map lookup is needed to find which file it's in.
 - **`tools/check_slug_refs.py`** (wired into `make qa` as `check-slugs`) walks every token in
-  `docs/**/*.md` and `.py` under `apps/`/`packages/`, failing on a duplicate declaration, a reference
-  with no declaration, or a declaration whose `doc` doesn't match the file it's in.
+  `docs/**/*.md`, the root `CLAUDE.md`, every tracked `README.md`, and `.py` under `apps/`/`packages/`,
+  failing on a duplicate declaration, a reference with no declaration, or a declaration whose `doc`
+  doesn't match the file it's in.
 
 ## Why not just `§N.M`
 

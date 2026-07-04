@@ -1,8 +1,8 @@
 # Design assets — icons
 
 Single source of truth for the project's brand icons. See
-[§16.10 Design resources](../../docs/specs/packaging-deployment.md#1610-design-resources) for the
-full design and rationale.
+[Design resources](../../docs/specs/packaging-deployment.md) ([[packaging-deployment#design-resources]])
+for the full design and rationale.
 
 `icons.afdesign` is the **Affinity Designer master**; every other file here is exported from it.
 
