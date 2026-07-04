@@ -1,5 +1,7 @@
 # rehuco — Architecture Design
 
+[[[architecture-design]]]
+
 ## Overview
 
 [[[architecture-design#overview]]]

@@ -1,5 +1,7 @@
 # §A05. Windows Dev Launcher — Hurdles and Solutions
 
+[[[appendices.windows-dev-launcher]]]
+
 ## Overview
 
 [[[appendices.windows-dev-launcher#overview]]]

@@ -1,5 +1,9 @@
 # §12. Offline Editing Without a Deliberate Checkout
 
+[[[offline-editing]]]
+
+## Overview
+
 [[[offline-editing#overview]]]
 
 Distinct from a deliberate vacation/USB checkout ([[sync#overview]]) or a deliberate borrow (§11): a resource's owning

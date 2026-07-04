@@ -1,5 +1,7 @@
 # §9. Mounts, `.rehuco`, and Cross-Box Visibility
 
+[[[mounts-and-storage]]]
+
 ## §9.1 The problem
 
 [[[mounts-and-storage#the-problem]]]

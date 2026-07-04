@@ -1,5 +1,7 @@
 # §A04. Testing and Cross-Platform QA
 
+[[[appendices.testing]]]
+
 ## Overview
 
 [[[appendices.testing#overview]]]

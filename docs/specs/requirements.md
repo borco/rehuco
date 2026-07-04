@@ -1,5 +1,9 @@
 # §14. Functional Requirements Carried Into the Architecture
 
+[[[requirements]]]
+
+## Overview
+
 [[[requirements#overview]]]
 
 Consolidated list of requirements established across discussion, checked against the design above:

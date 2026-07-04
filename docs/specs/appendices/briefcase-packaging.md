@@ -1,5 +1,7 @@
 # §A01. Briefcase Packaging — Native App Builds, File Association, and App Identity
 
+[[[appendices.briefcase-packaging]]]
+
 ## Overview
 
 [[[appendices.briefcase-packaging#overview]]]

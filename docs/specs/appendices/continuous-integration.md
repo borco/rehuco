@@ -1,5 +1,7 @@
 # §A02. Continuous Integration — Design Decisions and Hurdles
 
+[[[appendices.continuous-integration]]]
+
 ## Overview
 
 [[[appendices.continuous-integration#overview]]]

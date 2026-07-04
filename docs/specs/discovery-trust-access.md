@@ -1,5 +1,7 @@
 # §6. Discovery, Swarm Identity, and Trust
 
+[[[discovery-trust-access]]]
+
 ## §6.1 Two separate questions
 
 [[[discovery-trust-access#separate-gates]]]

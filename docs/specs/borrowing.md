@@ -1,5 +1,7 @@
 # §11. Borrowing, Library-Shelf Storage, and Scheduled Archival
 
+[[[borrowing]]]
+
 ## §11.1 The "library shelf" pattern
 
 [[[borrowing#library-shelf]]]

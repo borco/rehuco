@@ -1,5 +1,7 @@
 # §13. Plugins
 
+[[[plugins]]]
+
 ## Overview
 
 [[[plugins#overview]]]

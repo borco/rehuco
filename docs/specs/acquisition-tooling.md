@@ -1,5 +1,7 @@
 # §15. Acquisition and Migration Tooling
 
+[[[acquisition-tooling]]]
+
 ## Overview
 
 [[[acquisition-tooling#overview]]]

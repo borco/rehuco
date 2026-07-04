@@ -1,5 +1,7 @@
 # §17. Field Schema (v1, `.tc`-compatible)
 
+[[[field-schema]]]
+
 ## Overview
 
 [[[field-schema#overview]]]
@@ -507,7 +509,9 @@ plugin — so the
 }
 ```
 
-### Collection — common core only, year-only date (field set provisional, §17.2.1)
+### Collection — common core only, year-only date (provisional)
+
+Field set provisional ([[field-schema#resource-types]]).
 
 ```json
 {

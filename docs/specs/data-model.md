@@ -1,5 +1,7 @@
 # §4. Data Model
 
+[[[data-model]]]
+
 ## §4.1 `.rehu` format
 
 [[[data-model#rehu-format]]]

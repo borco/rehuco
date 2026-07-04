@@ -1,5 +1,7 @@
 # §10. Identity, Instance Tracking, and Deduplication
 
+[[[instances-and-dedup]]]
+
 ## §10.1 UUID identifies lineage, not "the one legitimate copy"
 
 [[[instances-and-dedup#uuid-is-lineage]]]

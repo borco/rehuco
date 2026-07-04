@@ -1,5 +1,7 @@
 # §16. Code Organization, Packaging, and Deployment
 
+[[[packaging-deployment]]]
+
 ## Overview
 
 [[[packaging-deployment#overview]]]

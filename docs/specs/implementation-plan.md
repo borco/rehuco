@@ -1,5 +1,7 @@
 # rehuco — Implementation Plan
 
+[[[implementation-plan]]]
+
 > [!NOTE]
 > **Tracer-Bullet First Slices**
 >

@@ -1,5 +1,7 @@
 # §8. Multiplicity: Swarms and Nodes per Machine
 
+[[[multiplicity]]]
+
 ## Overview
 
 [[[multiplicity#overview]]]

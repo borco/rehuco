@@ -1,5 +1,9 @@
 # §7. Sync & Conflict Resolution
 
+[[[sync]]]
+
+## Overview
+
 [[[sync#overview]]]
 
 > [!NOTE]
