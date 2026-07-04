@@ -2,6 +2,8 @@
 
 ## §10.1 UUID identifies lineage, not "the one legitimate copy"
 
+[[instances-and-dedup#uuid-is-lineage]]
+
 A single resource's UUID can legitimately exist in **many physical locations at once**, by design — a backup, a vacation checkout, and the live copy on a node are all valid, simultaneous instances of the same resource. UUID is not "uniqueness enforcement"; it answers **"are these the same resource?"**, enabling:
 
 - **Corruption recovery**: if a primary copy fails checksum verification, any other known instance with the same UUID (a backup on an offline HDD, a USB checkout) is a candidate to restore from, verified against the checksum manifest before being promoted.
@@ -10,9 +12,13 @@ A single resource's UUID can legitimately exist in **many physical locations at 
 
 ## §10.2 Instance registry
 
+[[instances-and-dedup#instance-registry]]
+
 Each UUID maps to a set of known **instances**, each tagged with a role (primary, backup, checkout, mounted-elsewhere, sealed/read-only) and a health/last-seen state. Reconciliation and dedup-recovery logic operate over this registry — e.g. skipping sealed instances when looking for a sync target, or surfacing a healthy backup when the primary fails a checksum check.
 
 ## §10.3 Failure model, precisely
+
+[[instances-and-dedup#failure-model]]
 
 "A node is down" and "the underlying files are unreachable" are **independent conditions**, not the same event:
 
@@ -20,6 +26,8 @@ Each UUID maps to a set of known **instances**, each tagged with a role (primary
 - The read-only/writable-cache fallback (§12) applies only when **no live access route remains at all** for that resource — true offline media being the common case (a USB stick or disc that's physically disconnected most of the time), not merely "the node that happens to administer it is off."
 
 ## §10.4 Deduplication
+
+[[instances-and-dedup#deduplication]]
 
 UUID matching alone is not sufficient for dedup, because two `.rehu` files can describe the same real-world resource without sharing lineage — e.g. a copy received from someone else who generated their own `.rehu` independently, or multiple accidental downloads of the same thing made before cataloguing existed. Dedup needs a **separate, complementary signal set**:
 
@@ -30,6 +38,8 @@ UUID matching alone is not sufficient for dedup, because two `.rehu` files can d
 **URL specificity must be tracked explicitly.** Some `.rehu` entries carry a real, unique URL (a specific product/course page); others, where the original page no longer exists, were backfilled with a generic publisher homepage as a placeholder. These look identical as plain strings but mean very different things for matching — treating them the same would cause false-positive dedup matches concentrated exactly on resources whose metadata is already weaker. The schema should mark generic/fallback URLs explicitly (e.g. a flag, or a separate field from a confirmed specific source URL) so dedup logic can exclude them from the match signal rather than being misled by them.
 
 ## §10.5 Duplicate review UI
+
+[[instances-and-dedup#duplicate-review]]
 
 Automated matching only ever **proposes**; a human verdict is recorded and never re-asked:
 

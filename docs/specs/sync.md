@@ -1,5 +1,7 @@
 # §7. Sync & Conflict Resolution
 
+[[sync#overview]]
+
 > [!NOTE]
 > **Implement this with Opus, not the auto-switched Sonnet.** The version-vector ordering, the concurrent-edit merge rules, the delete-vs-edit asymmetry, and the tombstone semantics are reasoning-dense — a subtle error here silently loses or resurrects data. Override `opusplan` to `/model opus` while implementing §7 even though it's "execution," and verify each merge case against the rules below.
 

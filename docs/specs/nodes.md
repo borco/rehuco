@@ -1,5 +1,9 @@
 # §5. Node Communication
 
+## Overview
+
+[[nodes#overview]]
+
 **Plain REST over HTTP**, not a message queue or pub-sub broker. The actual operations needed (query catalog, fetch content/thumbnails, push state sync, trigger a remote checksum job, notify a node that a file changed, serve a browser) are simple request/response patterns. A queue would add infrastructure (broker, persistence) with no real benefit at this scale, and would burden the weakest hardware (QNAP TS-230). REST is also natively browser-compatible, covering the tablet/web-UI case for free.
 
 Nodes need to support, at minimum:
@@ -14,6 +18,8 @@ Nodes need to support, at minimum:
 
 ## §5.1 Two roles: node (service) and agent (desktop GUI)
 
+[[nodes#two-roles]]
+
 The thing loosely called "the app" or "the admin app" elsewhere is more precisely the **agent**. Two distinct *roles* exist, because one process cannot be both a headless server (on the QNAP, no display) and a GUI (PySide6, needs a display):
 
 - **Node** — the headless service: HTTP server, swarm participation, serving data, running jobs. Runs on every participating machine *including* headless ones (QNAP). Never has a GUI.
@@ -27,6 +33,8 @@ On GUI desktops the node and agent usually ship together and feel like one tray 
 
 ## §5.2 Readiness is per-operation, never one global gate
 
+[[nodes#readiness-per-op]]
+
 The app must be usable before swarm chatter settles. The mistake to avoid is a single `node_is_ready` flag that blocks everything until the slowest background task finishes. Instead, operations are tiered by what they actually depend on:
 
 - **Local-file only** → never waits. Double-clicking a `.rehu` to view it reads that one self-describing file (and its sibling screenshots) off disk and renders immediately — no swarm, no registry, no cache, no login required.
@@ -36,6 +44,8 @@ The app must be usable before swarm chatter settles. The mistake to avoid is a s
 All swarm activity — discovery, registry resync, fingerprint mapping (§9.10), instance reconciliation, propagation — runs **async in the background** (in the task queue, §3) and surfaces *status* ("syncing" / "offline, showing last-known" / "up to date"), never a blocking splash. The app opens interactive on local/cached data and refines as sync lands.
 
 ## §5.3 Local-file mode vs. swarm mode
+
+[[nodes#local-vs-swarm]]
 
 The agent operates in two scopes, and conflating them is what made §5.1's "always a node client" sound contradictory:
 
@@ -47,6 +57,8 @@ The agent operates in two scopes, and conflating them is what made §5.1's "alwa
 **Saving is where managed files converge back (§4.9).** If the agent has a session and the file's owning node is reachable (the same check that powers enrichment), the save routes through that node like any swarm edit, honoring the single-writer rule. Otherwise the agent writes the file directly — local-file mode stays fully usable as the floor — and the write is an **out-of-band change**: the owning node detects it via verify-on-access (§4.7) the next time the resource is opened, browsed, or served (or at the next incremental scan) and reintegrates it then (§9.5). Atomic writes (§4.9) bound the residual race to lose-one-never-corrupt; the version-vector comparison decides fast-forward vs. genuinely-concurrent (§4.9, §7).
 
 ## §5.4 Single-instance behavior and file association
+
+[[nodes#single-instance]]
 
 The agent uses the standard single-instance pattern: on launch (or `.rehu` double-click) it tries to bind a local socket; if it binds, it is the **main instance**; if the bind fails, another agent is already running, so it connects to that socket, forwards the file path, and exits — the main instance opens a new viewer view for the forwarded file. (This matches Qt's `QLocalServer`/single-application approach.)
 

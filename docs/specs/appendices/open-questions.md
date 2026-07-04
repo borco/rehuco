@@ -1,8 +1,14 @@
 # §A03. Open Questions — Out of Scope and Not Yet Designed
 
+## Overview
+
+[[appendices.open-questions#overview]]
+
 Flagging gaps so they're a deliberate choice rather than an oversight.
 
 ## §A03.1 Resolved or scoped since the first consolidation
+
+[[appendices.open-questions#resolved-or-scoped]]
 
 - **Metadata-conflict during offline editing** — previously an unacknowledged contradiction between §7 ("single writer, no conflict") and §12 ("cache stays editable offline"). Resolved for v1 by making resource metadata online-only-editable (§7); only per-user state is offline-editable. The hard multi-writer-metadata merge is a future hook, not v1 work.
 - **Instance-registry / offline-instance persistence** — the rebuild-from-scratch model was imprecise. Now bounded (§2): retained metadata copies (§9.8) survive rebuild by rescan; transient instances re-register on reconnect; borrows persist via the user meta block (§11.4).
@@ -37,6 +43,8 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **File-association + app-identity mechanics** — now **proven on current versions** by the Pre-work spikes: macOS (#13) — a Briefcase `.app` registers the extension (UTI + `CFBundleDocumentTypes`) and double-clicks arrive as `QFileOpenEvent` into the single instance (§5.4); Windows (#1) — an HKCU ProgID default handler plus an in-process launcher's AUMID give double-click-open and correct taskbar pin/running. The Briefcase how-to and per-OS hurdles are captured in §A01 (and §A05 for the Windows dev launcher). Only code-signing/notarization remains open below.
 
 ## §A03.2 Still open
+
+[[appendices.open-questions#still-open]]
 
 - **Full `.rehu` schema** — field ownership (common vs. plugin) is settled (§4.1, §13.1); the complete field list/types per plugin is being designed separately. Archival is a tag (§11.3), not a schema state. The schema must now also carry the version vector and the `versions` history list (§7) and the user/auth records (§6.8).
 - **Access-rule grammar/schema** — the *model* is settled (§6.10: swarm-propagated, server-enforced, full/per-resource/dynamic-tag grants). What's not yet specified is the concrete representation: how a grant is written, how per-resource and tag-grants combine (additive? can a deny override an allow?), and where exactly it sits in the propagated registry.

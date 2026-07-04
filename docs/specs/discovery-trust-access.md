@@ -2,6 +2,8 @@
 
 ## §6.1 Two separate questions
 
+[[discovery-trust-access#separate-gates]]
+
 - **"Is this node even part of my network?"** → answered by **swarm identity**.
 - **"Do I trust this specific node?"** → answered by **pairing/approval**.
 
@@ -9,15 +11,21 @@ These must be separate gates. Without the first, the second alone would let any 
 
 ## §6.2 Swarm ID
 
+[[discovery-trust-access#swarm-id]]
+
 - Generated once, randomly, when the very first node is created ("create new swarm" vs. "join existing swarm" at first run).
 - Carried in every zeroconf announcement. Nodes ignore announcements with a non-matching swarm ID outright — a foreign node never even becomes a pairing candidate.
 - This also directly enables **running multiple independent swarms** on the same LAN (e.g. a real household swarm and a separate test/dev swarm), since they simply never see each other's traffic.
 
 ## §6.3 Discovery
 
+[[discovery-trust-access#discovery]]
+
 **Zeroconf (mDNS/Bonjour)** for finding nodes on the LAN — the right tool for zero-config local discovery, and lightweight enough for the QNAP.
 
 ## §6.4 Node identity and pairing (Syncthing-style, trust-on-first-use)
+
+[[discovery-trust-access#node-identity-pairing]]
 
 Node identity follows the Syncthing model, which is cleaner than a separate pairing-secret scheme because the human-visible identity and the cryptographic identity are the *same object*:
 
@@ -30,6 +38,8 @@ Node identity follows the Syncthing model, which is cleaner than a separate pair
 
 ## §6.5 Membership model: hub-and-spoke, not full mesh
 
+[[discovery-trust-access#membership-model]]
+
 The **admin is the sole authority for swarm membership**. When the admin approves a new node:
 
 - The admin records the new node's public identity in its registry.
@@ -40,6 +50,8 @@ The **admin is the sole authority for swarm membership**. When the admin approve
 This is the same pattern Syncthing calls an **introducer** — a trusted device that vouches for others to its peers — which independently validates the hub-and-spoke choice. The admin is the introducer; ordinary nodes trust the admin's vouching rather than re-verifying each new member themselves.
 
 ## §6.6 Registry home: preferred authority with chatter fallback (decided)
+
+[[discovery-trust-access#registry-home]]
 
 > [!NOTE]
 > **Implement the registry-resolution and serve-after-resync logic (§6.6 + §6.11) with Opus, not the auto-switched Sonnet.** The startup sequence (preferred-authority → chatter-for-highest-version → last-known), the version-marker comparison, and the "serve only after catching up, unless nothing newer is reachable" gate have several edge cases (single node, cold start, partial power-up, vacation laptop) where a wrong default either deadlocks startup or serves stale access rules. Override to `/model opus` for both sections.
@@ -54,6 +66,8 @@ So startup registry resolution is a simple sequence: **try the preferred authori
 
 ## §6.7 Admin app portability
 
+[[discovery-trust-access#admin-portability]]
+
 The agent must run identically on any machine — it holds no unique local state beyond a cached session token (§6.8):
 
 - The **authoritative registry lives on the preferred authority node** (above), not on whichever machine the agent last ran on. The agent resolves and pulls the current registry on launch via the sequence above.
@@ -61,6 +75,8 @@ The agent must run identically on any machine — it holds no unique local state
 - **Open question, still unresolved:** should the *admin* identity be a permanent "master key," or revocable/replaceable like an ordinary node identity, in case it's lost or compromised? (This is distinct from registry home, which is now decided.)
 
 ## §6.8 User authentication (distinct from node trust)
+
+[[discovery-trust-access#user-auth]]
 
 §6.1–6.6 authenticate *nodes* to each other. Authenticating *humans* is separate and necessary because any node can act as an HTTPS server a user logs into (including the thin tablet's server, §11.5):
 
@@ -72,6 +88,8 @@ The agent must run identically on any machine — it holds no unique local state
 
 ## §6.9 Visitors and cross-swarm sharing (no federation)
 
+[[discovery-trust-access#cross-swarm-sharing]]
+
 A visitor is never allowed to join the swarm as a node. Two clean paths instead:
 
 - **Guest account** — a normal user record (username + hash + view-only permissions), propagated like any user. The visitor logs into *your* node's web UI as a dumb browser client (same as the tablet); their device never becomes a node and never holds hashes or swarm state.
@@ -79,6 +97,8 @@ A visitor is never allowed to join the swarm as a node. Two clean paths instead:
   - An exported resource **keeps its UUID** (harmless, occasionally useful for later re-import/compare) but is **stripped of the version vector, activity log, per-user state, and instance-registry entries** — those are the originating swarm's private bookkeeping and would leak usage or corrupt ordering in the destination swarm. Export = resource content + `.rehu` metadata + screenshots, scrubbed of all swarm bookkeeping.
 
 ## §6.10 Access control
+
+[[discovery-trust-access#access-control]]
 
 Access rules (which users may see which resources) are **swarm-wide config**, authored by the admin and propagated to every node exactly like membership (§6.5) and the user list (§6.8).
 
@@ -89,6 +109,8 @@ Access rules (which users may see which resources) are **swarm-wide config**, au
 **Grant types** (per §14): full access, per-resource, or by-tag. Tag-based grants are **evaluated dynamically at query time**, not expanded into a static list — if a user is granted "everything tagged `blender`" and a resource is later retagged, that resource automatically enters or leaves the user's view with no explicit grant edit. This is the one part of access that is *computed* rather than a static lookup, and it makes grant-by-category cheap and self-maintaining.
 
 ## §6.11 Serve-after-resync (startup gating on swarm info)
+
+[[discovery-trust-access#serve-after-resync]]
 
 A node that was offline while users/permissions changed must not serve on stale access rules — it could grant access that was revoked, or deny access that was granted. So a node gates serving user-facing requests on first bringing its `.rehusw` (§4.8) up to date. The rule must be stated carefully, because taken literally ("don't serve until resynced with the rest of the swarm") it would make the swarm un-startable:
 

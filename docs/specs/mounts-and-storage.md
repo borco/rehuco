@@ -2,15 +2,21 @@
 
 ## §9.1 The problem
 
+[[mounts-and-storage#the-problem]]
+
 A machine running the Qt app (or a node) may have network shares from *other* boxes mounted locally — e.g. the Mac mini has the QNAP's share mounted. The same physical files can then be reachable two ways at once: directly via the mount, and via the QNAP's own node over REST. Naively, this risks the same resource appearing as two separate catalog entries.
 
 ## §9.2 Resolved by UUID, not by path-guessing
+
+[[mounts-and-storage#uuid-not-paths]]
 
 Path-based inference (trying to guess that a given mount root corresponds to a given node's share) is fragile — mount points are named arbitrarily and have no necessary relation to a node's internal paths. Instead: **a resource discovered via a mount and the same resource reported by a node are recognized as identical purely because their `.rehu` UUIDs match.** Once matched, the catalog holds one logical entry with multiple known **access routes** (mount path, node REST endpoint, or both), and can prefer whichever route is fastest for a given operation (typically: local mount > delegating to a node over the network).
 
 This same model generalizes cleanly: **more than one node can serve the same resource**, if more than one box happens to have the owning box's share mounted. This isn't a conflict — it's just additional access routes for the same UUID. If the originally-owning box goes down but another node still has it mounted, that node can keep serving the resource live; the read-only cached fallback (§10) only applies when **no** live route remains at all.
 
 ## §9.3 `.rehuco`: explicit, local, declared scope
+
+[[mounts-and-storage#rehuco-scope]]
 
 Rather than relying purely on empirical UUID-matching to discover the mount-to-node relationship (which only self-corrects after both sides have independently reported the same UUID at least once), the system uses a **`.rehuco` file, local to each machine**, that explicitly declares:
 
@@ -24,9 +30,13 @@ Rather than relying purely on empirical UUID-matching to discover the mount-to-n
 
 ## §9.4 Nodes can also serve mounted (not locally-owned) content
 
+[[mounts-and-storage#nodes-serve-mounted]]
+
 The same mounting capability applies to nodes, not just the Qt app — a node can serve a resource it only has access to via a mount from another box, using the same `.rehuco`-declared relationship.
 
 ## §9.5 Out-of-band changes: notification, verify-on-access, and scan — not disk-watching
+
+[[mounts-and-storage#out-of-band]]
 
 Ordinary agent edits to a managed `.rehu` route through the owning node (§4.9, §5.3), so the node sees them by construction. What this section covers is the **out-of-band change** — a write the owning node didn't make: an agent in local-file mode with no route to the node (§5.3), files dropped in by other tools, a bulk copy landing in a watched root. The node must learn of these without a continuously-running filesystem watcher (an unwanted resource cost, especially on weak hardware). Three complementary discovery paths, ordered by immediacy:
 
@@ -38,9 +48,13 @@ On any of the three, the node re-reads just that file, updates its cache, and pr
 
 ## §9.6 Node handoff during active viewing
 
+[[mounts-and-storage#node-handoff]]
+
 A user may start watching a tutorial via the node on their PC, then switch to the node on the TS-230 (e.g. because they're shutting the PC down), and later reconnect the PC — expecting playback progress to follow seamlessly throughout. This requires no new mechanism beyond §7's per-user state sync, but does require a **higher push frequency during active playback**: progress should be written to the authoritative record every few seconds (or on pause/seek/stop), not only at session end, so that switching the serving node — or reconnecting one used earlier — reflects state that's only seconds stale rather than a full session behind. A node taking over playback reads current state before resuming, the same read any node would perform on session start.
 
 ## §9.7 Example deployment: multiple machines mounting one share
+
+[[mounts-and-storage#example-deploy]]
 
 The same share can legitimately be mounted by several machines at once (e.g. the PC, the main desktop, the Mac mini, and a low-power always-on Linux box could all mount the QNAP's export) — this is an ordinary network-share capability, not something the architecture needs to specially support. What it means in practice is that **"who serves a resource" doesn't need a single designated answer**; per §9.2, any subset of machines with access can each run a node for it simultaneously, with no conflict. This makes per-machine role assignment a matter of matching each box's power/compute profile to a job, rather than picking one "correct" server:
 
@@ -50,6 +64,8 @@ The same share can legitimately be mounted by several machines at once (e.g. the
 
 ## §9.8 Configurable durable retention of remote/offline metadata
 
+[[mounts-and-storage#durable-retention]]
+
 `.rehuco` can opt in, per source, to keeping a **durable local copy of that source's `.rehu` metadata and screenshots** — for usually-offline media (external drives, USB sticks, CD/DVD) and optionally for other nodes. Rationale and rules:
 
 - **Why**: offline media are painful to rescan one-by-one, and a powered-off node's content would otherwise drop out of the catalog. Retaining their metadata locally keeps them browsable while disconnected, and — because the retained copies are ordinary local files — keeps them present across a full cache rebuild (§2). Extending the same option to other nodes' metadata is for completeness/flexibility, not necessity.
@@ -58,6 +74,8 @@ The same share can legitimately be mounted by several machines at once (e.g. the
 - **Staleness is resolved by version comparison, not blind overwrite.** When a retained source becomes reachable, compare the stored `resource_version`/timestamp against the live one; re-pull only if it moved.
 
 ## §9.9 Tolerating offline mounts without blocking
+
+[[mounts-and-storage#offline-mounts]]
 
 A node may run continuously (e.g. the always-on Linux node) while the boxes whose shares it mounts — the TS-230 in particular, but any source box — are powered off or unreachable for long stretches. A configured mount is therefore frequently **present in `.rehuco` but currently dead**, and the node must keep serving everything else without stalling on it.
 
@@ -75,6 +93,8 @@ Deployment note: mount the shares **soft / with short timeouts** so failed sysca
 
 ## §9.10 Self-mapping via fingerprint files
 
+[[mounts-and-storage#fingerprint-map]]
+
 UUID-matching (§9.2) resolves overlaps *per resource, reactively*. Fingerprinting resolves the **topology of shared storage proactively** — it discovers that nodeA's `foo/1` + `foo/2` and nodeB's mounted `foo/` are the same underlying storage, and how their paths map, without waiting to observe per-resource UUID collisions. Mechanism:
 
 1. Each node drops a **content-unique fingerprint file** (containing a UUID identifying that node-root) into each top-level root it is **primary** for (§9.11) — never into remote/mounted roots, which it doesn't own and which may be read-only.
@@ -85,6 +105,8 @@ Requirements: the fingerprint file must be content-unique per node-root (UUID in
 
 ## §9.11 Folder-add: declaring primary/local vs. remote/mounted ownership
 
+[[mounts-and-storage#folder-add]]
+
 When the admin adds a folder root to a node (via that node's `.rehuco`, edited through the node per §5.1), it must be tagged as one of:
 
 - **Primary/local** — this node owns the files and is the authoritative metadata writer (§7).
@@ -94,6 +116,8 @@ This flag is the concrete source of truth for §7's single-writer guarantee. **H
 
 ## §9.12 Node benchmarking and grading
 
+[[mounts-and-storage#node-benchmark]]
+
 An explicit, user-triggered task (§3) that produces per-node performance grades to feed the dispatch decisions in §4.5/§9.7 (currently described only qualitatively as "the fast box" / "the weak box"):
 
 - Create a large test file, generate its checksum, then **clear the OS disk cache and re-checksum to measure cold-read speed** (not warm-cache speed).
@@ -102,6 +126,8 @@ An explicit, user-triggered task (§3) that produces per-node performance grades
 Caveat to record: dropping disk caches is disruptive and **platform-specific** (mechanism differs across Linux/macOS/QNAP and may need privileges). The benchmark must therefore be occasional and explicit, never automatic, and must **degrade gracefully** where cold-cache measurement isn't permitted (fall back to warm-cache numbers, flagged as such).
 
 ## §9.13 Self-determined fastest/safest move/rename
+
+[[mounts-and-storage#safe-move-rename]]
 
 > [!NOTE]
 > **Implement the cross-filesystem move with Opus, not the auto-switched Sonnet.** The copy → verify-checksum-on-target → delete-source-only-if-verified sequence (and keeping the source's instance-registry entry until verification passes) is data-loss-sensitive: a wrong ordering or a skipped verification can delete the only good copy. Override to `/model opus` for the cross-FS path.

@@ -2,6 +2,8 @@
 
 ## §4.1 `.rehu` format
 
+[[data-model#rehu-format]]
+
 JSON, replacing the YAML `.tc`. The full schema is being designed separately (§17, the concrete
 v1 field list derived from the `.tc` format) and isn't detailed here, but its scope is settled:
 
@@ -24,13 +26,19 @@ A few field-level decisions carried over from the old `.tc` format, worth keepin
 
 ## §4.2 Stable identity, independent of location
 
+[[data-model#stable-identity]]
+
 Because resources can move between folders, disks, and nodes, **path cannot be the identifier**. Every `.rehu` carries a UUID minted once at creation time. This UUID identifies the **resource's lineage** — see §10 for why this is a many-to-one relationship (one UUID, potentially many physical instances) rather than "one UUID, one legitimate copy."
 
 ## §4.3 Single file, not split metadata/state files
 
+[[data-model#single-file]]
+
 Considered splitting `.rehu` into separate metadata vs. per-user-state files to simplify conflict resolution, but rejected this: it breaks the "one self-sufficient file" property that makes the design work in the first place. Instead, conflict resolution is scoped to the relevant sub-block *within* the one file (§7).
 
 ## §4.4 Resource scoping: directory-scoped vs. file-scoped
+
+[[data-model#resource-scoping]]
 
 Two patterns for what a `.rehu` describes:
 
@@ -40,12 +48,16 @@ Two patterns for what a `.rehu` describes:
 
 ## §4.5 Checksums
 
+[[data-model#checksums]]
+
 - Algorithm in use today: CRC32 (SFV). Subject to change pending benchmarking (CPU-accelerated CRC32 vs. alternatives like xxHash or hardware-accelerated SHA). The checksum manifest format should record **which algorithm was used** per entry, so a future algorithm switch doesn't invalidate or require migrating existing checksums, and different resources can use different algorithms if needed.
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the `infoXX.*` images, which are designed to be freely editable.
 - The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue (§3), and multi-selecting many resources serializes the work rather than running it all at once.
 - **Execution location is a dispatch decision, not fixed.** A checksum job can run: (a) on the node that owns the files (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API, or when no node is reachable at all — e.g. an offline checkout on a USB stick), or (c) via a locally mounted path that happens to also be served by a node — see §9.4. The general rule: **prefer whichever route gives local-disk-speed access to the actual bytes**; fall back to delegating to the owning node otherwise.
 
 ## §4.6 Two distinct meanings of "image"
+
+[[data-model#image-meanings]]
 
 The design uses "image" for two unrelated things; conflating them caused real ambiguity, so they're separated explicitly:
 
@@ -56,6 +68,8 @@ The reference-images plugin's per-image tags and redaction overlays (§13.7) des
 
 ## §4.7 Scanning strategy and staleness detection
 
+[[data-model#scan-and-staleness]]
+
 Scanning is load-bearing (§2, §9.5) but the *strategy* was previously undefined. Two principles:
 
 - **Incremental, version-aware reconciliation is the normal mode; full rescan is a recovery tool.** A node/app should detect what actually changed (e.g. by file mtime/size, or by comparing a cheap `resource_version`/timestamp marker) and re-read only those `.rehu` files, rather than re-parsing the whole catalog on the hot path. The original startup-slowness problem was a full-scan problem; the SQLite cache plus incremental scanning — not raw per-file parse speed — is the real lever. (JSON-over-YAML is still chosen for tooling, validation, and benchmarked parse speed, but parse speed of a single file is not the primary startup-time factor once the cache exists.)
@@ -63,6 +77,8 @@ Scanning is load-bearing (§2, §9.5) but the *strategy* was previously undefine
 - **Verify-on-access closes the out-of-band gap lazily.** The cache records, per resource, the `.rehu` file's own stat signature (mtime/size) and a content hash captured at last read — distinct from the §4.5 content checksums, which deliberately exclude `.rehu`. Opening, browsing to, or serving a resource re-checks the stat signature against the cache (hashing only to confirm a suspected change, off the hot path); a mismatch means the file changed out-of-band (§9.5), and it is reintegrated on the spot — re-read, version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.
 
 ## §4.8 Per-node local file trio
+
+[[data-model#local-file-trio]]
 
 Each node keeps three files of the same basename, sitting together, with sharply different roles and lifecycles:
 
@@ -76,6 +92,8 @@ Each node keeps three files of the same basename, sitting together, with sharply
 
 ## §4.9 Write integrity: atomic writes + single-writer-per-managed-file
 
+[[data-model#write-integrity]]
+
 A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent this — and which applies depends on whether the file is **managed** (a node owns its storage, §9.11) or **unmanaged** (a loose file no node watches — a fresh export being adjusted, a single file received from someone; note that local-file mode §5.3 can open both kinds):
 
 - **Atomic write is universal — every `.rehu` write, by anyone, is temp-then-rename.** Write to a temp file in the same directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows `ReplaceFile`/`MoveFileEx`). A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new file — never a torn one. This prevents *torn* files.
@@ -85,6 +103,8 @@ A `.rehu` is the source of truth, and several actors can want to write one (an a
 **Import is the explicit unmanaged → managed hand-off.** A received export (unmanaged, stripped of swarm bookkeeping per §6.9) is edited freely in local-file mode (agent writes directly). **Import** is the discrete act of a node taking ownership — assigning the file to a primary root and minting fresh swarm bookkeeping (new version vector, instance entry, §10.2). Before import, no node knows the file exists (agent is sole writer); after import, exactly one node owns it (node is sole writer). There is no window where both believe they own the write, because import is a deliberate, atomic transition. At import the node treats the file as untrusted outside input — validate it, upgrade its format if older (§4.10), mint new bookkeeping — rather than assuming it is well-formed just because it has a `.rehu` extension. The same defensive posture applies to *reading* any `.rehu` (a double-clicked file is untrusted input too, §5.3): parsing enforces sanity caps — total file size, `versions`-list length, entry sizes, JSON nesting depth — and a file exceeding them opens read-only with a warning (or is refused at import) instead of exhausting memory or wedging the app.
 
 ## §4.10 Schema format versioning of `.rehu` itself
+
+[[data-model#schema-version]]
 
 The `.rehu` schema will gain fields over time (it is still being designed). Because the offline-media design (§9.8, §10) guarantees old files *will* resurface years later — off a USB stick, a sealed DVD, a received export — every `.rehu` must carry its own **format-version field**. Rules:
 

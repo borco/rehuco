@@ -1,5 +1,9 @@
 # §A01. Briefcase Packaging — Native App Builds, File Association, and App Identity
 
+## Overview
+
+[[appendices.briefcase-packaging#overview]]
+
 How rehuco uses [Briefcase](https://briefcase.readthedocs.io/) to build `rehuco-agent` into a
 native, double-clickable application with OS-registered file association and app identity — the
 *how-to and the hurdles*, complementing §16.8 (which records the *decision* to use Briefcase over
@@ -12,6 +16,8 @@ config lands in `apps/rehuco-agent/` and as Windows and Linux packaging are wire
 detail is still spike-proven rather than production-shipped, it says so.
 
 ## §A01.1 Status
+
+[[appendices.briefcase-packaging#status]]
 
 - **macOS file association + `QFileOpenEvent` delivery + single-instance routing** — proven end to
   end on current versions by the #13 spike (§A01.6). The `rehuco-agent` app code it depends on
@@ -26,6 +32,8 @@ detail is still spike-proven rather than production-shipped, it says so.
 - **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A03.2).
 
 ## §A01.2 The Briefcase config
+
+[[appendices.briefcase-packaging#briefcase-config]]
 
 Briefcase reads everything from `pyproject.toml`; no per-OS manifest is hand-maintained. The
 config below is what the #13 spike used and verified; the production version in `rehuco-agent`
@@ -62,6 +70,8 @@ requires = ["PySide6>=6.9", "../../packages/borco-core", "../../packages/borco-p
 ```
 
 ## §A01.3 The app-side wiring it relies on
+
+[[appendices.briefcase-packaging#app-side-wiring]]
 
 Briefcase only produces the bundle and its registration; the app must still handle the two macOS
 delivery mechanics. Both already exist in `rehuco-agent` and needed no change for macOS.
@@ -101,6 +111,8 @@ singleton.other_instance_run.connect(open_forwarded)
 
 ## §A01.4 Build and iterate
 
+[[appendices.briefcase-packaging#build-and-iterate]]
+
 **Icon first.** Briefcase's `icon = "rehuco-spike"` config points at a basename; on macOS it needs
 a matching `.icns` next to `pyproject.toml`. macOS builds one from the `.svg` master with the
 platform tools (no third-party dependency). This is **not yet a Makefile target** — the Windows
@@ -137,6 +149,8 @@ a Makefile target against the workspace venv.
 
 ## §A01.5 Hurdles
 
+[[appendices.briefcase-packaging#hurdles]]
+
 Recorded in the order they bite when building a Briefcase macOS bundle for a PySide6 app.
 
 ### `min_os_version` must be ≥ the PySide6 wheel's floor
@@ -167,6 +181,8 @@ but wastes a scaffolding round-trip if hit.
 
 ## §A01.6 Verification recipe (terminal-driven, no GUI session)
 
+[[appendices.briefcase-packaging#verification]]
+
 `open` and `lsregister` drive the *exact same* LaunchServices path Finder uses for a double-click,
 so the whole flow is verifiable over SSH with no screen attached — how the #13 spike was checked.
 
@@ -193,6 +209,8 @@ log stream --style compact --predicate 'process == "<Formal Name>"'
 ```
 
 ## §A01.7 What the #13 spike confirmed
+
+[[appendices.briefcase-packaging#spike-confirmed]]
 
 Tested on Python 3.14.6, PySide6 6.11.1, Briefcase 0.4.3, macOS 26.5.1 (2026-07-02). All three of
 the spike's acceptance criteria passed:

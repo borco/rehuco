@@ -1,8 +1,14 @@
 # §13. Plugins
 
+## Overview
+
+[[plugins#overview]]
+
 Resource types (tutorial, reference images, Daz3D, and future types) are implemented as **plugins**, loaded per `.rehuco` declaration (§9.3). The core app provides default plugins for tutorials, reference images, and Daz3D, but the architecture doesn't assume these are exhaustive.
 
 ## §13.1 Split between core and plugin-owned responsibility
+
+[[plugins#core-vs-plugin]]
 
 | Core (same for every resource type) | Plugin-owned (varies per type) |
 | --- | --- |
@@ -25,6 +31,8 @@ Both produce the same on-disk block (§13.3) — whether a block's fields came f
 
 ## §13.2 Field toolkit and the viewer / editor / both surfaces
 
+[[plugins#toolkit-surfaces]]
+
 - [ ] [#20: feat: A2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
 
 The field toolkit named in §13.1 is a shared, non-plugin library the agent owns; plugins (and
@@ -32,6 +40,8 @@ declarative types) compose their viewer/editor from it. This section is its arch
 per-resource **viewer / editor / both** surface model that hosts it.
 
 ### §13.2.1 Field toolkit
+
+[[plugins#field-toolkit]]
 
 A **field** binds one logical value (a common-core field, or later a plugin sub-field) to the widgets
 that show and edit it:
@@ -72,6 +82,8 @@ own child fields without a base change.
 
 ### §13.2.2 Reactive view-model
 
+[[plugins#view-model]]
+
 The surfaces never touch `RehuDocument` (§4) directly. A thin **view-model** — a `QObject` wrapping
 the pure document — exposes each field as a reactive property with a `…_changed` signal plus a
 `dirty` flag; setting a field writes through to the document, marks dirty, and emits. This is what
@@ -86,6 +98,8 @@ is the seam it plugs into.
 
 ### §13.2.3 Viewer / editor / both surfaces
 
+[[plugins#viewer-editor-both]]
+
 Each open resource has a **viewer surface** and (for now) one **editor surface**, each built by a
 `FieldsForm` over the same view-model, and each toggled independently:
 
@@ -95,6 +109,8 @@ Each open resource has a **viewer surface** and (for now) one **editor surface**
   arrangeable docks, not a fixed split.
 
 ### §13.2.4 Document-dock shell
+
+[[plugins#dock-shell]]
 
 The agent hosts open resources in a **document-dock shell**: a `MainWindow` whose central area is a
 QtAds dock-in-dock, with **one dock per open `.rehu`**. Opening a file adds its dock to the currently
@@ -109,6 +125,8 @@ later slice (A2.1/#21). A nested surface toggle must carry the §16.7.1 closed-d
 (stash `splitterSizes` on `closeRequested`, reapply on `viewToggled(True)`).
 
 ## §13.3 Plugin blocks: keyed, versioned, single-live-type
+
+[[plugins#plugin-blocks]]
 
 > [!NOTE]
 > **Implement the block save invariant with Opus, not the auto-switched Sonnet.** The live/inert distinction, and especially the *claim-then-abandon-drops-but-never-claimed-foreign-carries* rule (the worked example below), is the subtle logic most likely to be implemented as the wrong-but-plausible "save the current type" — which silently deletes foreign blocks. Override to `/model opus` for this and check all four steps of the worked example.
@@ -137,6 +155,8 @@ The same block key (`refimages`) thus has opposite fates in steps 1 and 4, deter
 
 ## §13.4 Generic fallback editor for inert / unknown blocks
 
+[[plugins#fallback-editor]]
+
 Inert blocks (and a live block whose plugin isn't installed here) are shown via a generic fallback rather than failing:
 
 - **Unknown block** (whole plugin not the live type, or not installed): a labeled, collapsible section marked with *why* it's flagged — "not the current type" vs. "plugin not installed here" are different situations the user resolves differently. Default is carry-verbatim, with an explicit drop option.
@@ -144,6 +164,8 @@ Inert blocks (and a live block whose plugin isn't installed here) are shown via 
 - Flagged items **stand out in the viewer**, labeled by provenance (newer-version-of-installed-plugin vs. plugin-absent vs. not-the-current-type) so the user knows whether the fix is "upgrade the plugin," "install it," or "this is just inert payload."
 
 ## §13.5 Resource browsers (per-type, with shelf/table modes)
+
+[[plugins#browsers]]
 
 The catalog is presented through **browsers**, which are the catalog-level counterpart to the plugin block model (§13.3): just as a `.rehu` has common fields plus a type-specific block, a browser has common columns plus type-specific columns.
 
@@ -155,12 +177,16 @@ The catalog is presented through **browsers**, which are the catalog-level count
 
 ## §13.6 Tutorial plugin
 
+[[plugins#tutorial-plugin]]
+
 - **Viewer** (triggered by double-clicking `.rehu` in File Explorer): read-only field display; rendered Markdown description; horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to close.
 - **Editor**: field editing including the Markdown description; folder rename from the predefined-candidates list (§4.1).
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress and duration; note-taking (create/view/edit); bookmarking. Progress sync follows §7/§9.6.
 - **Web**: search/browse tutorials the user has access to; follow a tutorial from the browser, with the same progress/notes/bookmarks behavior as the desktop "follow" mode.
 
 ## §13.7 Reference images plugin
+
+[[plugins#refimages-plugin]]
 
 Viewer/editor similar in shape to the tutorial plugin (no "follow" mode), with type-specific features:
 
@@ -172,8 +198,12 @@ Viewer/editor similar in shape to the tutorial plugin (no "follow" mode), with t
 
 ## §13.8 Daz3D plugin
 
+[[plugins#daz3d-plugin]]
+
 Viewer/editor similar in shape to the others, plus a **custom action**: install/uninstall the plugin/asset into the user's local Daz3D installation. Tracked per user *and* per box (i.e. "installed on which machine, by whom, when"), since this is a system-integration side effect rather than a view/edit operation — it's the first concrete example motivating "custom actions with tracked side effects" as a first-class plugin capability (§13.1), not just schema/viewer/editor/web.
 
 ## §13.9 Shared capability worth extracting
+
+[[plugins#shared-capability]]
 
 "Follow tutorial" (§13.6) and the sketch-practice slideshow (§13.7) both want a **timed/sequential presentation** capability, just configured differently (tracked progress + notes/bookmarks vs. a fixed-duration rotating display + a session log). Worth designing this as one shared core capability that plugins configure, rather than reimplementing similar sequencing/timer logic independently in two plugins.

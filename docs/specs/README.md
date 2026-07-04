@@ -10,28 +10,28 @@ below.
 To resolve any `§N` reference, find its number here — this table is the single source of
 truth for what a section number means and which file it lives in.
 
-| § | Section | File |
-| --- | --- | --- |
-| 1–3 | Problem statement · why distributed · components | [architecture-design.md](architecture-design.md) |
-| 4 | Data Model | [data-model.md](data-model.md) |
-| 5 | Node Communication | [nodes.md](nodes.md) |
-| 6 | Discovery, Swarm Identity, and Trust | [discovery-trust-access.md](discovery-trust-access.md) |
-| 7 | Sync & Conflict Resolution | [sync.md](sync.md) |
-| 8 | Multiplicity: Swarms and Nodes per Machine | [multiplicity.md](multiplicity.md) |
-| 9 | Mounts, `.rehuco`, and Cross-Box Visibility | [mounts-and-storage.md](mounts-and-storage.md) |
-| 10 | Identity, Instance Tracking, and Deduplication | [instances-and-dedup.md](instances-and-dedup.md) |
-| 11 | Borrowing, Library-Shelf Storage, and Scheduled Archival | [borrowing.md](borrowing.md) |
-| 12 | Offline Editing Without a Deliberate Checkout | [offline-editing.md](offline-editing.md) |
-| 13 | Plugins | [plugins.md](plugins.md) |
-| 14 | Functional Requirements Carried Into the Architecture | [requirements.md](requirements.md) |
-| 15 | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
-| 16 | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
-| 17 | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
-| A01 | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
-| A02 | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
-| A03 | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A04 | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
-| A05 | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| § | Link prefix | Section | File |
+| --- | --- | --- | --- |
+| 1–3 | `[[architecture-design.*]]` | Problem statement · why distributed · components | [architecture-design.md](architecture-design.md) |
+| 4 | `[[data-model.*]]` | Data Model | [data-model.md](data-model.md) |
+| 5 | `[[nodes.*]]` | Node Communication | [nodes.md](nodes.md) |
+| 6 | `[[discovery-trust-access.*]]` | Discovery, Swarm Identity, and Trust | [discovery-trust-access.md](discovery-trust-access.md) |
+| 7 | `[[sync.*]]` | Sync & Conflict Resolution | [sync.md](sync.md) |
+| 8 | `[[multiplicity.*]]` | Multiplicity: Swarms and Nodes per Machine | [multiplicity.md](multiplicity.md) |
+| 9 | `[[mounts-and-storage.*]]` | Mounts, `.rehuco`, and Cross-Box Visibility | [mounts-and-storage.md](mounts-and-storage.md) |
+| 10 | `[[instances-and-dedup.*]]` | Identity, Instance Tracking, and Deduplication | [instances-and-dedup.md](instances-and-dedup.md) |
+| 11 | `[[borrowing.*]]` | Borrowing, Library-Shelf Storage, and Scheduled Archival | [borrowing.md](borrowing.md) |
+| 12 | `[[offline-editing.*]]` | Offline Editing Without a Deliberate Checkout | [offline-editing.md](offline-editing.md) |
+| 13 | `[[plugins.*]]` | Plugins | [plugins.md](plugins.md) |
+| 14 | `[[requirements.*]]` | Functional Requirements Carried Into the Architecture | [requirements.md](requirements.md) |
+| 15 | `[[acquisition-tooling.*]]` | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
+| 16 | `[[packaging-deployment.*]]` | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
+| 17 | `[[field-schema.*]]` | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
+| A01 | `[[appendices.briefcase-packaging.*]]` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
+| A02 | `[[appendices.continuous-integration.*]]` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
+| A03 | `[[appendices.open-questions.*]]` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
+| A04 | `[[appendices.testing.*]]` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| A05 | `[[appendices.windows-dev-launcher.*]]` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 The milestone breakdown and build sequencing live separately in
 [implementation-plan.md](implementation-plan.md).
@@ -70,3 +70,25 @@ The milestone breakdown and build sequencing live separately in
   therefore **renumber-and-shifts** the rest, updating every `§A0N` reference in the same change —
   the same rule as `§N` above. Appendix subsections are `§A01.1`, `§A01.2`, … and are referenced
   like any other (`§A01.2`).
+
+## Symbolic cross-references
+
+Every heading also carries a stable `[[doc#slug]]` declaration on its own line right beneath it
+(dot-qualified for appendices: `[[appendices.open-questions#still-open]]`). Unlike the `§N.M`
+number, the slug never changes when sections are inserted or renumbered — **new cross-references
+(prose in other specs, docstrings in `.py` source) should use the slug, not the number.** The
+number stays on the heading as a reading-order indicator; the slug is what anything outside the
+file should actually point at.
+
+- **Not a clickable link — a grep convention.** Search the repo for the exact token; the
+  occurrence that's the *only thing on its line* is the declaration, every other occurrence is a
+  reference. This deliberately sidesteps chasing identical clickable-anchor behavior across GitHub
+  and the published mkdocs site, which isn't achievable cheaply (the two renderers handle anchors
+  differently).
+- **Self-resolving.** The doc name is in the token itself (`plugins` in
+  `[[plugins#field-toolkit]]`), so no document-map lookup is needed to find which file it's in —
+  unlike a bare `§13.2.1`.
+- **Migration is in progress, not complete.** Every heading has its slug declared; converting the
+  many existing `§N.M` prose mentions across the repo (docs *and* `.py` docstrings) to slug form is
+  ongoing. A bare `§N.M` mention still resolves via the document map above until its context is
+  converted.

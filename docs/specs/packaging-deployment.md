@@ -1,8 +1,14 @@
 # §16. Code Organization, Packaging, and Deployment
 
+## Overview
+
+[[packaging-deployment#overview]]
+
 A monorepo with **uv workspaces** is the chosen structure, driven by three concrete pains: refactoring code between the shared library and the apps (currently a multi-repo/submodule dance of coupled commits), tooling confusion over *which* `.venv` is active (a multi-root VSCode layout has one venv per root, and tools — including AI coding assistants — guess wrong), and independent PyPI publishing of the shared libraries.
 
 ## §16.1 Why uv workspaces
+
+[[packaging-deployment#uv-workspaces]]
 
 - **One shared `.venv` at the workspace root**, containing every member as an editable install. This eliminates the "which venv?" ambiguity at its source: there is exactly one environment, every package is always importable from it, nothing to guess. (This is the strongest single reason for the move.)
 - **Atomic cross-package refactors.** Moving a widget from an app into the shared library becomes one commit in one repo, instead of a commit in the submodule plus a pointer-bump commit in the consumer.
@@ -12,24 +18,24 @@ The one real constraint workspaces impose: all members resolve against **one dep
 
 ## §16.2 Three packages, mapping onto the node/agent/shared-library split
 
+[[packaging-deployment#three-packages]]
+
 - [x] [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
 
 The packaging boundary mirrors the architecture's node/agent split (§5.1):
 
 ```txt
 rehuco/                   # monorepo root
-  pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
-  uv.lock                 # single lockfile
   .venv/                  # the one shared environment (development only)
+  apps/
+    rehuco-agent/         # desktop GUI: depends on rehuco-core + PySide6/scintilla/ads
+    rehuco-node/          # headless service: depends on rehuco-core + FastAPI/uvicorn/zeroconf
   packages/
-    rehuco-core/          # shared library: field toolkit, .rehu model, plugin base — PUBLISHABLE
     borco-core/           # generic, non-rehuco utilities (no GUI dep) — temporary guest, moving out
     borco-pyside/         # generic, non-rehuco PySide widgets/utilities — temporary guest, moving out
-    pyside6-scintilla/    # PUBLISHABLE
-    pyside6-lexilla/      # PUBLISHABLE
-  apps/
-    rehuco-node/          # headless service: depends on rehuco-core + FastAPI/uvicorn/zeroconf
-    rehuco-agent/         # desktop GUI: depends on rehuco-core + PySide6/scintilla/ads
+    rehuco-core/          # shared library: field toolkit, .rehu model, plugin base — PUBLISHABLE
+  pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
+  uv.lock                 # single lockfile
 ```
 
 The **virtual workspace root** (no `[project]` table, only `[tool.uv.workspace]`) is a pure organizational container — it can't itself be published and holds no app code, keeping the root clean. Shared libraries are publishable leaf packages (they depend only on PyPI packages, never on the apps, so they carry no workspace-internal dependencies that would block publishing).
@@ -38,11 +44,15 @@ The `borco-*` packages (`borco-core`, `borco-pyside`) are **generic, non-rehuco*
 
 ## §16.3 PyPI publishing and `uv tool install`
 
+[[packaging-deployment#pypi-publishing]]
+
 - Each member has its own `pyproject.toml` (name, version, build backend) and **publishes to PyPI independently** — `uv build --package rehuco-core && uv publish`. The monorepo structure is invisible to PyPI; it just sees a normal wheel.
 - The node and agent are installable as tools: **`uv tool install rehuco-node`** (ideal — headless service, console entry point) and **`uv tool install rehuco-agent`** (works for the GUI; native installers / file-association registration are a later polish for wider distribution (§16.8), not needed for the author's own machines).
 - **Three packages, not one-package-with-extras.** Extras were considered (`rehuco[node]` / `rehuco[app]`) but rejected: extras are *additive and cannot subtract a base dependency*, so any GUI dependency reachable from the base would still be pulled by `rehuco[node]` — adding unwanted GUI overhead to a headless service. Separate packages make "the node has no GUI dependencies" **structural rather than carefully-maintained**, and let each package carry its own `requires-python` floor.
 
 ## §16.4 The TS-230 as NAS: SMB mount, not a node host
+
+[[packaging-deployment#ts230-as-nas]]
 
 The QNAP TS-230 is used as a **NAS**, not as a compute host. It serves its storage over the existing Samba (SMB) share. `rehuco-node` runs on capable hardware (Mac mini, always-on Linux box) and accesses TS-230 content via that SMB mount — treating it as a local path. No node needs to run on the TS-230 itself, and the glibc constraint (§16.5) plays no role in deployment.
 
@@ -53,6 +63,8 @@ This is already an option the architecture anticipated (§9.3): the box owning t
 **The monorepo workspace remains the development environment only** — it is never synced to a remote host. Deployment installs individual published packages: `uv tool install rehuco-node` on any capable box, `uv tool install rehuco-agent` on GUI machines.
 
 ## §16.5 TS-230 glibc canary — historical findings
+
+[[packaging-deployment#glibc-canary]]
 
 Since the node does not run on the TS-230 (§16.4), the glibc canary is **not an active requirement**. The findings below are kept as a reference in case direct QNAP deployment is ever reconsidered.
 
@@ -92,6 +104,8 @@ The initial canary confirmed that all planned node dependencies install and impo
 
 ### §16.5.1 Initial canary result (2026-06-30)
 
+[[packaging-deployment#initial-canary]]
+
 - [x] [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
 
 Tested on the physical TS-230: glibc 2.23, aarch64, Python 3.14.6 (uv-managed).
@@ -115,6 +129,8 @@ Cold-import time on TS-230 ARM hardware is ~3.3 s — expected, not a compatibil
 
 ### §16.5.2 Automated canary: three-tier verification
 
+[[packaging-deployment#auto-canary]]
+
 - [x] [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
 
 The canary runs at three tiers, ordered fastest → most authoritative:
@@ -133,9 +149,13 @@ smoke-imports each one. A missing `manylinux2014_aarch64` wheel or a glibc-versi
 
 ## §16.6 Migrating existing repos
 
+[[packaging-deployment#migrating-repos]]
+
 **Decided: start the monorepo fresh.** Per-repo git history of the old apps isn't valued enough to preserve (the author is comfortable starting clean — "what's another repo"). The old rehuco-predecessor repos (`resource-hub`, `tutcatalog5`, `tutcatalog4`) are not grafted in. This avoids the `git subtree`/`git-filter-repo` fiddliness entirely. The generic PySide utilities that used to live in a standalone package are likewise reintroduced fresh as the `borco-*` packages (§16.2) rather than grafted in — no old clone or remote needs to survive.
 
 ## §16.7 Dependency licensing policy
+
+[[packaging-deployment#licensing-policy]]
 
 **Principle: the choice of the final application's license must stay with the author, not be forced by a dependency.** GPL is fine *by deliberate choice* for a final app; being *compelled* into GPL by a linked library is not acceptable — it removes the author's freedom and entangles the reusable libraries (`rehuco-core`, `pyside_ibo`, etc.) that are meant to be independently publishable under whatever license the author picks. (This principle is already evidenced by the author writing an MIT-licensed `pyside6-scintilla` rather than depending on a copyleft alternative.)
 
@@ -144,10 +164,12 @@ Concrete consequence for **docking**:
 - **Use `pyqtads` (Qt-Advanced-Docking-System), not KDDockWidgets.** Both are mature and feature-comparable (detach/float/nest/auto-hide/delete-on-close), and KDDockWidgets is in some respects the more capable *framework* (KDAB pedigree, native QML docks, deeper customization). But:
   - **KDDockWidgets is GPL 2.0/3.0** (or paid commercial). Linking it makes the *entire agent* a GPL combined work — cascading into the publish plan (§16.3) and risking entanglement of the reusable libraries. This is a property of the license, not something the binding/packaging can engineer around.
   - **`pyqtads` is permissively licensed (LGPL)** — it can be linked from an app of any license without forcing the app's license — **and ships prebuilt PySide6/PyQt6/PyQt5 bindings on PyPI**, so it drops into the uv workspace as a normal dependency with no build step.
-- The packaging objection to KDDockWidgets (no PyPI wheel; bindings must be built from source via shiboken+CMake+libclang) is one the author *could* solve — the same CI-built-binding work already done for `pyside6-scintilla` (shiboken) and `pyside6-lexilla` (nanobind). So bindings are **not** the blocker. **The license is the blocker**, and it is not solvable by effort.
+- The packaging objection to KDDockWidgets (no PyPI wheel; bindings must be built from source via shiboken+CMake+libclang) is one the author *could* solve — the same CI-built-binding work already done for `pyside6-scintilla` (shiboken) and `lexilla` (nanobind). So bindings are **not** the blocker. **The license is the blocker**, and it is not solvable by effort.
 - KDDockWidgets is therefore foreclosed for this project. The QML-in-`pyqtads` approach (QQuickWidget hosted in a widget dock) was **re-verified on current versions** by spike #4 (§16.7.1) and holds; the fallback — constraining how QML is used (non-detachable docks, reduced QML footprint) — is held in reserve, **not** needed, and switching to KDDockWidgets stays foreclosed regardless.
 
 ### §16.7.1 QML-in-`pyqtads` regression check (spike #4)
+
+[[packaging-deployment#qml-regression]]
 
 - [ ] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
 
@@ -173,6 +195,8 @@ deleted and this issue closed).
 
 ## §16.8 Desktop distribution, file association, and app identity
 
+[[packaging-deployment#app-identity]]
+
 Distribution splits by audience, structurally (as the package split does, §16.2):
 
 - **`rehuco-core` and `rehuco-node` are pure PyPI** (§16.3) — a library and a headless service; no GUI identity, no file association.
@@ -187,6 +211,8 @@ Two design facts shape the choice:
 
 ## §16.9 Auto-update
 
+[[packaging-deployment#auto-update]]
+
 The agent should detect a newer release, flag it, and offer to install. Design positions:
 
 - **Version checking is cheap and uses a public source.** The repo is public, so either GitHub Releases or the PyPI metadata serves as the version oracle, via a small periodic poll.
@@ -196,6 +222,8 @@ The agent should detect a newer release, flag it, and offer to install. Design p
 Code-signing / notarization is an unpriced prerequisite (§A03.2). Auto-update is end-user polish on the same track as §16.8, deferred past the personal critical path (plan: deferred).
 
 ## §16.10 Design resources
+
+[[packaging-deployment#design-resources]]
 
 - [x] [#29: single icon master in top-level design/icons](https://github.com/borco/rehuco/issues/29)
 

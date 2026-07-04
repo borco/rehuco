@@ -1,11 +1,17 @@
 # §17. Field Schema (v1, `.tc`-compatible)
 
+## Overview
+
+[[field-schema#overview]]
+
 - [x] [#6: decision: tutorial and reference-image field lists](https://github.com/borco/rehuco/issues/6)
 
 The concrete starting field set for rehuco, derived from the fields a real tutcatalog4 (tc4)
 `.tc` file carries. §4.1 settles the *scope* of the `.rehu` schema and defers the detail here.
 
 ## §17.1 Scope and intent
+
+[[field-schema#scope-and-intent]]
 
 The first release must **double-click an existing `.tc` and view it**. That goal — not a
 speculative ideal schema — fixes the starting field set: rehuco has to accommodate whatever
@@ -24,6 +30,8 @@ tc4 actually stored.
   the Collection *type*'s field set stays deferred (§17.2.1).
 
 ## §17.2 Field mapping: tc4 `.tc` → rehuco
+
+[[field-schema#field-mapping]]
 
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
 (§4.1, §13) and says **where the field lives on disk**: `common` at the top level, everything
@@ -75,6 +83,8 @@ disk scan (which in rehuco feed `current_duration` / `current_size` — see §17
 
 ### §17.2.1 Resource types
 
+[[field-schema#resource-types]]
+
 `type` selects one of three. Fields fall into tiers so "common" means *common to all types*
 only:
 
@@ -108,6 +118,8 @@ fixtures.
 
 ### §17.2.2 Per-user vs shared
 
+[[field-schema#per-user-shared]]
+
 `rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **private**
 `learning_paths` are **per-user** state, not properties of the resource. v1 is single-user/local
 so this is invisible, but the schema must keep them separable from shared fields so the
@@ -118,6 +130,8 @@ per-user keys live **inline** in the plugin block (polluting the current scope);
 per-user block waits on the swarm/user model (§17.6).
 
 ### §17.2.3 Sources (multi title / publisher / URL)
+
+[[field-schema#sources]]
 
 One resource can be published in several places — the same tutorial sold on more than one
 platform under slightly different names and links (§4.1). This is modeled as `sources`:
@@ -172,6 +186,8 @@ membership *fields* above are settled.
 
 ### §17.2.4 The `online` flag and local backup
 
+[[field-schema#online-flag]]
+
 `online` means **the original source is still available online** — not "this is an online-only
 resource" (the ambiguity §4.1 warns against). The driving case: many Udemy-style courses are
 kept as just a `.rehu` with screenshots plus a pointer to the source (the primary listing's
@@ -186,6 +202,8 @@ worth it.
 
 ### §17.2.5 Record timestamps
 
+[[field-schema#record-timestamps]]
+
 `created` and `updated` are **new** full datetime values (not the partial-precision `released`, which
 is the *content's* publication date): when the `.rehu` record was first written and last
 edited. tc4 stored neither; on import they seed from the file's timestamps. They are shared
@@ -198,6 +216,8 @@ Once the `versions` list lands in the schema (§7 — v1 carries no versions yet
 fields in favor of the derived values — §4.10 makes that migration safe.
 
 ### §17.2.6 Boolean flags
+
+[[field-schema#boolean-flags]]
 
 For v1 the tc4 boolean flags stay **individual booleans**, as in tc4 — `complete`, `online`
 (§17.2.4), `viewed`, `todo`, `keep` — plus a new `favorite`. Import is 1:1 (each tc4 bool maps
@@ -216,6 +236,8 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   never folds in (it is an integer, not a toggle).
 
 ## §17.3 Duration and size model
+
+[[field-schema#duration-size]]
 
 Two orthogonal axes govern both duration and size — **how the value is known** (measured by
 scanning files vs claimed by a publisher) and **what it covers** (the complete resource vs
@@ -257,6 +279,8 @@ to be filled later by scanning (§17.6) rather than by guessing it was ever an i
 
 ### §17.3.1 Canonical unit and the millisecond-leak history
 
+[[field-schema#ms-leak-history]]
+
 - **Duration is stored as integer seconds.** At tutorial scale (minutes to hundreds of hours)
   sub-second precision is meaningless; milliseconds buy nothing and caused the historical bug.
 - **The old bug was ms-vs-seconds, not a `×60` error.** MediaInfo reports track durations in
@@ -273,6 +297,8 @@ to be filled later by scanning (§17.6) rather than by guessing it was ever an i
   genuinely long collections.
 
 ### §17.3.2 Human-readable duration format
+
+[[field-schema#duration-format]]
 
 Carried over verbatim from tc4 (it already matches the desired behavior). For a value `d` in
 seconds:
@@ -294,6 +320,8 @@ empty.
 
 ## §17.4 Field types
 
+[[field-schema#field-types]]
+
 The distinct value types the viewer must handle:
 
 | type | notes |
@@ -313,6 +341,8 @@ The distinct value types the viewer must handle:
 
 ## §17.5 tc4 viewer layout (reference for the v1 view)
 
+[[field-schema#tc4-viewer-layout]]
+
 The exact field order, labels, and widgets from tc4's `Viewer.qml`, as the concrete reference
 for the v1 rendering. One shared layout served all types (which is why an inapplicable field
 could leak); rehuco instead shows only the fields a type declares.
@@ -328,6 +358,8 @@ Field order, in the three groups the layout separates:
 - **Description:** Markdown rendered as rich text.
 
 ## §17.6 Deferred / open items
+
+[[field-schema#deferred-items]]
 
 - **Common/plugin boundary** — the §17.2 tiers (common core / resource fields / per-type) are a
   first cut; finalize when the field toolkit (A2) and plugin blocks (§13) land. The generic
@@ -362,6 +394,8 @@ Field order, in the three groups the layout separates:
   not decided — pin down before filtering lands (§17.4).
 
 ## §17.7 Example `.rehu` files (validation fixtures)
+
+[[field-schema#example-files]]
 
 Concrete `.rehu` documents (JSON, §4.1) that exercise the field set above — usable as
 parser/schema validation fixtures.

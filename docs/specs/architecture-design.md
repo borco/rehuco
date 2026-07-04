@@ -1,5 +1,9 @@
 # rehuco — Architecture Design
 
+## Overview
+
+[[architecture-design#overview]]
+
 *rehuco — a personal, distributed catalog for tutorials, references, and creative assets.* (The name is the stem of the file formats it owns: `.rehu`, `.rehuco`, `.rehudb`, `.rehusw`. Successor to TutCatalog, generalized beyond tutorials.)
 
 This file holds the high-level overview (§1–§3). The rest of the design lives in topic
@@ -7,6 +11,8 @@ files alongside it; see [README.md](README.md) for the **document map** that say
 section number lives in which file, and a suggested reading order.
 
 ## §1. Problem Statement
+
+[[architecture-design#problem]]
 
 The user has a large, heterogeneous personal media collection spread across multiple machines:
 
@@ -29,6 +35,8 @@ An existing PySide6 app already manages this using a YAML sidecar file (`info.tc
 
 ## §2. Why a Distributed, Self-Describing Design
 
+[[architecture-design#why-distributed]]
+
 Two properties drive most of the architecture:
 
 1. **Self-describing data.** `.rehu` files live next to the content they describe. A resource can be copied, moved to a different disk, moved to a different node, backed up, checked out, or read from completely offline media (USB stick, CD/DVD) — and it still carries everything needed to reconstruct its catalog entry. The cached database (SQLite or similar) is rebuildable from scratch by rescanning `.rehu` files; it is a cache, never the source of truth.
@@ -45,6 +53,8 @@ Two properties drive most of the architecture:
 This pushes the design toward a **distributed system with eventual consistency**, not a client-server app with a single backend. That's a deliberate, scope-increasing choice — worth stating plainly, since it affects build order and where complexity lives.
 
 ## §3. Components
+
+[[architecture-design#components]]
 
 **Core principle — the agent (desktop GUI) is a node client for swarm operations; "admin" is a logged-in user's privilege, not a separate app (§5.1).** The desktop GUI talks to a node rather than touching the catalog filesystem itself, removing "local path vs. remote node" special-casing. The bare single-file viewer is the one exception — it opens a local `.rehu` off disk with no node and no login (§5.3).
 
