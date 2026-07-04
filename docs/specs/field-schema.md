@@ -178,7 +178,7 @@ collections:
 - **`learning_paths`** use the `{ title, index, visibility }` shape and render apart from the tag
   fields (a plain tag can't carry an order). **`visibility` is a `public` / `private` toggle in the
   UI**: *private* = only its owner sees it; *public* = shared with the swarm (the admin can also
-  curate public ones, §6). The **owner stays implicit** — a personal path lives in that user's
+  curate public ones, [[discovery-trust-access]]). The **owner stays implicit** — a personal path lives in that user's
   per-user block ([[field-schema#per-user-shared]]), so we store the **`visibility` flag, not a `user` field**. Public
   paths are propagated swarm state; private ones stay per-user, mirroring `rating` / `viewed` /
   `progress` ([[sync#overview]]). v1 is single-user, so the public/private split only bites once there's a

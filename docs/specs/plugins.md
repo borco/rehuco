@@ -101,7 +101,7 @@ own child fields without a base change.
 
 [[[plugins#view-model]]]
 
-The surfaces never touch `RehuDocument` (§4) directly. A thin **view-model** — a `QObject` wrapping
+The surfaces never touch `RehuDocument` ([[data-model]]) directly. A thin **view-model** — a `QObject` wrapping
 the pure document — exposes each field as a reactive property with a `…_changed` signal plus a
 `dirty` flag; setting a field writes through to the document, marks dirty, and emits. This is what
 makes **live "both"** work: an edit in the editor surface updates the view-model, whose signal the

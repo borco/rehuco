@@ -14,7 +14,7 @@ class RehuDocumentModel(QObject):
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
     ([[plugins#view-model]]).
 
-    The viewer/editor surfaces bind to this instead of touching `RehuDocument` (§4) directly, keeping
+    The viewer/editor surfaces bind to this instead of touching `RehuDocument` ([[data-model]]) directly, keeping
     the core non-GUI ([[plugins#core-vs-plugin]]). Setting ``title`` / ``publisher`` / ``url`` writes
     through to the document's **primary** source ([[field-schema#sources]]), marks the model dirty,
     and emits the field's ``<name>_changed`` signal -- which is what makes live "both" work: an edit

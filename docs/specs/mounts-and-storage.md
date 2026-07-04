@@ -24,7 +24,8 @@ to a node over the network).
 This same model generalizes cleanly: **more than one node can serve the same resource**, if more than one box happens to
 have the owning box's share mounted. This isn't a conflict — it's just additional access routes for the same UUID. If
 the originally-owning box goes down but another node still has it mounted, that node can keep serving the resource live;
-the read-only cached fallback (§10) only applies when **no** live route remains at all.
+the read-only cached fallback ([[instances-and-dedup#failure-model]]) only applies when **no** live route remains at
+all.
 
 ## §9.3 `.rehuco`: explicit, local, declared scope
 

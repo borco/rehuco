@@ -43,7 +43,8 @@ A few field-level decisions carried over from the old `.tc` format, worth keepin
 [[[data-model#stable-identity]]]
 
 Because resources can move between folders, disks, and nodes, **path cannot be the identifier**. Every `.rehu` carries a
-UUID minted once at creation time. This UUID identifies the **resource's lineage** — see §10 for why this is a
+UUID minted once at creation time. This UUID identifies the **resource's lineage** — see
+[[instances-and-dedup#uuid-is-lineage]] for why this is a
 many-to-one relationship (one UUID, potentially many physical instances) rather than "one UUID, one legitimate copy."
 
 ## §4.3 Single file, not split metadata/state files
@@ -211,7 +212,8 @@ memory or wedging the app.
 [[[data-model#schema-version]]]
 
 The `.rehu` schema will gain fields over time (it is still being designed). Because the offline-media design
-([[mounts-and-storage#durable-retention]], §10) guarantees old files *will* resurface years later — off a USB stick, a
+([[mounts-and-storage#durable-retention]], [[instances-and-dedup#uuid-is-lineage]]) guarantees old files *will*
+resurface years later — off a USB stick, a
 sealed DVD, a received export — every `.rehu` must carry its own **format-version field**. Rules:
 
 - **A newer agent/node reads an older file and upgrades it** to the current format on write (the upgrade is itself an

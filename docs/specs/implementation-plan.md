@@ -145,7 +145,8 @@ Three principles hold across the split:
 
 - **Monotonically increasing distribution complexity.** A is standalone (no network); B adds a single node serving thin
   clients; C adds two-party sync — the first real reconcile, but the minimal topology. The full **N-node swarm**
-  (discovery, pairing, registry, safe-move — §6, [[mounts-and-storage#fingerprint-map]]–9.13) is deferred *past* all
+  (discovery, pairing, registry, safe-move — [[discovery-trust-access]],
+  [[mounts-and-storage#fingerprint-map]]–9.13) is deferred *past* all
   three.
 - **One new integration risk per milestone.** Each isolates a single unproven spine so nothing tackles two at once;
   within each, the first slice (A1/B1/C1) is a kept **tracer bullet** and the rest thicken it.
@@ -293,7 +294,8 @@ far simpler than general swarm sync.
 > Mark a tutorial "borrow" → its files + `.rehu` copy onto the laptop, borrow recorded in the user meta block
 > ([[borrowing#recording-borrows]]) → laptop node serves it offline → on return, progress/notes reconcile back.
 
-Touches, thinly: §11 (borrow as instance role), [[instances-and-dedup#instance-registry]] (instance tracking),
+Touches, thinly: [[borrowing#another-instance-role]] (borrow as instance role),
+[[instances-and-dedup#instance-registry]] (instance tracking),
 [[sync#overview]]/[[offline-editing#overview]] (two-party reconcile), [[borrowing#recording-borrows]] (borrow-in-meta).
 
 ### C2–Cn — Thicken
@@ -316,8 +318,9 @@ Touches, thinly: §11 (borrow as instance role), [[instances-and-dedup#instance-
 
 Everything that isn't on the personal critical path, per the architecture doc's own scoping:
 
-- **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) — §6,
-  [[mounts-and-storage#fingerprint-map]]–9.13. Defer until single-node + borrow is serving you daily; you may want it
+- **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) —
+  [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–9.13. Defer until single-node + borrow is serving
+  you daily; you may want it
   less than expected.
 - **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — [[acquisition-tooling#overview]]. Explicitly
   deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap

@@ -20,12 +20,14 @@ Two different kinds of data live in `.rehu`, with different natural owners:
 | Per-user state | view progress, notes, bookmarks, borrow records, deletion/archival actions (logged, [[sync#overview]]) | The user | Real, but narrow in scope |
 
 **Resource metadata** never has a multi-writer conflict, by design — there's exactly one owning node per resource. Other
-nodes/clients show a cached copy, marked offline/stale if no live access route remains (§10). This also covers offline
+nodes/clients show a cached copy, marked offline/stale if no live access route remains
+([[instances-and-dedup#failure-model]]). This also covers offline
 media (external drives, USB sticks, CD/DVD): the cached entry persists and is marked offline rather than disappearing.
 
 **v1 scope decision — metadata is editable only when the resource is online; per-user notes/state are always editable.**
-To keep the single-writer guarantee above *actually true* rather than contradicted by offline-editing features (§11,
-[[offline-editing#overview]]), the first implementation deliberately forbids editing **resource metadata** (including
+To keep the single-writer guarantee above *actually true* rather than contradicted by offline-editing features
+([[borrowing]], [[offline-editing#overview]]), the first implementation deliberately forbids editing **resource
+metadata** (including
 screenshots, [[data-model#image-meanings]]) while the authoritative copy is unreachable. (Editing the file itself in
 local-file mode is *not* "offline editing" in this sense — the `.rehu` on disk **is** the authoritative copy; what v1
 forbids is editing a *cached copy* of an unreachable resource. A direct local write to a managed file is the out-of-band

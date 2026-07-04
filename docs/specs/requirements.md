@@ -22,7 +22,8 @@ Consolidated list of requirements established across discussion, checked against
 - No remote/off-LAN access by design; reach the swarm from outside via a VPN into the home network
   ([[appendices.open-questions#still-open]]).
 - Checkout → offline use → sync-back of notes/progress, including the implicit-checkout case when storage itself becomes
-  unreachable ([[offline-editing#overview]]), and the deliberate borrow/library-shelf case (§11). In v1, offline editing
+  unreachable ([[offline-editing#overview]]), and the deliberate borrow/library-shelf case ([[borrowing]]). In v1,
+  offline editing
   covers per-user state only; resource metadata is online-only-editable ([[sync#overview]]).
 - Borrows recorded in the user's meta block, supporting multiple simultaneous devices and an explicit return step
   ([[borrowing#recording-borrows]]).

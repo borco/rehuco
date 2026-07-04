@@ -133,7 +133,8 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   the agent is expected to connect to any node ([[requirements#overview]]) and playback hands off between nodes
   ([[mounts-and-storage#node-handoff]]). Per-node sessions (re-login on switch) vs. a swarm-shared token-signing key
   propagated in `.rehusw` — not decided.
-- **Remote (off-LAN) access** — *deliberately out of scope, not a gap.* The whole trust/discovery model (§6) is
+- **Remote (off-LAN) access** — *deliberately out of scope, not a gap.* The whole trust/discovery model
+  ([[discovery-trust-access]]) is
   LAN-local by design. The app provides no remote-access mechanism and will not put a personal media catalog on the
   public internet. A user who needs access from outside, without standing up their own mobile node, should **VPN into
   the home network** (WireGuard/Tailscale/etc.) — at which point they are "on the LAN" and everything works unchanged.

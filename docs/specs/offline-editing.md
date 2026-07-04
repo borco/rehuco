@@ -6,7 +6,8 @@
 
 [[[offline-editing#overview]]]
 
-Distinct from a deliberate vacation/USB checkout ([[sync#overview]]) or a deliberate borrow (§11): a resource's owning
+Distinct from a deliberate vacation/USB checkout ([[sync#overview]]) or a deliberate borrow ([[borrowing]]): a
+resource's owning
 storage can become wholly unreachable (the whole box goes down, not just its node process) with **no prior checkout
 having been made**. In this case, the cached entry should remain **editable for per-user state** while disconnected.
 
