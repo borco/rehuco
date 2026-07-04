@@ -2,15 +2,16 @@
 
 ## Overview
 
-[[appendices.continuous-integration#overview]]
+[[[appendices.continuous-integration#overview]]]
 
 Why the cross-platform CI workflow ([#14](https://github.com/borco/rehuco/issues/14)) isn't just
 `make qa` wrapped in a GitHub Actions matrix, and the toolchain gaps it had to work around. Builds
-on the cross-platform QA groundwork in §A04 (issue [#15](https://github.com/borco/rehuco/issues/15)).
+on the cross-platform QA groundwork in [[appendices.testing#overview]] (issue
+[#15](https://github.com/borco/rehuco/issues/15)).
 
 ## §A02.1 `make qa` mutates sources — CI needs a non-mutating equivalent
 
-[[appendices.continuous-integration#non-mutating-ci]]
+[[[appendices.continuous-integration#non-mutating-ci]]]
 
 `make format` — the first step of `make qa` — runs `ruff format .` then `ruff check --fix .`. Both
 rewrite files in place. Running `make qa` verbatim in CI would silently reformat and autofix a PR's
@@ -23,10 +24,11 @@ bandit`, `make pyright`, `make pylint` — since none of those mutate sources.
 
 ## §A02.2 The Qt build artifacts aren't distributed — CI has to generate them, like any dev checkout
 
-[[appendices.continuous-integration#ci-must-build-qt]]
+[[[appendices.continuous-integration#ci-must-build-qt]]]
 
 `viewer_window_ui.py`, `main_rc.py`, and `rehuco-agent.ico` are gitignored, not committed: per
-§A04.6, `rehuco-agent` doesn't work without them, but they don't ship in the repo, so `make uis`
+[[appendices.testing#qualified-rc-imports]], `rehuco-agent` doesn't work without them, but they don't ship in the repo,
+so `make uis`
 (which pulls in `qrcs` and `icons`) has to run before `pytest` can even collect tests — on every
 matrix leg, since a CI checkout starts from the same source tree as a fresh clone.
 
@@ -67,11 +69,12 @@ free of that warning annotation.
 
 ## §A02.3 Bare Linux runners are missing Qt runtime libraries, not just a display
 
-[[appendices.continuous-integration#missing-qt-libs]]
+[[[appendices.continuous-integration#missing-qt-libs]]]
 
 Past `make uis`, `ubuntu-latest` failed again, differently: `pytest` itself crashed with
 `INTERNALERROR> ImportError: libEGL.so.1: cannot open shared object file` while `pytest-qt`
-imported `PySide6.QtGui`. This is unrelated to §A04.2's `QT_QPA_PLATFORM=offscreen` — that setting
+imported `PySide6.QtGui`. This is unrelated to [[appendices.testing#headless-qt]]'s `QT_QPA_PLATFORM=offscreen` — that
+setting
 only picks *which* Qt platform plugin loads once `QtGui` is already importable; it doesn't change
 what shared libraries `QtGui` itself links against at import time. A bare `ubuntu-latest` runner
 ships none of them (macOS and Windows have no equivalent gap, so only the Linux leg needs this).
@@ -91,13 +94,15 @@ That segfault turned out to be a **separate problem from the missing libraries**
 fuller Qt-lib set did *not* eliminate it: it reproduced identically on a WSL Ubuntu 24.04 box that
 already had all three libraries present. The real cause is a deferred-`deleteLater()` teardown
 ordering bug in the *test harness*, not a runtime-lib or a workflow gap — the crash signature
-§A04.2 documents was never fully closed by `QT_QPA_PLATFORM=offscreen` on Linux. The fix lives in
-the `make_singleton` fixture (an explicit `DeferredDelete` flush at teardown); see §A04.2 for the
+[[appendices.testing#headless-qt]] documents was never fully closed by `QT_QPA_PLATFORM=offscreen` on Linux. The fix
+lives in
+the `make_singleton` fixture (an explicit `DeferredDelete` flush at teardown); see [[appendices.testing#headless-qt]]
+for the
 mechanism. No CI-config change was needed for it beyond the library installs already described.
 
 ## §A02.4 One shell for all three runners
 
-[[appendices.continuous-integration#cross-platform-shell]]
+[[[appendices.continuous-integration#cross-platform-shell]]]
 
 The job sets `defaults.run.shell: bash`. On `windows-latest` this resolves to the
 Git-for-Windows-backed bash that GitHub Actions already provides there, which bundles the GNU
@@ -108,7 +113,7 @@ utilities — so every step is written once, not branched per OS.
 
 ## §A02.5 Pinning the Python version explicitly
 
-[[appendices.continuous-integration#pin-python]]
+[[[appendices.continuous-integration#pin-python]]]
 
 Every package pins `requires-python = ">=3.14"`, which leaves the exact minor/patch version up to
 whatever a given runner image resolves it to. `astral-sh/setup-uv`'s `python-version: "3.14"` input
@@ -117,7 +122,7 @@ overrides that and pins the version `uv` provisions, guaranteeing it matches wha
 
 ## §A02.6 Pinning `astral-sh/setup-uv` to an immutable release, not a floating major tag
 
-[[appendices.continuous-integration#fix-node20-warning]]
+[[[appendices.continuous-integration#fix-node20-warning]]]
 
 GitHub flagged `astral-sh/setup-uv@v6` as deprecated: it declares `node20`, which Actions is
 retiring, and was silently being run under `node24` anyway. `v7`+ declare `node24`, but
@@ -131,17 +136,17 @@ to `node24` as floating tags, so neither needed a change.
 
 ## §A02.7 Two things that needed no extra work
 
-[[appendices.continuous-integration#no-extra-work]]
+[[[appendices.continuous-integration#no-extra-work]]]
 
 - **Headless Qt.** `QT_QPA_PLATFORM=offscreen` needs no workflow-level setting — the repo-root
-  `conftest.py` already sets it (§A04.2) before any test module can build a `QApplication`.
+  `conftest.py` already sets it ([[appendices.testing#headless-qt]]) before any test module can build a `QApplication`.
 - **`fail-fast: false`.** Deliberate, not a default left alone: without it, the first matrix leg to
   fail cancels the other two, hiding whether a failure is OS-specific or universal — defeating the
   point of running the matrix at all.
 
 ## §A02.8 Per-OS coverage reporting (Codecov)
 
-[[appendices.continuous-integration#per-os-coverage]]
+[[[appendices.continuous-integration#per-os-coverage]]]
 
 `make cov` only ever printed `term-missing` to the job log — nothing was uploaded anywhere, so the
 README's per-OS coverage badges ([#19](https://github.com/borco/rehuco/issues/19)) had no live data

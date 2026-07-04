@@ -1,4 +1,4 @@
-"""Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces (§13.2.2)."""
+"""Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 from pathlib import Path
 from typing import Any, Final
@@ -11,13 +11,15 @@ from rehuco_agent.fields.field import Field, FieldBinding
 
 
 class RehuDocumentModel(QObject):
-    """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag (§13.2.2).
+    """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
+    ([[plugins#view-model]]).
 
     The viewer/editor surfaces bind to this instead of touching `RehuDocument` (§4) directly, keeping
-    the core non-GUI (§13.1). Setting ``title`` / ``publisher`` / ``url`` writes through to the
-    document's **primary** source (§17.2.3), marks the model dirty, and emits the field's
-    ``<name>_changed`` signal -- which is what makes live "both" work: an edit in the editor updates
-    the model, whose signal the viewer is bound to. ``sources`` is exposed as the list it is; the
+    the core non-GUI ([[plugins#core-vs-plugin]]). Setting ``title`` / ``publisher`` / ``url`` writes
+    through to the document's **primary** source ([[field-schema#sources]]), marks the model dirty,
+    and emits the field's ``<name>_changed`` signal -- which is what makes live "both" work: an edit
+    in the editor updates the model, whose signal the viewer is bound to. ``sources`` is exposed as
+    the list it is; the
     multi-source record-list editor is a later slice (A2.3/#23, A2.6/#26) that plugs into this seam.
 
     :param document: the document to wrap.
@@ -25,13 +27,13 @@ class RehuDocumentModel(QObject):
     """
 
     title = SimpleProperty("")
-    """The primary source's display title (§17.2.3)."""
+    """The primary source's display title ([[field-schema#sources]])."""
 
     publisher = SimpleProperty("")
-    """The primary source's publisher (§17.2.3)."""
+    """The primary source's publisher ([[field-schema#sources]])."""
 
     url = SimpleProperty("")
-    """The primary source's URL (§17.2.3)."""
+    """The primary source's URL ([[field-schema#sources]])."""
 
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
@@ -62,16 +64,16 @@ class RehuDocumentModel(QObject):
 
     @property
     def sources(self) -> list[dict[str, Any]]:
-        """The document's ``sources`` list (§17.2.3); the model edits its primary entry."""
+        """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
         return self.__document.sources
 
     def save(self) -> None:
-        """Atomically save the document (§4.9) and clear the dirty flag."""
+        """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""
         self.__document.save()
         self.dirty = False
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
-        """Resolve a field into its current binding on this model (§13.2.1, `FieldModel`).
+        """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
 
         :param field: the field to resolve; its :attr:`~Field.name` must match a `SimpleProperty`
             declared on this class.

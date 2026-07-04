@@ -1,10 +1,10 @@
 """.rehu document model: JSON read/write that preserves unknown fields on round-trip.
 
 The parsed JSON object is kept verbatim as the source of truth; typed accessors read and
-write the common-core fields (§17.2.1) on top of it. Keys the model does not understand --
+write the common-core fields ([[field-schema#resource-types]]) on top of it. Keys the model does not understand --
 including the whole type-keyed plugin block -- are never dropped, satisfying the
-preserve-unknown-fields rule (§4.10). Writes go through :func:`borco_core.atomic_write_text`
-so a crash never yields a torn file (§4.9).
+preserve-unknown-fields rule ([[data-model#schema-version]]). Writes go through :func:`borco_core.atomic_write_text`
+so a crash never yields a torn file ([[data-model#write-integrity]]).
 """
 
 import json
@@ -14,7 +14,7 @@ from typing import Any, Final
 from borco_core import atomic_write_text
 
 PRIMARY_KEY: Final = "primary"
-"""Marker key on the canonical entry in ``sources`` (§17.2.3)."""
+"""Marker key on the canonical entry in ``sources`` ([[field-schema#sources]])."""
 
 
 class RehuFormatError(ValueError):
@@ -86,18 +86,18 @@ class RehuDocument:
 
     @property
     def id(self) -> str:
-        """The resource UUID (§4.2); empty string if absent (e.g. a not-yet-imported file)."""
+        """The resource UUID ([[data-model#stable-identity]]); empty string if absent (e.g. a not-yet-imported file)."""
         return str(self.__data.get("id", ""))
 
     @property
     def sources(self) -> list[dict[str, Any]]:
-        """The ``sources`` list (§17.2.3); empty when the key is absent."""
+        """The ``sources`` list ([[field-schema#sources]]); empty when the key is absent."""
         sources = self.__data.get("sources", [])
         return sources if isinstance(sources, list) else []
 
     @property
     def primary_source(self) -> dict[str, Any] | None:
-        """The canonical source, resolved permissively per §17.2.3.
+        """The canonical source, resolved permissively per [[field-schema#sources]].
 
         The first entry flagged ``primary: true`` wins; if none is flagged, the first entry
         is treated as primary; if there are no sources, ``None``.
@@ -112,7 +112,7 @@ class RehuDocument:
 
     @property
     def title(self) -> str:
-        """The display title -- the primary source's ``title`` (§17.2.3); empty if none."""
+        """The display title -- the primary source's ``title`` ([[field-schema#sources]]); empty if none."""
         primary = self.primary_source
         return str(primary.get("title", "")) if primary else ""
 
@@ -122,7 +122,7 @@ class RehuDocument:
 
     @property
     def publisher(self) -> str:
-        """The primary source's ``publisher`` (§17.2.3); empty if none."""
+        """The primary source's ``publisher`` ([[field-schema#sources]]); empty if none."""
         primary = self.primary_source
         return str(primary.get("publisher", "")) if primary else ""
 
@@ -132,7 +132,7 @@ class RehuDocument:
 
     @property
     def url(self) -> str:
-        """The primary source's ``url`` (§17.2.3); empty if none."""
+        """The primary source's ``url`` ([[field-schema#sources]]); empty if none."""
         primary = self.primary_source
         return str(primary.get("url", "")) if primary else ""
 
@@ -143,7 +143,7 @@ class RehuDocument:
     def __primary_source_or_create(self) -> dict[str, Any]:
         """Return the mutable primary source, appending a new flagged entry to ``sources`` if none exists.
 
-        :returns: the primary source dict (§17.2.3), attached by reference to ``sources`` so
+        :returns: the primary source dict ([[field-schema#sources]]), attached by reference to ``sources`` so
             mutating it in place is reflected on the next :meth:`save`.
         """
         primary = self.primary_source
@@ -154,28 +154,28 @@ class RehuDocument:
 
     @property
     def authors(self) -> list[str]:
-        """The shared ``authors`` list (§17.2.1); empty when absent."""
+        """The shared ``authors`` list ([[field-schema#resource-types]]); empty when absent."""
         authors = self.__data.get("authors", [])
         return [str(a) for a in authors] if isinstance(authors, list) else []
 
     @property
     def released(self) -> str:
-        """The partial-precision content release date (§17.2), as stored; empty if absent."""
+        """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; empty if absent."""
         return str(self.__data.get("released", ""))
 
     @property
     def advertised_tags(self) -> list[str]:
-        """The web-scraped ``advertised_tags`` list (§17.2); empty when absent."""
+        """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]]); empty when absent."""
         tags = self.__data.get("advertised_tags", [])
         return [str(t) for t in tags] if isinstance(tags, list) else []
 
     @property
     def extra_tags(self) -> list[str]:
-        """The personal ``extra_tags`` list (§17.2); empty when absent."""
+        """The personal ``extra_tags`` list ([[field-schema#field-mapping]]); empty when absent."""
         tags = self.__data.get("extra_tags", [])
         return [str(t) for t in tags] if isinstance(tags, list) else []
 
     @property
     def description(self) -> str:
-        """The Markdown ``description`` (§17.4), as stored; empty when absent."""
+        """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent."""
         return str(self.__data.get("description", ""))

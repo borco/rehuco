@@ -73,22 +73,28 @@ The milestone breakdown and build sequencing live separately in
 
 ## Symbolic cross-references
 
-Every heading also carries a stable `[[doc#slug]]` declaration on its own line right beneath it
-(dot-qualified for appendices: `[[appendices.open-questions#still-open]]`). Unlike the `§N.M`
-number, the slug never changes when sections are inserted or renumbered — **new cross-references
-(prose in other specs, docstrings in `.py` source) should use the slug, not the number.** The
-number stays on the heading as a reading-order indicator; the slug is what anything outside the
-file should actually point at.
+Every heading also carries a stable declaration on its own line right beneath it: a
+**triple-bracket** token, `[[[doc#slug]]]` (dot-qualified for appendices:
+`[[[appendices.open-questions#still-open]]]`). Every other occurrence of that same `doc#slug` pair
+— prose in another spec, a `.py` docstring — is a **double-bracket reference**, `[[doc#slug]]`.
+Unlike the `§N.M` number, the slug never changes when sections are inserted or renumbered — **new
+cross-references should use the slug, not the number.** The number stays on the heading as a
+reading-order indicator; the slug is what anything outside the file should actually point at.
 
 - **Not a clickable link — a grep convention.** Search the repo for the exact token; the
-  occurrence that's the *only thing on its line* is the declaration, every other occurrence is a
-  reference. This deliberately sidesteps chasing identical clickable-anchor behavior across GitHub
-  and the published mkdocs site, which isn't achievable cheaply (the two renderers handle anchors
+  triple-bracket form is the declaration, the double-bracket form is a reference. This
+  deliberately sidesteps chasing identical clickable-anchor behavior across GitHub and the
+  published mkdocs site, which isn't achievable cheaply (the two renderers handle anchors
   differently).
+- **The extra bracket is structural, not cosmetic.** A reference can land alone on its own line
+  purely as a byproduct of word-wrapping — with a same-bracket-count scheme that would be
+  indistinguishable from a real declaration. The triple/double distinction means wrapping can never
+  manufacture a false declaration.
 - **Self-resolving.** The doc name is in the token itself (`plugins` in
   `[[plugins#field-toolkit]]`), so no document-map lookup is needed to find which file it's in —
   unlike a bare `§13.2.1`.
-- **Migration is in progress, not complete.** Every heading has its slug declared; converting the
-  many existing `§N.M` prose mentions across the repo (docs *and* `.py` docstrings) to slug form is
-  ongoing. A bare `§N.M` mention still resolves via the document map above until its context is
-  converted.
+- **Migration complete for existing content.** Every heading has its slug declared, and every
+  existing `§N.M` prose mention (docs and `.py` docstrings) has been converted to slug form, except
+  a handful of bare whole-chapter references (e.g. `§6`) in docs with no single top-level anchor to
+  point to — those still resolve via the document map above. New prose should reference the slug,
+  not the number.

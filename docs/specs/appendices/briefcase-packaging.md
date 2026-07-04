@@ -2,11 +2,12 @@
 
 ## Overview
 
-[[appendices.briefcase-packaging#overview]]
+[[[appendices.briefcase-packaging#overview]]]
 
 How rehuco uses [Briefcase](https://briefcase.readthedocs.io/) to build `rehuco-agent` into a
 native, double-clickable application with OS-registered file association and app identity — the
-*how-to and the hurdles*, complementing §16.8 (which records the *decision* to use Briefcase over
+*how-to and the hurdles*, complementing [[packaging-deployment#app-identity]] (which records the *decision* to use
+Briefcase over
 PyInstaller and *why*).
 
 This appendix starts from the macOS half of the file-association spike
@@ -17,23 +18,27 @@ detail is still spike-proven rather than production-shipped, it says so.
 
 ## §A01.1 Status
 
-[[appendices.briefcase-packaging#status]]
+[[[appendices.briefcase-packaging#status]]]
 
 - **macOS file association + `QFileOpenEvent` delivery + single-instance routing** — proven end to
-  end on current versions by the #13 spike (§A01.6). The `rehuco-agent` app code it depends on
+  end on current versions by the #13 spike ([[appendices.briefcase-packaging#verification]]). The `rehuco-agent` app
+  code it depends on
   (`Application.event()`'s `QFileOpenEvent` branch, `ApplicationSingleton`) already exists and
   needs no macOS-specific changes.
 - **Windows ProgID / AUMID default-handler + taskbar identity** — proven by #1; the dev-time story
-  and its hurdles live in §A05 (the C launcher). Briefcase is the confirmed end-user packager
+  and its hurdles live in [[appendices.windows-dev-launcher#overview]] (the C launcher). Briefcase is the confirmed
+  end-user packager
   there too.
 - **Production Briefcase config in `apps/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
-  wider-distribution polish, deferred past the personal critical path (§16.8, plan: deferred).
+  wider-distribution polish, deferred past the personal critical path ([[packaging-deployment#app-identity]], plan:
+  deferred).
   `uv tool install` covers the author's own machines until then.
-- **Linux packaging, code-signing / notarization, auto-update** — not yet done (§16.9, §A03.2).
+- **Linux packaging, code-signing / notarization, auto-update** — not yet done ([[packaging-deployment#auto-update]],
+  [[appendices.open-questions#still-open]]).
 
 ## §A01.2 The Briefcase config
 
-[[appendices.briefcase-packaging#briefcase-config]]
+[[[appendices.briefcase-packaging#briefcase-config]]]
 
 Briefcase reads everything from `pyproject.toml`; no per-OS manifest is hand-maintained. The
 config below is what the #13 spike used and verified; the production version in `rehuco-agent`
@@ -71,7 +76,7 @@ requires = ["PySide6>=6.9", "../../packages/borco-core", "../../packages/borco-p
 
 ## §A01.3 The app-side wiring it relies on
 
-[[appendices.briefcase-packaging#app-side-wiring]]
+[[[appendices.briefcase-packaging#app-side-wiring]]]
 
 Briefcase only produces the bundle and its registration; the app must still handle the two macOS
 delivery mechanics. Both already exist in `rehuco-agent` and needed no change for macOS.
@@ -92,11 +97,12 @@ class Application(QApplication):
         return super().event(event)
 ```
 
-`main()` still also reads `sys.argv[1:]`, for parity with Windows' `argv`-based forwarding (§5.4)
+`main()` still also reads `sys.argv[1:]`, for parity with Windows' `argv`-based forwarding ([[nodes#single-instance]])
 and for `python -m ... <path>` during development.
 
 Single-instance routing uses the same `QLocalServer`/`QLocalSocket` mechanism as every platform
-(§5.4) — no macOS-specific code. See §A01.6 for *when* this path actually fires on macOS (it is a
+([[nodes#single-instance]]) — no macOS-specific code. See [[appendices.briefcase-packaging#verification]] for *when*
+this path actually fires on macOS (it is a
 fallback there, not the primary route).
 
 ```python
@@ -111,13 +117,14 @@ singleton.other_instance_run.connect(open_forwarded)
 
 ## §A01.4 Build and iterate
 
-[[appendices.briefcase-packaging#build-and-iterate]]
+[[[appendices.briefcase-packaging#build-and-iterate]]]
 
 **Icon first.** Briefcase's `icon = "rehuco-spike"` config points at a basename; on macOS it needs
 a matching `.icns` next to `pyproject.toml`. macOS builds one from the `.svg` master with the
 platform tools (no third-party dependency). This is **not yet a Makefile target** — the Windows
 `.ico` rule already lives in the Makefile (`%.ico: %.svg` via `magick`); the `.icns` equivalent
-below should be wired in the same way when production packaging lands (§16.8), rather than run by
+below should be wired in the same way when production packaging lands ([[packaging-deployment#app-identity]]), rather
+than run by
 hand:
 
 ```sh
@@ -149,7 +156,7 @@ a Makefile target against the workspace venv.
 
 ## §A01.5 Hurdles
 
-[[appendices.briefcase-packaging#hurdles]]
+[[[appendices.briefcase-packaging#hurdles]]]
 
 Recorded in the order they bite when building a Briefcase macOS bundle for a PySide6 app.
 
@@ -181,7 +188,7 @@ but wastes a scaffolding round-trip if hit.
 
 ## §A01.6 Verification recipe (terminal-driven, no GUI session)
 
-[[appendices.briefcase-packaging#verification]]
+[[[appendices.briefcase-packaging#verification]]]
 
 `open` and `lsregister` drive the *exact same* LaunchServices path Finder uses for a double-click,
 so the whole flow is verifiable over SSH with no screen attached — how the #13 spike was checked.
@@ -210,7 +217,7 @@ log stream --style compact --predicate 'process == "<Formal Name>"'
 
 ## §A01.7 What the #13 spike confirmed
 
-[[appendices.briefcase-packaging#spike-confirmed]]
+[[[appendices.briefcase-packaging#spike-confirmed]]]
 
 Tested on Python 3.14.6, PySide6 6.11.1, Briefcase 0.4.3, macOS 26.5.1 (2026-07-02). All three of
 the spike's acceptance criteria passed:
@@ -225,7 +232,7 @@ Two behaviours are worth keeping in mind for the production wiring:
 
 - **macOS's own app-uniquing — not `ApplicationSingleton` — routes a second Finder double-click.**
   LaunchServices sees the bundle is already running and delivers the second file as another
-  `QFileOpenEvent` to the same process, without launching a competitor. This *confirms* the §16.8
+  `QFileOpenEvent` to the same process, without launching a competitor. This *confirms* the [[packaging-deployment#app-identity]]
   note that "a bundled `.app` is already kept single-instance by the OS, so the local-server
   forwarding mainly earns its keep on Windows/Linux." `ApplicationSingleton`'s `QLocalServer`
   fallback still works when exercised directly (invoking the bundle executable, bypassing

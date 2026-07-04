@@ -1,4 +1,4 @@
-"""Field toolkit base: a `Field` binds one logical value to viewer/editor widgets (§13.2.1)."""
+"""Field toolkit base: a `Field` binds one logical value to viewer/editor widgets ([[plugins#field-toolkit]])."""
 
 import re
 from collections.abc import Callable
@@ -11,10 +11,11 @@ from PySide6.QtWidgets import QWidget
 
 @dataclass
 class FieldBinding[T]:
-    """The current value, change signal, and setter a `Field` needs to bind one widget (§13.2.1).
+    """The current value, change signal, and setter a `Field` needs to bind one widget ([[plugins#field-toolkit]]).
 
     Deliberately narrow: a `Field` only ever sees this, never the model that produced it, so the
-    toolkit stays reusable across any model shape that can produce one (§13.2.1, §A03.2).
+    toolkit stays reusable across any model shape that can produce one ([[plugins#field-toolkit]],
+    [[appendices.open-questions#still-open]]).
 
     :param value: the field's current value.
     :param changed: the signal that fires with the new value on every change.
@@ -27,7 +28,9 @@ class FieldBinding[T]:
 
 
 class FieldModel(Protocol):  # pylint: disable=too-few-public-methods
-    """What a view-model must provide for the field toolkit to bind to it (§13.2.1, §13.2.2)."""
+    """What a view-model must provide for the field toolkit to bind to it
+    ([[plugins#field-toolkit]], [[plugins#view-model]]).
+    """
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
         """Resolve a field into its current binding.
@@ -39,21 +42,22 @@ class FieldModel(Protocol):  # pylint: disable=too-few-public-methods
 
 
 class Field[T]:
-    """Base for a field: binds one logical value to the widgets that view and edit it (§13.2.1).
+    """Base for a field: binds one logical value to the widgets that view and edit it
+    ([[plugins#field-toolkit]]).
 
     A field is a stateless factory: :meth:`make_viewer` and :meth:`make_editors` build widgets from
     a :class:`FieldBinding` resolved by the model -- a field never holds document state itself, and
     never sees the model or view-model that produced its binding. Viewer and editor are deliberately
-    separate widgets, not one widget in two modes (§13.1's editor/viewer split); :meth:`make_editors`
-    is plural so a field can surface across more than one editor later (the multi-editor split,
-    A2.6/#26) without changing the base.
+    separate widgets, not one widget in two modes ([[plugins#core-vs-plugin]]'s editor/viewer
+    split); :meth:`make_editors` is plural so a field can surface across more than one editor later
+    (the multi-editor split, A2.6/#26) without changing the base.
 
     :param name: the field's identifier on its model (also the default label source).
     :param label: display label; derived from ``name`` when omitted.
     """
 
     TYPE: str
-    """The field-type selector (§17.4) the registry maps to this class. **Must be unique.**"""
+    """The field-type selector ([[field-schema#field-types]]) the registry maps to this class. **Must be unique.**"""
 
     def __init__(self, name: str, label: str | None = None) -> None:
         self.__name: Final = name

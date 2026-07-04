@@ -1,4 +1,4 @@
-"""The `text` leaf field: a read-only label viewer and a `QLineEdit` editor (§13.2.1)."""
+"""The `text` leaf field: a read-only label viewer and a `QLineEdit` editor ([[plugins#field-toolkit]])."""
 
 from typing import override
 
@@ -9,7 +9,9 @@ from rehuco_agent.fields.field import Field, FieldBinding
 
 
 class TextField(Field[str]):
-    """A single-line `text` field (§13.2.1): a label viewer + a `QLineEdit` editor, live-bound to the binding."""
+    """A single-line `text` field ([[plugins#field-toolkit]]): a label viewer + a `QLineEdit` editor,
+    live-bound to the binding.
+    """
 
     TYPE = "text"
 

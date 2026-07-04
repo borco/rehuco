@@ -12,7 +12,7 @@ from rehuco_agent.viewer_window import ViewerWindow
 
 FAKE_PATH: Final = Path("/fake/tutorials/sculpting/info.rehu")
 
-# resembles rehuco-core's test_document.py fixture by design (same §17.7 shape); this tests a
+# resembles rehuco-core's test_document.py fixture by design (same [[field-schema#example-files]] shape); this tests a
 # different layer (GUI rendering, not the document model) so sharing one constant across packages
 # would be an inappropriate cross-package test dependency
 # pylint: disable=duplicate-code
