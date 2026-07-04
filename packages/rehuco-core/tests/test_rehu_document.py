@@ -8,7 +8,7 @@ import pytest
 from pytest_mock import MockerFixture
 from rehuco_core import RehuDocument, RehuFormatError
 
-# A Tutorial document exercising multi-source, a plugin block, and unknown keys (§17.7).
+# A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
 TUTORIAL: Final = {
     "format_version": 1,
     "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -107,7 +107,7 @@ def test_primary_source_prefers_flagged_entry() -> None:
 
 
 def test_primary_source_falls_back_to_first() -> None:
-    """With no ``primary`` flag anywhere, the first source is treated as primary (§17.2.3).
+    """With no ``primary`` flag anywhere, the first source is treated as primary ([[field-schema#sources]]).
 
     **Test steps:**
 

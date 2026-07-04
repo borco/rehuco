@@ -67,7 +67,7 @@ ignored-modules = ["winreg"]
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
 pythonpath = ["."]
-testpaths = ["packages", "apps"]
+testpaths = ["packages", "apps", "tools"]
 markers = [
     "slow: marks tests that are slow to run",
     "disk: marks tests that perform real disk I/O (no mocks)",

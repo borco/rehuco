@@ -1,4 +1,4 @@
-.PHONY: sync tests cov format bandit pyright pylint qa docs-serve publish setup-git uis qrcs icons \
+.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-serve publish setup-git uis qrcs icons \
 	agent-build agent-build-clean agent-register agent-unregister
 
 SEARCH_DIRS := apps packages spikes
@@ -71,12 +71,15 @@ bandit:
 	uv run bandit -c pyproject.toml -r packages/ apps/
 
 pyright:
-	uv run pyright packages/ apps/
+	uv run pyright packages/ apps/ tools/
 
 pylint:
-	uv run pylint packages/ apps/
+	uv run pylint packages/ apps/ tools/
 
-qa: format cov bandit pyright pylint
+check-slugs:
+	uv run python tools/check_slug_refs.py
+
+qa: format check-slugs cov bandit pyright pylint
 
 docs-serve:
 	uv run mkdocs serve

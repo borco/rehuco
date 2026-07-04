@@ -1,1 +1,1 @@
-"""Windows-only rehuco-agent modules (§16.8). Never imported on other platforms."""
+"""Windows-only rehuco-agent modules ([[packaging-deployment#app-identity]]). Never imported on other platforms."""

@@ -1,5 +1,11 @@
 # §A04. Testing and Cross-Platform QA
 
+[[[appendices.testing]]]
+
+## Overview
+
+[[[appendices.testing#overview]]]
+
 How rehuco's tests and static checks are structured and run, and the cross-platform gotchas that
 took real time to work through — most of them surfaced by the **first full `make qa` run on
 macOS** (issue [#15](https://github.com/borco/rehuco/issues/15)); several also gate the planned
@@ -12,6 +18,8 @@ where it does execute.
 
 ## §A04.1 The QA gate
 
+[[[appendices.testing#qa-gate]]]
+
 `make qa` runs, in order: `ruff format` + `ruff check --fix`, then `pytest` with coverage
 (`make cov`), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus `pytest-mock`,
 `pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
@@ -22,6 +30,8 @@ Each test's docstring ends with a `**Test steps:**` bullet list, so intent is re
 tracing the code (a project convention, not a pytest feature).
 
 ## §A04.2 Qt tests must run headless
+
+[[[appendices.testing#headless-qt]]]
 
 **Symptom:** running the Qt-touching tests (`ApplicationSingleton`, the agent app/viewer tests)
 without an active window server — a CI runner, or macOS over SSH — **segfaults** (exit 139) during
@@ -68,6 +78,8 @@ Every `ApplicationSingleton` this fixture builds is `shutdown()`- then-flushed, 
 
 ## §A04.3 Platform-conditional tests
 
+[[[appendices.testing#platform-tests]]]
+
 Two distinct mechanisms, for two distinct needs:
 
 - **Per-test platform markers.** `pyproject.toml` declares `windows` / `macos` / `linux` markers;
@@ -108,6 +120,8 @@ a harmless no-op).
 
 ## §A04.4 Static analysis across platforms
 
+[[[appendices.testing#static-analysis]]]
+
 `win_registration.py` uses Windows-only stdlib (`winreg`, `ctypes.windll`), which the linters flag
 when qa runs on macOS/Linux:
 
@@ -122,6 +136,8 @@ when qa runs on macOS/Linux:
   module-level ignore is platform-safe.
 
 ## §A04.5 Coverage of platform-specific code
+
+[[[appendices.testing#platform-coverage]]]
 
 Windows-only code can't run on a macOS/Linux qa pass, so it would count as missed: the whole
 `platforms/windows/` package, and `__main__.py`'s two `if sys.platform == "win32":` branches. It
@@ -158,6 +174,8 @@ Two implementation notes worth keeping:
   root on `sys.path` in time; without it the plugin fails with `ModuleNotFoundError`.
 
 ## §A04.6 A build step that broke test *collection*
+
+[[[appendices.testing#qualified-rc-imports]]]
 
 Not a test issue per se, but it first showed up as one: `pyside6-uic --python-paths` expects the
 OS-native path separator (`;` on Windows, `:` elsewhere). The Makefile hardcoded `;`, so on

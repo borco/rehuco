@@ -36,7 +36,8 @@ def test_open_path_creates_and_shows_a_window(mocker: MockerFixture) -> None:
 
 
 def test_file_open_event_opens_a_path(mocker: MockerFixture) -> None:
-    """A ``QFileOpenEvent`` (macOS double-click delivery, §5.4) opens its path like a forwarded argv.
+    """A ``QFileOpenEvent`` (macOS double-click delivery, [[nodes#single-instance]]) opens its path
+    like a forwarded argv.
 
     Called as an unbound method against a stand-in ``self`` for the same reason as
     ``test_open_path_creates_and_shows_a_window`` above -- the ``isinstance(event, QFileOpenEvent)``

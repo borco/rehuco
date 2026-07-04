@@ -1,4 +1,6 @@
-"""QApplication wiring: single-instance guard, argv/QFileOpenEvent routing to viewer windows (§5.4)."""
+"""QApplication wiring: single-instance guard, argv/QFileOpenEvent routing to viewer windows
+([[nodes#single-instance]]).
+"""
 
 import logging
 from typing import Final, override
@@ -24,7 +26,7 @@ class Application(QApplication):
     """The single ``QApplication``, opening one :class:`ViewerWindow` per requested path.
 
     Handles both argv-based opens (Windows ProgID ``"%1"`` forwarding) and ``QFileOpenEvent``
-    (macOS double-click delivery) -- see §5.4.
+    (macOS double-click delivery) -- see [[nodes#single-instance]].
 
     :param argv: process argv, forwarded to the ``QApplication`` base constructor.
     """

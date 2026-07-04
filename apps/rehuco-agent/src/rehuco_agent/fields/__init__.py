@@ -1,4 +1,4 @@
-"""Field toolkit: reactive viewer/editor widgets composed from a declarative field list (§13.2.1)."""
+"""Field toolkit: reactive viewer/editor widgets composed from a declarative field list ([[plugins#field-toolkit]])."""
 
 from typing import Final
 
@@ -13,7 +13,7 @@ DOCUMENT_FIELD_SPECS: Final = (
     ("text", "url"),
 )
 """The document's field list: title/publisher/url, all `text`. A hardcoded constant for A2.0; where
-this is authored long-term is an open question (§A03.2)."""
+this is authored long-term is an open question ([[appendices.open-questions#still-open]])."""
 
 __all__ = ["Field", "FieldRegistry", "FieldsForm", "TextField", "DOCUMENT_FIELD_SPECS", "build_document_form"]
 

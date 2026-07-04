@@ -1,4 +1,4 @@
-"""Maps a field-type string to its `Field` subclass so type lists resolve declaratively (§13.2.1)."""
+"""Maps a field-type string to its `Field` subclass so type lists resolve declaratively ([[plugins#field-toolkit]])."""
 
 from typing import Any, Final
 
@@ -7,7 +7,7 @@ from rehuco_agent.fields.text_field import TextField
 
 
 class FieldRegistry:
-    """Resolves a field ``type`` selector to its :class:`Field` subclass (§13.2.1).
+    """Resolves a field ``type`` selector to its :class:`Field` subclass ([[plugins#field-toolkit]]).
 
     :param field_types: the field classes to register; defaults to the built-in toolkit types.
     """

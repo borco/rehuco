@@ -15,7 +15,7 @@ def main() -> int:
     platforms: the argument parser only defines them when ``sys.platform == "win32"``, so
     ``rehuco-agent --register`` on macOS/Linux fails with argparse's own "unrecognized
     arguments" rather than a custom runtime message -- there is nothing for it to do there
-    (§16.8 is explicitly OS-specific; only the Windows half is built so far, issue #1).
+    ([[packaging-deployment#app-identity]] is explicitly OS-specific; only the Windows half is built so far, issue #1).
     ``rehuco_agent.platforms.windows.win_registration`` is imported lazily, only once inside that Windows-only
     branch: it does ``import winreg`` at module scope, which does not exist elsewhere, so an
     unconditional top-level import here would break this entry point on every other platform.
@@ -69,7 +69,8 @@ def main() -> int:
                 # no separate ico_path: falls back to the running exe's own icon (§DefaultIcon
                 # `{exe_path},0`) -- correct either way, since the dev trampoline embeds this
                 # same icon in its own PE resources (launcher.rc.in) and the real packaged exe
-                # has no icon to fall back to regardless (§16.8, deferred distribution polish)
+                # has no icon to fall back to regardless ([[packaging-deployment#app-identity]],
+                # deferred distribution polish)
                 win_registration.register(exe_path)
             else:
                 win_registration.unregister()

@@ -1,4 +1,4 @@
-"""Composes an ordered field list into a viewer or editor `QFormLayout` (§13.2.1)."""
+"""Composes an ordered field list into a viewer or editor `QFormLayout` ([[plugins#field-toolkit]])."""
 
 from collections.abc import Sequence
 from typing import Any, Final
@@ -9,7 +9,7 @@ from rehuco_agent.fields.field import Field, FieldModel
 
 
 class FieldsForm:
-    """Builds a viewer or editor form from an ordered list of fields (§13.2.1).
+    """Builds a viewer or editor form from an ordered list of fields ([[plugins#field-toolkit]]).
 
     :param fields: the fields to lay out, in display order.
     """

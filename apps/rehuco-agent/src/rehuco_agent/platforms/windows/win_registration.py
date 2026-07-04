@@ -1,4 +1,5 @@
-"""Windows HKCU file-association and app-identity registration (§16.8, §5.4).
+"""Windows HKCU file-association and app-identity registration
+([[packaging-deployment#app-identity]], [[nodes#single-instance]]).
 
 Ported from the file-association spike (issue #1): a HKCU ProgID for ``.rehu`` plus its
 ``AppUserModelId``, so double-click opens route through the single-instance agent and the
