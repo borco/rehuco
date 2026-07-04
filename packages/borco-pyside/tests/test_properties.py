@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 import pytest
-from borco_pyside.core import SimpleProperty, TypedProperty
+from borco_pyside.core import SimpleProperty, TypedProperty, notify_signal_name
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QCheckBox, QLineEdit
 from pytestqt.qtbot import QtBot
@@ -40,6 +40,9 @@ class ObjectSample(QObject):
     count_changed = Signal(object)
     count = SimpleProperty(0)
     """Some count (auto-binds to count_changed)."""
+
+    active = SimpleProperty(False)
+    """Whether active (no declared signal -- SimpleProperty synthesizes `active_changed`)."""
 
 
 # endregion
@@ -205,20 +208,29 @@ def test_one_signal_shared_by_multiple_properties() -> None:
     assert received == [3, 7]
 
 
-def test_missing_change_signal_raises() -> None:
-    """A `SimpleProperty` with `notify="auto"` and no declared `<name>_changed` signal raises.
+def test_missing_change_signal_is_synthesized() -> None:
+    """A `SimpleProperty` with `notify="auto"` and no declared `<name>_changed` signal synthesizes one.
 
     **Test steps:**
 
     * declare a `QObject` with a `SimpleProperty` but no matching `<name>_changed` signal
-    * verify `RuntimeError` naming the missing signal is raised while the class body is created
+    * connect to the synthesized signal (needs `# type: ignore`, since it isn't statically declared)
+    * set the property and verify it updates and the synthesized signal fires
     """
-    with pytest.raises(RuntimeError, match="value_changed"):
 
-        class Missing(QObject):  # pylint: disable=unused-variable
-            """A `QObject` missing the `value_changed` signal its property needs."""
+    class Missing(QObject):
+        """A `QObject` relying on `SimpleProperty` to synthesize its `value_changed` signal."""
 
-            value = SimpleProperty(0)
+        value = SimpleProperty(0)
+
+    obj = Missing()
+    received: list[int] = []
+    obj.value_changed.connect(received.append)  # type: ignore[attr-defined]
+
+    obj.value = 5
+
+    assert obj.value == 5
+    assert received == [5]
 
 
 def test_explicit_notify_not_a_class_attribute_raises() -> None:
@@ -253,6 +265,89 @@ def test_declaring_on_non_qobject_raises() -> None:
             """A non-`QObject` class, declared only to trigger the `__set_name__` guard."""
 
             title = SimpleProperty("")
+
+
+# endregion
+
+
+# region notify_signal_name tests
+def test_notify_signal_name_resolves_a_declared_signal() -> None:
+    """notify_signal_name resolves the auto-bound, class-declared signal's attribute name.
+
+    **Test steps:**
+
+    * call `notify_signal_name` for `ObjectSample.title`
+    * verify it returns `"title_changed"`
+    """
+    assert notify_signal_name(ObjectSample, "title") == "title_changed"
+
+
+def test_notify_signal_name_resolves_a_synthesized_signal() -> None:
+    """notify_signal_name resolves a signal SimpleProperty synthesized (no declaration needed).
+
+    **Test steps:**
+
+    * declare a `QObject` with a `SimpleProperty` and no matching `<name>_changed` signal
+    * verify `notify_signal_name` still resolves it to the synthesized `value_changed`
+    """
+
+    class Synthesized(QObject):
+        """A `QObject` relying on `SimpleProperty` to synthesize its `value_changed` signal."""
+
+        value = SimpleProperty(0)
+
+    assert notify_signal_name(Synthesized, "value") == "value_changed"
+
+
+def test_notify_signal_name_resolves_an_explicit_differently_named_signal() -> None:
+    """notify_signal_name resolves an explicit notify= signal, not the `<name>_changed` convention.
+
+    **Test steps:**
+
+    * declare a `QObject` whose property notifies through a differently-named `renamed` signal
+    * verify `notify_signal_name` returns `"renamed"`, not `"nickname_changed"`
+    """
+
+    class Named(QObject):
+        """A `QObject` whose property notifies through an explicitly-named signal."""
+
+        renamed = Signal(object)
+        nickname = SimpleProperty("", notify=renamed)
+
+    assert notify_signal_name(Named, "nickname") == "renamed"
+
+
+def test_notify_signal_name_resolves_both_kinds_on_one_class() -> None:
+    """A class mixing a declared signal (`title`) and a synthesized one (`active`) resolves both.
+
+    **Test steps:**
+
+    * verify `notify_signal_name` resolves `ObjectSample.title` (declared) and `.active` (synthesized)
+    * connect to the synthesized `active_changed` and verify set/emit still works
+    """
+    assert notify_signal_name(ObjectSample, "title") == "title_changed"
+    assert notify_signal_name(ObjectSample, "active") == "active_changed"
+
+    obj = ObjectSample()
+    received: list[bool] = []
+    obj.active_changed.connect(received.append)  # type: ignore[attr-defined]
+
+    obj.active = True
+
+    assert obj.active is True
+    assert received == [True]
+
+
+def test_notify_signal_name_raises_for_an_unregistered_name() -> None:
+    """notify_signal_name raises for a name that isn't a `SimpleProperty` on the class.
+
+    **Test steps:**
+
+    * call `notify_signal_name` with a name never declared on `ObjectSample`
+    * verify `KeyError` is raised
+    """
+    with pytest.raises(KeyError):
+        notify_signal_name(ObjectSample, "nonexistent")
 
 
 # endregion

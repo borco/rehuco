@@ -108,7 +108,7 @@ def test_edit_title_and_save_writes_atomically(mocker: MockerFixture, qtbot: QtB
     * verify the captured JSON has the new title and the untouched plugin block intact
     """
     window = open_window(mocker, qtbot)
-    mock_write = mocker.patch("rehuco_core.document.atomic_write_text")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     window.ui.titleLineEdit.selectAll()
     qtbot.keyClicks(window.ui.titleLineEdit, "Renamed Title")
@@ -129,7 +129,7 @@ def test_ctrl_s_action_saves(mocker: MockerFixture, qtbot: QtBot) -> None:
     * verify a write happened
     """
     window = open_window(mocker, qtbot)
-    mock_write = mocker.patch("rehuco_core.document.atomic_write_text")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     window.ui.actionSave.trigger()
     mock_write.assert_called_once()
 

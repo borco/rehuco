@@ -82,7 +82,7 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     * parse the captured JSON and verify the edit applied, plugin block and unknown key intact
     """
     doc = load_doc(mocker, TUTORIAL)
-    mock_write = mocker.patch("rehuco_core.document.atomic_write_text")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     doc.title = "Renamed Title"
     doc.save()

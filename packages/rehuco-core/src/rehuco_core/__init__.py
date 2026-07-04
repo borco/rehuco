@@ -1,6 +1,6 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
-from rehuco_core.document import RehuDocument, RehuFormatError
+from rehuco_core.rehu_document import RehuDocument, RehuFormatError
 
 __version__ = "0.0.1"
 

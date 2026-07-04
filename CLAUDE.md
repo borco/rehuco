@@ -45,6 +45,9 @@ must tolerate the mount being offline (§9.9).
 
 ## Code conventions
 
+- **Imports:** absolute only (`from rehuco_agent.fields.field import Field`), never relative (`from .field
+  import Field`) — grep-able across the monorepo, and safe when code moves between files at different
+  package depths.
 - **Visibility:** public or private (`__`); no protected (`_`) unless the class is designed for inheritance.
 - **Constants:** `Final` without an explicit type when it can be inferred.
 - **Overrides:** `@override` on every method that overrides a base-class method.

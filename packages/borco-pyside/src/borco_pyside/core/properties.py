@@ -8,6 +8,9 @@ from PySide6.QtCore import Property, QObject, Signal
 OBJECT_SIGNAL_SIGNATURE: Final = "(PyObject)"
 """``Signal.signatures[0]`` of a single-argument ``Signal(object)`` -- always valid for any value."""
 
+_signal_names: Final[dict[type, dict[str, str]]] = {}
+"""Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``SimpleProperty.__set_name__``."""
+
 
 def signal_signature(signal: Signal) -> str:
     """Return a single-argument ``Signal``'s declared argument signature (e.g. ``"(int)"``).
@@ -19,6 +22,25 @@ def signal_signature(signal: Signal) -> str:
     :returns: its first (and, for these single-argument signals, only) signature string.
     """
     return getattr(signal, "signatures")[0]
+
+
+def notify_signal_name(owner: type, name: str) -> str:
+    """Return the attribute name of the notify signal ``SimpleProperty`` wired for ``name`` on ``owner``.
+
+    Usually ``f"{name}_changed"`` (the ``notify="auto"`` convention), but may be a differently-named
+    signal if the property was declared with an explicit ``notify=``. Generic code that binds to a
+    property by name (e.g. a reactive-model binding helper) should use this instead of assuming the
+    naming convention.
+
+    :param owner: the class the property was declared on.
+    :param name: the property's attribute name.
+    :returns: the notify signal's attribute name.
+    :raises KeyError: if ``name`` is not a ``SimpleProperty`` declared on ``owner``.
+    """
+    try:
+        return _signal_names[owner][name]
+    except KeyError as exc:
+        raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
 
 class TypedProperty[T](Property):
@@ -81,15 +103,23 @@ class TypedProperty[T](Property):
 
 
 class SimpleProperty[T]:
-    """Read-write ``QObject`` property that emits a **class-declared** change signal on change.
+    """Read-write ``QObject`` property that emits a change signal on change.
 
-    On a ``QObject`` subclass, declare a change ``Signal`` and bind the property to it -- by the
-    ``<name>_changed`` naming convention (the ``notify="auto"`` default) or by passing any signal
-    explicitly as ``notify=``. Then ``obj.<name>`` reads and writes the value, the bound signal fires
-    with the new value on every change (assigning the current value is a no-op), and
-    ``obj.set_<name>(value)`` is a plain method usable as a slot. Because the signal is a real class
-    attribute, connecting to it type-checks with no ``# type: ignore`` -- the ``set_<name>`` helper is
-    the one exception: referencing it as a bare slot needs an inline ``# type: ignore[attr-defined]``.
+    On a ``QObject`` subclass, bind the property to a change ``Signal`` -- by the ``<name>_changed``
+    naming convention (the ``notify="auto"`` default) or by passing any signal explicitly as
+    ``notify=``. Then ``obj.<name>`` reads and writes the value, the bound signal fires with the new
+    value on every change (assigning the current value is a no-op), and ``obj.set_<name>(value)`` is
+    a plain method usable as a slot.
+
+    **Declaring `<name>_changed` is optional.** In ``"auto"`` mode, if the class already declares
+    ``<name>_changed = Signal(...)``, that signal is used and, because it's a real class attribute,
+    connecting to it type-checks with no ``# type: ignore``. If it isn't declared, one is synthesized
+    (``Signal(object)``, wired on the class the same way ``TypedProperty`` itself is) so the property
+    still works with zero boilerplate -- but a synthesized signal is invisible to a type checker, so
+    connecting to it needs an inline ``# type: ignore[attr-defined]``, same as the ``set_<name>``
+    helper always has. Declare the signal explicitly when a consumer needs typed ``.connect()``;
+    generic code that must find a property's notify signal by name regardless of which case applies
+    should use :func:`notify_signal_name` rather than assuming the ``<name>_changed`` convention.
 
     Which signal to declare: ``Signal(object)`` is always valid. A signal matching the value's **own**
     type is also valid -- the native primitives (``int``/``str``/``float``/``bool``) round-trip, and a
@@ -111,10 +141,10 @@ class SimpleProperty[T]:
     check and, only when the value actually changes, a signal emit -- negligible outside a tight loop.
 
     :param value: the initial value.
-    :param notify: ``"auto"`` (default) discovers the class's ``<name>_changed`` signal and raises
-        if it is missing; pass a ``Signal`` to wire an explicit, possibly differently-named one
-        (which must itself be a class attribute). The signal's argument type is validated against
-        the value type either way.
+    :param notify: ``"auto"`` (default) uses the class's ``<name>_changed`` signal if declared, else
+        synthesizes one; pass a ``Signal`` to wire an explicit, possibly differently-named one (which
+        must itself be a class attribute). The signal's argument type is validated against the value
+        type either way.
     :param value_type: ``"auto"`` (default) takes the value type from ``value``; pass an explicit
         type to override it for the signal check and the Qt property type -- e.g. ``value_type=object``
         for an optional defaulted to a non-``None`` value, so it correctly requires ``Signal(object)``.
@@ -123,10 +153,10 @@ class SimpleProperty[T]:
 
         class Item(QObject):
             title_changed = Signal(object)          # object is always valid, for any value type
-            title = SimpleProperty("")              # auto-binds to title_changed
+            title = SimpleProperty("")              # declared -- binds to it, fully typed .connect()
 
-            count_changed = Signal(int)             # a matching typed signal is fine for a primitive
-            count = SimpleProperty(0)               # auto-binds to count_changed
+            count = SimpleProperty(0)               # not declared -- count_changed is synthesized
+                                                     # (works the same; needs # type: ignore to connect)
 
             renamed = Signal(str)
             name = SimpleProperty("", notify=renamed)   # or wire an explicit, differently-named one
@@ -157,13 +187,13 @@ class SimpleProperty[T]:
         self.__signal_name: str = ""
 
     def __set_name__(self, owner: type, name: str) -> None:
-        """Install the backing attribute, setter helper, and Qt property wired to the declared signal.
+        """Install the backing attribute, setter helper, and Qt property wired to the resolved signal.
 
         :param owner: the class declaring this property.
         :param name: the property's attribute name.
-        :raises RuntimeError: if ``owner`` is not a ``QObject`` subclass, if ``notify="auto"`` and no
-            ``<name>_changed`` signal is declared, if an explicit ``notify`` signal is not a class
-            attribute of ``owner``, or if the signal's argument type is incompatible with the value type.
+        :raises RuntimeError: if ``owner`` is not a ``QObject`` subclass, if an explicit ``notify``
+            signal is not a class attribute of ``owner``, or if the signal's argument type is
+            incompatible with the value type.
         """
         if not issubclass(owner, QObject):
             raise RuntimeError(f"SimpleProperty {owner.__qualname__}.{name} requires a QObject subclass.")
@@ -172,6 +202,7 @@ class SimpleProperty[T]:
         value_type = type(self.__value) if self.__declared_type == "auto" else self.__declared_type
         signal, self.__signal_name = self.__resolve_signal(owner, name)
         self.__check_signal_type(owner, name, signal, value_type)
+        _signal_names.setdefault(owner, {})[name] = self.__signal_name
 
         # Wire the property onto the owner class: a private backing attribute, a set_<name>(value)
         # slot helper, and a real Qt Property (TypedProperty) that *replaces* this descriptor -- so
@@ -186,17 +217,17 @@ class SimpleProperty[T]:
         :param owner: the class declaring this property.
         :param name: the property's attribute name.
         :returns: the ``Signal`` to notify and the attribute name it is declared under.
-        :raises RuntimeError: if the ``<name>_changed`` signal is missing (``"auto"``) or an explicit
-            ``notify`` signal is not a class attribute of ``owner``.
+        :raises RuntimeError: if an explicit ``notify`` signal is not a class attribute of ``owner``.
         """
         if self.__notify == "auto":
             signal_name = f"{name}_changed"
             signal = owner.__dict__.get(signal_name)
             if not isinstance(signal, Signal):
-                raise RuntimeError(
-                    f"SimpleProperty {owner.__qualname__}.{name} needs a `{signal_name} = Signal(object)` "
-                    f"declared on the class, or an explicit notify= signal."
-                )
+                # Not declared -- synthesize one, wired onto the class the same way __set_name__
+                # wires the property itself. Fully functional at runtime, but invisible to a type
+                # checker (see the class docstring): connecting to it needs # type: ignore.
+                signal = Signal(object)
+                setattr(owner, signal_name, signal)
         else:
             signal = self.__notify
             signal_name = next((key for key, value in owner.__dict__.items() if value is signal), "")
