@@ -12,11 +12,15 @@ that don't belong to any single subsection. Checks:
 - every reference resolves to exactly one declaration;
 - a declaration's `doc` component matches the spec file it's actually declared in.
 
-Scans `docs/**/*.md` and every `.py` file under `apps/` and `packages/` (skipping the gitignored,
-generated `*_ui.py` / `*_rc.py` files, which are never hand-edited and never carry these tokens).
+Scans `docs/**/*.md`, the root `CLAUDE.md`, every `README.md`, and every `.py` file under `apps/`
+and `packages/` (skipping the gitignored, generated `*_ui.py` / `*_rc.py` files, which are never
+hand-edited and never carry these tokens). The file list comes from git (tracked files plus
+untracked-but-not-gitignored ones), so gitignored/generated content (`.venv`, `__pycache__`, build
+output) is never considered, while a brand-new file not yet `git add`-ed still is.
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -77,17 +81,42 @@ def expected_doc_key(path: Path) -> str | None:
     return path.stem.lower()
 
 
+def iter_repo_files() -> list[Path]:
+    """List every file git considers part of the working tree, as absolute paths.
+
+    :returns: tracked files plus untracked-but-not-gitignored ones (``git ls-files --cached
+        --others --exclude-standard``), so gitignored/generated content (`.venv`, `__pycache__`,
+        build output) is never considered a source file, while a brand-new file a developer just
+        created -- not yet `git add`-ed -- still is.
+    """
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+    return [REPO_ROOT / rel for rel in result.stdout.split("\0") if rel]
+
+
 def iter_source_files() -> list[Path]:
     """Return every file this checker should scan for `[[doc#slug]]` tokens.
 
-    :returns: markdown files under `docs/`, plus `.py` files under `apps/`/`packages/`
-        (excluding generated `*_ui.py`/`*_rc.py`).
+    :returns: markdown files under `docs/`, the root `CLAUDE.md`, every `README.md`, plus `.py`
+        files under `apps/`/`packages/` (excluding generated `*_ui.py`/`*_rc.py`).
     """
-    files = list((REPO_ROOT / "docs").rglob("*.md"))
-    for base in ("apps", "packages"):
-        for path in (REPO_ROOT / base).rglob("*.py"):
-            if path.name.endswith(("_ui.py", "_rc.py")):
-                continue
+    files: list[Path] = []
+    for path in iter_repo_files():
+        rel = path.relative_to(REPO_ROOT)
+        is_scanned_markdown = path.suffix == ".md" and (
+            rel.parts[0] == "docs" or path.name in ("CLAUDE.md", "README.md")
+        )
+        is_scanned_python = (
+            path.suffix == ".py"
+            and rel.parts[0] in ("apps", "packages")
+            and not path.name.endswith(("_ui.py", "_rc.py"))
+        )
+        if is_scanned_markdown or is_scanned_python:
             files.append(path)
     return files
 

@@ -12,16 +12,18 @@ filename in the "how do you want to open this" picker; depending on how the laun
 to Python, taskbar/AUMID identity can also resolve back to `python.exe` instead of the app.
 `launcher.c` avoids all of this by embedding Python directly in a real, purpose-built,
 icon-and-version-stamped exe. This is *not* the eventual end-user packaging story (that's
-Briefcase, per §16.8) -- it's a dev-only stopgap.
+Briefcase, per [[packaging-deployment#app-identity]]) -- it's a dev-only stopgap.
 
-See [§A02 in docs/specs](../../../docs/specs/appendices/windows-dev-launcher.md) for every
-implementation hurdle hit building this launcher, and how each was solved.
+See [the Windows Dev Launcher appendix](../../../docs/specs/appendices/windows-dev-launcher.md)
+([[appendices.windows-dev-launcher]]) for every implementation hurdle hit building this launcher,
+and how each was solved.
 
 ## Prerequisites
 
 - Visual Studio 2022 (or Build Tools) with the C++ workload.
-- `cmake` on `PATH` -- prefer a recent one (§A05.1 explains why an old bundled CMake
-  specifically breaks this). `scoop install cmake` is the recommended way to get one:
+- `cmake` on `PATH` -- prefer a recent one ([[appendices.windows-dev-launcher#cmake-cant-find-python]]
+  explains why an old bundled CMake specifically breaks this). `scoop install cmake` is the
+  recommended way to get one:
 
   ```sh
   scoop install cmake

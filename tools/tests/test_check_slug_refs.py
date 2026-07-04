@@ -135,27 +135,45 @@ def test_expected_doc_key_none_outside_specs() -> None:
 
 # endregion
 
+# region iter_repo_files tests
+
+
+def test_iter_repo_files_parses_git_ls_files_output(mocker: MockerFixture) -> None:
+    """`git ls-files -z` output is split on NUL and resolved to absolute repo-root paths.
+
+    **Test steps:**
+
+    * fake `subprocess.run` to return a NUL-separated `stdout` with a trailing separator
+    * verify each non-empty entry becomes an absolute path under `REPO_ROOT`
+    """
+    fake_stdout = "CLAUDE.md\0docs/specs/plugins.md\0"
+    mocker.patch.object(check_slug_refs.subprocess, "run", return_value=mocker.Mock(stdout=fake_stdout))
+
+    result = check_slug_refs.iter_repo_files()
+
+    assert result == [
+        check_slug_refs.REPO_ROOT / "CLAUDE.md",
+        check_slug_refs.REPO_ROOT / "docs" / "specs" / "plugins.md",
+    ]
+
+
+# endregion
+
 # region iter_source_files tests
 
 
 def test_iter_source_files_includes_markdown_and_python_files(mocker: MockerFixture) -> None:
-    """Every `.md` under `docs/` and `.py` under `apps/`/`packages/` is included.
+    """Every tracked `.md` under `docs/` and `.py` under `apps/`/`packages/` is included.
 
     **Test steps:**
 
-    * fake `Path.rglob` to return one file each for `docs/`, `apps/`, and `packages/`
+    * fake `iter_repo_files()` to return one file each for `docs/`, `apps/`, and `packages/`
     * verify all three come back from `iter_source_files()`
     """
     docs_md = check_slug_refs.REPO_ROOT / "docs" / "specs" / "plugins.md"
     apps_py = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "app.py"
     packages_py = check_slug_refs.REPO_ROOT / "packages" / "rehuco-core" / "core.py"
-    by_root = {
-        check_slug_refs.REPO_ROOT / "docs": [docs_md],
-        check_slug_refs.REPO_ROOT / "apps": [apps_py],
-        check_slug_refs.REPO_ROOT / "packages": [packages_py],
-    }
-
-    mocker.patch.object(Path, "rglob", lambda self, pattern: by_root.get(self, []))
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[docs_md, apps_py, packages_py])
 
     assert check_slug_refs.iter_source_files() == [docs_md, apps_py, packages_py]
 
@@ -165,17 +183,57 @@ def test_iter_source_files_excludes_generated_ui_and_rc_files(mocker: MockerFixt
 
     **Test steps:**
 
-    * fake `Path.rglob` under `apps/` to return a real `.py`, a `_ui.py`, and a `_rc.py`
+    * fake `iter_repo_files()` under `apps/` to return a real `.py`, a `_ui.py`, and a `_rc.py`
     * verify only the real `.py` file survives
     """
     real_py = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "app.py"
     generated_ui = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "main_window_ui.py"
     generated_rc = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "resources_rc.py"
-    by_root = {check_slug_refs.REPO_ROOT / "apps": [real_py, generated_ui, generated_rc]}
-
-    mocker.patch.object(Path, "rglob", lambda self, pattern: by_root.get(self, []))
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[real_py, generated_ui, generated_rc])
 
     assert check_slug_refs.iter_source_files() == [real_py]
+
+
+def test_iter_source_files_includes_root_claude_md(mocker: MockerFixture) -> None:
+    """The root `CLAUDE.md` is scanned even though it lives outside `docs/`.
+
+    **Test steps:**
+
+    * fake `iter_repo_files()` to return only `CLAUDE.md` at the repo root
+    * verify it comes back from `iter_source_files()`
+    """
+    claude_md = check_slug_refs.REPO_ROOT / "CLAUDE.md"
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[claude_md])
+
+    assert check_slug_refs.iter_source_files() == [claude_md]
+
+
+def test_iter_source_files_includes_readme_anywhere(mocker: MockerFixture) -> None:
+    """Any tracked `README.md`, anywhere in the tree, is scanned.
+
+    **Test steps:**
+
+    * fake `iter_repo_files()` to return a `README.md` nested several directories deep
+    * verify it comes back from `iter_source_files()`
+    """
+    nested_readme = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "launcher" / "README.md"
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[nested_readme])
+
+    assert check_slug_refs.iter_source_files() == [nested_readme]
+
+
+def test_iter_source_files_excludes_unrelated_top_level_markdown(mocker: MockerFixture) -> None:
+    """A `.md` file that is neither under `docs/` nor named `CLAUDE.md`/`README.md` is skipped.
+
+    **Test steps:**
+
+    * fake `iter_repo_files()` to return a hypothetical `CHANGELOG.md` at the repo root
+    * verify it does not come back from `iter_source_files()`
+    """
+    changelog_md = check_slug_refs.REPO_ROOT / "CHANGELOG.md"
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[changelog_md])
+
+    assert not check_slug_refs.iter_source_files()
 
 
 # endregion
@@ -322,6 +380,27 @@ def test_main_ignores_tokens_inside_code_spans(mocker: MockerFixture) -> None:
 
     assert exit_code == 0
     assert "0 declarations, 0 references" in output
+
+
+def test_main_ignores_a_triple_bracket_token_sharing_a_line_with_other_text(mocker: MockerFixture) -> None:
+    """A `[[[doc#slug]]]`-shaped token is only a declaration when it is alone on its line.
+
+    Prose can legitimately mention the triple-bracket syntax (e.g. explaining the convention)
+    without that turning into a real declaration; the adjacent brackets also make it invisible to
+    the double-bracket reference regex, so it isn't miscounted as a reference either.
+
+    **Test steps:**
+
+    * put `[[[plugins#overview]]]` mid-sentence, sharing its line with other text
+    * verify `main()` finds zero declarations and zero references
+    """
+    other_md = check_slug_refs.SPECS_ROOT / "data-model.md"
+    files = {other_md: ["See [[[plugins#overview]]] above for the declaration syntax."]}
+
+    exit_code, output = run_main(mocker, files)
+
+    assert exit_code == 0
+    assert "0 declarations, 0 references, all resolve" in output
 
 
 def test_main_does_not_confuse_reference_inside_a_declaration_line(mocker: MockerFixture) -> None:

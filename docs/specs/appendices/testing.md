@@ -1,4 +1,4 @@
-# §A04. Testing and Cross-Platform QA
+# §A05. Testing and Cross-Platform QA
 
 [[[appendices.testing]]]
 
@@ -6,7 +6,8 @@
 
 [[[appendices.testing#overview]]]
 
-How rehuco's tests and static checks are structured and run, and the cross-platform gotchas that
+Test-writing conventions (docstring format, etc.) live in [[appendices.code-conventions#testing]]; this page
+is about how rehuco's tests and static checks are structured and run, and the cross-platform gotchas that
 took real time to work through — most of them surfaced by the **first full `make qa` run on
 macOS** (issue [#15](https://github.com/borco/rehuco/issues/15)); several also gate the planned
 cross-platform CI ([#14](https://github.com/borco/rehuco/issues/14)).
@@ -16,7 +17,7 @@ platform's own runner.** A test that can't apply on the current OS is *skipped*,
 that can't execute on the current OS is *excluded from coverage* there and measured on the runner
 where it does execute.
 
-## §A04.1 The QA gate
+## §A05.1 The QA gate
 
 [[[appendices.testing#qa-gate]]]
 
@@ -26,10 +27,7 @@ where it does execute.
 beside their packages under `packages/*/tests` and `apps/*/tests` (`testpaths` in `pyproject.toml`);
 `--strict-markers` is on, so every marker must be declared.
 
-Each test's docstring ends with a `**Test steps:**` bullet list, so intent is readable without
-tracing the code (a project convention, not a pytest feature).
-
-## §A04.2 Qt tests must run headless
+## §A05.2 Qt tests must run headless
 
 [[[appendices.testing#headless-qt]]]
 
@@ -76,7 +74,7 @@ Every `ApplicationSingleton` this fixture builds is `shutdown()`- then-flushed, 
 `app.exec()` to completion, whose event loop (and the `QApplication` destructor on exit) reap
 `DeferredDelete` continuously, so nothing accumulates.
 
-## §A04.3 Platform-conditional tests
+## §A05.3 Platform-conditional tests
 
 [[[appendices.testing#platform-tests]]]
 
@@ -118,7 +116,7 @@ windll.shell32.SetCurrentProcessExplicitAppUserModelID.assert_not_called()
 This works identically on all platforms (on Windows `windll` already exists; `create=True` is then
 a harmless no-op).
 
-## §A04.4 Static analysis across platforms
+## §A05.4 Static analysis across platforms
 
 [[[appendices.testing#static-analysis]]]
 
@@ -135,7 +133,7 @@ when qa runs on macOS/Linux:
   is enabled, so it would itself be flagged on Windows, where the import resolves fine. A
   module-level ignore is platform-safe.
 
-## §A04.5 Coverage of platform-specific code
+## §A05.5 Coverage of platform-specific code
 
 [[[appendices.testing#platform-coverage]]]
 
@@ -173,7 +171,7 @@ Two implementation notes worth keeping:
   `pytest_load_initial_conftests`. `[tool.pytest.ini_options] pythonpath = ["."]` puts the repo
   root on `sys.path` in time; without it the plugin fails with `ModuleNotFoundError`.
 
-## §A04.6 A build step that broke test *collection*
+## §A05.6 A build step that broke test *collection*
 
 [[[appendices.testing#qualified-rc-imports]]]
 
