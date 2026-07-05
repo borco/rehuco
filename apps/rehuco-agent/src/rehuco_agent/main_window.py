@@ -32,8 +32,10 @@ class MainWindow(QMainWindow):
         self.__ui: Final = Ui_MainWindow()
         self.__ui.setupUi(self)
         self.centralWidget().hide()
+        self.__base_window_title: Final = self.windowTitle()
 
         self.__documents_dock: Final = DocumentsDock(self)
+        self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
 
         self.__window_settings: Final = WindowSettings()
@@ -44,6 +46,14 @@ class MainWindow(QMainWindow):
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
         self.__restore_session()
+
+    def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
+        """Reflect the newly-focused document's label in the window title, or the base title if none.
+
+        :param widget: the newly-focused document's widget, or ``None`` when no document is focused.
+        """
+        label = widget.model.label if widget is not None else ""
+        self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
 
     def __setup_docking_system(self) -> None:
         dock_manager = QtAds.CDockManager(self)

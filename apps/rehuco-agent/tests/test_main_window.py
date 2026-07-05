@@ -48,6 +48,65 @@ def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
     assert original_central.isHidden()
 
 
+def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Reporting a focused document's widget sets the window title to "<label> - <base title>".
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and note its base (``.ui``-set) title
+    * call the private focus-changed handler with a stand-in widget reporting a label
+    * verify the window title includes it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    base_title = window.windowTitle()
+    widget = mocker.MagicMock(model=mocker.MagicMock(label="foo"))
+
+    window._MainWindow__on_document_focus_changed(widget)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window.windowTitle() == f"foo - {base_title}"
+
+
+def test_on_document_focus_changed_reverts_to_the_base_title_for_none(qtbot: QtBot) -> None:
+    """Reporting no focused document (``None``) reverts the window title to the base title.
+
+    **Test steps:**
+
+    * construct ``MainWindow``, change its title, then call the handler with ``None``
+    * verify the window title reverted to the base title
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    base_title = window.windowTitle()
+    window.setWindowTitle("something else")
+
+    window._MainWindow__on_document_focus_changed(None)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window.windowTitle() == base_title
+
+
+def test_document_focus_changed_is_wired_to_the_window_title(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``DocumentsDock.document_focus_changed`` really is connected to the window-title handler.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * emit ``document_focus_changed`` directly on its documents dock, with a stand-in widget
+    * verify the window title picked up its label
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    base_title = window.windowTitle()
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget = mocker.MagicMock(model=mocker.MagicMock(label="bar"))
+
+    docs_dock.document_focus_changed.emit(widget)
+
+    assert window.windowTitle() == f"bar - {base_title}"
+
+
 def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``open_file`` resolves its path and hands it to the documents dock.
 

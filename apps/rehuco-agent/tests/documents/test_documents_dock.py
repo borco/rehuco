@@ -13,6 +13,8 @@ from rehuco_agent.documents.documents_dock import DocumentsDock
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
 platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows without a drive)."""
+FAKE_LABEL: Final = f"{FAKE_PATH.parent.name}/"
+"""``FAKE_PATH``'s expected dock-title label: an ``info.rehu``'s parent directory name, trailing-slashed."""
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
 
 TUTORIAL: Final = {
@@ -102,10 +104,14 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
 def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
 
+    ``FAKE_PATH`` is an ``info.rehu``, so the title is the parent directory's name
+    ([[data-model#dir-scoped]]) throughout -- covered on its own in
+    :func:`test_dock_title_uses_the_parent_directory_name_for_info_rehu`.
+
     **Test steps:**
 
     * open the fake path
-    * verify the dock title is the bare filename while clean
+    * verify the dock title has no dirty marker while clean
     * dirty the model and verify the title gains a trailing ``*``
     * clear dirty (as ``save()`` does) and verify the marker is gone again
     """
@@ -116,13 +122,73 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     widget = dock.open_document(FAKE_PATH)
     assert widget is not None
     cdock = dock_for(dock, widget)
-    assert cdock.windowTitle() == FAKE_PATH.name
+    assert cdock.windowTitle() == FAKE_LABEL
 
     widget.model.title = "Changed"
-    assert cdock.windowTitle() == f"{FAKE_PATH.name}*"
+    assert cdock.windowTitle() == f"{FAKE_LABEL}*"
 
     widget.model.dirty = False
-    assert cdock.windowTitle() == FAKE_PATH.name
+    assert cdock.windowTitle() == FAKE_LABEL
+
+
+def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock's tab tooltip is always the full path, regardless of the ``info.rehu`` title special-case.
+
+    **Test steps:**
+
+    * open the (``info.rehu``) fake path
+    * verify the tab tooltip is the full path, not the parent-directory title
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+
+    assert cdock.tabWidget().toolTip() == str(FAKE_PATH)
+
+
+def test_document_focus_changed_emits_the_widget_when_opening_a_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a document emits ``document_focus_changed`` with its widget.
+
+    **Test steps:**
+
+    * connect a spy to ``document_focus_changed``
+    * open the fake path
+    * verify the spy received that document's widget
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    with qtbot.waitSignal(dock.document_focus_changed, timeout=1000) as blocker:
+        widget = dock.open_document(FAKE_PATH)
+
+    assert blocker.args == [widget]
+
+
+def test_document_focus_changed_emits_none_when_the_last_dock_closes(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the only open document emits ``document_focus_changed`` with ``None``.
+
+    **Test steps:**
+
+    * open the fake path
+    * connect a spy to ``document_focus_changed``
+    * close its dock
+    * verify the spy received ``None``
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+
+    with qtbot.waitSignal(dock.document_focus_changed, timeout=1000) as blocker:
+        cdock.requestCloseDockWidget()
+
+    assert blocker.args == [None]
 
 
 def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -9,6 +9,10 @@ from rehuco_core import RehuDocument
 
 from rehuco_agent.fields.field import Field, FieldBinding
 
+INFO_REHU_FILENAME: Final = "info.rehu"
+"""A directory-scoped resource's filename ([[data-model#dir-scoped]]); its label uses the parent
+directory's name instead, since the literal filename is the same for every such resource."""
+
 
 class RehuDocumentModel(QObject):
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
@@ -61,6 +65,18 @@ class RehuDocumentModel(QObject):
     def path(self) -> Path | None:
         """The document's file path, if any (the dock shell reuses-and-focuses by path)."""
         return self.__document.path
+
+    @property
+    def label(self) -> str:
+        """This document's display label: the parent directory's name, trailing-slashed, for
+        `info.rehu` ([[data-model#dir-scoped]]), the bare filename otherwise.
+
+        :returns: the label, or an empty string when the document has no path yet.
+        """
+        path = self.path
+        if path is None:
+            return ""
+        return f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
 
     @property
     def sources(self) -> list[dict[str, Any]]:

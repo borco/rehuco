@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import RehuDocument, RehuFormatError
 
@@ -19,6 +20,15 @@ class DocumentsDock(QMainWindow):
 
     :param parent: optional Qt parent.
     """
+
+    document_focus_changed: Signal = Signal(object)
+    """Emitted with the newly-focused document's widget (a ``DocumentWidget``), or ``None`` when
+    focus leaves every document dock. Consumers read ``widget.model.label`` for its display label.
+    Typed as plain ``object`` (Python-object marshalling), not ``Signal(DocumentWidget)`` -- the
+    latter has Shiboken try to cast the emitted value to a genuine C++ ``DocumentWidget*``, which
+    crashes the process outright when a test registers a ``MagicMock`` stand-in dock instead of a
+    real one (an established pattern elsewhere in this test suite for isolating dock bookkeeping
+    from real ``QtAds`` objects)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -47,7 +57,7 @@ class DocumentsDock(QMainWindow):
         # does not synchronously emit it in this QtAds version (verified against 5.0.0), so without
         # this, every dock after the first would read __current_dock as still None and split into
         # its own area instead of tabbing into the currently open one
-        self.__current_dock = dock
+        self.__set_current_dock(dock)
 
         return widget
 
@@ -114,13 +124,17 @@ class DocumentsDock(QMainWindow):
         return dock
 
     def __update_dock_title(self, dock: QtAds.CDockWidget) -> None:
-        """Set ``dock``'s tab title from its document's path, marking it dirty when unsaved.
+        """Set ``dock``'s tab title/tooltip from its document's label, marking it dirty when unsaved.
+
+        The tab title is the document's :attr:`~RehuDocumentModel.label`; the tooltip always shows
+        the full path.
 
         :param dock: the dock whose title to refresh.
         """
         widget = self.__document_docks[dock]
-        name = path.name if (path := widget.model.path) else ""
+        name = widget.model.label
         dock.setWindowTitle(f"{name}*" if widget.model.dirty else name)
+        dock.setTabToolTip(str(widget.model.path) if widget.model.path else "")
 
     def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:
         """Return the dock whose document has ``path``, or ``None`` if no such dock is open.
@@ -133,13 +147,21 @@ class DocumentsDock(QMainWindow):
                 return dock
         return None
 
+    def __set_current_dock(self, dock: QtAds.CDockWidget | None) -> None:
+        """Track the currently-focused document dock and announce its widget.
+
+        :param dock: the newly-focused dock, or ``None`` when focus leaves every document dock.
+        """
+        self.__current_dock = dock
+        self.document_focus_changed.emit(self.__document_docks[dock] if dock is not None else None)
+
     def __on_focused_dock_widget_changed(self, _: QtAds.CDockWidget, now: QtAds.CDockWidget) -> None:
         """Track the currently-focused document dock, so new docks join its area.
 
         :param now: the newly-focused dock, or ``None`` when focus left every document dock.
         """
         if now is None or now in self.__document_docks:
-            self.__current_dock = now
+            self.__set_current_dock(now)
 
     def __on_close_dock_widget_requested(self) -> None:
         """Remove the closed dock (and its widget) from the dock manager and bookkeeping.
@@ -160,7 +182,7 @@ class DocumentsDock(QMainWindow):
 
         self.__document_docks.pop(dock, None)
         if self.__current_dock == dock:
-            self.__current_dock = None
+            self.__set_current_dock(None)
 
     def __confirm_close(self, model: RehuDocumentModel) -> bool:
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.

@@ -46,6 +46,10 @@ class CDockAreaWidget(QWidget):
         """The tab index `dock_widget` occupies in this area, for use with `setCurrentIndex`."""
         ...
 
+class CDockWidgetTab(QWidget):
+    """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.
+    `toolTip()` (inherited from `QWidget`) reflects `CDockWidget.setTabToolTip`."""
+
 class CDockWidget(QWidget):
     """One dockable pane: a titled, taggable container around a single content `QWidget`
     (`setWidget`), placed into a `CDockManager` via `addDockWidget`/`setCentralWidget`."""
@@ -133,6 +137,15 @@ class CDockWidget(QWidget):
 
     def setWidget(self, widget: QWidget) -> None:
         """Set the content widget this dock displays."""
+        ...
+
+    def setTabToolTip(self, tool_tip: str) -> None:
+        """Set the tooltip shown when hovering this dock's tab (independent of `setWindowTitle`,
+        which sets the tab's visible label)."""
+        ...
+
+    def tabWidget(self) -> CDockWidgetTab:
+        """This dock's tab widget, e.g. to read back `toolTip()` after `setTabToolTip`."""
         ...
 
     def widget(self) -> QWidget:
