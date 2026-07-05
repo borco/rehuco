@@ -32,8 +32,13 @@ class TextField(Field[str]):
     def __echo(line_edit: QLineEdit, value: str) -> None:
         """Update the editor from a binding change without re-emitting ``textChanged`` (echo guard).
 
+        The text-equality check is not an optimization: ``setText`` resets the cursor to the end
+        even for identical text, so echoing the editor's own edit back into it unguarded would
+        teleport the cursor on every mid-string keystroke (#35).
+
         :param line_edit: the editor to update.
         :param value: the new value.
         """
-        with QSignalBlocker(line_edit):
-            line_edit.setText(value)
+        if line_edit.text() != value:
+            with QSignalBlocker(line_edit):
+                line_edit.setText(value)

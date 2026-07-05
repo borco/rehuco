@@ -85,3 +85,30 @@ def test_text_field_editor_follows_an_external_model_change(qtbot: QtBot, model:
 
     model.title = "External"
     assert editor.text() == "External"
+
+
+def test_text_field_editor_preserves_the_cursor_when_typing_mid_string(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Typing in the middle of the text doesn't teleport the cursor to the end (#35).
+
+    Without the echo guard's text-equality check, the editor's own keystroke bounces back through
+    the model into ``setText``, which resets the cursor even for identical text.
+
+    **Test steps:**
+
+    * build the title editor and seed it with a two-word value
+    * place the cursor mid-string and type one character there
+    * verify the character landed at the cursor, the cursor advanced by one (not to the end),
+      and the model followed
+    """
+    field = TextField("title")
+    editor = field.make_editors(model.bind(field))[0]
+    qtbot.addWidget(editor)
+    assert isinstance(editor, QLineEdit)
+    editor.setText("hello world")
+    editor.setCursorPosition(5)
+
+    qtbot.keyClicks(editor, "x")
+
+    assert editor.text() == "hellox world"
+    assert editor.cursorPosition() == 6
+    assert model.title == "hellox world"
