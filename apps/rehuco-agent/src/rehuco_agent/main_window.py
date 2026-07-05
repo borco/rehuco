@@ -2,13 +2,15 @@
 
 import sys
 from pathlib import Path
-from typing import Final
+from typing import Final, override
 
 import PySide6QtAds as QtAds
-from PySide6.QtWidgets import QMainWindow
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QDialog, QMainWindow
 
 from rehuco_agent.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
+from rehuco_agent.unsaved_changes_dialog import UnsavedChangesDialog
 
 
 class MainWindow(QMainWindow):
@@ -37,6 +39,26 @@ class MainWindow(QMainWindow):
         central_dock.setFeature(QtAds.CDockWidget.NoTab, True)
 
         dock_manager.setCentralWidget(central_dock)
+
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Guard the app close: prompt for dirty documents, saving the checked ones.
+
+        Cancelling the prompt aborts the app close; nothing closes. Unchecked dirty documents are
+        left unsaved -- their edits are discarded along with the close.
+
+        :param event: the close event to accept or ignore.
+        """
+        dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
+        if dirty_models:
+            dialog = UnsavedChangesDialog(dirty_models, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                event.ignore()
+                return
+            for model in dialog.selected_models():
+                model.save()
+
+        super().closeEvent(event)
 
     def open_file(self, path: Path | str) -> None:
         """Open ``path`` in its document dock, focusing it if already open ([[nodes#single-instance]]).

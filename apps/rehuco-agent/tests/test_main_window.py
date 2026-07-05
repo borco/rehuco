@@ -2,7 +2,8 @@
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtGui import QCloseEvent
+from PySide6.QtWidgets import QDialog, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import MainWindow
@@ -44,6 +45,81 @@ def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFi
     window.open_file("a.rehu")
 
     open_document.assert_called_once_with(Path("a.rehu").resolve())
+
+
+def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With no dirty documents, the close proceeds without showing the unsaved-changes dialog.
+
+    **Test steps:**
+
+    * mock ``open_document_models`` to return a clean model
+    * mock the dialog class to detect an unwanted construction
+    * dispatch a close event
+    * verify the event was accepted and the dialog was never shown
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    clean_model = mocker.MagicMock(dirty=False)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[clean_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_class = mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert event.isAccepted()
+    dialog_class.assert_not_called()
+
+
+def test_close_event_saves_selected_documents_when_accepted(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Accepting the unsaved-changes dialog saves the models it reports as selected.
+
+    **Test steps:**
+
+    * mock ``open_document_models`` to return two dirty models
+    * mock the dialog to accept and select only one of them
+    * dispatch a close event
+    * verify the event was accepted and only the selected model was saved
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    kept, discarded = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=True)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[kept, discarded])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = [kept]
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert event.isAccepted()
+    kept.save.assert_called_once_with()
+    discarded.save.assert_not_called()
+
+
+def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Cancelling the unsaved-changes dialog aborts the app close; nothing is saved.
+
+    **Test steps:**
+
+    * mock ``open_document_models`` to return a dirty model
+    * mock the dialog to be rejected (Cancel)
+    * dispatch a close event
+    * verify the event was ignored and the model was not saved
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dirty_model = mocker.MagicMock(dirty=True)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Rejected
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    dirty_model.save.assert_not_called()
 
 
 def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: QtBot) -> None:
