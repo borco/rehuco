@@ -117,9 +117,17 @@ class DocumentsDock(QMainWindow):
             self.__current_dock = now
 
     def __on_close_dock_widget_requested(self) -> None:
-        """Remove the closed dock (and its widget) from the dock manager and bookkeeping."""
+        """Remove the closed dock (and its widget) from the dock manager and bookkeeping.
+
+        Prompts to Save/Discard/Cancel first if the document is dirty; Cancel leaves the dock open
+        and untouched.
+        """
         dock = self.sender()
         if not isinstance(dock, QtAds.CDockWidget):
+            return
+
+        widget = self.__document_docks[dock]
+        if widget.model.dirty and not self.__confirm_close(widget.model):
             return
 
         self.__dock_manager.removeDockWidget(dock)
@@ -128,3 +136,25 @@ class DocumentsDock(QMainWindow):
         self.__document_docks.pop(dock, None)
         if self.__current_dock == dock:
             self.__current_dock = None
+
+    def __confirm_close(self, model: RehuDocumentModel) -> bool:
+        """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.
+
+        :param model: the dirty document model about to be closed.
+        :returns: ``True`` if the close should proceed (Save or Discard was chosen), ``False`` if
+            it was cancelled.
+        """
+        buttons = QMessageBox.StandardButton
+        name = model.path.name if model.path else "Untitled"
+        answer = QMessageBox.warning(
+            self,
+            "Unsaved Changes",
+            f'"{name}" has unsaved changes. Save them before closing?',
+            buttons.Save | buttons.Discard | buttons.Cancel,
+            buttons.Save,
+        )
+        if answer == buttons.Cancel:
+            return False
+        if answer == buttons.Save:
+            model.save()
+        return True

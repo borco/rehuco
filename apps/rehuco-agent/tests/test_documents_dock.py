@@ -146,6 +146,109 @@ def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_closing_a_dirty_dock_prompts_and_discards_on_discard(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a dirty dock prompts, and Discard closes it without saving.
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Discard
+    * request the dock's close
+    * verify the dock is gone and the model was not saved
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    cdock = dock_for(dock, widget)
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Discard)
+    save = mocker.patch.object(widget.model, "save")
+
+    cdock.requestCloseDockWidget()
+
+    warning.assert_called_once()
+    save.assert_not_called()
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_a_dirty_dock_saves_on_save(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a dirty dock and answering Save saves the document before closing it.
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Save
+    * request the dock's close
+    * verify the model was saved and the dock is gone
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    cdock = dock_for(dock, widget)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Save)
+    save = mocker.patch.object(widget.model, "save")
+
+    cdock.requestCloseDockWidget()
+
+    save.assert_called_once()
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_a_dirty_dock_cancel_leaves_it_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a dirty dock and answering Cancel leaves the dock untouched.
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Cancel
+    * request the dock's close
+    * verify the dock is still present and the model was not saved
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    cdock = dock_for(dock, widget)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Cancel)
+    save = mocker.patch.object(widget.model, "save")
+
+    cdock.requestCloseDockWidget()
+
+    save.assert_not_called()
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_a_clean_dock_does_not_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a clean (non-dirty) dock closes it immediately, with no confirmation prompt.
+
+    **Test steps:**
+
+    * open the fake path (clean)
+    * mock the confirmation dialog to detect any (unwanted) call
+    * request the dock's close
+    * verify the dialog was never shown and the dock is gone
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+    warning = mocker.patch.object(QMessageBox, "warning")
+
+    cdock.requestCloseDockWidget()
+
+    warning.assert_not_called()
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_close_requested_ignores_a_non_dock_sender(qtbot: QtBot) -> None:
     """The close handler's ``sender()`` guard does nothing for an unexpected/absent sender.
 
