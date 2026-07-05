@@ -123,7 +123,7 @@ Each open resource has a **viewer surface** and (for now) one **editor surface**
 - **viewer only**, **editor only**, or **both** — chosen by toggle actions; "both" is the live case
   above.
 - The surfaces are hosted as docks inside a per-resource nested dock area ([[plugins#dock-shell]]), so "both" is two
-  arrangeable docks, not a fixed split.
+  arrangeable docks, not a fixed split. See [[component-decomposition]] for the containment hierarchy this produces.
 
 ### §13.2.4 Document-dock shell
 
@@ -135,7 +135,8 @@ focused document's area (tabbed) and focuses it; opening a file that is **alread
 existing dock** rather than opening a second. Each document dock is itself a nested dock area holding
 that resource's viewer/editor surfaces ([[plugins#viewer-editor-both]]). This replaces the A1 per-file window (#7) and
 is the
-same shell the catalog browser later opens viewers into ([[plugins#browsers]]).
+same shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
+[[activity-open-document]] for this flow traced end-to-end.
 
 The open-and-forward and single-instance semantics this shell realizes are owned by [[nodes#local-vs-swarm]] (local-file
 mode) and [[nodes#single-instance]] (single-instance / file association); session persistence and the close guard are a

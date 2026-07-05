@@ -1,9 +1,12 @@
 # Diagrams
 
 Exploratory diagrams of how rehuco-agent actually works today, read straight off the code
-(`apps/rehuco-agent/src/rehuco_agent/`). Not wired into the `mkdocs.yml` nav or the
-`docs/specs/README.md` document map -- this is a scratch space for understanding the system, not
-a numbered spec section.
+(`apps/rehuco-agent/src/rehuco_agent/`). Each diagram carries a `[[doc#slug]]` declaration
+([[readme#symbolic-cross-references]]) and is cross-referenced from [[plugins#dock-shell]] /
+[[plugins#viewer-editor-both]], so `tools/check_slug_refs.py` catches a broken link either
+direction. Still not wired into the `mkdocs.yml` nav or the `docs/specs/README.md` document
+map's numbered table, though -- this is a scratch space for understanding the system, not a
+numbered spec section.
 
 All diagrams are PlantUML. Mermaid was tried first (each diagram had a parallel Mermaid version),
 but dropped in favor of PlantUML-only after a side-by-side look -- Mermaid's rendering was judged
