@@ -10,8 +10,8 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from rehuco_agent.document_widget import DocumentWidget
-from rehuco_agent.documents_dock import DocumentsDock
+from rehuco_agent.documents.document_widget import DocumentWidget
+from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings

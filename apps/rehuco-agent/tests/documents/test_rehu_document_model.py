@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.field import Field
-from rehuco_agent.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 
 

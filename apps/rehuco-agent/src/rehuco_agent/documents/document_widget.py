@@ -8,8 +8,8 @@ from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import build_document_form
-from rehuco_agent.rehu_document_model import RehuDocumentModel
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"

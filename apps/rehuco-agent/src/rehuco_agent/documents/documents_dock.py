@@ -7,8 +7,8 @@ import PySide6QtAds as QtAds
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import RehuDocument, RehuFormatError
 
-from rehuco_agent.document_widget import DocumentWidget
-from rehuco_agent.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.document_widget import DocumentWidget
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 
 
 class DocumentsDock(QMainWindow):

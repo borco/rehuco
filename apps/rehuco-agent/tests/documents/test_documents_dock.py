@@ -8,7 +8,7 @@ import PySide6QtAds as QtAds
 from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents_dock import DocumentsDock
+from rehuco_agent.documents.documents_dock import DocumentsDock
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
