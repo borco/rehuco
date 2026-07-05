@@ -64,6 +64,10 @@ heading, bare `[[doc]]` for the whole document.
   triple-bracket form is the declaration, the double-bracket form is a reference. This deliberately
   sidesteps chasing identical clickable-anchor behavior across GitHub and the published mkdocs site,
   which isn't achievable cheaply (the two renderers handle anchors differently).
+- **Styled like inline code on the published site, still not a link.** A small mkdocs hook
+  (`tools/mkdocs_slug_ref_hook.py`) renders every token in a `.slug-ref`-styled `<span>` purely for
+  legibility, so it doesn't read as ordinary prose; it stays inert (no click behavior) and GitHub's
+  rendering is unaffected.
 - **The extra bracket is structural, not cosmetic.** A reference can land alone on its own line
   purely as a byproduct of word-wrapping — with a same-bracket-count scheme that would be
   indistinguishable from a real declaration. The triple/double distinction means wrapping can never
