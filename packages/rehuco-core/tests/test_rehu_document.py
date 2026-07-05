@@ -118,6 +118,31 @@ def test_primary_source_falls_back_to_first() -> None:
     assert doc.title == "First"
 
 
+def test_primary_source_skips_non_object_entries() -> None:
+    """Malformed non-object entries in ``sources`` are skipped, not crashed on (#35).
+
+    **Test steps:**
+
+    * construct a document whose ``sources`` mixes a bare string with a real source object
+    * verify the title comes from the first *object* entry, past the junk
+    """
+    doc = RehuDocument({"sources": ["junk", {"title": "Ok"}]})
+    assert doc.title == "Ok"
+
+
+def test_primary_source_is_none_when_no_entry_is_an_object() -> None:
+    """A ``sources`` list holding only non-object junk yields no primary source, and empty accessors (#35).
+
+    **Test steps:**
+
+    * construct a document whose ``sources`` holds only a bare string
+    * verify ``primary_source`` is ``None`` and the title accessor returns empty instead of crashing
+    """
+    doc = RehuDocument({"sources": ["junk"]})
+    assert doc.primary_source is None
+    assert doc.title == ""
+
+
 def test_title_setter_creates_primary_source_when_absent() -> None:
     """Setting the title on a source-less document creates a flagged primary entry.
 
