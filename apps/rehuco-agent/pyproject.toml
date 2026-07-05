@@ -21,8 +21,10 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
     "rehuco-core",
+    "borco-core",
     "borco-pyside",
     "PySide6>=6.9",
+    "pyside6-qtads>=5.0.0",
 ]
 
 [project.urls]
@@ -45,4 +47,5 @@ packages = ["src/rehuco_agent"]
 
 [tool.uv.sources]
 rehuco-core = { workspace = true }
+borco-core = { workspace = true }
 borco-pyside = { workspace = true }

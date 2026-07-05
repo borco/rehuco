@@ -4,8 +4,21 @@ import argparse
 import ctypes
 import sys
 from pathlib import Path
+from typing import Final
 
 from rehuco_agent.app import run
+
+PROGID: Final = "Rehuco.Document"
+"""HKCU ProgID under ``Software\\Classes`` that owns the ``.rehu`` association."""
+
+EXTENSION: Final = "rehu"
+"""File extension (without the leading dot) registered to :data:`PROGID`."""
+
+AUMID: Final = "borco.rehuco.agent"
+"""Application User Model ID the running process declares via ``SetCurrentProcessExplicitAppUserModelID``."""
+
+FRIENDLY_NAME: Final = "Rehuco Resource"
+"""Human-readable type name shown in Explorer's Type column."""
 
 
 def main() -> int:
@@ -16,9 +29,11 @@ def main() -> int:
     ``rehuco-agent --register`` on macOS/Linux fails with argparse's own "unrecognized
     arguments" rather than a custom runtime message -- there is nothing for it to do there
     ([[packaging-deployment#app-identity]] is explicitly OS-specific; only the Windows half is built so far, issue #1).
-    ``rehuco_agent.platforms.windows.win_registration`` is imported lazily, only once inside that Windows-only
-    branch: it does ``import winreg`` at module scope, which does not exist elsewhere, so an
-    unconditional top-level import here would break this entry point on every other platform.
+    ``borco_core.platforms.windows.file_association`` is imported lazily, only once inside that
+    Windows-only branch: it does ``import winreg`` at module scope, which does not exist elsewhere, so an
+    unconditional top-level import here would break this entry point on every other platform. The
+    module itself is generic (progid/extension/command/icon/aumid all passed in); this module owns
+    rehuco's own identity constants above.
 
     Both flags register/unregister *this running exe* (``sys.argv[0]``), not a hardcoded
     guess -- so the same code path works whether invoked as the real packaged
@@ -49,7 +64,8 @@ def main() -> int:
     # args.register/args.unregister don't exist at all on non-Windows (the parser never
     # defined them above), so all Windows-only behavior nests under one platform check.
     if sys.platform == "win32":
-        from rehuco_agent.platforms.windows import win_registration  # pylint: disable=import-outside-toplevel
+        # pylint: disable-next=import-outside-toplevel
+        from borco_core.platforms.windows.file_association import FileAssociation
 
         if args.register or args.unregister:
             if exe_path.suffix.lower() != ".exe":
@@ -66,17 +82,19 @@ def main() -> int:
                 )
                 return 1
             if args.register:
-                # no separate ico_path: falls back to the running exe's own icon (§DefaultIcon
+                # no separate ico_path: falls back to the running exe's own icon (DefaultIcon
                 # `{exe_path},0`) -- correct either way, since the dev trampoline embeds this
                 # same icon in its own PE resources (launcher.rc.in) and the real packaged exe
                 # has no icon to fall back to regardless ([[packaging-deployment#app-identity]],
                 # deferred distribution polish)
-                win_registration.register(exe_path)
+                command = f'"{exe_path}" "%1"'
+                icon = f"{exe_path},0"
+                FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, command, icon, AUMID)
             else:
-                win_registration.unregister()
+                FileAssociation.unregister(PROGID, EXTENSION)
             return 0
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(win_registration.AUMID)
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(AUMID)
 
     return run([str(exe_path), *args.paths])
 
