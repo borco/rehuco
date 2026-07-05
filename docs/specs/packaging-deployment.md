@@ -236,7 +236,7 @@ Concrete consequence for **docking**:
 
 [[[packaging-deployment#qml-regression]]]
 
-- [ ] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
+- [x] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
 
 Spike #4 re-verified the QML-in-`pyqtads` approach on **PySide6 6.11.1 + pyside6-qtads 5.0.0** (a
 major bump from `resource-hub`'s 4.5.0.4). All three parts hold:
