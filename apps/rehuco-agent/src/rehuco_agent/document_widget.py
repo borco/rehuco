@@ -1,13 +1,18 @@
 """Per-document viewer/editor surfaces over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
-from typing import Final
+from typing import Any, Final
 
+import cbor2
 import PySide6QtAds as QtAds
+from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.fields import build_document_form
 from rehuco_agent.rehu_document_model import RehuDocumentModel
+
+STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
+STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 
 
 class DocumentWidget(QMainWindow):
@@ -73,6 +78,41 @@ class DocumentWidget(QMainWindow):
     def editor_action(self) -> QAction:
         """Toggles the editor dock's visibility."""
         return self.__editor_action
+
+    def save_state(self) -> bytes:
+        """Serialize this document's dock layout (visible surfaces, splitter sizes) for persistence.
+
+        :returns: cbor2-encoded state, suitable for :meth:`restore_state`
+            (:class:`~rehuco_agent.document_session_settings.DocumentSessionSettings.Item.state`).
+        """
+        return cbor2.dumps(
+            {
+                STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
+                STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
+            }
+        )
+
+    def restore_state(self, state: bytes) -> bool:
+        """Restore a dock layout previously captured by :meth:`save_state`.
+
+        :param state: the cbor2-encoded state to restore.
+        :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
+            ``state`` was empty, malformed, or not in the expected shape.
+        """
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return False
+        if not isinstance(values, dict):
+            return False
+
+        stashed_sizes = values.get(STATE_STASHED_SIZES_KEY)
+        if isinstance(stashed_sizes, dict):
+            self.__stashed_sizes.clear()
+            self.__stashed_sizes.update(stashed_sizes)
+
+        dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
+        return bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
 
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)

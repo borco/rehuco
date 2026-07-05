@@ -8,7 +8,7 @@ later slices adopt more of the API (e.g. the QML docks from
 
 from typing import overload
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget
 
@@ -228,6 +228,17 @@ class CDockManager(QWidget):
     def setSplitterSizes(self, dock_area_widget: CDockAreaWidget, sizes: list[int]) -> None:
         """Re-apply previously-read `splitterSizes` to `dock_area_widget`'s containing splitter
         (`len(sizes)` must match the splitter's current pane count)."""
+        ...
+
+    def saveState(self) -> QByteArray:
+        """Serialize this manager's current layout (areas, splitters, visibility) for later
+        `restoreState`. Used for per-document dock-layout persistence (#21)."""
+        ...
+
+    def restoreState(self, state: QByteArray) -> bool:
+        """Re-apply a layout previously captured by `saveState`.
+
+        :returns: whether `state` was recognized and applied."""
         ...
 
     def setDockWidgetFocused(self, dock_widget: CDockWidget) -> None:

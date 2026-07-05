@@ -6,6 +6,7 @@ that it wires two real surfaces from one model, exposes toggle actions for them,
 the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
+import cbor2
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import fixture
@@ -195,6 +196,63 @@ def test_restore_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, w
     widget._DocumentWidget__restore_size(fake_dock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     set_sizes.assert_not_called()
+
+
+def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) -> None:
+    """A dock layout saved via ``save_state`` restores cleanly through ``restore_state``.
+
+    **Test steps:**
+
+    * hide the editor dock (so its stash and dock-manager state both reflect a change)
+    * save the widget's state, then restore it into a fresh widget over the same model
+    * verify the restore reports success and the stash carried over
+    """
+    widget.editor_action.trigger()
+
+    state = widget.save_state()
+
+    assert widget.restore_state(state) is True
+    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert "editor" in stashed
+
+
+def test_restore_state_rejects_malformed_bytes(widget: DocumentWidget) -> None:
+    """Malformed (non-cbor2) bytes are rejected rather than raising.
+
+    **Test steps:**
+
+    * call ``restore_state`` with bytes that aren't valid cbor2
+    * verify it reports failure
+    """
+    assert widget.restore_state(b"not cbor2") is False
+
+
+def test_restore_state_rejects_a_non_dict_payload(widget: DocumentWidget) -> None:
+    """A validly-encoded but wrongly-shaped payload (not a dict) is rejected rather than raising.
+
+    **Test steps:**
+
+    * call ``restore_state`` with cbor2-encoded bytes that decode to a list, not a dict
+    * verify it reports failure
+    """
+    assert widget.restore_state(cbor2.dumps([1, 2, 3])) is False
+
+
+def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: DocumentWidget) -> None:
+    """A dict payload missing the stashed-sizes entry still restores the dock manager's own state.
+
+    **Test steps:**
+
+    * save the widget's real state, then strip its ``stashed_sizes`` entry
+    * call ``restore_state`` with that payload
+    * verify it still reports success and leaves the (empty) stash untouched
+    """
+    payload = cbor2.loads(widget.save_state())
+    del payload["stashed_sizes"]
+
+    assert widget.restore_state(cbor2.dumps(payload)) is True
+    stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert not stashed
 
 
 # endregion
