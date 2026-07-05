@@ -8,9 +8,9 @@ import PySide6QtAds as QtAds
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
+from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
-from rehuco_agent.unsaved_changes_dialog import UnsavedChangesDialog
 
 
 class MainWindow(QMainWindow):

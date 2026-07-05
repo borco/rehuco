@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from rehuco_agent.dialogs.unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
 from rehuco_agent.rehu_document_model import RehuDocumentModel
-from rehuco_agent.unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
 
 
 class UnsavedChangesDialog(QDialog):

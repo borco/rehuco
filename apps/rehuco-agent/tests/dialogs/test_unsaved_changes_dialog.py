@@ -7,7 +7,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QDialogButtonBox, QStyleOptionViewItem
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.unsaved_changes_dialog import UnsavedChangesDialog
+from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 
 PATH: Final = Path.cwd() / "fake" / "info.rehu"
 
