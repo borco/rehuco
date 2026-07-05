@@ -40,3 +40,18 @@
 .puml .diagram-open-hint:hover {
   opacity: 1;
 }
+
+/* [[doc#slug]] / [[[doc#slug]]] cross-reference tokens (docs/specs/README.md's "Symbolic
+   cross-references"): styled to look like inline `code` for legibility, via a dedicated class
+   rather than an actual <code> element -- see tools/mkdocs_slug_ref_hook.py. Values mirror
+   mkdocs-material's own .md-typeset code rule so both track the active palette identically. */
+.slug-ref {
+  background-color: var(--md-code-bg-color);
+  border-radius: .1rem;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  color: var(--md-code-fg-color);
+  font-family: var(--md-code-font-family);
+  font-size: .85em;
+  padding: 0 .2941176471em;
+}
