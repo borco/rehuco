@@ -31,11 +31,10 @@ and how each was solved.
   ```
 
 - ImageMagick's `magick` on `PATH` (for `make icons`, a dependency of `make agent-register`).
-  Tested working with `ImageMagick.Q8` -- both `ImageMagick.Q16` and `ImageMagick.Q16-HDRI` failed to run.
 
   ```sh
-  winget install ImageMagick.Q8
-  magick --version  # confirmed working here at 7.1.2-24 Q8
+  scoop install imagemagick
+  magick --version  # confirmed working here at 7.1.2-26 Q16-HDRI
   ```
 
 ## Usage
