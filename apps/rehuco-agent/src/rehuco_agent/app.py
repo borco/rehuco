@@ -1,15 +1,18 @@
-"""QApplication wiring: single-instance guard, argv/QFileOpenEvent routing to viewer windows (§5.4)."""
+"""QApplication wiring: single-instance guard, argv/QFileOpenEvent routing to the main window
+([[nodes#single-instance]]).
+"""
 
 import logging
 from typing import Final, override
 
+import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QFileOpenEvent, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
-from rehuco_agent.viewer_window import ViewerWindow
+from rehuco_agent.main_window import MainWindow
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -21,10 +24,14 @@ ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 
 
 class Application(QApplication):
-    """The single ``QApplication``, opening one :class:`ViewerWindow` per requested path.
+    """The single ``QApplication``, holding the one :class:`MainWindow` every path opens into.
 
     Handles both argv-based opens (Windows ProgID ``"%1"`` forwarding) and ``QFileOpenEvent``
-    (macOS double-click delivery) -- see §5.4.
+    (macOS double-click delivery) -- see [[nodes#single-instance]]. The main window is deliberately
+    **not** built here: a ``QApplication`` must exist before :class:`~borco_pyside.core.ApplicationSingleton`
+    can even check whether this process is the primary instance, but building the
+    ``QMainWindow``-based dock shell is real, visible work that a forwarding (non-primary) process
+    should never do -- see :meth:`show_main_window`, called only once ``run()`` confirms primary.
 
     :param argv: process argv, forwarded to the ``QApplication`` base constructor.
     """
@@ -37,26 +44,40 @@ class Application(QApplication):
         # setWindowIcon() below needs a genuinely-constructed object, not a skipped one
         super().__init__(argv)
         self.setWindowIcon(QIcon(ICON_RESOURCE))
-        self.__windows: list[ViewerWindow] = []
-        """Open viewer windows, kept alive by this list (Qt does not own top-level widgets)."""
+        self.__main_window: MainWindow | None = None
 
     @override
     def event(self, event: QEvent) -> bool:
-        if isinstance(event, QFileOpenEvent):
+        if isinstance(event, QFileOpenEvent):  # macOS double-click/"Open With" delivery, not argv
             self.open_path(event.file())
             return True
         return super().event(event)  # pragma: no cover  (see __init__: no real instance to hit this on)
 
-    def open_path(self, path: str) -> ViewerWindow:
-        """Open ``path`` in a new :class:`ViewerWindow` and show it.
+    def show_main_window(self) -> MainWindow:
+        """Build the main window on first call, then bring it to the foreground every time.
+
+        :returns: the single main window.
+        """
+        if self.__main_window is None:
+            # must run before this process's first CDockManager, whichever window ends up
+            # constructing it: the CDockFocusController that emits focusedDockWidgetChanged
+            # (which DocumentsDock listens to) is only built when this flag is set -- off by
+            # default, per typings/PySide6QtAds/__init__.pyi's focusedDockWidgetChanged docstring.
+            # Set here rather than in any one window's own __init__: show_main_window() is
+            # currently the earliest point that builds a window at all, and the only one reached
+            # solely by the primary instance -- if some other QtAds-based window is ever built
+            # before MainWindow, move this call ahead of that construction instead.
+            QtAds.CDockManager.setConfigFlag(QtAds.CDockManager.FocusHighlighting, True)
+            self.__main_window = MainWindow()
+        self.__main_window.raise_and_activate()
+        return self.__main_window
+
+    def open_path(self, path: str) -> None:
+        """Open ``path`` in the main window's document dock, bringing the window forward.
 
         :param path: filesystem path to a ``.rehu`` file.
-        :returns: the newly created window.
         """
-        window = ViewerWindow(path)
-        window.show()
-        self.__windows.append(window)
-        return window
+        self.show_main_window().open_file(path)
 
 
 def run(argv: list[str]) -> int:
@@ -68,13 +89,16 @@ def run(argv: list[str]) -> int:
     app = Application(argv)
     singleton = ApplicationSingleton(app)
     if not singleton.setup(APP_ID):
+        # not primary: setup() already forwarded this process's argv to the existing primary
         return 0
 
     def open_forwarded(paths: list[str]) -> None:
         for path in paths:
             app.open_path(path)
 
+    # connected before show_main_window() so a forward arriving during startup is never missed
     singleton.other_instance_run.connect(open_forwarded)
-    open_forwarded(argv[1:])
+    app.show_main_window()
+    open_forwarded(argv[1:])  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
 
     return app.exec()

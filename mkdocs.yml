@@ -12,8 +12,16 @@ extra:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - javascripts/diagram-open.js
+
 plugins:
   - search
+  - plantuml:
+      puml_url: !ENV [PUML_URL, "https://www.plantuml.com/plantuml"]
+      puml_keyword: plantuml
+      interaction:
+        enabled: false
 
 theme:
   name: material
@@ -85,8 +93,14 @@ nav:
       - Acquisition Tooling: specs/acquisition-tooling.md
       - Packaging & Deployment: specs/packaging-deployment.md
       - Field Schema: specs/field-schema.md
+      - Diagrams:
+          - Overview: specs/diagrams/README.md
+          - "Activity: Open a Path": specs/diagrams/activity-open-document.md
+          - "Component: Containment": specs/diagrams/component-decomposition.md
+          - "Sequence: Open a Path": specs/diagrams/sequence-open-document.md
       - Appendices:
           - Briefcase Packaging: specs/appendices/briefcase-packaging.md
+          - Code Conventions: specs/appendices/code-conventions.md
           - Continuous Integration: specs/appendices/continuous-integration.md
           - Open Questions: specs/appendices/open-questions.md
           - Testing: specs/appendices/testing.md

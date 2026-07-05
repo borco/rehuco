@@ -35,6 +35,7 @@ def make_singleton(qtbot: QtBot) -> Iterator[Callable[..., ApplicationSingleton]
     # different loop level are not reliably reaped there; on Linux's glib dispatcher they instead
     # pile up across tests and later segfault when a server is finally destroyed after a child
     # socket was already freed. Flush them explicitly so each test disposes of its own Qt objects
-    # (QT_QPA_PLATFORM=offscreen alone is not enough on Linux — see docs testing.md §A04.2).
+    # (QT_QPA_PLATFORM=offscreen alone is not enough on Linux — see docs testing.md
+    # [[appendices.testing#headless-qt]]).
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
     qtbot.wait(10)

@@ -9,3 +9,34 @@
 .md-header__button.md-logo svg {
   height: 2.4rem;
 }
+
+/* Fullscreen-icon hint button, injected by diagram-open.js: pinned to the diagram's top-right
+   corner. Invisible at rest and revealed only by hovering the button's own small area -- opacity
+   (unlike display/visibility) doesn't stop it from receiving that hover in the first place. The
+   diagram itself carries no click handler, so nothing happens clicking outside this button. */
+.puml {
+  position: relative;
+}
+
+.puml .diagram-open-hint {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.puml .diagram-open-hint:hover {
+  opacity: 1;
+}

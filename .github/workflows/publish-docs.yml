@@ -14,6 +14,15 @@ jobs:
     name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
 
+    # self-hosted so the deploy doesn't depend on the public plantuml.com server's availability/rate
+    # limits; only needed for the "Deploy docs" step below, since mkdocs-puml inlines the rendered
+    # SVG into the built HTML at that point -- no runtime dependency on this server afterward.
+    services:
+      plantuml:
+        image: plantuml/plantuml-server:jetty
+        ports:
+          - 8080:8080
+
     steps:
       - uses: actions/checkout@v7
 
@@ -29,4 +38,6 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Deploy docs
+        env:
+          PUML_URL: http://localhost:8080
         run: uv run mkdocs gh-deploy --force

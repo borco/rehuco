@@ -1,4 +1,10 @@
-# §A05. Windows Dev Launcher — Hurdles and Solutions
+# §A06. Windows Dev Launcher — Hurdles and Solutions
+
+[[[appendices.windows-dev-launcher]]]
+
+## Overview
+
+[[[appendices.windows-dev-launcher#overview]]]
 
 Engineering notes for the
 [`apps/rehuco-agent/launcher/`](https://github.com/borco/rehuco/tree/master/apps/rehuco-agent/launcher)
@@ -12,7 +18,9 @@ faster.
 Recorded in the order they actually bit, since later ones sometimes look like symptoms of
 earlier ones until you've ruled the earlier fix out.
 
-## §A05.1 CMake can't find Python (`Development.Embed`)
+## §A06.1 CMake can't find Python (`Development.Embed`)
+
+[[[appendices.windows-dev-launcher#cmake-cant-find-python]]]
 
 **Symptom:** `find_package(Python3 REQUIRED COMPONENTS Development.Embed)` fails with
 `Could NOT find Python3 (missing: Python3_LIBRARIES Python3_INCLUDE_DIRS Development.Embed)`,
@@ -48,7 +56,9 @@ those live at the base install it was created from) and its `python3{minor}` lib
 set `Python3_INCLUDE_DIR`/`Python3_LIBRARY`/`Python3_EXECUTABLE` as `CACHE ... FORCE` variables
 before calling `find_package`.
 
-## §A05.2 The compiled exe can't import the workspace's editable-installed packages
+## §A06.2 The compiled exe can't import the workspace's editable-installed packages
+
+[[[appendices.windows-dev-launcher#exe-cant-import]]]
 
 **Symptom:** the exe runs (no crash), but `ModuleNotFoundError: No module named 'rehuco_agent'`,
 preceded by `<frozen site>:101: RuntimeWarning: Unexpected value in sys.prefix, expected
@@ -84,7 +94,9 @@ static const char *ENTRY_SCRIPT_FMT =
 stops mattering at all -- confirmed working from both the repo root and a nested build
 directory.
 
-## §A05.3 A naive icon-generation build rule converts every SVG under `icons/` to its own `.ico`
+## §A06.3 A naive icon-generation build rule converts every SVG under `icons/` to its own `.ico`
+
+[[[appendices.windows-dev-launcher#create-too-many-icons]]]
 
 **Symptom:** none yet observed in practice, but the bug is real: a pattern rule like
 `%.ico: %.svg` combined with a broad glob over every SVG under any `icons/` directory will mint
@@ -97,7 +109,9 @@ Working `magick` invocation for a multi-resolution Windows icon:
 `magick -background none <svg> -define icon:auto-resize=16,32,48,256 <ico>` (`-background none`
 keeps it transparent rather than white-boxed).
 
-## §A05.4 `make agent-build` re-runs `cmake` every time, even when nothing changed
+## §A06.4 `make agent-build` re-runs `cmake` every time, even when nothing changed
+
+[[[appendices.windows-dev-launcher#cmake-always-reruns]]]
 
 **Symptom:** every invocation re-runs `cmake -S ...`/`cmake --build ...` in full, even though
 CMake's own incremental build correctly no-ops internally (no recompile line in the output) --
@@ -114,7 +128,9 @@ real target depending on a `.PHONY` prerequisite is always considered out of dat
 targets have no timestamp to compare), which silently defeats the whole point -- the exe target
 would go back to rebuilding every time.
 
-## §A05.5 Icon must exist *before* `cmake configure`, not just before registering
+## §A06.5 Icon must exist *before* `cmake configure`, not just before registering
+
+[[[appendices.windows-dev-launcher#cmake-needs-icon]]]
 
 **Cause:** the `.rc` resource script embeds the `.ico` into the exe's PE resources at *build*
 time (`configure_file` + the RC compiler step), not at registration time. Listing the icon as a
@@ -124,7 +140,9 @@ exists before the build itself runs.
 **Fix:** make icon generation a prerequisite of the build target directly, not of the
 registration target.
 
-## §A05.6 Explorer shows the raw exe filename, not a friendly app name, in the "open with" picker
+## §A06.6 Explorer shows the raw exe filename, not a friendly app name, in the "open with" picker
+
+[[[appendices.windows-dev-launcher#missing-versioninfo]]]
 
 **Cause:** the spike's `.rc` file only ever had `1 ICON "..."` -- no `VERSIONINFO` block.
 Without a `FileDescription`, Explorer falls back to the literal filename.
@@ -136,7 +154,9 @@ Also worth adding on top of the spike's plain `.ext` default-value binding: an
 `OpenWithProgids` registry entry (`HKCU\Software\Classes\.<ext>\OpenWithProgids\<ProgID>` =
 empty value), a stronger "this is a real recommended handler" signal for the picker.
 
-## §A05.7 Explorer's "how do you want to open this" picker has no "Always" button, or reappears despite "Just once"
+## §A06.7 Explorer's "how do you want to open this" picker has no "Always" button, or reappears despite "Just once"
+
+[[[appendices.windows-dev-launcher#no-permanent-association]]]
 
 **Symptom:** registration is verifiably correct (checked the registry directly), the exe runs
 and shows the right window, but Explorer's picker keeps reappearing on every double-click, and
@@ -167,7 +187,9 @@ persistent "Always" choice from the first-encounter picker entirely, in favor of
 Apps → Default apps → search `<ext>`** as the only way to set a lasting default. Not a
 registration bug either way.
 
-## §A05.8 Icon or file-type label doesn't update after a fresh, correct registration
+## §A06.8 Icon or file-type label doesn't update after a fresh, correct registration
+
+[[[appendices.windows-dev-launcher#stale-icon-label]]]
 
 **Cause:** Explorer's icon-cache *database* (`iconcache_*.db`) is a separate cache from the
 association cache `SHChangeNotify` refreshes, and doesn't reliably flush on its own.
@@ -180,7 +202,9 @@ Remove-Item "$env:LocalAppData\Microsoft\Windows\Explorer\iconcache_*.db" -Force
 Start-Process explorer.exe
 ```
 
-## §A05.9 `PyConfig_SetArgv` drops the real `argv[0]`
+## §A06.9 `PyConfig_SetArgv` drops the real `argv[0]`
+
+[[[appendices.windows-dev-launcher#setargv-drops-argv-0]]]
 
 Carried over correctly from the spike, but easy to reintroduce if rewriting from scratch:
 `PyConfig_SetArgv` maps `config.argv` directly to `sys.argv`, but Python's own init consumes
@@ -189,7 +213,9 @@ Carried over correctly from the spike, but easy to reintroduce if rewriting from
 argv[0]. Fix: prepend an extra copy of `argv[0]` before calling `PyConfig_SetArgv`, so Python's
 shift leaves the real `sys.argv` intact.
 
-## §A05.10 AUMID must be set before any window (or `QApplication`) is constructed
+## §A06.10 AUMID must be set before any window (or `QApplication`) is constructed
+
+[[[appendices.windows-dev-launcher#aumid-before-window]]]
 
 Also carried over correctly from the spike: `SetCurrentProcessExplicitAppUserModelID` binds to
 a process's first top-level HWND at *creation* time. Calling it after a window already exists

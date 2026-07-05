@@ -11,6 +11,7 @@ dev = [
     "mkdocs>=1.6",
     "mkdocs-exclude>=1.0",
     "mkdocs-material>=9.5",
+    "mkdocs-puml>=2.3",
     "pyright>=1.1",
     "pylint>=3.3",
     "pylint-qt>=0.1",
@@ -67,7 +68,7 @@ ignored-modules = ["winreg"]
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
 pythonpath = ["."]
-testpaths = ["packages", "apps"]
+testpaths = ["packages", "apps", "tools"]
 markers = [
     "slow: marks tests that are slow to run",
     "disk: marks tests that perform real disk I/O (no mocks)",

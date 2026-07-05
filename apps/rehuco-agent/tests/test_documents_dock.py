@@ -1,0 +1,265 @@
+"""Tests for DocumentsDock: one dock per open `.rehu`, focus-and-reuse by path."""
+
+import json
+from pathlib import Path
+from typing import Any, Final
+
+import PySide6QtAds as QtAds
+from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
+from rehuco_agent.documents_dock import DocumentsDock
+
+FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
+"""``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
+platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows without a drive)."""
+OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
+
+TUTORIAL: Final = {
+    "format_version": 1,
+    "type": "Tutorial",
+    "sources": [{"title": "Foo", "publisher": "Bar", "url": "https://example.com", "primary": True}],
+}
+
+
+def load_document(mocker: MockerFixture, data: dict[str, Any] | None = None) -> None:
+    """Mock the filesystem so ``RehuDocument.load`` serves ``data`` (defaults to :data:`TUTORIAL`).
+
+    :param mocker: pytest-mock fixture.
+    :param data: document JSON to serve; defaults to :data:`TUTORIAL`.
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps(data if data is not None else TUTORIAL))
+
+
+def dock_for(dock: DocumentsDock, widget: object) -> QtAds.CDockWidget:
+    """Return the ``CDockWidget`` wrapping ``widget`` (reaches into the private map by design --
+    :class:`DocumentsDock` doesn't expose docks, only :meth:`open_document`'s widget).
+
+    :param dock: the documents dock to search.
+    :param widget: the document widget to find the wrapping dock for.
+    :returns: the matching ``CDockWidget``.
+    """
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return next(d for d, w in docks.items() if w is widget)
+
+
+def test_opening_a_path_adds_one_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a path creates exactly one document dock.
+
+    **Test steps:**
+
+    * mock the filesystem to serve the tutorial fixture
+    * open the fake path
+    * verify the internal dock map holds exactly one entry
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_reopening_the_same_path_focuses_the_existing_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening an already-open path reuses and focuses its dock rather than adding a second one.
+
+    **Test steps:**
+
+    * open the fake path twice
+    * verify only one dock exists and the same widget is returned both times
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(FAKE_PATH)
+
+    assert first is second
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a distinct path adds a second dock alongside the first.
+
+    **Test steps:**
+
+    * open two distinct fake paths
+    * verify two docks now exist, holding two distinct widgets
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+
+    assert first is not second
+    assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
+
+    **Test steps:**
+
+    * open the fake path
+    * verify the dock title is the bare filename while clean
+    * dirty the model and verify the title gains a trailing ``*``
+    * clear dirty (as ``save()`` does) and verify the marker is gone again
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+    assert cdock.windowTitle() == FAKE_PATH.name
+
+    widget.model.title = "Changed"
+    assert cdock.windowTitle() == f"{FAKE_PATH.name}*"
+
+    widget.model.dirty = False
+    assert cdock.windowTitle() == FAKE_PATH.name
+
+
+def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Requesting to close a document's dock removes it from the dock map.
+
+    **Test steps:**
+
+    * open the fake path
+    * request the dock's close (the ``CustomCloseHandling`` flow a tab's close button drives)
+    * verify the dock map is empty again
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+
+    cdock.requestCloseDockWidget()
+
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_requested_ignores_a_non_dock_sender(qtbot: QtBot) -> None:
+    """The close handler's ``sender()`` guard does nothing for an unexpected/absent sender.
+
+    Calls the private slot directly rather than via a real ``closeRequested`` emission: outside of
+    live signal dispatch, ``QObject.sender()`` returns ``None``, which is exactly the "not a
+    CDockWidget" case the guard exists for.
+
+    **Test steps:**
+
+    * call the private close-request handler directly on a dock with no open documents
+    * verify it returns without raising and leaves the (empty) dock map untouched
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock._DocumentsDock__on_close_dock_widget_requested()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_focus_tracking_follows_a_document_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Focusing a document's dock records it as the current dock (new docks join its area).
+
+    Calls the private slot directly rather than relying on a real Qt focus event (unreliable to
+    simulate headlessly) -- this is pure bookkeeping over its arguments, not signal-dispatch behavior.
+
+    **Test steps:**
+
+    * open a document, then report it as newly focused
+    * verify the current-dock bookkeeping picked it up
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+
+    dock._DocumentsDock__on_focused_dock_widget_changed(None, cdock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_focus_tracking_ignores_a_dock_outside_the_documents_area(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Focus moving to something that isn't one of this dock's own documents doesn't overwrite it.
+
+    **Test steps:**
+
+    * open a document and report it focused (sets the current dock)
+    * report focus moving to an unrelated, unmanaged dock
+    * verify the current dock is unchanged
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+    dock._DocumentsDock__on_focused_dock_widget_changed(None, cdock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    other = QtAds.CDockWidget(manager, "elsewhere")
+    dock._DocumentsDock__on_focused_dock_widget_changed(cdock, other)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_open_document_focuses_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a path whose dock currently has no containing area still focuses it, just without
+    indexing into that (nonexistent) area.
+
+    Registers a stand-in dock directly in the private map, since a real dock added via the normal
+    flow always has an area -- this null case can't be reached through the public API alone.
+
+    **Test steps:**
+
+    * register a stand-in dock (reporting no area) for a path, directly in the private map
+    * open that same path
+    * verify the stand-in's widget was returned and it was still focused
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    fake_cdock = mocker.MagicMock()
+    fake_cdock.dockAreaWidget.return_value = None
+    fake_widget = mocker.MagicMock()
+    fake_widget.model.path = FAKE_PATH
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    docks[fake_cdock] = fake_widget
+    dock_manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    set_focused = mocker.patch.object(dock_manager, "setDockWidgetFocused")
+
+    result = dock.open_document(FAKE_PATH)
+
+    assert result is fake_widget
+    set_focused.assert_called_once_with(fake_cdock)
+
+
+def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a dock that isn't the tracked current one doesn't clear the current-dock bookkeeping.
+
+    **Test steps:**
+
+    * open two documents, and report the second one as focused (sets the current dock)
+    * close the first (non-current) document's dock
+    * verify the current dock is still the second one
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first_widget = dock.open_document(FAKE_PATH)
+    first_cdock = dock_for(dock, first_widget)
+    second_widget = dock.open_document(OTHER_PATH)
+    second_cdock = dock_for(dock, second_widget)
+    dock._DocumentsDock__on_focused_dock_widget_changed(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        first_cdock, second_cdock
+    )
+
+    first_cdock.requestCloseDockWidget()
+
+    assert dock._DocumentsDock__current_dock is second_cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
