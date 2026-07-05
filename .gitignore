@@ -26,7 +26,6 @@ sdist/
 # uv
 .venv/
 .uv/
-uv.lock
 
 # ruff
 .ruff_cache/
