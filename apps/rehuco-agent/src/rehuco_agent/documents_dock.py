@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
-from PySide6.QtWidgets import QMainWindow, QWidget
-from rehuco_core import RehuDocument
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
+from rehuco_core import RehuDocument, RehuFormatError
 
 from rehuco_agent.document_widget import DocumentWidget
 from rehuco_agent.rehu_document_model import RehuDocumentModel
@@ -28,13 +28,16 @@ class DocumentsDock(QMainWindow):
 
         self.__dock_manager.focusedDockWidgetChanged.connect(self.__on_focused_dock_widget_changed)
 
-    def open_document(self, path: Path) -> DocumentWidget:
+    def open_document(self, path: Path) -> DocumentWidget | None:
         """Open ``path`` in a new dock, or focus its dock if already open.
 
         :param path: absolute filesystem path to a ``.rehu`` file (``MainWindow.open_file`` resolves it).
-        :returns: the document's widget.
+        :returns: the document's widget, or ``None`` when the file could not be read (an error
+            dialog was shown instead of a dock, #35).
         """
         dock = self.__find_dock_by_path(path) or self.__make_new_dock(path)
+        if dock is None:
+            return None
         widget = self.__document_docks[dock]
 
         if area := dock.dockAreaWidget():
@@ -48,8 +51,19 @@ class DocumentsDock(QMainWindow):
 
         return widget
 
-    def __make_new_dock(self, path: Path) -> QtAds.CDockWidget:
-        model = RehuDocumentModel(RehuDocument.load(path), self)
+    def __make_new_dock(self, path: Path) -> QtAds.CDockWidget | None:
+        """Load ``path`` and build its document dock, or show an error dialog and return ``None``.
+
+        :param path: absolute filesystem path to the ``.rehu`` file to load.
+        :returns: the new dock, or ``None`` when the file is missing/unreadable (``OSError``) or
+            not valid ``.rehu`` JSON (:class:`RehuFormatError`) -- no dock is created then (#35).
+        """
+        try:
+            document = RehuDocument.load(path)
+        except (OSError, RehuFormatError) as exc:
+            QMessageBox.critical(self, "Cannot Open File", f"Could not open {path}:\n\n{exc}")
+            return None
+        model = RehuDocumentModel(document, self)
         widget = DocumentWidget(model, self)
 
         dock = QtAds.CDockWidget(self.__dock_manager, "")
