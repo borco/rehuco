@@ -54,8 +54,10 @@ findings kept in [[packaging-deployment#glibc-canary]]). Nodes must tolerate the
 (+ `pytest-mock`, `-qt`, `-cov`, `-benchmark`, `-freezer`, `-explicit`), `mkdocs`. VSCode is configured for
 ruff formatting/linting; pylint, mypy, and black are disabled there.
 
-Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`,
-`qa` (format + cov + bandit + pyright + pylint), `docs-serve`.
+Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`, `check-slugs`,
+`qa` (format + check-slugs + cov + bandit + pyright + pylint), `docs-serve`, `publish`, `uis`/`qrcs`/`icons`
+(regenerate the gitignored `*_ui.py`/`*_rc.py` and brand-icon exports — run `make uis` after a fresh
+checkout/sync), and the Windows-only dev-launcher targets `agent-build`/`agent-register`/`agent-unregister`.
 
 ## Model strategy
 
@@ -78,6 +80,5 @@ serve-after-resync, cross-filesystem safe move.
 
 Agile cadence + tracer-bullet first slices + occasional spikes. **Tracer bullet** — minimal but real,
 production-grade, kept; proves the layers connect end-to-end. **Spike** — throwaway; answers one sharp
-question; keep the lesson, delete the code. Current phase: **Milestone A** (local view/edit). The **A1** tracer — double-click
-a `.rehu` → single-instance agent → read → render common fields + Markdown + image strip → edit one field →
-atomic-save — is done (#7); next slice is **A2**, the field toolkit ([[plugins#field-toolkit]]).
+question; keep the lesson, delete the code. The current phase and next slice are deliberately not recorded
+here (they'd go stale) — read them off the GH milestones/board (`gh issue list`) before picking up work.

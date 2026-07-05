@@ -61,6 +61,11 @@ Why tracer bullets specifically fit here:
 **Rule for every milestone:** the first iteration is the thinnest end-to-end path that *works and is kept*. Later
 iterations thicken one part without breaking the working spine.
 
+**The plan is a guide, not a contract — life beats any planning.** Slices grow, split, and gain ad-hoc features as
+implementation teaches (A2 already did; see its sub-slices on the GH milestone). Introducing a feature ad-hoc when
+it's needed is expected, not a deviation: the GH milestones/issues are the live record of what a milestone actually
+contains, and this plan catches up after the fact.
+
 ### Spikes vs. tracer bullets (a related but different distinction)
 
 A third term, **spike** (from XP), is often confused with a tracer bullet. They're distinguished by **what you keep**,
@@ -123,7 +128,7 @@ These unblock or de-risk everything after; small but high-leverage.
 | Stand up the monorepo (uv workspaces) | setup (kept) | The dev environment for everything; fixes the venv-confusion immediately ([[packaging-deployment#overview]]) | Root virtual workspace + `packages/rehuco-core`, `apps/rehuco-agent`; add `rehuco-node` later when Milestone B starts |
 | Decide the **tutorial** and **reference-image** field lists | decision | Specific-field rendering is the one thing blocked on schema ([[appendices.open-questions#still-open]]) | The generic editor does *not* need this; only the rich per-type view does. Decide enough to start, refine later |
 | Decide access-rule grammar | decision | Not needed for Milestones A/B (single user, local) | Can defer to Milestone C-ish; noted so it's not forgotten |
-| **pyqtads + QML integration (regression check)** | **spike** | Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions | QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that **detaches to a floating window and re-docks** without glitches (the classic QML cross-window trouble spot), a **QWidgets dock and QML dock coexisting** in one layout, and **layout save/restore** with a QML dock present — including **whether closed/hidden docks restore their size** (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to **keep QML surfaces in non-detachable docks or reduce the QML footprint** — *not* switch to KDDockWidgets, which is foreclosed by its GPL license (architecture [[packaging-deployment#licensing-policy]]). pyqtads stays (LGPL, prebuilt PySide6 bindings). **Result:** approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a `splitterSizes` stash/reapply workaround — carried into A1. Recorded in [[packaging-deployment#qml-regression]] |
+| **pyqtads + QML integration (regression check)** | **spike** | Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions | QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that **detaches to a floating window and re-docks** without glitches (the classic QML cross-window trouble spot), a **QWidgets dock and QML dock coexisting** in one layout, and **layout save/restore** with a QML dock present — including **whether closed/hidden docks restore their size** (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to **keep QML surfaces in non-detachable docks or reduce the QML footprint** — *not* switch to KDDockWidgets, which is foreclosed by its GPL license (architecture [[packaging-deployment#licensing-policy]]). pyqtads stays (LGPL, prebuilt PySide6 bindings). **Result:** approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a `splitterSizes` stash/reapply workaround — carried forward — it landed with the A2.0 document-dock shell (#20). Recorded in [[packaging-deployment#qml-regression]] |
 | **QNAP/glibc dependency canary** | **spike** | De-risks Milestone B's node deps early | Build a glibc-2.23 container; confirm FastAPI/uvicorn/zeroconf/pydantic-core/cryptography wheels load. Keep the lesson (a pinned compatible-versions list); the container/script is throwaway |
 | **File association + app identity** | **spike** | De-risks A1's "double-click → opens" before A1 depends on it ([[packaging-deployment#app-identity]]) | macOS: a minimal `.app` (built via Briefcase) that's the default opener for `.rehu` and delivers the path as a **`QFileOpenEvent`** into a single running PySide6 instance ([[nodes#single-instance]]) — macOS does *not* pass it as `argv`. Windows: an HKCU **ProgID** for default double-click + an explicit **AUMID** (`SetCurrentProcessExplicitAppUserModelID`) so a pinned taskbar button shows the app's icon and lights up as running (the gap `resource-hub` only papered over with a PyInstaller exe), with `DefaultIcon` from a shipped `.ico`. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect |
 
@@ -148,7 +153,7 @@ Three principles hold across the split:
 - **Monotonically increasing distribution complexity.** A is standalone (no network); B adds a single node serving thin
   clients; C adds two-party sync — the first real reconcile, but the minimal topology. The full **N-node swarm**
   (discovery, pairing, registry, safe-move — [[discovery-trust-access]],
-  [[mounts-and-storage#fingerprint-map]]–9.13) is deferred *past* all
+  [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#safe-move-rename]]) is deferred *past* all
   three.
 - **One new integration risk per milestone.** Each isolates a single unproven spine so nothing tackles two at once;
   within each, the first slice (A1/B1/C1) is a kept **tracer bullet** and the rest thicken it.
@@ -214,7 +219,11 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
 - **A2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path,
   image-count) with editor/viewer variants — the shared toolkit plugins compose from ([[plugins#core-vs-plugin]]); the
   toolkit and viewer/editor/both surfaces are designed in [[plugins#toolkit-surfaces]]. (TutCatalog5 has prior art here
-  to draw on as a *design* reference.)
+  to draw on as a *design* reference.) In practice A2 is wider than the field widgets alone: it opened with its own
+  mini-tracer — A2.0/#20, the document-dock shell + reactive view-model + text-field spine ([[plugins#dock-shell]],
+  [[plugins#view-model]]) — and is broken into sub-slices A2.0–A2.8, tracked as issues on the GH `A2` milestone
+  (session/close-guard persistence, the per-type field widgets, multi-source and image-selection editors,
+  unknown-field fallback).
 - **A3 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule
   ([[data-model#schema-version]]). Bring `.tc`→`.rehu` migration in as "format v0" ([[acquisition-tooling#tc-to-rehu]])
   — opening a `.tc` offers migration + screenshot-name normalization.
@@ -321,7 +330,8 @@ Touches, thinly: [[borrowing#another-instance-role]] (borrow as instance role),
 Everything that isn't on the personal critical path, per the architecture doc's own scoping:
 
 - **Full swarm** (multi-node discovery, pairing, registry chatter, fingerprint mapping, benchmarking, safe-move) —
-  [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–9.13. Defer until single-node + borrow is serving
+  [[discovery-trust-access]], [[mounts-and-storage#fingerprint-map]]–[[mounts-and-storage#safe-move-rename]].
+  Defer until single-node + borrow is serving
   you daily; you may want it
   less than expected.
 - **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — [[acquisition-tooling#overview]]. Explicitly
@@ -340,10 +350,10 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 ## Sequencing gates (decide-before-you-start)
 
 - **Before A2:** enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).
-- **Before the dock manager + mixed QML/QWidgets UI is adopted, at the first slice with a
-  browser+viewer dock shell (currently B4):** the pyqtads + QML integration *spike* (pre-work,
-  issue #4) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
-  versions.
+- **Before the dock manager + mixed QML/QWidgets UI is adopted:** the pyqtads + QML integration *spike*
+  (pre-work, issue #4) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
+  versions. Done; the dock-manager half is already adopted — the QtAds document-dock shell landed with
+  the A2.0 tracer (#20, [[plugins#dock-shell]]) — while the first QML dock is still ahead.
 - **Before A1 relies on "double-click → opens":** the file-association + app-identity *spike* (pre-work) — macOS
   `.app`/`QFileOpenEvent` and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work;
   also settles Briefcase as the end-user packager.
