@@ -83,7 +83,7 @@ class DocumentWidget(QMainWindow):
         """Serialize this document's dock layout (visible surfaces, splitter sizes) for persistence.
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`
-            (:class:`~rehuco_agent.document_session_settings.DocumentSessionSettings.Item.state`).
+            (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
         """
         return cbor2.dumps(
             {

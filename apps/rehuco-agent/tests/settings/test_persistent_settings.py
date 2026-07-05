@@ -1,7 +1,7 @@
 """Tests for the app-wide persistent settings storage helper."""
 
 from PySide6.QtCore import QSettings
-from rehuco_agent.settings import APPLICATION_NAME, ORGANIZATION_NAME, persistent_settings
+from rehuco_agent.settings.persistent_settings import APPLICATION_NAME, ORGANIZATION_NAME, persistent_settings
 
 
 def test_persistent_settings_is_scoped_to_this_app() -> None:

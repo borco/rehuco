@@ -9,9 +9,9 @@ from PySide6.QtWidgets import QDialog, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.document_session_settings import DocumentSessionSettings
 from rehuco_agent.main_window import MainWindow
-from rehuco_agent.window_settings import WindowSettings
+from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
+from rehuco_agent.settings.window_settings import WindowSettings
 
 
 @fixture(autouse=True)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from pytest import fixture
-from rehuco_agent.document_session_settings import MAXIMUM_REMEMBERED_FILES, DocumentSessionSettings
+from rehuco_agent.settings.document_session_settings import MAXIMUM_REMEMBERED_FILES, DocumentSessionSettings
 
 FIRST: Final = Path.cwd() / "fake" / "first.rehu"
 SECOND: Final = Path.cwd() / "fake" / "second.rehu"

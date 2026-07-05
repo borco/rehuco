@@ -7,7 +7,7 @@ for the same rationale) rather than a real one or ``tmp_path``.
 from typing import Any
 
 from pytest import fixture
-from rehuco_agent.window_settings import WindowSettings
+from rehuco_agent.settings.window_settings import WindowSettings
 
 
 # region fixtures
