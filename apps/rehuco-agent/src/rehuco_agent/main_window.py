@@ -9,8 +9,10 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from rehuco_agent.document_session_settings import DocumentSessionSettings
 from rehuco_agent.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
+from rehuco_agent.settings import persistent_settings
 
 
 class MainWindow(QMainWindow):
@@ -30,6 +32,10 @@ class MainWindow(QMainWindow):
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__setup_docking_system()
+
+        self.__session: Final = DocumentSessionSettings()
+        self.__session.load(persistent_settings())
+        self.__restore_session()
 
     def __setup_docking_system(self) -> None:
         dock_manager = QtAds.CDockManager(self)
@@ -58,7 +64,44 @@ class MainWindow(QMainWindow):
             for model in dialog.selected_models():
                 model.save()
 
+        self.__save_session()
         super().closeEvent(event)
+
+    def __restore_session(self) -> None:
+        """Reopen every document the last session left open, restoring its dock layout.
+
+        A path that no longer exists or fails to load is skipped silently (``open_document``
+        already showed an error dialog for it, #35) -- the rest of the session still restores.
+        """
+        for path, item in self.__session.items.items():
+            if not item.open:
+                continue
+            widget = self.__documents_dock.open_document(path)
+            if widget is not None:
+                widget.restore_state(item.state)
+
+    def __save_session(self) -> None:
+        """Snapshot every open document's dock layout and persist the open-file set.
+
+        Currently open documents always count as the most-recently-used ones (moved to the end of
+        the LRU order); everything else keeps its prior state but is marked closed.
+        """
+        open_widgets = {
+            widget.model.path: widget
+            for widget in self.__documents_dock.open_document_widgets()
+            if widget.model.path is not None
+        }
+
+        for path in open_widgets:
+            self.__session.items.pop(path, None)
+        for item in self.__session.items.values():
+            item.open = False
+        for path, widget in open_widgets.items():
+            self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
+                open=True, state=widget.save_state()
+            )
+
+        self.__session.save(persistent_settings())
 
     def open_file(self, path: Path | str) -> None:
         """Open ``path`` in its document dock, focusing it if already open ([[nodes#single-instance]]).

@@ -7,9 +7,6 @@ from typing import Final, cast
 
 from PySide6.QtCore import QByteArray, QSettings
 
-ORGANIZATION_NAME: Final = "borco"
-APPLICATION_NAME: Final = "rehuco-agent"
-
 MAXIMUM_REMEMBERED_FILES: Final = 10
 """LRU cap on remembered closed files. Configurable later in settings (A7); a constant for now."""
 

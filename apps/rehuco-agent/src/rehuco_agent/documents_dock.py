@@ -51,12 +51,20 @@ class DocumentsDock(QMainWindow):
 
         return widget
 
+    def open_document_widgets(self) -> list[DocumentWidget]:
+        """Every currently open document's widget, in no particular order.
+
+        Used by the session-persistence save (``MainWindow``) to snapshot each open document's
+        dock layout.
+        """
+        return list(self.__document_docks.values())
+
     def open_document_models(self) -> list[RehuDocumentModel]:
         """The models of every currently open document, in no particular order.
 
         Used by the whole-app close guard (``MainWindow.closeEvent``) to find dirty documents.
         """
-        return [widget.model for widget in self.__document_docks.values()]
+        return [widget.model for widget in self.open_document_widgets()]
 
     def __make_new_dock(self, path: Path) -> QtAds.CDockWidget | None:
         """Load ``path`` and build its document dock, or show an error dialog and return ``None``.

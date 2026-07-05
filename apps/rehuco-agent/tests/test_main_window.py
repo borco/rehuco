@@ -1,12 +1,27 @@
 """Tests for MainWindow: the top-level dock-in-dock shell hosting DocumentsDock."""
 
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QWidget
+from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.document_session_settings import DocumentSessionSettings
 from rehuco_agent.main_window import MainWindow
+
+
+@fixture(autouse=True)
+def mock_persistent_settings(mocker: MockerFixture) -> Any:
+    """Stand in for ``persistent_settings()`` so session load/save never touch real QSettings storage.
+
+    ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``);
+    everything else on the mock is a harmless no-op.
+    """
+    settings = mocker.MagicMock()
+    settings.beginReadArray.return_value = 0
+    return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
 
 def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
@@ -120,6 +135,150 @@ def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFi
 
     assert not event.isAccepted()
     dirty_model.save.assert_not_called()
+
+
+def test_restore_session_reopens_open_documents_and_restores_their_state(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document the saved session marks open is reopened and has its dock layout restored.
+
+    **Test steps:**
+
+    * seed ``DocumentSessionSettings.load`` to report one open item (with known state bytes) and
+      one closed item
+    * mock ``DocumentsDock.open_document`` to return a stand-in widget
+    * construct ``MainWindow``
+    * verify ``open_document`` was called only for the open item's path, and its widget's
+      ``restore_state`` was called with that item's state
+    """
+    open_path = Path("open.rehu").resolve()
+    closed_path = Path("closed.rehu").resolve()
+
+    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        # pylint: disable=unsupported-assignment-operation
+        self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")
+        self.items[closed_path] = DocumentSessionSettings.Item(open=False, state=b"old-state")
+
+    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
+    widget = mocker.MagicMock()
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    open_document.assert_called_once_with(open_path)
+    widget.restore_state.assert_called_once_with(b"state-bytes")
+
+
+def test_restore_session_skips_a_document_that_fails_to_reopen(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A previously-open document that fails to reopen (missing/invalid file, #35) is skipped, not crashed on.
+
+    **Test steps:**
+
+    * seed one open item
+    * mock ``open_document`` to return ``None``, as it does when the file can't be loaded
+    * construct ``MainWindow`` and verify it doesn't raise
+    """
+    path = Path("missing.rehu").resolve()
+
+    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state")  # pylint: disable=unsupported-assignment-operation
+
+    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+
+def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app snapshots every open document's dock layout into the session and saves it.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` with one (clean) open document widget
+    * dispatch a close event
+    * verify the session gained an entry for that document's path, marked open with its saved
+      state, and ``DocumentSessionSettings.save`` was called
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("a.rehu").resolve()
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=path, dirty=False)
+    widget.save_state.return_value = b"snapshot"
+    mocker.patch.object(
+        window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        "open_document_widgets",
+        return_value=[widget],
+    )
+    mocker.patch.object(
+        window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        "open_document_models",
+        return_value=[widget.model],
+    )
+    save = mocker.patch.object(DocumentSessionSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert session.items[path] == DocumentSessionSettings.Item(open=True, state=b"snapshot")
+    save.assert_called_once()
+
+
+def test_close_event_marks_a_no_longer_open_document_as_closed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document the session remembers as open, but that isn't open anymore, is marked closed.
+
+    **Test steps:**
+
+    * seed the session with an item marked open, matching no currently-open document
+    * dispatch a close event with no documents open
+    * verify the item is now marked closed, its prior state preserved
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stale_path = Path("stale.rehu").resolve()
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    session.items[stale_path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
+        open=True, state=b"old"
+    )
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(docs_dock, "open_document_widgets", return_value=[])
+    mocker.patch.object(docs_dock, "open_document_models", return_value=[])
+    mocker.patch.object(DocumentSessionSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    item = session.items[stale_path]
+    assert item.open is False  # pylint: disable=no-member
+    assert item.state == b"old"  # pylint: disable=no-member
+
+
+def test_close_event_skips_a_document_with_no_path_when_snapshotting(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document widget with no path yet is skipped when snapshotting, not crashed on.
+
+    **Test steps:**
+
+    * dispatch a close event with one open widget reporting ``model.path is None``
+    * verify the session gains no entry for it, and save still happens
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=None, dirty=False)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(docs_dock, "open_document_widgets", return_value=[widget])
+    mocker.patch.object(docs_dock, "open_document_models", return_value=[widget.model])
+    save = mocker.patch.object(DocumentSessionSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert not session.items
+    save.assert_called_once()
 
 
 def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: QtBot) -> None:
