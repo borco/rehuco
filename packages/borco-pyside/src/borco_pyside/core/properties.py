@@ -178,7 +178,7 @@ class SimpleProperty[T]:
     receives a QVariant-converted *copy*, not the emitted object (verified empirically, #35). They are
     therefore never acceptable notify signatures -- a list/dict-valued property must use ``Signal(object)``."""
 
-    __signal_names: Final[dict[type, dict[str, str]]] = {}
+    __SIGNAL_NAMES: Final[dict[type, dict[str, str]]] = {}
     """Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``__set_name__``."""
 
     @overload
@@ -238,7 +238,7 @@ class SimpleProperty[T]:
         :raises KeyError: if ``name`` is not a ``SimpleProperty`` declared on ``owner``.
         """
         try:
-            return cls.__signal_names[owner][name]
+            return cls.__SIGNAL_NAMES[owner][name]
         except KeyError as exc:
             raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
@@ -265,7 +265,7 @@ class SimpleProperty[T]:
             value_type = type(self.__value)
         signal, self.__signal_name = self.__resolve_signal(owner, name)
         self.__check_signal_type(owner, name, signal, value_type)
-        self.__signal_names.setdefault(owner, {})[name] = self.__signal_name
+        self.__SIGNAL_NAMES.setdefault(owner, {})[name] = self.__signal_name
 
         # Wire the property onto the owner class: a private backing attribute, a set_<name>(value)
         # slot helper, and a real Qt Property (TypedProperty) that *replaces* this descriptor -- so
