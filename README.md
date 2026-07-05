@@ -69,19 +69,22 @@ libraries version independently. See the
 rehuco/
 ├── apps/
 │   ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
-│   └── rehuco-node/          # headless REST service; runs on QNAP and other headless boxes
+│   └── rehuco-node/          # headless REST service (FastAPI + uvicorn)
 ├── docs/
 │   └── specs/
 │       ├── architecture-design.md
 │       └── implementation-plan.md
 └── packages/
+    ├── borco-core/           # generic non-GUI utilities — temporary guest, moving out
+    ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
     └── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
 ```
 
 `rehuco-agent` is the PySide6 desktop GUI; it is a node client for swarm operations.
 `rehuco-core` is a shared library.
-`rehuco-node` is the headless service (FastAPI + uvicorn); it has a low `requires-python` floor
-to remain installable on a QNAP TS-230.
+`rehuco-node` is the headless service (FastAPI + uvicorn); it runs on capable hardware and mounts
+the NAS share — the QNAP TS-230 is storage, not a compute host. Getting the node to run directly
+on the NAS would be a nice bonus if it ever proves workable, but nothing depends on it.
 
 ## File formats
 

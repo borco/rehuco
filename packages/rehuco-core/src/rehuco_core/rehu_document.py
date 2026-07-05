@@ -100,7 +100,8 @@ class RehuDocument:
         """The canonical source, resolved permissively per [[field-schema#sources]].
 
         The first entry flagged ``primary: true`` wins; if none is flagged, the first entry
-        is treated as primary; if there are no sources, ``None``.
+        is treated as primary; if there are no sources, ``None``. Non-object entries in a
+        malformed ``sources`` are skipped in both passes rather than crashing the accessors (#35).
 
         :returns: the primary source object, or ``None`` when there are no sources.
         """
@@ -108,7 +109,7 @@ class RehuDocument:
         for source in sources:
             if isinstance(source, dict) and source.get(PRIMARY_KEY) is True:
                 return source
-        return sources[0] if sources else None
+        return next((source for source in sources if isinstance(source, dict)), None)
 
     @property
     def title(self) -> str:

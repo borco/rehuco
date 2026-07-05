@@ -21,6 +21,11 @@ itself is written.
   `FieldRegistry`), unless the file deliberately groups several related classes (`properties.py` →
   `TypedProperty`+`SimpleProperty`, `fields/field.py` → `Field`+`FieldBinding`+`FieldModel`).
 - **Visibility:** public or private (`__`); no protected (`_`) unless the class is designed for inheritance.
+  This holds at module level too — no `_`-prefixed module globals or classes. A helper used by only one
+  class belongs inside that class (a `__`-private member, or a public classmethod if it's API — even the
+  sentinel-in-signature case works, verified against 3.14's lazy annotations); anything that must stay at
+  module level is a plain public name, kept out of the package API by what the package `__init__` exports
+  (name mangling doesn't exist outside a class body, so a module-level `_` would be convention-only anyway).
 - **Constants:** `Final` without an explicit type when it can be inferred.
 - **Naming:** don't bake development-methodology/process labels into identifiers (e.g. a bare `TRACER_`
   prefix naming a constant after "this was built during the tracer-bullet slice") — that context rots once

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
+from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents_dock import DocumentsDock
@@ -113,6 +114,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     qtbot.addWidget(dock)
 
     widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
     cdock = dock_for(dock, widget)
     assert cdock.windowTitle() == FAKE_PATH.name
 
@@ -263,3 +265,49 @@ def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: Mo
     first_cdock.requestCloseDockWidget()
 
     assert dock._DocumentsDock__current_dock is second_cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_opening_a_missing_file_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A path that cannot be read gets an error dialog instead of a dock (#35).
+
+    **Test steps:**
+
+    * mock the filesystem so reading the path raises ``OSError`` (missing/unreadable file)
+    * mock the error dialog (a real modal would block the headless test)
+    * open the path
+    * verify ``None`` came back, no dock was created, and the dialog named the path
+    """
+    mocker.patch.object(Path, "read_text", side_effect=OSError("no such file"))
+    critical = mocker.patch.object(QMessageBox, "critical")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget is None
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_called_once()
+    assert str(FAKE_PATH) in critical.call_args[0][2]
+
+
+def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A file that isn't valid ``.rehu`` JSON gets an error dialog instead of a dock (#35).
+
+    **Test steps:**
+
+    * mock the filesystem to serve malformed JSON (raises ``RehuFormatError`` on load)
+    * mock the error dialog (a real modal would block the headless test)
+    * open the path
+    * verify ``None`` came back, no dock was created, and the dialog named the path
+    """
+    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+    critical = mocker.patch.object(QMessageBox, "critical")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget is None
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_called_once()
+    assert str(FAKE_PATH) in critical.call_args[0][2]
