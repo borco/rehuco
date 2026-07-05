@@ -1,46 +1,9 @@
 """Reactive `QObject` properties that emit a change signal when their value changes."""
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal, overload
 
 from PySide6.QtCore import Property, QObject, Signal
-
-OBJECT_SIGNAL_SIGNATURE: Final = "(PyObject)"
-"""``Signal.signatures[0]`` of a single-argument ``Signal(object)`` -- always valid for any value."""
-
-_signal_names: Final[dict[type, dict[str, str]]] = {}
-"""Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``SimpleProperty.__set_name__``."""
-
-
-def signal_signature(signal: Signal) -> str:
-    """Return a single-argument ``Signal``'s declared argument signature (e.g. ``"(int)"``).
-
-    Reads PySide6's ``Signal.signatures`` via ``getattr`` because the attribute exists at runtime
-    but is absent from the type stubs.
-
-    :param signal: the signal to inspect.
-    :returns: its first (and, for these single-argument signals, only) signature string.
-    """
-    return getattr(signal, "signatures")[0]
-
-
-def notify_signal_name(owner: type, name: str) -> str:
-    """Return the attribute name of the notify signal ``SimpleProperty`` wired for ``name`` on ``owner``.
-
-    Usually ``f"{name}_changed"`` (the ``notify="auto"`` convention), but may be a differently-named
-    signal if the property was declared with an explicit ``notify=``. Generic code that binds to a
-    property by name (e.g. a reactive-model binding helper) should use this instead of assuming the
-    naming convention.
-
-    :param owner: the class the property was declared on.
-    :param name: the property's attribute name.
-    :returns: the notify signal's attribute name.
-    :raises KeyError: if ``name`` is not a ``SimpleProperty`` declared on ``owner``.
-    """
-    try:
-        return _signal_names[owner][name]
-    except KeyError as exc:
-        raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
 
 class TypedProperty[T](Property):
@@ -119,7 +82,7 @@ class SimpleProperty[T]:
     connecting to it needs an inline ``# type: ignore[attr-defined]``, same as the ``set_<name>``
     helper always has. Declare the signal explicitly when a consumer needs typed ``.connect()``;
     generic code that must find a property's notify signal by name regardless of which case applies
-    should use :func:`notify_signal_name` rather than assuming the ``<name>_changed`` convention.
+    should use :meth:`notify_signal_name` rather than assuming the ``<name>_changed`` convention.
 
     Which signal to declare: ``Signal(object)`` is always valid. A signal matching the value's **own**
     type is also valid -- the native primitives (``int``/``str``/``float``/``bool``) round-trip, and a
@@ -128,6 +91,26 @@ class SimpleProperty[T]:
     to ``3``, ``Signal(str)`` turns ``None``/``42`` into ``""``), making the emitted value differ from
     what the getter returns. The value type comes from the initial ``value`` (or ``value_type=``), so a
     reference property that defaults to ``None`` reads as ``object`` -- give it a ``Signal(object)``.
+
+    **A mutable default needs** ``default_factory``, **never a bare value.** The initial ``value`` is
+    seeded once, at class-definition time, as a class-level fallback -- one object every instance
+    would share (Python's mutable-default-argument trap) -- so an unhashable default (``[]``, ``{}``,
+    ``set()``, any custom mutable container) is rejected outright, the same way ``dataclasses.field``
+    rejects it. Pass a factory instead -- ``default_factory=list`` for an empty default,
+    ``default_factory=lambda: [1, 2, 3]`` for a populated one -- and each instance seeds its own copy
+    on first access. The factory is additionally called once at class-definition time purely to sample
+    the value type (the sample is discarded; unavoidable, since the Qt property and the signal check
+    need the type up front), so keep it cheap and side-effect-free. Value-type consequence:
+    ``Signal(list)`` / ``Signal(dict)`` convert on emit (the slot receives a QVariant-converted
+    *copy*), so a list/dict-valued property requires ``Signal(object)`` -- the signal check enforces
+    this.
+
+    **Replace, don't mutate** is the working pattern for a mutable value: assignment
+    (``obj.tags = [*obj.tags, x]``) is what change detection and the emit key off; an in-place
+    ``append`` changes nothing observable. The accepted escape hatch when copying is genuinely
+    expensive: mutate in place and emit manually -- ``obj.tags.append(x);
+    obj.tags_changed.emit(obj.tags)``. Be aware it mutates the very object observers may have cached
+    *before* the signal fires: any held "old value" is retroactively changed.
 
     **Limitation:** every *custom* Python ``QObject`` subclass collapses to the signature
     ``(QObject*)`` (only built-in Qt C++ types like ``QLineEdit`` keep a distinct one), so a mismatch
@@ -140,7 +123,12 @@ class SimpleProperty[T]:
     instance. A read is a Qt-property get plus one Python attribute lookup; a write adds an equality
     check and, only when the value actually changes, a signal emit -- negligible outside a tight loop.
 
-    :param value: the initial value.
+    :param value: the initial value; mutually exclusive with ``default_factory``, and rejected when
+        unhashable (mutable) -- use ``default_factory`` for those.
+    :param default_factory: zero-argument callable building each instance's own initial value, for
+        mutable defaults (``default_factory=list``, or ``default_factory=lambda: [1, 2, 3]`` for a
+        populated one). Called once per instance on first access, plus once at class-definition time
+        to sample the value type. Mutually exclusive with ``value``.
     :param notify: ``"auto"`` (default) uses the class's ``<name>_changed`` signal if declared, else
         synthesizes one; pass a ``Signal`` to wire an explicit, possibly differently-named one (which
         must itself be a class attribute). The signal's argument type is validated against the value
@@ -167,24 +155,92 @@ class SimpleProperty[T]:
             subtitle_changed = Signal(object)
             subtitle = SimpleProperty[str | None]("", value_type=object)  # optional, non-None default: force object
 
+            tags_changed = Signal(object)                            # list/dict values must use Signal(object)
+            tags = SimpleProperty[list[str]](default_factory=list)   # mutable: each instance seeds its own copy
+
         item = Item()
         item.title_changed.connect(on_title)        # fully typed, no `# type: ignore`
         item.title = "New Title"                     # updates the value and emits title_changed
         another_object.some_signal.connect(item.set_title)  # set_<name> slot helper
     """
 
+    class __Unset:  # pylint: disable=invalid-name,too-few-public-methods
+        """Type of the ``__UNSET`` sentinel -- dedicated, since ``None`` is itself a valid initial value."""
+
+    __UNSET: Final = __Unset()
+    """Sentinel meaning "no initial ``value`` was passed" (which an explicit ``None`` cannot signal)."""
+
+    __OBJECT_SIGNAL_SIGNATURE: Final = "(PyObject)"
+    """``Signal.signatures[0]`` of a single-argument ``Signal(object)`` -- always valid for any value."""
+
+    __COERCING_SIGNAL_SIGNATURES: Final = ("(QVariantList)", "(QVariantMap)")
+    """Native container signatures (``Signal(list)`` / ``Signal(dict)``) that convert on emit: the slot
+    receives a QVariant-converted *copy*, not the emitted object (verified empirically, #35). They are
+    therefore never acceptable notify signatures -- a list/dict-valued property must use ``Signal(object)``."""
+
+    __signal_names: Final[dict[type, dict[str, str]]] = {}
+    """Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``__set_name__``."""
+
+    @overload
     def __init__(
         self,
         value: T,
         *,
         notify: Signal | Literal["auto"] = "auto",
         value_type: type | Literal["auto"] = "auto",
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        *,
+        default_factory: Callable[[], T],
+        notify: Signal | Literal["auto"] = "auto",
+        value_type: type | Literal["auto"] = "auto",
+    ) -> None: ...
+    def __init__(
+        self,
+        value: T | __Unset = __UNSET,
+        *,
+        default_factory: Callable[[], T] | None = None,
+        notify: Signal | Literal["auto"] = "auto",
+        value_type: type | Literal["auto"] = "auto",
     ) -> None:
-        self.__value: T = value
+        if default_factory is not None and not isinstance(value, self.__Unset):
+            raise RuntimeError("SimpleProperty: pass either value or default_factory, not both.")
+        if default_factory is None and isinstance(value, self.__Unset):
+            raise RuntimeError("SimpleProperty: pass an initial value or a default_factory.")
+        if default_factory is None and type(value).__hash__ is None:
+            # the dataclasses.field rule: an unhashable default is (by convention) mutable, and the
+            # class-level seed in __set_name__ would silently share that one object across instances
+            raise RuntimeError(
+                f"SimpleProperty: mutable default {value!r} is not allowed -- pass "
+                f"default_factory={type(value).__name__} (or a lambda for a non-empty default) instead."
+            )
+        self.__value = value
+        self.__factory: Final = default_factory
         self.__notify: Final = notify
         self.__declared_type: Final = value_type
         self.__private_name: str = ""
         self.__signal_name: str = ""
+
+    @classmethod
+    def notify_signal_name(cls, owner: type, name: str) -> str:
+        """Return the attribute name of the notify signal wired for ``name`` on ``owner``.
+
+        Usually ``f"{name}_changed"`` (the ``notify="auto"`` convention), but may be a differently-named
+        signal if the property was declared with an explicit ``notify=``. Generic code that binds to a
+        property by name (e.g. a reactive-model binding helper) should use this instead of assuming the
+        naming convention.
+
+        :param owner: the class the property was declared on.
+        :param name: the property's attribute name.
+        :returns: the notify signal's attribute name.
+        :raises KeyError: if ``name`` is not a ``SimpleProperty`` declared on ``owner``.
+        """
+        try:
+            return cls.__signal_names[owner][name]
+        except KeyError as exc:
+            raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
     def __set_name__(self, owner: type, name: str) -> None:
         """Install the backing attribute, setter helper, and Qt property wired to the resolved signal.
@@ -199,15 +255,26 @@ class SimpleProperty[T]:
             raise RuntimeError(f"SimpleProperty {owner.__qualname__}.{name} requires a QObject subclass.")
 
         self.__private_name = f"__{name}"
-        value_type = type(self.__value) if self.__declared_type == "auto" else self.__declared_type
+        value_type: type
+        if self.__declared_type != "auto":
+            value_type = self.__declared_type
+        elif self.__factory is not None:
+            # called once, only to sample the value type -- the sample itself is discarded
+            value_type = type(self.__factory())
+        else:
+            value_type = type(self.__value)
         signal, self.__signal_name = self.__resolve_signal(owner, name)
         self.__check_signal_type(owner, name, signal, value_type)
-        _signal_names.setdefault(owner, {})[name] = self.__signal_name
+        self.__signal_names.setdefault(owner, {})[name] = self.__signal_name
 
         # Wire the property onto the owner class: a private backing attribute, a set_<name>(value)
         # slot helper, and a real Qt Property (TypedProperty) that *replaces* this descriptor -- so
         # Qt's meta-object sees a typed property and obj.<name> routes through __fget/__fset.
-        setattr(owner, self.__private_name, self.__value)
+        # With a default_factory there is deliberately *no* class-level backing attribute -- one
+        # shared object is exactly the mutable-default trap -- so __fget seeds each instance with
+        # its own factory-made value on first access instead.
+        if self.__factory is None:
+            setattr(owner, self.__private_name, self.__value)
         setattr(owner, f"set_{name}", lambda obj, value: self.__fset(obj, value))  # pylint: disable=unnecessary-lambda
         setattr(owner, name, TypedProperty(value_type, fget=self.__fget, fset=self.__fset, notify=signal))
 
@@ -246,6 +313,9 @@ class SimpleProperty[T]:
         ``QObject`` subclass is passed by pointer (Qt normalizes them all to ``QObject*``), so
         identity is preserved. Any other typed signal is a value-type signal that coerces on emit
         (``Signal(str)`` blanks a non-string, ``Signal(int)`` truncates a float), so it is rejected.
+        A native *container* signature (``Signal(list)`` -> ``QVariantList``, ``Signal(dict)`` ->
+        ``QVariantMap``) coerces too -- the slot receives a converted copy -- so those value types
+        accept only ``Signal(object)`` (``__COERCING_SIGNAL_SIGNATURES``).
 
         :param owner: the class declaring this property.
         :param name: the property's attribute name.
@@ -253,24 +323,46 @@ class SimpleProperty[T]:
         :param value_type: the property's value type (from ``value_type=`` or the initial value).
         :raises RuntimeError: if the signal's signature is incompatible with the value type.
         """
-        signature = signal_signature(signal)
+        signature = self.__signal_signature(signal)
         # Qt's own type -> signature mapping for the value's type; equals "(PyObject)" for anything
         # it has no native converter for, so non-primitive/non-QObject values require Signal(object).
-        native = signal_signature(Signal(value_type))
-        if signature not in (OBJECT_SIGNAL_SIGNATURE, native):
+        native = self.__signal_signature(Signal(value_type))
+        if native in self.__COERCING_SIGNAL_SIGNATURES:
+            # a list/dict "native" signal converts on emit -- the slot receives a QVariant copy, not
+            # the object itself (verified empirically, #35) -- so it is itself a coercing value-type
+            # signal: fold it away so only Signal(object) passes
+            native = self.__OBJECT_SIGNAL_SIGNATURE
+        if signature not in (self.__OBJECT_SIGNAL_SIGNATURE, native):
             hint = "Signal(object)"
-            if native != OBJECT_SIGNAL_SIGNATURE:
+            if native != self.__OBJECT_SIGNAL_SIGNATURE:
                 hint = f"Signal(object) or Signal({value_type.__name__})"
             raise RuntimeError(
                 f"SimpleProperty {owner.__qualname__}.{name}: notify signal signature {signature} is "
                 f"incompatible with a {value_type.__name__} value; use {hint}."
             )
 
+    @staticmethod
+    def __signal_signature(signal: Signal) -> str:
+        """Return a single-argument ``Signal``'s declared argument signature (e.g. ``"(int)"``).
+
+        Reads PySide6's ``Signal.signatures`` via ``getattr`` because the attribute exists at runtime
+        but is absent from the type stubs.
+
+        :param signal: the signal to inspect.
+        :returns: its first (and, for these single-argument signals, only) signature string.
+        """
+        return getattr(signal, "signatures")[0]
+
     def __fget(self, obj: object) -> T:
+        # factory mode has no class-level fallback: seed this instance's own default on first access
+        if self.__factory is not None and not hasattr(obj, self.__private_name):
+            setattr(obj, self.__private_name, self.__factory())
         return getattr(obj, self.__private_name)  # type: ignore[no-any-return]
 
     def __fset(self, obj: object, value: T) -> None:
-        if getattr(obj, self.__private_name) == value:
+        # read through __fget, not a bare getattr: a factory-mode set before any get must seed the
+        # instance default first, both to compare against it and to avoid an AttributeError
+        if self.__fget(obj) == value:
             return
         setattr(obj, self.__private_name, value)
         getattr(obj, self.__signal_name).emit(value)

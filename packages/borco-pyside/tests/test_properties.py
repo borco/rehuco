@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 import pytest
-from borco_pyside.core import SimpleProperty, TypedProperty, notify_signal_name
+from borco_pyside.core import SimpleProperty, TypedProperty
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QCheckBox, QLineEdit
 from pytestqt.qtbot import QtBot
@@ -279,7 +279,7 @@ def test_notify_signal_name_resolves_a_declared_signal() -> None:
     * call `notify_signal_name` for `ObjectSample.title`
     * verify it returns `"title_changed"`
     """
-    assert notify_signal_name(ObjectSample, "title") == "title_changed"
+    assert SimpleProperty.notify_signal_name(ObjectSample, "title") == "title_changed"
 
 
 def test_notify_signal_name_resolves_a_synthesized_signal() -> None:
@@ -296,7 +296,7 @@ def test_notify_signal_name_resolves_a_synthesized_signal() -> None:
 
         value = SimpleProperty(0)
 
-    assert notify_signal_name(Synthesized, "value") == "value_changed"
+    assert SimpleProperty.notify_signal_name(Synthesized, "value") == "value_changed"
 
 
 def test_notify_signal_name_resolves_an_explicit_differently_named_signal() -> None:
@@ -314,7 +314,7 @@ def test_notify_signal_name_resolves_an_explicit_differently_named_signal() -> N
         renamed = Signal(object)
         nickname = SimpleProperty("", notify=renamed)
 
-    assert notify_signal_name(Named, "nickname") == "renamed"
+    assert SimpleProperty.notify_signal_name(Named, "nickname") == "renamed"
 
 
 def test_notify_signal_name_resolves_both_kinds_on_one_class() -> None:
@@ -325,8 +325,8 @@ def test_notify_signal_name_resolves_both_kinds_on_one_class() -> None:
     * verify `notify_signal_name` resolves `ObjectSample.title` (declared) and `.active` (synthesized)
     * connect to the synthesized `active_changed` and verify set/emit still works
     """
-    assert notify_signal_name(ObjectSample, "title") == "title_changed"
-    assert notify_signal_name(ObjectSample, "active") == "active_changed"
+    assert SimpleProperty.notify_signal_name(ObjectSample, "title") == "title_changed"
+    assert SimpleProperty.notify_signal_name(ObjectSample, "active") == "active_changed"
 
     obj = ObjectSample()
     received: list[bool] = []
@@ -347,7 +347,7 @@ def test_notify_signal_name_raises_for_an_unregistered_name() -> None:
     * verify `KeyError` is raised
     """
     with pytest.raises(KeyError):
-        notify_signal_name(ObjectSample, "nonexistent")
+        SimpleProperty.notify_signal_name(ObjectSample, "nonexistent")
 
 
 # endregion
@@ -493,12 +493,14 @@ def test_simple_datatype_value_notifies_through_object_signal() -> None:
 
     **Test steps:**
 
-    * declare a `Point` dataclass; `point = SimpleProperty(Point())` with `point_changed = Signal(object)`
+    * declare a frozen `Point` dataclass (a non-frozen one is unhashable, i.e. mutable by
+      convention, and the mutable-default rejection would demand `default_factory` instead);
+      `point = SimpleProperty(Point())` with `point_changed = Signal(object)`
     * connect, then set a fresh `Point`
     * verify the getter and the emitted value are the identical instance
     """
 
-    @dataclass
+    @dataclass(frozen=True)
     class Point:
         """A plain dataclass value type (not a `QObject`)."""
 
@@ -672,6 +674,203 @@ def test_object_signal_carries_non_primitive_without_coercion() -> None:
 
     assert obj.data is value
     assert received[0] is value
+
+
+# endregion
+
+
+# region SimpleProperty default_factory tests
+def test_mutable_default_value_raises() -> None:
+    """A mutable (unhashable) initial value is rejected -- `default_factory` is the supported spelling (#35).
+
+    Without the rejection, the class-level seed would be one object silently shared by every
+    instance (Python's mutable-default-argument trap; `dataclasses.field` rejects it the same way).
+
+    **Test steps:**
+
+    * construct a `SimpleProperty` with a `[]`, `{}`, and `set()` default in turn
+    * verify each raises `RuntimeError` pointing at `default_factory`
+    """
+    mutables: tuple[object, ...] = ([], {}, set())
+    for mutable in mutables:
+        with pytest.raises(RuntimeError, match="default_factory"):
+            SimpleProperty(mutable)
+
+
+def test_value_and_default_factory_together_raise() -> None:
+    """Passing both an initial value and a factory is rejected -- they are mutually exclusive.
+
+    **Test steps:**
+
+    * construct a `SimpleProperty` with both `value` and `default_factory`
+    * verify `RuntimeError` is raised
+    """
+    with pytest.raises(RuntimeError, match="not both"):
+        SimpleProperty(0, default_factory=lambda: 0)  # type: ignore[call-overload]
+
+
+def test_neither_value_nor_default_factory_raises() -> None:
+    """Passing neither an initial value nor a factory is rejected -- exactly one is required.
+
+    **Test steps:**
+
+    * construct a `SimpleProperty` with no arguments
+    * verify `RuntimeError` is raised
+    """
+    with pytest.raises(RuntimeError, match="default_factory"):
+        SimpleProperty()  # type: ignore[call-overload]
+
+
+def test_default_factory_seeds_each_instance_with_its_own_value() -> None:
+    """`default_factory=list` gives every instance its own (equal but distinct) empty list (#35).
+
+    **Test steps:**
+
+    * declare a list-valued property with `default_factory=list` and construct two instances
+    * verify both read an empty list, and the two lists are distinct objects
+    """
+
+    class Model(QObject):
+        """A `QObject` with a factory-backed empty-list property."""
+
+        tags_changed = Signal(object)
+        tags = SimpleProperty[list[str]](default_factory=list)
+
+    first, second = Model(), Model()
+
+    assert first.tags == []
+    assert second.tags == []
+    assert first.tags is not second.tags
+
+
+def test_default_factory_populated_default_is_not_shared() -> None:
+    """A populated factory default (`lambda: [1, 2, 3]`) is rebuilt per instance -- mutating one
+    instance's value leaves the other untouched (#35).
+
+    **Test steps:**
+
+    * declare a property with `default_factory=lambda: [1, 2, 3]` and construct two instances
+    * append to the first instance's list in place
+    * verify only the first instance changed
+    """
+
+    class Model(QObject):
+        """A `QObject` with a factory-backed populated-list property."""
+
+        tags_changed = Signal(object)
+        tags = SimpleProperty[list[int]](default_factory=lambda: [1, 2, 3])
+
+    first, second = Model(), Model()
+
+    first.tags.append(4)
+
+    assert first.tags == [1, 2, 3, 4]
+    assert second.tags == [1, 2, 3]
+
+
+def test_factory_backed_set_before_any_get_works() -> None:
+    """Assigning a factory-backed property before ever reading it seeds, compares, and emits normally.
+
+    Guards the set-first path: `__fset` must seed the instance default (there is no class-level
+    fallback in factory mode) rather than raise `AttributeError`.
+
+    **Test steps:**
+
+    * construct an instance and assign the property without any prior read
+    * verify the value took and the change signal fired once with it
+    """
+
+    class Model(QObject):
+        """A `QObject` with a factory-backed list property."""
+
+        tags_changed = Signal(object)
+        tags = SimpleProperty[list[str]](default_factory=list)
+
+    obj = Model()
+    received: list[object] = []
+    obj.tags_changed.connect(received.append)
+
+    obj.tags = ["a"]
+
+    assert obj.tags == ["a"]
+    assert received == [["a"]]
+
+
+def test_factory_backed_set_equal_to_default_does_not_emit() -> None:
+    """Assigning a value equal to the factory default is a no-op: no signal fires.
+
+    **Test steps:**
+
+    * construct an instance and assign an empty list over the factory-made empty default
+    * verify the signal did not fire
+    """
+
+    class Model(QObject):
+        """A `QObject` with a factory-backed list property."""
+
+        tags_changed = Signal(object)
+        tags = SimpleProperty[list[str]](default_factory=list)
+
+    obj = Model()
+    received: list[object] = []
+    obj.tags_changed.connect(received.append)
+
+    obj.tags = []
+
+    assert not received
+
+
+def test_mutate_and_emit_escape_hatch_preserves_identity() -> None:
+    """In-place mutation + manual emit delivers the same mutated object (the documented escape hatch).
+
+    Pins the two foundations the docstring's escape hatch relies on: reads return the same object
+    every time (no copy through the Qt property layer), and a manual emit through `Signal(object)`
+    passes that object by reference.
+
+    **Test steps:**
+
+    * verify two consecutive reads return the identical list object
+    * append in place, then emit the change signal manually
+    * verify the connected slot received that same object, holding the appended value
+    """
+
+    class Model(QObject):
+        """A `QObject` with a factory-backed list property."""
+
+        tags_changed = Signal(object)
+        tags = SimpleProperty[list[str]](default_factory=list)
+
+    obj = Model()
+    received: list[object] = []
+    obj.tags_changed.connect(received.append)
+    assert obj.tags is obj.tags
+
+    obj.tags.append("x")
+    obj.tags_changed.emit(obj.tags)
+
+    assert received[0] is obj.tags
+    assert obj.tags == ["x"]
+
+
+def test_list_typed_signal_raises() -> None:
+    """`Signal(list)` is rejected for a list value: its `QVariantList` conversion copies on emit (#35).
+
+    Emitting a list through `Signal(list)` delivers a QVariant-converted *copy* to the slot
+    (verified empirically), breaking the emit-what-the-getter-returns invariant -- so only
+    `Signal(object)` is acceptable for list/dict values.
+
+    **Test steps:**
+
+    * declare a `QObject` wiring a list-valued property to `tags_changed = Signal(list)`
+    * verify `RuntimeError` about incompatibility is raised while the class is created
+    """
+    with pytest.raises(RuntimeError, match="incompatible"):
+
+        class Bad(QObject):  # pylint: disable=unused-variable
+            """A `QObject` whose list-valued property is wired to a coercing `Signal(list)`."""
+
+            tags_changed = Signal(list)
+            tags = SimpleProperty[list[str]](default_factory=list)
 
 
 # endregion

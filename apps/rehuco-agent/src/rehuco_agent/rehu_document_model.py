@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Final
 
-from borco_pyside.core import SimpleProperty, notify_signal_name
+from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject
 from rehuco_core import RehuDocument
 
@@ -82,7 +82,7 @@ class RehuDocumentModel(QObject):
         name = field.name
         return FieldBinding(
             value=getattr(self, name),
-            changed=getattr(self, notify_signal_name(type(self), name)),
+            changed=getattr(self, SimpleProperty.notify_signal_name(type(self), name)),
             set_value=lambda value: setattr(self, name, value),
         )
 
