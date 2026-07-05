@@ -14,13 +14,13 @@ def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
     **Test steps:**
 
     * construct a real ``MainWindow`` (real `QtAds` objects, no mocking)
-    * find the `.ui`'s original ``centralwidget`` by object name
+    * find the `.ui`'s original ``central_widget`` by object name
     * verify it's no longer the current central widget, and was hidden
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
-    original_central = window.findChild(QWidget, "centralwidget")
+    original_central = window.findChild(QWidget, "central_widget")
     assert original_central is not None
     assert window.centralWidget() is not original_central
     assert original_central.isHidden()
