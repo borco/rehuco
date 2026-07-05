@@ -9,8 +9,6 @@ level is a real containment relationship in the code, not just a call:
 (`documents_dock.py:26`); `DocumentWidget` builds a viewer dock and an editor dock from the same
 `FieldsForm` (`document_widget.py:38-40`) -- the [[plugins#viewer-editor-both]] surfaces.
 
-## PlantUML
-
 ```plantuml
 @startuml
 component "Application (QApplication)" as App

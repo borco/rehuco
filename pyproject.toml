@@ -11,6 +11,7 @@ dev = [
     "mkdocs>=1.6",
     "mkdocs-exclude>=1.0",
     "mkdocs-material>=9.5",
+    "mkdocs-puml>=2.3",
     "pyright>=1.1",
     "pylint>=3.3",
     "pylint-qt>=0.1",

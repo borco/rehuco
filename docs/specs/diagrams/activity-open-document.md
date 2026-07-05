@@ -8,8 +8,6 @@ decision points rather than which object calls which. The fork/join reflects
 built, from the same `RehuDocumentModel`, regardless of which dock ends up visible. Traces the
 same [[plugins#dock-shell]] flow described in prose.
 
-## PlantUML
-
 ```plantuml
 @startuml
 start

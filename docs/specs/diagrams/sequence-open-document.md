@@ -8,8 +8,6 @@ becomes the single-instance primary, or another primary is already running and t
 just forwards its argv and exits ([[nodes#single-instance]]). Builds the [[plugins#dock-shell]]
 described in prose.
 
-## PlantUML
-
 ```plantuml
 @startuml
 participant "OS / Shell" as OS
