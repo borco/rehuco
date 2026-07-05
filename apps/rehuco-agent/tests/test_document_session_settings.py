@@ -32,6 +32,7 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         self.__group = ""
         self.__array_key = ""
         self.__array_index = 0
+        self.__in_array = False
 
     def beginGroup(self, name: str) -> None:  # noqa: N802  (Qt API name)
         self.__group = f"{name}/"
@@ -41,10 +42,12 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 
     def beginWriteArray(self, key: str) -> None:  # noqa: N802
         self.__array_key = self.__group + key
+        self.__in_array = True
         self.__data[f"{self.__array_key}/size"] = 0
 
     def beginReadArray(self, key: str) -> int:  # noqa: N802
         self.__array_key = self.__group + key
+        self.__in_array = True
         return self.__data.get(f"{self.__array_key}/size", 0)
 
     def setArrayIndex(self, index: int) -> None:  # noqa: N802
@@ -53,14 +56,21 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         self.__data[size_key] = max(self.__data.get(size_key, 0), index + 1)
 
     def setValue(self, key: str, value: Any) -> None:  # noqa: N802
-        self.__data[f"{self.__array_key}/{self.__array_index}/{key}"] = value
+        self.__data[self.__full_key(key)] = value
 
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
-        return self.__data.get(f"{self.__array_key}/{self.__array_index}/{key}", default)
+        return self.__data.get(self.__full_key(key), default)
 
     def endArray(self) -> None:  # noqa: N802
+        self.__in_array = False
         self.__array_key = ""
+
+    def __full_key(self, key: str) -> str:
+        """The storage key for ``key``: array-indexed while inside an array, else group-scoped."""
+        if self.__in_array:
+            return f"{self.__array_key}/{self.__array_index}/{key}"
+        return self.__group + key
 
 
 @fixture
@@ -153,6 +163,46 @@ def test_save_prunes_before_writing(settings: FakeSettings) -> None:
     restored = DocumentSessionSettings()
     restored.load(settings)  # type: ignore[arg-type]
     assert len(restored.items) == MAXIMUM_REMEMBERED_FILES
+
+
+def test_save_then_load_round_trips_the_focused_document(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the focused document's path, alongside the items array.
+
+    **Test steps:**
+
+    * set a focused document and one item, save
+    * load into a fresh instance from the same settings stand-in
+    * verify the focused document came back, resolved, and the item still round-tripped too
+    """
+    session = DocumentSessionSettings()
+    session.items[FIRST] = DocumentSessionSettings.Item(open=True)
+    session.focused_path = FIRST
+
+    session.save(settings)  # type: ignore[arg-type]
+
+    restored = DocumentSessionSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.focused_path == FIRST.resolve()
+    assert FIRST.resolve() in restored.items
+
+
+def test_load_defaults_to_no_focused_document_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had a focused document saved yields ``None``.
+
+    **Test steps:**
+
+    * save a session with no focused document set
+    * load into a fresh instance
+    * verify the focused document is ``None``
+    """
+    session = DocumentSessionSettings()
+    session.save(settings)  # type: ignore[arg-type]
+
+    restored = DocumentSessionSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.focused_path is None
 
 
 def test_load_clears_prior_items(settings: FakeSettings) -> None:

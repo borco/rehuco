@@ -59,6 +59,16 @@ class DocumentsDock(QMainWindow):
         """
         return list(self.__document_docks.values())
 
+    def focused_document_path(self) -> Path | None:
+        """The path of the currently focused document, or ``None`` if none is focused.
+
+        Used by the session-persistence save (``MainWindow``) to remember which document to
+        re-focus on restore.
+        """
+        if self.__current_dock is None:
+            return None
+        return self.__document_docks[self.__current_dock].model.path
+
     def open_document_models(self) -> list[RehuDocumentModel]:
         """The models of every currently open document, in no particular order.
 

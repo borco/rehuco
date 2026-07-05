@@ -5,14 +5,17 @@ from pathlib import Path
 from typing import Final, override
 
 import PySide6QtAds as QtAds
+from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.document_session_settings import DocumentSessionSettings
+from rehuco_agent.document_widget import DocumentWidget
 from rehuco_agent.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings import persistent_settings
+from rehuco_agent.window_settings import WindowSettings
 
 
 class MainWindow(QMainWindow):
@@ -32,6 +35,11 @@ class MainWindow(QMainWindow):
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__setup_docking_system()
+
+        self.__window_settings: Final = WindowSettings()
+        self.__window_settings.load(persistent_settings())
+        if self.__window_settings.geometry:
+            self.restoreGeometry(QByteArray(self.__window_settings.geometry))
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
@@ -64,24 +72,36 @@ class MainWindow(QMainWindow):
             for model in dialog.selected_models():
                 model.save()
 
+        self.__save_window_geometry()
         self.__save_session()
         super().closeEvent(event)
 
     def __restore_session(self) -> None:
-        """Reopen every document the last session left open, restoring its dock layout.
+        """Reopen every document the last session left open, restoring its dock layout and focus.
 
         A path that no longer exists or fails to load is skipped silently (``open_document``
         already showed an error dialog for it, #35) -- the rest of the session still restores.
         """
+        opened: dict[Path, DocumentWidget] = {}
         for path, item in self.__session.items.items():
             if not item.open:
                 continue
             widget = self.__documents_dock.open_document(path)
             if widget is not None:
                 widget.restore_state(item.state)
+                opened[path] = widget
+
+        focused_path = self.__session.focused_path
+        if focused_path is not None and focused_path in opened:
+            self.__documents_dock.open_document(focused_path)  # re-focuses an already-open dock
+
+    def __save_window_geometry(self) -> None:
+        """Persist this window's current size and position."""
+        self.__window_settings.geometry = bytes(self.saveGeometry().data())
+        self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:
-        """Snapshot every open document's dock layout and persist the open-file set.
+        """Snapshot every open document's dock layout and focus, and persist the open-file set.
 
         Currently open documents always count as the most-recently-used ones (moved to the end of
         the LRU order); everything else keeps its prior state but is marked closed.
@@ -100,6 +120,7 @@ class MainWindow(QMainWindow):
             self.__session.items[path] = DocumentSessionSettings.Item(  # pylint: disable=unsupported-assignment-operation
                 open=True, state=widget.save_state()
             )
+        self.__session.focused_path = self.__documents_dock.focused_document_path()
 
         self.__session.save(persistent_settings())
 

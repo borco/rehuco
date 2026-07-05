@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Any
 
+from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QWidget
 from pytest import fixture
@@ -10,16 +11,21 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.document_session_settings import DocumentSessionSettings
 from rehuco_agent.main_window import MainWindow
+from rehuco_agent.window_settings import WindowSettings
 
 
 @fixture(autouse=True)
 def mock_persistent_settings(mocker: MockerFixture) -> Any:
     """Stand in for ``persistent_settings()`` so session load/save never touch real QSettings storage.
 
-    ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``);
-    everything else on the mock is a harmless no-op.
+    ``value`` must return whatever default it was called with -- a bare ``MagicMock`` would
+    otherwise return a truthy, garbage ``MagicMock`` for calls like ``value(KEY, QByteArray(),
+    type=QByteArray)``, since ``bytes(MagicMock())`` doesn't raise -- which would make every
+    ``MainWindow()`` in these tests spuriously call ``restoreGeometry`` with junk bytes.
+    ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``).
     """
     settings = mocker.MagicMock()
+    settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
     settings.beginReadArray.return_value = 0
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
@@ -279,6 +285,150 @@ def test_close_event_skips_a_document_with_no_path_when_snapshotting(mocker: Moc
     session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not session.items
     save.assert_called_once()
+
+
+def test_restores_window_geometry_when_previously_saved(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Previously-saved window geometry is restored on construction.
+
+    **Test steps:**
+
+    * seed ``WindowSettings.load`` to report saved geometry bytes
+    * mock ``restoreGeometry`` to detect the call
+    * construct ``MainWindow``
+    * verify ``restoreGeometry`` was called with those bytes
+    """
+
+    def fake_load(self: WindowSettings, settings: object) -> None:
+        del settings
+        self.geometry = b"geometry-bytes"
+
+    mocker.patch.object(WindowSettings, "load", fake_load)
+    restore_geometry = mocker.patch.object(MainWindow, "restoreGeometry")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restore_geometry.assert_called_once_with(QByteArray(b"geometry-bytes"))
+
+
+def test_skips_restoring_geometry_when_nothing_was_saved(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With no previously-saved geometry, construction doesn't call ``restoreGeometry`` at all.
+
+    **Test steps:**
+
+    * mock ``restoreGeometry`` to detect an unwanted call
+    * construct ``MainWindow`` (the default mocked settings report no saved geometry)
+    * verify ``restoreGeometry`` was never called
+    """
+    restore_geometry = mocker.patch.object(MainWindow, "restoreGeometry")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restore_geometry.assert_not_called()
+
+
+def test_close_event_saves_the_window_geometry(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves the window's current geometry.
+
+    **Test steps:**
+
+    * mock ``saveGeometry`` to return known bytes
+    * dispatch a close event
+    * verify ``WindowSettings.save`` was called with those bytes recorded on the instance
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window, "saveGeometry", return_value=QByteArray(b"new-geometry"))
+    save = mocker.patch.object(WindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.geometry == b"new-geometry"
+    save.assert_called_once()
+
+
+def test_restore_session_refocuses_the_previously_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The document focused when the session was last saved is re-focused on restore.
+
+    **Test steps:**
+
+    * seed the session with two open items and a matching focused-document path
+    * mock ``open_document`` to return a stand-in widget for each path
+    * construct ``MainWindow``
+    * verify ``open_document`` was called an extra, final time for the focused path (to re-focus
+      its already-open dock)
+    """
+    first_path = Path("first.rehu").resolve()
+    second_path = Path("second.rehu").resolve()
+
+    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        # pylint: disable=unsupported-assignment-operation
+        self.items[first_path] = DocumentSessionSettings.Item(open=True, state=b"first")
+        self.items[second_path] = DocumentSessionSettings.Item(open=True, state=b"second")
+        self.focused_path = second_path
+
+    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
+    open_document = mocker.patch(
+        "rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock()
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert open_document.call_args_list[-1].args == (second_path,)  # pylint: disable=no-member
+    assert open_document.call_count == 3  # first_path, second_path, then second_path again to focus it
+
+
+def test_restore_session_does_not_refocus_a_document_that_failed_to_reopen(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A remembered focused document that fails to reopen isn't re-focused (nothing to focus).
+
+    **Test steps:**
+
+    * seed the session with a focused-document path that isn't among the successfully-opened ones
+    * construct ``MainWindow``
+    * verify ``open_document`` was called exactly once for that path (the initial attempt), not twice
+    """
+    path = Path("missing.rehu").resolve()
+
+    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state")  # pylint: disable=unsupported-assignment-operation
+        self.focused_path = path
+
+    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    open_document.assert_called_once_with(path)
+
+
+def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app records the currently-focused document's path into the session.
+
+    **Test steps:**
+
+    * mock ``focused_document_path`` to report a path
+    * dispatch a close event
+    * verify the session's ``focused_document`` was set to it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("focused.rehu").resolve()
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(docs_dock, "focused_document_path", return_value=path)
+    mocker.patch.object(DocumentSessionSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert session.focused_path == path
 
 
 def test_raise_and_activate_shows_a_normal_window(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -11,6 +11,7 @@ MAXIMUM_REMEMBERED_FILES: Final = 10
 """LRU cap on remembered closed files. Configurable later in settings (A7); a constant for now."""
 
 GROUP: Final = "documents"
+FOCUSED_PATH_KEY: Final = "focused_path"
 ITEMS_KEY: Final = "items"
 ITEM_PATH_KEY: Final = "path"
 ITEM_OPEN_KEY: Final = "open"
@@ -19,7 +20,7 @@ ITEM_STATE_KEY: Final = "state"
 
 @dataclass
 class DocumentSessionSettings:
-    """Which `.rehu` files were open, and each one's dock-layout state, LRU-capped when saved."""
+    """Which `.rehu` files were open, which one was focused, and each one's dock-layout state."""
 
     @dataclass
     class Item:
@@ -33,6 +34,9 @@ class DocumentSessionSettings:
 
     items: Final[OrderedDict[Path, DocumentSessionSettings.Item]] = field(default_factory=OrderedDict)
     """Per-path session state, in most-recently-used order (oldest first)."""
+
+    focused_path: Path | None = field(default=None)
+    """Which open document was focused when the session was last saved, if any."""
 
     def items_to_save(self) -> OrderedDict[Path, DocumentSessionSettings.Item]:
         """The items to persist: every open item, plus the newest closed ones up to the LRU cap.
@@ -59,11 +63,13 @@ class DocumentSessionSettings:
         return pruned
 
     def load(self, settings: QSettings) -> None:
-        """Replace the current items with what's in persistent storage.
+        """Replace the current items (and focused path) with what's in persistent storage.
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
+        focused = str(settings.value(FOCUSED_PATH_KEY, ""))
+        self.focused_path = Path(focused).resolve() if focused else None
         self.items.clear()
         for index in range(settings.beginReadArray(ITEMS_KEY)):
             settings.setArrayIndex(index)
@@ -77,11 +83,12 @@ class DocumentSessionSettings:
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
-        """Save the LRU-pruned items to persistent storage.
+        """Save the focused path and the LRU-pruned items to persistent storage.
 
         :param settings: the ``QSettings`` to write to.
         """
         settings.beginGroup(GROUP)
+        settings.setValue(FOCUSED_PATH_KEY, self.focused_path.as_posix() if self.focused_path else "")
         settings.beginWriteArray(ITEMS_KEY)
         for index, (path, item) in enumerate(self.items_to_save().items()):
             settings.setArrayIndex(index)

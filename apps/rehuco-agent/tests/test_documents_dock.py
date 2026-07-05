@@ -393,6 +393,39 @@ def test_opening_a_missing_file_shows_an_error_and_no_dock(mocker: MockerFixture
     assert str(FAKE_PATH) in critical.call_args[0][2]
 
 
+def test_focused_document_path_reports_the_focused_documents_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The focused document's path is reported once a dock is focused.
+
+    **Test steps:**
+
+    * open a document and report it as newly focused
+    * verify ``focused_document_path`` returns its path
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+    dock._DocumentsDock__on_focused_dock_widget_changed(None, cdock)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock.focused_document_path() == FAKE_PATH
+
+
+def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> None:
+    """With no dock focused (e.g. nothing open yet), ``focused_document_path`` reports ``None``.
+
+    **Test steps:**
+
+    * build an empty dock
+    * verify ``focused_document_path`` returns ``None``
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    assert dock.focused_document_path() is None
+
+
 def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A file that isn't valid ``.rehu`` JSON gets an error dialog instead of a dock (#35).
 
