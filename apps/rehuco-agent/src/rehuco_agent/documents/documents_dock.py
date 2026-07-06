@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
+from PySide6.QtCore import QByteArray, Signal
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
 from rehuco_core import RehuDocument, RehuFormatError
 
 from rehuco_agent.documents.document_widget import DocumentWidget
@@ -43,6 +43,10 @@ class DocumentsDock(QMainWindow):
         -- checked by :meth:`__track_current_tab` so a second document joining an already-open
         area (as a new tab, not a new area) doesn't connect that area's signal a second time."""
         self.__current_dock: QtAds.CDockWidget | None = None
+
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            app.focusChanged.connect(self.__on_application_focus_changed)
 
     def open_document(self, path: Path) -> DocumentWidget | None:
         """Open ``path`` in a new dock, or focus its dock if already open.
@@ -91,6 +95,42 @@ class DocumentsDock(QMainWindow):
         """
         return [widget.model for widget in self.open_document_widgets()]
 
+    def save_state(self) -> bytes:
+        """Serialize this dock's own layout (splits/tabs between currently open documents).
+
+        :returns: the raw ``CDockManager.saveState()`` bytes, suitable for :meth:`restore_state`
+            (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.docks_state`).
+            Matches saved docks up by :meth:`__dock_object_name`, so only meaningful once every
+            document that was part of it has been reopened (their docks recreated with the same
+            identifiers) again.
+        """
+        return bytes(self.__dock_manager.saveState().data())
+
+    def restore_state(self, state: bytes) -> bool:
+        """Restore a previously-saved outer layout.
+
+        Must be called only after every document dock that was part of it has already been
+        (re-)opened -- ``CDockManager.restoreState()`` repositions currently-registered docks to
+        match the saved layout by name; it does not (re-)create any docks itself.
+
+        ``restoreState()`` also rebuilds every affected ``CDockAreaWidget`` from scratch -- the
+        ones :meth:`__track_current_tab` connected ``currentChanged`` to before this call are
+        discarded, orphaning those connections (confirmed empirically: tab switches inside a
+        restored area silently stopped updating :meth:`focused_document_path` after restore).
+        Re-tracking every dock's (possibly new) area afterwards fixes this; :meth:`__track_current_tab`
+        itself no-ops for an area already tracked, so this is safe to run unconditionally.
+
+        :param state: the raw bytes from a prior :meth:`save_state`.
+        :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
+            ``state`` was empty or not a recognized ``CDockManager`` state.
+        """
+        restored = bool(self.__dock_manager.restoreState(QByteArray(state)))
+        if restored:
+            for dock in self.__document_docks:
+                if area := dock.dockAreaWidget():
+                    self.__track_current_tab(area)
+        return restored
+
     def __make_new_dock(self, path: Path) -> QtAds.CDockWidget | None:
         """Load ``path`` and build its document dock, or show an error dialog and return ``None``.
 
@@ -107,6 +147,7 @@ class DocumentsDock(QMainWindow):
         widget = DocumentWidget(model, self)
 
         dock = QtAds.CDockWidget(self.__dock_manager, "")
+        dock.setObjectName(self.__dock_object_name(document))
         dock_features = QtAds.CDockWidget.DockWidgetFeature
         dock.setFeatures(
             dock_features.CustomCloseHandling
@@ -130,6 +171,20 @@ class DocumentsDock(QMainWindow):
         self.__track_current_tab(area)
 
         return dock
+
+    @staticmethod
+    def __dock_object_name(document: RehuDocument) -> str:
+        """A stable identifier for ``document``'s dock, surviving across app restarts.
+
+        Needed for :meth:`restore_state` to match a saved layout entry back up to the dock
+        recreated for the same document on the next launch (``CDockManager`` matches docks up by
+        ``objectName()``).
+
+        :param document: the loaded document to derive an identifier for.
+        :returns: the resource's own UUID ([[data-model#stable-identity]]), or its absolute path
+            if the UUID is empty (e.g. a not-yet-imported file).
+        """
+        return document.id or str(document.path)
 
     def __track_current_tab(self, area: QtAds.CDockAreaWidget) -> None:
         """Connect ``area.currentChanged`` to track tab switches, once per distinct area.
@@ -184,12 +239,48 @@ class DocumentsDock(QMainWindow):
     def __on_area_current_changed(self, area: QtAds.CDockAreaWidget, index: int) -> None:
         """Track the currently-focused document dock whenever the user switches tabs.
 
+        Handles switching between two documents *tabbed together in one shared area* -- but not
+        clicking into a *different, already-visible split area*, since neither area's own current
+        tab index actually changes then (each has only the one tab). See
+        :meth:`__on_application_focus_changed` for that case.
+
+        A stale connection from an area ``restore_state`` has since replaced can still fire while
+        ``CDockManager.restoreState()`` tears the old one down -- confirmed empirically (a real
+        crash log): Shiboken flags the old area's wrapper "already deleted" partway through that
+        teardown, before Qt's own auto-disconnect-on-destroy takes effect, so a transient
+        ``currentChanged`` can still reach this handler for it. Harmless to just ignore -- the area
+        is on its way out either way.
+
         :param area: the dock area whose current tab changed.
         :param index: the newly-current tab's index within ``area``.
         """
-        dock = area.dockWidget(index)
+        try:
+            dock = area.dockWidget(index)
+        except RuntimeError:
+            return
         if dock in self.__document_docks:
             self.__set_current_dock(dock)
+
+    def __on_application_focus_changed(self, _old: QWidget | None, now: QWidget | None) -> None:
+        """Track the currently-focused document dock whenever real Qt keyboard focus moves into it.
+
+        Complements :meth:`__on_area_current_changed`: catches focus moving into a *different,
+        already-visible split area* (e.g. clicking a field in another document's pane), which
+        never fires ``currentChanged`` since neither area's current-tab index changes -- confirmed
+        empirically: with two documents split side by side, ``__current_dock`` otherwise never
+        updates past whatever restore/an explicit :meth:`open_document` call last set, silently
+        going stale for the rest of the session (and re-persisting that same stale value on every
+        later save).
+
+        :param _old: the widget that just lost focus; unused.
+        :param now: the widget that gained focus, or ``None`` if focus left the application.
+        """
+        widget: QWidget | None = now
+        while widget is not None:
+            if isinstance(widget, QtAds.CDockWidget) and widget in self.__document_docks:
+                self.__set_current_dock(widget)
+                return
+            widget = widget.parentWidget()
 
     def __on_close_dock_widget_requested(self) -> None:
         """Remove the closed dock (and its widget) from the dock manager and bookkeeping.

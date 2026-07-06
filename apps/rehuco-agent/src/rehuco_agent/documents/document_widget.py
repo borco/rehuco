@@ -44,6 +44,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
+        self.__restoring_layout = False
 
         form = build_document_form()
         viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
@@ -118,7 +119,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__stashed_sizes.update(stashed_sizes)
 
         dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
-        restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
+        # restoreState() fires viewToggled(True) for every dock it reconstructs, even ones never
+        # really hidden/shown in the user-facing sense -- without this guard, __on_view_toggled
+        # would re-apply __stashed_sizes (last updated on some earlier, unrelated hide/show toggle,
+        # not necessarily reflecting the sizes actually being restored here) right on top of the
+        # correct sizes restoreState() itself just set, clobbering them with stale data
+        self.__restoring_layout = True
+        try:
+            restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
+        finally:
+            self.__restoring_layout = False
         if restored:
             # restoreState() can silently flip a toggleViewAction()'s checked state to match the
             # restored layout without ever emitting toggled -- refresh explicitly, or a hidden
@@ -146,9 +156,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def __on_view_toggled(self, dock: QtAds.CDockWidget, visible: bool) -> None:
         """Stash ``dock``'s splitter sizes as it hides, or restore them as it reappears.
 
+        No-op while :meth:`restore_state` is actively running -- see the comment there.
+
         :param dock: the dock whose visibility changed.
         :param visible: the dock's new visibility.
         """
+        if self.__restoring_layout:
+            return
         if visible:
             self.__restore_size(dock)
         else:

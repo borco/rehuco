@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QLineEdit, QMessageBox, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -387,6 +387,112 @@ def test_focus_tracking_ignores_a_dock_outside_the_documents_area(mocker: Mocker
     assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_focus_tracking_ignores_an_area_whose_underlying_dock_is_already_deleted(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A stale connection firing for an already-torn-down area doesn't crash or overwrite the current dock.
+
+    ``CDockManager.restoreState()`` rebuilds areas from scratch and can transiently fire
+    ``currentChanged`` on the old one it's replacing while tearing it down -- confirmed empirically
+    (a real crash log) that Shiboken flags that old area's wrapper "already deleted" by the time
+    the connected handler runs, partway through the teardown.
+
+    **Test steps:**
+
+    * open a document (sets the current dock)
+    * report a tab-change whose area raises ``RuntimeError`` when asked for its current dock widget
+    * verify the current dock is unchanged and nothing raises
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+
+    dead_area = mocker.MagicMock()
+    dead_area.dockWidget.side_effect = RuntimeError("Internal C++ object already deleted.")
+    dock._DocumentsDock__on_area_current_changed(dead_area, 0)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_application_focus_tracking_follows_focus_into_a_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Real Qt focus moving into a document's own content updates the current-dock bookkeeping.
+
+    Complements ``currentChanged``-based tracking: catches focus moving into a *different,
+    already-visible split area* (e.g. clicking a field in another document's pane), which never
+    fires ``currentChanged`` since neither area's current-tab index actually changes then (each
+    has only the one tab) -- confirmed empirically to otherwise leave the current dock stuck at
+    whatever restore/an explicit ``open_document`` call last set.
+
+    Calls the private slot directly with a real nested child widget, rather than relying on a
+    real ``focusChanged`` emission (confirmed unreliable to simulate headlessly: ``setFocus()``
+    on the offscreen platform never actually fires it).
+
+    **Test steps:**
+
+    * open a document and find a real nested child widget inside its content
+    * call the private focus-changed handler directly, reporting that child as newly focused
+    * verify the current-dock bookkeeping picked up the document it belongs to
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+    nested = widget.findChildren(QLineEdit)
+    assert nested
+
+    dock._DocumentsDock__on_application_focus_changed(None, nested[0])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_application_focus_tracking_ignores_focus_leaving_the_app(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Focus leaving the whole application (``now`` is ``None``) doesn't overwrite the current dock.
+
+    **Test steps:**
+
+    * open a document (sets the current dock)
+    * report focus moving to ``None``
+    * verify the current dock is unchanged
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+
+    dock._DocumentsDock__on_application_focus_changed(cdock, None)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_application_focus_tracking_ignores_a_widget_with_no_document_ancestor(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Focus moving to a widget with no enclosing document dock doesn't overwrite the current one.
+
+    **Test steps:**
+
+    * open a document (sets the current dock)
+    * report focus moving to an unrelated, parentless widget
+    * verify the current dock is unchanged
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+    unrelated = QWidget()
+    qtbot.addWidget(unrelated)
+
+    dock._DocumentsDock__on_application_focus_changed(None, unrelated)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a path whose dock currently has no containing area still tracks it as current, just
     without indexing into that (nonexistent) area.
@@ -535,3 +641,90 @@ def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixtur
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     critical.assert_called_once()
     assert str(FAKE_PATH) in critical.call_args[0][2]
+
+
+def test_restore_state_retracks_current_tab_after_area_recreation(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Tab switches keep updating the current dock even after ``restore_state`` recreates areas.
+
+    ``CDockManager.restoreState()`` rebuilds every affected ``CDockAreaWidget`` from scratch,
+    orphaning any ``currentChanged`` connection made before the call -- confirmed empirically to
+    otherwise leave :meth:`DocumentsDock.focused_document_path` stuck on whatever was current
+    before restore, never picking up a tab switch made afterwards (the reported regression: the
+    focused document was no longer updated in the saved session after a restart).
+
+    **Test steps:**
+
+    * open two documents (tabbed together, sharing one area) and save the outer layout
+    * restore that same layout, rebuilding the tabbed area
+    * switch to the first document's tab on the (possibly new) area object
+    * verify the current dock -- and so ``focused_document_path`` -- picked up the switch
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget1 = dock.open_document(FAKE_PATH)
+    widget2 = dock.open_document(OTHER_PATH)
+    assert widget1 is not None and widget2 is not None
+    state = dock.save_state()
+
+    assert dock.restore_state(state)
+
+    cdock1 = dock_for(dock, widget1)
+    area = cdock1.dockAreaWidget()
+    assert area is not None
+    area.setCurrentIndex(area.index(cdock1))
+
+    assert dock.focused_document_path() == FAKE_PATH
+
+
+def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:
+    """An empty (never-saved) state is rejected without touching the current layout.
+
+    **Test steps:**
+
+    * restore an empty byte string on a dock with nothing open
+    * verify it reports failure
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    assert dock.restore_state(b"") is False
+
+
+def test_dock_object_name_prefers_the_documents_own_id(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dock's object name is its document's stable id when the document has one.
+
+    Needed for ``restore_state`` to match a saved layout entry back up to the dock recreated for
+    the same document on the next launch (``CDockManager`` matches docks up by ``objectName()``).
+
+    **Test steps:**
+
+    * open a document whose data includes an ``id``
+    * verify its dock's object name is that id, not its path
+    """
+    load_document(mocker, {**TUTORIAL, "id": "some-stable-id"})
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget is not None
+    assert dock_for(dock, widget).objectName() == "some-stable-id"
+
+
+def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dock's object name falls back to its document's path when the document has no id.
+
+    **Test steps:**
+
+    * open a document whose data has no ``id`` (e.g. a not-yet-imported file)
+    * verify its dock's object name is its path
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget is not None
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)

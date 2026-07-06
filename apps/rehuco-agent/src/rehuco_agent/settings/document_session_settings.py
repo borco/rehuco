@@ -12,6 +12,7 @@ MAXIMUM_REMEMBERED_FILES: Final = 10
 
 GROUP: Final = "documents"
 FOCUSED_PATH_KEY: Final = "focused_path"
+DOCKS_STATE_KEY: Final = "docks_state"
 ITEMS_KEY: Final = "items"
 ITEM_PATH_KEY: Final = "path"
 ITEM_OPEN_KEY: Final = "open"
@@ -37,6 +38,10 @@ class DocumentSessionSettings:
 
     focused_path: Path | None = field(default=None)
     """Which open document was focused when the session was last saved, if any."""
+
+    docks_state: bytes = field(default=b"")
+    """``DocumentsDock.save_state()``'s own layout (splits/tabs between open documents), restored
+    via ``DocumentsDock.restore_state()`` only after every document it references has reopened."""
 
     def items_to_save(self) -> OrderedDict[Path, DocumentSessionSettings.Item]:
         """The items to persist: every open item, plus the newest closed ones up to the LRU cap.
@@ -70,6 +75,8 @@ class DocumentSessionSettings:
         settings.beginGroup(GROUP)
         focused = str(settings.value(FOCUSED_PATH_KEY, ""))
         self.focused_path = Path(focused).resolve() if focused else None
+        docks_state = cast(QByteArray, settings.value(DOCKS_STATE_KEY, QByteArray(), type=QByteArray))
+        self.docks_state = bytes(docks_state.data())
         self.items.clear()
         for index in range(settings.beginReadArray(ITEMS_KEY)):
             settings.setArrayIndex(index)
@@ -89,6 +96,7 @@ class DocumentSessionSettings:
         """
         settings.beginGroup(GROUP)
         settings.setValue(FOCUSED_PATH_KEY, self.focused_path.as_posix() if self.focused_path else "")
+        settings.setValue(DOCKS_STATE_KEY, QByteArray(self.docks_state))
         settings.beginWriteArray(ITEMS_KEY)
         for index, (path, item) in enumerate(self.items_to_save().items()):
             settings.setArrayIndex(index)

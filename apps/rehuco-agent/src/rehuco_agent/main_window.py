@@ -99,6 +99,9 @@ class MainWindow(QMainWindow):
 
         A path that no longer exists or fails to load is skipped silently (``open_document``
         already showed an error dialog for it, #35) -- the rest of the session still restores.
+        The outer layout (splits/tabs between documents) is restored only once every document
+        it references has already been reopened above -- ``DocumentsDock.restore_state`` matches
+        saved entries up to currently-registered docks by name, it does not create any itself.
         """
         opened: dict[Path, DocumentWidget] = {}
         for path, item in self.__session.items.items():
@@ -108,6 +111,8 @@ class MainWindow(QMainWindow):
             if widget is not None:
                 widget.restore_state(item.state)
                 opened[path] = widget
+
+        self.__documents_dock.restore_state(self.__session.docks_state)
 
         focused_path = self.__session.focused_path
         if focused_path is not None and focused_path in opened:
@@ -139,6 +144,7 @@ class MainWindow(QMainWindow):
                 open=True, state=widget.save_state()
             )
         self.__session.focused_path = self.__documents_dock.focused_document_path()
+        self.__session.docks_state = self.__documents_dock.save_state()
 
         self.__session.save(persistent_settings())
 
