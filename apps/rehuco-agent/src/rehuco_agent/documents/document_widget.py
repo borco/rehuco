@@ -4,8 +4,9 @@ from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.gui import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QAction, QIcon, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -49,13 +50,13 @@ class DocumentWidget(QMainWindow):
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        self.__viewer_action.setIcon(QIcon(VIEWER_ICON_RESOURCE))
+        ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
         self.__editor_action: Final = editor_dock.toggleViewAction()
-        self.__editor_action.setIcon(QIcon(EDITOR_ICON_RESOURCE))
+        ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
-        self.__save_action.setIcon(QIcon(SAVE_ICON_RESOURCE))
+        ActionIconThemeHandler(self.__save_action, SAVE_ICON_RESOURCE)
         self.__save_action.triggered.connect(model.save)
         self.addAction(self.__save_action)
 

@@ -28,19 +28,15 @@
    <addaction name="theme_action"/>
   </widget>
   <action name="theme_action">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
    <property name="icon">
     <iconset resource="main.qrc">
-     <normaloff>:/icons/theme_light.svg</normaloff>
-     <normalon>:/icons/theme_dark.svg</normalon>:/icons/theme_light.svg</iconset>
+     <normaloff>:/icons/theme_auto.svg</normaloff>:/icons/theme_auto.svg</iconset>
    </property>
    <property name="text">
     <string>Theme</string>
    </property>
    <property name="toolTip">
-    <string>Switch theme between dark and light</string>
+    <string>Cycle theme: follow system, light, dark</string>
    </property>
   </action>
  </widget>

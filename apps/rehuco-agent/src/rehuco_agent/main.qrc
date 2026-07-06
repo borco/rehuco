@@ -4,6 +4,7 @@
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
+        <file alias="icons/theme_auto.svg">../../../../design/icons/theme_auto.svg</file>
         <file alias="icons/theme_dark.svg">../../../../design/icons/theme_dark.svg</file>
         <file alias="icons/theme_light.svg">../../../../design/icons/theme_light.svg</file>
     </qresource>

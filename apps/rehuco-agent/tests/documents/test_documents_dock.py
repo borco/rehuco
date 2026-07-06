@@ -106,7 +106,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
 
     ``FAKE_PATH`` is an ``info.rehu``, so the title is the parent directory's name
-    ([[data-model#dir-scoped]]) throughout -- covered on its own in
+    ([[data-model#resource-scoping]]) throughout -- covered on its own in
     :func:`test_dock_title_uses_the_parent_directory_name_for_info_rehu`.
 
     **Test steps:**

@@ -10,7 +10,7 @@ from rehuco_core import RehuDocument
 from rehuco_agent.fields.field import Field, FieldBinding
 
 INFO_REHU_FILENAME: Final = "info.rehu"
-"""A directory-scoped resource's filename ([[data-model#dir-scoped]]); its label uses the parent
+"""A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
 directory's name instead, since the literal filename is the same for every such resource."""
 
 
@@ -69,7 +69,7 @@ class RehuDocumentModel(QObject):
     @property
     def label(self) -> str:
         """This document's display label: the parent directory's name, trailing-slashed, for
-        `info.rehu` ([[data-model#dir-scoped]]), the bare filename otherwise.
+        `info.rehu` ([[data-model#resource-scoping]]), the bare filename otherwise.
 
         :returns: the label, or an empty string when the document has no path yet.
         """
