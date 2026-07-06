@@ -1,4 +1,4 @@
-# §A06. Windows Dev Launcher — Hurdles and Solutions
+# §A07. Windows Dev Launcher — Hurdles and Solutions
 
 [[[appendices.windows-dev-launcher]]]
 
@@ -18,7 +18,7 @@ faster.
 Recorded in the order they actually bit, since later ones sometimes look like symptoms of
 earlier ones until you've ruled the earlier fix out.
 
-## §A06.1 CMake can't find Python (`Development.Embed`)
+## §A07.1 CMake can't find Python (`Development.Embed`)
 
 [[[appendices.windows-dev-launcher#cmake-cant-find-python]]]
 
@@ -56,7 +56,7 @@ those live at the base install it was created from) and its `python3{minor}` lib
 set `Python3_INCLUDE_DIR`/`Python3_LIBRARY`/`Python3_EXECUTABLE` as `CACHE ... FORCE` variables
 before calling `find_package`.
 
-## §A06.2 The compiled exe can't import the workspace's editable-installed packages
+## §A07.2 The compiled exe can't import the workspace's editable-installed packages
 
 [[[appendices.windows-dev-launcher#exe-cant-import]]]
 
@@ -94,7 +94,7 @@ static const char *ENTRY_SCRIPT_FMT =
 stops mattering at all -- confirmed working from both the repo root and a nested build
 directory.
 
-## §A06.3 A naive icon-generation build rule converts every SVG under `icons/` to its own `.ico`
+## §A07.3 A naive icon-generation build rule converts every SVG under `icons/` to its own `.ico`
 
 [[[appendices.windows-dev-launcher#create-too-many-icons]]]
 
@@ -109,7 +109,7 @@ Working `magick` invocation for a multi-resolution Windows icon:
 `magick -background none <svg> -define icon:auto-resize=16,32,48,256 <ico>` (`-background none`
 keeps it transparent rather than white-boxed).
 
-## §A06.4 `make agent-build` re-runs `cmake` every time, even when nothing changed
+## §A07.4 `make agent-build` re-runs `cmake` every time, even when nothing changed
 
 [[[appendices.windows-dev-launcher#cmake-always-reruns]]]
 
@@ -128,7 +128,7 @@ real target depending on a `.PHONY` prerequisite is always considered out of dat
 targets have no timestamp to compare), which silently defeats the whole point -- the exe target
 would go back to rebuilding every time.
 
-## §A06.5 Icon must exist *before* `cmake configure`, not just before registering
+## §A07.5 Icon must exist *before* `cmake configure`, not just before registering
 
 [[[appendices.windows-dev-launcher#cmake-needs-icon]]]
 
@@ -140,7 +140,7 @@ exists before the build itself runs.
 **Fix:** make icon generation a prerequisite of the build target directly, not of the
 registration target.
 
-## §A06.6 Explorer shows the raw exe filename, not a friendly app name, in the "open with" picker
+## §A07.6 Explorer shows the raw exe filename, not a friendly app name, in the "open with" picker
 
 [[[appendices.windows-dev-launcher#missing-versioninfo]]]
 
@@ -154,7 +154,7 @@ Also worth adding on top of the spike's plain `.ext` default-value binding: an
 `OpenWithProgids` registry entry (`HKCU\Software\Classes\.<ext>\OpenWithProgids\<ProgID>` =
 empty value), a stronger "this is a real recommended handler" signal for the picker.
 
-## §A06.7 Explorer's "how do you want to open this" picker has no "Always" button, or reappears despite "Just once"
+## §A07.7 Explorer's "how do you want to open this" picker has no "Always" button, or reappears despite "Just once"
 
 [[[appendices.windows-dev-launcher#no-permanent-association]]]
 
@@ -187,7 +187,7 @@ persistent "Always" choice from the first-encounter picker entirely, in favor of
 Apps → Default apps → search `<ext>`** as the only way to set a lasting default. Not a
 registration bug either way.
 
-## §A06.8 Icon or file-type label doesn't update after a fresh, correct registration
+## §A07.8 Icon or file-type label doesn't update after a fresh, correct registration
 
 [[[appendices.windows-dev-launcher#stale-icon-label]]]
 
@@ -202,7 +202,7 @@ Remove-Item "$env:LocalAppData\Microsoft\Windows\Explorer\iconcache_*.db" -Force
 Start-Process explorer.exe
 ```
 
-## §A06.9 `PyConfig_SetArgv` drops the real `argv[0]`
+## §A07.9 `PyConfig_SetArgv` drops the real `argv[0]`
 
 [[[appendices.windows-dev-launcher#setargv-drops-argv-0]]]
 
@@ -213,7 +213,7 @@ Carried over correctly from the spike, but easy to reintroduce if rewriting from
 argv[0]. Fix: prepend an extra copy of `argv[0]` before calling `PyConfig_SetArgv`, so Python's
 shift leaves the real `sys.argv` intact.
 
-## §A06.10 AUMID must be set before any window (or `QApplication`) is constructed
+## §A07.10 AUMID must be set before any window (or `QApplication`) is constructed
 
 [[[appendices.windows-dev-launcher#aumid-before-window]]]
 

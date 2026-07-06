@@ -106,6 +106,7 @@ nav:
           - Code Conventions: specs/appendices/code-conventions.md
           - Continuous Integration: specs/appendices/continuous-integration.md
           - Open Questions: specs/appendices/open-questions.md
+          - QtAds: specs/appendices/qt-ads.md
           - Testing: specs/appendices/testing.md
           - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
   - Implementation Plan: specs/implementation-plan.md
