@@ -38,9 +38,11 @@ class DocumentsDock(QMainWindow):
         super().__init__(parent)
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
+        self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
+        """Every area whose ``currentChanged`` is already connected to :meth:`__on_area_current_changed`
+        -- checked by :meth:`__track_current_tab` so a second document joining an already-open
+        area (as a new tab, not a new area) doesn't connect that area's signal a second time."""
         self.__current_dock: QtAds.CDockWidget | None = None
-
-        self.__dock_manager.focusedDockWidgetChanged.connect(self.__on_focused_dock_widget_changed)
 
     def open_document(self, path: Path) -> DocumentWidget | None:
         """Open ``path`` in a new dock, or focus its dock if already open.
@@ -56,11 +58,10 @@ class DocumentsDock(QMainWindow):
 
         if area := dock.dockAreaWidget():
             area.setCurrentIndex(area.index(dock))
-        self.__dock_manager.setDockWidgetFocused(dock)
-        # set directly rather than relying solely on focusedDockWidgetChanged: setDockWidgetFocused()
-        # does not synchronously emit it in this QtAds version (verified against 5.0.0), so without
-        # this, every dock after the first would read __current_dock as still None and split into
-        # its own area instead of tabbing into the currently open one
+        # set directly rather than relying solely on the area's currentChanged: opening the very
+        # first document ever is already index 0, so setCurrentIndex(0) above is a no-op that
+        # never fires it, leaving __current_dock as still None and the next dock splitting into
+        # its own area instead of tabbing into this one
         self.__set_current_dock(dock)
 
         return widget
@@ -125,9 +126,20 @@ class DocumentsDock(QMainWindow):
         self.__update_dock_title(dock)
 
         dock_area = self.__current_dock.dockAreaWidget() if self.__current_dock is not None else None
-        self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, dock_area)
+        area = self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, dock_area)
+        self.__track_current_tab(area)
 
         return dock
+
+    def __track_current_tab(self, area: QtAds.CDockAreaWidget) -> None:
+        """Connect ``area.currentChanged`` to track tab switches, once per distinct area.
+
+        :param area: the dock area to track; a no-op if already tracked (e.g. a new dock joining
+            an already-open area, which shares that area's existing connection).
+        """
+        if area not in self.__areas_tracking_current_tab:
+            self.__areas_tracking_current_tab.add(area)
+            area.currentChanged.connect(lambda index: self.__on_area_current_changed(area, index))
 
     def __on_tab_label_double_clicked(self) -> None:
         """Handle a double-click on a document's tab label."""
@@ -169,13 +181,15 @@ class DocumentsDock(QMainWindow):
         self.__current_dock = dock
         self.document_focus_changed.emit(self.__document_docks[dock] if dock is not None else None)
 
-    def __on_focused_dock_widget_changed(self, _: QtAds.CDockWidget, now: QtAds.CDockWidget) -> None:
-        """Track the currently-focused document dock, so new docks join its area.
+    def __on_area_current_changed(self, area: QtAds.CDockAreaWidget, index: int) -> None:
+        """Track the currently-focused document dock whenever the user switches tabs.
 
-        :param now: the newly-focused dock, or ``None`` when focus left every document dock.
+        :param area: the dock area whose current tab changed.
+        :param index: the newly-current tab's index within ``area``.
         """
-        if now is None or now in self.__document_docks:
-            self.__set_current_dock(now)
+        dock = area.dockWidget(index)
+        if dock in self.__document_docks:
+            self.__set_current_dock(dock)
 
     def __on_close_dock_widget_requested(self) -> None:
         """Remove the closed dock (and its widget) from the dock manager and bookkeeping.

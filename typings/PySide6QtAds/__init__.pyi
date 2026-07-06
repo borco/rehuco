@@ -46,6 +46,20 @@ class CDockAreaWidget(QWidget):
         """The tab index `dock_widget` occupies in this area, for use with `setCurrentIndex`."""
         ...
 
+    def dockWidget(self, index: int) -> CDockWidget | None:
+        """The dock widget occupying the tab at `index`, or `None` if `index` is out of range."""
+        ...
+
+    def currentIndex(self) -> int:
+        """The index of this area's currently-selected tab."""
+        ...
+
+    currentChanged: Signal
+    """Emitted with the new tab index whenever this area's current (selected) tab changes -- e.g.
+    the user clicks a different tab. Plain tab-bar behavior, unlike
+    `CDockManager.focusedDockWidgetChanged` -- fires regardless of the `FocusHighlighting` config
+    flag."""
+
 class CElidingLabel(QLabel):
     """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
     content of a `CDockWidgetTab`'s clickable label (`objectName() == "dockWidgetTabLabel"`,
