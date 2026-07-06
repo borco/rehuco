@@ -61,13 +61,19 @@ class Application(QApplication):
         if self.__main_window is None:
             # must run before this process's first CDockManager, whichever window ends up
             # constructing it: the CDockFocusController that emits focusedDockWidgetChanged
-            # (which DocumentsDock listens to) is only built when this flag is set -- off by
-            # default, per typings/PySide6QtAds/__init__.pyi's focusedDockWidgetChanged docstring.
-            # Set here rather than in any one window's own __init__: show_main_window() is
-            # currently the earliest point that builds a window at all, and the only one reached
-            # solely by the primary instance -- if some other QtAds-based window is ever built
-            # before MainWindow, move this call ahead of that construction instead.
-            QtAds.CDockManager.setConfigFlag(QtAds.CDockManager.FocusHighlighting, True)
+            # (which DocumentsDock listens to) is only built when FocusHighlighting is set --
+            # off by default, per typings/PySide6QtAds/__init__.pyi's focusedDockWidgetChanged
+            # docstring. Set here rather than in any one window's own __init__: show_main_window()
+            # is currently the earliest point that builds a window at all, and the only one
+            # reached solely by the primary instance -- if some other QtAds-based window is ever
+            # built before MainWindow, move this call ahead of that construction instead.
+            config_flags = QtAds.CDockManager.eConfigFlag
+            QtAds.CDockManager.setConfigFlags(
+                config_flags.AllTabsHaveCloseButton
+                | config_flags.DockAreaHasTabsMenuButton
+                | config_flags.MiddleMouseButtonClosesTab
+                | config_flags.FocusHighlighting
+            )
             self.__main_window = MainWindow()
         self.__main_window.raise_and_activate()
         return self.__main_window

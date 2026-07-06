@@ -176,31 +176,51 @@ class CDockManager(QWidget):
     via `addDockWidget`/`setCentralWidget`. Nestable -- a `CDockWidget`'s content can itself embed
     another `CDockManager` (`rehuco_agent`'s dock-in-dock shell, [[nodes#single-instance]])."""
 
-    class ConfigFlag:
-        """One global docking-behavior toggle, passed to `setConfigFlag`/`testConfigFlag`. Only
-        the flag `rehuco-agent` actually needs is declared here (see this stub's module docstring)."""
+    class eConfigFlag:
+        """One global docking-behavior toggle, OR'd together and passed to `setConfigFlags`. Only
+        the flags `rehuco-agent` actually needs are declared here (see this stub's module
+        docstring)."""
 
-        FocusHighlighting: CDockManager.ConfigFlag
+        AllTabsHaveCloseButton: CDockManager.eConfigFlag
+        """Shows the `[x]` close button on every tab in a dock area, not only the active one."""
+
+        DockAreaHasTabsMenuButton: CDockManager.eConfigFlag
+        """Adds a drop-down button to each dock area listing all its tabs, for areas with more
+        tabs than fit the available width."""
+
+        MiddleMouseButtonClosesTab: CDockManager.eConfigFlag
+        """Middle-clicking a tab closes it, the same as clicking its `[x]` button."""
+
+        FocusHighlighting: CDockManager.eConfigFlag
         """Enables `CDockFocusController`, which is what makes `focusedDockWidgetChanged` ever
         fire and `setDockWidgetFocused` do anything -- **off by default**. Must be set via
-        `setConfigFlag` before the first `CDockManager` is constructed (`MainWindow.__init__`
+        `setConfigFlags` before the first `CDockManager` is constructed (`MainWindow.__init__`
         does this, before `DocumentsDock` builds one)."""
 
+        def __or__(self, other: CDockManager.eConfigFlag) -> CDockManager.eConfigFlag:
+            """Combine two flags into one selector, mirroring the C++ enum's `|` (Qt flag)
+            operator."""
+            ...
+
     # promoted onto CDockManager itself too, like CDockWidget.DockWidgetFeature's members:
-    FocusHighlighting: ConfigFlag
+    AllTabsHaveCloseButton: eConfigFlag
+    DockAreaHasTabsMenuButton: eConfigFlag
+    MiddleMouseButtonClosesTab: eConfigFlag
+    FocusHighlighting: eConfigFlag
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Construct an empty dock manager with no docks yet."""
         ...
 
     @staticmethod
-    def setConfigFlag(flag: ConfigFlag, on: bool = True) -> None:
-        """Turn one global `ConfigFlag` on or off for every `CDockManager` in the process.
-        Must be called before the first `CDockManager` is constructed to take effect."""
+    def setConfigFlags(flags: eConfigFlag) -> None:
+        """Turn on every `eConfigFlag` OR'd into `flags` (all others off) for every `CDockManager`
+        in the process. Must be called before the first `CDockManager` is constructed to take
+        effect."""
         ...
 
     @staticmethod
-    def testConfigFlag(flag: ConfigFlag) -> bool:
+    def testConfigFlag(flag: eConfigFlag) -> bool:
         """Whether `flag` is currently set."""
         ...
 
