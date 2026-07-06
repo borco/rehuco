@@ -7,12 +7,14 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
+from borco_pyside.logging import setup_console_logging
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QFileOpenEvent, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.main_window import MainWindow
+from rehuco_agent.settings.persistent_settings import persistent_settings
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -92,6 +94,8 @@ def run(argv: list[str]) -> int:
     :param argv: process argv (``sys.argv``); ``argv[1:]`` are ``.rehu`` paths to open immediately.
     :returns: process exit code; ``0`` immediately if this process forwarded to a running primary.
     """
+    setup_console_logging()
+    LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)
     if not singleton.setup(APP_ID):
