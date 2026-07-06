@@ -120,6 +120,35 @@ def test_set_icon_switches_the_source_svg_and_keeps_it_themed(
     assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
 
 
+def test_refresh_rebuilds_the_icon_for_a_checked_state_changed_without_toggled(
+    make_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """refresh() rebuilds the icon for the action's current checked state, even when nothing ever
+    emitted `toggled` for it (confirmed: `CDockManager.restoreState()` can flip a dock's
+    `toggleViewAction()` this way, silently, without the signal).
+
+    **Test steps:**
+
+    * mock QFile, make the action checkable, construct a handler (builds the unchecked icon)
+    * flip checked without emitting toggled (blockSignals), simulating a silent external change
+    * call refresh()
+    * verify the icon now renders in the app palette's HighlightedText color
+    """
+    mock_qfile(SVG)
+    make_action.setCheckable(True)
+    handler = ActionIconThemeHandler(make_action, "icon.svg")
+
+    make_action.blockSignals(True)
+    make_action.setChecked(True)
+    make_action.blockSignals(False)
+
+    handler.refresh()
+
+    expected = QApplication.palette().color(QPalette.ColorRole.HighlightedText)
+    pixmap = make_action.icon().pixmap(10, 10)
+    assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
+
+
 def test_toggling_back_reuses_the_previously_cached_icon(
     make_action: QAction, mock_qfile: Callable[..., Any], mocker: MockerFixture
 ) -> None:

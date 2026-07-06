@@ -238,6 +238,21 @@ def test_restore_state_rejects_a_non_dict_payload(widget: DocumentWidget) -> Non
     assert widget.restore_state(cbor2.dumps([1, 2, 3])) is False
 
 
+def test_restore_state_rejects_a_dict_with_garbage_dock_manager_bytes(widget: DocumentWidget) -> None:
+    """A validly-encoded dict payload whose dock-manager bytes aren't a real saved state is
+    rejected by QtAds's own ``restoreState``, rather than refreshing the toggle icons for it.
+
+    **Test steps:**
+
+    * call ``restore_state`` with a dict payload whose ``dock_manager`` entry is garbage bytes
+    * verify it reports failure
+    """
+    payload = cbor2.loads(widget.save_state())
+    payload["dock_manager"] = b"not a real dock manager state"
+
+    assert widget.restore_state(cbor2.dumps(payload)) is False
+
+
 def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: DocumentWidget) -> None:
     """A dict payload missing the stashed-sizes entry still restores the dock manager's own state.
 

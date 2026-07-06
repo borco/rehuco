@@ -47,6 +47,17 @@ class ActionIconThemeHandler(QObject):
 
         self.__update_icon()
 
+    def refresh(self) -> None:
+        """Rebuild the icon for the action's *current* checked state.
+
+        For when something changed that state without going through the action's own
+        ``setChecked()``/`toggled` -- confirmed: ``CDockManager.restoreState()`` can silently flip
+        a dock's ``toggleViewAction()`` to match the restored layout without ever emitting
+        ``toggled``, leaving whichever icon was cached at construction time on screen regardless
+        of the dock's real, now-different state.
+        """
+        self.__update_icon()
+
     def set_icon(self, icon: str) -> None:
         """Switch the source SVG this handler recolors, rebuilding the current icon immediately.
 
