@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Final, override
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QByteArray
+from PySide6.QtCore import QByteArray, QSignalBlocker, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QMainWindow
+from PySide6.QtWidgets import QApplication, QDialog, QMainWindow
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
@@ -46,6 +46,35 @@ class MainWindow(QMainWindow):
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
         self.__restore_session()
+
+        self.__setup_theme_toggle()
+
+    def __setup_theme_toggle(self) -> None:
+        """Wire the ``.ui``-declared theme action: checked means dark, unchecked means light.
+
+        The icon always reflects the *current* scheme (sun in light, moon in dark, mkdocs-style)
+        and stays in sync via ``colorSchemeChanged`` even if something else changes it.
+        """
+        self.__ui.theme_action.toggled.connect(self.__on_theme_action_toggled)
+        QApplication.styleHints().colorSchemeChanged.connect(self.__update_theme_action)
+        self.__update_theme_action(QApplication.styleHints().colorScheme())
+
+    @staticmethod
+    def __on_theme_action_toggled(checked: bool) -> None:
+        """Apply the app's color scheme for the action's new checked state.
+
+        :param checked: the action's new checked state -- ``True`` means dark, ``False`` light.
+        """
+        QApplication.styleHints().setColorScheme(Qt.ColorScheme.Dark if checked else Qt.ColorScheme.Light)
+
+    def __update_theme_action(self, scheme: Qt.ColorScheme) -> None:
+        """Sync the theme action's checked state to ``scheme``; its icon follows automatically.
+
+        :param scheme: the app's current color scheme (``Unknown`` is treated as light).
+        """
+        # avoids re-triggering __on_theme_action_toggled with the same scheme
+        with QSignalBlocker(self.__ui.theme_action):
+            self.__ui.theme_action.setChecked(scheme == Qt.ColorScheme.Dark)
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.

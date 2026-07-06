@@ -5,7 +5,7 @@ from typing import Any, Final
 import cbor2
 import PySide6QtAds as QtAds
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -13,6 +13,10 @@ from rehuco_agent.fields import build_document_form
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
+
+VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
+EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
+SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 
 
 class DocumentWidget(QMainWindow):
@@ -45,12 +49,13 @@ class DocumentWidget(QMainWindow):
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        self.__viewer_action.setText("Toggle Viewer")
+        self.__viewer_action.setIcon(QIcon(VIEWER_ICON_RESOURCE))
         self.__editor_action: Final = editor_dock.toggleViewAction()
-        self.__editor_action.setText("Toggle Editor")
+        self.__editor_action.setIcon(QIcon(EDITOR_ICON_RESOURCE))
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
+        self.__save_action.setIcon(QIcon(SAVE_ICON_RESOURCE))
         self.__save_action.triggered.connect(model.save)
         self.addAction(self.__save_action)
 
