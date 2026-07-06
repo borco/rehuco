@@ -1,5 +1,6 @@
 """One dock per open `.rehu` document, with focus-and-reuse-by-path ([[nodes#single-instance]])."""
 
+import logging
 from pathlib import Path
 from typing import Final
 
@@ -10,6 +11,9 @@ from rehuco_core import RehuDocument, RehuFormatError
 
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.widgets.qtads_utils import tab_label
+
+LOG: Final = logging.getLogger(__name__)
 
 
 class DocumentsDock(QMainWindow):
@@ -115,6 +119,8 @@ class DocumentsDock(QMainWindow):
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = widget  # pylint: disable=unsupported-assignment-operation
 
+        tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
+
         model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
         self.__update_dock_title(dock)
 
@@ -122,6 +128,14 @@ class DocumentsDock(QMainWindow):
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, dock_area)
 
         return dock
+
+    def __on_tab_label_double_clicked(self) -> None:
+        """Handle a double-click on a document's tab label."""
+        # TODO: implement tab label double-clicked functionality -- convert a preview-mode tab
+        # into a normal one, once tab preview mode (VSCode-explorer-style: opened-from-explorer
+        # tabs start in preview and get replaced by the next preview open, until double-click or
+        # an edit promotes them) exists.
+        LOG.info("Tab label double-clicked; not implemented yet")
 
     def __update_dock_title(self, dock: QtAds.CDockWidget) -> None:
         """Set ``dock``'s tab title/tooltip from its document's label, marking it dirty when unsaved.

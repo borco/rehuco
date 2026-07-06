@@ -10,7 +10,7 @@ from typing import overload
 
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QLabel, QWidget
 
 class DockWidgetArea:
     """A drop-location selector for `CDockManager.addDockWidget`/`setCentralWidget` (e.g.
@@ -45,6 +45,14 @@ class CDockAreaWidget(QWidget):
     def index(self, dock_widget: CDockWidget) -> int:
         """The tab index `dock_widget` occupies in this area, for use with `setCurrentIndex`."""
         ...
+
+class CElidingLabel(QLabel):
+    """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
+    content of a `CDockWidgetTab`'s clickable label (`objectName() == "dockWidgetTabLabel"`,
+    findable via `CDockWidgetTab.findChild`)."""
+
+    doubleClicked: Signal
+    """Emitted when the label is double-clicked."""
 
 class CDockWidgetTab(QWidget):
     """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.

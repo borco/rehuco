@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.widgets.qtads_utils import tab_label
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -490,6 +491,25 @@ def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> Non
     qtbot.addWidget(dock)
 
     assert dock.focused_document_path() is None
+
+
+def test_double_clicking_a_tab_label_does_not_raise(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Double-clicking a document's tab label doesn't raise -- wired to a placeholder for now,
+    pending the future preview-tab-mode feature the double-click is meant to drive.
+
+    **Test steps:**
+
+    * open the fake path
+    * emit its tab label's `doubleClicked` signal
+    * verify nothing raises
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+
+    tab_label(cdock).doubleClicked.emit()
 
 
 def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
