@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Final, override
 
 import PySide6QtAds as QtAds
-from borco_pyside.gui import ThemeManager
+from borco_pyside.theming import ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow

@@ -4,8 +4,8 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from borco_pyside.gui.action_icon_theme_handler import ActionIconThemeHandler
-from borco_pyside.gui.svg_recolor import recolored_svg_icon
+from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
+from borco_pyside.theming.svg_recolor import recolored_svg_icon
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QColor, QPalette
 from PySide6.QtWidgets import QApplication
@@ -44,7 +44,7 @@ def test_construction_raises_without_a_running_qapplication(
     * verify RuntimeError is raised
     """
     mock_qfile(SVG)
-    mocker.patch("borco_pyside.gui.action_icon_theme_handler.QApplication.instance", return_value=None)
+    mocker.patch("borco_pyside.theming.action_icon_theme_handler.QApplication.instance", return_value=None)
 
     with pytest.raises(RuntimeError, match="QApplication"):
         ActionIconThemeHandler(make_action, "icon.svg")
@@ -161,7 +161,9 @@ def test_toggling_back_reuses_the_previously_cached_icon(
     * verify the icon builder ran exactly twice (once per distinct state), not three times
     """
     mock_qfile(SVG)
-    build_spy = mocker.patch("borco_pyside.gui.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon)
+    build_spy = mocker.patch(
+        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon
+    )
     make_action.setCheckable(True)
     ActionIconThemeHandler(make_action, "icon.svg")  # builds unchecked (1)
 
@@ -184,7 +186,9 @@ def test_palette_change_clears_the_cache_and_rebuilds_the_icon(
     * verify the icon builder ran again, and the icon now reflects the new color
     """
     mock_qfile(SVG)
-    build_spy = mocker.patch("borco_pyside.gui.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon)
+    build_spy = mocker.patch(
+        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon
+    )
     ActionIconThemeHandler(make_action, "icon.svg")
     assert build_spy.call_count == 1
 

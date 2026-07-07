@@ -1,6 +1,6 @@
 """Tests for recolor_svg/recolored_svg_icon and their backing RecoloredSvgIconEngine."""
 
-from borco_pyside.gui.svg_recolor import RecoloredSvgIconEngine, recolor_svg, recolored_svg_icon
+from borco_pyside.theming.svg_recolor import RecoloredSvgIconEngine, recolor_svg, recolored_svg_icon
 from PySide6.QtGui import QColor, QIcon
 from pytestqt.qtbot import QtBot
 

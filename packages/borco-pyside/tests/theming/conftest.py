@@ -1,4 +1,4 @@
-"""pytest fixtures for borco_pyside.gui tests."""
+"""pytest fixtures for borco_pyside.theming tests."""
 
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -45,7 +45,7 @@ def mock_qfile(mocker: MockerFixture) -> Callable[..., Any]:
         file_mock = mocker.MagicMock()
         file_mock.open.return_value = open_ok
         file_mock.readAll.return_value.data.return_value = data
-        mocker.patch("borco_pyside.gui.action_icon_theme_handler.QFile", return_value=file_mock)
+        mocker.patch("borco_pyside.theming.action_icon_theme_handler.QFile", return_value=file_mock)
         return file_mock
 
     return factory

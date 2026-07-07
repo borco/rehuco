@@ -3,8 +3,8 @@
 from collections.abc import Callable
 from typing import Any
 
-from borco_pyside.gui.action_icon_theme_handler import ActionIconThemeHandler
-from borco_pyside.gui.theme_manager import ThemeManager
+from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
+from borco_pyside.theming.theme_manager import ThemeManager
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication

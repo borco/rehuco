@@ -4,7 +4,7 @@ from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
-from borco_pyside.gui import ActionIconThemeHandler
+from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget

@@ -4,7 +4,7 @@ from PySide6.QtCore import QFile, QIODevice, QObject
 from PySide6.QtGui import QAction, QIcon, QPalette
 from PySide6.QtWidgets import QApplication
 
-from borco_pyside.gui.svg_recolor import recolored_svg_icon
+from borco_pyside.theming.svg_recolor import recolored_svg_icon
 
 
 class ActionIconThemeHandler(QObject):
@@ -12,7 +12,7 @@ class ActionIconThemeHandler(QObject):
 
     ``icon`` (an SVG resource/file path) is assumed to already be drawn for the light theme's
     unchecked (normal) state, and is kept as the source glyph; a checked variant is derived from
-    it via :func:`~borco_pyside.gui.recolored_svg_icon`, using ``QPalette.ColorRole.ButtonText``/
+    it via :func:`~borco_pyside.theming.recolored_svg_icon`, using ``QPalette.ColorRole.ButtonText``/
     ``HighlightedText`` so both automatically track whatever palette the current theme provides --
     no separate light/dark master assets needed. Recoloring the SVG's own fill (rather than a
     rasterized pixmap) keeps the icon exactly as crisp at any size as an untouched SVG-backed
@@ -28,7 +28,7 @@ class ActionIconThemeHandler(QObject):
     :param action: the checkable action to keep recolored.
     :param icon: path (Qt resource or filesystem) to the source SVG, drawn for the light theme's
         unchecked (normal) state. Must be genuinely monochrome, in the narrow sense
-        :func:`~borco_pyside.gui.recolor_svg` actually requires -- a multi-color source loses its
+        :func:`~borco_pyside.theming.recolor_svg` actually requires -- a multi-color source loses its
         color distinctions rather than being preserved.
     :param parent: optional Qt parent; defaults to ``action`` itself.
     """

@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication
 
-from borco_pyside.gui.action_icon_theme_handler import ActionIconThemeHandler
+from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
 
 
 class ThemeManager(QObject):
@@ -20,7 +20,7 @@ class ThemeManager(QObject):
     OS live-tracking after pinning ``Light``/``Dark``: an explicit scheme override otherwise
     disables that tracking for the rest of the process.
 
-    Each mode's icon is kept themed via an internal :class:`~borco_pyside.gui.ActionIconThemeHandler`
+    Each mode's icon is kept themed via an internal :class:`~borco_pyside.theming.ActionIconThemeHandler`
     (swapping its source SVG on every mode change instead of setting a plain, uncolored icon), so
     ``action``'s glyph always contrasts with the app's current theme, the same as any other themed
     action.
