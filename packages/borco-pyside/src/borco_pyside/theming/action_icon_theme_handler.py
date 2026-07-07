@@ -1,7 +1,7 @@
 """Keep a checkable action's icon recolored to match the current app theme."""
 
 from PySide6.QtCore import QFile, QIODevice, QObject
-from PySide6.QtGui import QAction, QIcon, QPalette
+from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
 from borco_pyside.theming.svg_recolor import recolored_svg_icon
@@ -10,16 +10,15 @@ from borco_pyside.theming.svg_recolor import recolored_svg_icon
 class ActionIconThemeHandler(QObject):
     """Keeps a checkable action's icon recolored to match the current app theme.
 
-    ``icon`` (an SVG resource/file path) is assumed to already be drawn for the light theme's
-    unchecked (normal) state, and is kept as the source glyph; a checked variant is derived from
-    it via :func:`~borco_pyside.theming.recolored_svg_icon`, using ``QPalette.ColorRole.ButtonText``/
-    ``HighlightedText`` so both automatically track whatever palette the current theme provides --
-    no separate light/dark master assets needed. Recoloring the SVG's own fill (rather than a
-    rasterized pixmap) keeps the icon exactly as crisp at any size as an untouched SVG-backed
-    ``QIcon``. Icons are built lazily, one per ``checked`` state, and rebuilt from scratch whenever
-    ``QApplication.paletteChanged`` fires -- that signal (not ``QStyleHints.colorSchemeChanged``,
-    which can fire before the palette itself has actually been updated) is the authoritative point
-    at which the new theme's colors are available to read.
+    ``icon`` (an SVG resource/file path) is the source glyph; the handler sets **one** scalable
+    ``QIcon`` (via :func:`~borco_pyside.theming.recolored_svg_icon` with an ``on_color``) carrying
+    both variants -- the unchecked glyph coloured ``QPalette.ColorRole.ButtonText`` as
+    ``QIcon.State.Off`` and the checked glyph coloured ``HighlightedText`` as ``State.On`` -- so
+    **Qt** picks the right one from the action's own checked state; the handler never swaps icons on
+    ``toggled``. The whole icon is rebuilt whenever ``QApplication.paletteChanged`` fires -- that
+    signal (not
+    ``QStyleHints.colorSchemeChanged``, which can fire before the palette itself has actually been
+    updated) is the authoritative point at which the new theme's colours are available to read.
 
     A ``QObject``, parented to ``action`` by default -- ``ActionIconThemeHandler(action, icon)``
     alone is enough, with nothing to hold onto: Qt destroys it along with ``action``, and its own
@@ -37,29 +36,16 @@ class ActionIconThemeHandler(QObject):
         super().__init__(parent if parent is not None else action)
         self.__action = action
         self.__svg: bytes = self.__read_file(icon)
-        self.__cache: dict[bool, QIcon] = {}
 
-        action.toggled.connect(self.__update_icon)
         app = QApplication.instance()
         if not isinstance(app, QApplication):
             raise RuntimeError("ActionIconThemeHandler requires a running QApplication")
         app.paletteChanged.connect(self.__on_palette_changed)
 
-        self.__update_icon()
-
-    def refresh(self) -> None:
-        """Rebuild the icon for the action's *current* checked state.
-
-        For when something changed that state without going through the action's own
-        ``setChecked()``/`toggled` -- confirmed: ``CDockManager.restoreState()`` can silently flip
-        a dock's ``toggleViewAction()`` to match the restored layout without ever emitting
-        ``toggled``, leaving whichever icon was cached at construction time on screen regardless
-        of the dock's real, now-different state.
-        """
-        self.__update_icon()
+        self.__apply_icon()
 
     def set_icon(self, icon: str) -> None:
-        """Switch the source SVG this handler recolors, rebuilding the current icon immediately.
+        """Switch the source SVG this handler recolors, rebuilding the icon immediately.
 
         For an action whose glyph itself changes (e.g. a mode-cycling action swapping between
         sun/moon/auto), rather than just its color -- the new source is still kept themed exactly
@@ -69,28 +55,27 @@ class ActionIconThemeHandler(QObject):
             theme's unchecked (normal) state.
         """
         self.__svg = self.__read_file(icon)
-        self.__cache.clear()
-        self.__update_icon()
+        self.__apply_icon()
 
     def __on_palette_changed(self, *_args: object) -> None:
         # the app's palette only reflects a theme switch once this fires -- rebuilding eagerly on
-        # colorSchemeChanged instead read the still-stale pre-switch palette and cached it forever
-        # under that scheme's key (confirmed: the save icon then never picked up the real colors).
-        self.__cache.clear()
-        self.__update_icon()
+        # colorSchemeChanged instead reads the still-stale pre-switch palette (confirmed: the save
+        # icon then never picked up the real colors).
+        self.__apply_icon()
 
-    def __update_icon(self, *_args: object) -> None:
-        checked = self.__action.isChecked()
-        icon = self.__cache.get(checked)
-        if icon is None:
-            icon = self.__build_icon(checked)
-            self.__cache[checked] = icon  # pylint: disable=unsupported-assignment-operation
-        self.__action.setIcon(icon)
-
-    def __build_icon(self, checked: bool) -> QIcon:
-        role = QPalette.ColorRole.HighlightedText if checked else QPalette.ColorRole.ButtonText
-        color = QApplication.palette().color(role)
-        return recolored_svg_icon(self.__svg, color)
+    def __apply_icon(self) -> None:
+        # One scalable QIcon carrying both variants -- unchecked (ButtonText) as State.Off, checked
+        # (HighlightedText) as State.On -- and let Qt pick per the action's checked state. Nothing
+        # is swapped on `toggled`, which would miss state changes that don't emit it (a dock closed
+        # via its tab's [x], or CDockManager.restoreState() flipping toggleViewAction()).
+        palette = QApplication.palette()
+        self.__action.setIcon(
+            recolored_svg_icon(
+                self.__svg,
+                palette.color(QPalette.ColorRole.ButtonText),
+                palette.color(QPalette.ColorRole.HighlightedText),
+            )
+        )
 
     def __read_file(self, path: str) -> bytes:
         """Read ``path`` (Qt resource or filesystem) fully into memory.

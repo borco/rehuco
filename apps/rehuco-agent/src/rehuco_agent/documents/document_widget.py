@@ -58,9 +58,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        self.__viewer_icon_handler: Final = ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
+        ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
         self.__editor_action: Final = editor_dock.toggleViewAction()
-        self.__editor_icon_handler: Final = ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
+        ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -136,12 +136,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
         finally:
             self.__restoring_layout = False
-        if restored:
-            # restoreState() can silently flip a toggleViewAction()'s checked state to match the
-            # restored layout without ever emitting toggled -- refresh explicitly, or a hidden
-            # dock's toolbar icon stays stuck showing whatever was cached at construction time
-            self.__viewer_icon_handler.refresh()
-            self.__editor_icon_handler.refresh()
         return restored
 
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:
