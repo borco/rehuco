@@ -50,26 +50,45 @@ def recolor_svg(svg: bytes, color: QColor) -> bytes:
     return re.sub(r'style="([^"]*)"', replace_style, text).encode("utf-8")
 
 
-def recolored_svg_icon(svg: bytes, color: QColor) -> QIcon:
-    """Build a ``QIcon`` that renders ``svg`` recolored to ``color``, at any size, on demand.
+def recolored_svg_icon(svg: bytes, color: QColor, on_color: QColor | None = None) -> QIcon:
+    """Build a scalable ``QIcon`` that renders ``svg`` recolored to ``color``, at any size, on demand.
+
+    Pass ``on_color`` for a distinct *checked* (``QIcon.State.On``) variant, so one icon can serve a
+    checkable action -- Qt renders ``color`` when unchecked and ``on_color`` when checked, without
+    the caller swapping icons on state changes. Left ``None``, the state is ignored and every state
+    renders in ``color``.
 
     :param svg: the source SVG document, as raw bytes.
-    :param color: the color to recolor every filled shape to.
+    :param color: the color for the unchecked (``State.Off``) variant, and any state with no variant.
+    :param on_color: the color for the checked (``State.On``) variant; ``None`` reuses ``color``.
     :returns: a scalable ``QIcon`` backed by a :class:`RecoloredSvgIconEngine`.
     """
-    return QIcon(RecoloredSvgIconEngine(recolor_svg(svg, color)))
+    on_svg = recolor_svg(svg, on_color) if on_color is not None else None
+    return QIcon(RecoloredSvgIconEngine(recolor_svg(svg, color), on_svg))
 
 
 class RecoloredSvgIconEngine(QIconEngine):
     """Renders an already-recolored SVG fresh at whatever exact size/mode/state Qt requests.
 
-    :param svg: the (already recolored) SVG document to render, as raw bytes.
+    Optionally carries a distinct ``on_svg`` for the checked (``QIcon.State.On``) state; left
+    ``None``, the state is ignored and ``svg`` renders for every state. One engine thus covers a
+    checkable icon's Off/On without a separate engine per state combination.
+
+    :param svg: the (already recolored) SVG to render, as raw bytes.
+    :param on_svg: the (already recolored) SVG to render for ``State.On``; ``None`` reuses ``svg``.
     """
 
-    def __init__(self, svg: bytes) -> None:
+    def __init__(self, svg: bytes, on_svg: bytes | None = None) -> None:
         super().__init__()
         self.__svg: Final = svg
+        self.__on_svg: Final = on_svg
         self.__renderer: Final = QSvgRenderer(QByteArray(svg))
+        self.__on_renderer: Final = QSvgRenderer(QByteArray(on_svg)) if on_svg is not None else None
+
+    def __renderer_for(self, state: QIcon.State) -> QSvgRenderer:
+        if state == QIcon.State.On and self.__on_renderer is not None:
+            return self.__on_renderer
+        return self.__renderer
 
     @override
     def paint(  # pylint: disable=unused-argument
@@ -79,7 +98,7 @@ class RecoloredSvgIconEngine(QIconEngine):
         mode: QIcon.Mode,
         state: QIcon.State,
     ) -> None:
-        self.__renderer.render(painter, QRectF(rect))
+        self.__renderer_for(state).render(painter, QRectF(rect))
 
     @override
     def pixmap(self, size: QSize, mode: QIcon.Mode, state: QIcon.State) -> QPixmap:
@@ -96,4 +115,4 @@ class RecoloredSvgIconEngine(QIconEngine):
 
     @override
     def clone(self) -> QIconEngine:
-        return RecoloredSvgIconEngine(self.__svg)
+        return RecoloredSvgIconEngine(self.__svg, self.__on_svg)

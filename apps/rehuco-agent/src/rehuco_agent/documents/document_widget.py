@@ -4,6 +4,7 @@ from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
@@ -14,6 +15,7 @@ from rehuco_agent.fields import build_document_form
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
+STATE_CURRENT_DOCK_KEY: Final = "current_dock"
 
 VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
@@ -43,6 +45,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
+        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
@@ -51,9 +54,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        self.__viewer_icon_handler: Final = ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
+        ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
         self.__editor_action: Final = editor_dock.toggleViewAction()
-        self.__editor_icon_handler: Final = ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
+        ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -96,6 +99,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             {
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
+                STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
             }
         )
 
@@ -130,11 +134,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         finally:
             self.__restoring_layout = False
         if restored:
-            # restoreState() can silently flip a toggleViewAction()'s checked state to match the
-            # restored layout without ever emitting toggled -- refresh explicitly, or a hidden
-            # dock's toolbar icon stays stuck showing whatever was cached at construction time
-            self.__viewer_icon_handler.refresh()
-            self.__editor_icon_handler.refresh()
+            # re-select the surface that was current -- restoreState above only recovers the current
+            # tab within each area, not which of two split (viewer/editor) areas actually had focus
+            current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
+            if isinstance(current_dock_state, bytes):
+                self.__tracker.restore_state(current_dock_state)
         return restored
 
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:

@@ -118,3 +118,72 @@ just the Python bindings or this repo's own typings stub — is often the only w
 a root cause once a QtAds behavior stops matching what the Python-side API surface alone suggests
 it should do; clone the repo locally and read the relevant `.cpp`/`.h` directly (§A05.1.1 above
 came from doing exactly that).
+
+## §A05.2 The full signal set a "current dock" tracker needs
+
+[[[appendices.qt-ads#current-dock-signals]]]
+
+`CDockAreaWidget.currentChanged` (§A05.1.3) is necessary but **not sufficient** — it only fires
+when a *tab index within one area* changes, and several ways of making a dock "current" don't do
+that. `QtAdsFocusTracker` (`borco_pyside.qtads`) is the reusable home for the whole set, each part
+added only after confirming empirically that the others miss its case:
+
+- **`CDockAreaWidget.currentChanged`** — ordinary tab-bar switching within a shared (tabbed) area.
+- **the area's tabs-menu `QMenu.triggered`** — picking an area's *already-current* lone tab from
+  its dropdown never changes `currentChanged`'s index, so it fires nothing.
+- **the dock's own tab-label `clicked`** (`tab_label(dock)` → the `CElidingLabel` named
+  `dockWidgetTabLabel`) — a dock alone in its area is always index 0, so clicking its tab never
+  changes `currentChanged` either.
+- **`QApplication.focusChanged`** — real keyboard focus moving into a *different, already-visible
+  split area* changes no area's current-tab index at all. Walk up `parentWidget()` from the newly
+  focused widget to find the enclosing tracked `CDockWidget`.
+- **`CDockWidget.viewToggled`** — a dock hidden/shown by its `toggleViewAction` fires *none* of the
+  above. Show → make it current. Hiding the *current* dock: Qt moves keyboard focus to a neighbor
+  **synchronously, before `viewToggled` fires** (verified: `focusWidget()` already points at the
+  sibling inside the `viewToggled(False)` slot), so `focusChanged` has already re-selected that
+  real neighbor and the toggle handler is reached only when nothing tracked took focus — clear
+  then, rather than fabricate a current dock no focus points at. Guard the whole handler with
+  `CDockManager.isRestoringState()`: `restoreState` fires `viewToggled` for every reconstructed
+  dock, which would fight the explicit re-selection in §A05.3.
+
+Deliberately **not** the tab *title*: current-ness is shown by a dynamic `tracked_focus` QSS
+property + highlight styling on the tab (a `FocusHighlighting`-free equivalent of QtAds' own
+`focused` property), so callers own their titles outright and there is no marker-vs-dirty-suffix
+conflict from two writers touching one `windowTitle`.
+
+## §A05.3 `restoreState` doesn't restore which *split* area was current
+
+[[[appendices.qt-ads#restore-current-split]]]
+
+`CDockManager.saveState`/`restoreState` records only the current *tab within each area*, never
+which of several *split* areas held focus. So docks tabbed together restore their current tab
+fine, but a viewer/editor split into two areas always comes back current on whichever dock was
+adopted first (the viewer), losing the real selection. Persist it yourself: save the current
+dock's `objectName()` alongside the manager state, and after `restoreState` (which re-registers
+every dock by name) re-select it with `CDockManager.findDockWidget(name)` +
+`set_current_dock` — this is `QtAdsFocusTracker.save_state`/`restore_state`. Note `restoreState`
+rebuilds every affected `CDockAreaWidget` from scratch, orphaning `currentChanged` connections
+made before it — re-track areas on `stateRestored` — and fires `viewToggled`/`currentChanged` for
+the reconstructed docks *during* the call, hence the `isRestoringState()` guard in §A05.2.
+
+## §A05.4 Recoloring a tab close button: the icon is stylesheet-governed, not code-set
+
+[[[appendices.qt-ads#tab-close-button]]]
+
+**Symptom:** the `[x]` close-button icon goes invisible against a themed/highlighted tab, and
+`color:` in QSS can't tint it. Root cause (found by reading QtAds' `DockWidgetTab.cpp` and its
+bundled `default.css`): the close button's icon comes from the default stylesheet's
+`#tabCloseButton { qproperty-icon: url(:/ads/images/close-button.svg); qproperty-iconSize: 16px; }`
+rule, which **wins over both** the C++ `internal::setButtonIcon` *and*
+`CDockManager.iconProvider().registerCustomIcon(TabCloseIcon, …)` at polish time — so neither
+code path can change the icon in the installed build, and a `url()` SVG icon ignores QSS `color:`
+regardless. What *does* follow the palette is **text**: render the close mark as the button's
+**text** (a glyph — ideally from a bundled icon font, e.g. Phosphor, loaded via
+`QFontDatabase.addApplicationFont`, since a system-font glyph's metrics vary per platform), color
+it with `color: palette(...)`, and hide the real icon with `qproperty-iconSize: 0px`. Two timing
+traps: (1) do the icon-size zeroing in **QSS**, because QtAds re-polishes the button on every tab
+activation and would re-apply the 16px size otherwise; (2) set the glyph's font/size and a square
+`setFixedSize` in **Python on a deferred (`QTimer.singleShot(0)`) tick**, because QtAds re-sets the
+button *after* emitting `dockWidgetAdded` (and after a restore) for the tab it then makes active,
+overwriting an eager restyle. `TabCloseButtonIsToolButton` aside, the button is a `QPushButton`
+named `tabCloseButton`, reachable via `dock.tabWidget().findChild(QAbstractButton, "tabCloseButton")`.

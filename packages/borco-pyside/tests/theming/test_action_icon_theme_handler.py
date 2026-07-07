@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
 from borco_pyside.theming.svg_recolor import recolored_svg_icon
-from PySide6.QtCore import QObject
-from PySide6.QtGui import QAction, QColor, QPalette
+from PySide6.QtCore import QObject, QSize
+from PySide6.QtGui import QAction, QColor, QIcon, QPalette
 from PySide6.QtWidgets import QApplication
 from pytest_mock import MockerFixture
 
@@ -70,27 +70,28 @@ def test_construction_builds_the_unchecked_icon_from_button_text_color(
     assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
 
 
-def test_checking_the_action_recolors_the_icon_to_the_highlighted_text_color(
-    make_action: QAction, mock_qfile: Callable[..., Any]
-) -> None:
-    """Checking a checkable action switches its icon to the HighlightedText-colored variant.
+def test_the_single_icon_carries_both_state_variants(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:
+    """One ``QIcon`` holds both variants: unchecked (ButtonText) as ``Off``, checked as ``On``.
+
+    Qt itself picks the variant from the action's checked state, so a state change that never emits
+    ``toggled`` (a dock closed via its tab's ``[x]``, or ``CDockManager.restoreState()``) still
+    shows the right colour -- this is the fix for the icon going white on such changes.
 
     **Test steps:**
 
-    * mock QFile to return a real recolorable SVG
-    * construct an ActionIconThemeHandler for a checkable action
-    * check the action
-    * verify the icon now renders in the app palette's HighlightedText color
+    * construct a handler, then read the built icon's ``Off`` and ``On`` state pixmaps
+    * verify ``Off`` renders in ButtonText and ``On`` in HighlightedText
     """
     mock_qfile(SVG)
-    make_action.setCheckable(True)
     ActionIconThemeHandler(make_action, "icon.svg")
 
-    make_action.setChecked(True)
-
-    expected = QApplication.palette().color(QPalette.ColorRole.HighlightedText)
-    pixmap = make_action.icon().pixmap(10, 10)
-    assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
+    icon = make_action.icon()
+    off = icon.pixmap(QSize(10, 10), QIcon.Mode.Normal, QIcon.State.Off)
+    on = icon.pixmap(QSize(10, 10), QIcon.Mode.Normal, QIcon.State.On)
+    assert off.toImage().pixelColor(5, 5).name() == QApplication.palette().color(QPalette.ColorRole.ButtonText).name()
+    assert (
+        on.toImage().pixelColor(5, 5).name() == QApplication.palette().color(QPalette.ColorRole.HighlightedText).name()
+    )
 
 
 def test_set_icon_switches_the_source_svg_and_keeps_it_themed(
@@ -120,74 +121,48 @@ def test_set_icon_switches_the_source_svg_and_keeps_it_themed(
     assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
 
 
-def test_refresh_rebuilds_the_icon_for_a_checked_state_changed_without_toggled(
-    make_action: QAction, mock_qfile: Callable[..., Any]
-) -> None:
-    """refresh() rebuilds the icon for the action's current checked state, even when nothing ever
-    emitted `toggled` for it (confirmed: `CDockManager.restoreState()` can flip a dock's
-    `toggleViewAction()` this way, silently, without the signal).
-
-    **Test steps:**
-
-    * mock QFile, make the action checkable, construct a handler (builds the unchecked icon)
-    * flip checked without emitting toggled (blockSignals), simulating a silent external change
-    * call refresh()
-    * verify the icon now renders in the app palette's HighlightedText color
-    """
-    mock_qfile(SVG)
-    make_action.setCheckable(True)
-    handler = ActionIconThemeHandler(make_action, "icon.svg")
-
-    make_action.blockSignals(True)
-    make_action.setChecked(True)
-    make_action.blockSignals(False)
-
-    handler.refresh()
-
-    expected = QApplication.palette().color(QPalette.ColorRole.HighlightedText)
-    pixmap = make_action.icon().pixmap(10, 10)
-    assert pixmap.toImage().pixelColor(5, 5).name() == expected.name()
-
-
-def test_toggling_back_reuses_the_previously_cached_icon(
+def test_toggling_the_action_does_not_rebuild_the_icon(
     make_action: QAction, mock_qfile: Callable[..., Any], mocker: MockerFixture
 ) -> None:
-    """Returning to a checked state already built once reuses its cached icon, without rebuilding.
+    """Toggling the action never rebuilds the icon -- Qt picks the state variant from the one icon.
 
     **Test steps:**
 
     * mock QFile and spy on recolored_svg_icon
-    * construct a handler, then check then uncheck the action
-    * verify the icon builder ran exactly twice (once per distinct state), not three times
+    * construct a checkable handler (builds the icon once), then check and uncheck the action
+    * verify the builder never ran again after construction
     """
     mock_qfile(SVG)
     build_spy = mocker.patch(
-        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon
+        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon",
+        wraps=recolored_svg_icon,
     )
     make_action.setCheckable(True)
-    ActionIconThemeHandler(make_action, "icon.svg")  # builds unchecked (1)
+    ActionIconThemeHandler(make_action, "icon.svg")  # builds the icon (1)
+    assert build_spy.call_count == 1
 
-    make_action.setChecked(True)  # builds checked (2)
-    make_action.setChecked(False)  # unchecked already cached -- no rebuild
+    make_action.setChecked(True)
+    make_action.setChecked(False)
 
-    assert build_spy.call_count == 2
+    assert build_spy.call_count == 1
 
 
-def test_palette_change_clears_the_cache_and_rebuilds_the_icon(
+def test_palette_change_rebuilds_both_variants(
     make_action: QAction, mock_qfile: Callable[..., Any], mocker: MockerFixture
 ) -> None:
-    """A real app-wide palette change invalidates every cached icon and rebuilds the current one.
+    """A real app-wide palette change rebuilds the icon (both variants) in the new colors.
 
     **Test steps:**
 
     * mock QFile and spy on recolored_svg_icon
-    * construct a handler (builds once)
+    * construct a handler (builds the icon once)
     * change the app's palette for real (ButtonText to a new color)
-    * verify the icon builder ran again, and the icon now reflects the new color
+    * verify the icon was rebuilt and the unchecked variant reflects the new color
     """
     mock_qfile(SVG)
     build_spy = mocker.patch(
-        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon", wraps=recolored_svg_icon
+        "borco_pyside.theming.action_icon_theme_handler.recolored_svg_icon",
+        wraps=recolored_svg_icon,
     )
     ActionIconThemeHandler(make_action, "icon.svg")
     assert build_spy.call_count == 1
@@ -201,7 +176,7 @@ def test_palette_change_clears_the_cache_and_rebuilds_the_icon(
         app.setPalette(palette)
 
         assert build_spy.call_count == 2
-        pixmap = make_action.icon().pixmap(10, 10)
+        pixmap = make_action.icon().pixmap(QSize(10, 10), QIcon.Mode.Normal, QIcon.State.Off)
         assert pixmap.toImage().pixelColor(5, 5).name() == "#00ff00"
     finally:
         app.setPalette(original_palette)

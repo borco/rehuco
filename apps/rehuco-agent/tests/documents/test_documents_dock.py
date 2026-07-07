@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
-from PySide6.QtWidgets import QLineEdit, QMessageBox, QWidget
+from borco_pyside.qtads import tab_label
+from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.documents_dock import CURRENT_DOCK_MARKER, DIRTY_DOCK_MARKER, DocumentsDock
-from rehuco_agent.widgets.qtads_utils import tab_label
+from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, DocumentsDock
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -102,115 +102,6 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
     assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def test_current_dock_marker_moves_with_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Only the currently-focused dock's title carries :data:`CURRENT_DOCK_MARKER`.
-
-    **Test steps:**
-
-    * open two documents (the second becomes current)
-    * verify only the second's title carries the marker
-    * switch focus back to the first
-    * verify the marker moved: the first's title now carries it, the second's no longer does
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
-    assert first is not None and second is not None
-    cdock1 = dock_for(dock, first)
-    cdock2 = dock_for(dock, second)
-    assert not cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
-    assert cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-    dock.open_document(FAKE_PATH)
-
-    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
-    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-
-def test_clicking_a_lone_docks_tab_label_moves_the_current_dock_marker(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Clicking a dock's own tab label marks it current, even alone in its own area with no siblings.
-
-    A lone dock's area never fires ``currentChanged`` on click (its current tab index is always 0,
-    unchanged) -- confirmed empirically as a real reported bug: splitting two documents apart into
-    their own areas, then clicking the one that wasn't current, never moved
-    :data:`CURRENT_DOCK_MARKER` to it. The tab label's own ``clicked`` fires regardless of whether
-    its area's current tab index actually changes.
-
-    **Test steps:**
-
-    * open two documents and split them into their own separate areas
-    * emit the non-current dock's tab label ``clicked``
-    * verify the current dock -- and so the marker -- moved to it
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
-    assert first is not None and second is not None
-    cdock1 = dock_for(dock, first)
-    cdock2 = dock_for(dock, second)
-    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    manager.addDockWidget(QtAds.RightDockWidgetArea, cdock2, cdock1.dockAreaWidget())
-    # the split above can itself re-fire currentChanged for cdock1's now-lone remaining area
-    # (re-establishing its one tab as "current"); pin down the precondition explicitly rather
-    # than relying on that incidental side effect
-    dock._DocumentsDock__set_current_dock(cdock2)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-
-def test_selecting_a_lone_dock_from_its_own_tabs_menu_moves_the_current_dock_marker(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """Selecting a dock from its own (lone) tabs-menu marks it current, same as clicking its tab.
-
-    QtAds's tabs-menu (the dropdown listing every tab in an area, present even for a lone tab) is a
-    separate hook from both the tab label's own ``clicked`` and ``currentChanged``: choosing its
-    only entry -- the area's already-current tab -- never actually changes that index, confirmed
-    empirically as a real reported bug: picking a lone, non-current dock from its own tabs-menu
-    never moved :data:`CURRENT_DOCK_MARKER` to it.
-
-    **Test steps:**
-
-    * open two documents and split them into their own separate areas
-    * pin the current dock to the second one
-    * trigger the first (non-current) dock's own tabs-menu action selecting itself
-    * verify the current dock -- and so the marker -- moved to it
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    first = dock.open_document(FAKE_PATH)
-    second = dock.open_document(OTHER_PATH)
-    assert first is not None and second is not None
-    cdock1 = dock_for(dock, first)
-    cdock2 = dock_for(dock, second)
-    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    manager.addDockWidget(QtAds.RightDockWidgetArea, cdock2, cdock1.dockAreaWidget())
-    dock._DocumentsDock__set_current_dock(cdock2)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert not cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-    area1 = cdock1.dockAreaWidget()
-    assert area1 is not None
-    menu = area1.titleBarButton(QtAds.TitleBarButtonTabsMenu).menu()
-    menu.aboutToShow.emit()
-    (action,) = menu.actions()
-    action.trigger()
-
-    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
-    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-    tab_label(cdock1).clicked.emit()
-
-    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
-    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
-
-
 def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
 
@@ -232,13 +123,13 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     widget = dock.open_document(FAKE_PATH)
     assert widget is not None
     cdock = dock_for(dock, widget)
-    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}"
+    assert cdock.windowTitle() == FAKE_LABEL
 
     widget.model.title = "Changed"
-    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}{DIRTY_DOCK_MARKER}"
+    assert cdock.windowTitle() == f"{FAKE_LABEL}{DIRTY_DOCK_MARKER}"
 
     widget.model.dirty = False
-    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}"
+    assert cdock.windowTitle() == FAKE_LABEL
 
 
 def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -445,183 +336,6 @@ def test_close_requested_ignores_a_non_dock_sender(qtbot: QtBot) -> None:
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def test_focus_tracking_follows_a_document_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Switching tabs to a document's dock records it as the current dock (new docks join its area).
-
-    Calls the private slot directly rather than relying on a real Qt tab click (unreliable to
-    simulate headlessly) -- this is pure bookkeeping over its arguments, not signal-dispatch behavior.
-
-    **Test steps:**
-
-    * open a document, then report its area's current tab as having switched to it
-    * verify the current-dock bookkeeping picked it up
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    cdock = dock_for(dock, widget)
-    area = cdock.dockAreaWidget()
-    assert area is not None
-
-    dock._DocumentsDock__on_area_current_changed(area, area.index(cdock))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_focus_tracking_ignores_a_dock_outside_the_documents_area(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A tab-change reporting a dock that isn't one of this dock's own documents doesn't overwrite it.
-
-    **Test steps:**
-
-    * open a document and report its area's current tab as having switched to it (sets the current dock)
-    * report a tab-change whose area resolves the index to an unrelated, unmanaged dock
-    * verify the current dock is unchanged
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    cdock = dock_for(dock, widget)
-    area = cdock.dockAreaWidget()
-    assert area is not None
-    dock._DocumentsDock__on_area_current_changed(area, area.index(cdock))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    other = QtAds.CDockWidget(manager, "elsewhere")
-    fake_area = mocker.MagicMock()
-    fake_area.dockWidget.return_value = other
-    dock._DocumentsDock__on_area_current_changed(fake_area, 0)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_focus_tracking_ignores_an_area_whose_underlying_dock_is_already_deleted(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A stale connection firing for an already-torn-down area doesn't crash or overwrite the current dock.
-
-    ``CDockManager.restoreState()`` rebuilds areas from scratch and can transiently fire
-    ``currentChanged`` on the old one it's replacing while tearing it down -- confirmed empirically
-    (a real crash log) that Shiboken flags that old area's wrapper "already deleted" by the time
-    the connected handler runs, partway through the teardown.
-
-    **Test steps:**
-
-    * open a document (sets the current dock)
-    * report a tab-change whose area raises ``RuntimeError`` when asked for its current dock widget
-    * verify the current dock is unchanged and nothing raises
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    cdock = dock_for(dock, widget)
-
-    dead_area = mocker.MagicMock()
-    dead_area.dockWidget.side_effect = RuntimeError("Internal C++ object already deleted.")
-    dock._DocumentsDock__on_area_current_changed(dead_area, 0)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_application_focus_tracking_follows_focus_into_a_document(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Real Qt focus moving into a document's own content updates the current-dock bookkeeping.
-
-    Complements ``currentChanged``-based tracking: catches focus moving into a *different,
-    already-visible split area* (e.g. clicking a field in another document's pane), which never
-    fires ``currentChanged`` since neither area's current-tab index actually changes then (each
-    has only the one tab) -- confirmed empirically to otherwise leave the current dock stuck at
-    whatever restore/an explicit ``open_document`` call last set.
-
-    Calls the private slot directly with a real nested child widget, rather than relying on a
-    real ``focusChanged`` emission (confirmed unreliable to simulate headlessly: ``setFocus()``
-    on the offscreen platform never actually fires it).
-
-    **Test steps:**
-
-    * open a document and find a real nested child widget inside its content
-    * call the private focus-changed handler directly, reporting that child as newly focused
-    * verify the current-dock bookkeeping picked up the document it belongs to
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    assert widget is not None
-    cdock = dock_for(dock, widget)
-    nested = widget.findChildren(QLineEdit)
-    assert nested
-
-    dock._DocumentsDock__on_application_focus_changed(None, nested[0])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_application_focus_tracking_ignores_focus_leaving_the_app(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Focus leaving the whole application (``now`` is ``None``) doesn't overwrite the current dock.
-
-    **Test steps:**
-
-    * open a document (sets the current dock)
-    * report focus moving to ``None``
-    * verify the current dock is unchanged
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    cdock = dock_for(dock, widget)
-
-    dock._DocumentsDock__on_application_focus_changed(cdock, None)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_application_focus_tracking_ignores_a_widget_with_no_document_ancestor(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """Focus moving to a widget with no enclosing document dock doesn't overwrite the current one.
-
-    **Test steps:**
-
-    * open a document (sets the current dock)
-    * report focus moving to an unrelated, parentless widget
-    * verify the current dock is unchanged
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    cdock = dock_for(dock, widget)
-    unrelated = QWidget()
-    qtbot.addWidget(unrelated)
-
-    dock._DocumentsDock__on_application_focus_changed(None, unrelated)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def test_construction_skips_focus_tracking_without_a_running_qapplication(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Construction still succeeds when ``QApplication.instance()`` reports no live app.
-
-    Unlike e.g. ``ActionIconThemeHandler``, ``DocumentsDock`` doesn't require a running
-    ``QApplication`` to function -- it just can't wire up its ``focusChanged``-based tracker then.
-
-    **Test steps:**
-
-    * mock ``QApplication.instance()`` to return ``None``
-    * construct a ``DocumentsDock``
-    * verify construction did not raise
-    """
-    mocker.patch("rehuco_agent.documents.documents_dock.QApplication.instance", return_value=None)
-
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    assert dock._DocumentsDock__current_dock is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
 def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a path whose dock currently has no containing area still tracks it as current, just
     without indexing into that (nonexistent) area.
@@ -633,7 +347,7 @@ def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: 
 
     * register a stand-in dock (reporting no area) for a path, directly in the private map
     * open that same path
-    * verify the stand-in's widget was returned and it's tracked as the current dock
+    * verify the stand-in's widget was returned and it's tracked as the focused document
     """
     dock = DocumentsDock()
     qtbot.addWidget(dock)
@@ -648,7 +362,7 @@ def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: 
     result = dock.open_document(FAKE_PATH)
 
     assert result is fake_widget
-    assert dock._DocumentsDock__current_dock is fake_cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert dock.focused_document_path() == FAKE_PATH
 
 
 def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -656,24 +370,21 @@ def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: Mo
 
     **Test steps:**
 
-    * open two documents, and report the second one's tab as current (sets the current dock)
+    * open two documents (the second, opened last, is the current one)
     * close the first (non-current) document's dock
-    * verify the current dock is still the second one
+    * verify the focused document is still the second one
     """
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     first_widget = dock.open_document(FAKE_PATH)
     first_cdock = dock_for(dock, first_widget)
-    second_widget = dock.open_document(OTHER_PATH)
-    second_cdock = dock_for(dock, second_widget)
-    area = second_cdock.dockAreaWidget()
-    assert area is not None
-    dock._DocumentsDock__on_area_current_changed(area, area.index(second_cdock))  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock.open_document(OTHER_PATH)
+    assert dock.focused_document_path() == OTHER_PATH
 
     first_cdock.requestCloseDockWidget()
 
-    assert dock._DocumentsDock__current_dock is second_cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert dock.focused_document_path() == OTHER_PATH
 
 
 def test_opening_a_missing_file_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -804,33 +515,6 @@ def test_restore_state_retracks_current_tab_after_area_recreation(mocker: Mocker
     area.setCurrentIndex(area.index(cdock1))
 
     assert dock.focused_document_path() == FAKE_PATH
-
-
-def test_restore_state_skips_retracking_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The re-tracking loop skips any dock that currently has no containing area.
-
-    Registers a stand-in dock (reporting no area) directly in the private map, since a real dock
-    always has an area right after a successful restore -- this null case can't be reached through
-    the public API alone.
-
-    **Test steps:**
-
-    * register a stand-in dock (reporting no area) directly in the private map
-    * force ``CDockManager.restoreState()`` to report success
-    * restore some (arbitrary) state
-    * verify it reports success without raising -- the no-area dock was skipped, not retracked
-    """
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    fake_cdock = mocker.MagicMock()
-    fake_cdock.dockAreaWidget.return_value = None
-    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    docks[fake_cdock] = mocker.MagicMock()
-    mocker.patch.object(dock._DocumentsDock__dock_manager, "restoreState", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert dock.restore_state(b"state") is True
-
-    fake_cdock.dockAreaWidget.assert_called_once()
 
 
 def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:

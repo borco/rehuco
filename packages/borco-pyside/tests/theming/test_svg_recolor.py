@@ -1,6 +1,7 @@
 """Tests for recolor_svg/recolored_svg_icon and their backing RecoloredSvgIconEngine."""
 
 from borco_pyside.theming.svg_recolor import RecoloredSvgIconEngine, recolor_svg, recolored_svg_icon
+from PySide6.QtCore import QSize
 from PySide6.QtGui import QColor, QIcon
 from pytestqt.qtbot import QtBot
 
@@ -126,6 +127,25 @@ def test_recolored_svg_icon_renders_sharply_at_a_different_size(qtbot: QtBot) ->
 
     assert small.size().width() == 20
     assert large.size().width() == 64
+
+
+def test_recolored_svg_icon_with_on_color_renders_a_distinct_checked_variant(qtbot: QtBot) -> None:
+    """Passing ``on_color`` gives ``State.On`` its own color, while ``State.Off`` keeps ``color``.
+
+    **Test steps:**
+
+    * build a recolored icon with ``color`` red and ``on_color`` blue
+    * render the ``Off`` and ``On`` state pixmaps
+    * verify ``Off`` is red and ``On`` is blue
+    """
+    del qtbot
+    icon = recolored_svg_icon(SVG_WITH_RGB_FILL, QColor("red"), QColor("blue"))
+
+    off = icon.pixmap(QSize(24, 24), QIcon.Mode.Normal, QIcon.State.Off)
+    on = icon.pixmap(QSize(24, 24), QIcon.Mode.Normal, QIcon.State.On)
+
+    assert off.toImage().pixelColor(12, 12).name() == "#ff0000"
+    assert on.toImage().pixelColor(12, 12).name() == "#0000ff"
 
 
 def test_engine_clone_renders_the_same_recolored_content(qtbot: QtBot) -> None:
