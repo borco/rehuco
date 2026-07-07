@@ -272,6 +272,112 @@ def test_restore_state_ignores_an_unknown_dock_name(manager: QtAds.CDockManager)
     assert tracker.current_dock is dock
 
 
+def test_showing_a_hidden_dock_makes_it_current(manager: QtAds.CDockManager) -> None:
+    """Showing a dock via its toggle action makes it the current one (focus follows the reveal).
+
+    **Test steps:**
+
+    * split two docks, make the first current, then hide the second
+    * show the second again
+    * verify it is now current
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    second = add_dock(manager, "two", QtAds.RightDockWidgetArea, first.dockAreaWidget())
+    tracker.set_current_dock(first)
+    second.toggleView(False)
+    assert tracker.current_dock is first
+
+    second.toggleView(True)
+
+    assert tracker.current_dock is second
+
+
+def test_hiding_the_current_dock_clears_current(manager: QtAds.CDockManager) -> None:
+    """Hiding the current dock clears current-ness (no tracked dock holds real focus here).
+
+    Following focus to a real neighbour is ``QApplication.focusChanged``'s job -- Qt moves keyboard
+    focus to a neighbour synchronously when a *focused* dock hides, and that re-selects it before
+    this even runs (see :func:`test_focus_moving_into_a_tracked_dock_makes_it_current`). Here the
+    current dock was only tracked, never given real focus, so hiding it leaves nothing focused and
+    the tracker clears rather than fabricating a current dock.
+
+    **Test steps:**
+
+    * split two docks and make the first current (without real keyboard focus)
+    * hide the first (the current one)
+    * verify nothing is current
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    add_dock(manager, "two", QtAds.RightDockWidgetArea, first.dockAreaWidget())
+    tracker.set_current_dock(first)
+
+    first.toggleView(False)
+
+    assert tracker.current_dock is None
+
+
+def test_hiding_a_non_current_dock_leaves_current_unchanged(manager: QtAds.CDockManager) -> None:
+    """Hiding a dock that isn't current doesn't disturb the current one.
+
+    **Test steps:**
+
+    * split two docks and make the first current
+    * hide the second (not current)
+    * verify the first is still current
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    second = add_dock(manager, "two", QtAds.RightDockWidgetArea, first.dockAreaWidget())
+    tracker.set_current_dock(first)
+
+    second.toggleView(False)
+
+    assert tracker.current_dock is first
+
+
+def test_hiding_the_last_visible_dock_clears_current(manager: QtAds.CDockManager) -> None:
+    """Hiding the current dock when no other is visible clears the current dock.
+
+    **Test steps:**
+
+    * add a single dock (current)
+    * hide it
+    * verify nothing is current
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+    assert tracker.current_dock is dock
+
+    dock.toggleView(False)
+
+    assert tracker.current_dock is None
+
+
+def test_view_toggle_during_a_restore_is_ignored(manager: QtAds.CDockManager, mocker: MockerFixture) -> None:
+    """A ``viewToggled`` fired while the manager is restoring state is ignored (restore owns current).
+
+    ``restoreState`` fires ``viewToggled`` for every reconstructed dock; acting on those would fight
+    the explicit :meth:`restore_state` re-selection that follows.
+
+    **Test steps:**
+
+    * split two docks and make the second current
+    * report the manager as mid-restore, then hide the current dock
+    * verify the current dock is unchanged (the toggle was ignored)
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    second = add_dock(manager, "two", QtAds.RightDockWidgetArea, first.dockAreaWidget())
+    tracker.set_current_dock(second)
+    mocker.patch.object(manager, "isRestoringState", return_value=True)
+
+    second.toggleView(False)
+
+    assert tracker.current_dock is second
+
+
 def test_setting_the_already_current_dock_is_a_noop(manager: QtAds.CDockManager) -> None:
     """Re-setting the current dock to itself neither re-emits nor rewrites its title.
 

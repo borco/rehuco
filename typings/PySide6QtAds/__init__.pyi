@@ -184,6 +184,13 @@ class CDockWidget(QWidget):
         """The tabbed area currently containing this dock, or `None` if it isn't placed in one
         (e.g. before it's been added to a manager)."""
 
+    def isClosed(self) -> bool:
+        """Whether this dock is currently closed/hidden (its `toggleViewAction` unchecked)."""
+
+    def toggleView(self, open: bool = ...) -> None:
+        """Show (`open=True`) or hide (`open=False`) this dock, as its `toggleViewAction` does --
+        firing `viewToggled` with the new visibility."""
+
     def requestCloseDockWidget(self) -> None:
         """Ask ADS to close this dock as if its close button were clicked, honoring
         `CustomCloseHandling`/`DockWidgetDeleteOnClose` the same way a real click would."""
@@ -285,3 +292,7 @@ class CDockManager(QWidget):
 
     def findDockWidget(self, object_name: str) -> CDockWidget | None:
         """Return the registered dock whose `objectName()` is `object_name`, or `None` if none matches."""
+
+    def isRestoringState(self) -> bool:
+        """Whether a `restoreState` is currently in progress -- true only during that call, e.g. while
+        the `viewToggled`/`currentChanged` signals it fires for reconstructed docks are dispatching."""

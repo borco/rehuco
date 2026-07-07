@@ -221,6 +221,7 @@ ads--CDockWidget[{prop}="true"] {{
         """
         self.__tracked_docks.add(dock)
         tab_label(dock).clicked.connect(lambda: self.__set_current_dock(dock))
+        dock.viewToggled.connect(lambda visible: self.__on_view_toggled(dock, visible))
         self.__defer_close_button_style(dock)
         area = dock.dockAreaWidget()
         joins_existing_area = area is not None and area in self.__areas_tracking_current_tab
@@ -237,6 +238,41 @@ ads--CDockWidget[{prop}="true"] {{
         self.__tracked_docks.discard(dock)
         if self.__current_dock is dock:
             self.__set_current_dock(None)
+
+    def __on_view_toggled(self, dock: QtAds.CDockWidget, visible: bool) -> None:
+        """Follow a dock hidden/shown by its ``toggleViewAction``: make current-ness track visibility.
+
+        Showing a dock makes it current (focus moves to the surface you just revealed); hiding the
+        current dock moves current to another still-visible one (or nothing, if none remain), so the
+        remaining surface takes focus rather than the hidden one keeping it. Skipped while the
+        manager is restoring state -- ``restoreState`` fires ``viewToggled`` for every reconstructed
+        dock, and :meth:`restore_state` re-selects the saved current dock explicitly afterwards.
+
+        :param dock: the dock whose visibility just changed.
+        :param visible: the dock's new visibility.
+        """
+        if self.__dock_manager.isRestoringState():
+            return
+        if visible:
+            self.set_current_dock(dock)
+        elif dock is self.__current_dock:
+            # Reached only when hiding the current dock did *not* move Qt focus into another tracked
+            # dock -- if it had, ``focusChanged`` would already have re-selected that real neighbour
+            # (Qt moves focus synchronously, before this fires). So nothing tracked is focused now;
+            # clear rather than fabricate a current dock no real focus points at.
+            self.__set_current_dock(None)
+
+    def __tracked_dock_ancestor(self, widget: QWidget | None) -> QtAds.CDockWidget | None:
+        """The tracked dock that is ``widget`` or encloses it, or ``None`` if none does.
+
+        :param widget: the widget to walk up from (e.g. the global focus widget).
+        :returns: the enclosing tracked dock, or ``None``.
+        """
+        while widget is not None:
+            if isinstance(widget, QtAds.CDockWidget) and widget in self.__tracked_docks:
+                return widget
+            widget = widget.parentWidget()
+        return None
 
     def __on_state_restored(self) -> None:
         """Re-track areas after a layout restore, and resync the current dock to the restored tab.
@@ -300,12 +336,9 @@ ads--CDockWidget[{prop}="true"] {{
         :param _old: the widget that just lost focus; unused.
         :param now: the widget that gained focus, or ``None`` if focus left the application.
         """
-        widget: QWidget | None = now
-        while widget is not None:
-            if isinstance(widget, QtAds.CDockWidget) and widget in self.__tracked_docks:
-                self.__set_current_dock(widget)
-                return
-            widget = widget.parentWidget()
+        dock = self.__tracked_dock_ancestor(now)
+        if dock is not None:
+            self.__set_current_dock(dock)
 
     def __set_current_dock(self, dock: QtAds.CDockWidget | None) -> None:
         if dock is self.__current_dock:
