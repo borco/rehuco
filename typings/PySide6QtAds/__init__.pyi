@@ -56,6 +56,10 @@ class CDockAreaWidget(QWidget):
         """The dock widget occupying the tab at `index`, or `None` if `index` is out of range."""
         ...
 
+    def currentIndex(self) -> int:
+        """The index of this area's currently-selected (front) tab."""
+        ...
+
     def titleBarButton(self, which: TitleBarButton) -> CTitleBarButton:
         """This area's title-bar button matching `which` (e.g. its tabs-menu dropdown)."""
         ...
@@ -194,6 +198,12 @@ class CDockWidget(QWidget):
     def requestCloseDockWidget(self) -> None:
         """Ask ADS to close this dock as if its close button were clicked, honoring
         `CustomCloseHandling`/`DockWidgetDeleteOnClose` the same way a real click would."""
+        ...
+
+    def setAsCurrentTab(self) -> None:
+        """Bring this dock's tab to the front of its area (the visible one), without giving it Qt
+        keyboard focus. A no-op if it's already the area's current tab, or has no area yet. Fires
+        `CDockAreaWidget.currentChanged` when the current tab actually changes."""
         ...
 
 class CDockManager(QWidget):

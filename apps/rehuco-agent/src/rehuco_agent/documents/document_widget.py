@@ -49,14 +49,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
-        self.__focus_tracker: Final = QtAdsFocusTracker(self.__dock_manager, current_dock_marker=CURRENT_DOCK_MARKER)
+        QtAdsFocusTracker(self.__dock_manager, current_dock_marker=CURRENT_DOCK_MARKER)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
         form = build_document_form()
         viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
-        self.__focus_tracker.set_current_dock(viewer_dock)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
         self.__viewer_icon_handler: Final = ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)

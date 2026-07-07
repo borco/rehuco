@@ -69,29 +69,51 @@ class QtAdsFocusTracker(QObject):
 
     @property
     def current_dock(self) -> QtAds.CDockWidget | None:
-        """The currently-current dock, or ``None`` if none is."""
+        """The dock currently tracked as current, or ``None`` if none is."""
         return self.__current_dock
 
     def set_current_dock(self, dock: QtAds.CDockWidget | None) -> None:
-        """Force ``dock`` to become the current one, e.g. right after opening/creating it.
+        """Make ``dock`` the current one: bring its tab to the front of its area, and track it.
 
-        Needed on top of the automatic tracking above for a first-ever dock: adding it to an
-        empty manager is already index 0, so nothing about that add actually changes
-        ``currentChanged``'s index, and the automatic tracking never fires for it on its own.
+        The explicit counterpart to the automatic tracking (tab switches, tab-label clicks,
+        tabs-menu picks, keyboard focus) -- for driving current-ness from code rather than user
+        interaction. Reveals a dock stacked behind others by raising it (``setAsCurrentTab``), so
+        this is how you focus/show a specific dock: pick a particular document tab, or restore a
+        remembered focus after a reload. Also marks a dock that's alone at index 0 of its area,
+        which the automatic tracking can't (no ``currentChanged`` fires there).
 
-        :param dock: the dock to mark current, or ``None`` to mark that none is.
+        :param dock: the dock to make current, or ``None`` to mark that none is.
         """
+        if dock is not None:
+            dock.setAsCurrentTab()
         self.__set_current_dock(dock)
 
     def __on_dock_widget_added(self, dock: QtAds.CDockWidget) -> None:
         """Start tracking a dock QtAds just added: its tab-label click and its area's tab switches.
 
+        Also adopts ``dock`` as current in the two cases the area's own ``currentChanged`` can't
+        cover on its own:
+
+        * it joins an **existing** area (tabbed in) -- it becomes that area's current tab, but
+          QtAds fires the area's ``currentChanged`` *before* emitting ``dockWidgetAdded``, so at
+          that point ``dock`` isn't tracked yet and :meth:`__on_area_current_changed` drops it.
+        * nothing is current yet -- the first dock overall, sitting at index 0 of a fresh area,
+          which fires no ``currentChanged`` at all (no prior index to change *from*).
+
+        A dock that opens a **new** area while something is already current (a deliberate split,
+        e.g. a second surface built after the first) is left as-is; focus it with
+        :meth:`set_current_dock` if it should steal current-ness.
+
         :param dock: the dock QtAds just added to the tracked manager.
         """
         self.__tracked_docks.add(dock)
         tab_label(dock).clicked.connect(lambda: self.__set_current_dock(dock))
-        if area := dock.dockAreaWidget():
+        area = dock.dockAreaWidget()
+        joins_existing_area = area is not None and area in self.__areas_tracking_current_tab
+        if area is not None:
             self.__track_area(area)
+        if joins_existing_area or self.__current_dock is None:
+            self.__set_current_dock(dock)
 
     def __on_dock_widget_removed(self, dock: QtAds.CDockWidget) -> None:
         """Stop tracking a dock QtAds just removed, clearing it as current if it was.
