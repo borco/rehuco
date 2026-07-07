@@ -24,10 +24,9 @@ class UnsavedChangesDialog(QDialog):
     the close). **Discard All** closes without saving anything, regardless of the checkboxes.
     **Cancel** aborts the app close entirely -- see :meth:`MainWindow.closeEvent`.
 
-    Geometry (size/position) is not yet restored across runs -- deferred to #21's settings/
-    persistence slice, which must capture it on every exit path (Save Selected, Discard All,
-    Cancel, Escape, and the titlebar close button all funnel through :meth:`QDialog.done`, the one
-    hook that fires for all of them).
+    Geometry (size/position) is not yet restored across runs -- deferred to #38, which must
+    capture it on every exit path (Save Selected, Discard All, Cancel, Escape, and the titlebar
+    close button all funnel through :meth:`QDialog.done`, the one hook that fires for all of them).
 
     :param models: the dirty document models to offer for saving.
     :param parent: optional Qt parent.

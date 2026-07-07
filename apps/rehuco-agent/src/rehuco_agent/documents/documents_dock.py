@@ -232,11 +232,11 @@ class DocumentsDock(QMainWindow):
     def __confirm_close(self, model: RehuDocumentModel) -> bool:
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.
 
-        Geometry (size/position) is not yet restored across runs -- deferred to #21's settings/
-        persistence slice. Unlike :class:`UnsavedChangesDialog`, that's simple here: the static
-        ``QMessageBox.warning()`` call already blocks until the box closes for any reason (a
-        button, Escape, or the titlebar close button), so reading geometry right after it returns
-        would cover every exit path -- no need for a `QDialog.done()`-style single hook.
+        Geometry (size/position) is not yet restored across runs -- deferred to #38. Unlike
+        :class:`UnsavedChangesDialog`, that's simple here: the static ``QMessageBox.warning()`` call
+        already blocks until the box closes for any reason (a button, Escape, or the titlebar close
+        button), so reading geometry right after it returns would cover every exit path -- no need
+        for a `QDialog.done()`-style single hook.
 
         :param model: the dirty document model about to be closed.
         :returns: ``True`` if the close should proceed (Save or Discard was chosen), ``False`` if
