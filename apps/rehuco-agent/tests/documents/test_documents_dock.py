@@ -602,6 +602,26 @@ def test_application_focus_tracking_ignores_a_widget_with_no_document_ancestor(
     assert dock._DocumentsDock__current_dock is cdock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_construction_skips_focus_tracking_without_a_running_qapplication(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Construction still succeeds when ``QApplication.instance()`` reports no live app.
+
+    Unlike e.g. ``ActionIconThemeHandler``, ``DocumentsDock`` doesn't require a running
+    ``QApplication`` to function -- it just can't wire up its ``focusChanged``-based tracker then.
+
+    **Test steps:**
+
+    * mock ``QApplication.instance()`` to return ``None``
+    * construct a ``DocumentsDock``
+    * verify construction did not raise
+    """
+    mocker.patch("rehuco_agent.documents.documents_dock.QApplication.instance", return_value=None)
+
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    assert dock._DocumentsDock__current_dock is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_open_document_tracks_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a path whose dock currently has no containing area still tracks it as current, just
     without indexing into that (nonexistent) area.
@@ -784,6 +804,33 @@ def test_restore_state_retracks_current_tab_after_area_recreation(mocker: Mocker
     area.setCurrentIndex(area.index(cdock1))
 
     assert dock.focused_document_path() == FAKE_PATH
+
+
+def test_restore_state_skips_retracking_a_dock_with_no_area(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The re-tracking loop skips any dock that currently has no containing area.
+
+    Registers a stand-in dock (reporting no area) directly in the private map, since a real dock
+    always has an area right after a successful restore -- this null case can't be reached through
+    the public API alone.
+
+    **Test steps:**
+
+    * register a stand-in dock (reporting no area) directly in the private map
+    * force ``CDockManager.restoreState()`` to report success
+    * restore some (arbitrary) state
+    * verify it reports success without raising -- the no-area dock was skipped, not retracked
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    fake_cdock = mocker.MagicMock()
+    fake_cdock.dockAreaWidget.return_value = None
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    docks[fake_cdock] = mocker.MagicMock()
+    mocker.patch.object(dock._DocumentsDock__dock_manager, "restoreState", return_value=True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dock.restore_state(b"state") is True
+
+    fake_cdock.dockAreaWidget.assert_called_once()
 
 
 def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:
