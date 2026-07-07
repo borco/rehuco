@@ -51,8 +51,6 @@ class QtAdsFocusTracker(QObject):
     :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param title_bar: current dock's area title-bar accent colour (see
         :meth:`tracked_focus_dock_stylesheet`).
-    :param style_sheet: full stylesheet override for ``dock_manager``; ``None`` (the default) builds
-        one from ``highlight``/``label``/``title_bar``. Pass ``""`` to apply nothing.
     :param parent: optional Qt parent; defaults to ``dock_manager`` itself.
     """
 
@@ -72,7 +70,6 @@ class QtAdsFocusTracker(QObject):
         highlight: str = "palette(highlight)",
         label: str = "palette(highlighted-text)",
         title_bar: str = "palette(highlight)",
-        style_sheet: str | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
@@ -81,9 +78,7 @@ class QtAdsFocusTracker(QObject):
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
 
-        if style_sheet is None:
-            style_sheet = self.tracked_focus_dock_stylesheet(highlight, label, title_bar)
-        dock_manager.setStyleSheet(style_sheet)
+        dock_manager.setStyleSheet(self.tracked_focus_dock_stylesheet(highlight, label, title_bar))
         dock_manager.dockWidgetAdded.connect(self.__on_dock_widget_added)
         dock_manager.dockWidgetRemoved.connect(self.__on_dock_widget_removed)
         dock_manager.stateRestored.connect(self.__on_state_restored)

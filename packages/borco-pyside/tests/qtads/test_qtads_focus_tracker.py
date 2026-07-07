@@ -415,18 +415,22 @@ def test_focus_moving_outside_every_tracked_dock_is_ignored(manager: QtAds.CDock
     assert tracker.current_dock is dock
 
 
-def test_explicit_style_sheet_overrides_the_built_default(manager: QtAds.CDockManager) -> None:
-    """A ``style_sheet`` argument is applied verbatim instead of the built default.
+def test_tracked_focus_dock_stylesheet_builds_qss_from_its_colours(manager: QtAds.CDockManager) -> None:
+    """The stylesheet builder emits the tracked-focus selectors with the given colours.
 
     **Test steps:**
 
-    * construct a tracker with an explicit ``style_sheet``
-    * verify the manager carries exactly that stylesheet
+    * build a stylesheet with explicit colours
+    * verify it selects on the tracked-focus property and carries each colour
     """
-    tracker = QtAdsFocusTracker(manager, style_sheet="QWidget { color: red; }")
+    tracker = QtAdsFocusTracker(manager)
 
-    assert tracker.current_dock is None
-    assert manager.styleSheet() == "QWidget { color: red; }"
+    qss = tracker.tracked_focus_dock_stylesheet(highlight="#111", label="#222", title_bar="#333")
+
+    assert '[tracked_focus="true"]' in qss
+    assert "#111" in qss
+    assert "#222" in qss
+    assert "#333" in qss
 
 
 def test_state_restore_resyncs_current_dock_to_the_restored_current_tab(manager: QtAds.CDockManager) -> None:
