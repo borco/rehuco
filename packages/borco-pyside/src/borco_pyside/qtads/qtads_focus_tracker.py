@@ -47,9 +47,6 @@ class QtAdsFocusTracker(QObject):
     alone is enough, with nothing to hold onto: Qt destroys it along with ``dock_manager``.
 
     :param dock_manager: the dock manager whose docks to track.
-    :param current_dock_marker: prefix added to the current dock's tab title, stripped from
-        whichever dock stops being current; defaults to :data:`CURRENT_DOCK_MARKER`. Pass an empty
-        string to skip marking titles at all.
     :param highlight: current dock's tab fill/border colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param title_bar: current dock's area title-bar accent colour (see
@@ -61,10 +58,6 @@ class QtAdsFocusTracker(QObject):
     """Dynamic boolean property this tracker sets on the current dock's tab (a ``CDockWidgetTab``)
     and the dock itself (a ``CDockWidget``) -- and re-polishes -- for
     :meth:`tracked_focus_dock_stylesheet`'s selectors to match on."""
-
-    CURRENT_DOCK_MARKER: Final = ""
-    """Default prefix marking the current dock's tab title -- a right-pointing triangle then a space.
-    Used as ``current_dock_marker``'s default; pass an empty string to disable title marking."""
 
     CLOSE_BUTTON_TEXT: Final = "\ue4f6"
     """Glyph shown as each tab close button's text instead of its icon. Text (not an icon) so its
@@ -89,17 +82,15 @@ class QtAdsFocusTracker(QObject):
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
     current, whenever :attr:`current_dock` changes."""
 
-    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    def __init__(
         self,
         dock_manager: QtAds.CDockManager,
-        current_dock_marker: str = CURRENT_DOCK_MARKER,
         highlight: str = "palette(highlight)",
         label: str = "palette(highlighted-text)",
         title_bar: str = "palette(highlight)",
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
-        self.__marker: Final = current_dock_marker
         self.__current_dock: QtAds.CDockWidget | None = None
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
@@ -125,10 +116,10 @@ class QtAdsFocusTracker(QObject):
         tabs-menu picks, keyboard focus) -- for driving current-ness from code rather than user
         interaction. Reveals a dock stacked behind others by raising it (``setAsCurrentTab``), so
         this is how you focus/show a specific dock: pick a particular document tab, or restore a
-        remembered focus after a reload. Also marks a dock that's alone at index 0 of its area,
+        remembered focus after a reload. Also tracks a dock that's alone at index 0 of its area,
         which the automatic tracking can't (no ``currentChanged`` fires there).
 
-        :param dock: the dock to make current, or ``None`` to mark that none is.
+        :param dock: the dock to make current, or ``None`` to record that none is.
         """
         if dock is not None:
             dock.setAsCurrentTab()
@@ -300,7 +291,7 @@ ads--CDockWidget[{prop}="true"] {{
         self.current_dock_changed.emit(dock)
 
     def __style_dock(self, dock: QtAds.CDockWidget, current: bool) -> None:
-        """Reflect ``dock``'s current-ness: move the title marker, toggle the tracked-focus property.
+        """Reflect ``dock``'s current-ness by toggling (and re-polishing) the tracked-focus property.
 
         Sets ``tracked_focus`` on ``dock`` (styled with the accent line -- its top border, just below
         the title bar) and on its ``tab`` (the highlight fill), then re-polishes them plus the tab's
@@ -315,9 +306,6 @@ ads--CDockWidget[{prop}="true"] {{
         :param current: whether ``dock`` is now the current one.
         """
         try:
-            if self.__marker:
-                title = dock.windowTitle().removeprefix(self.__marker)
-                dock.setWindowTitle(f"{self.__marker}{title}" if current else title)
             tab = dock.tabWidget()
             dock.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
             tab.setProperty(self.TRACKED_FOCUS_PROPERTY, current)

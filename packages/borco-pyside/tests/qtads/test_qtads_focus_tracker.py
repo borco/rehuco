@@ -10,8 +10,6 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
-MARKER = "* "
-
 
 @fixture
 def manager(qtbot: QtBot) -> Iterator[QtAds.CDockManager]:
@@ -132,45 +130,27 @@ def test_switching_the_current_tab_updates_the_current_dock(manager: QtAds.CDock
     assert tracker.current_dock is first
 
 
-def test_current_dock_marker_marks_only_the_current_dock(manager: QtAds.CDockManager) -> None:
-    """The marker prefixes only the current dock's title, moving as current-ness moves.
+def test_the_tracker_leaves_tab_titles_untouched(manager: QtAds.CDockManager) -> None:
+    """The tracker never rewrites a dock's tab title -- current-ness is shown by styling alone.
 
     **Test steps:**
 
-    * build a marking tracker, add two tabbed docks (second current)
-    * verify only the second's title carries the marker
-    * switch to the first
-    * verify the marker moved to the first and off the second
+    * build a tracker, add two tabbed docks (the second becomes current)
+    * switch current between them
+    * verify each dock keeps exactly the title it was given, current or not
     """
-    tracker = QtAdsFocusTracker(manager, current_dock_marker=MARKER)
+    tracker = QtAdsFocusTracker(manager)
     first = add_dock(manager, "one")
     second = add_dock(manager, "two", QtAds.CenterDockWidgetArea, first.dockAreaWidget())
-    assert not first.windowTitle().startswith(MARKER)
-    assert second.windowTitle().startswith(MARKER)
+    assert tracker.current_dock is second
 
     area = first.dockAreaWidget()
     assert area is not None
     area.setCurrentIndex(area.index(first))
 
     assert tracker.current_dock is first
-    assert first.windowTitle().startswith(MARKER)
-    assert not second.windowTitle().startswith(MARKER)
-
-
-def test_empty_marker_leaves_titles_untouched(manager: QtAds.CDockManager) -> None:
-    """With the default empty marker, titles are never rewritten.
-
-    **Test steps:**
-
-    * build a tracker with no marker, add a dock
-    * verify its title is unchanged (its plain name)
-    """
-    tracker = QtAdsFocusTracker(manager)
-
-    dock = add_dock(manager, "one")
-
-    assert tracker.current_dock is dock
-    assert dock.windowTitle() == "one"
+    assert first.windowTitle() == "one"
+    assert second.windowTitle() == "two"
 
 
 def test_set_current_dock_reveals_a_stacked_dock(manager: QtAds.CDockManager) -> None:
@@ -194,23 +174,22 @@ def test_set_current_dock_reveals_a_stacked_dock(manager: QtAds.CDockManager) ->
     assert tracker.current_dock is first
 
 
-def test_set_current_dock_none_clears_the_current_dock_and_its_marker(manager: QtAds.CDockManager) -> None:
-    """``set_current_dock(None)`` clears current-ness and strips the marker from the old current.
+def test_set_current_dock_none_clears_the_current_dock(manager: QtAds.CDockManager) -> None:
+    """``set_current_dock(None)`` clears current-ness.
 
     **Test steps:**
 
-    * build a marking tracker, add a dock (current, marked)
+    * add a dock (it becomes current)
     * ``set_current_dock(None)``
-    * verify nothing is current and the old dock's marker is gone
+    * verify nothing is current
     """
-    tracker = QtAdsFocusTracker(manager, current_dock_marker=MARKER)
+    tracker = QtAdsFocusTracker(manager)
     dock = add_dock(manager, "one")
-    assert dock.windowTitle().startswith(MARKER)
+    assert tracker.current_dock is dock
 
     tracker.set_current_dock(None)
 
     assert tracker.current_dock is None
-    assert dock.windowTitle() == "one"
 
 
 def test_setting_the_already_current_dock_is_a_noop(manager: QtAds.CDockManager) -> None:
