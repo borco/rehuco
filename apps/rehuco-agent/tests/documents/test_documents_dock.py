@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
+from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QLineEdit, QMessageBox, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import CURRENT_DOCK_MARKER, DIRTY_DOCK_MARKER, DocumentsDock
-from rehuco_agent.widgets.qtads_utils import tab_label
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every

@@ -3,11 +3,11 @@
 from collections.abc import Iterator
 
 import PySide6QtAds as QtAds
+from borco_pyside.qtads.qtads_utils import tab_label
 from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.widgets.qtads_utils import tab_label
 
 
 @fixture

@@ -279,6 +279,17 @@ class CDockManager(QWidget):
         :returns: whether `state` was recognized and applied."""
         ...
 
+    dockWidgetAdded: Signal
+    """Emitted with a dock widget just after it's been added to this manager (e.g. via
+    `addDockWidget`), already placed into its `CDockAreaWidget`."""
+
+    dockWidgetRemoved: Signal
+    """Emitted with a dock widget just after it's been removed from this manager via
+    `removeDockWidget`."""
+
+    stateRestored: Signal
+    """Emitted after `restoreState` finishes applying a previously-saved layout."""
+
     def removeDockWidget(self, dock_widget: CDockWidget) -> None:
         """Remove `dock_widget` from this manager's layout (its containing area is removed too, if
         it was the area's last dock). Does not delete `dock_widget` itself -- callers that own it

@@ -4,6 +4,7 @@ from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
@@ -18,6 +19,11 @@ STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
+
+CURRENT_DOCK_MARKER: Final = "⯈ "
+"""Prefix marking the currently-current dock (viewer or editor) among this document's own surfaces
+-- a separate, inner instance of the same marker :class:`~rehuco_agent.documents.documents_dock.DocumentsDock`
+uses for the outer, per-document tab."""
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -43,12 +49,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
+        self.__focus_tracker: Final = QtAdsFocusTracker(self.__dock_manager, current_dock_marker=CURRENT_DOCK_MARKER)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
         form = build_document_form()
         viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
+        self.__focus_tracker.set_current_dock(viewer_dock)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
         self.__viewer_icon_handler: Final = ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)

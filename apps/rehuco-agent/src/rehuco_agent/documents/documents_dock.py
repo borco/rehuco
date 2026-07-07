@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
+from borco_pyside.qtads import tab_label
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
 from rehuco_core import RehuDocument, RehuFormatError
 
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.widgets.qtads_utils import tab_label
 
 LOG: Final = logging.getLogger(__name__)
 
