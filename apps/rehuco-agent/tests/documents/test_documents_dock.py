@@ -8,7 +8,7 @@ import PySide6QtAds as QtAds
 from PySide6.QtWidgets import QLineEdit, QMessageBox, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.documents_dock import CURRENT_DOCK_MARKER, DIRTY_DOCK_MARKER, DocumentsDock
 from rehuco_agent.widgets.qtads_utils import tab_label
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -102,6 +102,115 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
     assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_current_dock_marker_moves_with_focus(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only the currently-focused dock's title carries :data:`CURRENT_DOCK_MARKER`.
+
+    **Test steps:**
+
+    * open two documents (the second becomes current)
+    * verify only the second's title carries the marker
+    * switch focus back to the first
+    * verify the marker moved: the first's title now carries it, the second's no longer does
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    assert first is not None and second is not None
+    cdock1 = dock_for(dock, first)
+    cdock2 = dock_for(dock, second)
+    assert not cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
+    assert cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+    dock.open_document(FAKE_PATH)
+
+    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
+    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+
+def test_clicking_a_lone_docks_tab_label_moves_the_current_dock_marker(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Clicking a dock's own tab label marks it current, even alone in its own area with no siblings.
+
+    A lone dock's area never fires ``currentChanged`` on click (its current tab index is always 0,
+    unchanged) -- confirmed empirically as a real reported bug: splitting two documents apart into
+    their own areas, then clicking the one that wasn't current, never moved
+    :data:`CURRENT_DOCK_MARKER` to it. The tab label's own ``clicked`` fires regardless of whether
+    its area's current tab index actually changes.
+
+    **Test steps:**
+
+    * open two documents and split them into their own separate areas
+    * emit the non-current dock's tab label ``clicked``
+    * verify the current dock -- and so the marker -- moved to it
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    assert first is not None and second is not None
+    cdock1 = dock_for(dock, first)
+    cdock2 = dock_for(dock, second)
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    manager.addDockWidget(QtAds.RightDockWidgetArea, cdock2, cdock1.dockAreaWidget())
+    # the split above can itself re-fire currentChanged for cdock1's now-lone remaining area
+    # (re-establishing its one tab as "current"); pin down the precondition explicitly rather
+    # than relying on that incidental side effect
+    dock._DocumentsDock__set_current_dock(cdock2)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+
+def test_selecting_a_lone_dock_from_its_own_tabs_menu_moves_the_current_dock_marker(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Selecting a dock from its own (lone) tabs-menu marks it current, same as clicking its tab.
+
+    QtAds's tabs-menu (the dropdown listing every tab in an area, present even for a lone tab) is a
+    separate hook from both the tab label's own ``clicked`` and ``currentChanged``: choosing its
+    only entry -- the area's already-current tab -- never actually changes that index, confirmed
+    empirically as a real reported bug: picking a lone, non-current dock from its own tabs-menu
+    never moved :data:`CURRENT_DOCK_MARKER` to it.
+
+    **Test steps:**
+
+    * open two documents and split them into their own separate areas
+    * pin the current dock to the second one
+    * trigger the first (non-current) dock's own tabs-menu action selecting itself
+    * verify the current dock -- and so the marker -- moved to it
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    assert first is not None and second is not None
+    cdock1 = dock_for(dock, first)
+    cdock2 = dock_for(dock, second)
+    manager = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    manager.addDockWidget(QtAds.RightDockWidgetArea, cdock2, cdock1.dockAreaWidget())
+    dock._DocumentsDock__set_current_dock(cdock2)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert not cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+    area1 = cdock1.dockAreaWidget()
+    assert area1 is not None
+    menu = area1.titleBarButton(QtAds.TitleBarButtonTabsMenu).menu()
+    menu.aboutToShow.emit()
+    (action,) = menu.actions()
+    action.trigger()
+
+    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
+    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+    tab_label(cdock1).clicked.emit()
+
+    assert cdock1.windowTitle().startswith(CURRENT_DOCK_MARKER)
+    assert not cdock2.windowTitle().startswith(CURRENT_DOCK_MARKER)
+
+
 def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
 
@@ -123,13 +232,13 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     widget = dock.open_document(FAKE_PATH)
     assert widget is not None
     cdock = dock_for(dock, widget)
-    assert cdock.windowTitle() == FAKE_LABEL
+    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}"
 
     widget.model.title = "Changed"
-    assert cdock.windowTitle() == f"{FAKE_LABEL}*"
+    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}{DIRTY_DOCK_MARKER}"
 
     widget.model.dirty = False
-    assert cdock.windowTitle() == FAKE_LABEL
+    assert cdock.windowTitle() == f"{CURRENT_DOCK_MARKER} {FAKE_LABEL}"
 
 
 def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbot: QtBot) -> None:

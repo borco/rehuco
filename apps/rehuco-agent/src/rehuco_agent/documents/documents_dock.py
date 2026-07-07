@@ -15,6 +15,14 @@ from rehuco_agent.widgets.qtads_utils import tab_label
 
 LOG: Final = logging.getLogger(__name__)
 
+CURRENT_DOCK_MARKER: Final = "⯈ "
+"""Prefix marking the currently-focused document's tab title, distinguishing it from every other
+open dock -- including tabbed-together ones QtAds already shows as each area's own "active" tab
+regardless of which area (if any) actually has real Qt keyboard focus."""
+
+DIRTY_DOCK_MARKER: Final = " ✻"
+"""Marker appended to the title of dirty document tabs."""
+
 
 class DocumentsDock(QMainWindow):
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
@@ -161,7 +169,12 @@ class DocumentsDock(QMainWindow):
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = widget  # pylint: disable=unsupported-assignment-operation
 
-        tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
+        label = tab_label(dock)
+        label.doubleClicked.connect(self.__on_tab_label_double_clicked)
+        # a lone dock's own area never fires currentChanged on click (its current tab index is
+        # always 0, unchanged) -- confirmed empirically as the reported bug: clicking such a dock's
+        # tab never moved CURRENT_DOCK_MARKER to it. This label's own click fires regardless.
+        label.clicked.connect(lambda: self.__set_current_dock(dock))
 
         model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
         self.__update_dock_title(dock)
@@ -187,7 +200,13 @@ class DocumentsDock(QMainWindow):
         return document.id or str(document.path)
 
     def __track_current_tab(self, area: QtAds.CDockAreaWidget) -> None:
-        """Connect ``area.currentChanged`` to track tab switches, once per distinct area.
+        """Connect ``area.currentChanged`` and its tabs-menu to track tab switches, once per area.
+
+        The tabs-menu (QtAds's dropdown listing every tab in ``area``, present even for a lone tab)
+        needs its own separate hook: selecting its only entry -- the area's already-current tab --
+        never fires ``currentChanged`` (its index doesn't actually change), confirmed empirically as
+        a real reported bug: picking a lone, non-current dock from its own tabs-menu never moved
+        :data:`CURRENT_DOCK_MARKER` to it. ``QMenu.triggered`` fires on every selection regardless.
 
         :param area: the dock area to track; a no-op if already tracked (e.g. a new dock joining
             an already-open area, which shares that area's existing connection).
@@ -195,6 +214,8 @@ class DocumentsDock(QMainWindow):
         if area not in self.__areas_tracking_current_tab:
             self.__areas_tracking_current_tab.add(area)
             area.currentChanged.connect(lambda index: self.__on_area_current_changed(area, index))
+            menu = area.titleBarButton(QtAds.TitleBarButtonTabsMenu).menu()
+            menu.triggered.connect(lambda action: self.__on_area_current_changed(area, action.data()))
 
     def __on_tab_label_double_clicked(self) -> None:
         """Handle a double-click on a document's tab label."""
@@ -207,14 +228,17 @@ class DocumentsDock(QMainWindow):
     def __update_dock_title(self, dock: QtAds.CDockWidget) -> None:
         """Set ``dock``'s tab title/tooltip from its document's label, marking it dirty when unsaved.
 
-        The tab title is the document's :attr:`~RehuDocumentModel.label`; the tooltip always shows
-        the full path.
+        The tab title is the document's :attr:`~RehuDocumentModel.label`, prefixed with
+        :data:`CURRENT_DOCK_MARKER` for the currently-focused dock; the tooltip always shows the
+        full path.
 
         :param dock: the dock whose title to refresh.
         """
         widget = self.__document_docks[dock]
         name = widget.model.label
-        dock.setWindowTitle(f"{name}*" if widget.model.dirty else name)
+        if dock is self.__current_dock:
+            name = f"{CURRENT_DOCK_MARKER} {name}"
+        dock.setWindowTitle(f"{name}{DIRTY_DOCK_MARKER}" if widget.model.dirty else name)
         dock.setTabToolTip(str(widget.model.path) if widget.model.path else "")
 
     def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:
@@ -231,9 +255,18 @@ class DocumentsDock(QMainWindow):
     def __set_current_dock(self, dock: QtAds.CDockWidget | None) -> None:
         """Track the currently-focused document dock and announce its widget.
 
+        Refreshes the previous and new current dock's titles, so :data:`CURRENT_DOCK_MARKER` moves
+        from one to the other -- the previous dock may already be closed (removed from
+        :attr:`__document_docks`) by the time this runs, e.g. when closing the current dock itself.
+
         :param dock: the newly-focused dock, or ``None`` when focus leaves every document dock.
         """
+        previous = self.__current_dock
         self.__current_dock = dock
+        if previous is not None and previous in self.__document_docks:
+            self.__update_dock_title(previous)
+        if dock is not None:
+            self.__update_dock_title(dock)
         self.document_focus_changed.emit(self.__document_docks[dock] if dock is not None else None)
 
     def __on_area_current_changed(self, area: QtAds.CDockAreaWidget, index: int) -> None:

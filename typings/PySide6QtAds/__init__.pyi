@@ -10,7 +10,7 @@ from typing import overload
 
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QToolButton, QWidget
 
 class DockWidgetArea:
     """A drop-location selector for `CDockManager.addDockWidget`/`setCentralWidget` (e.g.
@@ -23,17 +23,23 @@ class DockWidgetArea:
 CenterDockWidgetArea: DockWidgetArea
 """Docks as a new tab in the target area's existing tab group (or as the sole tab, if none)."""
 
-LeftDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off to the left of the reference area."""
-
 RightDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the right of the reference area."""
 
-TopDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off above the reference area."""
+class TitleBarButton:
+    """Selector for `CDockAreaWidget.titleBarButton` (e.g. `TitleBarButtonTabsMenu`)."""
 
-BottomDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off below the reference area."""
+TitleBarButtonTabsMenu: TitleBarButton
+"""The dropdown button (shown when `CDockManager.DockAreaHasTabsMenuButton` is set) listing every
+tab in an area, for areas with more tabs than fit the available width -- but present regardless of
+tab count, including a lone tab (verified empirically)."""
+
+class CTitleBarButton(QToolButton):
+    """One button in a `CDockAreaWidget`'s title bar (e.g. the tabs-menu dropdown)."""
+
+    def menu(self) -> QMenu:
+        """This button's dropdown menu (only meaningful for `TitleBarButtonTabsMenu`)."""
+        ...
 
 class CDockAreaWidget(QWidget):
     """One tabbed area within a `CDockManager`, holding one or more `CDockWidget` tabs."""
@@ -50,20 +56,21 @@ class CDockAreaWidget(QWidget):
         """The dock widget occupying the tab at `index`, or `None` if `index` is out of range."""
         ...
 
-    def currentIndex(self) -> int:
-        """The index of this area's currently-selected tab."""
+    def titleBarButton(self, which: TitleBarButton) -> CTitleBarButton:
+        """This area's title-bar button matching `which` (e.g. its tabs-menu dropdown)."""
         ...
 
     currentChanged: Signal
     """Emitted with the new tab index whenever this area's current (selected) tab changes -- e.g.
-    the user clicks a different tab. Plain tab-bar behavior, unlike
-    `CDockManager.focusedDockWidgetChanged` -- fires regardless of the `FocusHighlighting` config
-    flag."""
+    the user clicks a different tab."""
 
 class CElidingLabel(QLabel):
     """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
     content of a `CDockWidgetTab`'s clickable label (`objectName() == "dockWidgetTabLabel"`,
     findable via `CDockWidgetTab.findChild`)."""
+
+    clicked: Signal
+    """Emitted when the label is clicked (a single click, unlike `doubleClicked`)."""
 
     doubleClicked: Signal
     """Emitted when the label is double-clicked."""
@@ -189,10 +196,6 @@ class CDockWidget(QWidget):
         `CustomCloseHandling`/`DockWidgetDeleteOnClose` the same way a real click would."""
         ...
 
-    def isClosed(self) -> bool:
-        """Whether this dock is currently closed (hidden, or deleted-on-close and gone)."""
-        ...
-
 class CDockManager(QWidget):
     """The top-level docking surface: owns every `CDockAreaWidget`/`CDockWidget` placed into it
     via `addDockWidget`/`setCentralWidget`. Nestable -- a `CDockWidget`'s content can itself embed
@@ -213,12 +216,6 @@ class CDockManager(QWidget):
         MiddleMouseButtonClosesTab: CDockManager.eConfigFlag
         """Middle-clicking a tab closes it, the same as clicking its `[x]` button."""
 
-        FocusHighlighting: CDockManager.eConfigFlag
-        """Enables `CDockFocusController`, which is what makes `focusedDockWidgetChanged` ever
-        fire and `setDockWidgetFocused` do anything -- **off by default**. Must be set via
-        `setConfigFlags` before the first `CDockManager` is constructed (`MainWindow.__init__`
-        does this, before `DocumentsDock` builds one)."""
-
         def __or__(self, other: CDockManager.eConfigFlag) -> CDockManager.eConfigFlag:
             """Combine two flags into one selector, mirroring the C++ enum's `|` (Qt flag)
             operator."""
@@ -228,7 +225,6 @@ class CDockManager(QWidget):
     AllTabsHaveCloseButton: eConfigFlag
     DockAreaHasTabsMenuButton: eConfigFlag
     MiddleMouseButtonClosesTab: eConfigFlag
-    FocusHighlighting: eConfigFlag
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Construct an empty dock manager with no docks yet."""
@@ -240,19 +236,6 @@ class CDockManager(QWidget):
         in the process. Must be called before the first `CDockManager` is constructed to take
         effect."""
         ...
-
-    @staticmethod
-    def testConfigFlag(flag: eConfigFlag) -> bool:
-        """Whether `flag` is currently set."""
-        ...
-
-    focusedDockWidgetChanged: Signal
-    """Emitted with `(old, now)` when keyboard focus moves between `DockWidgetFocusable` docks in
-    this manager; `now` is `None` when focus leaves every dock in it. **Requires the
-    `FocusHighlighting` config flag** -- without it (the default), this signal never fires at all
-    (confirmed against the vendored `pyside6-qtads` 5.0.0 source: the `CDockFocusController` that
-    emits it is only constructed when the flag is on). `rehuco-agent` sets the flag in
-    `MainWindow.__init__`, before any `CDockManager` is built."""
 
     def addDockWidget(
         self,
@@ -294,14 +277,6 @@ class CDockManager(QWidget):
         """Re-apply a layout previously captured by `saveState`.
 
         :returns: whether `state` was recognized and applied."""
-        ...
-
-    def setDockWidgetFocused(self, dock_widget: CDockWidget) -> None:
-        """Give `dock_widget` keyboard focus. A complete no-op unless the `FocusHighlighting`
-        config flag is set (see `focusedDockWidgetChanged`) -- and even with it set, does not
-        synchronously emit `focusedDockWidgetChanged` in every case (deferred until `dock_widget`
-        becomes visible, if it wasn't already), so callers needing the new focus immediately
-        should also track it themselves rather than relying solely on the signal."""
         ...
 
     def removeDockWidget(self, dock_widget: CDockWidget) -> None:
