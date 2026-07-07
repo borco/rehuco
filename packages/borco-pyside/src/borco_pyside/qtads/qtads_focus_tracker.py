@@ -34,23 +34,45 @@ class QtAdsFocusTracker(QObject):
     (see [[appendices.qt-ads#focus-highlighting]]). Each :class:`QtAdsFocusTracker` instance only
     ever reads/writes its own bookkeeping, so nesting several (one per manager) is safe.
 
+    Styles the current dock via the :data:`TRACKED_FOCUS_PROPERTY` dynamic property it sets (and
+    re-polishes) on the current dock's tab and the dock itself as current-ness moves, matched by a
+    stylesheet applied to ``dock_manager`` at construction (:meth:`tracked_focus_dock_stylesheet`).
+    This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
+    Note the stylesheet's ``palette(...)`` colours are frozen to the theme active when it was
+    applied; to follow a theme switch, rebuild it and re-apply on ``QApplication.paletteChanged``.
+
     A ``QObject``, parented to ``dock_manager`` by default -- ``QtAdsFocusTracker(dock_manager)``
     alone is enough, with nothing to hold onto: Qt destroys it along with ``dock_manager``.
 
     :param dock_manager: the dock manager whose docks to track.
     :param current_dock_marker: prefix added to the current dock's tab title, stripped from
         whichever dock stops being current; empty (the default) skips marking titles at all.
+    :param highlight: current dock's tab fill/border colour (see :meth:`tracked_focus_dock_stylesheet`).
+    :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
+    :param title_bar: current dock's area title-bar accent colour (see
+        :meth:`tracked_focus_dock_stylesheet`).
+    :param style_sheet: full stylesheet override for ``dock_manager``; ``None`` (the default) builds
+        one from ``highlight``/``label``/``title_bar``. Pass ``""`` to apply nothing.
     :param parent: optional Qt parent; defaults to ``dock_manager`` itself.
     """
+
+    TRACKED_FOCUS_PROPERTY: Final = "tracked_focus"
+    """Dynamic boolean property this tracker sets on the current dock's tab (a ``CDockWidgetTab``)
+    and the dock itself (a ``CDockWidget``) -- and re-polishes -- for
+    :meth:`tracked_focus_dock_stylesheet`'s selectors to match on."""
 
     current_dock_changed: Signal = Signal(object)
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
     current, whenever :attr:`current_dock` changes."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         dock_manager: QtAds.CDockManager,
         current_dock_marker: str = "",
+        highlight: str = "palette(highlight)",
+        label: str = "palette(highlighted-text)",
+        title_bar: str = "palette(highlight)",
+        style_sheet: str | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
@@ -59,6 +81,9 @@ class QtAdsFocusTracker(QObject):
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
 
+        if style_sheet is None:
+            style_sheet = self.tracked_focus_dock_stylesheet(highlight, label, title_bar)
+        dock_manager.setStyleSheet(style_sheet)
         dock_manager.dockWidgetAdded.connect(self.__on_dock_widget_added)
         dock_manager.dockWidgetRemoved.connect(self.__on_dock_widget_removed)
         dock_manager.stateRestored.connect(self.__on_state_restored)
@@ -87,6 +112,40 @@ class QtAdsFocusTracker(QObject):
         if dock is not None:
             dock.setAsCurrentTab()
         self.__set_current_dock(dock)
+
+    def tracked_focus_dock_stylesheet(
+        self,
+        highlight: str = "palette(highlight)",
+        label: str = "palette(highlighted-text)",
+        title_bar: str = "palette(highlight)",
+    ) -> str:
+        """Build the QSS styling whichever dock currently carries :data:`TRACKED_FOCUS_PROPERTY`.
+
+        Mirrors QtAds' own ``FocusHighlighting`` reference styling, but off this tracker's custom
+        property rather than QtAds' ``focused`` one. Each colour is a QSS colour expression -- a
+        ``palette(role)`` reference (theme-aware on each re-apply) or a literal ``#rrggbb``/``rgb(...)``.
+
+        :param highlight: fill/border colour of the current dock's tab. Default ``palette(highlight)``.
+        :param label: text colour of the current dock's tab label. Default ``palette(highlighted-text)``
+            -- the role guaranteed to contrast ``highlight`` in both light and dark themes.
+        :param title_bar: colour of the accent line just below the title bar (drawn as the current
+            dock's top border). Default ``palette(highlight)``.
+        :returns: a QSS string, ready for ``setStyleSheet`` (or appended to an existing one).
+        """
+        prop = self.TRACKED_FOCUS_PROPERTY
+        return f"""\
+ads--CDockWidgetTab[{prop}="true"] {{
+    background: {highlight};
+    border-color: {highlight};
+    padding-bottom: 1px;
+}}
+ads--CDockWidgetTab[{prop}="true"] QLabel {{
+    color: {label};
+}}
+ads--CDockWidget[{prop}="true"] {{
+    border-top: 1px solid {title_bar};
+}}
+"""
 
     def __on_dock_widget_added(self, dock: QtAds.CDockWidget) -> None:
         """Start tracking a dock QtAds just added: its tab-label click and its area's tab switches.
@@ -125,10 +184,23 @@ class QtAdsFocusTracker(QObject):
             self.__set_current_dock(None)
 
     def __on_state_restored(self) -> None:
-        """Re-track every still-registered dock's (possibly rebuilt) area after a layout restore."""
+        """Re-track areas after a layout restore, and resync the current dock to the restored tab.
+
+        ``restoreState`` sets each area's current tab from the saved layout and fires that area's
+        ``currentChanged`` -- but *during* the restore, before this method reconnects the areas, so
+        it's missed and :attr:`current_dock` would otherwise stay on whatever was current before
+        (e.g. a dock the restore has since stacked *behind* another). Reading the current tab of the
+        stale current dock's area back here corrects it, without needing the user to click first.
+        """
         for dock in self.__tracked_docks:
             if area := dock.dockAreaWidget():
                 self.__track_area(area)
+        if self.__current_dock is not None:
+            area = self.__current_dock.dockAreaWidget()
+            if area is not None:
+                restored_current = area.dockWidget(area.currentIndex())
+                if restored_current in self.__tracked_docks:
+                    self.__set_current_dock(restored_current)
 
     def __track_area(self, area: QtAds.CDockAreaWidget) -> None:
         """Connect ``area.currentChanged`` and its tabs-menu to track tab switches, once per area.
@@ -181,18 +253,45 @@ class QtAdsFocusTracker(QObject):
             return
         previous = self.__current_dock
         self.__current_dock = dock
-        if self.__marker:
-            if previous is not None:
-                self.__mark(previous, False)
-            if dock is not None:
-                self.__mark(dock, True)
+        if previous is not None:
+            self.__style_dock(previous, False)
+        if dock is not None:
+            self.__style_dock(dock, True)
         self.current_dock_changed.emit(dock)
 
-    def __mark(self, dock: QtAds.CDockWidget, current: bool) -> None:
-        """Prefix or strip :attr:`__marker` from ``dock``'s tab title, in place.
+    def __style_dock(self, dock: QtAds.CDockWidget, current: bool) -> None:
+        """Reflect ``dock``'s current-ness: move the title marker, toggle the tracked-focus property.
 
-        :param dock: the dock whose title to mark or unmark.
+        Sets ``tracked_focus`` on ``dock`` (styled with the accent line -- its top border, just below
+        the title bar) and on its ``tab`` (the highlight fill), then re-polishes them plus the tab's
+        label. A descendant rule (e.g. ``...CDockWidgetTab[tracked_focus] QLabel``) re-evaluates only
+        when the descendant itself is re-polished, never merely because its ancestor was; QSS does not
+        cascade ``color`` across child widgets the way CSS does.
+
+        Defensive against a ``dock`` mid-teardown (e.g. the one just removed): Shiboken can flag its
+        tab "already deleted" transiently, surfacing as ``RuntimeError`` -- harmless to skip.
+
+        :param dock: the dock whose styling to update.
         :param current: whether ``dock`` is now the current one.
         """
-        title = dock.windowTitle().removeprefix(self.__marker)
-        dock.setWindowTitle(f"{self.__marker}{title}" if current else title)
+        try:
+            if self.__marker:
+                title = dock.windowTitle().removeprefix(self.__marker)
+                dock.setWindowTitle(f"{self.__marker}{title}" if current else title)
+            tab = dock.tabWidget()
+            dock.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
+            tab.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
+            self.__repolish(dock, tab, tab_label(dock))
+        except RuntimeError:
+            pass
+
+    @staticmethod
+    def __repolish(*widgets: QWidget) -> None:
+        """Force ``widgets`` to re-evaluate the stylesheet (e.g. after a property change).
+
+        :param widgets: the widgets to unpolish/re-polish, in order.
+        """
+        for widget in widgets:
+            style = widget.style()
+            style.unpolish(widget)
+            style.polish(widget)

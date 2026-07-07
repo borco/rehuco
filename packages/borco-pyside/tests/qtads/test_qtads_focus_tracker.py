@@ -413,3 +413,101 @@ def test_focus_moving_outside_every_tracked_dock_is_ignored(manager: QtAds.CDock
     tracker._QtAdsFocusTracker__on_application_focus_changed(None, unrelated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert tracker.current_dock is dock
+
+
+def test_explicit_style_sheet_overrides_the_built_default(manager: QtAds.CDockManager) -> None:
+    """A ``style_sheet`` argument is applied verbatim instead of the built default.
+
+    **Test steps:**
+
+    * construct a tracker with an explicit ``style_sheet``
+    * verify the manager carries exactly that stylesheet
+    """
+    tracker = QtAdsFocusTracker(manager, style_sheet="QWidget { color: red; }")
+
+    assert tracker.current_dock is None
+    assert manager.styleSheet() == "QWidget { color: red; }"
+
+
+def test_state_restore_resyncs_current_dock_to_the_restored_current_tab(manager: QtAds.CDockManager) -> None:
+    """After a restore, the current dock follows the tab the restore made current -- no click needed.
+
+    **Test steps:**
+
+    * tab two docks together and make the second current, then save the layout
+    * make the first current (the mismatch a restore would otherwise leave stale)
+    * restore the saved layout (which makes the second current again)
+    * verify the current dock resynced to the second without any manual switch
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    second = add_dock(manager, "two", QtAds.CenterDockWidgetArea, first.dockAreaWidget())
+    tracker.set_current_dock(second)
+    state = bytes(manager.saveState().data())
+    tracker.set_current_dock(first)
+    assert tracker.current_dock is first
+
+    assert manager.restoreState(QByteArray(state))
+
+    assert tracker.current_dock is second
+
+
+def test_state_restore_with_a_current_dock_that_has_no_area_is_a_noop(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """The resync skips a current dock that (improbably) has no containing area after a restore.
+
+    **Test steps:**
+
+    * register a stand-in current dock reporting no area, directly in the tracker
+    * emit ``stateRestored``
+    * verify nothing raised and the current dock is unchanged
+    """
+    tracker = QtAdsFocusTracker(manager)
+    fake_current = mocker.MagicMock()
+    fake_current.dockAreaWidget.return_value = None
+    tracker._QtAdsFocusTracker__current_dock = fake_current  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    manager.stateRestored.emit()
+
+    assert tracker.current_dock is fake_current
+
+
+def test_state_restore_ignores_a_restored_tab_that_is_not_tracked(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """The resync ignores a restored current tab this tracker doesn't own.
+
+    **Test steps:**
+
+    * register a stand-in current dock whose area's current tab is an untracked dock
+    * emit ``stateRestored``
+    * verify the current dock is unchanged
+    """
+    tracker = QtAdsFocusTracker(manager)
+    fake_area = mocker.MagicMock()
+    fake_area.dockWidget.return_value = mocker.MagicMock()
+    fake_current = mocker.MagicMock()
+    fake_current.dockAreaWidget.return_value = fake_area
+    tracker._QtAdsFocusTracker__current_dock = fake_current  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    manager.stateRestored.emit()
+
+    assert tracker.current_dock is fake_current
+
+
+def test_styling_a_dock_mid_teardown_is_swallowed(manager: QtAds.CDockManager, mocker: MockerFixture) -> None:
+    """A ``RuntimeError`` while styling a dock (Shiboken "already deleted") is caught, not propagated.
+
+    **Test steps:**
+
+    * make a stand-in dock whose ``tabWidget()`` raises ``RuntimeError`` current
+    * verify it still became the current dock (the styling failure was swallowed)
+    """
+    tracker = QtAdsFocusTracker(manager)
+    fake = mocker.MagicMock()
+    fake.tabWidget.side_effect = RuntimeError("already deleted")
+
+    tracker._QtAdsFocusTracker__set_current_dock(fake)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert tracker.current_dock is fake

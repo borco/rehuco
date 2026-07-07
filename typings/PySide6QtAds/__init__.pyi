@@ -39,6 +39,9 @@ class CTitleBarButton(QToolButton):
     def menu(self) -> QMenu:
         """This button's dropdown menu (only meaningful for `TitleBarButtonTabsMenu`)."""
 
+class CDockAreaTitleBar(QWidget):
+    """The title-bar strip above a `CDockAreaWidget`'s tabs (`objectName() == "dockAreaTitleBar"`)."""
+
 class CDockAreaWidget(QWidget):
     """One tabbed area within a `CDockManager`, holding one or more `CDockWidget` tabs."""
 
@@ -53,6 +56,10 @@ class CDockAreaWidget(QWidget):
 
     def currentIndex(self) -> int:
         """The index of this area's currently-selected (front) tab."""
+
+    def titleBar(self) -> CDockAreaTitleBar:
+        """This area's title bar (the strip above its tabs), e.g. to re-polish it after a
+        stylesheet-affecting property change."""
 
     def titleBarButton(self, which: TitleBarButton) -> CTitleBarButton:
         """This area's title-bar button matching `which` (e.g. its tabs-menu dropdown)."""
