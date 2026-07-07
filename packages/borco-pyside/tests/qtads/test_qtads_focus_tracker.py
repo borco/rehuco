@@ -19,7 +19,7 @@ def manager(qtbot: QtBot) -> Iterator[QtAds.CDockManager]:
 
     A generator fixture, not a plain ``return``: `CDockManager()` has no Qt parent, so a ``return``
     would let it be garbage-collected (``qtbot.addWidget`` keeps only a weakref) -- see
-    ``test_qtads_utils`` for the full reasoning. Pausing at ``yield`` keeps it alive here.
+    ``test_qtads_widgets`` for the full reasoning. Pausing at ``yield`` keeps it alive here.
     """
     manager = QtAds.CDockManager()
     qtbot.addWidget(manager)
@@ -515,3 +515,70 @@ def test_styling_a_dock_mid_teardown_is_swallowed(manager: QtAds.CDockManager, m
     tracker._QtAdsFocusTracker__set_current_dock(fake)  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert tracker.current_dock is fake
+
+
+def test_styling_a_current_dock_with_no_close_button_re_polishes_without_it(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """A current dock whose tab shows no close button is styled without one (nothing to re-polish).
+
+    The default config gives every tab a close button, so this branch (no button) is forced by
+    reporting ``None`` from ``tab_close_button``.
+
+    **Test steps:**
+
+    * patch ``tab_close_button`` to report no button
+    * add a dock (it becomes current, running the styling that looks for a close button)
+    * verify it still became current, without raising
+    """
+    mocker.patch("borco_pyside.qtads.qtads_focus_tracker.tab_close_button", return_value=None)
+    tracker = QtAdsFocusTracker(manager)
+
+    dock = add_dock(manager, "one")
+
+    assert tracker.current_dock is dock
+
+
+def test_close_button_styling_skips_a_tab_with_no_close_button(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """The close-button styler is a no-op when the tab shows no close button.
+
+    **Test steps:**
+
+    * patch ``tab_close_button`` to report no button
+    * call the close-button styler directly with a stand-in dock
+    * verify the finder was consulted and nothing raised
+    """
+    finder = mocker.patch("borco_pyside.qtads.qtads_focus_tracker.tab_close_button", return_value=None)
+    tracker = QtAdsFocusTracker(manager)
+    dock = mocker.MagicMock()
+
+    tracker._QtAdsFocusTracker__style_close_button(dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    finder.assert_called_once_with(dock)
+
+
+def test_close_button_styling_of_a_deleted_dock_is_swallowed(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """A ``RuntimeError`` from a mid-teardown tab (Shiboken "already deleted") is caught, not raised.
+
+    Expected here because the deferred timer that runs this can fire after ``dock`` was closed.
+
+    **Test steps:**
+
+    * patch ``tab_close_button`` to raise ``RuntimeError``
+    * call the close-button styler directly with a stand-in dock
+    * verify the finder was consulted and nothing propagated
+    """
+    finder = mocker.patch(
+        "borco_pyside.qtads.qtads_focus_tracker.tab_close_button",
+        side_effect=RuntimeError("already deleted"),
+    )
+    tracker = QtAdsFocusTracker(manager)
+    dock = mocker.MagicMock()
+
+    tracker._QtAdsFocusTracker__style_close_button(dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    finder.assert_called_once_with(dock)

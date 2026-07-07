@@ -20,13 +20,8 @@ VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 
-CURRENT_DOCK_MARKER: Final = "⯈ "
-"""Prefix marking the currently-current dock (viewer or editor) among this document's own surfaces
--- a separate, inner instance of the same marker :class:`~rehuco_agent.documents.documents_dock.DocumentsDock`
-uses for the outer, per-document tab."""
 
-
-class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
+class DocumentWidget(QMainWindow):
     """One open document's **viewer** and **editor** surfaces, each in its own dock ([[plugins#viewer-editor-both]]).
 
     Both docks are built once, from the same :class:`RehuDocumentModel`, and stay live regardless of
@@ -49,7 +44,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
-        QtAdsFocusTracker(self.__dock_manager, current_dock_marker=CURRENT_DOCK_MARKER)
+        QtAdsFocusTracker(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 

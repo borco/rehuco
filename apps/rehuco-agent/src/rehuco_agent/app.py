@@ -9,7 +9,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
 from PySide6.QtCore import QEvent
-from PySide6.QtGui import QFileOpenEvent, QIcon
+from PySide6.QtGui import QFileOpenEvent, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
@@ -23,6 +23,16 @@ APP_ID: Final = "rehuco-agent"
 
 ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the app icon, registered by importing :mod:`rehuco_agent.main_rc`."""
+
+ICON_FONT_RESOURCES: Final = (
+    ":/fonts/Phosphor-Thin.ttf",
+    ":/fonts/Phosphor-Light.ttf",
+    ":/fonts/Phosphor.ttf",
+    ":/fonts/Phosphor-Bold.ttf",
+    ":/fonts/Phosphor-Fill.ttf",
+    ":/fonts/Phosphor-Duotone.ttf",
+)
+"""qrc paths to the custom icon fonts loaded at startup."""
 
 
 class Application(QApplication):
@@ -46,6 +56,8 @@ class Application(QApplication):
         # setWindowIcon() below needs a genuinely-constructed object, not a skipped one
         super().__init__(argv)
         self.setWindowIcon(QIcon(ICON_RESOURCE))
+        for font_resource in ICON_FONT_RESOURCES:
+            QFontDatabase.addApplicationFont(font_resource)
         self.__main_window: MainWindow | None = None
 
     @override

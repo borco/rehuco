@@ -1,9 +1,9 @@
-"""Tests for qtads_utils.tab_label: a CDockWidget's own tab label widget."""
+"""Tests for qtads_widgets: accessors for a CDockWidget tab's child widgets."""
 
 from collections.abc import Iterator
 
 import PySide6QtAds as QtAds
-from borco_pyside.qtads.qtads_utils import tab_label
+from borco_pyside.qtads.qtads_widgets import tab_label
 from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QWidget
 from pytest import fixture

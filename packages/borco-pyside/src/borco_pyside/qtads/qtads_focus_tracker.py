@@ -3,10 +3,10 @@
 from typing import Final
 
 import PySide6QtAds as QtAds
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QSize, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
-from borco_pyside.qtads.qtads_utils import tab_label
+from borco_pyside.qtads.qtads_widgets import tab_close_button, tab_label
 
 
 class QtAdsFocusTracker(QObject):
@@ -38,6 +38,8 @@ class QtAdsFocusTracker(QObject):
     re-polishes) on the current dock's tab and the dock itself as current-ness moves, matched by a
     stylesheet applied to ``dock_manager`` at construction (:meth:`tracked_focus_dock_stylesheet`).
     This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
+    Also renders every tab's close button as :data:`CLOSE_BUTTON_TEXT` text (not an icon) so the
+    same stylesheet can recolour it to stay legible against the current tab's highlight.
     Note the stylesheet's ``palette(...)`` colours are frozen to the theme active when it was
     applied; to follow a theme switch, rebuild it and re-apply on ``QApplication.paletteChanged``.
 
@@ -46,7 +48,8 @@ class QtAdsFocusTracker(QObject):
 
     :param dock_manager: the dock manager whose docks to track.
     :param current_dock_marker: prefix added to the current dock's tab title, stripped from
-        whichever dock stops being current; empty (the default) skips marking titles at all.
+        whichever dock stops being current; defaults to :data:`CURRENT_DOCK_MARKER`. Pass an empty
+        string to skip marking titles at all.
     :param highlight: current dock's tab fill/border colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param title_bar: current dock's area title-bar accent colour (see
@@ -59,6 +62,29 @@ class QtAdsFocusTracker(QObject):
     and the dock itself (a ``CDockWidget``) -- and re-polishes -- for
     :meth:`tracked_focus_dock_stylesheet`'s selectors to match on."""
 
+    CURRENT_DOCK_MARKER: Final = ""
+    """Default prefix marking the current dock's tab title -- a right-pointing triangle then a space.
+    Used as ``current_dock_marker``'s default; pass an empty string to disable title marking."""
+
+    CLOSE_BUTTON_TEXT: Final = "\ue4f6"
+    """Glyph shown as each tab close button's text instead of its icon. Text (not an icon) so its
+    colour follows QSS ``color:`` -- normally the tab's own foreground, and :meth:`label`'s colour on
+    the current tab -- letting it stay legible against the current tab's highlighted background. A
+    QtAds close button's icon is a fixed ``url()`` SVG that ``color:`` cannot tint, and the style's
+    fallback icon only recolors under some styles (not the native Windows one); text works
+    everywhere. The default is the Phosphor ``x`` glyph, which only renders once the
+    :data:`CLOSE_BUTTON_FONT` font is loaded (via ``QFontDatabase.addApplicationFont``); without it
+    the button shows tofu."""
+
+    CLOSE_BUTTON_FONT: Final = "Phosphor-Bold"
+    """Font family the close button is rendered in, so :data:`CLOSE_BUTTON_TEXT`'s glyph resolves.
+    The application must load this font (``QFontDatabase.addApplicationFont``) before any tracked
+    dock is shown; the family is em-centered, so no per-glyph padding tuning is needed."""
+
+    CLOSE_BUTTON_GLYPH_SIZE: Final = 12
+    """Pixel size the close button glyph is rendered at -- set in code (not QSS, which QtAds ignores
+    for this button's font), and re-applied on every restyle since QtAds rebuilds the button."""
+
     current_dock_changed: Signal = Signal(object)
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
     current, whenever :attr:`current_dock` changes."""
@@ -66,7 +92,7 @@ class QtAdsFocusTracker(QObject):
     def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         dock_manager: QtAds.CDockManager,
-        current_dock_marker: str = "",
+        current_dock_marker: str = CURRENT_DOCK_MARKER,
         highlight: str = "palette(highlight)",
         label: str = "palette(highlighted-text)",
         title_bar: str = "palette(highlight)",
@@ -120,21 +146,35 @@ class QtAdsFocusTracker(QObject):
         property rather than QtAds' ``focused`` one. Each colour is a QSS colour expression -- a
         ``palette(role)`` reference (theme-aware on each re-apply) or a literal ``#rrggbb``/``rgb(...)``.
 
+        Also carries a plain ``#tabCloseButton`` rule zeroing every tab close button's icon size, so
+        the :data:`CLOSE_BUTTON_TEXT` text :meth:`__style_close_button` sets shows alone. Done in QSS
+        (not just Python) because QtAds re-polishes the button on every tab activation, which would
+        otherwise re-apply its 16px icon size -- the rule re-applies 0 on each such repolish instead.
+
         :param highlight: fill/border colour of the current dock's tab. Default ``palette(highlight)``.
-        :param label: text colour of the current dock's tab label. Default ``palette(highlighted-text)``
-            -- the role guaranteed to contrast ``highlight`` in both light and dark themes.
+        :param label: text colour of the current dock's tab label *and* its close button (drawn as
+            :data:`CLOSE_BUTTON_TEXT`, not an icon, so this recolors it). Default
+            ``palette(highlighted-text)`` -- the role guaranteed to contrast ``highlight`` in both
+            light and dark themes.
         :param title_bar: colour of the accent line just below the title bar (drawn as the current
             dock's top border). Default ``palette(highlight)``.
         :returns: a QSS string, ready for ``setStyleSheet`` (or appended to an existing one).
         """
         prop = self.TRACKED_FOCUS_PROPERTY
         return f"""\
+#tabCloseButton {{
+    qproperty-iconSize: 0px;
+    padding: 0px;
+}}
 ads--CDockWidgetTab[{prop}="true"] {{
     background: {highlight};
     border-color: {highlight};
     padding-bottom: 1px;
 }}
 ads--CDockWidgetTab[{prop}="true"] QLabel {{
+    color: {label};
+}}
+ads--CDockWidgetTab[{prop}="true"] #tabCloseButton {{
     color: {label};
 }}
 ads--CDockWidget[{prop}="true"] {{
@@ -162,6 +202,7 @@ ads--CDockWidget[{prop}="true"] {{
         """
         self.__tracked_docks.add(dock)
         tab_label(dock).clicked.connect(lambda: self.__set_current_dock(dock))
+        self.__defer_close_button_style(dock)
         area = dock.dockAreaWidget()
         joins_existing_area = area is not None and area in self.__areas_tracking_current_tab
         if area is not None:
@@ -186,8 +227,12 @@ ads--CDockWidget[{prop}="true"] {{
         it's missed and :attr:`current_dock` would otherwise stay on whatever was current before
         (e.g. a dock the restore has since stacked *behind* another). Reading the current tab of the
         stale current dock's area back here corrects it, without needing the user to click first.
+
+        Also re-runs :meth:`__style_close_button` on every tracked dock: ``restoreState`` rebuilds
+        the tabs, so each dock's close button is a fresh one back to showing QtAds' default icon.
         """
         for dock in self.__tracked_docks:
+            self.__defer_close_button_style(dock)
             if area := dock.dockAreaWidget():
                 self.__track_area(area)
         if self.__current_dock is not None:
@@ -276,9 +321,54 @@ ads--CDockWidget[{prop}="true"] {{
             tab = dock.tabWidget()
             dock.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
             tab.setProperty(self.TRACKED_FOCUS_PROPERTY, current)
-            self.__repolish(dock, tab, tab_label(dock))
+            widgets: list[QWidget] = [dock, tab, tab_label(dock)]
+            if (button := tab_close_button(dock)) is not None:
+                widgets.append(button)
+            self.__repolish(*widgets)
         except RuntimeError:
             pass
+
+    def __defer_close_button_style(self, dock: QtAds.CDockWidget) -> None:
+        """Schedule :meth:`__style_close_button` for ``dock`` on the next event-loop tick.
+
+        Deferred, not immediate, because QtAds re-applies the close button's own icon and 16px icon
+        size *after* it emits ``dockWidgetAdded`` (and after a restore) for the tab it then makes
+        active -- overwriting an eager restyle (confirmed empirically: the first/active tab kept
+        QtAds' icon while a tabbed-in one styled correctly). A zero-delay timer runs once that
+        synchronous QtAds setup has finished.
+
+        :param dock: the dock whose close button to restyle once QtAds has finished with it.
+        """
+        QTimer.singleShot(0, lambda: self.__style_close_button(dock))
+
+    def __style_close_button(self, dock: QtAds.CDockWidget) -> None:
+        """Render ``dock``'s tab close button as :data:`CLOSE_BUTTON_TEXT` text rather than an icon.
+
+        Shows :data:`CLOSE_BUTTON_TEXT` as text and hides QtAds' own close icon by zeroing the
+        button's icon size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:``
+        recolours it, see :data:`CLOSE_BUTTON_TEXT`. Called (deferred) whenever the button is
+        (re)created: on ``dockWidgetAdded`` and after a layout restore rebuilds the tabs. A no-op if
+        this tab shows no close button (no close-button config flag).
+
+        Defensive against a ``dock`` mid-teardown, like :meth:`__style_dock`: ``RuntimeError`` from a
+        tab Shiboken has already flagged deleted is harmless to skip -- and expected, since the
+        deferred timer can fire after ``dock`` has since been closed.
+
+        :param dock: the dock whose close button to restyle.
+        """
+        try:
+            button = tab_close_button(dock)
+        except RuntimeError:
+            return
+        if button is not None:
+            button.setIconSize(QSize(0, 0))
+            button.setText(self.CLOSE_BUTTON_TEXT)
+            font = button.font()
+            font.setFamily(self.CLOSE_BUTTON_FONT)
+            font.setPixelSize(self.CLOSE_BUTTON_GLYPH_SIZE)
+            button.setFont(font)
+            side = button.height()
+            button.setFixedSize(side, side)
 
     @staticmethod
     def __repolish(*widgets: QWidget) -> None:
