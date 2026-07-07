@@ -216,6 +216,46 @@ def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) ->
     assert "editor" in stashed
 
 
+def test_restore_state_reselects_the_surface_that_was_current(widget: DocumentWidget) -> None:
+    """The surface (viewer/editor) that was current is re-selected on restore, even when split.
+
+    QtAds' own ``restoreState`` recovers only the current tab within each area, not which of the two
+    split areas held focus -- so this covers the extra state ``QtAdsFocusTracker.save_state`` adds
+    for that (the reported bug: a split editor/viewer always came back with the viewer current).
+
+    **Test steps:**
+
+    * make the editor the current surface, and save the state
+    * move current away to the viewer, then restore the saved state
+    * verify the editor is the current surface again, not the viewer it had moved to
+    """
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    tracker = widget._DocumentWidget__tracker  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    tracker.set_current_dock(manager.findDockWidget("editor"))
+    state = widget.save_state()
+    tracker.set_current_dock(manager.findDockWidget("viewer"))
+    assert tracker.current_dock.objectName() == "viewer"
+
+    assert widget.restore_state(state) is True
+
+    assert tracker.current_dock.objectName() == "editor"
+
+
+def test_restore_state_tolerates_a_non_bytes_current_dock_entry(widget: DocumentWidget) -> None:
+    """A dict payload whose ``current_dock`` entry isn't bytes is ignored, not fed to the tracker.
+
+    **Test steps:**
+
+    * save the widget's real state, then replace its ``current_dock`` entry with a non-bytes value
+    * call ``restore_state`` with that payload
+    * verify it still reports success (the malformed current-dock entry was skipped)
+    """
+    payload = cbor2.loads(widget.save_state())
+    payload["current_dock"] = 123
+
+    assert widget.restore_state(cbor2.dumps(payload)) is True
+
+
 def test_restore_state_rejects_malformed_bytes(widget: DocumentWidget) -> None:
     """Malformed (non-cbor2) bytes are rejected rather than raising.
 

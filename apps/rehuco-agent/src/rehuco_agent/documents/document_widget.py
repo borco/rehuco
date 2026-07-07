@@ -15,13 +15,14 @@ from rehuco_agent.fields import build_document_form
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
+STATE_CURRENT_DOCK_KEY: Final = "current_dock"
 
 VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 
 
-class DocumentWidget(QMainWindow):
+class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """One open document's **viewer** and **editor** surfaces, each in its own dock ([[plugins#viewer-editor-both]]).
 
     Both docks are built once, from the same :class:`RehuDocumentModel`, and stay live regardless of
@@ -44,7 +45,7 @@ class DocumentWidget(QMainWindow):
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
-        QtAdsFocusTracker(self.__dock_manager)
+        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
@@ -98,6 +99,7 @@ class DocumentWidget(QMainWindow):
             {
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
+                STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
             }
         )
 
@@ -131,6 +133,12 @@ class DocumentWidget(QMainWindow):
             restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
         finally:
             self.__restoring_layout = False
+        if restored:
+            # re-select the surface that was current -- restoreState above only recovers the current
+            # tab within each area, not which of two split (viewer/editor) areas actually had focus
+            current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
+            if isinstance(current_dock_state, bytes):
+                self.__tracker.restore_state(current_dock_state)
         return restored
 
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:

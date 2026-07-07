@@ -91,6 +91,7 @@ class QtAdsFocusTracker(QObject):
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
+        self.__dock_manager: Final = dock_manager
         self.__current_dock: QtAds.CDockWidget | None = None
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
@@ -124,6 +125,33 @@ class QtAdsFocusTracker(QObject):
         if dock is not None:
             dock.setAsCurrentTab()
         self.__set_current_dock(dock)
+
+    def save_state(self) -> bytes:
+        """Serialize which dock is current, to survive a dock-manager ``restoreState`` round-trip.
+
+        ``CDockManager.saveState`` records only the current *tab within each area*, not which area
+        holds focus -- so docks split across separate areas lose their current-ness on restore
+        (a fresh restore defaults to whichever dock was adopted first). Persisting this alongside
+        the manager's own state, and replaying it via :meth:`restore_state`, closes that gap.
+
+        :returns: the current dock's ``objectName`` as UTF-8 bytes, or empty when none is current.
+        """
+        return self.__current_dock.objectName().encode() if self.__current_dock is not None else b""
+
+    def restore_state(self, state: bytes) -> None:
+        """Re-select the dock :meth:`save_state` recorded as current, found by its ``objectName``.
+
+        Call *after* ``CDockManager.restoreState`` has repositioned (and so re-registered by name)
+        every dock. A no-op when ``state`` is empty or names a dock no longer present.
+
+        :param state: the bytes from a prior :meth:`save_state`.
+        """
+        name = bytes(state).decode()
+        if not name:
+            return
+        dock = self.__dock_manager.findDockWidget(name)
+        if dock is not None:
+            self.set_current_dock(dock)
 
     def tracked_focus_dock_stylesheet(
         self,

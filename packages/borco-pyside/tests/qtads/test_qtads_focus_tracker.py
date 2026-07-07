@@ -192,6 +192,86 @@ def test_set_current_dock_none_clears_the_current_dock(manager: QtAds.CDockManag
     assert tracker.current_dock is None
 
 
+def test_save_state_records_the_current_docks_object_name(manager: QtAds.CDockManager) -> None:
+    """``save_state`` returns the current dock's object name as bytes.
+
+    **Test steps:**
+
+    * add a dock (it becomes current)
+    * verify ``save_state`` returns its object name as UTF-8 bytes
+    """
+    tracker = QtAdsFocusTracker(manager)
+    add_dock(manager, "one")
+
+    assert tracker.save_state() == b"one"
+
+
+def test_save_state_is_empty_without_a_current_dock(manager: QtAds.CDockManager) -> None:
+    """``save_state`` returns empty bytes when nothing is current.
+
+    **Test steps:**
+
+    * build a tracker over an empty manager (nothing current)
+    * verify ``save_state`` returns empty bytes
+    """
+    tracker = QtAdsFocusTracker(manager)
+
+    assert tracker.save_state() == b""
+
+
+def test_restore_state_reselects_the_saved_dock(manager: QtAds.CDockManager) -> None:
+    """``restore_state`` re-selects the dock ``save_state`` recorded, even after current moved away.
+
+    **Test steps:**
+
+    * add two tabbed docks (the second is current) and save
+    * make the first current (moving current away from the saved one)
+    * restore the saved state and verify the second is current again
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    second = add_dock(manager, "two", QtAds.CenterDockWidgetArea, first.dockAreaWidget())
+    state = tracker.save_state()
+    tracker.set_current_dock(first)
+    assert tracker.current_dock is first
+
+    tracker.restore_state(state)
+
+    assert tracker.current_dock is second
+
+
+def test_restore_state_with_empty_bytes_is_a_noop(manager: QtAds.CDockManager) -> None:
+    """``restore_state`` with empty bytes leaves the current dock unchanged.
+
+    **Test steps:**
+
+    * add a dock (current), then ``restore_state`` empty bytes
+    * verify the current dock is unchanged
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+
+    tracker.restore_state(b"")
+
+    assert tracker.current_dock is dock
+
+
+def test_restore_state_ignores_an_unknown_dock_name(manager: QtAds.CDockManager) -> None:
+    """``restore_state`` naming a dock that isn't present leaves the current dock unchanged.
+
+    **Test steps:**
+
+    * add a dock (current), then ``restore_state`` a name no dock has
+    * verify the current dock is unchanged
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+
+    tracker.restore_state(b"ghost")
+
+    assert tracker.current_dock is dock
+
+
 def test_setting_the_already_current_dock_is_a_noop(manager: QtAds.CDockManager) -> None:
     """Re-setting the current dock to itself neither re-emits nor rewrites its title.
 

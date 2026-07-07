@@ -282,3 +282,6 @@ class CDockManager(QWidget):
         """Remove `dock_widget` from this manager's layout (its containing area is removed too, if
         it was the area's last dock). Does not delete `dock_widget` itself -- callers that own it
         (e.g. via `DockWidgetDeleteOnClose`) are responsible for that separately."""
+
+    def findDockWidget(self, object_name: str) -> CDockWidget | None:
+        """Return the registered dock whose `objectName()` is `object_name`, or `None` if none matches."""
