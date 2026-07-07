@@ -1,5 +1,17 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
+        <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
+        <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
+        <file alias="icons/theme_auto.svg">../../../../design/icons/theme_auto.svg</file>
+        <file alias="icons/theme_dark.svg">../../../../design/icons/theme_dark.svg</file>
+        <file alias="icons/theme_light.svg">../../../../design/icons/theme_light.svg</file>
+        <file alias="fonts/Phosphor-Thin.ttf">../../../../design/fonts/Phosphor-Thin.ttf</file>
+        <file alias="fonts/Phosphor-Light.ttf">../../../../design/fonts/Phosphor-Light.ttf</file>
+        <file alias="fonts/Phosphor.ttf">../../../../design/fonts/Phosphor.ttf</file>
+        <file alias="fonts/Phosphor-Bold.ttf">../../../../design/fonts/Phosphor-Bold.ttf</file>
+        <file alias="fonts/Phosphor-Fill.ttf">../../../../design/fonts/Phosphor-Fill.ttf</file>
+        <file alias="fonts/Phosphor-Duotone.ttf">../../../../design/fonts/Phosphor-Duotone.ttf</file>
     </qresource>
 </RCC>

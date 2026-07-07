@@ -7,12 +7,14 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
+from borco_pyside.logging import setup_console_logging
 from PySide6.QtCore import QEvent
-from PySide6.QtGui import QFileOpenEvent, QIcon
+from PySide6.QtGui import QFileOpenEvent, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.main_window import MainWindow
+from rehuco_agent.settings.persistent_settings import persistent_settings
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -21,6 +23,16 @@ APP_ID: Final = "rehuco-agent"
 
 ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the app icon, registered by importing :mod:`rehuco_agent.main_rc`."""
+
+ICON_FONT_RESOURCES: Final = (
+    ":/fonts/Phosphor-Thin.ttf",
+    ":/fonts/Phosphor-Light.ttf",
+    ":/fonts/Phosphor.ttf",
+    ":/fonts/Phosphor-Bold.ttf",
+    ":/fonts/Phosphor-Fill.ttf",
+    ":/fonts/Phosphor-Duotone.ttf",
+)
+"""qrc paths to the custom icon fonts loaded at startup."""
 
 
 class Application(QApplication):
@@ -44,6 +56,8 @@ class Application(QApplication):
         # setWindowIcon() below needs a genuinely-constructed object, not a skipped one
         super().__init__(argv)
         self.setWindowIcon(QIcon(ICON_RESOURCE))
+        for font_resource in ICON_FONT_RESOURCES:
+            QFontDatabase.addApplicationFont(font_resource)
         self.__main_window: MainWindow | None = None
 
     @override
@@ -60,14 +74,17 @@ class Application(QApplication):
         """
         if self.__main_window is None:
             # must run before this process's first CDockManager, whichever window ends up
-            # constructing it: the CDockFocusController that emits focusedDockWidgetChanged
-            # (which DocumentsDock listens to) is only built when this flag is set -- off by
-            # default, per typings/PySide6QtAds/__init__.pyi's focusedDockWidgetChanged docstring.
-            # Set here rather than in any one window's own __init__: show_main_window() is
-            # currently the earliest point that builds a window at all, and the only one reached
-            # solely by the primary instance -- if some other QtAds-based window is ever built
-            # before MainWindow, move this call ahead of that construction instead.
-            QtAds.CDockManager.setConfigFlag(QtAds.CDockManager.FocusHighlighting, True)
+            # constructing it -- config flags only take effect if set before then. Set here
+            # rather than in any one window's own __init__: show_main_window() is currently the
+            # earliest point that builds a window at all, and the only one reached solely by the
+            # primary instance -- if some other QtAds-based window is ever built before
+            # MainWindow, move this call ahead of that construction instead.
+            config_flags = QtAds.CDockManager.eConfigFlag
+            QtAds.CDockManager.setConfigFlags(
+                config_flags.AllTabsHaveCloseButton
+                | config_flags.DockAreaHasTabsMenuButton
+                | config_flags.MiddleMouseButtonClosesTab
+            )
             self.__main_window = MainWindow()
         self.__main_window.raise_and_activate()
         return self.__main_window
@@ -86,6 +103,8 @@ def run(argv: list[str]) -> int:
     :param argv: process argv (``sys.argv``); ``argv[1:]`` are ``.rehu`` paths to open immediately.
     :returns: process exit code; ``0`` immediately if this process forwarded to a running primary.
     """
+    setup_console_logging()
+    LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)
     if not singleton.setup(APP_ID):

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.field import Field
-from rehuco_agent.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 
 
@@ -188,6 +188,45 @@ def test_path_passes_through_to_the_document() -> None:
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
 
     assert model.path == Path("/fake/info.rehu")
+
+
+def test_label_is_empty_for_a_document_with_no_path() -> None:
+    """A document with no path yet has an empty label.
+
+    **Test steps:**
+
+    * build a model over a pathless document
+    * verify ``model.label`` is an empty string
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+    assert model.label == ""
+
+
+def test_label_uses_the_parent_directory_name_for_info_rehu() -> None:
+    """An ``info.rehu`` document's label is its parent directory's name, trailing-slashed.
+
+    **Test steps:**
+
+    * build a model over an ``info.rehu`` path
+    * verify ``model.label`` is the parent directory's name plus a trailing slash
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/sculpting/info.rehu")))
+
+    assert model.label == "sculpting/"
+
+
+def test_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
+    """A regular (non-``info.rehu``) document's label is its own bare filename.
+
+    **Test steps:**
+
+    * build a model over a non-``info.rehu`` path
+    * verify ``model.label`` is that file's bare name
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/sculpting/sculpting.rehu")))
+
+    assert model.label == "sculpting.rehu"
 
 
 def test_bind_resolves_the_current_value_and_a_stable_changed_signal(model: RehuDocumentModel) -> None:

@@ -2,8 +2,8 @@
 
 from PySide6.QtWidgets import QFormLayout
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import build_document_form
-from rehuco_agent.rehu_document_model import RehuDocumentModel
 
 
 def form_labels(layout: QFormLayout) -> list[str]:

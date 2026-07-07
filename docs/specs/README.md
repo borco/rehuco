@@ -37,8 +37,9 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | A02 | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
 | A03 | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
 | A04 | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A05 | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
-| A06 | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| A05 | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
+| A06 | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| A07 | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
 **Numbering, briefly:** `§N`/`§N.M` are global and renumber-and-shift on insert (no letter
 suffixes) — update every heading number in the same change, and never reuse a retired number.

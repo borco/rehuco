@@ -1,16 +1,28 @@
 """Per-document viewer/editor surfaces over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
-from typing import Final
+from typing import Any, Final
 
+import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.qtads import QtAdsFocusTracker
+from borco_pyside.theming import ActionIconThemeHandler
+from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import build_document_form
-from rehuco_agent.rehu_document_model import RehuDocumentModel
+
+STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
+STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
+STATE_CURRENT_DOCK_KEY: Final = "current_dock"
+
+VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
+EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
+SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 
 
-class DocumentWidget(QMainWindow):
+class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """One open document's **viewer** and **editor** surfaces, each in its own dock ([[plugins#viewer-editor-both]]).
 
     Both docks are built once, from the same :class:`RehuDocumentModel`, and stay live regardless of
@@ -33,19 +45,22 @@ class DocumentWidget(QMainWindow):
         super().__init__(parent)
         self.__model: Final = model
         self.__dock_manager: Final = QtAds.CDockManager(self)
+        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
+        self.__restoring_layout = False
 
         form = build_document_form()
         viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
         editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        self.__viewer_action.setText("Toggle Viewer")
+        ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
         self.__editor_action: Final = editor_dock.toggleViewAction()
-        self.__editor_action.setText("Toggle Editor")
+        ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
+        ActionIconThemeHandler(self.__save_action, SAVE_ICON_RESOURCE)
         self.__save_action.triggered.connect(model.save)
         self.addAction(self.__save_action)
 
@@ -74,6 +89,58 @@ class DocumentWidget(QMainWindow):
         """Toggles the editor dock's visibility."""
         return self.__editor_action
 
+    def save_state(self) -> bytes:
+        """Serialize this document's dock layout (visible surfaces, splitter sizes) for persistence.
+
+        :returns: cbor2-encoded state, suitable for :meth:`restore_state`
+            (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
+        """
+        return cbor2.dumps(
+            {
+                STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
+                STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
+                STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
+            }
+        )
+
+    def restore_state(self, state: bytes) -> bool:
+        """Restore a dock layout previously captured by :meth:`save_state`.
+
+        :param state: the cbor2-encoded state to restore.
+        :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
+            ``state`` was empty, malformed, or not in the expected shape.
+        """
+        try:
+            values: Any = cbor2.loads(state)
+        except cbor2.CBORDecodeError:
+            return False
+        if not isinstance(values, dict):
+            return False
+
+        stashed_sizes = values.get(STATE_STASHED_SIZES_KEY)
+        if isinstance(stashed_sizes, dict):
+            self.__stashed_sizes.clear()
+            self.__stashed_sizes.update(stashed_sizes)
+
+        dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
+        # restoreState() fires viewToggled(True) for every dock it reconstructs, even ones never
+        # really hidden/shown in the user-facing sense -- without this guard, __on_view_toggled
+        # would re-apply __stashed_sizes (last updated on some earlier, unrelated hide/show toggle,
+        # not necessarily reflecting the sizes actually being restored here) right on top of the
+        # correct sizes restoreState() itself just set, clobbering them with stale data
+        self.__restoring_layout = True
+        try:
+            restored = bool(self.__dock_manager.restoreState(QByteArray(dock_manager_state)))
+        finally:
+            self.__restoring_layout = False
+        if restored:
+            # re-select the surface that was current -- restoreState above only recovers the current
+            # tab within each area, not which of two split (viewer/editor) areas actually had focus
+            current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
+            if isinstance(current_dock_state, bytes):
+                self.__tracker.restore_state(current_dock_state)
+        return restored
+
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)
         dock.setObjectName(name)
@@ -93,9 +160,13 @@ class DocumentWidget(QMainWindow):
     def __on_view_toggled(self, dock: QtAds.CDockWidget, visible: bool) -> None:
         """Stash ``dock``'s splitter sizes as it hides, or restore them as it reappears.
 
+        No-op while :meth:`restore_state` is actively running -- see the comment there.
+
         :param dock: the dock whose visibility changed.
         :param visible: the dock's new visibility.
         """
+        if self.__restoring_layout:
+            return
         if visible:
             self.__restore_size(dock)
         else:

@@ -1,7 +1,7 @@
 """Shared fixtures for the field toolkit tests."""
 
 from pytest import fixture
-from rehuco_agent.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 
 

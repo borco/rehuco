@@ -8,9 +8,9 @@ later slices adopt more of the API (e.g. the QML docks from
 
 from typing import overload
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QLabel, QMenu, QToolButton, QWidget
 
 class DockWidgetArea:
     """A drop-location selector for `CDockManager.addDockWidget`/`setCentralWidget` (e.g.
@@ -18,33 +18,70 @@ class DockWidgetArea:
 
     def __or__(self, other: DockWidgetArea) -> DockWidgetArea:
         """Combine two areas into one selector, mirroring the C++ enum's `|` (Qt flag) operator."""
-        ...
 
 CenterDockWidgetArea: DockWidgetArea
 """Docks as a new tab in the target area's existing tab group (or as the sole tab, if none)."""
 
-LeftDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off to the left of the reference area."""
-
 RightDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the right of the reference area."""
 
-TopDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off above the reference area."""
+class TitleBarButton:
+    """Selector for `CDockAreaWidget.titleBarButton` (e.g. `TitleBarButtonTabsMenu`)."""
 
-BottomDockWidgetArea: DockWidgetArea
-"""Docks in a new area split off below the reference area."""
+TitleBarButtonTabsMenu: TitleBarButton
+"""The dropdown button (shown when `CDockManager.DockAreaHasTabsMenuButton` is set) listing every
+tab in an area, for areas with more tabs than fit the available width -- but present regardless of
+tab count, including a lone tab (verified empirically)."""
+
+class CTitleBarButton(QToolButton):
+    """One button in a `CDockAreaWidget`'s title bar (e.g. the tabs-menu dropdown)."""
+
+    def menu(self) -> QMenu:
+        """This button's dropdown menu (only meaningful for `TitleBarButtonTabsMenu`)."""
+
+class CDockAreaTitleBar(QWidget):
+    """The title-bar strip above a `CDockAreaWidget`'s tabs (`objectName() == "dockAreaTitleBar"`)."""
 
 class CDockAreaWidget(QWidget):
     """One tabbed area within a `CDockManager`, holding one or more `CDockWidget` tabs."""
 
     def setCurrentIndex(self, index: int) -> None:
         """Bring the tab at `index` to the front, hiding whichever tab was previously current."""
-        ...
 
     def index(self, dock_widget: CDockWidget) -> int:
         """The tab index `dock_widget` occupies in this area, for use with `setCurrentIndex`."""
-        ...
+
+    def dockWidget(self, index: int) -> CDockWidget | None:
+        """The dock widget occupying the tab at `index`, or `None` if `index` is out of range."""
+
+    def currentIndex(self) -> int:
+        """The index of this area's currently-selected (front) tab."""
+
+    def titleBar(self) -> CDockAreaTitleBar:
+        """This area's title bar (the strip above its tabs), e.g. to re-polish it after a
+        stylesheet-affecting property change."""
+
+    def titleBarButton(self, which: TitleBarButton) -> CTitleBarButton:
+        """This area's title-bar button matching `which` (e.g. its tabs-menu dropdown)."""
+
+    currentChanged: Signal
+    """Emitted with the new tab index whenever this area's current (selected) tab changes -- e.g.
+    the user clicks a different tab."""
+
+class CElidingLabel(QLabel):
+    """A `QLabel` that elides overflowing text instead of overflowing its bounds. Also the default
+    content of a `CDockWidgetTab`'s clickable label (`objectName() == "dockWidgetTabLabel"`,
+    findable via `CDockWidgetTab.findChild`)."""
+
+    clicked: Signal
+    """Emitted when the label is clicked (a single click, unlike `doubleClicked`)."""
+
+    doubleClicked: Signal
+    """Emitted when the label is double-clicked."""
+
+class CDockWidgetTab(QWidget):
+    """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.
+    `toolTip()` (inherited from `QWidget`) reflects `CDockWidget.setTabToolTip`."""
 
 class CDockWidget(QWidget):
     """One dockable pane: a titled, taggable container around a single content `QWidget`
@@ -83,7 +120,6 @@ class CDockWidget(QWidget):
 
         def __or__(self, other: CDockWidget.DockWidgetFeature) -> CDockWidget.DockWidgetFeature:
             """Combine two features into one selector, mirroring the C++ enum's `|` operator."""
-            ...
 
     # the flag enum's members are also promoted onto CDockWidget itself (verified at runtime):
     # both `QtAds.CDockWidget.DockWidgetFeature.NoTab` and `QtAds.CDockWidget.NoTab` resolve.
@@ -100,12 +136,10 @@ class CDockWidget(QWidget):
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         """Construct a standalone dock widget, to be added to a manager later via
         `CDockManager.addDockWidget`/`setCentralWidget`."""
-        ...
     @overload
     def __init__(self, manager: CDockManager, title: str, parent: QWidget | None = None) -> None:
         """Construct a dock widget already associated with `manager` (still needs
         `addDockWidget`/`setCentralWidget` to actually place it)."""
-        ...
 
     closeRequested: Signal
     """Emitted when the user clicks the close (x) button on a dock with `CustomCloseHandling`
@@ -125,79 +159,84 @@ class CDockWidget(QWidget):
 
     def setFeatures(self, features: DockWidgetFeature) -> None:
         """Replace this dock's entire `DockWidgetFeature` bitmask."""
-        ...
 
     def setFeature(self, feature: DockWidgetFeature, on: bool) -> None:
         """Turn a single `DockWidgetFeature` on or off, leaving the others untouched."""
-        ...
 
     def setWidget(self, widget: QWidget) -> None:
         """Set the content widget this dock displays."""
-        ...
+
+    def setTabToolTip(self, tool_tip: str) -> None:
+        """Set the tooltip shown when hovering this dock's tab (independent of `setWindowTitle`,
+        which sets the tab's visible label)."""
+
+    def tabWidget(self) -> CDockWidgetTab:
+        """This dock's tab widget, e.g. to read back `toolTip()` after `setTabToolTip`."""
 
     def widget(self) -> QWidget:
         """The content widget previously set with `setWidget`."""
-        ...
 
     def toggleViewAction(self) -> QAction:
         """A checkable `QAction` that shows/hides this dock -- checking/unchecking it (e.g. from
         a toolbar button or menu item) is what fires `viewToggled`."""
-        ...
 
     def dockAreaWidget(self) -> CDockAreaWidget | None:
         """The tabbed area currently containing this dock, or `None` if it isn't placed in one
         (e.g. before it's been added to a manager)."""
-        ...
+
+    def isClosed(self) -> bool:
+        """Whether this dock is currently closed/hidden (its `toggleViewAction` unchecked)."""
+
+    def toggleView(self, open: bool = ...) -> None:
+        """Show (`open=True`) or hide (`open=False`) this dock, as its `toggleViewAction` does --
+        firing `viewToggled` with the new visibility."""
 
     def requestCloseDockWidget(self) -> None:
         """Ask ADS to close this dock as if its close button were clicked, honoring
         `CustomCloseHandling`/`DockWidgetDeleteOnClose` the same way a real click would."""
-        ...
 
-    def isClosed(self) -> bool:
-        """Whether this dock is currently closed (hidden, or deleted-on-close and gone)."""
-        ...
+    def setAsCurrentTab(self) -> None:
+        """Bring this dock's tab to the front of its area (the visible one), without giving it Qt
+        keyboard focus. A no-op if it's already the area's current tab, or has no area yet. Fires
+        `CDockAreaWidget.currentChanged` when the current tab actually changes."""
 
 class CDockManager(QWidget):
     """The top-level docking surface: owns every `CDockAreaWidget`/`CDockWidget` placed into it
     via `addDockWidget`/`setCentralWidget`. Nestable -- a `CDockWidget`'s content can itself embed
     another `CDockManager` (`rehuco_agent`'s dock-in-dock shell, [[nodes#single-instance]])."""
 
-    class ConfigFlag:
-        """One global docking-behavior toggle, passed to `setConfigFlag`/`testConfigFlag`. Only
-        the flag `rehuco-agent` actually needs is declared here (see this stub's module docstring)."""
+    class eConfigFlag:
+        """One global docking-behavior toggle, OR'd together and passed to `setConfigFlags`. Only
+        the flags `rehuco-agent` actually needs are declared here (see this stub's module
+        docstring)."""
 
-        FocusHighlighting: CDockManager.ConfigFlag
-        """Enables `CDockFocusController`, which is what makes `focusedDockWidgetChanged` ever
-        fire and `setDockWidgetFocused` do anything -- **off by default**. Must be set via
-        `setConfigFlag` before the first `CDockManager` is constructed (`MainWindow.__init__`
-        does this, before `DocumentsDock` builds one)."""
+        AllTabsHaveCloseButton: CDockManager.eConfigFlag
+        """Shows the `[x]` close button on every tab in a dock area, not only the active one."""
+
+        DockAreaHasTabsMenuButton: CDockManager.eConfigFlag
+        """Adds a drop-down button to each dock area listing all its tabs, for areas with more
+        tabs than fit the available width."""
+
+        MiddleMouseButtonClosesTab: CDockManager.eConfigFlag
+        """Middle-clicking a tab closes it, the same as clicking its `[x]` button."""
+
+        def __or__(self, other: CDockManager.eConfigFlag) -> CDockManager.eConfigFlag:
+            """Combine two flags into one selector, mirroring the C++ enum's `|` (Qt flag)
+            operator."""
 
     # promoted onto CDockManager itself too, like CDockWidget.DockWidgetFeature's members:
-    FocusHighlighting: ConfigFlag
+    AllTabsHaveCloseButton: eConfigFlag
+    DockAreaHasTabsMenuButton: eConfigFlag
+    MiddleMouseButtonClosesTab: eConfigFlag
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Construct an empty dock manager with no docks yet."""
-        ...
 
     @staticmethod
-    def setConfigFlag(flag: ConfigFlag, on: bool = True) -> None:
-        """Turn one global `ConfigFlag` on or off for every `CDockManager` in the process.
-        Must be called before the first `CDockManager` is constructed to take effect."""
-        ...
-
-    @staticmethod
-    def testConfigFlag(flag: ConfigFlag) -> bool:
-        """Whether `flag` is currently set."""
-        ...
-
-    focusedDockWidgetChanged: Signal
-    """Emitted with `(old, now)` when keyboard focus moves between `DockWidgetFocusable` docks in
-    this manager; `now` is `None` when focus leaves every dock in it. **Requires the
-    `FocusHighlighting` config flag** -- without it (the default), this signal never fires at all
-    (confirmed against the vendored `pyside6-qtads` 5.0.0 source: the `CDockFocusController` that
-    emits it is only constructed when the flag is on). `rehuco-agent` sets the flag in
-    `MainWindow.__init__`, before any `CDockManager` is built."""
+    def setConfigFlags(flags: eConfigFlag) -> None:
+        """Turn on every `eConfigFlag` OR'd into `flags` (all others off) for every `CDockManager`
+        in the process. Must be called before the first `CDockManager` is constructed to take
+        effect."""
 
     def addDockWidget(
         self,
@@ -211,7 +250,6 @@ class CDockManager(QWidget):
 
         :returns: the tabbed area `dock_widget` ended up in.
         """
-        ...
 
     def setCentralWidget(self, dock_widget: CDockWidget) -> CDockAreaWidget:
         """Place `dock_widget` as this manager's permanent central area, which stays visible even
@@ -219,27 +257,42 @@ class CDockManager(QWidget):
 
         :returns: the tabbed area `dock_widget` ended up in.
         """
-        ...
 
     def splitterSizes(self, dock_area_widget: CDockAreaWidget) -> list[int]:
         """The pixel sizes of `dock_area_widget`'s containing splitter's panes, in splitter order."""
-        ...
 
     def setSplitterSizes(self, dock_area_widget: CDockAreaWidget, sizes: list[int]) -> None:
         """Re-apply previously-read `splitterSizes` to `dock_area_widget`'s containing splitter
         (`len(sizes)` must match the splitter's current pane count)."""
-        ...
 
-    def setDockWidgetFocused(self, dock_widget: CDockWidget) -> None:
-        """Give `dock_widget` keyboard focus. A complete no-op unless the `FocusHighlighting`
-        config flag is set (see `focusedDockWidgetChanged`) -- and even with it set, does not
-        synchronously emit `focusedDockWidgetChanged` in every case (deferred until `dock_widget`
-        becomes visible, if it wasn't already), so callers needing the new focus immediately
-        should also track it themselves rather than relying solely on the signal."""
-        ...
+    def saveState(self) -> QByteArray:
+        """Serialize this manager's current layout (areas, splitters, visibility) for later
+        `restoreState`. Used for per-document dock-layout persistence (#21)."""
+
+    def restoreState(self, state: QByteArray) -> bool:
+        """Re-apply a layout previously captured by `saveState`.
+
+        :returns: whether `state` was recognized and applied."""
+
+    dockWidgetAdded: Signal
+    """Emitted with a dock widget just after it's been added to this manager (e.g. via
+    `addDockWidget`), already placed into its `CDockAreaWidget`."""
+
+    dockWidgetRemoved: Signal
+    """Emitted with a dock widget just after it's been removed from this manager via
+    `removeDockWidget`."""
+
+    stateRestored: Signal
+    """Emitted after `restoreState` finishes applying a previously-saved layout."""
 
     def removeDockWidget(self, dock_widget: CDockWidget) -> None:
         """Remove `dock_widget` from this manager's layout (its containing area is removed too, if
         it was the area's last dock). Does not delete `dock_widget` itself -- callers that own it
         (e.g. via `DockWidgetDeleteOnClose`) are responsible for that separately."""
-        ...
+
+    def findDockWidget(self, object_name: str) -> CDockWidget | None:
+        """Return the registered dock whose `objectName()` is `object_name`, or `None` if none matches."""
+
+    def isRestoringState(self) -> bool:
+        """Whether a `restoreState` is currently in progress -- true only during that call, e.g. while
+        the `viewToggled`/`currentChanged` signals it fires for reconstructed docks are dispatching."""

@@ -2,8 +2,8 @@
 
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.text_field import TextField
-from rehuco_agent.rehu_document_model import RehuDocumentModel
 
 
 def test_text_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:

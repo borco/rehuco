@@ -25,6 +25,7 @@ dependencies = [
     "borco-pyside",
     "PySide6>=6.9",
     "pyside6-qtads>=5.0.0",
+    "cbor2>=6.1.3",
 ]
 
 [project.urls]

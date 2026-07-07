@@ -63,6 +63,12 @@ itself is written.
   something Designer surfaces — a developer opening the file in Designer needs to be able to
   find and change it there. Anything Designer can't set belongs in the controller class's
   Python code after `setupUi()`, not in the `.ui`.
+- Name widgets in `.ui` files `snake_case`, not Qt Designer's default `camelCase` — this is a
+  recommendation, not a hard rule; use `camelCase` where justified (e.g. overriding a name Qt
+  itself expects). A widget name that's already a single dictionary word a spell checker
+  recognizes (`checkbox`, `toolbar`) doesn't need splitting; a compound default that isn't a
+  real single word (`centralwidget`, `statusbar`, `menubar`) becomes `central_widget`,
+  `status_bar`, `menu_bar`.
 
 ## §A02.3 Markdown
 

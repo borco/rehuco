@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "rehuco-agent",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/apps/rehuco-agent/src/rehuco_agent/__main__.py",
+            "console": "integratedTerminal",
+        },
+        {
+            "name": "windows | rehuco-agent-dev-launcher",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/.build/apps/rehuco-agent/launcher/Release/rehuco-agent-dev.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "internalConsole"
+        },
+    ]
+}
