@@ -8,6 +8,7 @@ so a crash never yields a torn file ([[data-model#write-integrity]]).
 """
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -152,6 +153,54 @@ class RehuDocument:
             primary = {PRIMARY_KEY: True}
             self.__data.setdefault("sources", []).append(primary)
         return primary
+
+    @property
+    def type_fields_key(self) -> str:
+        """The type-keyed plugin block's key ([[field-schema#resource-types]]): the resource ``type`` in
+        snake_case (``Tutorial`` -> ``tutorial``, ``ReferenceImages`` -> ``reference_images``); empty when
+        the type is."""
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", self.type).lower()
+
+    @property
+    def type_fields(self) -> dict[str, Any]:
+        """The type-keyed plugin block holding this type's own fields ([[field-schema#resource-types]]); an
+        empty dict when the block is absent or malformed (not an object)."""
+        block = self.__data.get(self.type_fields_key)
+        return block if isinstance(block, dict) else {}
+
+    def type_field(self, key: str, default: Any = None) -> Any:
+        """Read a value from the type-keyed plugin block ([[field-schema#resource-types]]).
+
+        Generic value access only -- **not** the live/inert block save invariant (A3, [[data-model#rehu-format]]).
+
+        :param key: the key to read inside the block.
+        :param default: value to return when the block or key is absent.
+        :returns: the stored value, or ``default`` when absent.
+        """
+        return self.type_fields.get(key, default)
+
+    def set_type_field(self, key: str, value: Any) -> None:
+        """Write a value into the type-keyed plugin block ([[field-schema#resource-types]]), creating the block
+        if it is absent or malformed.
+
+        Generic value access only -- **not** the live/inert block save invariant (A3, [[data-model#rehu-format]]).
+
+        :param key: the key to write inside the block.
+        :param value: the value to store.
+        """
+        self.__type_fields_or_create()[key] = value
+
+    def __type_fields_or_create(self) -> dict[str, Any]:
+        """Return the mutable plugin block, installing a fresh one when absent or malformed.
+
+        :returns: the block dict, attached by reference to ``data`` so mutating it in place is reflected
+            on the next :meth:`save`.
+        """
+        block = self.__data.get(self.type_fields_key)
+        if not isinstance(block, dict):
+            block = {}
+            self.__data[self.type_fields_key] = block
+        return block
 
     @property
     def authors(self) -> list[str]:

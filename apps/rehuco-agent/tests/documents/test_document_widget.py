@@ -62,17 +62,18 @@ def test_model_property_exposes_the_wrapped_model(widget: DocumentWidget, model:
 
 
 def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: DocumentWidget) -> None:
-    """Both surfaces are built from the same document field list (title/publisher/url).
+    """Both surfaces are built from the same document field list (title/publisher/url + flags).
 
     **Test steps:**
 
     * build a widget over the sample model
-    * verify three editors (``QLineEdit``) exist, seeded with the model's current values
+    * verify the text editors (``QLineEdit``) are seeded with the model's current values (a subset,
+      since the spin-box editors carry their own internal line edits)
     * verify viewer labels (``QLabel``) show the same three values (distinguishing them from the
       form's own row-label widgets, which show the field names, never the values)
     """
     editor_texts = {editor.text() for editor in widget.findChildren(QLineEdit)}
-    assert editor_texts == {"Foo", "Bar", "https://example.com"}
+    assert {"Foo", "Bar", "https://example.com"} <= editor_texts
 
     viewer_texts = {label.text() for label in widget.findChildren(QLabel)}
     assert {"Foo", "Bar", "https://example.com"} <= viewer_texts

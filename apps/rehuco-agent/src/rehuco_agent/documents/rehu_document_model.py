@@ -13,6 +13,19 @@ INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
 directory's name instead, since the literal filename is the same for every such resource."""
 
+TYPE_FIELD_BOOL_DEFAULTS: Final = {
+    "complete": True,
+    "online": False,
+    "viewed": False,
+    "todo": False,
+    "keep": False,
+    "favorite": False,
+}
+"""The type-field boolean flags ([[field-schema#boolean-flags]]) and import defaults (``complete`` is ``true``)."""
+
+TYPE_FIELD_INT_DEFAULTS: Final = {"rating": 0, "images_count": 0}
+"""The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be negative."""
+
 
 class RehuDocumentModel(QObject):
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
@@ -39,6 +52,30 @@ class RehuDocumentModel(QObject):
     url = SimpleProperty("")
     """The primary source's URL ([[field-schema#sources]])."""
 
+    complete = SimpleProperty(True)
+    """The shared "all files present" flag ([[field-schema#boolean-flags]]); defaults ``true``."""
+
+    online = SimpleProperty(False)
+    """The shared "source still available online" flag ([[field-schema#online-flag]])."""
+
+    viewed = SimpleProperty(False)
+    """The per-user "viewed" flag ([[field-schema#per-user-shared]])."""
+
+    todo = SimpleProperty(False)
+    """The per-user "to do" flag ([[field-schema#per-user-shared]])."""
+
+    keep = SimpleProperty(False)
+    """The per-user "keep" flag ([[field-schema#per-user-shared]])."""
+
+    favorite = SimpleProperty(False)
+    """The per-user "favorite" flag ([[field-schema#boolean-flags]])."""
+
+    rating = SimpleProperty(0)
+    """The per-user rating ([[field-schema#per-user-shared]]); may be negative ([[field-schema#field-types]])."""
+
+    images_count = SimpleProperty(0)
+    """The ReferenceImages image count ([[field-schema#field-types]])."""
+
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
@@ -52,9 +89,20 @@ class RehuDocumentModel(QObject):
         self.publisher = document.publisher
         self.url = document.url
 
+        # The type-field scalar fields read/write generically through the type-keyed plugin block
+        # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
+        for name, default in TYPE_FIELD_BOOL_DEFAULTS.items():
+            setattr(self, name, bool(document.type_field(name, default)))
+        for name, default in TYPE_FIELD_INT_DEFAULTS.items():
+            value = document.type_field(name, default)
+            setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
+        for name in (*TYPE_FIELD_BOOL_DEFAULTS, *TYPE_FIELD_INT_DEFAULTS):
+            signal_name = SimpleProperty.notify_signal_name(type(self), name)
+            getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
     @property
     def document(self) -> RehuDocument:
@@ -124,4 +172,13 @@ class RehuDocumentModel(QObject):
         :param value: the new url.
         """
         self.__document.url = value
+        self.dirty = True
+
+    def __on_type_field_changed(self, key: str, value: Any) -> None:
+        """Write an edited type-field scalar through to the document's plugin block and mark dirty.
+
+        :param key: the type-field key that changed.
+        :param value: the new value.
+        """
+        self.__document.set_type_field(key, value)
         self.dirty = True
