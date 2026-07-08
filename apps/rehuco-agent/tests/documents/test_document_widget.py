@@ -7,6 +7,7 @@ the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
 import cbor2
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import fixture
@@ -89,17 +90,87 @@ def test_save_action_triggers_the_models_save(
     **Test steps:**
 
     * mock ``model.save``
+    * dirty the model, so the (otherwise-disabled, #41) save action can actually fire
     * verify the action's shortcut is the platform's standard "Save" key sequence
     * trigger the save action
     * verify ``save`` was called
     """
     save = mocker.patch.object(model, "save")
+    model.title = "New Title"
 
     assert widget.save_action.shortcut() == QKeySequence(QKeySequence.StandardKey.Save)
 
     widget.save_action.trigger()
 
     save.assert_called_once_with()
+
+
+def test_save_action_is_scoped_to_this_widgets_own_subtree(widget: DocumentWidget) -> None:
+    """The save action's shortcut is scoped per-widget, not to the shared top-level window (#41).
+
+    A plain ``WindowShortcut`` (the default) resolves to the single real top-level window every
+    open document shares -- with two documents dirty at once, Qt would see two enabled actions on
+    the same key sequence in that one scope and call it ambiguous, firing neither. Scoping to this
+    widget's own subtree (``WidgetWithChildrenShortcut``) means the shortcut only fires for
+    whichever document actually has focus (confirmed empirically before this fix landed).
+
+    **Test steps:**
+
+    * verify the save action's shortcut context is ``WidgetWithChildrenShortcut``
+    """
+    assert widget.save_action.shortcutContext() == Qt.ShortcutContext.WidgetWithChildrenShortcut
+
+
+def test_revert_action_triggers_the_models_revert(
+    mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """The revert action calls the model's ``revert()`` (#41).
+
+    **Test steps:**
+
+    * mock ``model.revert``
+    * trigger the revert action (enabled unconditionally, not gated on dirty)
+    * verify ``revert`` was called
+    """
+    revert = mocker.patch.object(model, "revert")
+
+    widget.revert_action.trigger()
+
+    revert.assert_called_once_with()
+
+
+def test_save_starts_disabled_and_revert_starts_enabled_on_a_clean_model(widget: DocumentWidget) -> None:
+    """Save starts disabled (nothing to save yet); revert starts enabled regardless (#41).
+
+    Revert also serves picking up an out-of-band change on a *clean* document, so it isn't gated on
+    dirty the way save is.
+
+    **Test steps:**
+
+    * build a widget over a freshly-seeded (clean) model
+    * verify save reports disabled and revert reports enabled
+    """
+    assert widget.save_action.isEnabled() is False
+    assert widget.revert_action.isEnabled() is True
+
+
+def test_save_enables_and_disables_with_dirty_while_revert_stays_enabled(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """Save tracks the model's dirty flag live; revert is unaffected by it either way (#41).
+
+    **Test steps:**
+
+    * dirty the model and verify save enables while revert stays enabled
+    * clean the model (as ``save()`` would) and verify save disables again while revert still stays enabled
+    """
+    model.title = "New Title"
+    assert widget.save_action.isEnabled() is True
+    assert widget.revert_action.isEnabled() is True
+
+    model.dirty = False
+    assert widget.save_action.isEnabled() is False
+    assert widget.revert_action.isEnabled() is True
 
 
 def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> None:

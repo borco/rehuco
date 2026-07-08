@@ -271,6 +271,42 @@ def test_save_without_path_raises() -> None:
         doc.save()
 
 
+def test_reload_replaces_data_in_place_from_disk(mocker: MockerFixture) -> None:
+    """``reload`` re-reads the document's own path and refreshes its data, keeping ``data``'s identity.
+
+    **Test steps:**
+
+    * load a document, then mock ``Path.read_text`` to return different content
+    * call ``reload()``
+    * verify the document's fields reflect the new content, and ``data`` is still the same object
+    """
+    doc = load_doc(mocker, TUTORIAL)
+    original_data = doc.data
+
+    mocker.patch.object(
+        Path, "read_text", return_value=json.dumps({"type": "Tutorial", "authors": ["Reloaded Author"]})
+    )
+    doc.reload()
+
+    assert doc.data is original_data
+    assert doc.authors == ["Reloaded Author"]
+    assert doc.title == ""
+
+
+def test_reload_without_a_path_raises() -> None:
+    """Calling ``reload`` on a document never loaded from a file raises.
+
+    **Test steps:**
+
+    * construct a document with no ``path``
+    * call ``reload()``
+    * verify ``ValueError`` is raised
+    """
+    doc = RehuDocument({"type": "Tutorial"})
+    with pytest.raises(ValueError, match="no path to reload from"):
+        doc.reload()
+
+
 def test_extra_tags_returns_empty_for_non_list() -> None:
     """``extra_tags`` falls back to an empty list when the stored value is not a list.
 

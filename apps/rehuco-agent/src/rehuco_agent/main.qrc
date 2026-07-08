@@ -1,6 +1,7 @@
 <RCC>
     <qresource prefix="/">
         <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
+        <file alias="icons/document_revert.svg">../../../../design/icons/document_revert.svg</file>
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>

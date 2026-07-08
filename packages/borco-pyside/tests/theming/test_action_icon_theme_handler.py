@@ -94,6 +94,50 @@ def test_the_single_icon_carries_both_state_variants(make_action: QAction, mock_
     )
 
 
+def test_the_single_icon_carries_a_disabled_variant_too(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:
+    """The built icon's ``Mode.Disabled`` variant is colored from the palette's own disabled group (#41).
+
+    A custom icon engine gets no automatic disabled-greying from Qt -- without this, a disabled
+    action's icon would render identically to its enabled one (the actual bug this closes).
+
+    **Test steps:**
+
+    * construct a handler, then read the built icon's ``Disabled`` pixmap
+    * verify it renders in the palette's ``ColorGroup.Disabled`` ``ButtonText``, not the enabled one
+    """
+    mock_qfile(SVG)
+    ActionIconThemeHandler(make_action, "icon.svg")
+
+    icon = make_action.icon()
+    disabled = icon.pixmap(QSize(10, 10), QIcon.Mode.Disabled, QIcon.State.Off)
+    expected = QApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText)
+    assert disabled.toImage().pixelColor(5, 5).name() == expected.name()
+
+
+def test_the_single_icon_carries_a_disabled_checked_variant_too(
+    make_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """The built icon's disabled+checked corner is colored from the ``Disabled`` group's ``HighlightedText`` (#41).
+
+    Distinct from plain ``Mode.Disabled`` (``State.Off``) -- a disabled *checkable* action (e.g. one
+    mirroring a model flag the user can't toggle directly) still needs to show checked-ness while
+    disabled, not collapse to one flat disabled look.
+
+    **Test steps:**
+
+    * construct a handler, then read the built icon's disabled+checked pixmap
+    * verify it renders in the palette's ``ColorGroup.Disabled`` ``HighlightedText``, distinct from
+      plain disabled
+    """
+    mock_qfile(SVG)
+    ActionIconThemeHandler(make_action, "icon.svg")
+
+    icon = make_action.icon()
+    disabled_checked = icon.pixmap(QSize(10, 10), QIcon.Mode.Disabled, QIcon.State.On)
+    expected = QApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.HighlightedText)
+    assert disabled_checked.toImage().pixelColor(5, 5).name() == expected.name()
+
+
 def test_set_icon_switches_the_source_svg_and_keeps_it_themed(
     make_action: QAction, mock_qfile: Callable[..., Any]
 ) -> None:

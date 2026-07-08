@@ -40,6 +40,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     multi-source record-list editor is a later slice (A2.6/#26) that plugs into this seam. ``authors``
     / ``advertised_tags`` / ``extra_tags`` are common-core top-level lists, not source-scoped, so they
     write straight through to the document instead of through the primary source (A2.3/#23).
+    :meth:`revert` is the write-through's mirror image: it re-reads the document from disk and
+    reseeds every field, guarded so reseeding is never itself treated as an edit (#41).
 
     :param document: the document to wrap.
     :param parent: optional Qt parent.
@@ -93,23 +95,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __init__(self, document: RehuDocument, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self.__document: Final = document
+        self.__reverting = False
 
         # Seed the fields from the document *before* wiring the write-through handlers, so seeding a
         # freshly-loaded model never looks like an edit (no dirty, no document write-back).
-        self.title = document.title
-        self.authors = document.authors
-        self.publisher = document.publisher
-        self.url = document.url
-        self.advertised_tags = document.advertised_tags
-        self.extra_tags = document.extra_tags
-
-        # The type-field scalar fields read/write generically through the type-keyed plugin block
-        # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
-        for name, default in TYPE_FIELD_BOOL_DEFAULTS.items():
-            setattr(self, name, bool(document.type_field(name, default)))
-        for name, default in TYPE_FIELD_INT_DEFAULTS.items():
-            value = document.type_field(name, default)
-            setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+        self.__seed_from_document()
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
@@ -153,6 +143,24 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.save()
         self.dirty = False
 
+    def revert(self) -> None:
+        """Discard in-memory edits and reseed every field from the document's file on disk.
+
+        Re-reads the file (:meth:`RehuDocument.reload`) rather than just resetting to the
+        last-loaded snapshot, so an out-of-band edit ([[data-model#write-integrity]]) is picked up
+        too. Reseeding is guarded the same way construction is, so it never looks like an edit --
+        no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
+
+        :raises ValueError: if the document has no path (was never loaded from or saved to a file).
+        """
+        self.__document.reload()
+        self.__reverting = True
+        try:
+            self.__seed_from_document()
+        finally:
+            self.__reverting = False
+        self.dirty = False
+
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
         """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
 
@@ -167,59 +175,104 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             set_value=lambda value: setattr(self, name, value),
         )
 
+    def __seed_from_document(self) -> None:
+        """Set every field from :attr:`document`'s current in-memory state (construction and :meth:`revert`)."""
+        self.title = self.__document.title
+        self.authors = self.__document.authors
+        self.publisher = self.__document.publisher
+        self.url = self.__document.url
+        self.advertised_tags = self.__document.advertised_tags
+        self.extra_tags = self.__document.extra_tags
+
+        # The type-field scalar fields read/write generically through the type-keyed plugin block
+        # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
+        for name, default in TYPE_FIELD_BOOL_DEFAULTS.items():
+            setattr(self, name, bool(self.__document.type_field(name, default)))
+        for name, default in TYPE_FIELD_INT_DEFAULTS.items():
+            value = self.__document.type_field(name, default)
+            setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+
     def __on_title_changed(self, value: str) -> None:
         """Write an edited title through to the document's primary source and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new title.
         """
+        if self.__reverting:
+            return
         self.__document.title = value
         self.dirty = True
 
     def __on_authors_changed(self, value: list[str]) -> None:
         """Write an edited authors list through to the document and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new authors list.
         """
+        if self.__reverting:
+            return
         self.__document.authors = value
         self.dirty = True
 
     def __on_publisher_changed(self, value: str) -> None:
         """Write an edited publisher through to the document's primary source and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new publisher.
         """
+        if self.__reverting:
+            return
         self.__document.publisher = value
         self.dirty = True
 
     def __on_url_changed(self, value: str) -> None:
         """Write an edited url through to the document's primary source and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new url.
         """
+        if self.__reverting:
+            return
         self.__document.url = value
         self.dirty = True
 
     def __on_advertised_tags_changed(self, value: list[str]) -> None:
         """Write an edited advertised_tags list through to the document and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new advertised_tags list.
         """
+        if self.__reverting:
+            return
         self.__document.advertised_tags = value
         self.dirty = True
 
     def __on_extra_tags_changed(self, value: list[str]) -> None:
         """Write an edited extra_tags list through to the document and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param value: the new extra_tags list.
         """
+        if self.__reverting:
+            return
         self.__document.extra_tags = value
         self.dirty = True
 
     def __on_type_field_changed(self, key: str, value: Any) -> None:
         """Write an edited type-field scalar through to the document's plugin block and mark dirty.
 
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
         :param key: the type-field key that changed.
         :param value: the new value.
         """
+        if self.__reverting:
+            return
         self.__document.set_type_field(key, value)
         self.dirty = True
