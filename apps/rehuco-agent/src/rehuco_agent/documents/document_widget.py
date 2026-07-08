@@ -6,7 +6,7 @@ import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QByteArray
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
@@ -20,6 +20,7 @@ STATE_CURRENT_DOCK_KEY: Final = "current_dock"
 VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
+REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -35,7 +36,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     for the ``CustomCloseHandling`` close-button flow `DocumentsDock` uses instead) -- and
     re-applied on ``viewToggled(True)``, since QtAds does not otherwise restore a closed dock's size.
     Also carries the save action (the platform save shortcut, e.g. ``Ctrl+S``), since A1's per-file
-    save button/shortcut ([[data-model#write-integrity]]) has no other home in the dock shell.
+    save button/shortcut ([[data-model#write-integrity]]) has no other home in the dock shell, and a
+    revert action that re-reads the document from disk (#41). Save is enabled only while the model is
+    :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert stays enabled
+    unconditionally: it is also how a clean document picks up a change made outside this app, not
+    just how a dirty one discards in-memory edits.
 
     :param model: the reactive view-model this document's surfaces bind to.
     :param parent: optional Qt parent.
@@ -60,11 +65,27 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
+        # WidgetWithChildrenShortcut, not the default WindowShortcut: this widget is a QMainWindow
+        # embedded in a dock, not a genuine top-level window, so WindowShortcut resolves to the
+        # single real top-level window shared by every open document -- with two dirty documents
+        # open, Qt would see two enabled actions on the same key sequence in that shared scope and
+        # call it ambiguous, firing neither (#41). Scoping to this widget's own subtree instead
+        # means the shortcut only fires whichever document actually has focus.
+        self.__save_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         ActionIconThemeHandler(self.__save_action, SAVE_ICON_RESOURCE)
         self.__save_action.triggered.connect(model.save)
         self.addAction(self.__save_action)
 
+        self.__revert_action: Final = QAction("&Revert", self)
+        ActionIconThemeHandler(self.__revert_action, REVERT_ICON_RESOURCE)
+        self.__revert_action.triggered.connect(model.revert)
+        self.addAction(self.__revert_action)
+
+        self.__save_action.setEnabled(model.dirty)
+        model.dirty_changed.connect(self.__on_dirty_changed)  # type: ignore[attr-defined]
+
         toolbar = self.addToolBar("View")
+        toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
         toolbar.addAction(self.__viewer_action)
         toolbar.addAction(self.__editor_action)
@@ -78,6 +99,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def save_action(self) -> QAction:
         """Saves the document ([[data-model#write-integrity]]); bound to the platform's save shortcut."""
         return self.__save_action
+
+    @property
+    def revert_action(self) -> QAction:
+        """Discards in-memory edits and reloads the document from disk (#41)."""
+        return self.__revert_action
 
     @property
     def viewer_action(self) -> QAction:
@@ -140,6 +166,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             if isinstance(current_dock_state, bytes):
                 self.__tracker.restore_state(current_dock_state)
         return restored
+
+    def __on_dirty_changed(self, dirty: bool) -> None:
+        """Enable save only while the model holds unsaved edits -- there is nothing to save otherwise.
+
+        Revert stays enabled regardless: it re-reads the document from disk (#41), which is useful
+        even on a clean model, to pick up a change made outside this app.
+
+        :param dirty: the model's new dirty state.
+        """
+        self.__save_action.setEnabled(dirty)
 
     def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)

@@ -22,7 +22,7 @@ class RehuFormatError(ValueError):
     """Raised when a ``.rehu`` payload is not a JSON object."""
 
 
-class RehuDocument:
+class RehuDocument:  # pylint: disable=too-many-public-methods
     """In-memory view over one ``.rehu`` JSON document.
 
     Wraps the parsed object and exposes the common-core fields as typed properties while
@@ -69,6 +69,23 @@ class RehuDocument:
         text = json.dumps(self.__data, indent=2, ensure_ascii=False) + "\n"
         atomic_write_text(target, text)
         self.__path = target
+
+    def reload(self) -> None:
+        """Re-read this document from its own path, replacing all in-memory data in place.
+
+        Picks up an out-of-band change ([[data-model#write-integrity]]) -- an edit made outside this
+        app -- rather than just resetting to the last-loaded snapshot. Keeps this document's identity
+        (the same backing :attr:`data` object a caller may already hold a reference to): the dict is
+        cleared and refilled, not replaced.
+
+        :raises ValueError: if this document has no path (never loaded from or saved to a file).
+        :raises RehuFormatError: if the file's top-level JSON value is not an object.
+        """
+        if self.__path is None:
+            raise ValueError("no path to reload from -- document was not loaded from a file")
+        fresh = RehuDocument.load(self.__path)
+        self.__data.clear()
+        self.__data.update(fresh.data)
 
     @property
     def data(self) -> dict[str, Any]:

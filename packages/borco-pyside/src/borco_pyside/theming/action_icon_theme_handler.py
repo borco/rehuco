@@ -11,12 +11,15 @@ class ActionIconThemeHandler(QObject):
     """Keeps a checkable action's icon recolored to match the current app theme.
 
     ``icon`` (an SVG resource/file path) is the source glyph; the handler sets **one** scalable
-    ``QIcon`` (via :func:`~borco_pyside.theming.recolored_svg_icon` with an ``on_color``) carrying
-    both variants -- the unchecked glyph coloured ``QPalette.ColorRole.ButtonText`` as
-    ``QIcon.State.Off`` and the checked glyph coloured ``HighlightedText`` as ``State.On`` -- so
-    **Qt** picks the right one from the action's own checked state; the handler never swaps icons on
-    ``toggled``. The whole icon is rebuilt whenever ``QApplication.paletteChanged`` fires -- that
-    signal (not
+    ``QIcon`` (via :func:`~borco_pyside.theming.recolored_svg_icon` with an ``on_color``, a
+    ``disabled_color``, and an ``on_disabled_color``) carrying all four corners of the checked/enabled
+    space, each colored from the matching ``QPalette`` group/role -- ``ButtonText`` (enabled+off),
+    ``HighlightedText`` (enabled+on), the ``Disabled`` group's ``ButtonText`` (disabled+off), and the
+    ``Disabled`` group's ``HighlightedText`` (disabled+on, so a disabled checkable action -- e.g. one
+    mirroring a model flag it doesn't let the user toggle directly -- still shows its state, not just a
+    flat disabled look, #41) -- so **Qt** picks the right one from the action's own checked/enabled
+    state; the handler never swaps icons on ``toggled``/``enabledChanged``. The whole icon is rebuilt
+    whenever ``QApplication.paletteChanged`` fires -- that signal (not
     ``QStyleHints.colorSchemeChanged``, which can fire before the palette itself has actually been
     updated) is the authoritative point at which the new theme's colours are available to read.
 
@@ -64,16 +67,21 @@ class ActionIconThemeHandler(QObject):
         self.__apply_icon()
 
     def __apply_icon(self) -> None:
-        # One scalable QIcon carrying both variants -- unchecked (ButtonText) as State.Off, checked
-        # (HighlightedText) as State.On -- and let Qt pick per the action's checked state. Nothing
-        # is swapped on `toggled`, which would miss state changes that don't emit it (a dock closed
-        # via its tab's [x], or CDockManager.restoreState() flipping toggleViewAction()).
+        # One scalable QIcon carrying all four mode/state corners -- unchecked (ButtonText) as
+        # State.Off, checked (HighlightedText) as State.On, and the same Off/On split again within
+        # the Disabled color group for Mode.Disabled -- and let Qt pick per the action's
+        # checked/enabled state. Nothing is swapped on `toggled`/`enabledChanged`, which would miss
+        # state changes that don't emit them (a dock closed via its tab's [x], or
+        # CDockManager.restoreState() flipping toggleViewAction()).
         palette = QApplication.palette()
+        disabled = QPalette.ColorGroup.Disabled
         self.__action.setIcon(
             recolored_svg_icon(
                 self.__svg,
                 palette.color(QPalette.ColorRole.ButtonText),
                 palette.color(QPalette.ColorRole.HighlightedText),
+                palette.color(disabled, QPalette.ColorRole.ButtonText),
+                palette.color(disabled, QPalette.ColorRole.HighlightedText),
             )
         )
 

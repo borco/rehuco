@@ -50,7 +50,13 @@ def recolor_svg(svg: bytes, color: QColor) -> bytes:
     return re.sub(r'style="([^"]*)"', replace_style, text).encode("utf-8")
 
 
-def recolored_svg_icon(svg: bytes, color: QColor, on_color: QColor | None = None) -> QIcon:
+def recolored_svg_icon(
+    svg: bytes,
+    color: QColor,
+    on_color: QColor | None = None,
+    disabled_color: QColor | None = None,
+    on_disabled_color: QColor | None = None,
+) -> QIcon:
     """Build a scalable ``QIcon`` that renders ``svg`` recolored to ``color``, at any size, on demand.
 
     Pass ``on_color`` for a distinct *checked* (``QIcon.State.On``) variant, so one icon can serve a
@@ -58,47 +64,89 @@ def recolored_svg_icon(svg: bytes, color: QColor, on_color: QColor | None = None
     the caller swapping icons on state changes. Left ``None``, the state is ignored and every state
     renders in ``color``.
 
+    Pass ``disabled_color`` for a distinct **disabled** (``QIcon.Mode.Disabled``) variant. This is not
+    optional in practice for a *custom* icon engine: Qt's usual "auto-grey a disabled icon" fallback
+    (``QStyle.generatedIconPixmap``) only applies to the default pixmap-based engine, which stores a
+    fixed set of mode/state pixmaps and falls back to that generator for a mode it wasn't given.
+    :class:`RecoloredSvgIconEngine` renders every request instead of storing pixmaps, so it is fully
+    responsible for the disabled look itself -- without ``disabled_color``, a disabled action's icon
+    renders identically to its enabled one (confirmed empirically, #41).
+
+    Pass ``on_disabled_color`` too for a checkable action that can *also* be disabled -- e.g. a toggle
+    that mirrors a model flag (a "dirty" indicator, say) but isn't itself user-clickable. Without it,
+    ``disabled_color`` wins outright over ``on_color`` whenever ``mode`` is ``Disabled``, so a disabled
+    checked icon would look identical to a disabled unchecked one -- fine for a plain disabled action,
+    but it defeats a disabled toggle's whole point if it's meant to keep showing its state.
+
     :param svg: the source SVG document, as raw bytes.
     :param color: the color for the unchecked (``State.Off``) variant, and any state with no variant.
     :param on_color: the color for the checked (``State.On``) variant; ``None`` reuses ``color``.
+    :param disabled_color: the color for the disabled+unchecked variant; ``None`` reuses ``color`` (so
+        a disabled icon looks identical to an enabled one -- rarely what's wanted for an action whose
+        enabled state actually changes).
+    :param on_disabled_color: the color for the disabled+checked variant; ``None`` reuses
+        ``disabled_color`` (so a disabled toggle can't show checked-ness).
     :returns: a scalable ``QIcon`` backed by a :class:`RecoloredSvgIconEngine`.
     """
     on_svg = recolor_svg(svg, on_color) if on_color is not None else None
-    return QIcon(RecoloredSvgIconEngine(recolor_svg(svg, color), on_svg))
+    disabled_svg = recolor_svg(svg, disabled_color) if disabled_color is not None else None
+    on_disabled_svg = recolor_svg(svg, on_disabled_color) if on_disabled_color is not None else None
+    return QIcon(RecoloredSvgIconEngine(recolor_svg(svg, color), on_svg, disabled_svg, on_disabled_svg))
 
 
-class RecoloredSvgIconEngine(QIconEngine):
+class RecoloredSvgIconEngine(QIconEngine):  # pylint: disable=too-many-instance-attributes
     """Renders an already-recolored SVG fresh at whatever exact size/mode/state Qt requests.
 
-    Optionally carries a distinct ``on_svg`` for the checked (``QIcon.State.On``) state; left
-    ``None``, the state is ignored and ``svg`` renders for every state. One engine thus covers a
-    checkable icon's Off/On without a separate engine per state combination.
+    Optionally carries a distinct SVG per corner of the mode/state space: ``on_svg`` for checked
+    (``State.On``), ``disabled_svg`` for disabled+unchecked, and ``on_disabled_svg`` for
+    disabled+checked. Resolution, most-specific first: disabled+checked prefers ``on_disabled_svg``,
+    falling back to ``disabled_svg``, then ``on_svg``, then ``svg``; disabled+unchecked prefers
+    ``disabled_svg``, falling back to ``svg``; enabled+checked prefers ``on_svg``, falling back to
+    ``svg``; enabled+unchecked always renders ``svg``. Any variant left ``None`` simply isn't
+    preferred at its corner. One engine thus covers a whole icon's mode/state combinations without a
+    separate engine per combination.
 
     :param svg: the (already recolored) SVG to render, as raw bytes.
-    :param on_svg: the (already recolored) SVG to render for ``State.On``; ``None`` reuses ``svg``.
+    :param on_svg: the (already recolored) SVG to render for enabled ``State.On``; ``None`` reuses ``svg``.
+    :param disabled_svg: the (already recolored) SVG to render for disabled ``State.Off``; ``None``
+        reuses ``svg``.
+    :param on_disabled_svg: the (already recolored) SVG to render for disabled ``State.On``; ``None``
+        falls back to ``disabled_svg``, then ``on_svg``, then ``svg``.
     """
 
-    def __init__(self, svg: bytes, on_svg: bytes | None = None) -> None:
+    def __init__(
+        self,
+        svg: bytes,
+        on_svg: bytes | None = None,
+        disabled_svg: bytes | None = None,
+        on_disabled_svg: bytes | None = None,
+    ) -> None:
         super().__init__()
         self.__svg: Final = svg
         self.__on_svg: Final = on_svg
+        self.__disabled_svg: Final = disabled_svg
+        self.__on_disabled_svg: Final = on_disabled_svg
         self.__renderer: Final = QSvgRenderer(QByteArray(svg))
         self.__on_renderer: Final = QSvgRenderer(QByteArray(on_svg)) if on_svg is not None else None
+        self.__disabled_renderer: Final = QSvgRenderer(QByteArray(disabled_svg)) if disabled_svg is not None else None
+        self.__on_disabled_renderer: Final = (
+            QSvgRenderer(QByteArray(on_disabled_svg)) if on_disabled_svg is not None else None
+        )
 
-    def __renderer_for(self, state: QIcon.State) -> QSvgRenderer:
-        if state == QIcon.State.On and self.__on_renderer is not None:
+    def __renderer_for(self, mode: QIcon.Mode, state: QIcon.State) -> QSvgRenderer:
+        checked = state == QIcon.State.On
+        if mode == QIcon.Mode.Disabled:
+            if checked and self.__on_disabled_renderer is not None:
+                return self.__on_disabled_renderer
+            if self.__disabled_renderer is not None:
+                return self.__disabled_renderer
+        if checked and self.__on_renderer is not None:
             return self.__on_renderer
         return self.__renderer
 
     @override
-    def paint(  # pylint: disable=unused-argument
-        self,
-        painter: QPainter,
-        rect: QRect,
-        mode: QIcon.Mode,
-        state: QIcon.State,
-    ) -> None:
-        self.__renderer_for(state).render(painter, QRectF(rect))
+    def paint(self, painter: QPainter, rect: QRect, mode: QIcon.Mode, state: QIcon.State) -> None:
+        self.__renderer_for(mode, state).render(painter, QRectF(rect))
 
     @override
     def pixmap(self, size: QSize, mode: QIcon.Mode, state: QIcon.State) -> QPixmap:
@@ -115,4 +163,4 @@ class RecoloredSvgIconEngine(QIconEngine):
 
     @override
     def clone(self) -> QIconEngine:
-        return RecoloredSvgIconEngine(self.__svg, self.__on_svg)
+        return RecoloredSvgIconEngine(self.__svg, self.__on_svg, self.__disabled_svg, self.__on_disabled_svg)

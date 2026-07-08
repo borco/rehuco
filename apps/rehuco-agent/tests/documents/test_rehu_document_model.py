@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pytest import fixture
+from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.field import Field
@@ -211,6 +211,110 @@ def test_save_writes_document_and_clears_dirty(
 
     save.assert_called_once_with()
     assert model.dirty is False
+
+
+def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
+    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """revert() re-reads the document and reseeds every common-core field from it, then clears dirty.
+
+    Picks up values the model never held before (neither the original seed nor the unsaved edit),
+    proving it re-reads rather than just resetting to the last-loaded snapshot (#41). Changes every
+    common-core field so each write-through handler's reverting-guard early-return actually runs
+    (not just title's).
+
+    **Test steps:**
+
+    * make an unsaved edit, dirtying the model
+    * mock ``document.reload`` to simulate an out-of-band on-disk change touching every field
+    * call ``model.revert()``
+    * verify every field reflects the *reloaded* value (not the edit, not the original) and dirty clears
+    """
+    model.title = "Unsaved Edit"
+    assert model.dirty is True
+
+    def fake_reload() -> None:
+        document.data["sources"] = [
+            {
+                "title": "Reloaded Title",
+                "publisher": "Reloaded Publisher",
+                "url": "https://reloaded.example",
+                "primary": True,
+            }
+        ]
+        document.data["authors"] = ["Reloaded Author"]
+        document.data["advertised_tags"] = ["reloaded-tag"]
+        document.data["extra_tags"] = ["reloaded-extra"]
+
+    reload = mocker.patch.object(document, "reload", side_effect=fake_reload)
+
+    model.revert()
+
+    reload.assert_called_once_with()
+    assert model.title == "Reloaded Title"
+    assert model.publisher == "Reloaded Publisher"
+    assert model.url == "https://reloaded.example"
+    assert model.authors == ["Reloaded Author"]
+    assert model.advertised_tags == ["reloaded-tag"]
+    assert model.extra_tags == ["reloaded-extra"]
+    assert model.dirty is False
+
+
+def test_revert_reseeds_type_fields_too(
+    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """revert() also reseeds the type-field-backed scalars (bool/int) from the reloaded document.
+
+    **Test steps:**
+
+    * mock ``document.reload`` to simulate an on-disk rating change
+    * call ``model.revert()``
+    * verify ``model.rating`` reflects the reloaded value
+    """
+
+    def fake_reload() -> None:
+        document.data["tutorial"] = {"rating": -3}
+
+    mocker.patch.object(document, "reload", side_effect=fake_reload)
+
+    model.revert()
+
+    assert model.rating == -3
+
+
+def test_revert_does_not_write_back_to_a_sourceless_document(mocker: MockerFixture) -> None:
+    """Reseeding during revert is guarded: it doesn't synthesize a primary source on a document with none.
+
+    Without the guard, reseeding empty ``title``/``publisher``/``url`` would still call each setter,
+    which creates a flagged primary source on a document that has none -- an unwanted side effect of
+    a pure reseed (#41).
+
+    **Test steps:**
+
+    * build a model over a document with no ``sources``, and mock ``reload`` as a no-op
+    * call ``model.revert()``
+    * verify no primary source was synthesized
+    """
+    document = RehuDocument({"type": "Tutorial"})
+    model = RehuDocumentModel(document)
+    mocker.patch.object(document, "reload")
+
+    model.revert()
+
+    assert document.sources == []
+
+
+def test_revert_without_a_path_propagates(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """revert() propagates the document's error when it has never been loaded from a file.
+
+    **Test steps:**
+
+    * call ``model.revert()`` on a document with no path
+    * verify ``ValueError`` propagates
+    """
+    assert document.path is None
+    with raises(ValueError, match="no path to reload from"):
+        model.revert()
 
 
 def test_document_exposes_the_wrapped_document(model: RehuDocumentModel, document: RehuDocument) -> None:
