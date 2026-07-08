@@ -33,6 +33,7 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
     assert isinstance(layout, QFormLayout)
     assert form_labels(layout) == [
         "Title",
+        "Authors",
         "Publisher",
         "Url",
         "Complete",
@@ -42,4 +43,6 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
         "Keep",
         "Favorite",
         "Rating",
+        "Advertised Tags",
+        "Extra Tags",
     ]

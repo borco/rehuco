@@ -9,11 +9,14 @@ from rehuco_agent.fields.fields_form import FieldsForm
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
+from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.url_field import UrlField
 
 DOCUMENT_FIELD_SPECS: Final = (
     ("text", "title"),
+    ("text_list", "authors"),
     ("text", "publisher"),
-    ("text", "url"),
+    ("url", "url"),
     ("bool", "complete"),
     ("bool", "online"),
     ("bool", "viewed"),
@@ -21,11 +24,13 @@ DOCUMENT_FIELD_SPECS: Final = (
     ("bool", "keep"),
     ("bool", "favorite"),
     ("rating", "rating"),
+    ("text_list", "advertised_tags"),
+    ("text_list", "extra_tags"),
 )
-"""The document's field list: the common-core title/publisher/url plus the shared resource-type scalar
-flags and rating ([[field-schema#resource-types]]). A hardcoded constant for now; per-type field lists and
-where this is authored long-term are open questions ([[field-schema#deferred-items]],
-[[appendices.open-questions#still-open]])."""
+"""The document's field list: the common-core title/authors/publisher/url plus the shared resource-type
+scalar flags, rating, and the tag lists ([[field-schema#resource-types]]). A hardcoded constant for now;
+per-type field lists and where this is authored long-term are open questions
+([[field-schema#deferred-items]], [[appendices.open-questions#still-open]])."""
 
 __all__ = [
     "Field",
@@ -35,6 +40,8 @@ __all__ = [
     "BooleanField",
     "RatingField",
     "IntField",
+    "TextListField",
+    "UrlField",
     "DOCUMENT_FIELD_SPECS",
     "build_document_form",
 ]

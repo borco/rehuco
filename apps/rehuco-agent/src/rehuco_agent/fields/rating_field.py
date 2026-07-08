@@ -39,11 +39,11 @@ class RatingField(Field[int]):
     **may be negative**.
 
     The viewer is a :class:`~borco_pyside.widgets.Rating`: ``|value|`` stars, filled (default color) for a
-    positive rating, outline and red for a negative one -- tc4's good/bad star split (``RatingView.qml``),
-    reworked onto Phosphor's shared star glyph instead of a second SVG. The editor is a bounded ``QSlider``
-    (tc4's ``-5``..``5`` ``Slider``, ``InfoEditor.qml``), not a spin box -- ``rating`` is distinct from the
-    plain ``int`` type ([[field-schema#field-types]]) and does not share
-    :class:`~rehuco_agent.fields.int_field.IntField`'s widgets.
+    positive rating, outline and red for a negative one -- a single shared Phosphor star glyph with a
+    font-family swap between the two states, rather than two separate icon assets. The editor is a bounded
+    ``QSlider``, not a spin box -- ``rating`` is distinct from the plain ``int`` type
+    ([[field-schema#field-types]]) and does not share :class:`~rehuco_agent.fields.int_field.IntField`'s
+    widgets.
 
     :param name: the field's identifier on its model.
     :param label: display label; derived from ``name`` when omitted.

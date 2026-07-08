@@ -7,6 +7,8 @@ from rehuco_agent.fields.field import Field
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
+from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.url_field import UrlField
 
 
 class FieldRegistry:
@@ -17,7 +19,7 @@ class FieldRegistry:
 
     def __init__(self, *field_types: type[Field[Any]]) -> None:
         self.__types: Final[dict[str, type[Field[Any]]]] = {}
-        for field_type in field_types or (TextField, BooleanField, RatingField, IntField):
+        for field_type in field_types or (TextField, BooleanField, RatingField, IntField, TextListField, UrlField):
             self.__types[field_type.TYPE] = field_type
 
     @property
