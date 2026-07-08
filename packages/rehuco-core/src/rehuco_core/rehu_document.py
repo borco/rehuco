@@ -208,6 +208,10 @@ class RehuDocument:
         authors = self.__data.get("authors", [])
         return [str(a) for a in authors] if isinstance(authors, list) else []
 
+    @authors.setter
+    def authors(self, value: list[str]) -> None:
+        self.__data["authors"] = list(value)
+
     @property
     def released(self) -> str:
         """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; empty if absent."""
@@ -219,11 +223,19 @@ class RehuDocument:
         tags = self.__data.get("advertised_tags", [])
         return [str(t) for t in tags] if isinstance(tags, list) else []
 
+    @advertised_tags.setter
+    def advertised_tags(self, value: list[str]) -> None:
+        self.__data["advertised_tags"] = list(value)
+
     @property
     def extra_tags(self) -> list[str]:
         """The personal ``extra_tags`` list ([[field-schema#field-mapping]]); empty when absent."""
         tags = self.__data.get("extra_tags", [])
         return [str(t) for t in tags] if isinstance(tags, list) else []
+
+    @extra_tags.setter
+    def extra_tags(self, value: list[str]) -> None:
+        self.__data["extra_tags"] = list(value)
 
     @property
     def description(self) -> str:

@@ -69,14 +69,16 @@ def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: Docu
     * build a widget over the sample model
     * verify the text editors (``QLineEdit``) are seeded with the model's current values (a subset,
       since the spin-box editors carry their own internal line edits)
-    * verify viewer labels (``QLabel``) show the same three values (distinguishing them from the
-      form's own row-label widgets, which show the field names, never the values)
+    * verify viewer labels (``QLabel``) show the same values (a subset; the ``url`` viewer renders
+      as a hyperlink, not plain text, so it's checked separately) -- distinguishing them from the
+      form's own row-label widgets, which show the field names, never the values
     """
     editor_texts = {editor.text() for editor in widget.findChildren(QLineEdit)}
     assert {"Foo", "Bar", "https://example.com"} <= editor_texts
 
     viewer_texts = {label.text() for label in widget.findChildren(QLabel)}
-    assert {"Foo", "Bar", "https://example.com"} <= viewer_texts
+    assert {"Foo", "Bar"} <= viewer_texts
+    assert '<a href="https://example.com">https://example.com</a>' in viewer_texts
 
 
 def test_save_action_triggers_the_models_save(

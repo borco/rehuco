@@ -6,6 +6,8 @@ from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
+from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.url_field import UrlField
 
 
 def test_registry_resolves_a_type_to_its_class() -> None:
@@ -40,6 +42,20 @@ def test_registry_resolves_the_scalar_field_types() -> None:
     assert registry.types["bool"] is BooleanField
     assert registry.types["rating"] is RatingField
     assert registry.types["int"] is IntField
+
+
+def test_registry_resolves_the_list_and_url_field_types() -> None:
+    """The registry maps the ``text_list`` / ``url`` types to their classes.
+
+    **Test steps:**
+
+    * build a default registry
+    * verify each type resolves to its ``Field`` subclass
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["text_list"] is TextListField
+    assert registry.types["url"] is UrlField
 
 
 def test_registry_raises_on_an_unknown_type() -> None:

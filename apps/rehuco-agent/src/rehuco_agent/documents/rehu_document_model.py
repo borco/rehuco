@@ -27,7 +27,7 @@ TYPE_FIELD_INT_DEFAULTS: Final = {"rating": 0, "images_count": 0}
 """The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be negative."""
 
 
-class RehuDocumentModel(QObject):
+class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
     ([[plugins#view-model]]).
 
@@ -37,7 +37,9 @@ class RehuDocumentModel(QObject):
     and emits the field's ``<name>_changed`` signal -- which is what makes live "both" work: an edit
     in the editor updates the model, whose signal the viewer is bound to. ``sources`` is exposed as
     the list it is; the
-    multi-source record-list editor is a later slice (A2.3/#23, A2.6/#26) that plugs into this seam.
+    multi-source record-list editor is a later slice (A2.6/#26) that plugs into this seam. ``authors``
+    / ``advertised_tags`` / ``extra_tags`` are common-core top-level lists, not source-scoped, so they
+    write straight through to the document instead of through the primary source (A2.3/#23).
 
     :param document: the document to wrap.
     :param parent: optional Qt parent.
@@ -45,6 +47,9 @@ class RehuDocumentModel(QObject):
 
     title = SimpleProperty("")
     """The primary source's display title ([[field-schema#sources]])."""
+
+    authors = SimpleProperty[list[str]](default_factory=list)
+    """The shared ``authors`` list ([[field-schema#resource-types]])."""
 
     publisher = SimpleProperty("")
     """The primary source's publisher ([[field-schema#sources]])."""
@@ -76,6 +81,12 @@ class RehuDocumentModel(QObject):
     images_count = SimpleProperty(0)
     """The ReferenceImages image count ([[field-schema#field-types]])."""
 
+    advertised_tags = SimpleProperty[list[str]](default_factory=list)
+    """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
+
+    extra_tags = SimpleProperty[list[str]](default_factory=list)
+    """The personal ``extra_tags`` list ([[field-schema#field-mapping]])."""
+
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
@@ -86,8 +97,11 @@ class RehuDocumentModel(QObject):
         # Seed the fields from the document *before* wiring the write-through handlers, so seeding a
         # freshly-loaded model never looks like an edit (no dirty, no document write-back).
         self.title = document.title
+        self.authors = document.authors
         self.publisher = document.publisher
         self.url = document.url
+        self.advertised_tags = document.advertised_tags
+        self.extra_tags = document.extra_tags
 
         # The type-field scalar fields read/write generically through the type-keyed plugin block
         # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
@@ -98,8 +112,11 @@ class RehuDocumentModel(QObject):
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
+        self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
+        self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
+        self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
         for name in (*TYPE_FIELD_BOOL_DEFAULTS, *TYPE_FIELD_INT_DEFAULTS):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
@@ -158,6 +175,14 @@ class RehuDocumentModel(QObject):
         self.__document.title = value
         self.dirty = True
 
+    def __on_authors_changed(self, value: list[str]) -> None:
+        """Write an edited authors list through to the document and mark dirty.
+
+        :param value: the new authors list.
+        """
+        self.__document.authors = value
+        self.dirty = True
+
     def __on_publisher_changed(self, value: str) -> None:
         """Write an edited publisher through to the document's primary source and mark dirty.
 
@@ -172,6 +197,22 @@ class RehuDocumentModel(QObject):
         :param value: the new url.
         """
         self.__document.url = value
+        self.dirty = True
+
+    def __on_advertised_tags_changed(self, value: list[str]) -> None:
+        """Write an edited advertised_tags list through to the document and mark dirty.
+
+        :param value: the new advertised_tags list.
+        """
+        self.__document.advertised_tags = value
+        self.dirty = True
+
+    def __on_extra_tags_changed(self, value: list[str]) -> None:
+        """Write an edited extra_tags list through to the document and mark dirty.
+
+        :param value: the new extra_tags list.
+        """
+        self.__document.extra_tags = value
         self.dirty = True
 
     def __on_type_field_changed(self, key: str, value: Any) -> None:

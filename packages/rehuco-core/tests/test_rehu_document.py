@@ -209,6 +209,54 @@ def test_publisher_and_url_setters_update_existing_primary_source() -> None:
     assert doc.sources[1] == {"title": "Second", "publisher": "Other Publisher", "url": "https://other.example/x"}
 
 
+def test_authors_setter_replaces_the_list() -> None:
+    """Setting ``authors`` replaces the stored list with an independent copy.
+
+    **Test steps:**
+
+    * construct a document with an existing ``authors`` list
+    * assign a new list
+    * verify the document reflects it and mutating the input list afterward has no effect
+    """
+    doc = RehuDocument({"authors": ["Old Author"]})
+    new_authors = ["New Author"]
+    doc.authors = new_authors
+    new_authors.append("Mutated After Assignment")
+    assert doc.authors == ["New Author"]
+
+
+def test_advertised_tags_setter_replaces_the_list() -> None:
+    """Setting ``advertised_tags`` replaces the stored list with an independent copy.
+
+    **Test steps:**
+
+    * construct a document with an existing ``advertised_tags`` list
+    * assign a new list
+    * verify the document reflects it and mutating the input list afterward has no effect
+    """
+    doc = RehuDocument({"advertised_tags": ["old"]})
+    new_tags = ["new"]
+    doc.advertised_tags = new_tags
+    new_tags.append("mutated-after-assignment")
+    assert doc.advertised_tags == ["new"]
+
+
+def test_extra_tags_setter_replaces_the_list() -> None:
+    """Setting ``extra_tags`` replaces the stored list with an independent copy.
+
+    **Test steps:**
+
+    * construct a document with an existing ``extra_tags`` list
+    * assign a new list
+    * verify the document reflects it and mutating the input list afterward has no effect
+    """
+    doc = RehuDocument({"extra_tags": ["old"]})
+    new_tags = ["new"]
+    doc.extra_tags = new_tags
+    new_tags.append("mutated-after-assignment")
+    assert doc.extra_tags == ["new"]
+
+
 def test_save_without_path_raises() -> None:
     """Calling ``save`` on a pathless document with no explicit target raises.
 
@@ -232,7 +280,7 @@ def test_extra_tags_returns_empty_for_non_list() -> None:
     * verify the property returns an empty list
     """
     doc = RehuDocument({"extra_tags": 42})
-    assert doc.extra_tags == []
+    assert not doc.extra_tags
 
 
 def test_type_fields_key_is_the_type_in_snake_case() -> None:

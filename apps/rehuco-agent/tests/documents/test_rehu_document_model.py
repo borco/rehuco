@@ -97,6 +97,64 @@ def test_setting_publisher_and_url_write_through(model: RehuDocumentModel, docum
     assert document.url == "https://changed.example"
 
 
+def test_model_seeds_empty_lists_from_a_document_with_none(model: RehuDocumentModel) -> None:
+    """A document with no list fields seeds the model's list fields to empty, without dirtying.
+
+    **Test steps:**
+
+    * construct a model over a document with no ``authors``/``advertised_tags``/``extra_tags``
+    * verify each reads back as an empty list and the model is clean
+    """
+    assert model.authors == []
+    assert model.advertised_tags == []
+    assert model.extra_tags == []
+    assert model.dirty is False
+
+
+def test_model_seeds_list_fields_from_the_document() -> None:
+    """The list fields seed from the document's top-level ``authors``/``advertised_tags``/``extra_tags``.
+
+    **Test steps:**
+
+    * construct a model over a document carrying all three lists
+    * verify each field mirrors the stored value, and the model is clean
+    """
+    document = RehuDocument(
+        {
+            "type": "Tutorial",
+            "authors": ["Author One"],
+            "advertised_tags": ["scraped"],
+            "extra_tags": ["personal"],
+        }
+    )
+    model = RehuDocumentModel(document)
+
+    assert model.authors == ["Author One"]
+    assert model.advertised_tags == ["scraped"]
+    assert model.extra_tags == ["personal"]
+    assert model.dirty is False
+
+
+def test_setting_authors_advertised_tags_extra_tags_write_through(
+    model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """Setting authors/advertised_tags/extra_tags writes through to the document (not source-scoped) and dirties.
+
+    **Test steps:**
+
+    * set ``model.authors``, ``model.advertised_tags``, ``model.extra_tags``
+    * verify all three land on the document directly, and the model is dirty
+    """
+    model.authors = ["New Author"]
+    model.advertised_tags = ["new-tag"]
+    model.extra_tags = ["extra"]
+
+    assert document.authors == ["New Author"]
+    assert document.advertised_tags == ["new-tag"]
+    assert document.extra_tags == ["extra"]
+    assert model.dirty is True
+
+
 def test_setting_title_to_equal_value_is_a_no_op(model: RehuDocumentModel) -> None:
     """Assigning the current value emits nothing and leaves the model clean.
 
