@@ -235,6 +235,87 @@ def test_extra_tags_returns_empty_for_non_list() -> None:
     assert doc.extra_tags == []
 
 
+def test_type_fields_key_is_the_type_in_snake_case() -> None:
+    """The plugin-block key is the resource ``type`` in snake_case ([[field-schema#resource-types]]).
+
+    **Test steps:**
+
+    * verify a single-word type lowercases and a multi-word type snake-cases
+    * verify a typeless document yields an empty key
+    """
+    assert RehuDocument({"type": "Tutorial"}).type_fields_key == "tutorial"
+    assert RehuDocument({"type": "ReferenceImages"}).type_fields_key == "reference_images"
+    assert RehuDocument({}).type_fields_key == ""
+
+
+def test_type_field_reads_from_the_type_keyed_block() -> None:
+    """``type_field`` reads a key out of the ``type``-keyed plugin block ([[field-schema#resource-types]]).
+
+    **Test steps:**
+
+    * construct a Tutorial document carrying a ``tutorial`` block with a rating
+    * verify the stored key reads back, and an absent key returns the given default
+    """
+    doc = RehuDocument({"type": "Tutorial", "tutorial": {"format_version": 0, "rating": 4}})
+    assert doc.type_field("rating") == 4
+    assert doc.type_field("missing", 0) == 0
+
+
+def test_type_field_defaults_when_block_is_absent_or_malformed() -> None:
+    """``type_field`` returns the default when the block is missing or not an object (#35).
+
+    **Test steps:**
+
+    * verify a document with no block returns the default
+    * verify a document whose block is a non-object returns the default (malformed, skipped)
+    """
+    assert RehuDocument({"type": "Tutorial"}).type_field("rating", 0) == 0
+    assert RehuDocument({"type": "Tutorial", "tutorial": "junk"}).type_field("rating", 0) == 0
+    assert RehuDocument({"type": "Tutorial", "tutorial": "junk"}).type_fields == {}
+
+
+def test_set_type_field_updates_an_existing_block() -> None:
+    """``set_type_field`` writes into an existing block, leaving its other keys intact.
+
+    **Test steps:**
+
+    * construct a Tutorial document with a ``tutorial`` block
+    * set a new value on one key
+    * verify the key updated and the block's ``format_version`` is untouched
+    """
+    doc = RehuDocument({"type": "Tutorial", "tutorial": {"format_version": 0, "rating": 1}})
+    doc.set_type_field("rating", 5)
+    assert doc.data["tutorial"] == {"format_version": 0, "rating": 5}
+
+
+def test_set_type_field_creates_the_block_when_absent() -> None:
+    """``set_type_field`` installs a fresh block keyed by ``type`` when none exists.
+
+    **Test steps:**
+
+    * construct a Tutorial document with no plugin block
+    * set a type-field value
+    * verify a ``tutorial`` block now holds it
+    """
+    doc = RehuDocument({"type": "Tutorial"})
+    doc.set_type_field("complete", False)
+    assert doc.data["tutorial"] == {"complete": False}
+
+
+def test_set_type_field_replaces_a_malformed_block() -> None:
+    """``set_type_field`` replaces a non-object block with a fresh one rather than crashing (#35).
+
+    **Test steps:**
+
+    * construct a Tutorial document whose ``tutorial`` block is a non-object
+    * set a type-field value
+    * verify the malformed block was replaced by a fresh object holding it
+    """
+    doc = RehuDocument({"type": "Tutorial", "tutorial": "junk"})
+    doc.set_type_field("rating", 3)
+    assert doc.data["tutorial"] == {"rating": 3}
+
+
 def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
     """A ``.rehu`` with malformed JSON is rejected as a ``RehuFormatError``.
 

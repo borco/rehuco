@@ -262,4 +262,79 @@ def test_bind_set_value_writes_through_and_dirties(model: RehuDocumentModel, doc
     assert model.dirty is True
 
 
+def test_model_seeds_type_field_defaults_when_block_is_absent(model: RehuDocumentModel) -> None:
+    """A document with no plugin block seeds the type-field-backed fields to their defaults, without dirtying.
+
+    **Test steps:**
+
+    * construct a model over a document with no ``tutorial`` block
+    * verify ``complete`` defaults true, the other flags false, rating/images_count zero, and it is clean
+    """
+    assert model.complete is True
+    assert model.online is False
+    assert model.favorite is False
+    assert model.rating == 0
+    assert model.images_count == 0
+    assert model.dirty is False
+
+
+def test_model_seeds_type_field_values_from_the_document() -> None:
+    """The type-field-backed fields seed from the document's ``type``-keyed plugin block.
+
+    **Test steps:**
+
+    * construct a model over a document whose ``tutorial`` block carries flags and a rating
+    * verify each field mirrors the stored value, and the model is clean
+    """
+    document = RehuDocument({"type": "Tutorial", "tutorial": {"complete": False, "online": True, "rating": -2}})
+    model = RehuDocumentModel(document)
+
+    assert model.complete is False
+    assert model.online is True
+    assert model.rating == -2
+    assert model.dirty is False
+
+
+def test_model_coerces_malformed_type_field_values_to_defaults() -> None:
+    """Malformed type-field values fall back to the field default rather than crashing (#35).
+
+    **Test steps:**
+
+    * construct a model over a document whose block holds a non-int rating and a null images_count
+    * verify both coerce to their defaults
+    """
+    document = RehuDocument({"type": "ReferenceImages", "reference_images": {"rating": "junk", "images_count": None}})
+    model = RehuDocumentModel(document)
+
+    assert model.rating == 0
+    assert model.images_count == 0
+
+
+def test_setting_a_type_field_flag_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting a type-field-backed flag writes through to the document's plugin block and marks dirty.
+
+    **Test steps:**
+
+    * set ``model.complete`` false
+    * verify the document's ``tutorial`` block now holds it, and the model is dirty
+    """
+    model.complete = False
+
+    assert document.type_field("complete") is False
+    assert model.dirty is True
+
+
+def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting the rating writes through to the document's plugin block.
+
+    **Test steps:**
+
+    * set ``model.rating`` to a negative value
+    * verify the document's ``tutorial`` block holds it
+    """
+    model.rating = -4
+
+    assert document.type_field("rating") == -4
+
+
 # endregion

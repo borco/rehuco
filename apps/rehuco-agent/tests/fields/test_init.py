@@ -19,16 +19,27 @@ def form_labels(layout: QFormLayout) -> list[str]:
 
 
 def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """build_document_form composes the title/publisher/url text fields, in order.
+    """build_document_form composes the configured field list -- text fields, flags, and rating -- in order.
 
     **Test steps:**
 
     * build the document form's editor
-    * verify it has the three configured rows in order
+    * verify it has the configured rows in declaration order
     """
     widget = build_document_form().make_editor(model)
     qtbot.addWidget(widget)
 
     layout = widget.layout()
     assert isinstance(layout, QFormLayout)
-    assert form_labels(layout) == ["Title", "Publisher", "Url"]
+    assert form_labels(layout) == [
+        "Title",
+        "Publisher",
+        "Url",
+        "Complete",
+        "Online",
+        "Viewed",
+        "Todo",
+        "Keep",
+        "Favorite",
+        "Rating",
+    ]
