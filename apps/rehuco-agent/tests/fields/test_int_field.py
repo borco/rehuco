@@ -1,6 +1,7 @@
-"""Tests for IntField: label viewer and the live ``QSpinBox`` editor binding (negatives allowed)."""
+"""Tests for IntField: label viewer and the live ``UnboundedSpinBox`` editor binding (negatives, no ceiling)."""
 
-from PySide6.QtWidgets import QLabel, QSpinBox
+from borco_pyside.widgets import UnboundedSpinBox
+from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.int_field import IntField
@@ -31,7 +32,7 @@ def test_int_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocu
 
     **Test steps:**
 
-    * build the ``images_count`` editor (a single ``QSpinBox``)
+    * build the ``images_count`` editor (a single ``UnboundedSpinBox``)
     * set a negative value and verify ``model.images_count`` follows (``int`` is plain, negatives allowed)
     """
     field = IntField("images_count")
@@ -39,7 +40,7 @@ def test_int_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocu
     assert len(editors) == 1
     spin_box = editors[0]
     qtbot.addWidget(spin_box)
-    assert isinstance(spin_box, QSpinBox)
+    assert isinstance(spin_box, UnboundedSpinBox)
 
     spin_box.setValue(-7)
     assert model.images_count == -7
@@ -59,14 +60,14 @@ def test_int_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot, 
     viewer = field.make_viewer(model.bind(field))
     qtbot.addWidget(editor)
     qtbot.addWidget(viewer)
-    assert isinstance(editor, QSpinBox)
+    assert isinstance(editor, UnboundedSpinBox)
     assert isinstance(viewer, QLabel)
 
     editor.setValue(9)
 
     assert model.images_count == 9
     assert viewer.text() == "9"
-    assert editor.value() == 9
+    assert editor.value == 9
 
 
 def test_int_field_editor_follows_an_external_model_change(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -81,58 +82,64 @@ def test_int_field_editor_follows_an_external_model_change(qtbot: QtBot, model: 
     field = IntField("images_count")
     editor = field.make_editors(model.bind(field))[0]
     qtbot.addWidget(editor)
-    assert isinstance(editor, QSpinBox)
+    assert isinstance(editor, UnboundedSpinBox)
 
     model.images_count = 13
-    assert editor.value() == 13
+    assert editor.value == 13
 
 
-def test_int_field_editor_defaults_to_the_full_int32_range(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """With no explicit ``minimum``/``maximum``, the editor spans ``IntField.MINIMUM``/``MAXIMUM``.
+def test_int_field_editor_defaults_to_no_range(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """With no explicit ``minimum``/``maximum``, the editor has no bound in either direction.
 
     **Test steps:**
 
     * build the editor for an ``IntField`` with no range arguments
-    * verify the spin box's actual range matches the class constants
+    * verify the spin box's ``minimum()``/``maximum()`` are both ``None``
     """
     field = IntField("images_count")
     editor = field.make_editors(model.bind(field))[0]
     qtbot.addWidget(editor)
-    assert isinstance(editor, QSpinBox)
+    assert isinstance(editor, UnboundedSpinBox)
 
-    assert editor.minimum() == IntField.MINIMUM
-    assert editor.maximum() == IntField.MAXIMUM
+    assert editor.minimum() is None
+    assert editor.maximum() is None
 
 
-def test_int_field_editor_uses_a_narrower_explicit_range(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Explicit ``minimum``/``maximum`` narrower than the int32 bounds are used as given.
+def test_int_field_editor_uses_an_explicit_range(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """An explicit ``minimum``/``maximum`` is passed straight through to the editor.
 
     **Test steps:**
 
     * build the editor for an ``IntField`` constructed with ``minimum=-10``, ``maximum=10``
-    * verify the spin box's actual range matches those values, not the class constants
+    * verify the spin box's actual range matches those values
     """
     field = IntField("images_count", minimum=-10, maximum=10)
     editor = field.make_editors(model.bind(field))[0]
     qtbot.addWidget(editor)
-    assert isinstance(editor, QSpinBox)
+    assert isinstance(editor, UnboundedSpinBox)
 
     assert editor.minimum() == -10
     assert editor.maximum() == 10
 
 
-def test_int_field_editor_boxes_a_wider_explicit_range_to_int32(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """An explicit ``minimum``/``maximum`` wider than int32 is boxed to ``IntField.MINIMUM``/``MAXIMUM``.
+def test_int_field_editor_accepts_a_value_beyond_int32(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The editor holds a value far past the C++ ``int`` (32-bit) ceiling ``QSpinBox`` is stuck with --
+    the entire point of ``UnboundedSpinBox`` (#40).
 
     **Test steps:**
 
-    * build the editor for an ``IntField`` constructed with a range wider than the ``QSpinBox`` can hold
-    * verify the spin box's actual range is clamped to the class constants, not the wider request
+    * set ``model.images_count`` to a value beyond int32 before building the editor
+    * build the editor and verify it holds that value exactly
+    * edit it further and verify the model follows exactly, with no truncation
     """
-    field = IntField("images_count", minimum=IntField.MINIMUM - 1, maximum=IntField.MAXIMUM + 1)
+    beyond_int32 = 2**40
+    model.images_count = beyond_int32
+    field = IntField("images_count")
     editor = field.make_editors(model.bind(field))[0]
     qtbot.addWidget(editor)
-    assert isinstance(editor, QSpinBox)
+    assert isinstance(editor, UnboundedSpinBox)
+    assert editor.value == beyond_int32
 
-    assert editor.minimum() == IntField.MINIMUM
-    assert editor.maximum() == IntField.MAXIMUM
+    editor.setValue(beyond_int32 + 1)
+
+    assert model.images_count == beyond_int32 + 1
