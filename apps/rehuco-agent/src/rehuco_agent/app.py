@@ -93,7 +93,7 @@ class Application(QApplication):
         """Open ``path`` in the main window's document dock, bringing the window forward.
 
         :param path: filesystem path to a ``.rehu`` file, or to a directory-scoped resource's
-            directory ([[data-model#resource-scoping]], e.g. from the "Open in Rehuco" folder/
+            directory ([[data-model#resource-scoping]], e.g. from the "Open with Rehuco" folder/
             folder-background shell verbs, #43) -- see :meth:`MainWindow.open_path`.
         """
         self.show_main_window().open_path(path)

@@ -92,7 +92,7 @@ def test_unregister_rejects_non_exe_argv0(monkeypatch: pytest.MonkeyPatch, mocke
 def test_register_registers_the_running_exe(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """``--register`` registers whatever exe is actually running (``sys.argv[0]``), using rehuco's
     own ProgID/extension/friendly-name/AUMID identity, and registers the folder + folder-background
-    "Open in Rehuco" shell verbs (#43) alongside it.
+    "Open with Rehuco" shell verbs (#43) alongside it.
 
     **Test steps:**
 

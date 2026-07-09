@@ -23,7 +23,7 @@ FRIENDLY_NAME: Final = "Rehuco Resource"
 DIRECTORY_SUB_KEY: Final = "Rehuco.OpenFolder"
 """HKCU sub-key under both ``Directory\\shell`` and ``Directory\\Background\\shell`` (#43)."""
 
-DIRECTORY_MENU_TEXT: Final = "Open in Rehuco"
+DIRECTORY_MENU_TEXT: Final = "Open with Rehuco"
 """Menu label shown for both the folder and folder-background shell verbs."""
 
 
