@@ -11,6 +11,8 @@ from pytest import mark  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.__main__ import (  # noqa: E402  # pylint: disable=wrong-import-position
     AUMID,
+    DIRECTORY_MENU_TEXT,
+    DIRECTORY_SUB_KEY,
     EXTENSION,
     FRIENDLY_NAME,
     PROGID,
@@ -22,16 +24,22 @@ FAKE_SCRIPT: Final = r"C:\fake\rehuco_agent\__main__.py"
 
 FILE_ASSOCIATION_REGISTER: Final = "borco_core.platforms.windows.file_association.FileAssociation.register"
 FILE_ASSOCIATION_UNREGISTER: Final = "borco_core.platforms.windows.file_association.FileAssociation.unregister"
+DIRECTORY_CONTEXT_MENU: Final = "borco_core.platforms.windows.directory_context_menu.DirectoryContextMenu"
+DIRECTORY_REGISTER_FOLDER: Final = f"{DIRECTORY_CONTEXT_MENU}.register_folder"
+DIRECTORY_REGISTER_BACKGROUND: Final = f"{DIRECTORY_CONTEXT_MENU}.register_background"
+DIRECTORY_UNREGISTER_FOLDER: Final = f"{DIRECTORY_CONTEXT_MENU}.unregister_folder"
+DIRECTORY_UNREGISTER_BACKGROUND: Final = f"{DIRECTORY_CONTEXT_MENU}.unregister_background"
 
 
-def expected_command_and_icon(exe: str) -> tuple[str, str]:
-    """The ``command``/``icon`` strings ``main()`` derives from a resolved exe path.
+def expected_command_and_icon(exe: str) -> tuple[str, str, str]:
+    """The file-association ``command``, directory ``command``, and shared ``icon`` derived from ``exe``.
 
     :param exe: the fake exe path argv[0] was set to.
-    :returns: the expected ``(command, icon)`` pair.
+    :returns: ``(file_command, directory_command, icon)`` -- the directory command has no trailing
+        argument yet; :class:`DirectoryContextMenu` appends ``"%1"``/``"%V"`` itself.
     """
     resolved = Path(exe).resolve()
-    return f'"{resolved}" "%1"', f"{resolved},0"
+    return f'"{resolved}" "%1"', f'"{resolved}"', f"{resolved},0"
 
 
 @mark.windows
@@ -45,14 +53,16 @@ def test_register_rejects_non_exe_argv0(monkeypatch: pytest.MonkeyPatch, mocker:
     **Test steps:**
 
     * set ``sys.argv`` so argv[0] is a ``.py`` path, with ``--register``
-    * mock ``FileAssociation.register`` (must never be called)
-    * verify ``main()`` returns ``1`` and ``register`` was not called
+    * mock ``FileAssociation.register`` and ``DirectoryContextMenu.register_folder`` (neither must be called)
+    * verify ``main()`` returns ``1`` and neither was called
     """
     monkeypatch.setattr("sys.argv", [FAKE_SCRIPT, "--register"])
     register = mocker.patch(FILE_ASSOCIATION_REGISTER)
+    register_folder = mocker.patch(DIRECTORY_REGISTER_FOLDER)
 
     assert main() == 1
     register.assert_not_called()
+    register_folder.assert_not_called()
 
 
 @mark.windows
@@ -65,51 +75,64 @@ def test_unregister_rejects_non_exe_argv0(monkeypatch: pytest.MonkeyPatch, mocke
     **Test steps:**
 
     * set ``sys.argv`` so argv[0] is a ``.py`` path, with ``--unregister``
-    * mock ``FileAssociation.unregister`` (must never be called)
-    * verify ``main()`` returns ``1`` and ``unregister`` was not called
+    * mock ``FileAssociation.unregister`` and ``DirectoryContextMenu.unregister_folder`` (neither
+      must be called)
+    * verify ``main()`` returns ``1`` and neither was called
     """
     monkeypatch.setattr("sys.argv", [FAKE_SCRIPT, "--unregister"])
     unregister = mocker.patch(FILE_ASSOCIATION_UNREGISTER)
+    unregister_folder = mocker.patch(DIRECTORY_UNREGISTER_FOLDER)
 
     assert main() == 1
     unregister.assert_not_called()
+    unregister_folder.assert_not_called()
 
 
 @mark.windows
 def test_register_registers_the_running_exe(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """``--register`` registers whatever exe is actually running (``sys.argv[0]``), using rehuco's
-    own ProgID/extension/friendly-name/AUMID identity.
+    own ProgID/extension/friendly-name/AUMID identity, and registers the folder + folder-background
+    "Open in Rehuco" shell verbs (#43) alongside it.
 
     **Test steps:**
 
     * set ``sys.argv`` so argv[0] is a fake ``.exe`` path, with ``--register``
-    * mock ``FileAssociation.register``
-    * verify ``main()`` returns ``0`` and ``register`` was called with rehuco's identity plus the
+    * mock ``FileAssociation.register`` and ``DirectoryContextMenu.register_folder``/``register_background``
+    * verify ``main()`` returns ``0`` and all three were called with rehuco's identity plus the
       command/icon derived from the resolved exe path
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--register"])
     register = mocker.patch(FILE_ASSOCIATION_REGISTER)
+    register_folder = mocker.patch(DIRECTORY_REGISTER_FOLDER)
+    register_background = mocker.patch(DIRECTORY_REGISTER_BACKGROUND)
 
     assert main() == 0
-    command, icon = expected_command_and_icon(FAKE_EXE)
-    register.assert_called_once_with(PROGID, EXTENSION, FRIENDLY_NAME, command, icon, AUMID)
+    file_command, directory_command, icon = expected_command_and_icon(FAKE_EXE)
+    register.assert_called_once_with(PROGID, EXTENSION, FRIENDLY_NAME, file_command, icon, AUMID)
+    register_folder.assert_called_once_with(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
+    register_background.assert_called_once_with(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
 
 
 @mark.windows
 def test_unregister_calls_file_association(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
-    """``--unregister`` calls through to ``FileAssociation.unregister`` with rehuco's identity.
+    """``--unregister`` calls through to ``FileAssociation.unregister`` with rehuco's identity, and
+    removes the folder + folder-background shell verbs (#43) alongside it.
 
     **Test steps:**
 
     * set ``sys.argv`` to ``--unregister``
-    * mock ``FileAssociation.unregister``
-    * verify ``main()`` returns ``0`` and ``unregister`` was called with the ProgID/extension
+    * mock ``FileAssociation.unregister`` and ``DirectoryContextMenu.unregister_folder``/``unregister_background``
+    * verify ``main()`` returns ``0`` and all three were called with the ProgID/extension or sub-key
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--unregister"])
     unregister = mocker.patch(FILE_ASSOCIATION_UNREGISTER)
+    unregister_folder = mocker.patch(DIRECTORY_UNREGISTER_FOLDER)
+    unregister_background = mocker.patch(DIRECTORY_UNREGISTER_BACKGROUND)
 
     assert main() == 0
     unregister.assert_called_once_with(PROGID, EXTENSION)
+    unregister_folder.assert_called_once_with(DIRECTORY_SUB_KEY)
+    unregister_background.assert_called_once_with(DIRECTORY_SUB_KEY)
 
 
 @mark.windows

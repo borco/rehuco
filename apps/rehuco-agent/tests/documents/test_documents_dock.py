@@ -568,3 +568,89 @@ def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFix
 
     assert widget is not None
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
+
+
+def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a folder whose ``info.rehu`` already exists behaves exactly like ``open_document``.
+
+    **Test steps:**
+
+    * mock the filesystem so ``info.rehu`` both exists and serves the tutorial fixture
+    * open the folder (not the ``info.rehu`` path itself)
+    * verify the resulting document's path is ``folder/info.rehu`` and it is not dirty
+    """
+    load_document(mocker)
+    mocker.patch.object(Path, "exists", return_value=True)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_PATH
+    assert widget.model.dirty is False
+
+
+def test_open_folder_with_a_corrupted_info_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A folder whose ``info.rehu`` exists but is corrupted gets the same error dialog as a bad
+    ``.rehu`` file (#35) -- the exists-branch never silently falls through to "start a new document".
+
+    **Test steps:**
+
+    * mock the filesystem so ``info.rehu`` exists but its content isn't valid JSON
+    * mock the error dialog (a real modal would block the headless test)
+    * open the folder
+    * verify ``None`` came back, no dock was created, and the dialog named the ``info.rehu`` path
+    """
+    mocker.patch.object(Path, "exists", return_value=True)
+    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+    critical = mocker.patch.object(QMessageBox, "critical")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget is None
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_called_once()
+    assert str(FAKE_PATH) in critical.call_args[0][2]
+
+
+def test_open_folder_without_info_rehu_starts_a_new_dirty_document(qtbot: QtBot) -> None:
+    """Opening a folder with no ``info.rehu`` yet starts a new, already-dirty document bound to it.
+
+    Nothing is read from or written to disk -- the fake folder never actually exists, so
+    ``info_path.exists()`` is genuinely ``False`` here, no mocking needed (#43).
+
+    **Test steps:**
+
+    * open a folder that has no ``info.rehu``
+    * verify the new document's path is ``folder/info.rehu``, it seeded empty, and it is dirty
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_PATH
+    assert widget.model.title == ""
+    assert widget.model.dirty is True
+
+
+def test_open_folder_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot) -> None:
+    """Reopening the same missing-``info.rehu`` folder focuses the still-unsaved dock, not a second one.
+
+    **Test steps:**
+
+    * open a folder with no ``info.rehu`` twice
+    * verify the same widget comes back both times and only one dock exists
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_folder(FAKE_PATH.parent)
+    second = dock.open_folder(FAKE_PATH.parent)
+
+    assert first is second
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access

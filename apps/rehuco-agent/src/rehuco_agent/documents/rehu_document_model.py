@@ -111,6 +111,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
+    @classmethod
+    def create_new(cls, path: Path | str | None = None, parent: QObject | None = None) -> RehuDocumentModel:
+        """Start a new, empty document, optionally already bound to a save path.
+
+        :param path: destination this document will save to by default. When given, the model
+            starts dirty -- nothing is written to disk until :meth:`save`, but the caller already
+            knows where it belongs (e.g. :meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.open_folder`'s
+            directory-scoped resource with no `info.rehu` yet). When omitted, the model starts
+            clean, with no destination decided yet.
+        :param parent: optional Qt parent.
+        :returns: the new model, wrapping a fresh in-memory `RehuDocument`.
+        """
+        model = cls(RehuDocument({}, Path(path) if path is not None else None), parent)
+        if path is not None:
+            model.dirty = True
+        return model
+
     @property
     def document(self) -> RehuDocument:
         """The wrapped document."""

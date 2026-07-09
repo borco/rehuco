@@ -127,6 +127,66 @@ def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFi
     open_document.assert_called_once_with(Path("a.rehu").resolve())
 
 
+def test_open_folder_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_folder`` resolves its path and hands it to the documents dock (#43).
+
+    **Test steps:**
+
+    * mock only ``DocumentsDock.open_folder`` (same reasoning as ``open_file``'s test above)
+    * construct a ``MainWindow`` and call ``open_folder`` with a relative path
+    * verify ``open_folder`` was called with the resolved absolute path
+    """
+    open_folder = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_folder("a_folder")
+
+    open_folder.assert_called_once_with(Path("a_folder").resolve())
+
+
+def test_open_path_dispatches_a_file_path_to_open_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_path`` hands a non-directory path to ``open_file`` (#43).
+
+    **Test steps:**
+
+    * mock ``Path.is_dir`` to report the path is not a directory
+    * call ``open_path``
+    * verify ``open_file`` (not ``open_folder``) was called with the path
+    """
+    mocker.patch("rehuco_agent.main_window.Path.is_dir", return_value=False)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+    open_folder = mocker.patch.object(window, "open_folder")
+
+    window.open_path("a.rehu")
+
+    open_file.assert_called_once_with("a.rehu")
+    open_folder.assert_not_called()
+
+
+def test_open_path_dispatches_a_directory_path_to_open_folder(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_path`` hands a directory path to ``open_folder`` instead (#43).
+
+    **Test steps:**
+
+    * mock ``Path.is_dir`` to report the path is a directory
+    * call ``open_path``
+    * verify ``open_folder`` (not ``open_file``) was called with the path
+    """
+    mocker.patch("rehuco_agent.main_window.Path.is_dir", return_value=True)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+    open_folder = mocker.patch.object(window, "open_folder")
+
+    window.open_path("a_folder")
+
+    open_folder.assert_called_once_with("a_folder")
+    open_file.assert_not_called()
+
+
 def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
     """With no dirty documents, the close proceeds without showing the unsaved-changes dialog.
 

@@ -6,10 +6,11 @@ by Explorer and cannot be set reliably by third-party code; registering the plai
 default value is the correct, unprivileged approach and works as long as no ``UserChoice`` exists).
 """
 
-import ctypes
 import logging
 import winreg
 from typing import Final
+
+from borco_core.platforms.windows import hkcu_registry
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -17,17 +18,10 @@ LOG: Final = logging.getLogger(__name__)
 class FileAssociation:
     """Namespace for HKCU file-type association registration.
 
-    Grouped as a class, not module-level functions, so the internal helpers below can be
-    genuinely private via Python's name-mangling -- which only applies inside a class body, not
-    at module level. There's no per-instance state, so every method is a ``classmethod``/
-    ``staticmethod``; nothing is ever instantiated.
+    Grouped as a class, not module-level functions, for symmetry with
+    :class:`~borco_core.platforms.windows.directory_context_menu.DirectoryContextMenu` -- there's no
+    per-instance state, so every method is a ``classmethod``.
     """
-
-    SHCNE_ASSOCCHANGED: Final = 0x08000000
-    """``SHChangeNotify`` event id: a file-type association changed."""
-
-    SHCNF_IDLIST: Final = 0x0000
-    """``SHChangeNotify`` flag: the two data pointers are ``None`` (not an ``ITEMIDLIST``/path pair)."""
 
     @classmethod
     def register(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -49,17 +43,17 @@ class FileAssociation:
         :param aumid: ``AppUserModelId`` to write under ``progid``'s ``Application`` key; omitted
             entirely when not given.
         """
-        cls.__set_value(rf"Software\Classes\{progid}", "", friendly_name)
-        cls.__set_value(rf"Software\Classes\{progid}\DefaultIcon", "", icon)
-        cls.__set_value(rf"Software\Classes\{progid}\shell\open\command", "", command)
+        hkcu_registry.set_value(rf"Software\Classes\{progid}", "", friendly_name)
+        hkcu_registry.set_value(rf"Software\Classes\{progid}\DefaultIcon", "", icon)
+        hkcu_registry.set_value(rf"Software\Classes\{progid}\shell\open\command", "", command)
         if aumid is not None:
-            cls.__set_value(rf"Software\Classes\{progid}\Application", "AppUserModelId", aumid)
-        cls.__set_value(rf"Software\Classes\.{extension}", "", progid)
+            hkcu_registry.set_value(rf"Software\Classes\{progid}\Application", "AppUserModelId", aumid)
+        hkcu_registry.set_value(rf"Software\Classes\.{extension}", "", progid)
         # in addition to the plain default-value binding above: a stronger "this is a real
         # recommended handler" signal for Explorer's "how do you want to open this" picker
-        cls.__set_value(rf"Software\Classes\.{extension}\OpenWithProgids", progid, "")
+        hkcu_registry.set_value(rf"Software\Classes\.{extension}\OpenWithProgids", progid, "")
 
-        cls.__notify_shell()
+        hkcu_registry.notify_shell()
         LOG.info("registered ProgID %r for .%s", progid, extension)
 
     @classmethod
@@ -69,7 +63,7 @@ class FileAssociation:
         :param progid: the ``ProgID`` to remove.
         :param extension: file extension whose binding is cleared, if it still points at ``progid``.
         """
-        cls.__delete_key_tree(winreg.HKEY_CURRENT_USER, rf"Software\Classes\{progid}")
+        hkcu_registry.delete_key_tree(rf"Software\Classes\{progid}")
 
         ext_key = rf"Software\Classes\.{extension}"
         try:
@@ -78,47 +72,10 @@ class FileAssociation:
                 if value == progid:
                     # recursive delete, not a plain DeleteKey: the extension key now has an
                     # OpenWithProgids subkey, and DeleteKey refuses to remove a key with children
-                    cls.__delete_key_tree(winreg.HKEY_CURRENT_USER, ext_key)
+                    hkcu_registry.delete_key_tree(ext_key)
                     LOG.info("removed extension binding for .%s", extension)
         except OSError:
             pass  # already gone or never existed
 
-        cls.__notify_shell()
+        hkcu_registry.notify_shell()
         LOG.info("unregistered ProgID %r", progid)
-
-    @staticmethod
-    def __set_value(key_path: str, name: str, value: str) -> None:
-        """Create ``key_path`` under HKCU and write a ``REG_SZ`` value.
-
-        :param key_path: registry path relative to ``HKEY_CURRENT_USER``.
-        :param name: value name; empty string writes the default value.
-        :param value: string data to write.
-        """
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, key_path) as key:
-            winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
-            LOG.debug("wrote HKCU\\%s[%r] = %r", key_path, name, value)
-
-    @classmethod
-    def __delete_key_tree(cls, root: int, path: str) -> None:
-        """Recursively delete ``path`` and all its sub-keys under ``root``.
-
-        :param root: a ``winreg`` root constant, e.g. ``winreg.HKEY_CURRENT_USER``.
-        :param path: registry path relative to ``root``.
-        """
-        try:
-            with winreg.OpenKey(root, path, access=winreg.KEY_ALL_ACCESS) as key:
-                while True:
-                    try:
-                        child = winreg.EnumKey(key, 0)
-                        cls.__delete_key_tree(root, rf"{path}\{child}")
-                    except OSError:
-                        break
-                winreg.DeleteKey(root, path)
-                LOG.debug("deleted HKCU\\%s", path)
-        except OSError:
-            pass  # already gone
-
-    @classmethod
-    def __notify_shell(cls) -> None:
-        """Tell Explorer that file-type associations changed, so it refreshes without a logoff."""
-        ctypes.windll.shell32.SHChangeNotify(cls.SHCNE_ASSOCCHANGED, cls.SHCNF_IDLIST, None, None)

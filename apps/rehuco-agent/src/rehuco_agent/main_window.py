@@ -148,12 +148,34 @@ class MainWindow(QMainWindow):
 
         self.__session.save(persistent_settings())
 
+    def open_path(self, path: Path | str) -> None:
+        """Open ``path``, dispatching to :meth:`open_file` or :meth:`open_folder` by its kind.
+
+        The single entry point for anything an outside caller (argv, Windows ProgID/shell-verb
+        forwarding, a ``QFileOpenEvent``, #43) hands in without already knowing which kind it is.
+
+        :param path: filesystem path to a ``.rehu`` file, or to a directory-scoped resource's
+            directory ([[data-model#resource-scoping]]).
+        """
+        if Path(path).is_dir():
+            self.open_folder(path)
+        else:
+            self.open_file(path)
+
     def open_file(self, path: Path | str) -> None:
         """Open ``path`` in its document dock, focusing it if already open ([[nodes#single-instance]]).
 
         :param path: filesystem path to a ``.rehu`` file.
         """
         self.__documents_dock.open_document(Path(path).resolve())
+
+    def open_folder(self, path: Path | str) -> None:
+        """Open the directory-scoped resource at ``path`` ([[data-model#resource-scoping]]), focusing
+        it if already open ([[nodes#single-instance]]).
+
+        :param path: filesystem path to the directory.
+        """
+        self.__documents_dock.open_folder(Path(path).resolve())
 
     def raise_and_activate(self) -> None:
         """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).
