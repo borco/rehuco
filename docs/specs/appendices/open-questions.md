@@ -1,4 +1,4 @@
-# §A04. Open Questions — Out of Scope and Not Yet Designed
+# Open Questions — Out of Scope and Not Yet Designed
 
 [[[appendices.open-questions]]]
 
@@ -8,7 +8,7 @@
 
 Flagging gaps so they're a deliberate choice rather than an oversight.
 
-## §A04.1 Resolved or scoped since the first consolidation
+## 1. Resolved or scoped since the first consolidation
 
 [[[appendices.open-questions#resolved-or-scoped]]]
 
@@ -116,7 +116,7 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   [[appendices.windows-dev-launcher#overview]] for the Windows dev launcher). Only code-signing/notarization remains
   open below.
 
-## §A04.2 Still open
+## 2. Still open
 
 [[[appendices.open-questions#still-open]]]
 
@@ -196,3 +196,9 @@ was to
   confirmed all planned node dependencies (pydantic-core, cryptography, etc.) install and import on glibc 2.23 anyway
   ([[packaging-deployment#glibc-canary]]), keeping direct QNAP deployment viable if ever reconsidered. Stack not yet
   finalized.
+- **File-size human-readable format** — not finalized. Implemented as GNU `ls -sh` style (base-1024, single-letter
+  suffix, no space, e.g. `1.4G`) via `humanize.naturalsize(value, gnu=True)`, kept until decided otherwise — unlike
+  duration ([[field-schema#duration-format]], settled), size ([[field-schema#duration-size]]) has no documented display
+  convention. This happens to compute the same base as Windows Explorer's own size column (base-1024 math, just
+  `KB`/`MB`/`GB`-style labels instead of GNU's bare letters); revisit if a different convention (decimal/SI, IEC
+  `KiB`/`MiB`/`GiB`, or matching Explorer's own labels) turns out to be wanted.

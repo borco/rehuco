@@ -1,4 +1,4 @@
-# §A02. Code Conventions
+# Code Conventions
 
 [[[appendices.code-conventions]]]
 
@@ -10,7 +10,7 @@ Conventions for writing code and docs in this repo, for any contributor — not 
 `CLAUDE.md` at the repo root covers how to work with the AI assistant; this page covers how the codebase
 itself is written.
 
-## §A02.1 Python
+## 1. Python
 
 [[[appendices.code-conventions#python]]]
 
@@ -39,7 +39,7 @@ itself is written.
   narration of what the code does.
 - **Line length:** 120 (ruff enforced).
 
-## §A02.2 PySide6 UI
+## 2. PySide6 UI
 
 [[[appendices.code-conventions#pyside-ui]]]
 
@@ -70,7 +70,7 @@ itself is written.
   real single word (`centralwidget`, `statusbar`, `menubar`) becomes `central_widget`,
   `status_bar`, `menu_bar`.
 
-## §A02.3 Markdown
+## 3. Markdown
 
 [[[appendices.code-conventions#markdown]]]
 
@@ -85,7 +85,7 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
   change that closes the issue (i.e. tick `- [x]` just before running `gh issue close`), rather than
   waiting for a separate follow-up.
 
-## §A02.4 Testing
+## 4. Testing
 
 [[[appendices.code-conventions#testing]]]
 

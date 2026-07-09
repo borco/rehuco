@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
+from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_core import RehuDocument, RehuFormatError
 
@@ -26,6 +27,8 @@ TUTORIAL: Final = {
     ],
     "authors": ["First Author", "Second Author"],
     "released": "2025-03",
+    "original_size": 5368709120,
+    "current_size": 1073741824,
     "description": "# Intro to Sculpting\n\nSee `info01.jpg`.",
     "advertised_tags": ["sculpting", "3d"],
     "extra_tags": ["rework"],
@@ -66,6 +69,8 @@ def test_common_field_accessors(mocker: MockerFixture) -> None:
     assert doc.url == "https://example.com/x"
     assert doc.authors == ["First Author", "Second Author"]
     assert doc.released == "2025-03"
+    assert doc.original_size == 5368709120
+    assert doc.current_size == 1073741824
     assert doc.advertised_tags == ["sculpting", "3d"]
     assert doc.extra_tags == ["rework"]
     assert doc.description.startswith("# Intro to Sculpting")
@@ -223,6 +228,70 @@ def test_authors_setter_replaces_the_list() -> None:
     doc.authors = new_authors
     new_authors.append("Mutated After Assignment")
     assert doc.authors == ["New Author"]
+
+
+def test_released_setter_replaces_the_value() -> None:
+    """Setting ``released`` replaces the stored partial-precision date.
+
+    **Test steps:**
+
+    * construct a document with an existing ``released`` value
+    * assign a new value
+    * verify the document reflects it
+    """
+    doc = RehuDocument({"released": "2024"})
+    doc.released = "2025-03-08"
+    assert doc.released == "2025-03-08"
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_size_field_defaults_to_zero_when_absent(attr: str) -> None:
+    """``original_size``/``current_size`` default to ``0`` when the key is absent (e.g. a Collection).
+
+    **Test steps:**
+
+    * construct a document with neither key
+    * verify the attribute reads ``0``
+    """
+    doc = RehuDocument({})
+    assert getattr(doc, attr) == 0
+
+
+@mark.parametrize(
+    ("attr", "malformed"),
+    [
+        param("original_size", "5 GB", id="original_size-non-int-string"),
+        param("original_size", True, id="original_size-bool"),
+        param("current_size", "5 GB", id="current_size-non-int-string"),
+        param("current_size", True, id="current_size-bool"),
+    ],
+)
+def test_size_field_defensively_coerces_a_malformed_value(attr: str, malformed: object) -> None:
+    """A non-``int`` (or ``bool``, technically an ``int`` subclass) stored value reads back as ``0``
+    rather than raising or returning the malformed value (#35).
+
+    **Test steps:**
+
+    * construct a document with ``attr`` set to a malformed value
+    * verify the attribute reads ``0``
+    """
+    doc = RehuDocument({attr: malformed})
+    assert getattr(doc, attr) == 0
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_size_field_setter_replaces_the_value(attr: str) -> None:
+    """Setting ``original_size``/``current_size`` replaces the stored byte count.
+
+    **Test steps:**
+
+    * construct a document with an existing value
+    * assign a new value
+    * verify the document reflects it
+    """
+    doc = RehuDocument({attr: 100})
+    setattr(doc, attr, 5368709120)
+    assert getattr(doc, attr) == 5368709120
 
 
 def test_advertised_tags_setter_replaces_the_list() -> None:

@@ -11,9 +11,11 @@ icon collapses every recognized shape to one flat color rather than preserving t
 import re
 from typing import Final, override
 
-from PySide6.QtCore import QByteArray, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QByteArray, QRect, QRectF, QSize
 from PySide6.QtGui import QColor, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
+
+from borco_pyside.theming.utils import painted_pixmap
 
 
 def recolor_svg(svg: bytes, color: QColor) -> bytes:
@@ -150,16 +152,7 @@ class RecoloredSvgIconEngine(QIconEngine):  # pylint: disable=too-many-instance-
 
     @override
     def pixmap(self, size: QSize, mode: QIcon.Mode, state: QIcon.State) -> QPixmap:
-        # overridden rather than relying on QIconEngine's inherited default: that default does not
-        # clear the pixmap to transparent first, so paint()'s anti-aliased edges blend against
-        # whatever garbage was already in the newly-allocated pixmap (confirmed empirically: wrong,
-        # seemingly-random colors came back until this was filled transparent explicitly).
-        pixmap = QPixmap(size)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        self.paint(painter, QRect(0, 0, pixmap.width(), pixmap.height()), mode, state)
-        painter.end()
-        return pixmap
+        return painted_pixmap(self, size, mode, state)
 
     @override
     def clone(self) -> QIconEngine:

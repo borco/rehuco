@@ -8,11 +8,13 @@ from typing import Final, override
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
+from borco_pyside.widgets import LineEditClearActionFilter
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QFileOpenEvent, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
+from rehuco_agent.glyphs import CLEAR_ACTION_GLYPH
 from rehuco_agent.main_window import MainWindow
 from rehuco_agent.settings.persistent_settings import persistent_settings
 
@@ -30,9 +32,11 @@ ICON_FONT_RESOURCES: Final = (
     ":/fonts/Phosphor.ttf",
     ":/fonts/Phosphor-Bold.ttf",
     ":/fonts/Phosphor-Fill.ttf",
-    ":/fonts/Phosphor-Duotone.ttf",
 )
-"""qrc paths to the custom icon fonts loaded at startup."""
+"""qrc paths to the custom icon fonts loaded at startup. No ``Phosphor-Duotone.ttf`` -- Phosphor's
+duotone rendering isn't implemented in the font files at all, only in their web/Flutter packages, so
+a glyph drawn from it can only ever be a flat, single-color silhouette
+([[appendices.theming_and_styling#duotone-font-limitation]])."""
 
 
 class Application(QApplication):
@@ -58,6 +62,10 @@ class Application(QApplication):
         self.setWindowIcon(QIcon(ICON_RESOURCE))
         for font_resource in ICON_FONT_RESOURCES:
             QFontDatabase.addApplicationFont(font_resource)
+        clear_action_filter = LineEditClearActionFilter(
+            CLEAR_ACTION_GLYPH.codepoint, CLEAR_ACTION_GLYPH.family, parent=self
+        )
+        self.installEventFilter(clear_action_filter)
         self.__main_window: MainWindow | None = None
 
     @override

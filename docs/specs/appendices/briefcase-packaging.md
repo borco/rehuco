@@ -1,4 +1,4 @@
-# §A01. Briefcase Packaging — Native App Builds, File Association, and App Identity
+# Briefcase Packaging — Native App Builds, File Association, and App Identity
 
 [[[appendices.briefcase-packaging]]]
 
@@ -18,7 +18,7 @@ This appendix starts from the macOS half of the file-association spike
 config lands in `apps/rehuco-agent/` and as Windows and Linux packaging are wired up. Where a
 detail is still spike-proven rather than production-shipped, it says so.
 
-## §A01.1 Status
+## 1. Status
 
 [[[appendices.briefcase-packaging#status]]]
 
@@ -38,7 +38,7 @@ detail is still spike-proven rather than production-shipped, it says so.
 - **Linux packaging, code-signing / notarization, auto-update** — not yet done ([[packaging-deployment#auto-update]],
   [[appendices.open-questions#still-open]]).
 
-## §A01.2 The Briefcase config
+## 2. The Briefcase config
 
 [[[appendices.briefcase-packaging#briefcase-config]]]
 
@@ -57,7 +57,7 @@ mime_type = "application/x-rehuco-spike"
 
 [tool.briefcase.app.spike.macOS]
 requires = ["std-nslog~=2.0.0"]
-# PySide6's macOS wheel is macosx_13_0_universal2; Briefcase's 11.0 default is too low (§A01.5).
+# PySide6's macOS wheel is macosx_13_0_universal2; Briefcase's 11.0 default is too low (see "Hurdles" below).
 min_os_version = "13.0"
 ```
 
@@ -76,7 +76,7 @@ Briefcase builds the bundle by pip-installing into it and cannot see the uv work
 requires = ["PySide6>=6.9", "../../packages/borco-core", "../../packages/borco-pyside"]
 ```
 
-## §A01.3 The app-side wiring it relies on
+## 3. The app-side wiring it relies on
 
 [[[appendices.briefcase-packaging#app-side-wiring]]]
 
@@ -117,7 +117,7 @@ if not singleton.setup(APP_ID):   # False -> forwarded argv to the existing prim
 singleton.other_instance_run.connect(open_forwarded)
 ```
 
-## §A01.4 Build and iterate
+## 4. Build and iterate
 
 [[[appendices.briefcase-packaging#build-and-iterate]]]
 
@@ -156,7 +156,7 @@ The spike ran this against a throwaway local venv (`uv venv`, then `uv pip insta
 the two `borco-*` editable packages, the app itself, and `briefcase`). In production this becomes
 a Makefile target against the workspace venv.
 
-## §A01.5 Hurdles
+## 5. Hurdles
 
 [[[appendices.briefcase-packaging#hurdles]]]
 
@@ -188,7 +188,7 @@ build resolver complains.
 like `"MIT license"` — the latter fails validation with an "invalid override value" error. Minor,
 but wastes a scaffolding round-trip if hit.
 
-## §A01.6 Verification recipe (terminal-driven, no GUI session)
+## 6. Verification recipe (terminal-driven, no GUI session)
 
 [[[appendices.briefcase-packaging#verification]]]
 
@@ -217,7 +217,7 @@ log stream --style compact --predicate 'process == "<Formal Name>"'
 "$LSREG" -u "build/<app>/macos/app/<Formal Name>.app"
 ```
 
-## §A01.7 What the #13 spike confirmed
+## 7. What the #13 spike confirmed
 
 [[[appendices.briefcase-packaging#spike-confirmed]]]
 

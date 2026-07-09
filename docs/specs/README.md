@@ -13,7 +13,7 @@ This directory holds the rehuco design, split into topic files. The high-level o
 A quick index from `§N` number to file and reading order. Cross-references don't need it — every
 doc/slug is self-resolving (see below) — but it's handy when skimming a heading number cold, or
 picking a next file to read: **core data/protocol** (§4–§7) → **storage/identity** (§9–§12) →
-**extensibility/delivery** (§13–§17) → **appendices** (§A01–…, alphabetical by title, after all
+**extensibility/delivery** (§13–§17) → **appendices** (unnumbered, alphabetical by title, after all
 `§N`). The milestone breakdown lives separately in [implementation-plan.md](implementation-plan.md).
 
 | § | Doc key | Section | File |
@@ -33,18 +33,21 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | 15 | `acquisition-tooling` | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
 | 16 | `packaging-deployment` | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
 | 17 | `field-schema` | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
-| A01 | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
-| A02 | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
-| A03 | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
-| A04 | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
-| A05 | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
-| A06 | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
-| A07 | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
+| — | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
+| — | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
+| — | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
+| — | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
+| — | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
+| — | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
+| — | `appendices.theming_and_styling` | Theming and Styling | [appendices/theming_and_styling.md](appendices/theming_and_styling.md) |
+| — | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
 
-**Numbering, briefly:** `§N`/`§N.M` are global and renumber-and-shift on insert (no letter
-suffixes) — update every heading number in the same change, and never reuse a retired number.
-Appendices are `§A01`, `§A02`, … , ordered alphabetically by title, each title's first letter
-matching its filename; `§A01.1` etc. renumber the same way.
+**Numbering, briefly:** `§N`/`§N.M` (the core §1–§17 docs) are global and renumber-and-shift on
+insert — update every heading number in the same change, and never reuse a retired number.
+**Appendices carry no `§` number at all** — ordered alphabetically by title in this table (each
+title's first letter matching its filename) — their own subsection headings (`## 1.`, `### 1.1`, …)
+are a plain, file-local counter with no cross-file meaning; a cross-reference always uses the
+`[[doc#slug]]` token, never a bare number.
 
 ## Symbolic cross-references
 

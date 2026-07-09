@@ -1,0 +1,35 @@
+"""The `date` leaf field: partial-precision (Y / Y-M / Y-M-D) text, edited via an opaque `DateEdit`
+([[plugins#field-toolkit]]).
+"""
+
+from typing import override
+
+from PySide6.QtWidgets import QLabel, QWidget
+
+from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.widgets import DateEdit
+
+
+class DateField(Field[str]):
+    """A ``date`` field ([[plugins#field-toolkit]], [[field-schema#field-types]]): **partial-precision**
+    -- stored and edited as the ``YYYY`` / ``YYYY-MM`` / ``YYYY-MM-DD`` ISO-prefix string it is on
+    disk ([[field-schema#deferred-items]]), never parsed into (or held as) a full calendar date --
+    edited via :class:`~rehuco_agent.fields.widgets.DateEdit`. The viewer is a plain label showing
+    the stored string as-is. Covers ``released``.
+    """
+
+    TYPE = "date"
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
+        label = QLabel(binding.value)
+        binding.changed.connect(label.setText)
+        return label
+
+    @override
+    def make_editors(self, binding: FieldBinding[str]) -> list[QWidget]:
+        editor = DateEdit()
+        editor.value = binding.value
+        editor.value_changed.connect(binding.set_value)
+        binding.changed.connect(editor.set_value)  # type: ignore[attr-defined]
+        return [editor]

@@ -353,6 +353,58 @@ def test_notify_signal_name_raises_for_an_unregistered_name() -> None:
 # endregion
 
 
+# region default_value tests
+def test_default_value_resolves_a_plain_value_default() -> None:
+    """default_value returns the literal `value` a property was declared with.
+
+    **Test steps:**
+
+    * call `default_value` for `ObjectSample.title` (declared `SimpleProperty("")`)
+    * verify it returns `""`, regardless of any instance's current value
+    """
+    obj = ObjectSample()
+    obj.title = "changed"
+
+    assert SimpleProperty.default_value(ObjectSample, "title") == ""
+
+
+def test_default_value_calls_a_factory_default_fresh_each_time() -> None:
+    """default_value calls `default_factory` again on every lookup, returning an independent copy.
+
+    **Test steps:**
+
+    * declare a list-valued property with `default_factory=list`
+    * call `default_value` twice
+    * verify both calls return an empty list, and they are distinct objects
+    """
+
+    class Model(QObject):
+        """A `QObject` with a mutable, factory-defaulted property."""
+
+        tags = SimpleProperty[list[str]](default_factory=list)
+
+    first = SimpleProperty.default_value(Model, "tags")
+    second = SimpleProperty.default_value(Model, "tags")
+
+    assert first == [] and second == []
+    assert first is not second
+
+
+def test_default_value_raises_for_an_unregistered_name() -> None:
+    """default_value raises for a name that isn't a `SimpleProperty` on the class.
+
+    **Test steps:**
+
+    * call `default_value` with a name never declared on `ObjectSample`
+    * verify `KeyError` is raised
+    """
+    with pytest.raises(KeyError):
+        SimpleProperty.default_value(ObjectSample, "nonexistent")
+
+
+# endregion
+
+
 # region SimpleProperty value-type tests
 def test_int_value_notifies_through_matching_signal() -> None:
     """An `int` property may notify through a matching `Signal(int)`; the value round-trips.

@@ -234,6 +234,32 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; empty if absent."""
         return str(self.__data.get("released", ""))
 
+    @released.setter
+    def released(self, value: str) -> None:
+        self.__data["released"] = value
+
+    @property
+    def original_size(self) -> int:
+        """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]]);
+        ``0`` when absent (e.g. a Collection, which has none of its own) or malformed (#35)."""
+        value = self.__data.get("original_size", 0)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    @original_size.setter
+    def original_size(self, value: int) -> None:
+        self.__data["original_size"] = value
+
+    @property
+    def current_size(self) -> int:
+        """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]); ``0``
+        when absent or malformed (#35)."""
+        value = self.__data.get("current_size", 0)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    @current_size.setter
+    def current_size(self, value: int) -> None:
+        self.__data["current_size"] = value
+
     @property
     def advertised_tags(self) -> list[str]:
         """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]]); empty when absent."""

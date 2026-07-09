@@ -1,0 +1,7 @@
+"""Composite editor widgets used by the field toolkit ([[plugins#field-toolkit]])."""
+
+from rehuco_agent.fields.widgets.date_edit import DateEdit
+from rehuco_agent.fields.widgets.duration_edit import DurationEdit
+from rehuco_agent.fields.widgets.file_size_edit import FileSizeEdit
+
+__all__ = ["DateEdit", "DurationEdit", "FileSizeEdit"]

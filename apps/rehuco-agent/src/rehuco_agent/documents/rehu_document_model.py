@@ -13,18 +13,14 @@ INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
 directory's name instead, since the literal filename is the same for every such resource."""
 
-TYPE_FIELD_BOOL_DEFAULTS: Final = {
-    "complete": True,
-    "online": False,
-    "viewed": False,
-    "todo": False,
-    "keep": False,
-    "favorite": False,
-}
-"""The type-field boolean flags ([[field-schema#boolean-flags]]) and import defaults (``complete`` is ``true``)."""
+TYPE_FIELD_BOOL_NAMES: Final = ("complete", "online", "viewed", "todo", "keep", "favorite")
+"""The type-field boolean flags ([[field-schema#boolean-flags]]); each name's default lives on its own
+``SimpleProperty`` declaration below, read back generically via ``SimpleProperty.default_value``."""
 
-TYPE_FIELD_INT_DEFAULTS: Final = {"rating": 0, "images_count": 0}
-"""The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be negative."""
+TYPE_FIELD_INT_NAMES: Final = ("rating", "images_count", "original_duration", "current_duration", "advertised_duration")
+"""The type-field integer fields ([[field-schema#field-types]]); ``rating`` may be negative, the
+``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
+``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -59,6 +55,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     url = SimpleProperty("")
     """The primary source's URL ([[field-schema#sources]])."""
 
+    released = SimpleProperty("")
+    """The shared, partial-precision ``released`` date ([[field-schema#field-mapping]])."""
+
     complete = SimpleProperty(True)
     """The shared "all files present" flag ([[field-schema#boolean-flags]]); defaults ``true``."""
 
@@ -83,6 +82,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     images_count = SimpleProperty(0)
     """The ReferenceImages image count ([[field-schema#field-types]])."""
 
+    original_duration = SimpleProperty(0)
+    """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]])."""
+
+    current_duration = SimpleProperty(0)
+    """Measured duration, in seconds, of the files still on disk ([[field-schema#duration-size]])."""
+
+    advertised_duration = SimpleProperty(0)
+    """The coarse web-claimed duration, in seconds ([[field-schema#duration-size]])."""
+
+    original_size = SimpleProperty(0)
+    """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]])."""
+
+    current_size = SimpleProperty(0)
+    """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]])."""
+
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
 
@@ -105,9 +119,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
+        self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
+        self.original_size_changed.connect(self.__on_original_size_changed)  # type: ignore[attr-defined]
+        self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
-        for name in (*TYPE_FIELD_BOOL_DEFAULTS, *TYPE_FIELD_INT_DEFAULTS):
+        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
@@ -198,14 +215,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.authors = self.__document.authors
         self.publisher = self.__document.publisher
         self.url = self.__document.url
+        self.released = self.__document.released
+        self.original_size = self.__document.original_size
+        self.current_size = self.__document.current_size
         self.advertised_tags = self.__document.advertised_tags
         self.extra_tags = self.__document.extra_tags
 
         # The type-field scalar fields read/write generically through the type-keyed plugin block
         # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
-        for name, default in TYPE_FIELD_BOOL_DEFAULTS.items():
+        # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
+        # hand-duplicated literal here -- so there is exactly one place per field to change its default.
+        for name in TYPE_FIELD_BOOL_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
             setattr(self, name, bool(self.__document.type_field(name, default)))
-        for name, default in TYPE_FIELD_INT_DEFAULTS.items():
+        for name in TYPE_FIELD_INT_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
             value = self.__document.type_field(name, default)
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
 
@@ -255,6 +279,42 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__reverting:
             return
         self.__document.url = value
+        self.dirty = True
+
+    def __on_released_changed(self, value: str) -> None:
+        """Write an edited released date through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new released date.
+        """
+        if self.__reverting:
+            return
+        self.__document.released = value
+        self.dirty = True
+
+    def __on_original_size_changed(self, value: int) -> None:
+        """Write an edited original_size through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new original_size.
+        """
+        if self.__reverting:
+            return
+        self.__document.original_size = value
+        self.dirty = True
+
+    def __on_current_size_changed(self, value: int) -> None:
+        """Write an edited current_size through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new current_size.
+        """
+        if self.__reverting:
+            return
+        self.__document.current_size = value
         self.dirty = True
 
     def __on_advertised_tags_changed(self, value: list[str]) -> None:
