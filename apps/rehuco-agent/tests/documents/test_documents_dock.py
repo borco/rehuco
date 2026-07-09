@@ -106,7 +106,7 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
 
 
 def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The dock's tab title gains a trailing marker while the document is dirty, and loses it on save.
+    """The dock's tab title gains a leading marker while the document is dirty, and loses it on save.
 
     ``FAKE_PATH`` is an ``info.rehu``, so the title is the parent directory's name
     ([[data-model#resource-scoping]]) throughout -- covered on its own in
@@ -116,7 +116,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
 
     * open the fake path
     * verify the dock title has no dirty marker while clean
-    * dirty the model and verify the title gains a trailing ``*``
+    * dirty the model and verify the title gains a leading marker
     * clear dirty (as ``save()`` does) and verify the marker is gone again
     """
     load_document(mocker)
@@ -129,7 +129,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
     assert cdock.windowTitle() == FAKE_LABEL
 
     widget.model.title = "Changed"
-    assert cdock.windowTitle() == f"{FAKE_LABEL}{DIRTY_DOCK_MARKER}"
+    assert cdock.windowTitle() == f"{DIRTY_DOCK_MARKER}{FAKE_LABEL}"
 
     widget.model.dirty = False
     assert cdock.windowTitle() == FAKE_LABEL

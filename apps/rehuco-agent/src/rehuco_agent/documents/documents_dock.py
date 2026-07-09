@@ -15,8 +15,8 @@ from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME, RehuD
 
 LOG: Final = logging.getLogger(__name__)
 
-DIRTY_DOCK_MARKER: Final = " ✻"
-"""Marker appended to the title of dirty document tabs."""
+DIRTY_DOCK_MARKER: Final = "⬤ "
+"""Marker prepended to the title of dirty document tabs."""
 
 
 class DocumentsDock(QMainWindow):
@@ -235,14 +235,13 @@ class DocumentsDock(QMainWindow):
         """Set ``dock``'s tab title/tooltip from its document's label, marking it dirty when unsaved.
 
         The tab title is the document's :attr:`~RehuDocumentModel.label`, with :data:`DIRTY_DOCK_MARKER`
-        appended while unsaved; the tooltip always shows the full path. Which dock is *current* is
-        shown by the tracker's highlight styling, not a title prefix.
+        prepended while unsaved; the tooltip always shows the full path.
 
         :param dock: the dock whose title to refresh.
         """
         widget = self.__document_docks[dock]
         name = widget.model.label
-        dock.setWindowTitle(f"{name}{DIRTY_DOCK_MARKER}" if widget.model.dirty else name)
+        dock.setWindowTitle(f"{DIRTY_DOCK_MARKER}{name}" if widget.model.dirty else name)
         dock.setTabToolTip(str(widget.model.path) if widget.model.path else "")
 
     def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:
