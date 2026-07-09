@@ -181,6 +181,11 @@ class SimpleProperty[T]:
     __SIGNAL_NAMES: Final[dict[type, dict[str, str]]] = {}
     """Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``__set_name__``."""
 
+    __DEFAULTS: Final[dict[type, dict[str, Callable[[], Any]]]] = {}
+    """Per-class ``name`` -> zero-argument default supplier, populated by ``__set_name__`` and read by
+    :meth:`default_value` -- a factory-mode entry is the factory itself (called fresh each time, so a
+    mutable default returns an independent copy); a plain-value entry is a lambda closed over that value."""
+
     @overload
     def __init__(
         self,
@@ -242,6 +247,28 @@ class SimpleProperty[T]:
         except KeyError as exc:
             raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
+    @classmethod
+    def default_value(cls, owner: type, name: str) -> Any:
+        """Return the default declared for a ``SimpleProperty`` attribute -- the ``value`` it was
+        constructed with, or a fresh ``default_factory()`` call for a factory-mode property (so a
+        mutable default comes back as its own independent copy, the same guarantee :meth:`__fget`
+        gives each instance on first access).
+
+        For generic code that needs "the fallback for a name" -- e.g. reseeding a field from an
+        external source that may be missing it -- without hand-duplicating each property's own
+        default a second time. Mirrors :meth:`notify_signal_name`'s owner/name lookup for the notify
+        signal.
+
+        :param owner: the class the property was declared on.
+        :param name: the property's attribute name.
+        :returns: the default value.
+        :raises KeyError: if ``name`` is not a ``SimpleProperty`` declared on ``owner``.
+        """
+        try:
+            return cls.__DEFAULTS[owner][name]()
+        except KeyError as exc:
+            raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
+
     def __set_name__(self, owner: type, name: str) -> None:
         """Install the backing attribute, setter helper, and Qt property wired to the resolved signal.
 
@@ -266,6 +293,9 @@ class SimpleProperty[T]:
         signal, self.__signal_name = self.__resolve_signal(owner, name)
         self.__check_signal_type(owner, name, signal, value_type)
         self.__SIGNAL_NAMES.setdefault(owner, {})[name] = self.__signal_name
+        self.__DEFAULTS.setdefault(owner, {})[name] = (
+            self.__factory if self.__factory is not None else lambda value=self.__value: value
+        )
 
         # Wire the property onto the owner class: a private backing attribute, a set_<name>(value)
         # slot helper, and a real Qt Property (TypedProperty) that *replaces* this descriptor -- so

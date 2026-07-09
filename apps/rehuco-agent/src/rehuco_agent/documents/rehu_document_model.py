@@ -13,25 +13,14 @@ INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
 directory's name instead, since the literal filename is the same for every such resource."""
 
-TYPE_FIELD_BOOL_DEFAULTS: Final = {
-    "complete": True,
-    "online": False,
-    "viewed": False,
-    "todo": False,
-    "keep": False,
-    "favorite": False,
-}
-"""The type-field boolean flags ([[field-schema#boolean-flags]]) and import defaults (``complete`` is ``true``)."""
+TYPE_FIELD_BOOL_NAMES: Final = ("complete", "online", "viewed", "todo", "keep", "favorite")
+"""The type-field boolean flags ([[field-schema#boolean-flags]]); each name's default lives on its own
+``SimpleProperty`` declaration below, read back generically via ``SimpleProperty.default_value``."""
 
-TYPE_FIELD_INT_DEFAULTS: Final = {
-    "rating": 0,
-    "images_count": 0,
-    "original_duration": 0,
-    "current_duration": 0,
-    "advertised_duration": 0,
-}
-"""The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be
-negative. The ``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]])."""
+TYPE_FIELD_INT_NAMES: Final = ("rating", "images_count", "original_duration", "current_duration", "advertised_duration")
+"""The type-field integer fields ([[field-schema#field-types]]); ``rating`` may be negative, the
+``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
+``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -127,7 +116,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
-        for name in (*TYPE_FIELD_BOOL_DEFAULTS, *TYPE_FIELD_INT_DEFAULTS):
+        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
@@ -224,9 +213,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         # The type-field scalar fields read/write generically through the type-keyed plugin block
         # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
-        for name, default in TYPE_FIELD_BOOL_DEFAULTS.items():
+        # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
+        # hand-duplicated literal here -- so there is exactly one place per field to change its default.
+        for name in TYPE_FIELD_BOOL_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
             setattr(self, name, bool(self.__document.type_field(name, default)))
-        for name, default in TYPE_FIELD_INT_DEFAULTS.items():
+        for name in TYPE_FIELD_INT_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
             value = self.__document.type_field(name, default)
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
 
