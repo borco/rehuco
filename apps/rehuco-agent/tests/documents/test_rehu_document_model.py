@@ -499,4 +499,38 @@ def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentMod
     assert document.type_field("rating") == -4
 
 
+def test_create_new_without_a_path_is_clean() -> None:
+    """``create_new`` with no path starts an empty, pathless, un-dirty model.
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_new()`` with no arguments
+    * verify the document has no path and the model is not dirty
+    """
+    model = RehuDocumentModel.create_new()
+
+    assert model.document.path is None
+    assert model.dirty is False
+
+
+def test_create_new_with_a_path_is_dirty_and_bound() -> None:
+    """``create_new`` with a path binds the document to it and starts the model dirty.
+
+    Nothing is written to disk by this call -- the document only gains a default save target
+    (:meth:`RehuDocument.save`'s destination); dirty signals there are unsaved changes to prompt
+    for (#43's directory-open-with-no-`info.rehu` flow).
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_new(path)``
+    * verify the document's path matches and the model is dirty
+    """
+    path = Path("/fake/sculpting/info.rehu")
+
+    model = RehuDocumentModel.create_new(path)
+
+    assert model.document.path == path
+    assert model.dirty is True
+
+
 # endregion

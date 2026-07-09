@@ -127,6 +127,112 @@ def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFi
     open_document.assert_called_once_with(Path("a.rehu").resolve())
 
 
+def test_open_folder_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_folder`` resolves its path and hands it to the documents dock (#43).
+
+    **Test steps:**
+
+    * mock only ``DocumentsDock.open_folder`` (same reasoning as ``open_file``'s test above)
+    * construct a ``MainWindow`` and call ``open_folder`` with a relative path
+    * verify ``open_folder`` was called with the resolved absolute path
+    """
+    open_folder = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_folder("a_folder")
+
+    open_folder.assert_called_once_with(Path("a_folder").resolve())
+
+
+def test_open_archive_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_archive`` resolves its path and hands it to the documents dock (#43).
+
+    **Test steps:**
+
+    * mock only ``DocumentsDock.open_archive`` (same reasoning as ``open_file``'s test above)
+    * construct a ``MainWindow`` and call ``open_archive`` with a relative path
+    * verify ``open_archive`` was called with the resolved absolute path
+    """
+    open_archive = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_archive("a.zip")
+
+    open_archive.assert_called_once_with(Path("a.zip").resolve())
+
+
+def test_open_path_dispatches_a_file_path_to_open_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_path`` hands a non-directory, non-archive path to ``open_file`` (#43).
+
+    **Test steps:**
+
+    * mock ``Path.is_dir`` to report the path is not a directory
+    * call ``open_path``
+    * verify ``open_file`` (not ``open_folder``/``open_archive``) was called with the path
+    """
+    mocker.patch("rehuco_agent.main_window.Path.is_dir", return_value=False)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+    open_folder = mocker.patch.object(window, "open_folder")
+    open_archive = mocker.patch.object(window, "open_archive")
+
+    window.open_path("a.rehu")
+
+    open_file.assert_called_once_with("a.rehu")
+    open_folder.assert_not_called()
+    open_archive.assert_not_called()
+
+
+def test_open_path_dispatches_a_directory_path_to_open_folder(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_path`` hands a directory path to ``open_folder`` instead (#43).
+
+    **Test steps:**
+
+    * mock ``Path.is_dir`` to report the path is a directory
+    * call ``open_path``
+    * verify ``open_folder`` (not ``open_file``/``open_archive``) was called with the path
+    """
+    mocker.patch("rehuco_agent.main_window.Path.is_dir", return_value=True)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+    open_folder = mocker.patch.object(window, "open_folder")
+    open_archive = mocker.patch.object(window, "open_archive")
+
+    window.open_path("a_folder")
+
+    open_folder.assert_called_once_with("a_folder")
+    open_file.assert_not_called()
+    open_archive.assert_not_called()
+
+
+def test_open_path_dispatches_an_archive_path_to_open_archive(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_path`` hands a path with an :data:`~rehuco_agent.main_window.ARCHIVE_EXTENSIONS` suffix
+    to ``open_archive`` instead (#43).
+
+    **Test steps:**
+
+    * mock ``Path.is_dir`` to report the path is not a directory
+    * call ``open_path`` with a ``.zip`` path
+    * verify ``open_archive`` (not ``open_file``/``open_folder``) was called with the path
+    """
+    mocker.patch("rehuco_agent.main_window.Path.is_dir", return_value=False)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+    open_folder = mocker.patch.object(window, "open_folder")
+    open_archive = mocker.patch.object(window, "open_archive")
+
+    window.open_path("a.zip")
+
+    open_archive.assert_called_once_with("a.zip")
+    open_file.assert_not_called()
+    open_folder.assert_not_called()
+
+
 def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
     """With no dirty documents, the close proceeds without showing the unsaved-changes dialog.
 

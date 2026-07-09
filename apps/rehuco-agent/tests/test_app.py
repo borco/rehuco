@@ -38,7 +38,8 @@ def test_show_main_window_builds_it_once_and_reuses_it(mocker: MockerFixture) ->
 
 
 def test_open_path_delegates_to_the_main_window(mocker: MockerFixture) -> None:
-    """``open_path`` hands the path to the (single) main window's ``open_file``.
+    """``open_path`` hands the path to the (single) main window's ``open_path``, which does the
+    file-vs-folder dispatch (#43).
 
     Called as an unbound method against a lightweight stand-in for ``self``: Qt permits only one
     ``QApplication`` per process, and the test session's shared one may already be a plain
@@ -50,14 +51,14 @@ def test_open_path_delegates_to_the_main_window(mocker: MockerFixture) -> None:
 
     * build a stand-in ``self`` whose ``show_main_window`` returns a mocked main window
     * call ``Application.open_path`` with it
-    * verify ``show_main_window`` was used to reach the window and ``open_file`` was called with the path
+    * verify ``show_main_window`` was used to reach the window and ``open_path`` was called with it
     """
     fake_main_window = mocker.MagicMock()
     fake_self = SimpleNamespace(show_main_window=mocker.MagicMock(return_value=fake_main_window))
 
     Application.open_path(fake_self, FAKE_PATH)  # type: ignore[arg-type]
 
-    fake_main_window.open_file.assert_called_once_with(FAKE_PATH)
+    fake_main_window.open_path.assert_called_once_with(FAKE_PATH)
 
 
 def test_file_open_event_opens_a_path(mocker: MockerFixture) -> None:
