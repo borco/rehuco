@@ -34,8 +34,12 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
     assert form_labels(layout) == [
         "Title",
         "Authors",
+        "Released",
         "Publisher",
         "Url",
+        "Original Duration",
+        "Current Duration",
+        "Advertised Duration",
         "Complete",
         "Online",
         "Viewed",

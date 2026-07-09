@@ -2,6 +2,8 @@
 
 from pytest import raises
 from rehuco_agent.fields.boolean_field import BooleanField
+from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
@@ -56,6 +58,20 @@ def test_registry_resolves_the_list_and_url_field_types() -> None:
 
     assert registry.types["text_list"] is TextListField
     assert registry.types["url"] is UrlField
+
+
+def test_registry_resolves_the_date_and_duration_field_types() -> None:
+    """The registry maps the ``date`` / ``duration`` types to their classes.
+
+    **Test steps:**
+
+    * build a default registry
+    * verify each type resolves to its ``Field`` subclass
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["date"] is DateField
+    assert registry.types["duration"] is DurationField
 
 
 def test_registry_raises_on_an_unknown_type() -> None:

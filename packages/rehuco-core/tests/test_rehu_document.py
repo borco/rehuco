@@ -225,6 +225,20 @@ def test_authors_setter_replaces_the_list() -> None:
     assert doc.authors == ["New Author"]
 
 
+def test_released_setter_replaces_the_value() -> None:
+    """Setting ``released`` replaces the stored partial-precision date.
+
+    **Test steps:**
+
+    * construct a document with an existing ``released`` value
+    * assign a new value
+    * verify the document reflects it
+    """
+    doc = RehuDocument({"released": "2024"})
+    doc.released = "2025-03-08"
+    assert doc.released == "2025-03-08"
+
+
 def test_advertised_tags_setter_replaces_the_list() -> None:
     """Setting ``advertised_tags`` replaces the stored list with an independent copy.
 

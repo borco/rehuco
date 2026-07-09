@@ -97,6 +97,35 @@ def test_setting_publisher_and_url_write_through(model: RehuDocumentModel, docum
     assert document.url == "https://changed.example"
 
 
+def test_model_seeds_released_from_the_document(document: RehuDocument) -> None:
+    """The ``released`` field seeds from the document's top-level value, without dirtying.
+
+    **Test steps:**
+
+    * set ``released`` directly on the document, then construct a fresh model over it
+    * verify the model mirrors it and is clean
+    """
+    document.released = "2025-03"
+    fresh_model = RehuDocumentModel(document)
+
+    assert fresh_model.released == "2025-03"
+    assert fresh_model.dirty is False
+
+
+def test_setting_released_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``released`` writes through to the document (not source-scoped) and marks dirty.
+
+    **Test steps:**
+
+    * set ``model.released``
+    * verify it lands on the document directly, and the model is dirty
+    """
+    model.released = "2025-03-08"
+
+    assert document.released == "2025-03-08"
+    assert model.dirty is True
+
+
 def test_model_seeds_empty_lists_from_a_document_with_none(model: RehuDocumentModel) -> None:
     """A document with no list fields seeds the model's list fields to empty, without dirtying.
 
@@ -243,6 +272,7 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
             }
         ]
         document.data["authors"] = ["Reloaded Author"]
+        document.data["released"] = "2030-01"
         document.data["advertised_tags"] = ["reloaded-tag"]
         document.data["extra_tags"] = ["reloaded-extra"]
 
@@ -255,6 +285,7 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     assert model.publisher == "Reloaded Publisher"
     assert model.url == "https://reloaded.example"
     assert model.authors == ["Reloaded Author"]
+    assert model.released == "2030-01"
     assert model.advertised_tags == ["reloaded-tag"]
     assert model.extra_tags == ["reloaded-extra"]
     assert model.dirty is False
@@ -497,6 +528,42 @@ def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentMod
     model.rating = -4
 
     assert document.type_field("rating") == -4
+
+
+def test_model_seeds_duration_fields_from_the_document() -> None:
+    """The ``*_duration`` fields seed from the document's ``type``-keyed plugin block.
+
+    **Test steps:**
+
+    * construct a model over a document whose ``tutorial`` block carries all three duration fields
+    * verify each field mirrors the stored value
+    """
+    document = RehuDocument(
+        {
+            "type": "Tutorial",
+            "tutorial": {"original_duration": 8100, "current_duration": 4050, "advertised_duration": 7800},
+        }
+    )
+    model = RehuDocumentModel(document)
+
+    assert model.original_duration == 8100
+    assert model.current_duration == 4050
+    assert model.advertised_duration == 7800
+
+
+def test_setting_duration_fields_writes_through_to_the_type_fields(
+    model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """Setting a ``*_duration`` field writes through to the document's plugin block.
+
+    **Test steps:**
+
+    * set ``model.original_duration``
+    * verify the document's ``tutorial`` block holds it
+    """
+    model.original_duration = 8100
+
+    assert document.type_field("original_duration") == 8100
 
 
 def test_create_new_without_a_path_is_clean() -> None:

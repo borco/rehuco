@@ -234,6 +234,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; empty if absent."""
         return str(self.__data.get("released", ""))
 
+    @released.setter
+    def released(self, value: str) -> None:
+        self.__data["released"] = value
+
     @property
     def advertised_tags(self) -> list[str]:
         """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]]); empty when absent."""

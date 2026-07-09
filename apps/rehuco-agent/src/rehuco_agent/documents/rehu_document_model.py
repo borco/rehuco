@@ -23,8 +23,15 @@ TYPE_FIELD_BOOL_DEFAULTS: Final = {
 }
 """The type-field boolean flags ([[field-schema#boolean-flags]]) and import defaults (``complete`` is ``true``)."""
 
-TYPE_FIELD_INT_DEFAULTS: Final = {"rating": 0, "images_count": 0}
-"""The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be negative."""
+TYPE_FIELD_INT_DEFAULTS: Final = {
+    "rating": 0,
+    "images_count": 0,
+    "original_duration": 0,
+    "current_duration": 0,
+    "advertised_duration": 0,
+}
+"""The type-field integer fields ([[field-schema#field-types]]) and their defaults; ``rating`` may be
+negative. The ``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]])."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -59,6 +66,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     url = SimpleProperty("")
     """The primary source's URL ([[field-schema#sources]])."""
 
+    released = SimpleProperty("")
+    """The shared, partial-precision ``released`` date ([[field-schema#field-mapping]])."""
+
     complete = SimpleProperty(True)
     """The shared "all files present" flag ([[field-schema#boolean-flags]]); defaults ``true``."""
 
@@ -83,6 +93,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     images_count = SimpleProperty(0)
     """The ReferenceImages image count ([[field-schema#field-types]])."""
 
+    original_duration = SimpleProperty(0)
+    """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]])."""
+
+    current_duration = SimpleProperty(0)
+    """Measured duration, in seconds, of the files still on disk ([[field-schema#duration-size]])."""
+
+    advertised_duration = SimpleProperty(0)
+    """The coarse web-claimed duration, in seconds ([[field-schema#duration-size]])."""
+
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
 
@@ -105,6 +124,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
+        self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
         for name in (*TYPE_FIELD_BOOL_DEFAULTS, *TYPE_FIELD_INT_DEFAULTS):
@@ -198,6 +218,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.authors = self.__document.authors
         self.publisher = self.__document.publisher
         self.url = self.__document.url
+        self.released = self.__document.released
         self.advertised_tags = self.__document.advertised_tags
         self.extra_tags = self.__document.extra_tags
 
@@ -255,6 +276,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__reverting:
             return
         self.__document.url = value
+        self.dirty = True
+
+    def __on_released_changed(self, value: str) -> None:
+        """Write an edited released date through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new released date.
+        """
+        if self.__reverting:
+            return
+        self.__document.released = value
         self.dirty = True
 
     def __on_advertised_tags_changed(self, value: list[str]) -> None:

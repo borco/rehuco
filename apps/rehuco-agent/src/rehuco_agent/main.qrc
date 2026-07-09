@@ -13,6 +13,5 @@
         <file alias="fonts/Phosphor.ttf">../../../../design/fonts/Phosphor.ttf</file>
         <file alias="fonts/Phosphor-Bold.ttf">../../../../design/fonts/Phosphor-Bold.ttf</file>
         <file alias="fonts/Phosphor-Fill.ttf">../../../../design/fonts/Phosphor-Fill.ttf</file>
-        <file alias="fonts/Phosphor-Duotone.ttf">../../../../design/fonts/Phosphor-Duotone.ttf</file>
     </qresource>
 </RCC>

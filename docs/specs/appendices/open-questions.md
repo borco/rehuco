@@ -1,4 +1,4 @@
-# §A04. Open Questions — Out of Scope and Not Yet Designed
+# Open Questions — Out of Scope and Not Yet Designed
 
 [[[appendices.open-questions]]]
 
@@ -8,7 +8,7 @@
 
 Flagging gaps so they're a deliberate choice rather than an oversight.
 
-## §A04.1 Resolved or scoped since the first consolidation
+## 1. Resolved or scoped since the first consolidation
 
 [[[appendices.open-questions#resolved-or-scoped]]]
 
@@ -116,7 +116,7 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   [[appendices.windows-dev-launcher#overview]] for the Windows dev launcher). Only code-signing/notarization remains
   open below.
 
-## §A04.2 Still open
+## 2. Still open
 
 [[[appendices.open-questions#still-open]]]
 

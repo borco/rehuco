@@ -1,4 +1,4 @@
-# §A05. QtAds — Hurdles and Solutions
+# QtAds — Hurdles and Solutions
 
 [[[appendices.qt-ads]]]
 
@@ -9,7 +9,7 @@
 Engineering notes on `pyside6-qtads` behavior that took real time to work through, so a future
 encounter with the same corner of QtAds doesn't have to re-derive it from scratch.
 
-## §A05.1 `FocusHighlighting` and nested `CDockManager`s
+## 1. `FocusHighlighting` and nested `CDockManager`s
 
 [[[appendices.qt-ads#focus-highlighting]]]
 
@@ -23,9 +23,9 @@ versa. Confirmed via live logging on `focusedDockWidgetChanged`, not just visual
 the application level without abandoning the "documents tabbed together in one window" UX (making
 each `DocumentWidget` a genuine separate top-level window, e.g. `Qt.Window` or an MDI subwindow,
 would isolate it — a much bigger change than warranted for a cosmetic feature); the fix is to
-avoid `FocusHighlighting` entirely — see §A05.1.3.
+avoid `FocusHighlighting` entirely — see [[appendices.qt-ads#current-changed-alternative]].
 
-### §A05.1.1 Root cause: a shared `QWindow` property plus global signals
+### 1.1 Root cause: a shared `QWindow` property plus global signals
 
 [[[appendices.qt-ads#cross-manager-contamination]]]
 
@@ -61,7 +61,7 @@ whole app. Giving each nested manager a "separate" `CDockFocusController` would 
 they'd all still share the one real window's property, since scoping follows the OS-level window,
 not the `CDockManager`/`QMainWindow` instance asking.
 
-### §A05.1.2 Compounding gotcha: silent no-op without the flag, deferred signal stacking
+### 1.2 Compounding gotcha: silent no-op without the flag, deferred signal stacking
 
 [[[appendices.qt-ads#requires-focushighlighting]]]
 
@@ -76,16 +76,18 @@ fire in a burst, in whatever order Qt happens to deliver them, once the window i
 not necessarily the order they were queued in. Style updates themselves are *not* deferred (they
 run synchronously, unconditionally, before the visibility check), so this specifically corrupts
 signal-driven bookkeeping (e.g. "which dock is current"), not paint state — a red herring that
-cost real time before §A05.1.1's shared-window-property cause was found.
+cost real time before [[appendices.qt-ads#cross-manager-contamination]]'s shared-window-property
+cause was found.
 
-### §A05.1.3 Fix: track focus via `CDockAreaWidget.currentChanged` instead
+### 1.3 Fix: track focus via `CDockAreaWidget.currentChanged` instead
 
 [[[appendices.qt-ads#current-changed-alternative]]]
 
 Don't use `FocusHighlighting` at all when nested `CDockManager`s share a window. Track whichever
 tab/dock matters using a signal that isn't gated by it instead: `CDockAreaWidget::currentChanged(int
 index)` is a plain tab-bar signal — ordinary Qt tab-widget behavior, not routed through the
-shared-window mechanism §A05.1.1 describes. Fires whenever the *current* (selected) tab within one
+shared-window mechanism [[appendices.qt-ads#cross-manager-contamination]] describes. Fires whenever
+the *current* (selected) tab within one
 specific area changes, regardless of real Qt keyboard focus. Connect it once per distinct
 `CDockAreaWidget` (`CDockManager.addDockWidget(...)` returns the area a dock ended up in —
 multiple docks tabbed into the same area share one connection, so guard against connecting
@@ -93,7 +95,7 @@ twice), then resolve the tab index back to a dock via `area.dockWidget(index)`. 
 `DocumentsDock` uses to track which document is "current" for the window title and
 session-focus-save, with no cross-manager coupling at all.
 
-### §A05.1.4 Confirm a binding exists before trusting a stub or the C++ header alone
+### 1.4 Confirm a binding exists before trusting a stub or the C++ header alone
 
 [[[appendices.qt-ads#verify-bindings-live]]]
 
@@ -116,14 +118,15 @@ bound (confirmed against the upstream
 stub — safe to add, once both checks agree. More generally: the upstream C++ source itself — not
 just the Python bindings or this repo's own typings stub — is often the only way to actually find
 a root cause once a QtAds behavior stops matching what the Python-side API surface alone suggests
-it should do; clone the repo locally and read the relevant `.cpp`/`.h` directly (§A05.1.1 above
-came from doing exactly that).
+it should do; clone the repo locally and read the relevant `.cpp`/`.h` directly
+([[appendices.qt-ads#cross-manager-contamination]] came from doing exactly that).
 
-## §A05.2 The full signal set a "current dock" tracker needs
+## 2. The full signal set a "current dock" tracker needs
 
 [[[appendices.qt-ads#current-dock-signals]]]
 
-`CDockAreaWidget.currentChanged` (§A05.1.3) is necessary but **not sufficient** — it only fires
+`CDockAreaWidget.currentChanged` ([[appendices.qt-ads#current-changed-alternative]]) is necessary
+but **not sufficient** — it only fires
 when a *tab index within one area* changes, and several ways of making a dock "current" don't do
 that. `QtAdsFocusTracker` (`borco_pyside.qtads`) is the reusable home for the whole set, each part
 added only after confirming empirically that the others miss its case:
@@ -144,14 +147,14 @@ added only after confirming empirically that the others miss its case:
   real neighbor and the toggle handler is reached only when nothing tracked took focus — clear
   then, rather than fabricate a current dock no focus points at. Guard the whole handler with
   `CDockManager.isRestoringState()`: `restoreState` fires `viewToggled` for every reconstructed
-  dock, which would fight the explicit re-selection in §A05.3.
+  dock, which would fight the explicit re-selection in [[appendices.qt-ads#restore-current-split]].
 
 Deliberately **not** the tab *title*: current-ness is shown by a dynamic `tracked_focus` QSS
 property + highlight styling on the tab (a `FocusHighlighting`-free equivalent of QtAds' own
 `focused` property), so callers own their titles outright and there is no marker-vs-dirty-suffix
 conflict from two writers touching one `windowTitle`.
 
-## §A05.3 `restoreState` doesn't restore which *split* area was current
+## 3. `restoreState` doesn't restore which *split* area was current
 
 [[[appendices.qt-ads#restore-current-split]]]
 
@@ -164,9 +167,10 @@ every dock by name) re-select it with `CDockManager.findDockWidget(name)` +
 `set_current_dock` — this is `QtAdsFocusTracker.save_state`/`restore_state`. Note `restoreState`
 rebuilds every affected `CDockAreaWidget` from scratch, orphaning `currentChanged` connections
 made before it — re-track areas on `stateRestored` — and fires `viewToggled`/`currentChanged` for
-the reconstructed docks *during* the call, hence the `isRestoringState()` guard in §A05.2.
+the reconstructed docks *during* the call, hence the `isRestoringState()` guard in
+[[appendices.qt-ads#current-dock-signals]].
 
-## §A05.4 Recoloring a tab close button: the icon is stylesheet-governed, not code-set
+## 4. Recoloring a tab close button: the icon is stylesheet-governed, not code-set
 
 [[[appendices.qt-ads#tab-close-button]]]
 

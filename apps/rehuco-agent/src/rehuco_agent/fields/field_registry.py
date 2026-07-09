@@ -3,6 +3,8 @@
 from typing import Any, Final
 
 from rehuco_agent.fields.boolean_field import BooleanField
+from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import Field
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
@@ -19,7 +21,16 @@ class FieldRegistry:
 
     def __init__(self, *field_types: type[Field[Any]]) -> None:
         self.__types: Final[dict[str, type[Field[Any]]]] = {}
-        for field_type in field_types or (TextField, BooleanField, RatingField, IntField, TextListField, UrlField):
+        for field_type in field_types or (
+            TextField,
+            BooleanField,
+            RatingField,
+            IntField,
+            TextListField,
+            UrlField,
+            DateField,
+            DurationField,
+        ):
             self.__types[field_type.TYPE] = field_type
 
     @property

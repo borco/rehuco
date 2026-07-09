@@ -1,4 +1,4 @@
-# §A06. Testing and Cross-Platform QA
+# Testing and Cross-Platform QA
 
 [[[appendices.testing]]]
 
@@ -17,7 +17,7 @@ platform's own runner.** A test that can't apply on the current OS is *skipped*,
 that can't execute on the current OS is *excluded from coverage* there and measured on the runner
 where it does execute.
 
-## §A06.1 The QA gate
+## 1. The QA gate
 
 [[[appendices.testing#qa-gate]]]
 
@@ -27,7 +27,7 @@ where it does execute.
 beside their packages under `packages/*/tests` and `apps/*/tests` (`testpaths` in `pyproject.toml`);
 `--strict-markers` is on, so every marker must be declared.
 
-## §A06.2 Qt tests must run headless
+## 2. Qt tests must run headless
 
 [[[appendices.testing#headless-qt]]]
 
@@ -74,7 +74,7 @@ Every `ApplicationSingleton` this fixture builds is `shutdown()`- then-flushed, 
 `app.exec()` to completion, whose event loop (and the `QApplication` destructor on exit) reap
 `DeferredDelete` continuously, so nothing accumulates.
 
-## §A06.3 Platform-conditional tests
+## 3. Platform-conditional tests
 
 [[[appendices.testing#platform-tests]]]
 
@@ -116,7 +116,7 @@ windll.shell32.SetCurrentProcessExplicitAppUserModelID.assert_not_called()
 This works identically on all platforms (on Windows `windll` already exists; `create=True` is then
 a harmless no-op).
 
-## §A06.4 Static analysis across platforms
+## 4. Static analysis across platforms
 
 [[[appendices.testing#static-analysis]]]
 
@@ -133,7 +133,7 @@ when qa runs on macOS/Linux:
   is enabled, so it would itself be flagged on Windows, where the import resolves fine. A
   module-level ignore is platform-safe.
 
-## §A06.5 Coverage of platform-specific code
+## 5. Coverage of platform-specific code
 
 [[[appendices.testing#platform-coverage]]]
 
@@ -171,7 +171,7 @@ Two implementation notes worth keeping:
   `pytest_load_initial_conftests`. `[tool.pytest.ini_options] pythonpath = ["."]` puts the repo
   root on `sys.path` in time; without it the plugin fails with `ModuleNotFoundError`.
 
-## §A06.6 A build step that broke test *collection*
+## 6. A build step that broke test *collection*
 
 [[[appendices.testing#qualified-rc-imports]]]
 
