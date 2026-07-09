@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pytest import fixture, raises
+from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.field import Field
@@ -123,6 +123,39 @@ def test_setting_released_writes_through_and_dirties(model: RehuDocumentModel, d
     model.released = "2025-03-08"
 
     assert document.released == "2025-03-08"
+    assert model.dirty is True
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_model_seeds_size_fields_from_the_document(attr: str, document: RehuDocument) -> None:
+    """``original_size``/``current_size`` seed from the document's top-level value, without dirtying.
+
+    **Test steps:**
+
+    * set ``attr`` directly on the document, then construct a fresh model over it
+    * verify the model mirrors it and is clean
+    """
+    setattr(document, attr, 5368709120)
+    fresh_model = RehuDocumentModel(document)
+
+    assert getattr(fresh_model, attr) == 5368709120
+    assert fresh_model.dirty is False
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_setting_a_size_field_writes_through_and_dirties(
+    attr: str, model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """Setting ``original_size``/``current_size`` writes through to the document and marks dirty.
+
+    **Test steps:**
+
+    * set ``model.<attr>``
+    * verify it lands on the document directly, and the model is dirty
+    """
+    setattr(model, attr, 5368709120)
+
+    assert getattr(document, attr) == 5368709120
     assert model.dirty is True
 
 
@@ -273,6 +306,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
         ]
         document.data["authors"] = ["Reloaded Author"]
         document.data["released"] = "2030-01"
+        document.data["original_size"] = 5368709120
+        document.data["current_size"] = 1073741824
         document.data["advertised_tags"] = ["reloaded-tag"]
         document.data["extra_tags"] = ["reloaded-extra"]
 
@@ -286,6 +321,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     assert model.url == "https://reloaded.example"
     assert model.authors == ["Reloaded Author"]
     assert model.released == "2030-01"
+    assert model.original_size == 5368709120
+    assert model.current_size == 1073741824
     assert model.advertised_tags == ["reloaded-tag"]
     assert model.extra_tags == ["reloaded-extra"]
     assert model.dirty is False

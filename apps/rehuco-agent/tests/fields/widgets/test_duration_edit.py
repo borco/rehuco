@@ -154,81 +154,27 @@ def test_duration_edit_line_edit_accepts_drops(qtbot: QtBot) -> None:
     assert internal_line_edit(edit).acceptDrops() is True
 
 
-def test_duration_edit_line_edit_shows_a_placeholder_when_empty(qtbot: QtBot) -> None:
-    """The line edit shows a "formatted time" placeholder hint while empty.
+def test_duration_edit_spin_box_shows_the_bare_number_at_zero(qtbot: QtBot) -> None:
+    """The spin box shows the plain ``"0"`` at zero -- no special-value hint.
+
+    Shown explicitly -- a native ``QSpinBox``'s displayed text is only populated on first paint,
+    not merely by construction, so an unshown widget's ``text()`` reads ``""`` regardless (confirmed
+    empirically, #24).
 
     **Test steps:**
 
-    * build the widget
-    * verify the internal line edit's placeholder text
-    """
-    edit = DurationEdit()
-    qtbot.addWidget(edit)
-
-    assert internal_line_edit(edit).placeholderText() == "formatted time"
-
-
-def test_duration_edit_spin_box_shows_seconds_hint_at_zero(qtbot: QtBot) -> None:
-    """The spin box shows a "seconds" hint at zero instead of a bare ``"0"`` (no ``" s"`` suffix either).
-
-    **Test steps:**
-
-    * build the widget
+    * build and show the widget
     * verify the internal spin box's displayed text at the default zero value
     """
     edit = DurationEdit()
     qtbot.addWidget(edit)
+    edit.show()
 
-    assert internal_spin_box(edit).text() == "seconds"
-
-
-@mark.parametrize(
-    ("value", "expected_empty"),
-    [
-        param(0, True, id="empty-property-true-at-zero"),
-        param(3661, False, id="empty-property-false-once-nonzero"),
-    ],
-)
-def test_duration_edit_spin_box_empty_property_matches_value(qtbot: QtBot, value: int, expected_empty: bool) -> None:
-    """The spin box's ``empty`` dynamic property (driving :attr:`DurationEdit.SPIN_BOX_EMPTY_STYLESHEET`'s
-    dimmed-text styling) matches whether ``value`` is at :attr:`DurationEdit.MINIMUM`.
-
-    Verified via the property itself, not rendered pixel color -- confirmed separately, empirically,
-    that the ``palette(placeholder-text)`` QSS rule this property drives measurably dims the text
-    (#24); the property is the stable, non-flaky thing a unit test should assert on.
-
-    **Test steps:**
-
-    * build the widget and set ``value``
-    * verify the internal spin box's ``empty`` property matches ``expected_empty``
-    """
-    edit = DurationEdit()
-    qtbot.addWidget(edit)
-
-    edit.value = value
-
-    assert internal_spin_box(edit).property("empty") is expected_empty
-
-
-def test_duration_edit_spin_box_empty_property_is_a_no_op_when_unchanged(qtbot: QtBot) -> None:
-    """Moving between two nonzero values doesn't touch the already-``False`` ``empty`` property.
-
-    **Test steps:**
-
-    * build the widget and set two different nonzero values in a row
-    * verify ``empty`` reads ``False`` after both, unaffected by the redundant re-set
-    """
-    edit = DurationEdit()
-    qtbot.addWidget(edit)
-
-    edit.value = 60
-    edit.value = 3661
-
-    assert internal_spin_box(edit).property("empty") is False
+    assert internal_spin_box(edit).text() == "0"
 
 
 def test_duration_edit_spin_box_shows_the_bare_number_once_nonzero(qtbot: QtBot) -> None:
-    """The spin box shows the plain number once ``value`` is nonzero -- no unit suffix.
+    """The spin box shows the plain number once ``value`` is nonzero.
 
     **Test steps:**
 
@@ -300,6 +246,58 @@ def test_duration_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBo
     internal_line_edit(edit).setText("1h 30")
 
     assert edit.value == 3600
+
+
+@mark.parametrize(
+    ("text", "expected_warning"),
+    [
+        param("", False, id="blank-is-not-a-warning"),
+        param("1h 30m", False, id="valid-text-is-not-a-warning"),
+        param("1h 30", True, id="unparseable-non-blank-text-is-a-warning"),
+    ],
+)
+def test_duration_edit_line_edit_warns_only_for_non_blank_unparseable_text(
+    qtbot: QtBot, text: str, expected_warning: bool
+) -> None:
+    """The line edit's ``warning`` dynamic property (driving :attr:`DurationEdit.WARNING_STYLESHEET`)
+    is set exactly when the typed text is non-blank and unparseable.
+
+    **Test steps:**
+
+    * build the widget, seed the line edit with placeholder text, then set it to ``text`` (so a
+      blank ``text`` case genuinely fires ``textChanged``, rather than a no-op ``setText("")`` on an
+      already-empty line edit)
+    * verify the internal line edit's ``warning`` property matches ``expected_warning``
+    """
+    # pylint: disable=duplicate-code
+    edit = DurationEdit()
+    qtbot.addWidget(edit)
+    line_edit = internal_line_edit(edit)
+    line_edit.setText("seed")
+
+    line_edit.setText(text)
+
+    assert line_edit.property("warning") is expected_warning
+
+
+def test_duration_edit_line_edit_warning_clears_once_text_becomes_valid(qtbot: QtBot) -> None:
+    """The warning property clears once unparseable text is completed into valid text.
+
+    **Test steps:**
+
+    * type unparseable text, then complete it into a valid duration
+    * verify the ``warning`` property clears
+    """
+    # pylint: enable=duplicate-code
+    edit = DurationEdit()
+    qtbot.addWidget(edit)
+    line_edit = internal_line_edit(edit)
+    line_edit.setText("1h 30")
+    assert line_edit.property("warning") is True
+
+    line_edit.setText("1h 30m")
+
+    assert line_edit.property("warning") is False
 
 
 @mark.parametrize(
@@ -392,8 +390,8 @@ def test_duration_edit_spin_box_clear_action_resets_the_value_not_just_the_text(
 
     * build the widget with a nonzero value
     * trigger the spin box's clear action
-    * verify ``value``, the spin box's own ``value()``, and its displayed text (the "seconds" hint)
-      all reflect zero, and simulating a focus-out doesn't resurrect the old number
+    * verify ``value`` and the spin box's own ``value()`` both reflect zero, and simulating a
+      focus-out doesn't resurrect the old number
     """
     edit = DurationEdit()
     qtbot.addWidget(edit)
@@ -404,7 +402,6 @@ def test_duration_edit_spin_box_clear_action_resets_the_value_not_just_the_text(
 
     assert edit.value == 0
     assert spin_box.value() == 0
-    assert spin_box.text() == "seconds"
 
     spin_box.interpretText()
     assert spin_box.value() == 0

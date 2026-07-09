@@ -91,6 +91,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     advertised_duration = SimpleProperty(0)
     """The coarse web-claimed duration, in seconds ([[field-schema#duration-size]])."""
 
+    original_size = SimpleProperty(0)
+    """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]])."""
+
+    current_size = SimpleProperty(0)
+    """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]])."""
+
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
 
@@ -114,6 +120,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
         self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
+        self.original_size_changed.connect(self.__on_original_size_changed)  # type: ignore[attr-defined]
+        self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
         for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES):
@@ -208,6 +216,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.publisher = self.__document.publisher
         self.url = self.__document.url
         self.released = self.__document.released
+        self.original_size = self.__document.original_size
+        self.current_size = self.__document.current_size
         self.advertised_tags = self.__document.advertised_tags
         self.extra_tags = self.__document.extra_tags
 
@@ -281,6 +291,30 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__reverting:
             return
         self.__document.released = value
+        self.dirty = True
+
+    def __on_original_size_changed(self, value: int) -> None:
+        """Write an edited original_size through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new original_size.
+        """
+        if self.__reverting:
+            return
+        self.__document.original_size = value
+        self.dirty = True
+
+    def __on_current_size_changed(self, value: int) -> None:
+        """Write an edited current_size through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new current_size.
+        """
+        if self.__reverting:
+            return
+        self.__document.current_size = value
         self.dirty = True
 
     def __on_advertised_tags_changed(self, value: list[str]) -> None:

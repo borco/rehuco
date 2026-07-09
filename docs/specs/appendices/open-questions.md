@@ -196,3 +196,9 @@ was to
   confirmed all planned node dependencies (pydantic-core, cryptography, etc.) install and import on glibc 2.23 anyway
   ([[packaging-deployment#glibc-canary]]), keeping direct QNAP deployment viable if ever reconsidered. Stack not yet
   finalized.
+- **File-size human-readable format** — not finalized. Implemented as GNU `ls -sh` style (base-1024, single-letter
+  suffix, no space, e.g. `1.4G`) via `humanize.naturalsize(value, gnu=True)`, kept until decided otherwise — unlike
+  duration ([[field-schema#duration-format]], settled), size ([[field-schema#duration-size]]) has no documented display
+  convention. This happens to compute the same base as Windows Explorer's own size column (base-1024 math, just
+  `KB`/`MB`/`GB`-style labels instead of GNU's bare letters); revisit if a different convention (decimal/SI, IEC
+  `KiB`/`MiB`/`GiB`, or matching Explorer's own labels) turns out to be wanted.

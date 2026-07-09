@@ -8,6 +8,7 @@ from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import Field
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.fields_form import FieldsForm
+from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
@@ -20,9 +21,11 @@ DOCUMENT_FIELD_SPECS: Final = (
     ("date", "released"),
     ("text", "publisher"),
     ("url", "url"),
+    ("duration", "advertised_duration"),
     ("duration", "original_duration"),
     ("duration", "current_duration"),
-    ("duration", "advertised_duration"),
+    ("size", "original_size"),
+    ("size", "current_size"),
     ("bool", "complete"),
     ("bool", "online"),
     ("bool", "viewed"),
@@ -34,10 +37,10 @@ DOCUMENT_FIELD_SPECS: Final = (
     ("text_list", "extra_tags"),
 )
 """The document's field list: the common-core title/authors/released/publisher/url, the Tutorial
-plugin-block duration fields, the shared resource-type scalar flags, rating, and the tag lists
-([[field-schema#resource-types]]). A hardcoded constant for now; per-type field lists and where this
-is authored long-term are open questions
-([[field-schema#deferred-items]], [[appendices.open-questions#still-open]])."""
+plugin-block duration fields, the common-core original/current size pair, the shared resource-type
+scalar flags, rating, and the tag lists ([[field-schema#resource-types]], [[field-schema#duration-size]]).
+A hardcoded constant for now; per-type field lists and where this is authored long-term are open
+questions ([[field-schema#deferred-items]], [[appendices.open-questions#still-open]])."""
 
 __all__ = [
     "Field",
@@ -51,6 +54,7 @@ __all__ = [
     "UrlField",
     "DateField",
     "DurationField",
+    "FileSizeField",
     "DOCUMENT_FIELD_SPECS",
     "build_document_form",
 ]

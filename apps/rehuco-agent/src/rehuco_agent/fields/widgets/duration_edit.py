@@ -5,10 +5,12 @@ from typing import Final, cast
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.theming import GlyphActionIconThemeHandler
+from borco_pyside.widgets import equal_width_row, parsed_value_or_reset, resync_line_edit, toggle_dynamic_property
 from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLineEdit, QSpinBox, QWidget
+from PySide6.QtWidgets import QLineEdit, QSpinBox, QWidget
 
+from rehuco_agent.fields.colors import WARNING_COLOR
 from rehuco_agent.glyphs import CLEAR_ACTION_GLYPH
 
 
@@ -60,12 +62,8 @@ class DurationEdit(QWidget):
     scanned for, so a run of tokens can be validated as covering the *entire* input, with no
     unrecognized leftover text silently ignored."""
 
-    SPIN_BOX_EMPTY_STYLESHEET: Final = 'QSpinBox[empty="true"] { color: palette(placeholder-text); }'
-    """Dims the ``"seconds"`` special-value text at zero to read as a placeholder, matching the line
-    edit's real (natively-dimmed) placeholder beside it -- ``QSpinBox.setSpecialValueText`` doesn't
-    get that automatic dimming on its own (confirmed empirically, #24), so this reproduces it via
-    the same dynamic-property + re-polish pattern :class:`~rehuco_agent.fields.boolean_field.BooleanField`
-    uses for its own conditional styling."""
+    WARNING_STYLESHEET: Final = f'QLineEdit[warning="true"] {{ color: {WARNING_COLOR}; }}'
+    """Paints the line edit's text in the warning color while it holds non-blank, unparseable text."""
 
     value_changed = Signal(int)
     value = SimpleProperty(0)
@@ -75,17 +73,12 @@ class DurationEdit(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__line_edit: Final = QLineEdit(self)
-        self.__line_edit.setPlaceholderText("formatted time")
+        self.__line_edit.setToolTip("Formatted duration (e.g. 1h 30m)")
+        self.__line_edit.setStyleSheet(self.WARNING_STYLESHEET)
 
         self.__spin_box: Final = QSpinBox(self)
         self.__spin_box.setRange(self.MINIMUM, self.MAXIMUM)
-        self.__spin_box.setSpecialValueText("seconds")
-        self.__spin_box.setStyleSheet(self.SPIN_BOX_EMPTY_STYLESHEET)
-        # value_changed (which __render/__style_spin_box react to) never fires for a freshly
-        # constructed widget already at its default (0) -- SimpleProperty only emits on an actual
-        # change -- so the initial "seconds" hint needs its dimmed styling applied explicitly here,
-        # the same reason clear_action.setVisible(False) below isn't left to the reactive path either.
-        self.__style_spin_box(empty=True)
+        self.__spin_box.setToolTip("Duration in seconds")
 
         # QSpinBox always has an internal line edit once constructed; cast rather than a runtime
         # None-check that could never actually be exercised (an untestable, permanently-dead branch).
@@ -98,10 +91,7 @@ class DurationEdit(QWidget):
         clear_action.setVisible(False)
         clear_action.triggered.connect(self.__clear_spin_box)
 
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.__line_edit)
-        layout.addWidget(self.__spin_box)
+        equal_width_row(self, self.__line_edit, self.__spin_box)
 
         self.__line_edit.textChanged.connect(self.__on_text_changed)
         self.__spin_box.valueChanged.connect(self.set_value)  # type: ignore[attr-defined]
@@ -180,40 +170,20 @@ class DurationEdit(QWidget):
 
         :param text: the line edit's current text.
         """
-        if not text.strip():
-            self.value = self.MINIMUM
-            return
-        parsed = self.parse(text)
-        if parsed is not None:
-            self.value = parsed
+        value = parsed_value_or_reset(text, self.MINIMUM, self.parse)
+        toggle_dynamic_property(self.__line_edit, "warning", value is None)
+        if value is not None:
+            self.value = value
 
     def __render(self, value: int) -> None:
         """Re-sync the line edit and the spin box to ``value`` (echo guard for each).
 
-        The line edit's guard compares its own *parsed* text against ``value``, not the raw text --
-        a keystroke that round-trips through :attr:`value` does not bounce back and reset the cursor.
-
         :param value: the new value.
         """
-        if self.parse(self.__line_edit.text()) != value:
-            with QSignalBlocker(self.__line_edit):
-                self.__line_edit.setText(self.format(value))
+        resync_line_edit(self.__line_edit, value, self.parse, self.format)
         if self.__spin_box.value() != value:
             with QSignalBlocker(self.__spin_box):
                 self.__spin_box.setValue(value)
-        self.__style_spin_box(value == self.MINIMUM)
-
-    def __style_spin_box(self, empty: bool) -> None:
-        """Toggle the spin box's ``empty`` dynamic property and re-polish, so
-        :attr:`SPIN_BOX_EMPTY_STYLESHEET`'s selector picks up the change.
-
-        :param empty: whether the spin box is showing the ``"seconds"`` special-value text.
-        """
-        if self.__spin_box.property("empty") != empty:
-            self.__spin_box.setProperty("empty", empty)
-            style = self.__spin_box.style()
-            style.unpolish(self.__spin_box)
-            style.polish(self.__spin_box)
 
     def __clear_spin_box(self) -> None:
         """Reset :attr:`value` to :attr:`MINIMUM` and restore focus to the spin box.
