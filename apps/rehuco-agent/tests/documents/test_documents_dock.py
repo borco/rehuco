@@ -17,6 +17,9 @@ platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows with
 FAKE_LABEL: Final = f"{FAKE_PATH.parent.name}/"
 """``FAKE_PATH``'s expected dock-title label: an ``info.rehu``'s parent directory name, trailing-slashed."""
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
+FAKE_ARCHIVE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting.zip"
+"""An archive whose ``.rehu`` companion (#43) is ``FAKE_ARCHIVE_PATH.with_suffix(".rehu")``."""
+FAKE_ARCHIVE_INFO_PATH: Final = FAKE_ARCHIVE_PATH.with_suffix(".rehu")
 
 TUTORIAL: Final = {
     "format_version": 1,
@@ -651,6 +654,94 @@ def test_open_folder_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot)
 
     first = dock.open_folder(FAKE_PATH.parent)
     second = dock.open_folder(FAKE_PATH.parent)
+
+    assert first is second
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_open_archive_with_existing_rehu_companion_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening an archive whose ``.rehu`` companion already exists behaves exactly like ``open_document``.
+
+    **Test steps:**
+
+    * mock the filesystem so the companion both exists and serves the tutorial fixture
+    * open the archive (not the companion path itself)
+    * verify the resulting document's path is the companion and it is not dirty
+    """
+    load_document(mocker)
+    mocker.patch.object(Path, "exists", return_value=True)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_ARCHIVE_INFO_PATH
+    assert widget.model.dirty is False
+
+
+def test_open_archive_with_a_corrupted_rehu_companion_shows_an_error_and_no_dock(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """An archive whose ``.rehu`` companion exists but is corrupted gets the same error dialog as a
+    bad ``.rehu`` file (#35) -- the exists-branch never silently falls through to "start a new document".
+
+    **Test steps:**
+
+    * mock the filesystem so the companion exists but its content isn't valid JSON
+    * mock the error dialog (a real modal would block the headless test)
+    * open the archive
+    * verify ``None`` came back, no dock was created, and the dialog named the companion path
+    """
+    mocker.patch.object(Path, "exists", return_value=True)
+    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+    critical = mocker.patch.object(QMessageBox, "critical")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+
+    assert widget is None
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_called_once()
+    assert str(FAKE_ARCHIVE_INFO_PATH) in critical.call_args[0][2]
+
+
+def test_open_archive_without_a_rehu_companion_starts_a_new_dirty_document(qtbot: QtBot) -> None:
+    """Opening an archive with no ``.rehu`` companion yet starts a new, already-dirty document bound to it.
+
+    Nothing is read from or written to disk -- the fake archive never actually exists, so
+    ``info_path.exists()`` is genuinely ``False`` here, no mocking needed (#43).
+
+    **Test steps:**
+
+    * open an archive that has no ``.rehu`` companion
+    * verify the new document's path is the companion, it seeded empty, and it is dirty
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_ARCHIVE_INFO_PATH
+    assert widget.model.title == ""
+    assert widget.model.dirty is True
+
+
+def test_open_archive_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot) -> None:
+    """Reopening the same missing-companion archive focuses the still-unsaved dock, not a second one.
+
+    **Test steps:**
+
+    * open an archive with no ``.rehu`` companion twice
+    * verify the same widget comes back both times and only one dock exists
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_archive(FAKE_ARCHIVE_PATH)
+    second = dock.open_archive(FAKE_ARCHIVE_PATH)
 
     assert first is second
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access

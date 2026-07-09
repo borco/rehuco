@@ -18,6 +18,11 @@ from rehuco_agent.settings.document_session_settings import DocumentSessionSetti
 from rehuco_agent.settings.persistent_settings import persistent_settings
 from rehuco_agent.settings.window_settings import WindowSettings
 
+ARCHIVE_EXTENSIONS: Final = (".zip",)
+"""Archive file extensions (each including the leading dot) that get a file-scoped ``.rehu``
+companion ([[data-model#resource-scoping]]) via :meth:`MainWindow.open_archive`, instead of being
+opened directly like a bare ``.rehu`` file."""
+
 
 class MainWindow(QMainWindow):
     """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`.
@@ -149,16 +154,20 @@ class MainWindow(QMainWindow):
         self.__session.save(persistent_settings())
 
     def open_path(self, path: Path | str) -> None:
-        """Open ``path``, dispatching to :meth:`open_file` or :meth:`open_folder` by its kind.
+        """Open ``path``, dispatching to :meth:`open_file`, :meth:`open_folder`, or
+        :meth:`open_archive` by its kind.
 
         The single entry point for anything an outside caller (argv, Windows ProgID/shell-verb
         forwarding, a ``QFileOpenEvent``, #43) hands in without already knowing which kind it is.
 
-        :param path: filesystem path to a ``.rehu`` file, or to a directory-scoped resource's
-            directory ([[data-model#resource-scoping]]).
+        :param path: filesystem path to a ``.rehu`` file, to a directory-scoped resource's
+            directory, or to an archive file ([[data-model#resource-scoping]]).
         """
-        if Path(path).is_dir():
+        resolved = Path(path)
+        if resolved.is_dir():
             self.open_folder(path)
+        elif resolved.suffix.lower() in ARCHIVE_EXTENSIONS:
+            self.open_archive(path)
         else:
             self.open_file(path)
 
@@ -176,6 +185,15 @@ class MainWindow(QMainWindow):
         :param path: filesystem path to the directory.
         """
         self.__documents_dock.open_folder(Path(path).resolve())
+
+    def open_archive(self, path: Path | str) -> None:
+        """Open the file-scoped resource for the archive at ``path`` ([[data-model#resource-scoping]]),
+        focusing it if already open ([[nodes#single-instance]]).
+
+        :param path: filesystem path to the archive file (e.g. ``foo.zip``); its ``.rehu`` companion
+            (e.g. ``foo.rehu``) is what actually gets opened or created.
+        """
+        self.__documents_dock.open_archive(Path(path).resolve())
 
     def raise_and_activate(self) -> None:
         """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).

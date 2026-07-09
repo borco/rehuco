@@ -41,7 +41,7 @@ class DirectoryContextMenu:
             ``'"C:\\...\\app.exe"'`` -- ``"%1"`` (the clicked folder) is appended here.
         :param icon: ``Icon`` value shown for this entry, e.g. ``"C:\\...\\app.exe,0"``.
         """
-        cls.__write_verb(cls.__DIRECTORY_ROOT, sub_key, text, icon, f'{command} "%1"')
+        hkcu_registry.write_verb(rf"{cls.__DIRECTORY_ROOT}\{sub_key}", text, icon, f'{command} "%1"')
         hkcu_registry.notify_shell()
         LOG.info("registered folder context menu %r", sub_key)
 
@@ -65,7 +65,7 @@ class DirectoryContextMenu:
             ``'"C:\\...\\app.exe"'`` -- ``"%V"`` (the folder you're inside) is appended here.
         :param icon: ``Icon`` value shown for this entry, e.g. ``"C:\\...\\app.exe,0"``.
         """
-        cls.__write_verb(cls.__BACKGROUND_ROOT, sub_key, text, icon, f'{command} "%V"')
+        hkcu_registry.write_verb(rf"{cls.__BACKGROUND_ROOT}\{sub_key}", text, icon, f'{command} "%V"')
         hkcu_registry.notify_shell()
         LOG.info("registered folder-background context menu %r", sub_key)
 
@@ -78,18 +78,3 @@ class DirectoryContextMenu:
         hkcu_registry.delete_key_tree(rf"{cls.__BACKGROUND_ROOT}\{sub_key}")
         hkcu_registry.notify_shell()
         LOG.info("unregistered folder-background context menu %r", sub_key)
-
-    @classmethod
-    def __write_verb(cls, root: str, sub_key: str, text: str, icon: str, command: str) -> None:
-        """Write one shell-verb key tree: label, icon, and command.
-
-        :param root: ``Directory\\shell`` or ``Directory\\Background\\shell``.
-        :param sub_key: registry sub-key name to create under ``root``.
-        :param text: menu label Explorer shows for this entry.
-        :param icon: ``Icon`` value for this entry.
-        :param command: the full ``command`` value, already carrying its ``%1``/``%V`` argument.
-        """
-        key = rf"{root}\{sub_key}"
-        hkcu_registry.set_value(key, "", text)
-        hkcu_registry.set_value(key, "Icon", icon)
-        hkcu_registry.set_value(rf"{key}\command", "", command)

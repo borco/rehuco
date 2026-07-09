@@ -1,8 +1,8 @@
 """Shared per-user (``HKEY_CURRENT_USER``) registry write/delete/notify helpers.
 
-Every HKCU-based registration in this package -- a file-type association, a folder shell verb --
-reduces to the same three primitives: write a ``REG_SZ`` value, recursively delete a key tree on
-unregister, and tell Explorer to refresh without a logoff.
+Every HKCU-based registration reduces to the same handful of low-level operations -- writing a
+string value, recursively deleting a key tree, telling Explorer to refresh without a logoff. Some
+helpers below compose others for a shape common across callers; that doesn't make them primitives.
 """
 
 import ctypes
@@ -17,6 +17,9 @@ SHCNE_ASSOCCHANGED: Final = 0x08000000
 
 SHCNF_IDLIST: Final = 0x0000
 """``SHChangeNotify`` flag: the two data pointers are ``None`` (not an ``ITEMIDLIST``/path pair)."""
+
+
+# region primitives
 
 
 def set_value(key_path: str, name: str, value: str) -> None:
@@ -56,3 +59,25 @@ def delete_key_tree(path: str) -> None:
 def notify_shell() -> None:
     """Tell Explorer that an association/shell-verb registration changed, refreshing it without a logoff."""
     ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
+
+
+# endregion
+
+# region composites
+
+
+def write_verb(key_path: str, text: str, icon: str, command: str) -> None:
+    """Write one shell-verb key: its label, icon, and launch command.
+
+    :param key_path: registry path relative to ``HKEY_CURRENT_USER`` for the verb's own key --
+        its ``command`` sub-key is derived from this path.
+    :param text: menu label Explorer shows for this entry.
+    :param icon: ``Icon`` value for this entry.
+    :param command: the full command value, already carrying its trailing path argument.
+    """
+    set_value(key_path, "", text)
+    set_value(key_path, "Icon", icon)
+    set_value(rf"{key_path}\command", "", command)
+
+
+# endregion

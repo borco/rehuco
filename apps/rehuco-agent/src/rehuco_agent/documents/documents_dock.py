@@ -68,7 +68,32 @@ class DocumentsDock(QMainWindow):
         :param folder: absolute filesystem path to the directory to open.
         :returns: the document's widget, or ``None`` when `info.rehu` exists but could not be read.
         """
-        info_path = folder / INFO_REHU_FILENAME
+        return self.__open_companion(folder / INFO_REHU_FILENAME)
+
+    def open_archive(self, archive_path: Path) -> DocumentWidget | None:
+        """Open the file-scoped resource for ``archive_path`` ([[data-model#resource-scoping]]).
+
+        Opens ``archive_path`` with its suffix replaced by ``.rehu`` (e.g. ``foo.zip`` ->
+        ``foo.rehu``) exactly like :meth:`open_document` if that companion already exists. If it
+        doesn't, starts a new document already bound to that path and dirty
+        (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves.
+
+        :param archive_path: absolute filesystem path to the archive file (e.g. ``foo.zip``).
+        :returns: the document's widget, or ``None`` when the companion ``.rehu`` exists but
+            could not be read.
+        """
+        return self.__open_companion(archive_path.with_suffix(".rehu"))
+
+    def __open_companion(self, info_path: Path) -> DocumentWidget | None:
+        """Open ``info_path`` if it exists, or start a new document bound to it.
+
+        Shared by :meth:`open_folder` and :meth:`open_archive`, which differ only in how they
+        derive ``info_path`` from the path the user actually clicked.
+
+        :param info_path: the resource's own ``.rehu`` path (an ``info.rehu`` under a folder, or a
+            same-stem companion of an archive file).
+        :returns: the document's widget, or ``None`` when ``info_path`` exists but could not be read.
+        """
         if info_path.exists():
             return self.open_document(info_path)
         return self.__activate(self.__find_dock_by_path(info_path) or self.__make_new_dock(info_path, new=True))

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Final
 
 from rehuco_agent.app import run
+from rehuco_agent.main_window import ARCHIVE_EXTENSIONS
 
 PROGID: Final = "Rehuco.Document"
 """HKCU ProgID under ``Software\\Classes`` that owns the ``.rehu`` association."""
@@ -26,22 +27,31 @@ DIRECTORY_SUB_KEY: Final = "Rehuco.OpenFolder"
 DIRECTORY_MENU_TEXT: Final = "Open with Rehuco"
 """Menu label shown for both the folder and folder-background shell verbs."""
 
+ARCHIVE_SUB_KEY: Final = "Rehuco.AddInfo"
+"""HKCU sub-key under each of :data:`~rehuco_agent.main_window.ARCHIVE_EXTENSIONS`' own
+``SystemFileAssociations\\<ext>\\shell`` (#43)."""
+
+ARCHIVE_MENU_TEXT: Final = "Create or Open Rehuco Info"
+"""Menu label shown for the archive-file shell verb -- static (not per-file, see #43's discussion of
+why a dynamic "Open foo.rehu"/"Create foo.rehu" label would need a full COM shell extension)."""
+
 
 def main() -> int:
-    """Register/unregister the Windows file association and folder context menu, or launch the GUI.
+    """Register/unregister the Windows file association and context menus, or launch the GUI.
 
     ``--register``/``--unregister`` are Windows-only and not offered at all on other
     platforms: the argument parser only defines them when ``sys.platform == "win32"``, so
     ``rehuco-agent --register`` on macOS/Linux fails with argparse's own "unrecognized
     arguments" rather than a custom runtime message -- there is nothing for it to do there
     ([[packaging-deployment#app-identity]] is explicitly OS-specific; only the Windows half is built so far, issue #1).
-    ``borco_core.platforms.windows.file_association``/``directory_context_menu`` are imported lazily,
-    only once inside that Windows-only branch: they do ``import winreg`` at module scope, which does
-    not exist elsewhere, so an unconditional top-level import here would break this entry point on
-    every other platform. Both modules are generic (progid/sub-key/command/icon all passed in); this
-    module owns rehuco's own identity constants above. The folder/folder-background shell verbs
-    (#43) open the directory's `info.rehu` if it exists, or start a new one if it doesn't
-    (:meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.open_folder`).
+    ``borco_core.platforms.windows.file_association``/``directory_context_menu``/
+    ``file_extension_context_menu`` are imported lazily, only once inside that Windows-only branch:
+    they do ``import winreg`` at module scope, which does not exist elsewhere, so an unconditional
+    top-level import here would break this entry point on every other platform. All three modules
+    are generic (progid/sub-key/command/icon all passed in); this module owns rehuco's own identity
+    constants above. The folder/folder-background shell verbs and the archive-file shell verb (#43)
+    both open the resource's own ``.rehu`` if it exists, or start a new one if it doesn't
+    (``DocumentsDock.open_folder``/``DocumentsDock.open_archive``).
 
     Both flags register/unregister *this running exe* (``sys.argv[0]``), not a hardcoded
     guess -- so the same code path works whether invoked as the real packaged
@@ -65,12 +75,16 @@ def main() -> int:
     if sys.platform == "win32":
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
-            "--register", action="store_true", help="register the .rehu file association and folder context menu"
+            "--register",
+            action="store_true",
+            help="register the .rehu file association and folder/archive context menus",
         )
         group.add_argument(
-            "--unregister", action="store_true", help="remove the .rehu file association and folder context menu"
+            "--unregister",
+            action="store_true",
+            help="remove the .rehu file association and folder/archive context menus",
         )
-    parser.add_argument("paths", nargs="*", help=".rehu files or resource directories to open")
+    parser.add_argument("paths", nargs="*", help=".rehu files, resource directories, or archives to open")
     args = parser.parse_args()
 
     # args.register/args.unregister don't exist at all on non-Windows (the parser never
@@ -81,6 +95,9 @@ def main() -> int:
 
         # pylint: disable-next=import-outside-toplevel
         from borco_core.platforms.windows.file_association import FileAssociation
+
+        # pylint: disable-next=import-outside-toplevel
+        from borco_core.platforms.windows.file_extension_context_menu import FileExtensionContextMenu
 
         if args.register or args.unregister:
             if exe_path.suffix.lower() != ".exe":
@@ -106,10 +123,14 @@ def main() -> int:
                 FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, f'"{exe_path}" "%1"', icon, AUMID)
                 DirectoryContextMenu.register_folder(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, f'"{exe_path}"', icon)
                 DirectoryContextMenu.register_background(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, f'"{exe_path}"', icon)
+                FileExtensionContextMenu.register(
+                    ARCHIVE_EXTENSIONS, ARCHIVE_SUB_KEY, ARCHIVE_MENU_TEXT, f'"{exe_path}"', icon
+                )
             else:
                 FileAssociation.unregister(PROGID, EXTENSION)
                 DirectoryContextMenu.unregister_folder(DIRECTORY_SUB_KEY)
                 DirectoryContextMenu.unregister_background(DIRECTORY_SUB_KEY)
+                FileExtensionContextMenu.unregister(ARCHIVE_EXTENSIONS, ARCHIVE_SUB_KEY)
             return 0
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(AUMID)

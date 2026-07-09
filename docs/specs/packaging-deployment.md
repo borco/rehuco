@@ -283,6 +283,11 @@ Two design facts shape the choice:
   `python.exe` as a subprocess, so the taskbar/pinned identity resolves to Python — the launcher must own the window's
   process, via Briefcase's exe or the dev C launcher, [[appendices.windows-dev-launcher#overview]]. Verified in #1.)
   Freezing the app into a single binary is therefore **not** required.
+- **File-manager right-click integration ("open this folder/archive in Rehuco", #43) is Windows-only so far** —
+  HKCU shell verbs under `Directory`, `Directory\Background`, and `SystemFileAssociations\<ext>`. macOS (Finder Quick
+  Actions/Services, or an Automator-generated workflow) and Linux (no single cross-desktop-environment API — Nautilus
+  scripts, Dolphin service menus, etc. are each their own mechanism) equivalents are **not yet implemented**. Revisit
+  when distribution expands past the author's own Windows machine, rather than letting this quietly stay Windows-only.
 
 **Decision: package end-user builds with Briefcase, not PyInstaller.** Briefcase does not freeze — it pairs a thin
 launcher with an embedded interpreter and the app's source, and declares icon, identity, file association, and installer
