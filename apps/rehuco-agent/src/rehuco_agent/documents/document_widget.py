@@ -10,14 +10,20 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
-from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
+from rehuco_agent.documents.document_fields import (
+    EDITOR_IMAGES_TAB,
+    EDITOR_MAIN_TAB,
+    VIEWER_TAB,
+    build_document_form,
+)
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsTab, PathField, StatefulWidget
+from rehuco_agent.fields import FieldsTab, ImagesField, PathField, StatefulWidget
 
 LOCATION_FIELD_NAME: Final = "location"
+IMAGES_FIELD_NAME: Final = "hidden_images"
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 2
+STATE_VERSION: Final = 3
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -73,7 +79,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             viewer_tab=VIEWER_TAB,
             editor_tab=EDITOR_MAIN_TAB,
         )
-        form = build_document_form(leading_fields=[location_field])
+        images_field = ImagesField(
+            IMAGES_FIELD_NAME,
+            image_files=model.image_files,
+            viewer_tab=VIEWER_TAB,
+            editor_tab=EDITOR_IMAGES_TAB,
+        )
+        # location leads so its editor keeps the Main Editor tab first/current; the images strip
+        # still sits high in the viewer, above the description, and its editor gets its own tab
+        form = build_document_form(leading_fields=[location_field, images_field])
         # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
         self.__editor_docks: Final = self.__add_docks(form.make_editor(model), "editor", QtAds.LeftDockWidgetArea)
         self.__viewer_docks: Final = self.__add_docks(form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea)

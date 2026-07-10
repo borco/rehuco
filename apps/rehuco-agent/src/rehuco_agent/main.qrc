@@ -1,6 +1,8 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="icons/document_description.svg">../../../../design/icons/document_description.svg</file>
         <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
+        <file alias="icons/document_images.svg">../../../../design/icons/document_images.svg</file>
         <file alias="icons/document_revert.svg">../../../../design/icons/document_revert.svg</file>
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>

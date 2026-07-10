@@ -19,10 +19,13 @@ are assigned to by :func:`build_document_form`."""
 EDITOR_MAIN_TAB: Final = FieldsTab("Main Editor", ":/icons/document_editor_main.svg")
 """The document's main editor surface ([[plugins#field-toolkit]]); record fields' editors default here."""
 
-EDITOR_DESCRIPTION_TAB: Final = FieldsTab("Description", ":/icons/document_editor_main.svg")
+EDITOR_DESCRIPTION_TAB: Final = FieldsTab("Description", ":/icons/document_description.svg")
 """The Markdown ``description``'s own editor dock ([[plugins#viewer-editor-both]]), so its editor can be
-torn out and maximized while writing prose. (Reusing the main-editor icon for now -- a dedicated
-description icon is a design follow-up.)"""
+torn out and maximized while writing prose."""
+
+EDITOR_IMAGES_TAB: Final = FieldsTab("Images", ":/icons/document_images.svg")
+"""The lightbox-curation editor's own dock ([[data-model#image-meanings]], #27): the checkable
+screenshot list beside its sized preview lives here, on its own tab."""
 
 LEVEL_CHOICES: Final = ("beginner", "intermediate", "advanced", "any")
 """The ``level`` multi-choice field's fixed value set ([[field-schema#field-types]])."""

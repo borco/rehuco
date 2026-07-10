@@ -19,6 +19,7 @@ from rehuco_agent.fields.field import (
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.fields_form import FieldsForm
 from rehuco_agent.fields.file_size_field import FileSizeField
+from rehuco_agent.fields.images_field import ImagesField
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
@@ -47,4 +48,5 @@ __all__ = [
     "MultipleChoiceField",
     "PathField",
     "DescriptionField",
+    "ImagesField",
 ]

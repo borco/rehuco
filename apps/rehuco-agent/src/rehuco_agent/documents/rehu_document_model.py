@@ -1,6 +1,7 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 import logging
+import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -43,6 +44,10 @@ each is formatted from the record's own fields (``title`` / ``publisher`` / ``au
 NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released")
 """The fields :data:`NAME_SUGGESTION_PATTERNS` interpolate; a change to any of them re-emits
 ``name_suggestions_changed`` so a `PathField` re-pulls the suggestions live."""
+
+IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
+"""Screenshot file extensions the lightbox enumerates ([[data-model#image-meanings]]); matched
+case-insensitively."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -144,6 +149,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     extra_tags = SimpleProperty[list[str]](default_factory=list)
     """The personal ``extra_tags`` list ([[field-schema#field-mapping]])."""
 
+    hidden_images = SimpleProperty[list[str]](default_factory=list)
+    """The screenshot filenames curated *out* of the lightbox ([[data-model#image-meanings]], #27); a
+    top-level common-core list. The lightbox shows every :meth:`image_files` sibling by default, so only
+    the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
+
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
@@ -162,6 +172,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
         self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
         self.description_changed.connect(self.__on_description_changed)  # type: ignore[attr-defined]
+        self.hidden_images_changed.connect(self.__on_hidden_images_changed)  # type: ignore[attr-defined]
         self.original_size_changed.connect(self.__on_original_size_changed)  # type: ignore[attr-defined]
         self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
@@ -229,6 +240,34 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def sources(self) -> list[dict[str, Any]]:
         """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
         return self.__document.sources
+
+    def image_files(self) -> list[Path]:
+        """Enumerate this resource's screenshot siblings for the lightbox ([[data-model#image-meanings]], #27).
+
+        Screenshots are the basename-matched, two-digit-numbered siblings of the ``.rehu`` -- for
+        ``info.rehu`` these are ``info00.jpg`` / ``info01.png`` / ..., for ``foo.rehu`` they are
+        ``foo00.jpg`` / ... -- with an :data:`IMAGE_EXTENSIONS` extension, matched case-insensitively.
+        Independent of :attr:`hidden_images`: this is *every* screenshot on disk; the lightbox subtracts
+        the hidden ones. Empty when the document has no path yet or its directory holds none.
+
+        :returns: the matching sibling paths, sorted by filename.
+        """
+        path = self.path
+        if path is None:
+            return []
+        pattern = re.compile(rf"^{re.escape(path.stem)}\d{{2}}$", re.IGNORECASE)
+        try:
+            siblings = list(path.parent.iterdir())
+        except OSError:
+            # the resource's directory may be absent or on an offline mount ([[mounts-and-storage#offline-mounts]]) --
+            # no screenshots to show, rather than a crash
+            return []
+        matches = [
+            sibling
+            for sibling in siblings
+            if sibling.suffix.lower() in IMAGE_EXTENSIONS and pattern.match(sibling.stem)
+        ]
+        return sorted(matches, key=lambda sibling: sibling.name)
 
     def name_suggestions(self) -> list[str]:
         """Build the rename-candidate names from this record's fields via :data:`NAME_SUGGESTION_PATTERNS`.
@@ -313,6 +352,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.url = self.__document.url
         self.released = self.__document.released
         self.description = self.__document.description
+        self.hidden_images = self.__document.hidden_images
         self.original_size = self.__document.original_size
         self.current_size = self.__document.current_size
         self.advertised_tags = self.__document.advertised_tags
@@ -425,6 +465,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__reverting:
             return
         self.__document.description = value
+        self.dirty = True
+
+    def __on_hidden_images_changed(self, value: list[str]) -> None:
+        """Write an edited hidden-images list through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new hidden-images list.
+        """
+        if self.__reverting:
+            return
+        self.__document.hidden_images = value
         self.dirty = True
 
     def __on_original_size_changed(self, value: int) -> None:
