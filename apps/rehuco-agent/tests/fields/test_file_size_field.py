@@ -3,8 +3,9 @@
 from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.widgets import FileSizeEdit
+
+from fields.field_testers import FileSizeFieldTester as FileSizeField
 
 
 def test_file_size_field_viewer_shows_and_tracks_the_formatted_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -17,10 +18,10 @@ def test_file_size_field_viewer_shows_and_tracks_the_formatted_value(qtbot: QtBo
     * change ``model.original_size`` and verify the label updates live, formatted
     """
     field = FileSizeField("original_size")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == ""
 
     model.original_size = 5368709120
@@ -30,21 +31,20 @@ def test_file_size_field_viewer_shows_and_tracks_the_formatted_value(qtbot: QtBo
 def test_file_size_field_editor_is_a_file_size_edit_seeded_from_the_model(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """``make_editors`` returns exactly one ``FileSizeEdit``, seeded with the model's current value.
+    """The editor is a ``FileSizeEdit`` seeded with the model's current value.
 
     **Test steps:**
 
     * seed the model with a size, then build the ``original_size`` editor
-    * verify there is exactly one editor, a ``FileSizeEdit``, already holding that value
+    * verify the editor is a ``FileSizeEdit`` already holding that value
     """
     model.original_size = 5368709120
     field = FileSizeField("original_size")
-    editors = field.make_editors(model.bind(field))
-    qtbot.addWidget(editors[0])
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, FileSizeEdit)
+    qtbot.addWidget(editor)
 
-    assert len(editors) == 1
-    assert isinstance(editors[0], FileSizeEdit)
-    assert editors[0].value == 5368709120
+    assert editor.value == 5368709120
 
 
 def test_file_size_field_editor_writes_through_to_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -57,9 +57,9 @@ def test_file_size_field_editor_writes_through_to_the_model(qtbot: QtBot, model:
     * verify ``model.original_size`` follows
     """
     field = FileSizeField("original_size")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, FileSizeEdit)
+    qtbot.addWidget(editor)
 
     editor.value = 1073741824
 
@@ -76,9 +76,9 @@ def test_file_size_field_editor_follows_an_external_model_change(qtbot: QtBot, m
     * verify the editor's ``value`` follows
     """
     field = FileSizeField("original_size")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, FileSizeEdit)
+    qtbot.addWidget(editor)
 
     model.original_size = 2048
 
@@ -95,12 +95,12 @@ def test_file_size_field_editor_and_viewer_stay_live_together(qtbot: QtBot, mode
     * verify the viewer reflects it, formatted
     """
     field = FileSizeField("original_size")
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, FileSizeEdit)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
 
     editor.value = 1073741824
 

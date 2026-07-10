@@ -3,7 +3,8 @@
 from PySide6.QtWidgets import QCheckBox, QLabel, QWidget
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
+
+from fields.field_testers import MultipleChoiceFieldTester as MultipleChoiceField
 
 CHOICES = ("beginner", "intermediate", "advanced", "any")
 
@@ -19,10 +20,10 @@ def test_multiple_choice_field_viewer_shows_and_tracks_selected_values(qtbot: Qt
     """
     model.level = ["advanced", "beginner"]
     field = MultipleChoiceField("level", choices=CHOICES)
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.wordWrap() is True
     assert viewer.text() == "beginner, advanced"
 
@@ -39,10 +40,10 @@ def test_multiple_choice_field_viewer_shows_nothing_when_empty(qtbot: QtBot, mod
     * verify the label is empty
     """
     field = MultipleChoiceField("level", choices=CHOICES)
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == ""
 
 
@@ -52,16 +53,14 @@ def test_multiple_choice_field_editor_has_one_checkbox_per_choice(qtbot: QtBot, 
     **Test steps:**
 
     * seed ``model.level`` with one of four choices
-    * build the editor and verify it returns a single container with four checkboxes
+    * build the editor and verify its container holds four checkboxes
     * verify only the seeded choice's checkbox starts checked
     """
     model.level = ["intermediate"]
     field = MultipleChoiceField("level", choices=CHOICES)
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    container = editors[0]
-    qtbot.addWidget(container)
+    container = field.make_editor(model.bind(field)).editor
     assert isinstance(container, QWidget)
+    qtbot.addWidget(container)
 
     checkboxes = container.findChildren(QCheckBox)
     assert len(checkboxes) == 4
@@ -80,7 +79,8 @@ def test_multiple_choice_field_editor_writes_back_to_the_model(qtbot: QtBot, mod
     * uncheck ``advanced`` and verify it drops out
     """
     field = MultipleChoiceField("level", choices=CHOICES)
-    container = field.make_editors(model.bind(field))[0]
+    container = field.make_editor(model.bind(field)).editor
+    assert isinstance(container, QWidget)
     qtbot.addWidget(container)
     checkboxes = {checkbox.text(): checkbox for checkbox in container.findChildren(QCheckBox)}
 
@@ -105,8 +105,10 @@ def test_multiple_choice_field_editor_and_viewer_echo_without_a_feedback_loop(
     """
     field = MultipleChoiceField("level", choices=CHOICES)
     binding = model.bind(field)
-    container = field.make_editors(binding)[0]
-    viewer = field.make_viewer(model.bind(field))
+    container = field.make_editor(binding).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(container, QWidget)
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(container)
     qtbot.addWidget(viewer)
     checkboxes = {checkbox.text(): checkbox for checkbox in container.findChildren(QCheckBox)}
@@ -114,7 +116,6 @@ def test_multiple_choice_field_editor_and_viewer_echo_without_a_feedback_loop(
     checkboxes["any"].setChecked(True)
 
     assert model.level == ["any"]
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == "any"
     assert checkboxes["any"].isChecked() is True
 
@@ -129,7 +130,8 @@ def test_multiple_choice_field_editor_follows_an_external_model_change(qtbot: Qt
     * verify the matching checkboxes follow, and the rest stay unchecked
     """
     field = MultipleChoiceField("level", choices=CHOICES)
-    container = field.make_editors(model.bind(field))[0]
+    container = field.make_editor(model.bind(field)).editor
+    assert isinstance(container, QWidget)
     qtbot.addWidget(container)
     checkboxes = {checkbox.text(): checkbox for checkbox in container.findChildren(QCheckBox)}
 

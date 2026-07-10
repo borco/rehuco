@@ -1,11 +1,15 @@
-"""Tests for the field toolkit's public entry points: build_document_form and DOCUMENT_FIELD_SPECS."""
+"""Tests for the document form composition: build_document_form over DOCUMENT_FIELD_SPECS.
+
+(These cover ``documents.document_fields``; the file keeps its historical location under ``tests/fields``.)
+"""
 
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.document_fields import build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import build_document_form
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
-from rehuco_agent.fields.text_field import TextField
+
+from fields.field_testers import TextFieldTester as TextField
 
 
 def form_labels(widget: QWidget) -> list[str]:

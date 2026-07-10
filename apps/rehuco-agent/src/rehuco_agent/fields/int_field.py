@@ -3,9 +3,9 @@
 from typing import override
 
 from borco_pyside.widgets import UnboundedSpinBox
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 
 class IntField(Field[int]):
@@ -26,26 +26,29 @@ class IntField(Field[int]):
 
     TYPE = "int"
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
         label: str | None = None,
         minimum: int | None = None,
         maximum: int | None = None,
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
     ) -> None:
-        super().__init__(name, label)
+        super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__minimum = minimum
         self.__maximum = maximum
 
     @override
-    def make_viewer(self, binding: FieldBinding[int]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
         label = QLabel(str(binding.value))
         binding.changed.connect(lambda value: label.setText(str(value)))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[int]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
         spin_box = UnboundedSpinBox(value=binding.value, minimum=self.__minimum, maximum=self.__maximum)
         spin_box.value_changed.connect(binding.set_value)  # type: ignore[attr-defined]
         binding.changed.connect(spin_box.setValue)
-        return [spin_box]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), spin_box)

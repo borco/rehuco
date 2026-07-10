@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 
 import pytest
+from fields.field_testers import FieldTester as Field
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import Field
 from rehuco_core import RehuDocument
 
 

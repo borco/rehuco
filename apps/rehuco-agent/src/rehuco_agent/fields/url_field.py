@@ -5,9 +5,8 @@
 from typing import override
 
 from borco_pyside.widgets import ElidedLabel
-from PySide6.QtWidgets import QWidget
 
-from rehuco_agent.fields.field import FieldBinding
+from rehuco_agent.fields.field import FieldBinding, FieldViewerWidgets
 from rehuco_agent.fields.text_field import TextField
 
 
@@ -26,12 +25,12 @@ class UrlField(TextField):
     TYPE = "url"
 
     @override
-    def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
         label = ElidedLabel()
         label.setOpenExternalLinks(True)
         self.__render(label, binding.value)
         binding.changed.connect(lambda value: self.__render(label, value))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @staticmethod
     def __render(label: ElidedLabel, value: str) -> None:

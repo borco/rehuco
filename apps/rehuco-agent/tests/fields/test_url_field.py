@@ -4,7 +4,8 @@ from borco_pyside.widgets import ElidedLabel
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.url_field import UrlField
+
+from fields.field_testers import UrlFieldTester as UrlField
 
 
 def test_url_field_viewer_is_an_elided_external_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -17,10 +18,10 @@ def test_url_field_viewer_is_an_elided_external_link(qtbot: QtBot, model: RehuDo
     * change ``model.url`` and verify the label follows
     """
     field = UrlField("url")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, ElidedLabel)
     assert viewer.openExternalLinks() is True
     assert viewer.text() == '<a href="https://example.com">https://example.com</a>'
 
@@ -39,10 +40,10 @@ def test_url_field_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDo
     """
     model.url = ""
     field = UrlField("url")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == ""
 
 
@@ -57,10 +58,10 @@ def test_url_field_viewer_escapes_html_in_the_value(qtbot: QtBot, model: RehuDoc
     """
     model.url = 'https://example.com/?a="x"<y>'
     field = UrlField("url")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, ElidedLabel)
     assert "<y>" not in viewer.text()
     assert "&lt;y&gt;" in viewer.text()
 
@@ -70,17 +71,13 @@ def test_url_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocu
 
     **Test steps:**
 
-    * build the ``url`` editor (a single ``QLineEdit``)
+    * build the ``url`` editor (a ``QLineEdit``)
     * set its text and verify ``model.url`` follows
     """
     field = UrlField("url")
-    # pylint: disable=duplicate-code
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    line_edit = editors[0]
-    qtbot.addWidget(line_edit)
+    line_edit = field.make_editor(model.bind(field)).editor
     assert isinstance(line_edit, QLineEdit)
-    # pylint: enable=duplicate-code
+    qtbot.addWidget(line_edit)
 
     line_edit.setText("https://typed.example")
     assert model.url == "https://typed.example"
@@ -97,12 +94,12 @@ def test_url_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot, 
     """
     field = UrlField("url")
     # pylint: disable=duplicate-code
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, QLineEdit)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
     # pylint: enable=duplicate-code
 
     editor.setText("https://live.example")
@@ -122,9 +119,9 @@ def test_url_field_editor_follows_an_external_model_change(qtbot: QtBot, model: 
     * verify the editor text follows
     """
     field = UrlField("url")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
 
     model.url = "https://external.example"
     assert editor.text() == "https://external.example"
@@ -140,9 +137,9 @@ def test_url_field_editor_preserves_the_cursor_when_typing_mid_string(qtbot: QtB
     * verify the character landed at the cursor and the cursor advanced by one (not to the end)
     """
     field = UrlField("url")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
     editor.setText("https://example.com")
     editor.setCursorPosition(8)
 

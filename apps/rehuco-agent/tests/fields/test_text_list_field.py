@@ -3,7 +3,8 @@
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.text_list_field import TextListField
+
+from fields.field_testers import TextListFieldTester as TextListField
 
 
 def test_text_list_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -16,10 +17,10 @@ def test_text_list_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: 
     * set ``model.authors`` and verify the label joins it, comma-separated
     """
     field = TextListField("authors")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.wordWrap() is True
     assert viewer.text() == ""
 
@@ -38,10 +39,10 @@ def test_text_list_field_viewer_deduplicates_for_display(qtbot: QtBot, model: Re
     """
     model.authors = ["Alice", "Bob", "Alice"]
     field = TextListField("authors")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == "Alice, Bob"
     assert model.authors == ["Alice", "Bob", "Alice"]
 
@@ -51,18 +52,14 @@ def test_text_list_field_editor_writes_back_to_the_model(qtbot: QtBot, model: Re
 
     **Test steps:**
 
-    * build the ``authors`` editor (a single ``QLineEdit``)
+    * build the ``authors`` editor (a ``QLineEdit``)
     * type ``"Alice, Bob , "``
     * verify ``model.authors`` holds the trimmed list, dropping the trailing empty entry
     """
     field = TextListField("authors")
-    # pylint: disable=duplicate-code
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    line_edit = editors[0]
-    qtbot.addWidget(line_edit)
+    line_edit = field.make_editor(model.bind(field)).editor
     assert isinstance(line_edit, QLineEdit)
-    # pylint: enable=duplicate-code
+    qtbot.addWidget(line_edit)
 
     line_edit.setText("Alice, Bob , ")
     assert model.authors == ["Alice", "Bob"]
@@ -79,12 +76,12 @@ def test_text_list_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: Q
     """
     field = TextListField("authors")
     # pylint: disable=duplicate-code
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, QLineEdit)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
     # pylint: enable=duplicate-code
 
     editor.setText("Alice, Bob")
@@ -104,9 +101,9 @@ def test_text_list_field_editor_follows_an_external_model_change(qtbot: QtBot, m
     * verify the editor text follows, comma-joined
     """
     field = TextListField("authors")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
 
     model.authors = ["Carol", "Dave"]
     assert editor.text() == "Carol, Dave"
@@ -124,9 +121,9 @@ def test_text_list_field_editor_preserves_the_cursor_when_typing_mid_string(
     * verify the character landed at the cursor and the cursor advanced by one (not to the end)
     """
     field = TextListField("authors")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
     editor.setText("Alice, Bob")
     editor.setCursorPosition(5)
 

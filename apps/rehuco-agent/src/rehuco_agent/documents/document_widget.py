@@ -10,8 +10,9 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
+from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import PathField, build_document_form
+from rehuco_agent.fields import PathField
 from rehuco_agent.fields.widgets import PathEditor
 
 LOCATION_FIELD_NAME: Final = "location"
@@ -64,6 +65,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             on_suggestion_selected=self.__rename_to,
             current_name=lambda: model.current_name,
             suggestions_changed=model.name_suggestions_changed,
+            viewer_tab=VIEWER_TAB,
+            editor_tab=EDITOR_MAIN_TAB,
         )
         form = build_document_form(leading_fields=[location_field])
         # keep the editor widget so save/restore_state can reach the location field's expand toggle

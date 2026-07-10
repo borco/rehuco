@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, Final
 
-from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
+from PySide6.QtWidgets import QGridLayout, QWidget
 
 from rehuco_agent.fields.field import Field, FieldModel
 
@@ -16,9 +16,10 @@ class FieldsForm:
     """Builds a viewer or editor form from an ordered list of fields ([[plugins#field-toolkit]]).
 
     Rows are laid out in a 3-column `QGridLayout` -- **label** | **misc** | **content** -- so a field
-    can place an extra control (the ``path`` field's expand toggle, :meth:`Field.make_misc`) in the
-    middle column between its label and its editor. The label and misc columns take their preferred
-    width and don't grow; the content column takes the remaining width.
+    can place an extra control (the ``path`` field's expand toggle, the ``misc`` slot of its
+    :class:`~rehuco_agent.fields.field.FieldEditorWidgets`) in the middle column between its label and
+    its editor. The label and misc columns take their preferred width and don't grow; the content
+    column takes the remaining width.
 
     :param fields: the fields to lay out, in display order.
     """
@@ -33,35 +34,36 @@ class FieldsForm:
         :returns: a widget whose grid holds one label -> viewer row per field, in order (the misc
             column stays empty in the viewer).
         """
+        # FIXME(#26 stage 2): collapses every field into one grid, ignoring each bundle's tab --
+        # replace with tab-grouped assembly returning one grid per FieldsTab.
         widget = QWidget()
         grid = self.__make_grid(widget)
         for row, field in enumerate(self.__fields):
-            grid.addWidget(QLabel(field.label), row, LABEL_COLUMN)
-            grid.addWidget(field.make_viewer(model.bind(field)), row, CONTENT_COLUMN)
+            widgets = field.make_viewer(model.bind(field))
+            if widgets.label is not None:
+                grid.addWidget(widgets.label, row, LABEL_COLUMN)
+            if widgets.viewer is not None:
+                grid.addWidget(widgets.viewer, row, CONTENT_COLUMN)
         return widget
 
     def make_editor(self, model: FieldModel) -> QWidget:
         """Build a form of editor rows bound to the model.
 
         :param model: the reactive view-model each field resolves its binding against.
-        :returns: a widget whose grid holds each field's editor(s) in the content column; only a
-            field's first editor carries the label and the misc widget (the rest seat the future
-            multi-editor split, A2.6/#26).
+        :returns: a widget whose grid holds one label | misc | editor row per field, in order.
         """
+        # FIXME(#26 stage 2): collapses every field into one grid, ignoring each bundle's tab --
+        # replace with tab-grouped assembly returning one grid per FieldsTab.
         widget = QWidget()
         grid = self.__make_grid(widget)
-        row = 0
-        for field in self.__fields:
-            binding = model.bind(field)
-            editors = field.make_editors(binding)
-            misc = field.make_misc(binding, editors)
-            for index, editor in enumerate(editors):
-                if index == 0:
-                    grid.addWidget(QLabel(field.label), row, LABEL_COLUMN)
-                    if misc is not None:
-                        grid.addWidget(misc, row, MISC_COLUMN)
-                grid.addWidget(editor, row, CONTENT_COLUMN)
-                row += 1
+        for row, field in enumerate(self.__fields):
+            widgets = field.make_editor(model.bind(field))
+            if widgets.label is not None:
+                grid.addWidget(widgets.label, row, LABEL_COLUMN)
+            if widgets.misc is not None:
+                grid.addWidget(widgets.misc, row, MISC_COLUMN)
+            if widgets.editor is not None:
+                grid.addWidget(widgets.editor, row, CONTENT_COLUMN)
         return widget
 
     @staticmethod

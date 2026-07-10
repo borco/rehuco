@@ -3,10 +3,10 @@
 from typing import Final, override
 
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QCheckBox, QLabel, QWidget
+from PySide6.QtWidgets import QCheckBox, QLabel
 
 from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 
 class BooleanField(Field[bool]):
@@ -26,21 +26,21 @@ class BooleanField(Field[bool]):
     WARNING_STYLESHEET: Final = f'QLabel[warning="true"] {{ color: {WARNING_COLOR}; }}'
 
     @override
-    def make_viewer(self, binding: FieldBinding[bool]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[bool]) -> FieldViewerWidgets:
         label = QLabel()
         if self.name in self.WARN_WHEN_FALSE:
             label.setStyleSheet(self.WARNING_STYLESHEET)
         self.__render(label, binding.value)
         binding.changed.connect(lambda value: self.__render(label, value))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[bool]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[bool]) -> FieldEditorWidgets:
         checkbox = QCheckBox()
         checkbox.setChecked(binding.value)
         checkbox.toggled.connect(binding.set_value)
         binding.changed.connect(lambda value: self.__echo(checkbox, value))
-        return [checkbox]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), checkbox)
 
     def __render(self, label: QLabel, value: bool) -> None:
         """Show ``Yes``/``No`` and flag the warning state so the stylesheet can repaint it.

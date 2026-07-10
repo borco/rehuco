@@ -4,7 +4,9 @@ from borco_pyside.widgets import Rating
 from PySide6.QtWidgets import QSlider
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.rating_field import POSITIVE_STAR_GLYPH, RatingField
+from rehuco_agent.fields.rating_field import POSITIVE_STAR_GLYPH
+
+from fields.field_testers import RatingFieldTester as RatingField
 
 
 def label_text(rating: Rating) -> str:
@@ -26,9 +28,9 @@ def test_rating_field_viewer_is_a_rating_widget_tracking_the_model(qtbot: QtBot,
     * set the model to a positive rating and verify the star glyph count follows
     """
     field = RatingField("rating")
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(viewer)
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, Rating)
+    qtbot.addWidget(viewer)
 
     assert label_text(viewer) == ""
 
@@ -41,13 +43,13 @@ def test_rating_field_editor_writes_back_a_negative_value(qtbot: QtBot, model: R
 
     **Test steps:**
 
-    * build the ``rating`` editor (a single ``QSlider``)
+    * build the ``rating`` editor (a ``QSlider``)
     * set a negative value and verify ``model.rating`` follows
     """
     field = RatingField("rating")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QSlider)
+    qtbot.addWidget(editor)
 
     editor.setValue(-2)
     assert model.rating == -2
@@ -63,12 +65,12 @@ def test_rating_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBo
     * verify the viewer reflects it and the slider still holds the value once (no echo loop)
     """
     field = RatingField("rating")
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, QSlider)
     assert isinstance(viewer, Rating)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
 
     editor.setValue(4)
 
@@ -87,9 +89,9 @@ def test_rating_field_editor_follows_an_external_model_change(qtbot: QtBot, mode
     * verify the slider follows
     """
     field = RatingField("rating")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QSlider)
+    qtbot.addWidget(editor)
 
     model.rating = -3
     assert editor.value() == -3
@@ -104,9 +106,9 @@ def test_rating_field_editor_defaults_to_minus_five_to_five(qtbot: QtBot, model:
     * verify the slider's actual range is ``-5``..``5``
     """
     field = RatingField("rating")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QSlider)
+    qtbot.addWidget(editor)
 
     assert editor.minimum() == -5
     assert editor.maximum() == 5
@@ -121,9 +123,9 @@ def test_rating_field_editor_honors_an_explicit_range(qtbot: QtBot, model: RehuD
     * verify the slider's actual range matches the explicit values, not the ``-5``/``5`` default
     """
     field = RatingField("rating", minimum=-2, maximum=3)
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QSlider)
+    qtbot.addWidget(editor)
 
     assert editor.minimum() == -2
     assert editor.maximum() == 3
