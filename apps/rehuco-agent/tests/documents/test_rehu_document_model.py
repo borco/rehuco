@@ -1,7 +1,9 @@
 """Tests for the RehuDocumentModel reactive view-model."""
 
+import logging
 from pathlib import Path
 
+import pytest
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -61,6 +63,232 @@ def test_model_seeds_empty_from_a_sourceless_document() -> None:
     assert model.publisher == ""
     assert model.url == ""
     assert model.dirty is False
+
+
+def test_model_seeds_location_from_the_document_path() -> None:
+    """``location`` seeds from the document's file path, as a posix string.
+
+    **Test steps:**
+
+    * construct a model over a document loaded with an explicit path
+    * verify ``model.location`` mirrors it
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/foo/info.rehu"))
+    model = RehuDocumentModel(document)
+
+    assert model.location == "C:/tutorials/foo/info.rehu"
+
+
+def test_model_seeds_location_empty_when_the_document_has_no_path(model: RehuDocumentModel) -> None:
+    """A pathless document (the shared fixture) seeds ``location`` empty.
+
+    **Test steps:**
+
+    * read ``model.location`` off the shared fixture, which has no path
+    * verify it is empty
+    """
+    assert model.location == ""
+
+
+def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``location`` (as the viewer binding does) never touches the document or dirties the model.
+
+    ``location`` mirrors the file path for the viewer; it isn't a document field. Rename-on-disk is
+    the separate :meth:`rename_location` path, deferred to A5 (#25).
+
+    **Test steps:**
+
+    * set ``model.location`` to a new value
+    * verify the document's path is unchanged and the model stays clean
+    """
+    model.location = "C:/tutorials/bar/info.rehu"
+
+    assert document.path is None
+    assert model.dirty is False
+
+
+def test_rename_location_always_fails_and_logs_an_error(
+    caplog: pytest.LogCaptureFixture, model: RehuDocumentModel
+) -> None:
+    """``rename_location`` always fails for now (the real move is deferred to A5), logging an error.
+
+    **Test steps:**
+
+    * call ``rename_location`` on a clean model
+    * verify it returns ``False`` and an error is logged
+    """
+    with caplog.at_level(logging.INFO):
+        result = model.rename_location("new_name")
+
+    assert result is False
+    assert any(record.levelno == logging.ERROR for record in caplog.records)
+
+
+def test_rename_location_logs_the_attempt_before_the_move_fails(
+    caplog: pytest.LogCaptureFixture, model: RehuDocumentModel
+) -> None:
+    """The attempt is logged before the (always-failing) move is even tried.
+
+    **Test steps:**
+
+    * call ``rename_location``
+    * verify an info-level "attempting" log precedes the error-level failure log
+    """
+    with caplog.at_level(logging.INFO):
+        model.rename_location("new_name")
+
+    levels = [record.levelno for record in caplog.records]
+    assert logging.INFO in levels
+    assert logging.ERROR in levels
+    assert levels.index(logging.INFO) < levels.index(logging.ERROR)
+
+
+def test_rename_location_saves_first_when_dirty(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """A dirty model is saved before the move is attempted, so the file being moved isn't stale.
+
+    **Test steps:**
+
+    * dirty the model, then patch ``save``
+    * call ``rename_location``
+    * verify ``save`` was called
+    """
+    model.title = "New Title"
+    assert model.dirty is True
+    save = mocker.patch.object(model, "save")
+
+    model.rename_location("new_name")
+
+    save.assert_called_once()
+
+
+def test_rename_location_does_not_save_when_clean(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """A clean model is not saved before attempting the move -- there is nothing to save.
+
+    **Test steps:**
+
+    * patch ``save`` on a clean model
+    * call ``rename_location``
+    * verify ``save`` was not called
+    """
+    assert model.dirty is False
+    save = mocker.patch.object(model, "save")
+
+    model.rename_location("new_name")
+
+    save.assert_not_called()
+
+
+def test_rename_location_returns_whether_the_move_succeeded(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """``rename_location`` returns the (deferred) move's result -- ``True`` when it would succeed.
+
+    The move itself always fails today (#25/A5) and owns committing :attr:`location`; this drives the
+    success branch by patching the private move to report success.
+
+    **Test steps:**
+
+    * patch the private move to report success
+    * call ``rename_location`` and verify it returns ``True``
+    """
+    move = mocker.patch.object(model, "_RehuDocumentModel__move", return_value=True)
+
+    result = model.rename_location("new_name")
+
+    assert result is True
+    move.assert_called_once_with("new_name")
+
+
+@mark.parametrize(
+    ("path", "expected"),
+    [
+        param("C:/tutorials/some_folder/info.rehu", "some_folder", id="info.rehu-uses-parent-dir"),
+        param("C:/tutorials/my_tutorial.rehu", "my_tutorial", id="standalone-uses-file-stem"),
+    ],
+)
+def test_current_name_is_the_rename_target(path: str, expected: str) -> None:
+    """``current_name`` is the folder name for ``info.rehu``, the file stem otherwise.
+
+    **Test steps:**
+
+    * build a model over a document at ``path``
+    * verify ``current_name`` is the expected rename-target name
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path(path)))
+
+    assert model.current_name == expected
+
+
+def test_current_name_is_empty_without_a_path(model: RehuDocumentModel) -> None:
+    """A pathless document has no current name.
+
+    **Test steps:**
+
+    * read ``current_name`` off the pathless fixture model
+    * verify it is empty
+    """
+    assert model.current_name == ""
+
+
+def test_name_suggestions_interpolate_the_record_fields() -> None:
+    """``name_suggestions`` formats the patterns from title / publisher / joined authors / released year.
+
+    **Test steps:**
+
+    * build a model with a title, publisher, two authors, and a released date
+    * verify each pattern is interpolated from those fields
+    """
+    document = RehuDocument(
+        {
+            "type": "Tutorial",
+            "sources": [{"title": "Intro", "publisher": "Acme", "primary": True}],
+            "authors": ["Jane", "John"],
+            "released": "2025-03",
+        }
+    )
+    model = RehuDocumentModel(document)
+
+    assert model.name_suggestions() == [
+        "Intro",
+        "Acme - Intro",
+        "Intro [2025]",
+        "Jane, John - Intro",
+    ]
+
+
+@mark.parametrize(
+    "attr", [param("title", id="title"), param("authors", id="authors"), param("released", id="released")]
+)
+def test_name_suggestions_changed_fires_when_a_source_field_changes(attr: str, model: RehuDocumentModel) -> None:
+    """``name_suggestions_changed`` fires when a field the suggestions are built from changes.
+
+    **Test steps:**
+
+    * connect to ``name_suggestions_changed``
+    * change one of the source fields (title / authors / released)
+    * verify the signal fired
+    """
+    fired: list[bool] = []
+    model.name_suggestions_changed.connect(lambda: fired.append(True))
+
+    setattr(model, attr, ["Someone"] if attr == "authors" else "changed")
+
+    assert fired == [True]
+
+
+def test_name_suggestions_changed_does_not_fire_for_unrelated_fields(model: RehuDocumentModel) -> None:
+    """A change to a field the suggestions don't use doesn't fire ``name_suggestions_changed``.
+
+    **Test steps:**
+
+    * connect to ``name_suggestions_changed``
+    * change an unrelated field (``rating``)
+    * verify the signal did not fire
+    """
+    fired: list[bool] = []
+    model.name_suggestions_changed.connect(lambda: fired.append(True))
+
+    model.rating = 4
+
+    assert not fired
 
 
 def test_setting_title_emits_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
@@ -350,6 +578,25 @@ def test_revert_reseeds_type_fields_too(
     assert model.rating == -3
 
 
+def test_revert_reseeds_location_from_the_document_path(mocker: MockerFixture) -> None:
+    """revert() reseeds ``location`` from the document's path, discarding an in-memory change.
+
+    **Test steps:**
+
+    * build a model over a document with a path, then change ``location`` in memory to something else
+    * mock ``reload`` as a no-op (the path stays)
+    * call ``model.revert()`` and verify ``location`` snaps back to the document's path
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/foo/info.rehu"))
+    model = RehuDocumentModel(document)
+    model.location = "C:/edited/elsewhere"
+    mocker.patch.object(document, "reload")
+
+    model.revert()
+
+    assert model.location == "C:/tutorials/foo/info.rehu"
+
+
 def test_revert_does_not_write_back_to_a_sourceless_document(mocker: MockerFixture) -> None:
     """Reseeding during revert is guarded: it doesn't synthesize a primary source on a document with none.
 
@@ -498,13 +745,15 @@ def test_model_seeds_type_field_defaults_when_block_is_absent(model: RehuDocumen
     **Test steps:**
 
     * construct a model over a document with no ``tutorial`` block
-    * verify ``complete`` defaults true, the other flags false, rating/images_count zero, and it is clean
+    * verify ``complete`` defaults true, the other flags false, rating/images_count zero, level
+      empty, and it is clean
     """
     assert model.complete is True
     assert model.online is False
     assert model.favorite is False
     assert model.rating == 0
     assert model.images_count == 0
+    assert model.level == []
     assert model.dirty is False
 
 
@@ -601,6 +850,51 @@ def test_setting_duration_fields_writes_through_to_the_type_fields(
     model.original_duration = 8100
 
     assert document.type_field("original_duration") == 8100
+
+
+def test_model_seeds_level_from_the_document() -> None:
+    """``level`` seeds from the document's ``type``-keyed plugin block as a list.
+
+    **Test steps:**
+
+    * construct a model over a document whose ``tutorial`` block carries a multi-valued ``level``
+    * verify the model mirrors it
+    """
+    document = RehuDocument({"type": "Tutorial", "tutorial": {"level": ["beginner", "intermediate"]}})
+    model = RehuDocumentModel(document)
+
+    assert model.level == ["beginner", "intermediate"]
+
+
+def test_model_coerces_malformed_level_to_the_default() -> None:
+    """A non-list or mixed-type ``level`` coerces to the default, dropping only the bad items (#35).
+
+    **Test steps:**
+
+    * construct a model whose ``tutorial`` block holds a non-list ``level``
+    * verify it coerces to empty rather than crashing
+    * construct another model whose ``level`` list mixes strings with a non-string item
+    * verify only the string items survive
+    """
+    non_list_document = RehuDocument({"type": "Tutorial", "tutorial": {"level": "beginner"}})
+    assert RehuDocumentModel(non_list_document).level == []
+
+    mixed_document = RehuDocument({"type": "Tutorial", "tutorial": {"level": ["beginner", 3]}})
+    assert RehuDocumentModel(mixed_document).level == ["beginner"]
+
+
+def test_setting_level_writes_through_to_the_type_fields(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``level`` writes through to the document's plugin block and marks dirty.
+
+    **Test steps:**
+
+    * set ``model.level`` to two values
+    * verify the document's ``tutorial`` block holds them, and the model is dirty
+    """
+    model.level = ["advanced", "any"]
+
+    assert document.type_field("level") == ["advanced", "any"]
+    assert model.dirty is True
 
 
 def test_create_new_without_a_path_is_clean() -> None:

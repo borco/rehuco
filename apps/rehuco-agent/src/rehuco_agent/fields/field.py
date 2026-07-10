@@ -91,6 +91,20 @@ class Field[T]:
         """
         raise NotImplementedError
 
+    def make_misc(self, binding: FieldBinding[T], editors: list[QWidget]) -> QWidget | None:
+        """Build an optional widget for the editor form's **misc** column, between the label and the
+        editor ([[plugins#field-toolkit]]) -- e.g. the ``path`` field's expand/collapse toggle.
+
+        Receives the already-built ``editors`` so it can wire to them (the toggle drives its
+        `PathEditor`'s expand state). Most fields have no misc widget and return ``None`` (the base
+        default), leaving that column empty for the row.
+
+        :param binding: the resolved value/signal/setter for this field.
+        :param editors: the widgets :meth:`make_editors` just returned for this field.
+        :returns: the misc widget, or ``None`` for none (the base default).
+        """
+        del binding, editors  # interface params, unused by the base (no misc widget)
+
     @staticmethod
     def make_label(name: str) -> str:
         """Derive a display label from a field name (``foo_bar`` / ``FooBar`` -> ``Foo Bar``).
