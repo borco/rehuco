@@ -32,6 +32,7 @@ class TextListField(Field[list[str]]):
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> QWidget:
         label = QLabel(self.__display(binding.value))
+        label.setWordWrap(True)
         binding.changed.connect(lambda value: label.setText(self.__display(value)))
         return label
 

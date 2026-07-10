@@ -20,6 +20,7 @@ def test_text_list_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: 
     qtbot.addWidget(viewer)
 
     assert isinstance(viewer, QLabel)
+    assert viewer.wordWrap() is True
     assert viewer.text() == ""
 
     model.authors = ["Alice", "Bob"]

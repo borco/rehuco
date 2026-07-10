@@ -18,6 +18,7 @@ class TextField(Field[str]):
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
         label = QLabel(binding.value)
+        label.setWordWrap(True)
         binding.changed.connect(label.setText)
         return label
 

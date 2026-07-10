@@ -20,6 +20,7 @@ def test_text_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuD
     qtbot.addWidget(viewer)
 
     assert isinstance(viewer, QLabel)
+    assert viewer.wordWrap() is True
     assert viewer.text() == "Foo"
 
     model.title = "Changed"
