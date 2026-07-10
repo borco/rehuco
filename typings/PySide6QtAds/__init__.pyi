@@ -25,6 +25,9 @@ CenterDockWidgetArea: DockWidgetArea
 RightDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the right of the reference area."""
 
+LeftDockWidgetArea: DockWidgetArea
+"""Docks in a new area split off to the left of the reference area."""
+
 class TitleBarButton:
     """Selector for `CDockAreaWidget.titleBarButton` (e.g. `TitleBarButtonTabsMenu`)."""
 

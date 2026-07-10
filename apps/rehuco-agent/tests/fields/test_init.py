@@ -5,17 +5,27 @@
 
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_fields import build_document_form
+from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields.field import FieldsTab
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
+from rehuco_agent.fields.text_field import TextField
 
-from fields.field_testers import TextFieldTester as TextField
+
+def sole_grid_widget(grids: dict[FieldsTab, QWidget]) -> QWidget:
+    """Return the single tab's grid widget (the document form uses one editor tab).
+
+    :param grids: the ``{tab: grid}`` mapping from ``FieldsForm.make_editor``.
+    :returns: the sole grid widget.
+    """
+    assert len(grids) == 1
+    return next(iter(grids.values()))
 
 
 def form_labels(widget: QWidget) -> list[str]:
     """Return the label-column text of every row in a form's grid, top to bottom.
 
-    :param widget: the form widget built by ``build_document_form``.
+    :param widget: the form grid widget built by ``build_document_form``.
     :returns: each row's label text, in order.
     """
     layout = widget.layout()
@@ -40,7 +50,7 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
     * build the document form's editor with no leading fields
     * verify it has the configured rows in declaration order
     """
-    widget = build_document_form().make_editor(model)
+    widget = sole_grid_widget(build_document_form().make_editor(model))
     qtbot.addWidget(widget)
 
     assert form_labels(widget) == [
@@ -70,12 +80,15 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
 def test_build_document_form_places_leading_fields_first(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """Leading fields are laid out before the record fields, in order.
 
+    The leading field shares the record fields' editor tab, so they land in the same grid.
+
     **Test steps:**
 
-    * build the form with a leading text field
+    * build the form with a leading text field on the main editor tab
     * verify its label comes before the first record field's label
     """
-    widget = build_document_form(leading_fields=[TextField("location")]).make_editor(model)
+    leading = TextField("location", viewer_tab=VIEWER_TAB, editor_tab=EDITOR_MAIN_TAB)
+    widget = sole_grid_widget(build_document_form(leading_fields=[leading]).make_editor(model))
     qtbot.addWidget(widget)
 
     labels = form_labels(widget)

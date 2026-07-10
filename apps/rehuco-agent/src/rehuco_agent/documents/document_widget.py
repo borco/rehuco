@@ -1,4 +1,4 @@
-"""Per-document viewer/editor surfaces over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
+"""Per-document viewer/editor docks over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
 from typing import Any, Final
 
@@ -12,29 +12,35 @@ from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import PathField
+from rehuco_agent.fields import FieldsTab, PathField
 from rehuco_agent.fields.widgets import PathEditor
 
 LOCATION_FIELD_NAME: Final = "location"
+
+STATE_VERSION_KEY: Final = "version"
+STATE_VERSION: Final = 1
+"""Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
+object name, so any change to the docks (names, count, which tabs exist) makes an older blob
+incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
+on any such change; :meth:`DocumentWidget.restore_state` ignores a blob whose version differs, keeping
+the default (all-visible) layout instead."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
 STATE_PATH_FIELD_EXPANDED_KEY: Final = "path_field_expanded"
 
-VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
-EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
-    """One open document's **viewer** and **editor** surfaces, each in its own dock ([[plugins#viewer-editor-both]]).
+    """One open document's **viewer** and **editor**, each in its own dock ([[plugins#viewer-editor-both]]).
 
     Both docks are built once, from the same :class:`RehuDocumentModel`, and stay live regardless of
     which are currently visible -- toggling a dock only hides/shows it, so an edit in the (possibly
     hidden) editor still reaches the (possibly hidden) viewer through the model's signals, making
-    "both" work even when only one surface is on screen. Carries the closed-dock-size workaround
+    "both" work even when only one is on screen. Carries the closed-dock-size workaround
     ([[packaging-deployment#qml-regression]]): `CDockManager.splitterSizes` are stashed on
     ``viewToggled(False)`` -- confirmed, against this QtAds version, to still fire with the area at
     its pre-hide size, unlike ``closeRequested`` (never emitted by a toggle-hide; that signal is
@@ -47,7 +53,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     unconditionally: it is also how a clean document picks up a change made outside this app, not
     just how a dirty one discards in-memory edits.
 
-    :param model: the reactive view-model this document's surfaces bind to.
+    :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
     """
 
@@ -69,15 +75,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             editor_tab=EDITOR_MAIN_TAB,
         )
         form = build_document_form(leading_fields=[location_field])
-        # keep the editor widget so save/restore_state can reach the location field's expand toggle
-        self.__editor_widget: Final = form.make_editor(model)
-        viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
-        editor_dock = self.__make_dock("editor", "Editor", self.__editor_widget, QtAds.RightDockWidgetArea)
-
-        self.__viewer_action: Final = viewer_dock.toggleViewAction()
-        ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
-        self.__editor_action: Final = editor_dock.toggleViewAction()
-        ActionIconThemeHandler(self.__editor_action, EDITOR_ICON_RESOURCE)
+        # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
+        self.__editor_docks: Final = self.__add_docks(form.make_editor(model), "editor", QtAds.LeftDockWidgetArea)
+        self.__viewer_docks: Final = self.__add_docks(form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -103,8 +103,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
-        toolbar.addAction(self.__viewer_action)
-        toolbar.addAction(self.__editor_action)
+        for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values()):
+            toolbar.addAction(dock.toggleViewAction())
 
     @property
     def model(self) -> RehuDocumentModel:
@@ -121,18 +121,21 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """Discards in-memory edits and reloads the document from disk (#41)."""
         return self.__revert_action
 
-    @property
-    def viewer_action(self) -> QAction:
-        """Toggles the viewer dock's visibility."""
-        return self.__viewer_action
+    def toggle_action(self, tab: FieldsTab) -> QAction:
+        """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
 
-    @property
-    def editor_action(self) -> QAction:
-        """Toggles the editor dock's visibility."""
-        return self.__editor_action
+        :param tab: the tab whose dock to toggle.
+        :returns: that dock's checkable toggle action.
+        :raises KeyError: if no dock hosts ``tab``.
+        """
+        dock = self.__viewer_docks.get(tab) or self.__editor_docks.get(tab)
+        if dock is None:
+            raise KeyError(tab)
+        # no-member: astroid mis-infers the CDockWidget value (QtAds is a C extension)
+        return dock.toggleViewAction()  # pylint: disable=no-member
 
     def save_state(self) -> bytes:
-        """Serialize this document's dock layout (visible surfaces, splitter sizes) and each
+        """Serialize this document's dock layout (visible docks, splitter sizes) and each
         `PathField`'s expand state for persistence.
 
         The path-field expand state rides along here -- persisted per ``.rehu`` together with the tab
@@ -143,6 +146,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         return cbor2.dumps(
             {
+                STATE_VERSION_KEY: STATE_VERSION,
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
                 STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
@@ -157,13 +161,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param state: the cbor2-encoded state to restore.
         :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
-            ``state`` was empty, malformed, or not in the expected shape.
+            ``state`` was empty, malformed, not in the expected shape, or of an incompatible
+            :data:`STATE_VERSION` (in which case the default layout is kept).
         """
         try:
             values: Any = cbor2.loads(state)
         except cbor2.CBORDecodeError:
             return False
         if not isinstance(values, dict):
+            return False
+        # An incompatible (e.g. pre-rename) blob would restore cleanly but hide the current docks,
+        # leaving a blank window -- ignore it and keep the default all-visible layout instead.
+        if values.get(STATE_VERSION_KEY) != STATE_VERSION:
             return False
 
         stashed_sizes = values.get(STATE_STASHED_SIZES_KEY)
@@ -183,7 +192,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         finally:
             self.__restoring_layout = False
         if restored:
-            # re-select the surface that was current -- restoreState above only recovers the current
+            # re-select the dock that was current -- restoreState above only recovers the current
             # tab within each area, not which of two split (viewer/editor) areas actually had focus
             current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
             if isinstance(current_dock_state, bytes):
@@ -199,14 +208,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return restored
 
     def __path_editors(self) -> list[PathEditor]:
-        """The editor form's `PathEditor` widgets, each named after its field.
+        """The editor docks' `PathEditor` widgets, each named after its field.
 
-        Found by type rather than by holding references, so this stays decoupled from how
-        `FieldsForm` lays the editor out.
+        Found by type across the dock manager rather than by holding references, so this stays
+        decoupled from how `FieldsForm` lays the editors out.
 
-        :returns: the `PathEditor` widgets under the editor surface.
+        :returns: the `PathEditor` widgets under the editor docks.
         """
-        return self.__editor_widget.findChildren(PathEditor)
+        return self.__dock_manager.findChildren(PathEditor)
 
     def __rename_to(self, new_name: str) -> None:
         """Rename the resource to a clicked suggestion's name (delegated to the model).
@@ -225,7 +234,30 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__save_action.setEnabled(dirty)
 
-    def __make_dock(self, name: str, title: str, widget: QWidget, position: QtAds.DockWidgetArea) -> QtAds.CDockWidget:
+    def __add_docks(
+        self, grids: dict[FieldsTab, QWidget], kind: str, position: QtAds.DockWidgetArea
+    ) -> dict[FieldsTab, QtAds.CDockWidget]:
+        """Build one dock per tab, stacked together into a single area at ``position``, theming each
+        dock's toggle action from the tab's SVG icon.
+
+        :param grids: the ``{tab: grid widget}`` mapping (from `FieldsForm`).
+        :param kind: ``"viewer"`` or ``"editor"`` -- namespaces the dock object names.
+        :param position: the dock area the first tab opens into; later tabs stack into it.
+        :returns: the built docks, keyed by tab.
+        """
+        docks: dict[FieldsTab, QtAds.CDockWidget] = {}
+        area: QtAds.CDockAreaWidget | None = None
+        for tab, widget in grids.items():
+            dock = self.__make_dock(f"{kind}:{tab.text}", tab.text, widget)
+            if area is None:
+                area = self.__dock_manager.addDockWidget(position, dock)
+            else:
+                self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
+            ActionIconThemeHandler(dock.toggleViewAction(), tab.icon)
+            docks[tab] = dock
+        return docks
+
+    def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)
         dock.setObjectName(name)
         dock_features = QtAds.CDockWidget.DockWidgetFeature
@@ -237,8 +269,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         dock.setWidget(widget)
         dock.viewToggled.connect(lambda visible: self.__on_view_toggled(dock, visible))
-
-        self.__dock_manager.addDockWidget(position, dock)
         return dock
 
     def __on_view_toggled(self, dock: QtAds.CDockWidget, visible: bool) -> None:
