@@ -77,6 +77,26 @@ The toolkit lives in the **agent** (`apps/rehuco-agent/…/fields/`); `rehuco-co
 **Where each type's ordered field list is authored is not yet decided** — see the open question
 ([[appendices.open-questions#still-open]]). For A2.0 the tracer's field list is a hardcoded Python constant.
 
+**Content fields vs. the location control — two different categories.** Almost every field is a piece of
+**content**: a value stored *inside* the `.rehu` payload, bound bidirectionally to its editor. These
+follow a **value-widget contract** — a `value` property, a `value_changed` signal, and a `set_value`
+slot (as `DurationEdit` / `FileSizeEdit` / `DateEdit` already do) — and a scalar-or-list value fits it
+directly (a multi-choice field is just `value: list[str]` + `value_changed`). Consolidating the
+remaining content fields onto this contract (e.g. `text`'s inline `QLineEdit` becoming a value widget
+that owns the echo guard) is A2.8/#28. The **`path` field is not
+content**: it controls the resource's **identity** — the `.rehu`'s file name and possibly its parent
+directory — not anything written into the payload. It rides the same `FieldsForm` purely for layout
+convenience (label + middle control column + row alignment), which is why its owner constructs it out-of-band as a
+*leading field* rather than from the type's field list. Its interface is therefore **not** a value: it is
+a **command out** (a chosen name — `suggestion_clicked(str)`) plus **display-only inputs** (the
+suggestions to show and the current name); its `location` display is a read-only projection of the path
+that only changes when a rename actually succeeds (deferred to A5). So the value-widget contract is the
+default for content fields, and the `path` field is not an exception to it but a different kind of
+object outside its scope. The suggestions it displays are still derived from content fields
+(`title` / `publisher` / …), so the naming domain logic belongs in a dedicated suggestion source, not in
+the widget — the three roles stay separate: **compute** (a name-suggestion model) → **present/command**
+(the `path` field) → **execute** (the view-model's rename).
+
 **Fields compose — groups, lists, and nesting.** Beyond leaf fields (text, switch, …), a **group
 field** is an ordered set of **subtype** fields, and a **list field** is a repeatable group. A
 composite is configured declaratively: the admin names a **group** and lists the **subtypes** that

@@ -179,7 +179,9 @@ was to
   folders) could define different field sets for the same type — one machine/root's "Tutorial" need not
   match another's. For A2.0 the field list is simply a **hardcoded Python constant**, parsed at app
   start; moving it into `.rehuco` (or an `.ini`, edited via a future fields-editor view) is deferred
-  until it's actually needed, not designed now.
+  until it's actually needed, not designed now. Note this concerns **content** fields only: the `path`
+  field is a location control, not a payload value, and is authored out-of-band regardless of where
+  content field lists end up living ([[plugins#field-toolkit]]'s content-vs-location distinction).
 - **Borrow automation** — manual vs. automated power-down of the source box is unresolved
   ([[borrowing#another-instance-role]]).
 - **Code-signing / notarization** (Apple Developer ID, Windows certificate) — an unpriced prerequisite for shipping
