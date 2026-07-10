@@ -11,11 +11,15 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import build_document_form
+from rehuco_agent.fields import PathField, build_document_form
+from rehuco_agent.fields.widgets import PathEditor
+
+LOCATION_FIELD_NAME: Final = "location"
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
+STATE_PATH_FIELD_EXPANDED_KEY: Final = "path_field_expanded"
 
 VIEWER_ICON_RESOURCE: Final = ":/icons/document_viewer.svg"
 EDITOR_ICON_RESOURCE: Final = ":/icons/document_editor_main.svg"
@@ -54,9 +58,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
-        form = build_document_form()
+        location_field = PathField(
+            LOCATION_FIELD_NAME,
+            suggestions=model.name_suggestions,
+            on_suggestion_selected=self.__rename_to,
+            current_name=lambda: model.current_name,
+            suggestions_changed=model.name_suggestions_changed,
+        )
+        form = build_document_form(leading_fields=[location_field])
+        # keep the editor widget so save/restore_state can reach the location field's expand toggle
+        self.__editor_widget: Final = form.make_editor(model)
         viewer_dock = self.__make_dock("viewer", "Viewer", form.make_viewer(model), QtAds.CenterDockWidgetArea)
-        editor_dock = self.__make_dock("editor", "Editor", form.make_editor(model), QtAds.RightDockWidgetArea)
+        editor_dock = self.__make_dock("editor", "Editor", self.__editor_widget, QtAds.RightDockWidgetArea)
 
         self.__viewer_action: Final = viewer_dock.toggleViewAction()
         ActionIconThemeHandler(self.__viewer_action, VIEWER_ICON_RESOURCE)
@@ -116,7 +129,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return self.__editor_action
 
     def save_state(self) -> bytes:
-        """Serialize this document's dock layout (visible surfaces, splitter sizes) for persistence.
+        """Serialize this document's dock layout (visible surfaces, splitter sizes) and each
+        `PathField`'s expand state for persistence.
+
+        The path-field expand state rides along here -- persisted per ``.rehu`` together with the tab
+        layout, not in a separate global settings section (#25).
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`
             (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
@@ -126,6 +143,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
                 STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
+                STATE_PATH_FIELD_EXPANDED_KEY: {
+                    editor.objectName(): editor.expanded for editor in self.__path_editors()
+                },
             }
         )
 
@@ -165,7 +185,32 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             current_dock_state = values.get(STATE_CURRENT_DOCK_KEY, b"")
             if isinstance(current_dock_state, bytes):
                 self.__tracker.restore_state(current_dock_state)
+
+        expanded = values.get(STATE_PATH_FIELD_EXPANDED_KEY)
+        if isinstance(expanded, dict):
+            editors = {editor.objectName(): editor for editor in self.__path_editors()}
+            for name, was_expanded in expanded.items():
+                editor = editors.get(name)
+                if editor is not None:
+                    editor.expanded = bool(was_expanded)
         return restored
+
+    def __path_editors(self) -> list[PathEditor]:
+        """The editor form's `PathEditor` widgets, each named after its field.
+
+        Found by type rather than by holding references, so this stays decoupled from how
+        `FieldsForm` lays the editor out.
+
+        :returns: the `PathEditor` widgets under the editor surface.
+        """
+        return self.__editor_widget.findChildren(PathEditor)
+
+    def __rename_to(self, new_name: str) -> None:
+        """Rename the resource to a clicked suggestion's name (delegated to the model).
+
+        :param new_name: the sanitized suggestion name that was clicked.
+        """
+        self.__model.rename_location(new_name)
 
     def __on_dirty_changed(self, dirty: bool) -> None:
         """Enable save only while the model holds unsaved edits -- there is nothing to save otherwise.
