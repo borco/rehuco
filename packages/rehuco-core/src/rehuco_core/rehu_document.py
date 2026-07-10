@@ -284,3 +284,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def description(self) -> str:
         """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent."""
         return str(self.__data.get("description", ""))
+
+    @description.setter
+    def description(self, value: str) -> None:
+        self.__data["description"] = value

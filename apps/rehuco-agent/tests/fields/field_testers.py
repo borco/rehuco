@@ -11,6 +11,7 @@ from typing import Any
 
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import Field, FieldsTab
 from rehuco_agent.fields.file_size_field import FileSizeField
@@ -105,6 +106,13 @@ class MultipleChoiceFieldTester(MultipleChoiceField):
 
 class PathFieldTester(PathField):
     """`PathField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class DescriptionFieldTester(DescriptionField):
+    """`DescriptionField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

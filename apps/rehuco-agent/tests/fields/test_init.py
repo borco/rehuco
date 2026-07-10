@@ -5,21 +5,15 @@
 
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
+from rehuco_agent.documents.document_fields import (
+    EDITOR_DESCRIPTION_TAB,
+    EDITOR_MAIN_TAB,
+    VIEWER_TAB,
+    build_document_form,
+)
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import FieldsTab
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
 from rehuco_agent.fields.text_field import TextField
-
-
-def sole_grid_widget(grids: dict[FieldsTab, QWidget]) -> QWidget:
-    """Return the single tab's grid widget (the document form uses one editor tab).
-
-    :param grids: the ``{tab: grid}`` mapping from ``FieldsForm.make_editor``.
-    :returns: the sole grid widget.
-    """
-    assert len(grids) == 1
-    return next(iter(grids.values()))
 
 
 def form_labels(widget: QWidget) -> list[str]:
@@ -39,21 +33,28 @@ def form_labels(widget: QWidget) -> list[str]:
     return texts
 
 
-def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """build_document_form composes the configured record fields -- text, flags, rating, level, tags -- in order.
+def test_build_document_form_puts_record_fields_on_the_main_editor_and_description_on_its_own_tab(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """build_document_form composes the record fields on the main editor tab, in declaration order, and
+    the Markdown ``description`` on its own editor tab.
 
     The special ``location`` field is not part of ``DOCUMENT_FIELD_SPECS`` (its owner threads it in as
     a leading field), so it does not appear here.
 
     **Test steps:**
 
-    * build the document form's editor with no leading fields
-    * verify it has the configured rows in declaration order
+    * build the document form's editor grids with no leading fields
+    * verify the main editor tab has the configured rows in declaration order
+    * verify the description lands on its own editor tab
     """
-    widget = sole_grid_widget(build_document_form().make_editor(model))
-    qtbot.addWidget(widget)
+    grids = build_document_form().make_editor(model)
+    main = grids[EDITOR_MAIN_TAB]
+    description = grids[EDITOR_DESCRIPTION_TAB]
+    qtbot.addWidget(main)
+    qtbot.addWidget(description)
 
-    assert form_labels(widget) == [
+    assert form_labels(main) == [
         "Title",
         "Authors",
         "Released",
@@ -75,12 +76,12 @@ def test_build_document_form_uses_the_configured_field_list(qtbot: QtBot, model:
         "Advertised Tags",
         "Extra Tags",
     ]
+    # the description editor carries no row label -- its own dock tab ("Description") already names it
+    assert not form_labels(description)
 
 
 def test_build_document_form_places_leading_fields_first(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Leading fields are laid out before the record fields, in order.
-
-    The leading field shares the record fields' editor tab, so they land in the same grid.
+    """Leading fields are laid out before the record fields on the main editor tab, in order.
 
     **Test steps:**
 
@@ -88,9 +89,9 @@ def test_build_document_form_places_leading_fields_first(qtbot: QtBot, model: Re
     * verify its label comes before the first record field's label
     """
     leading = TextField("location", viewer_tab=VIEWER_TAB, editor_tab=EDITOR_MAIN_TAB)
-    widget = sole_grid_widget(build_document_form(leading_fields=[leading]).make_editor(model))
-    qtbot.addWidget(widget)
+    main = build_document_form(leading_fields=[leading]).make_editor(model)[EDITOR_MAIN_TAB]
+    qtbot.addWidget(main)
 
-    labels = form_labels(widget)
+    labels = form_labels(main)
     assert labels[0] == "Location"
     assert labels[1] == "Title"

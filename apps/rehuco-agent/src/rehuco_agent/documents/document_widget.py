@@ -208,18 +208,23 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def __stateful_widgets(self) -> dict[str, StatefulWidget]:
         """The persisting widgets (`StatefulWidget`) across all docks, keyed by object name.
 
-        Found by protocol across the dock manager rather than by holding references or knowing which
-        field types persist, so persistence stays decoupled from the field toolkit's layout and its
-        set of stateful widgets. A field names its stateful widget after itself (via ``setObjectName``),
-        which is the key here.
+        Found by protocol rather than by holding references or knowing which field types persist, so
+        persistence stays decoupled from the field toolkit's layout and its set of stateful widgets. A
+        field names its stateful widget after itself (via ``setObjectName``), which is the key here.
+
+        Enumerated through the manager's dock registry (not ``findChildren``): QtAds detaches the
+        content of a dock hidden behind another tab from the widget tree, so ``findChildren`` would
+        miss it once a second editor tab (e.g. the description) is present.
 
         :returns: the stateful widgets, keyed by their object name.
         """
         widgets: dict[str, StatefulWidget] = {}
-        for widget in self.__dock_manager.findChildren(QWidget):
-            name = widget.objectName()
-            if name and isinstance(widget, StatefulWidget):
-                widgets[name] = widget
+        for dock in self.__dock_manager.dockWidgetsMap().values():
+            content = dock.widget()
+            for widget in (content, *content.findChildren(QWidget)):
+                name = widget.objectName()
+                if name and isinstance(widget, StatefulWidget):
+                    widgets[name] = widget
         return widgets
 
     def __rename_to(self, new_name: str) -> None:
@@ -260,6 +265,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
             ActionIconThemeHandler(dock.toggleViewAction(), tab.icon)
             docks[tab] = dock
+        if docks:
+            # later tabs open as the current one; make the first (e.g. the main editor) current instead
+            next(iter(docks.values())).setAsCurrentTab()
         return docks
 
     def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:

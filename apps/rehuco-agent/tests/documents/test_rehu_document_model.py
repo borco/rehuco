@@ -354,6 +354,35 @@ def test_setting_released_writes_through_and_dirties(model: RehuDocumentModel, d
     assert model.dirty is True
 
 
+def test_model_seeds_description_from_the_document(document: RehuDocument) -> None:
+    """The ``description`` field seeds from the document's top-level value, without dirtying.
+
+    **Test steps:**
+
+    * set ``description`` directly on the document, then construct a fresh model over it
+    * verify the model mirrors it and is clean
+    """
+    document.description = "# Notes\n\nsome prose"
+    fresh_model = RehuDocumentModel(document)
+
+    assert fresh_model.description == "# Notes\n\nsome prose"
+    assert fresh_model.dirty is False
+
+
+def test_setting_description_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``description`` writes through to the document (top-level, not source-scoped) and dirties.
+
+    **Test steps:**
+
+    * set ``model.description``
+    * verify it lands on the document directly, and the model is dirty
+    """
+    model.description = "edited prose"
+
+    assert document.description == "edited prose"
+    assert model.dirty is True
+
+
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
 def test_model_seeds_size_fields_from_the_document(attr: str, document: RehuDocument) -> None:
     """``original_size``/``current_size`` seed from the document's top-level value, without dirtying.

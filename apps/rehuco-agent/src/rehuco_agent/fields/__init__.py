@@ -7,6 +7,7 @@ surfaces, and how its form is assembled live in the ``documents`` layer
 
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import (
     Field,
@@ -45,4 +46,5 @@ __all__ = [
     "FileSizeField",
     "MultipleChoiceField",
     "PathField",
+    "DescriptionField",
 ]

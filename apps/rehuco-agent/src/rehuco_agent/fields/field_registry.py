@@ -4,6 +4,7 @@ from typing import Any, Final
 
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import Field, FieldsTab
 from rehuco_agent.fields.file_size_field import FileSizeField
@@ -36,6 +37,7 @@ class FieldRegistry:
             FileSizeField,
             MultipleChoiceField,
             PathField,
+            DescriptionField,
         ):
             self.__types[field_type.TYPE] = field_type
 
