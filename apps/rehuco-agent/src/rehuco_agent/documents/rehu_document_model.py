@@ -22,6 +22,11 @@ TYPE_FIELD_INT_NAMES: Final = ("rating", "images_count", "original_duration", "c
 ``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
 ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
+TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
+"""The type-field string-list fields ([[field-schema#field-types]]); ``level`` is multi-choice, not a
+mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
+at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
@@ -82,6 +87,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     images_count = SimpleProperty(0)
     """The ReferenceImages image count ([[field-schema#field-types]])."""
 
+    level = SimpleProperty[list[str]](default_factory=list)
+    """The Tutorial-only multi-choice level tags ([[field-schema#field-types]]); beginner /
+    intermediate / advanced / any, zero or more at once."""
+
     original_duration = SimpleProperty(0)
     """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]])."""
 
@@ -124,7 +133,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
-        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES):
+        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
@@ -232,6 +241,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             default = SimpleProperty.default_value(type(self), name)
             value = self.__document.type_field(name, default)
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+        for name in TYPE_FIELD_STR_LIST_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
+            value = self.__document.type_field(name, default)
+            coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
+            setattr(self, name, coerced)
 
     def __on_title_changed(self, value: str) -> None:
         """Write an edited title through to the document's primary source and mark dirty.
