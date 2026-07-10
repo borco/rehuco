@@ -61,7 +61,7 @@ class Field[T]:
 
     def __init__(self, name: str, label: str | None = None) -> None:
         self.__name: Final = name
-        self.__label: Final = label if label is not None else self.make_label(name)
+        self.__label: Final = label if label is not None else self.__make_label(name)
 
     @property
     def name(self) -> str:
@@ -106,7 +106,7 @@ class Field[T]:
         del binding, editors  # interface params, unused by the base (no misc widget)
 
     @staticmethod
-    def make_label(name: str) -> str:
+    def __make_label(name: str) -> str:
         """Derive a display label from a field name (``foo_bar`` / ``FooBar`` -> ``Foo Bar``).
 
         :param name: the field name.

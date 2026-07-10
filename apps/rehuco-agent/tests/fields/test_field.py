@@ -10,14 +10,14 @@ from rehuco_agent.fields.field import Field
     [("title", "Title"), ("foo_bar", "Foo Bar"), ("FooBar", "Foo Bar"), ("", "")],
 )
 def test_make_label_derives_a_human_label_from_a_name(name: str, expected: str) -> None:
-    """make_label title-cases and word-splits camelCase/snake_case names.
+    """A field's derived ``label`` title-cases and word-splits camelCase/snake_case names.
 
     **Test steps:**
 
-    * call ``Field.make_label`` on representative names
+    * build a field with each representative name and read its derived ``label``
     * verify each yields the expected human label
     """
-    assert Field.make_label(name) == expected
+    assert Field[str](name).label == expected
 
 
 def test_field_label_defaults_to_name_but_respects_an_override() -> None:
