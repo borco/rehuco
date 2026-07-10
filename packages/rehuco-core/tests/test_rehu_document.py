@@ -326,6 +326,46 @@ def test_extra_tags_setter_replaces_the_list() -> None:
     assert doc.extra_tags == ["new"]
 
 
+def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
+    """``hidden_images`` reads as an empty list when the key is missing or not a list (#35).
+
+    **Test steps:**
+
+    * verify a document with no ``hidden_images`` key reads ``[]``
+    * verify a document whose ``hidden_images`` is a non-list reads ``[]``
+    """
+    assert RehuDocument({}).hidden_images == []
+    assert RehuDocument({"hidden_images": "info00.jpg"}).hidden_images == []
+
+
+def test_hidden_images_reads_and_coerces_stored_names() -> None:
+    """``hidden_images`` reads the stored filename list, coercing entries to strings.
+
+    **Test steps:**
+
+    * construct a document with a mixed-type ``hidden_images`` list
+    * verify every entry is read back as a string
+    """
+    doc = RehuDocument({"hidden_images": ["info00.jpg", 7]})
+    assert doc.hidden_images == ["info00.jpg", "7"]
+
+
+def test_hidden_images_setter_replaces_the_list() -> None:
+    """Setting ``hidden_images`` replaces the stored list with an independent copy.
+
+    **Test steps:**
+
+    * construct a document with an existing ``hidden_images`` list
+    * assign a new list
+    * verify the document reflects it and mutating the input list afterward has no effect
+    """
+    doc = RehuDocument({"hidden_images": ["old00.jpg"]})
+    new_hidden = ["new00.jpg"]
+    doc.hidden_images = new_hidden
+    new_hidden.append("mutated-after-assignment")
+    assert doc.hidden_images == ["new00.jpg"]
+
+
 def test_save_without_path_raises() -> None:
     """Calling ``save`` on a pathless document with no explicit target raises.
 

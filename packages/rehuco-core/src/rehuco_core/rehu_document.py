@@ -288,3 +288,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     @description.setter
     def description(self, value: str) -> None:
         self.__data["description"] = value
+
+    @property
+    def hidden_images(self) -> list[str]:
+        """The screenshot filenames curated *out* of the lightbox ([[data-model#image-meanings]], #27).
+
+        App-managed presentation metadata: the lightbox defaults to showing every ``<stem>NN`` sibling
+        screenshot, so only the **hidden exceptions** are stored -- an empty/absent list means all are
+        shown. Filenames (basenames) only, never paths. Empty when the key is absent or malformed (#35)."""
+        names = self.__data.get("hidden_images", [])
+        return [str(name) for name in names] if isinstance(names, list) else []
+
+    @hidden_images.setter
+    def hidden_images(self, value: list[str]) -> None:
+        self.__data["hidden_images"] = list(value)
