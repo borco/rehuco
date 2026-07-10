@@ -13,6 +13,8 @@ from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
 from rehuco_agent.fields.url_field import UrlField
 
+from fields.field_testers import TEST_EDITOR_TAB, TEST_VIEWER_TAB
+
 
 def test_registry_resolves_a_type_to_its_class() -> None:
     """The registry maps the ``text`` type to ``TextField`` and instantiates it.
@@ -27,7 +29,7 @@ def test_registry_resolves_a_type_to_its_class() -> None:
 
     assert registry.types["text"] is TextField
 
-    field = registry.create("text", "publisher")
+    field = registry.create("text", "publisher", viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB)
     assert isinstance(field, TextField)
     assert field.name == "publisher"
     assert field.label == "Publisher"
@@ -99,4 +101,4 @@ def test_registry_raises_on_an_unknown_type() -> None:
     * verify ``create`` on an unregistered type raises ``KeyError``
     """
     with raises(KeyError):
-        FieldRegistry().create("multi-choice", "level")
+        FieldRegistry().create("multi-choice", "level", viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB)

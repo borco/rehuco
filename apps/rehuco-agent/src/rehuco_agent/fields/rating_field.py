@@ -6,10 +6,10 @@ from typing import Final, override
 
 from borco_pyside.widgets import Rating
 from PySide6.QtCore import QSignalBlocker, Qt
-from PySide6.QtWidgets import QSlider, QWidget
+from PySide6.QtWidgets import QSlider
 
 from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 POSITIVE_STAR_GLYPH: Final = "\ue46a"
 """Phosphor's "star" icon codepoint for a positive rating: shared across every Phosphor weight
@@ -56,19 +56,22 @@ class RatingField(Field[int]):
     RATING_MINIMUM: Final = -5
     RATING_MAXIMUM: Final = 5
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
         label: str | None = None,
         minimum: int = RATING_MINIMUM,
         maximum: int = RATING_MAXIMUM,
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
     ) -> None:
-        super().__init__(name, label)
+        super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__minimum = minimum
         self.__maximum = maximum
 
     @override
-    def make_viewer(self, binding: FieldBinding[int]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
         rating = Rating(
             positive_style=POSITIVE_STYLESHEET,
             positive_text=POSITIVE_STAR_GLYPH,
@@ -77,16 +80,16 @@ class RatingField(Field[int]):
             value=binding.value,
         )
         binding.changed.connect(rating.set_value)  # type: ignore[attr-defined]
-        return rating
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), rating)
 
     @override
-    def make_editors(self, binding: FieldBinding[int]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(self.__minimum, self.__maximum)
         slider.setValue(binding.value)
         slider.valueChanged.connect(binding.set_value)
         binding.changed.connect(lambda value: self.__echo(slider, value))
-        return [slider]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), slider)
 
     @staticmethod
     def __echo(slider: QSlider, value: int) -> None:

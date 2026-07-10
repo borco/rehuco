@@ -84,6 +84,21 @@ class PathEditor(QWidget):
             self.__rebuild()
         self.__render()
 
+    def save_state(self) -> bytes:
+        """Encode the expand state for per-``.rehu`` session persistence
+        (:class:`~rehuco_agent.fields.field.StatefulWidget`).
+
+        :returns: a one-byte blob restorable by :meth:`restore_state`.
+        """
+        return b"\x01" if self.expanded else b"\x00"
+
+    def restore_state(self, state: bytes) -> None:
+        """Restore the expand state produced by :meth:`save_state`.
+
+        :param state: the blob to restore from; anything but a leading ``0x01`` reads as collapsed.
+        """
+        self.expanded = state[:1] == b"\x01"
+
     def __on_expanded_changed(self, value: bool) -> None:
         """Show or hide the suggestions panel to match :attr:`expanded`.
 

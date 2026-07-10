@@ -3,9 +3,9 @@
 from typing import override
 
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 
 class TextField(Field[str]):
@@ -16,18 +16,18 @@ class TextField(Field[str]):
     TYPE = "text"
 
     @override
-    def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
         label = QLabel(binding.value)
         label.setWordWrap(True)
         binding.changed.connect(label.setText)
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[str]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         line_edit = QLineEdit(binding.value)
         line_edit.textChanged.connect(binding.set_value)
         binding.changed.connect(lambda value: self.__echo(line_edit, value))
-        return [line_edit]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit)
 
     @staticmethod
     def __echo(line_edit: QLineEdit, value: str) -> None:

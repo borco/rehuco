@@ -4,8 +4,9 @@ from typing import Any, Final
 
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
+from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
-from rehuco_agent.fields.field import Field
+from rehuco_agent.fields.field import Field, FieldsTab
 from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
@@ -36,6 +37,7 @@ class FieldRegistry:
             FileSizeField,
             MultipleChoiceField,
             PathField,
+            DescriptionField,
         ):
             self.__types[field_type.TYPE] = field_type
 
@@ -44,15 +46,26 @@ class FieldRegistry:
         """The registered ``type`` -> :class:`Field` subclass mapping."""
         return self.__types
 
-    def create(self, type_: str, name: str, label: str | None = None, **kwargs: Any) -> Field[Any]:
+    def create(
+        self,
+        type_: str,
+        name: str,
+        label: str | None = None,
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
+        **kwargs: Any,
+    ) -> Field[Any]:
         """Instantiate the field registered for ``type_``.
 
         :param type_: the field-type selector.
         :param name: the field's identifier on its model.
         :param label: optional display label; derived from ``name`` when omitted.
+        :param viewer_tab: the surface the field's viewer belongs to (passed to the field).
+        :param editor_tab: the surface the field's editor belongs to (passed to the field).
         :param kwargs: extra constructor arguments a specific type needs (e.g.
             :class:`~rehuco_agent.fields.multiple_choice_field.MultipleChoiceField`'s ``choices``).
         :returns: a new field instance.
         :raises KeyError: if ``type_`` is not registered (the unknown-field fallback is A2.8/#28).
         """
-        return self.__types[type_](name, label, **kwargs)
+        return self.__types[type_](name, label, viewer_tab=viewer_tab, editor_tab=editor_tab, **kwargs)

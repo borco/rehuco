@@ -1007,6 +1007,21 @@ wheels = [
 ]
 
 [[package]]
+name = "pyside6-scintilla"
+version = "5.6.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyside6" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/99/e9/29087dae57efb8773246c18edf8f56b26e601d4e10698a249cad36261571/pyside6_scintilla-5.6.3.4.tar.gz", hash = "sha256:c126e06f897838f09732b7a737a05a85aa9d457502b2dbe82b4e309a2fbb58e9", size = 2298951, upload-time = "2026-06-27T17:39:47.355Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d1/80/4ef2c57b2bb0de796879e0d1bf0c41f6ac9329af32a87e92a5c61844fae0/pyside6_scintilla-5.6.3.4-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:19b0f3b1275853b888436e882715614d40dc951b680882f33614a2d28c209aa8", size = 2807573, upload-time = "2026-06-27T17:39:41.076Z" },
+    { url = "https://files.pythonhosted.org/packages/9f/83/0144cd827de9a414a50cd3316caa871122941e7f97dbba2ac6e3e14865ca/pyside6_scintilla-5.6.3.4-cp314-cp314-macosx_13_0_x86_64.whl", hash = "sha256:697365e09314f49b8b08c5fc6e71a32b09f29dd60d2716f5d23de21585659a62", size = 2862942, upload-time = "2026-06-27T17:39:42.576Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/f4/e472fbc92d1a6e6498704cb22c25fcf83fefac23d284d004f1a7bc182eae/pyside6_scintilla-5.6.3.4-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:0d6d7b9d5abaf4e853b684722895c74529133ff8937513eea86fd07720bfcc4a", size = 1441923, upload-time = "2026-06-27T17:39:44.3Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/e5/7fda83497df7b928b37cf8e386360b1f33998735045fd8bb09f07718aa40/pyside6_scintilla-5.6.3.4-cp314-cp314-win_amd64.whl", hash = "sha256:001c77bfbfd6f66f489afdaab507fff30c39dcc263b9cdf5c65cbd60b5aaf9fd", size = 1449530, upload-time = "2026-06-27T17:39:45.899Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1167,9 +1182,11 @@ dependencies = [
     { name = "borco-pyside" },
     { name = "cbor2" },
     { name = "humanize" },
+    { name = "markdown" },
     { name = "pathvalidate" },
     { name = "pyside6" },
     { name = "pyside6-qtads" },
+    { name = "pyside6-scintilla" },
     { name = "python-dateutil" },
     { name = "rehuco-core" },
     { name = "unidecode" },
@@ -1181,9 +1198,11 @@ requires-dist = [
     { name = "borco-pyside", editable = "packages/borco-pyside" },
     { name = "cbor2", specifier = ">=6.1.3" },
     { name = "humanize", specifier = ">=4.16.0" },
+    { name = "markdown", specifier = ">=3.7" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pyside6", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0" },
+    { name = "pyside6-scintilla", specifier = ">=1.4.0" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
     { name = "unidecode", specifier = ">=1.4.0" },

@@ -1,8 +1,8 @@
-"""Tests for the per-document viewer/editor dock surfaces.
+"""Tests for the per-document viewer/editor docks.
 
 Editor/viewer live-binding itself ("both") is already covered at the `Field`/`FieldsForm` level
 (``tests/fields/test_text_field.py``); these tests cover what's specific to :class:`DocumentWidget`:
-that it wires two real surfaces from one model, exposes toggle actions for them, and stashes/restores
+that it wires two real docks from one model, exposes toggle actions for them, and stashes/restores
 the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QLabel, QLineEdit
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import PathEditor
@@ -22,7 +23,7 @@ from rehuco_core import RehuDocument
 # region fixtures
 @fixture
 def model() -> RehuDocumentModel:
-    """A view-model seeded with a primary source, for the surfaces to bind to."""
+    """A view-model seeded with a primary source, for the docks to bind to."""
     # matches fields/conftest.py's `model` fixture by design (same sample document shape); this
     # file lives outside that conftest's directory, so pytest won't pick it up, and duplicating
     # the shape here is more appropriate than an awkward cross-directory conftest import for one fixture
@@ -64,7 +65,7 @@ def test_model_property_exposes_the_wrapped_model(widget: DocumentWidget, model:
 
 
 def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: DocumentWidget) -> None:
-    """Both surfaces are built from the same document field list (title/publisher/url + flags).
+    """Both docks are built from the same document field list (title/publisher/url + flags).
 
     **Test steps:**
 
@@ -175,7 +176,7 @@ def test_save_enables_and_disables_with_dirty_while_revert_stays_enabled(
 
 
 def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> None:
-    """The viewer/editor toggle actions are checkable and start checked (both surfaces visible).
+    """The viewer/editor toggle actions are checkable and start checked (both docks visible).
 
     **Test steps:**
 
@@ -183,12 +184,12 @@ def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> 
     * verify both toggle actions report checked (their docks are shown by default)
     * trigger the editor action and verify it reports unchecked
     """
-    assert widget.viewer_action.isChecked() is True
-    assert widget.editor_action.isChecked() is True
+    assert widget.toggle_action(VIEWER_TAB).isChecked() is True
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
 
-    widget.editor_action.trigger()
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
-    assert widget.editor_action.isChecked() is False
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
 
 
 def test_closing_a_dock_stashes_its_splitter_sizes(widget: DocumentWidget) -> None:
@@ -205,10 +206,10 @@ def test_closing_a_dock_stashes_its_splitter_sizes(widget: DocumentWidget) -> No
       ``viewToggled(False)``)
     * verify the stash gained an entry keyed ``"editor"``
     """
-    widget.editor_action.trigger()
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert "editor" in stashed
+    assert "editor:Main Editor" in stashed
 
 
 def test_reopening_a_toggled_dock_restores_its_splitter_sizes(widget: DocumentWidget) -> None:
@@ -221,12 +222,12 @@ def test_reopening_a_toggled_dock_restores_its_splitter_sizes(widget: DocumentWi
     * hide the editor dock (stashes its sizes), then show it again (``viewToggled(True)``)
     * verify the toggle action reports checked again and the stash still holds the entry it restored from
     """
-    widget.editor_action.trigger()
-    widget.editor_action.trigger()
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
-    assert widget.editor_action.isChecked() is True
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert "editor" in stashed
+    assert "editor:Main Editor" in stashed
 
 
 def test_stash_size_is_a_noop_for_a_dock_with_no_area(mocker: MockerFixture, widget: DocumentWidget) -> None:
@@ -282,17 +283,17 @@ def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) ->
     * save the widget's state, then restore it into a fresh widget over the same model
     * verify the restore reports success and the stash carried over
     """
-    widget.editor_action.trigger()
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     state = widget.save_state()
 
     assert widget.restore_state(state) is True
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert "editor" in stashed
+    assert "editor:Main Editor" in stashed
 
 
-def test_restore_state_reselects_the_surface_that_was_current(widget: DocumentWidget) -> None:
-    """The surface (viewer/editor) that was current is re-selected on restore, even when split.
+def test_restore_state_reselects_the_dock_that_was_current(widget: DocumentWidget) -> None:
+    """The dock (viewer/editor) that was current is re-selected on restore, even when split.
 
     QtAds' own ``restoreState`` recovers only the current tab within each area, not which of the two
     split areas held focus -- so this covers the extra state ``QtAdsFocusTracker.save_state`` adds
@@ -300,20 +301,20 @@ def test_restore_state_reselects_the_surface_that_was_current(widget: DocumentWi
 
     **Test steps:**
 
-    * make the editor the current surface, and save the state
+    * make the editor the current dock, and save the state
     * move current away to the viewer, then restore the saved state
-    * verify the editor is the current surface again, not the viewer it had moved to
+    * verify the editor is the current dock again, not the viewer it had moved to
     """
     manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     tracker = widget._DocumentWidget__tracker  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    tracker.set_current_dock(manager.findDockWidget("editor"))
+    tracker.set_current_dock(manager.findDockWidget("editor:Main Editor"))
     state = widget.save_state()
-    tracker.set_current_dock(manager.findDockWidget("viewer"))
-    assert tracker.current_dock.objectName() == "viewer"
+    tracker.set_current_dock(manager.findDockWidget("viewer:Viewer"))
+    assert tracker.current_dock.objectName() == "viewer:Viewer"
 
     assert widget.restore_state(state) is True
 
-    assert tracker.current_dock.objectName() == "editor"
+    assert tracker.current_dock.objectName() == "editor:Main Editor"
 
 
 def test_restore_state_tolerates_a_non_bytes_current_dock_entry(widget: DocumentWidget) -> None:
@@ -368,6 +369,25 @@ def test_restore_state_rejects_a_dict_with_garbage_dock_manager_bytes(widget: Do
     assert widget.restore_state(cbor2.dumps(payload)) is False
 
 
+def test_restore_state_rejects_an_incompatible_version_and_keeps_docks_visible(widget: DocumentWidget) -> None:
+    """A blob from an incompatible schema version is ignored, keeping the default all-visible layout.
+
+    An older blob (e.g. from before the docks were renamed, #26) would otherwise ``restoreState``
+    cleanly yet hide the current docks -- a blank window -- and a subsequently shown dock would float.
+
+    **Test steps:**
+
+    * save the widget's real state, then strip its ``version`` key (as an older blob would lack it)
+    * verify restore reports failure and both docks stay visible
+    """
+    payload = cbor2.loads(widget.save_state())
+    del payload["version"]
+
+    assert widget.restore_state(cbor2.dumps(payload)) is False
+    assert widget.toggle_action(VIEWER_TAB).isChecked() is True
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
+
+
 def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: DocumentWidget) -> None:
     """A dict payload missing the stashed-sizes entry still restores the dock manager's own state.
 
@@ -390,7 +410,7 @@ def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: Documen
 
 # region location path field
 def location_editor(widget: DocumentWidget) -> PathEditor:
-    """Return the widget's editor-surface location `PathEditor`.
+    """Return the widget's editor-dock location `PathEditor`.
 
     :param widget: the document widget to inspect.
     :returns: the location field's editor.
@@ -423,30 +443,30 @@ def test_save_state_round_trips_the_path_field_expand_state(qtbot: QtBot, widget
     assert location_editor(fresh).expanded is True
 
 
-def test_restore_state_tolerates_a_payload_without_path_field_expand_state(widget: DocumentWidget) -> None:
-    """A dict payload missing the path-field expand entry still restores cleanly.
+def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:
+    """A dict payload missing the per-widget state entry still restores cleanly.
 
     **Test steps:**
 
-    * save the widget's real state, then strip its ``path_field_expanded`` entry
+    * save the widget's real state, then strip its ``widget_state`` entry
     * verify ``restore_state`` still reports success
     """
     payload = cbor2.loads(widget.save_state())
-    del payload["path_field_expanded"]
+    del payload["widget_state"]
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
 
 
-def test_restore_state_ignores_an_expand_entry_for_an_unknown_field(widget: DocumentWidget) -> None:
-    """A saved expand entry naming no current field is ignored, and the known one still applies.
+def test_restore_state_ignores_a_widget_state_entry_for_an_unknown_widget(widget: DocumentWidget) -> None:
+    """A saved widget-state entry naming no current widget is ignored, and the known one still applies.
 
     **Test steps:**
 
-    * save state, then add a bogus field name to the expand entry and expand the real one
+    * save state, then add a bogus widget name to the ``widget_state`` entry and expand the real one
     * restore it and verify the real editor expanded and no error was raised for the bogus name
     """
     payload = cbor2.loads(widget.save_state())
-    payload["path_field_expanded"] = {"location": True, "no_such_field": True}
+    payload["widget_state"] = {"location": b"\x01", "no_such_widget": b"\x01"}
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
     assert location_editor(widget).expanded is True

@@ -3,7 +3,8 @@
 from PySide6.QtWidgets import QCheckBox, QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.boolean_field import BooleanField
+
+from fields.field_testers import BooleanFieldTester as BooleanField
 
 
 def test_boolean_field_viewer_shows_and_tracks_yes_no(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -16,10 +17,10 @@ def test_boolean_field_viewer_shows_and_tracks_yes_no(qtbot: QtBot, model: RehuD
     * flip ``model.online`` and verify the label updates live to ``"Yes"``
     """
     field = BooleanField("online")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == "No"
 
     model.online = True
@@ -35,7 +36,8 @@ def test_complete_viewer_warns_only_when_false(qtbot: QtBot, model: RehuDocument
     * verify it starts unflagged, then flips to warning when ``complete`` goes false, and back
     """
     field = BooleanField("complete")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
     assert viewer.property("warning") is False
@@ -56,7 +58,8 @@ def test_non_warning_viewer_never_flags_warning(qtbot: QtBot, model: RehuDocumen
     * verify it is unflagged, and stays unflagged when toggled true then false
     """
     field = BooleanField("keep")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
     assert viewer.property("warning") is False
@@ -71,15 +74,13 @@ def test_boolean_field_editor_writes_back_to_the_model(qtbot: QtBot, model: Rehu
 
     **Test steps:**
 
-    * build the ``complete`` editor (a single ``QCheckBox``), seeded checked from the model
+    * build the ``complete`` editor (a ``QCheckBox``), seeded checked from the model
     * uncheck it and verify ``model.complete`` follows
     """
     field = BooleanField("complete")
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    checkbox = editors[0]
-    qtbot.addWidget(checkbox)
+    checkbox = field.make_editor(model.bind(field)).editor
     assert isinstance(checkbox, QCheckBox)
+    qtbot.addWidget(checkbox)
     assert checkbox.isChecked() is True
 
     checkbox.setChecked(False)
@@ -96,12 +97,12 @@ def test_boolean_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtB
     * verify the viewer reflects it and the editor still holds the value once (no echo loop)
     """
     field = BooleanField("favorite")
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, QCheckBox)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
 
     editor.setChecked(True)
 
@@ -120,9 +121,9 @@ def test_boolean_field_editor_follows_an_external_model_change(qtbot: QtBot, mod
     * verify the checkbox follows
     """
     field = BooleanField("complete")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QCheckBox)
+    qtbot.addWidget(editor)
 
     model.complete = False
     assert editor.isChecked() is False

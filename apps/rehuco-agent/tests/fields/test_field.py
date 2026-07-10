@@ -2,7 +2,8 @@
 
 from pytest import mark, raises
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import Field
+
+from fields.field_testers import FieldTester as Field
 
 
 @mark.parametrize(
@@ -10,14 +11,14 @@ from rehuco_agent.fields.field import Field
     [("title", "Title"), ("foo_bar", "Foo Bar"), ("FooBar", "Foo Bar"), ("", "")],
 )
 def test_make_label_derives_a_human_label_from_a_name(name: str, expected: str) -> None:
-    """make_label title-cases and word-splits camelCase/snake_case names.
+    """A field's derived ``label`` title-cases and word-splits camelCase/snake_case names.
 
     **Test steps:**
 
-    * call ``Field.make_label`` on representative names
+    * build a field with each representative name and read its derived ``label``
     * verify each yields the expected human label
     """
-    assert Field.make_label(name) == expected
+    assert Field[str](name).label == expected
 
 
 def test_field_label_defaults_to_name_but_respects_an_override() -> None:
@@ -33,16 +34,16 @@ def test_field_label_defaults_to_name_but_respects_an_override() -> None:
 
 
 def test_field_base_factories_require_a_subclass(model: RehuDocumentModel) -> None:
-    """The Field base leaves ``make_viewer`` / ``make_editors`` abstract for subclasses.
+    """The Field base leaves ``make_viewer`` / ``make_editor`` abstract for subclasses.
 
     **Test steps:**
 
     * build a bare ``Field`` and resolve its binding on the model
-    * verify ``make_viewer`` and ``make_editors`` both raise ``NotImplementedError``
+    * verify ``make_viewer`` and ``make_editor`` both raise ``NotImplementedError``
     """
     field = Field[str]("title")
     binding = model.bind(field)
     with raises(NotImplementedError):
         field.make_viewer(binding)
     with raises(NotImplementedError):
-        field.make_editors(binding)
+        field.make_editor(binding)

@@ -40,6 +40,6 @@ Model o-- Core : wraps
 Viewer ..> FieldC : one row per field
 Editor ..> FieldC : one row per field
 Viewer ..> Model : field.make_viewer(model.bind(field))
-Editor ..> Model : field.make_editors(model.bind(field))
+Editor ..> Model : field.make_editor(model.bind(field))
 @enduml
 ```

@@ -5,9 +5,9 @@
 from typing import Final, override
 
 from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 
 class TextListField(Field[list[str]]):
@@ -30,18 +30,18 @@ class TextListField(Field[list[str]]):
     SPLIT_SEPARATOR: Final = ","
 
     @override
-    def make_viewer(self, binding: FieldBinding[list[str]]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         label = QLabel(self.__display(binding.value))
         label.setWordWrap(True)
         binding.changed.connect(lambda value: label.setText(self.__display(value)))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[list[str]]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         line_edit = QLineEdit(self.__join(binding.value))
         line_edit.textChanged.connect(lambda text: binding.set_value(self.__split(text)))
         binding.changed.connect(lambda value: self.__echo(line_edit, value))
-        return [line_edit]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit)
 
     def __display(self, items: list[str]) -> str:
         """Deduplicate (order-preserving) and join a list for the read-only viewer.

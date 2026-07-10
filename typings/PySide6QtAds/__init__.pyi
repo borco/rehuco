@@ -25,6 +25,9 @@ CenterDockWidgetArea: DockWidgetArea
 RightDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the right of the reference area."""
 
+LeftDockWidgetArea: DockWidgetArea
+"""Docks in a new area split off to the left of the reference area."""
+
 class TitleBarButton:
     """Selector for `CDockAreaWidget.titleBarButton` (e.g. `TitleBarButtonTabsMenu`)."""
 
@@ -292,6 +295,12 @@ class CDockManager(QWidget):
 
     def findDockWidget(self, object_name: str) -> CDockWidget | None:
         """Return the registered dock whose `objectName()` is `object_name`, or `None` if none matches."""
+
+    def dockWidgetsMap(self) -> dict[str, CDockWidget]:
+        """Every registered dock, keyed by `objectName()` -- the authoritative registry. Unlike
+        `QObject.findChildren`, it includes a dock currently hidden behind another tab in its area
+        (whose content QtAds detaches from the widget tree), so persistence must enumerate docks
+        through this, not `findChildren`."""
 
     def isRestoringState(self) -> bool:
         """Whether a `restoreState` is currently in progress -- true only during that call, e.g. while

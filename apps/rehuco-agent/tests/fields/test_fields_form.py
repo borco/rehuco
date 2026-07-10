@@ -1,13 +1,15 @@
 """Tests for FieldsForm: composing an ordered field list into a 3-column viewer or editor grid."""
 
+from dataclasses import replace
 from typing import override
 
 from PySide6.QtWidgets import QGridLayout, QLabel, QLineEdit, QToolButton, QWidget
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import FieldBinding
+from rehuco_agent.fields.field import FieldBinding, FieldEditorWidgets, FieldsTab
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN, FieldsForm
-from rehuco_agent.fields.text_field import TextField
+
+from fields.field_testers import TextFieldTester as TextField
 
 
 # region Sample classes
@@ -15,17 +17,8 @@ class MiscField(TextField):
     """A sample field that contributes a misc-column widget (a ``QToolButton``)."""
 
     @override
-    def make_misc(self, binding: FieldBinding[str], editors: list[QWidget]) -> QWidget | None:
-        del binding, editors
-        return QToolButton()
-
-
-class MultiEditorField(TextField):
-    """A sample field whose ``make_editors`` returns two editors (the future multi-editor split)."""
-
-    @override
-    def make_editors(self, binding: FieldBinding[str]) -> list[QWidget]:
-        return [QLineEdit(binding.value), QLineEdit(binding.value)]
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), misc=QToolButton())
 
 
 # endregion
@@ -41,6 +34,16 @@ def widget_at(grid: QGridLayout, row: int, column: int) -> QWidget | None:
     """
     item = grid.itemAtPosition(row, column)
     return item.widget() if item is not None else None
+
+
+def sole_grid_widget(grids: dict[FieldsTab, QWidget]) -> QWidget:
+    """Return the single tab's grid widget from a ``{tab: grid}`` mapping (these tests use one tab).
+
+    :param grids: the mapping returned by ``FieldsForm.make_viewer``/``make_editor``.
+    :returns: the sole grid widget.
+    """
+    assert len(grids) == 1
+    return next(iter(grids.values()))
 
 
 def grid_of(widget: QWidget) -> QGridLayout:
@@ -76,7 +79,7 @@ def test_columns_are_fixed_label_and_misc_with_stretching_content(qtbot: QtBot, 
     * build any form and read its grid
     * verify column stretch is 0/0/1 for label/misc/content
     """
-    widget = FieldsForm([TextField("title")]).make_viewer(model)
+    widget = sole_grid_widget(FieldsForm([TextField("title")]).make_viewer(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
 
@@ -94,7 +97,7 @@ def test_viewer_lays_out_label_and_viewer_rows_in_order(qtbot: QtBot, model: Reh
     * verify the label column holds both labels in order and the content column holds their viewers
     """
     form = FieldsForm([TextField("title"), TextField("publisher")])
-    widget = form.make_viewer(model)
+    widget = sole_grid_widget(form.make_viewer(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
 
@@ -112,7 +115,7 @@ def test_editor_places_the_editor_in_the_content_column(qtbot: QtBot, model: Reh
     * verify the label is in the label column and a ``QLineEdit`` is in the content column
     """
     form = FieldsForm([TextField("title")])
-    widget = form.make_editor(model)
+    widget = sole_grid_widget(form.make_editor(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
 
@@ -121,7 +124,7 @@ def test_editor_places_the_editor_in_the_content_column(qtbot: QtBot, model: Reh
 
 
 def test_editor_places_a_misc_widget_in_the_misc_column(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """A field's :meth:`Field.make_misc` widget lands in the misc column, between label and editor.
+    """A field's ``FieldEditorWidgets.misc`` widget lands in the misc column, between label and editor.
 
     **Test steps:**
 
@@ -129,34 +132,12 @@ def test_editor_places_a_misc_widget_in_the_misc_column(qtbot: QtBot, model: Reh
     * verify the misc column holds it and the editor is still in the content column
     """
     form = FieldsForm([MiscField("title")])
-    widget = form.make_editor(model)
+    widget = sole_grid_widget(form.make_editor(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
 
     assert isinstance(widget_at(grid, 0, MISC_COLUMN), QToolButton)
     assert isinstance(widget_at(grid, 0, CONTENT_COLUMN), QLineEdit)
-
-
-def test_editor_labels_and_misc_only_the_first_row_of_a_multi_editor_field(
-    qtbot: QtBot, model: RehuDocumentModel
-) -> None:
-    """A field's extra editors get their own rows with no label or misc (only the first row carries them).
-
-    **Test steps:**
-
-    * build an editor form over a field that yields two editors
-    * verify two content-column rows, the first labelled, the second with no label
-    """
-    form = FieldsForm([MultiEditorField("title")])
-    widget = form.make_editor(model)
-    qtbot.addWidget(widget)
-    grid = grid_of(widget)
-
-    assert grid.rowCount() == 2
-    assert isinstance(widget_at(grid, 0, CONTENT_COLUMN), QLineEdit)
-    assert isinstance(widget_at(grid, 1, CONTENT_COLUMN), QLineEdit)
-    assert widget_at(grid, 1, LABEL_COLUMN) is None
-    assert widget_at(grid, 1, MISC_COLUMN) is None
 
 
 def test_viewer_never_populates_the_misc_column(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -168,7 +149,7 @@ def test_viewer_never_populates_the_misc_column(qtbot: QtBot, model: RehuDocumen
     * verify the misc column is empty (misc is an editor-only concern)
     """
     form = FieldsForm([MiscField("title")])
-    widget = form.make_viewer(model)
+    widget = sole_grid_widget(form.make_viewer(model))
     qtbot.addWidget(widget)
     grid = grid_of(widget)
 

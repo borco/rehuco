@@ -9,7 +9,7 @@ from borco_pyside.widgets import FlowLayout
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QCheckBox, QLabel, QWidget
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 
 class MultipleChoiceField(Field[list[str]]):
@@ -29,19 +29,27 @@ class MultipleChoiceField(Field[list[str]]):
 
     TYPE = "multi_choice"
 
-    def __init__(self, name: str, label: str | None = None, choices: Sequence[str] = ()) -> None:
-        super().__init__(name, label)
+    def __init__(
+        self,
+        name: str,
+        label: str | None = None,
+        choices: Sequence[str] = (),
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
+    ) -> None:
+        super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__choices: Final = tuple(choices)
 
     @override
-    def make_viewer(self, binding: FieldBinding[list[str]]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         label = QLabel(self.__display(binding.value))
         label.setWordWrap(True)
         binding.changed.connect(lambda value: label.setText(self.__display(value)))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[list[str]]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         container = QWidget()
         layout = FlowLayout(container)
         checkboxes: dict[str, QCheckBox] = {}
@@ -53,7 +61,7 @@ class MultipleChoiceField(Field[list[str]]):
         for checkbox in checkboxes.values():
             checkbox.toggled.connect(lambda _checked: self.__on_toggled(binding, checkboxes))
         binding.changed.connect(lambda value: self.__echo(checkboxes, value))
-        return [container]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), container)
 
     def __on_toggled(self, binding: FieldBinding[list[str]], checkboxes: dict[str, QCheckBox]) -> None:
         """Write the checkboxes' current combined state through to the binding, in ``choices`` order.

@@ -4,9 +4,9 @@
 
 from typing import override
 
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 from rehuco_agent.fields.widgets import DateEdit
 
 
@@ -21,15 +21,15 @@ class DateField(Field[str]):
     TYPE = "date"
 
     @override
-    def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
         label = QLabel(binding.value)
         binding.changed.connect(label.setText)
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[str]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         editor = DateEdit()
         editor.value = binding.value
         editor.value_changed.connect(binding.set_value)
         binding.changed.connect(editor.set_value)  # type: ignore[attr-defined]
-        return [editor]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

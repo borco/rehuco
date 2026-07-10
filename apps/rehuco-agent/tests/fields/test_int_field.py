@@ -4,7 +4,8 @@ from borco_pyside.widgets import UnboundedSpinBox
 from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.int_field import IntField
+
+from fields.field_testers import IntFieldTester as IntField
 
 
 def test_int_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -17,10 +18,10 @@ def test_int_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDo
     * change ``model.images_count`` and verify the label updates live
     """
     field = IntField("images_count")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.text() == "0"
 
     model.images_count = 42
@@ -32,15 +33,13 @@ def test_int_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocu
 
     **Test steps:**
 
-    * build the ``images_count`` editor (a single ``UnboundedSpinBox``)
+    * build the ``images_count`` editor (an ``UnboundedSpinBox``)
     * set a negative value and verify ``model.images_count`` follows (``int`` is plain, negatives allowed)
     """
     field = IntField("images_count")
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    spin_box = editors[0]
-    qtbot.addWidget(spin_box)
+    spin_box = field.make_editor(model.bind(field)).editor
     assert isinstance(spin_box, UnboundedSpinBox)
+    qtbot.addWidget(spin_box)
 
     spin_box.setValue(-7)
     assert model.images_count == -7
@@ -56,12 +55,12 @@ def test_int_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot, 
     * verify the viewer reflects it and the editor still holds the value once (no echo loop)
     """
     field = IntField("images_count")
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, UnboundedSpinBox)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
 
     editor.setValue(9)
 
@@ -80,9 +79,9 @@ def test_int_field_editor_follows_an_external_model_change(qtbot: QtBot, model: 
     * verify the spin box follows
     """
     field = IntField("images_count")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
 
     model.images_count = 13
     assert editor.value == 13
@@ -97,9 +96,9 @@ def test_int_field_editor_defaults_to_no_range(qtbot: QtBot, model: RehuDocument
     * verify the spin box's ``minimum()``/``maximum()`` are both ``None``
     """
     field = IntField("images_count")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
 
     assert editor.minimum() is None
     assert editor.maximum() is None
@@ -114,9 +113,9 @@ def test_int_field_editor_uses_an_explicit_range(qtbot: QtBot, model: RehuDocume
     * verify the spin box's actual range matches those values
     """
     field = IntField("images_count", minimum=-10, maximum=10)
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
 
     assert editor.minimum() == -10
     assert editor.maximum() == 10
@@ -135,9 +134,9 @@ def test_int_field_editor_accepts_a_value_beyond_int32(qtbot: QtBot, model: Rehu
     beyond_int32 = 2**40
     model.images_count = beyond_int32
     field = IntField("images_count")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
     assert editor.value == beyond_int32
 
     editor.setValue(beyond_int32 + 1)

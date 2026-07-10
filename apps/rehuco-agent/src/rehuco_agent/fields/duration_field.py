@@ -4,9 +4,9 @@
 
 from typing import override
 
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 from rehuco_agent.fields.widgets import DurationEdit
 
 
@@ -20,15 +20,15 @@ class DurationField(Field[int]):
     TYPE = "duration"
 
     @override
-    def make_viewer(self, binding: FieldBinding[int]) -> QWidget:
+    def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
         label = QLabel(DurationEdit.format(binding.value))
         binding.changed.connect(lambda value: label.setText(DurationEdit.format(value)))
-        return label
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
-    def make_editors(self, binding: FieldBinding[int]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
         editor = DurationEdit()
         editor.value = binding.value
         editor.value_changed.connect(binding.set_value)
         binding.changed.connect(editor.set_value)  # type: ignore[attr-defined]
-        return [editor]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

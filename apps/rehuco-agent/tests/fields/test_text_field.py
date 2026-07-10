@@ -3,7 +3,8 @@
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.text_field import TextField
+
+from fields.field_testers import TextFieldTester as TextField
 
 
 def test_text_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -16,10 +17,10 @@ def test_text_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuD
     * change ``model.title`` and verify the label updates live (the "both" path)
     """
     field = TextField("title")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
     assert viewer.wordWrap() is True
     assert viewer.text() == "Foo"
 
@@ -32,15 +33,13 @@ def test_text_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDoc
 
     **Test steps:**
 
-    * build the title editor (a single ``QLineEdit``)
+    * build the title editor (a ``QLineEdit``)
     * set its text and verify ``model.title`` follows
     """
     field = TextField("title")
-    editors = field.make_editors(model.bind(field))
-    assert len(editors) == 1
-    line_edit = editors[0]
-    qtbot.addWidget(line_edit)
+    line_edit = field.make_editor(model.bind(field)).editor
     assert isinstance(line_edit, QLineEdit)
+    qtbot.addWidget(line_edit)
 
     line_edit.setText("Typed")
     assert model.title == "Typed"
@@ -56,12 +55,12 @@ def test_text_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot,
     * verify the viewer reflects it and the editor still holds the value once (no echo loop)
     """
     field = TextField("title")
-    editor = field.make_editors(model.bind(field))[0]
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(editor)
-    qtbot.addWidget(viewer)
+    editor = field.make_editor(model.bind(field)).editor
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(editor, QLineEdit)
     assert isinstance(viewer, QLabel)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
 
     editor.setText("Live")
 
@@ -80,9 +79,9 @@ def test_text_field_editor_follows_an_external_model_change(qtbot: QtBot, model:
     * verify the editor text follows
     """
     field = TextField("title")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
 
     model.title = "External"
     assert editor.text() == "External"
@@ -102,9 +101,9 @@ def test_text_field_editor_preserves_the_cursor_when_typing_mid_string(qtbot: Qt
       and the model followed
     """
     field = TextField("title")
-    editor = field.make_editors(model.bind(field))[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, QLineEdit)
+    qtbot.addWidget(editor)
     editor.setText("hello world")
     editor.setCursorPosition(5)
 

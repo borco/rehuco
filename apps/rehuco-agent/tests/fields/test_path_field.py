@@ -6,8 +6,9 @@ from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QObject, Signal
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.widgets import ExpandToggleButton, PathEditor
+
+from fields.field_testers import PathFieldTester as PathField
 
 
 # region Sample classes
@@ -58,10 +59,10 @@ def test_viewer_is_an_elided_native_path_link(qtbot: QtBot, model: RehuDocumentM
     """
     model.location = "C:/tutorials/foo"
     field = PathField("location")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, ElidedLabel)
     assert viewer.openExternalLinks() is True
     assert viewer.text().startswith('<a href="file:')
     assert ">C:\\tutorials\\foo</a>" in viewer.text()
@@ -77,10 +78,10 @@ def test_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentMode
     """
     model.location = ""
     field = PathField("location")
-    viewer = field.make_viewer(model.bind(field))
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ElidedLabel)
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, ElidedLabel)
     assert viewer.text() == ""
 
 
@@ -93,9 +94,9 @@ def test_viewer_tracks_the_bound_value(qtbot: QtBot, model: RehuDocumentModel) -
     * verify the label updates to the native-path link
     """
     field = PathField("location")
-    viewer = field.make_viewer(model.bind(field))
-    qtbot.addWidget(viewer)
+    viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, ElidedLabel)
+    qtbot.addWidget(viewer)
 
     model.location = "C:/x/y"
 
@@ -112,16 +113,15 @@ def test_editor_without_suggestions_is_a_read_only_label(qtbot: QtBot, model: Re
     **Test steps:**
 
     * build the editor with no suggestions
-    * verify it returns a single ``ElidedLabel`` (not a ``PathEditor``), and no misc widget
+    * verify its editor is an ``ElidedLabel`` (not a ``PathEditor``), with no misc widget
     """
     model.location = "C:/foo"
     field = PathField("location")
-    editors = field.make_editors(model.bind(field))
-    qtbot.addWidget(editors[0])
+    widgets = field.make_editor(model.bind(field))
+    assert isinstance(widgets.editor, ElidedLabel)
+    qtbot.addWidget(widgets.editor)
 
-    assert len(editors) == 1
-    assert isinstance(editors[0], ElidedLabel)
-    assert field.make_misc(model.bind(field), editors) is None
+    assert widgets.misc is None
 
 
 # endregion
@@ -152,10 +152,9 @@ def build_editor(
         current_name=lambda: current_name,
         suggestions_changed=(changed.changed if changed is not None else None),
     )
-    binding = model.bind(field)
-    editors = field.make_editors(binding)
-    editor = editors[0]
-    misc = field.make_misc(binding, editors)
+    widgets = field.make_editor(model.bind(field))
+    editor = widgets.editor
+    misc = widgets.misc
     assert isinstance(editor, PathEditor)
     assert isinstance(misc, ExpandToggleButton)
     return field, editor, misc
@@ -244,16 +243,12 @@ def test_current_name_refreshes_when_the_bound_value_changes(qtbot: QtBot, model
     """
     name = ["old_name"]
     field = PathField("location", suggestions=lambda: ["Alpha"], current_name=lambda: name[0])
-    binding = model.bind(field)
-    editor = field.make_editors(binding)[0]
-    qtbot.addWidget(editor)
+    editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, PathEditor)
+    qtbot.addWidget(editor)
     assert editor_name_label(editor).text() == "old_name"
 
     name[0] = "new_name"
     model.location = "C:/trigger"  # fires location_changed -> refresh
 
     assert editor_name_label(editor).text() == "new_name"
-
-
-# endregion

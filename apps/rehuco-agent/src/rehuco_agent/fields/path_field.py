@@ -8,9 +8,8 @@ from typing import override
 
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QUrl, SignalInstance
-from PySide6.QtWidgets import QWidget
 
-from rehuco_agent.fields.field import Field, FieldBinding
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from rehuco_agent.fields.widgets import ExpandToggleButton, PathEditor
 
 
@@ -52,8 +51,11 @@ class PathField(Field[str]):
         current_name: Callable[[], str] | None = None,
         suggestions_changed: SignalInstance | None = None,
         expanded: bool = False,
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
     ) -> None:
-        super().__init__(name, label)
+        super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__suggestions = suggestions
         self.__on_suggestion_selected = on_suggestion_selected
         self.__current_name = current_name
@@ -61,17 +63,14 @@ class PathField(Field[str]):
         self.__expanded = expanded
 
     @override
-    def make_viewer(self, binding: FieldBinding[str]) -> QWidget:
-        label = ElidedLabel()
-        label.setOpenExternalLinks(True)
-        self.__render_link(label, binding.value)
-        binding.changed.connect(lambda value: self.__render_link(label, value))
-        return label
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return FieldViewerWidgets(self.viewer_tab, self.make_label(), self.__make_link_label(binding))
 
     @override
-    def make_editors(self, binding: FieldBinding[str]) -> list[QWidget]:
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         if self.__suggestions is None:
-            return [self.make_viewer(binding)]
+            # read-only variant: the same native-path link as the viewer, no rename panel or toggle
+            return FieldEditorWidgets(self.editor_tab, self.make_label(), self.__make_link_label(binding))
 
         editor = PathEditor()
         editor.setObjectName(self.name)
@@ -83,25 +82,26 @@ class PathField(Field[str]):
         binding.changed.connect(lambda _value: self.__refresh(editor))
         if self.__suggestions_changed is not None:
             self.__suggestions_changed.connect(lambda *_: self.__refresh(editor))
-        return [editor]
 
-    @override
-    def make_misc(self, binding: FieldBinding[str], editors: list[QWidget]) -> QWidget | None:
-        """Build the expand/collapse toggle for the misc column, two-way bound to the `PathEditor`.
-
-        :param binding: the resolved binding (unused; the toggle drives the editor directly).
-        :param editors: this field's editors; the first is the `PathEditor` when suggestions exist.
-        :returns: the toggle, or ``None`` for the read-only (no-suggestions) variant.
-        """
-        del binding
-        if self.__suggestions is None or not editors or not isinstance(editors[0], PathEditor):
-            return None
-        editor = editors[0]
+        # expand/collapse toggle for the middle column, two-way bound to the editor's expand state
         toggle = ExpandToggleButton()
         toggle.setChecked(editor.expanded)
         toggle.toggled.connect(lambda checked: setattr(editor, "expanded", checked))
         editor.expanded_changed.connect(toggle.setChecked)
-        return toggle
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor, toggle)
+
+    def __make_link_label(self, binding: FieldBinding[str]) -> ElidedLabel:
+        """Build the ``file://`` native-path link label bound to ``binding`` -- the viewer, and the
+        read-only (no-suggestions) editor variant.
+
+        :param binding: the value/signal to bind.
+        :returns: an `ElidedLabel` that re-renders the link on every change.
+        """
+        label = ElidedLabel()
+        label.setOpenExternalLinks(True)
+        self.__render_link(label, binding.value)
+        binding.changed.connect(lambda value: self.__render_link(label, value))
+        return label
 
     def __refresh(self, editor: PathEditor) -> None:
         """Re-pull the current name and raw suggestions into the editor.

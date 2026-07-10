@@ -91,6 +91,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     released = SimpleProperty("")
     """The shared, partial-precision ``released`` date ([[field-schema#field-mapping]])."""
 
+    description = SimpleProperty("")
+    """The resource's Markdown description; a top-level common-core string, edited in its own dock and
+    rendered in the viewer ([[plugins#viewer-editor-both]])."""
+
     complete = SimpleProperty(True)
     """The shared "all files present" flag ([[field-schema#boolean-flags]]); defaults ``true``."""
 
@@ -157,6 +161,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
         self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
         self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
+        self.description_changed.connect(self.__on_description_changed)  # type: ignore[attr-defined]
         self.original_size_changed.connect(self.__on_original_size_changed)  # type: ignore[attr-defined]
         self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
@@ -307,6 +312,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.publisher = self.__document.publisher
         self.url = self.__document.url
         self.released = self.__document.released
+        self.description = self.__document.description
         self.original_size = self.__document.original_size
         self.current_size = self.__document.current_size
         self.advertised_tags = self.__document.advertised_tags
@@ -407,6 +413,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__reverting:
             return
         self.__document.released = value
+        self.dirty = True
+
+    def __on_description_changed(self, value: str) -> None:
+        """Write an edited description through to the document and mark dirty.
+
+        No-op while :meth:`revert` is reseeding -- see the comment there.
+
+        :param value: the new description.
+        """
+        if self.__reverting:
+            return
+        self.__document.description = value
         self.dirty = True
 
     def __on_original_size_changed(self, value: int) -> None:
