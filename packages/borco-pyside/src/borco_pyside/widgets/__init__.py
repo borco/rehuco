@@ -8,6 +8,7 @@ from borco_pyside.widgets.layout_helpers import equal_width_row
 from borco_pyside.widgets.line_edit_clear_action import LineEditClearActionFilter
 from borco_pyside.widgets.line_edit_helpers import parsed_value_or_reset, resync_line_edit
 from borco_pyside.widgets.rating import Rating
+from borco_pyside.widgets.rich_text_view import RichTextView
 from borco_pyside.widgets.unbounded_spin_box import UnboundedSpinBox
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "HorizontalLine",
     "LineEditClearActionFilter",
     "Rating",
+    "RichTextView",
     "UnboundedSpinBox",
     "equal_width_row",
     "parsed_value_or_reset",
