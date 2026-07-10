@@ -63,10 +63,13 @@ that show and edit it:
 
 - **`Field`** — the base: a `type` selector ([[field-schema#field-types]]), a `name`, a display `label` (derived from
   the
-  name when not given), and two factories — `make_viewer()` and **`make_editors()` (plural)**. Viewer
-  and editor are deliberately separate objects, not one widget in two modes ([[plugins#core-vs-plugin]]'s editor/viewer
-  split); `make_editors()` is plural so one field can surface across more than one editor later (the
-  multi-editor split, A2.6/#26) without changing the base.
+  name when not given), a **viewer/editor `FieldsTab`** (the surface each belongs to), and two factories —
+  `make_viewer()` and `make_editor()`. Each returns a **widget bundle** (`FieldViewerWidgets` /
+  `FieldEditorWidgets`: the tab, a name `label`, an optional editor-only `misc` control, and the
+  viewer/editor widget), any slot of which may be `None`. Viewer and editor are deliberately separate
+  objects, not one widget in two modes ([[plugins#core-vs-plugin]]'s editor/viewer split). Each field maps
+  to **one** editor; the multi-*surface* split (different fields in different docks, A2.6/#26) is the
+  assembler's job — see `FieldsForm` — not a per-field list.
 - **`FieldRegistry`** — maps a field `type` string to its `Field` subclass, so a type's field list
   resolves declaratively ([[plugins#core-vs-plugin]]: a declarative type is a field list over the toolkit). An
   unregistered type falls back to the unknown-field surface (A2.8/#28).
@@ -114,8 +117,9 @@ URL:       [url edit]
 ```
 
 The list/nested widgets and their group/subtype config land in a later slice (A2.3/#23, A2.6/#26);
-A2.0 ships only the leaf text field, but the `Field` / `make_editors()` base is shaped so a field can
-own child fields without a base change.
+A2.0 ships only the leaf text field. A composite field still returns **one** editor widget from
+`make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
+change, and never a list of editors.
 
 ### §13.2.2 Reactive view-model
 
