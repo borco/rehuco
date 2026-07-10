@@ -81,7 +81,7 @@ jobs:
       # fail_ci_if_error: false -- this is new plumbing (#19); don't let upload flakiness
       # (rate limits, transient Codecov outages) fail QA. Tighten once it's proven reliable.
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: ${{ matrix.flag }}
