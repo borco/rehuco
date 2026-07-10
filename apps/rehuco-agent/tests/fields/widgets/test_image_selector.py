@@ -4,7 +4,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap, QStandardItemModel
-from PySide6.QtWidgets import QListView, QStackedWidget, QWidget
+from PySide6.QtWidgets import QLabel, QListView, QStackedWidget, QWidget
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_selector import ImageSelector, PreviewLabel
 
@@ -74,7 +75,7 @@ def test_seeding_does_not_emit_hidden_changed(qtbot: QtBot) -> None:
 
     selector.set_images(PATHS, ["info00.jpg"])
 
-    assert emitted == []
+    assert not emitted
 
 
 def test_preview_label_scales_its_source_to_fit_preserving_aspect(qtbot: QtBot) -> None:
@@ -156,3 +157,33 @@ def test_unchecking_a_row_emits_the_new_hidden_list(qtbot: QtBot) -> None:
     checkable_model(selector).item(0).setCheckState(Qt.CheckState.Unchecked)
 
     assert emitted == [["info00.jpg"]]
+
+
+def size_overlay(selector: ImageSelector) -> QLabel:
+    """The selector's preview size-overlay label.
+
+    :param selector: the selector under test.
+    :returns: the ``QLabel`` overlaying the preview with its pixel dimensions.
+    """
+    return selector._ImageSelector__size_overlay  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_selecting_a_loadable_screenshot_shows_its_dimensions(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Selecting a screenshot that loads previews it and labels the overlay with its pixel size.
+
+    **Test steps:**
+
+    * seed screenshots with a stubbed loader yielding a 320x180 pixmap
+    * select the first row
+    * verify the size overlay reads its dimensions
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.set_images(PATHS, [])
+
+    view = selector.findChild(QListView)
+    assert isinstance(view, QListView)
+    view.setCurrentIndex(view.model().index(0, 0))
+
+    assert size_overlay(selector).text() == "320 x 180"

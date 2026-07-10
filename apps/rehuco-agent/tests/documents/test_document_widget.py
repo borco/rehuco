@@ -7,15 +7,17 @@ the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
 import cbor2
+import PySide6QtAds as QtAds
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QLabel, QLineEdit
-from pytest import fixture
+from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields import FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
 from rehuco_core import RehuDocument
 
@@ -190,6 +192,31 @@ def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> 
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
+
+
+def test_toggle_action_raises_for_a_tab_no_dock_hosts(widget: DocumentWidget) -> None:
+    """Asking for the toggle action of a tab that neither the viewer nor editor hosts raises ``KeyError``.
+
+    **Test steps:**
+
+    * build a widget and ask for the toggle action of an unrelated tab
+    * verify it raises ``KeyError``
+    """
+    with raises(KeyError):
+        widget.toggle_action(FieldsTab("Nonexistent", ":/nope.svg"))
+
+
+def test_adding_docks_from_an_empty_grid_map_builds_nothing(widget: DocumentWidget) -> None:
+    """Building docks from an empty ``{tab: grid}`` mapping adds no docks and selects no current tab.
+
+    **Test steps:**
+
+    * invoke the dock builder with an empty grid map
+    * verify it returns an empty mapping (the ``setAsCurrentTab`` step is skipped)
+    """
+    docks = widget._DocumentWidget__add_docks({}, "viewer", QtAds.LeftDockWidgetArea)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert docks == {}
 
 
 def test_closing_a_dock_stashes_its_splitter_sizes(widget: DocumentWidget) -> None:

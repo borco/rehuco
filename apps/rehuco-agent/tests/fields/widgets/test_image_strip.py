@@ -91,3 +91,21 @@ def test_set_images_replaces_the_previous_thumbnails(mocker: MockerFixture, qtbo
     strip.set_images(PATHS[:1])
 
     assert strip_layout(strip).count() == 1
+
+
+def test_clearing_the_strip_skips_non_widget_layout_items(qtbot: QtBot) -> None:
+    """Clearing tolerates a stray non-widget layout item (e.g. a spacer), leaving the row empty.
+
+    **Test steps:**
+
+    * seed the row with a bare spacer item (no widget)
+    * call ``set_images([])`` and verify the row ends up empty
+    """
+    strip = ImageStrip()
+    qtbot.addWidget(strip)
+    strip_layout(strip).addStretch()
+    assert strip_layout(strip).count() == 1
+
+    strip.set_images([])
+
+    assert strip_layout(strip).count() == 0

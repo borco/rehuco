@@ -1,5 +1,10 @@
 """Tests for the RehuDocumentModel reactive view-model."""
 
+# the model has a broad reactive surface (common-core + type fields, seeding, revert, dirty
+# tracking); its test suite is correspondingly long -- one cohesive module reads better than an
+# arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 import logging
 from pathlib import Path
 
@@ -644,6 +649,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
         document.data["current_size"] = 1073741824
         document.data["advertised_tags"] = ["reloaded-tag"]
         document.data["extra_tags"] = ["reloaded-extra"]
+        document.data["description"] = "# Reloaded\n\nprose"
+        document.data["hidden_images"] = ["reloaded.jpg"]
 
     reload = mocker.patch.object(document, "reload", side_effect=fake_reload)
 
@@ -659,6 +666,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     assert model.current_size == 1073741824
     assert model.advertised_tags == ["reloaded-tag"]
     assert model.extra_tags == ["reloaded-extra"]
+    assert model.description == "# Reloaded\n\nprose"
+    assert model.hidden_images == ["reloaded.jpg"]
     assert model.dirty is False
 
 

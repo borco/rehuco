@@ -60,6 +60,26 @@ def test_size_hint_reports_the_rendered_content_height(qtbot: QtBot) -> None:
     assert tall > short
 
 
+def test_resizing_reflows_the_document_to_the_new_viewport_width(qtbot: QtBot) -> None:
+    """A resize re-wraps the live document to the new viewport width.
+
+    **Test steps:**
+
+    * show a view over some content, then resize it wider
+    * verify the document's text width tracks the resized viewport width
+    """
+    view = RichTextView()
+    qtbot.addWidget(view)
+    view.setHtml("<p>some wrapping content here</p>")
+    view.resize(300, 200)
+    view.show()
+    qtbot.waitExposed(view)
+
+    view.resize(500, 200)
+
+    assert view.document().textWidth() == view.viewport().width()
+
+
 def test_height_for_width_matches_the_size_hint_height(qtbot: QtBot) -> None:
     """The view opts into height-for-width, reporting the same cached content height.
 

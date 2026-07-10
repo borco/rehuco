@@ -49,6 +49,50 @@ class VerticalMiscField(VerticalField):
         return replace(super().make_editor(binding), misc=QToolButton())
 
 
+class EmptyField(TextField):
+    """A sample field whose viewer and editor bundles are entirely empty (all widgets ``None``)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), label=None, viewer=None)
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), label=None, editor=None, misc=None)
+
+
+class LabellessField(TextField):
+    """A sample field that contributes content but no label (label column stays empty)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), label=None)
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), label=None)
+
+
+class ContentlessField(TextField):
+    """A sample field that contributes a label but no viewer/editor (content column stays empty)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), viewer=None)
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), editor=None)
+
+
+class VerticalContentlessField(VerticalField):
+    """A vertical sample field with a label but no content (its full-width body is ``None``)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), viewer=None)
+
+
 # endregion
 
 
@@ -275,3 +319,73 @@ def test_vertical_editor_row_keeps_misc_on_the_top_line(qtbot: QtBot, model: Reh
     assert isinstance(stacked[0], QLabel)
     assert isinstance(stacked[1], QToolButton)
     assert isinstance(stacked[2], QLineEdit)
+
+
+def test_a_field_with_no_widgets_contributes_no_tab(model: RehuDocumentModel) -> None:
+    """A field whose viewer/editor bundle is all ``None`` produces no row, so its tab is absent.
+
+    **Test steps:**
+
+    * build viewer and editor forms over a single all-empty field
+    * verify both mappings are empty (the empty tab cascades away)
+    """
+    form = FieldsForm([EmptyField("title")])
+
+    assert not form.make_viewer(model)
+    assert not form.make_editor(model)
+
+
+def test_label_column_stays_empty_for_a_labelless_field(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A field with content but no label leaves the label column empty while still placing content.
+
+    **Test steps:**
+
+    * build viewer and editor forms over a label-less field
+    * verify the label column is empty and the content column is populated in each
+    """
+    for grids in (
+        FieldsForm([LabellessField("title")]).make_viewer(model),
+        FieldsForm([LabellessField("title")]).make_editor(model),
+    ):
+        widget = sole_grid_widget(grids)
+        qtbot.addWidget(widget)
+        grid = grid_of(widget)
+        assert widget_at(grid, 0, LABEL_COLUMN) is None
+        assert widget_at(grid, 0, CONTENT_COLUMN) is not None
+
+
+def test_content_column_stays_empty_for_a_contentless_field(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A field with a label but no viewer/editor leaves the content column empty while placing the label.
+
+    **Test steps:**
+
+    * build viewer and editor forms over a content-less field
+    * verify the label column is populated and the content column is empty in each
+    """
+    for grids in (
+        FieldsForm([ContentlessField("title")]).make_viewer(model),
+        FieldsForm([ContentlessField("title")]).make_editor(model),
+    ):
+        widget = sole_grid_widget(grids)
+        qtbot.addWidget(widget)
+        grid = grid_of(widget)
+        assert isinstance(widget_at(grid, 0, LABEL_COLUMN), QLabel)
+        assert widget_at(grid, 0, CONTENT_COLUMN) is None
+
+
+def test_vertical_row_omits_missing_content(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A vertical bundle with no content stacks only its label (the body widget is skipped).
+
+    **Test steps:**
+
+    * build a viewer form over a vertical field whose content is ``None``
+    * verify the spanning container holds only the label
+    """
+    form = FieldsForm([VerticalContentlessField("title")])
+    widget = sole_grid_widget(form.make_viewer(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    stacked = descendant_widgets(vertical_container(grid, 0))
+    assert len(stacked) == 1
+    assert isinstance(stacked[0], QLabel)
