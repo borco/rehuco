@@ -24,3 +24,10 @@ CLEAR_ACTION_GLYPH: Final = Glyph("\ue0ae", "Phosphor-Bold")
 
 CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
 """Phosphor's "calendar" glyph, `DateField`'s popup-calendar trailing action icon."""
+
+EXPAND_ACTION_GLYPH: Final = Glyph("\ue3d4", "Phosphor-Bold")
+"""Phosphor's "plus" glyph, `PathField`'s suggestions-panel expand toggle (collapsed state)."""
+
+COLLAPSE_ACTION_GLYPH: Final = Glyph("\ue32a", "Phosphor-Bold")
+"""Phosphor's "minus" glyph, `PathField`'s suggestions-panel collapse toggle (expanded state); shares
+:data:`EXPAND_ACTION_GLYPH`'s font family, so the toggle button sets its font once and only swaps text."""

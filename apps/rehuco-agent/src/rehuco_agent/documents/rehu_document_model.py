@@ -1,13 +1,16 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
+import logging
 from pathlib import Path
 from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, Signal
 from rehuco_core import RehuDocument
 
 from rehuco_agent.fields.field import Field, FieldBinding
+
+LOG: Final = logging.getLogger(__name__)
 
 INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
@@ -21,6 +24,25 @@ TYPE_FIELD_INT_NAMES: Final = ("rating", "images_count", "original_duration", "c
 """The type-field integer fields ([[field-schema#field-types]]); ``rating`` may be negative, the
 ``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
 ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
+TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
+"""The type-field string-list fields ([[field-schema#field-types]]); ``level`` is multi-choice, not a
+mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
+at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
+NAME_SUGGESTION_PATTERNS: Final = (
+    "{title}",
+    "{publisher} - {title}",
+    "{title} [{year}]",
+    "{authors} - {title}",
+)
+"""The folder/file-name suggestion patterns offered when renaming a resource ([[field-schema#field-mapping]]):
+each is formatted from the record's own fields (``title`` / ``publisher`` / ``authors`` / the released
+``year``) into a candidate name. A constant for now; a future revision may make it configurable."""
+
+NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released")
+"""The fields :data:`NAME_SUGGESTION_PATTERNS` interpolate; a change to any of them re-emits
+``name_suggestions_changed`` so a `PathField` re-pulls the suggestions live."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -42,6 +64,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :param document: the document to wrap.
     :param parent: optional Qt parent.
     """
+
+    name_suggestions_changed = Signal()
+    """Fires when a field the rename suggestions are built from
+    (:data:`NAME_SUGGESTION_SOURCE_FIELDS`) changes, so a `PathField` can re-pull
+    :meth:`name_suggestions` live -- e.g. editing ``authors`` updates the offered names."""
+
+    location = SimpleProperty("")
+    """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
+    folder/location links). The viewer binds to it (rendered as a native-path link); it is not edited
+    directly -- :meth:`rename_location` is the only thing that changes it, and only once the deferred
+    move-on-disk (A5) actually succeeds."""
 
     title = SimpleProperty("")
     """The primary source's display title ([[field-schema#sources]])."""
@@ -81,6 +114,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     images_count = SimpleProperty(0)
     """The ReferenceImages image count ([[field-schema#field-types]])."""
+
+    level = SimpleProperty[list[str]](default_factory=list)
+    """The Tutorial-only multi-choice level tags ([[field-schema#field-types]]); beginner /
+    intermediate / advanced / any, zero or more at once."""
 
     original_duration = SimpleProperty(0)
     """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]])."""
@@ -124,9 +161,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
         self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
         self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
-        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES):
+        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
+        for name in NAME_SUGGESTION_SOURCE_FIELDS:
+            signal_name = SimpleProperty.notify_signal_name(type(self), name)
+            getattr(self, signal_name).connect(lambda *_: self.name_suggestions_changed.emit())
 
     @classmethod
     def create_new(cls, path: Path | str | None = None, parent: QObject | None = None) -> RehuDocumentModel:
@@ -168,14 +208,64 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
 
     @property
+    def current_name(self) -> str:
+        """The resource's current rename target name -- the name a rename suggestion would replace
+        ([[field-schema#field-mapping]]): the **parent directory** name for a directory-scoped
+        ``info.rehu`` ([[data-model#resource-scoping]]), the file **stem** (no extension) otherwise,
+        since a standalone ``foo.rehu`` renames its whole ``foo.*`` sibling set. Empty when the
+        document has no path yet.
+        """
+        path = self.path
+        if path is None:
+            return ""
+        return path.parent.name if path.name == INFO_REHU_FILENAME else path.stem
+
+    @property
     def sources(self) -> list[dict[str, Any]]:
         """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
         return self.__document.sources
+
+    def name_suggestions(self) -> list[str]:
+        """Build the rename-candidate names from this record's fields via :data:`NAME_SUGGESTION_PATTERNS`.
+
+        Raw strings only -- interpolated from ``title`` / ``publisher`` / joined ``authors`` / the
+        released ``year`` -- left unsanitized; the `PathField` editor transliterates and
+        filesystem-sanitizes them before display, and drops any that reduce to nothing.
+
+        :returns: one candidate string per pattern, in pattern order.
+        """
+        values = {
+            "title": self.title,
+            "publisher": self.publisher,
+            "authors": ", ".join(self.authors),
+            "year": self.released[:4],
+        }
+        return [pattern.format(**values) for pattern in NAME_SUGGESTION_PATTERNS]
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""
         self.__document.save()
         self.dirty = False
+
+    def rename_location(self, new_name: str) -> bool:
+        """Rename this resource to ``new_name`` -- clicked from a `PathField` rename suggestion.
+
+        Orchestration only: the intent is logged *before* anything is attempted (so the log reflects
+        what was asked for even if it then fails), a dirty document is saved first (so the files
+        actually being moved are never stale), and the move itself is delegated to :meth:`__move`.
+        :meth:`__move` owns performing the rename and reseeding :attr:`location` on success; it always
+        fails for now -- the real rename-on-disk (folder-rename-from-suggestions, checksum-gated safe
+        move) is deferred to A5 ([[implementation-plan]]) -- so :attr:`location` never actually
+        changes through this path yet.
+
+        :param new_name: the destination file/folder name (already sanitized by the caller, e.g. a
+            clicked `PathField` suggestion).
+        :returns: whether the rename succeeded.
+        """
+        LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
+        if self.dirty:
+            self.save()
+        return self.__move(new_name)
 
     def revert(self) -> None:
         """Discard in-memory edits and reseed every field from the document's file on disk.
@@ -211,6 +301,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def __seed_from_document(self) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction and :meth:`revert`)."""
+        self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
         self.title = self.__document.title
         self.authors = self.__document.authors
         self.publisher = self.__document.publisher
@@ -232,6 +323,31 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             default = SimpleProperty.default_value(type(self), name)
             value = self.__document.type_field(name, default)
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+        for name in TYPE_FIELD_STR_LIST_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
+            value = self.__document.type_field(name, default)
+            coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
+            setattr(self, name, coerced)
+
+    def __move(self, new_name: str) -> bool:
+        """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
+
+        Always fails, for now -- the real rename-on-disk (folder-rename-from-suggestions, plus the
+        checksum-gated safe move a cross-filesystem destination needs) is deferred to A5
+        ([[implementation-plan]]); this stub exists so :meth:`rename_location` has somewhere to call
+        that already fails the way missing permissions or a name collision would, rather than
+        silently pretending to succeed. When implemented, it will perform the move and reseed
+        :attr:`location`/:attr:`current_name` from the new path.
+
+        :param new_name: the destination file/folder name.
+        :returns: always ``False``.
+        """
+        LOG.error(
+            "Rename not implemented yet (rename-on-disk is deferred to A5, #25): %r -> %r",
+            self.current_name,
+            new_name,
+        )
+        return False
 
     def __on_title_changed(self, value: str) -> None:
         """Write an edited title through to the document's primary source and mark dirty.

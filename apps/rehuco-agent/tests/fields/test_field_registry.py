@@ -6,6 +6,8 @@ from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.int_field import IntField
+from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
+from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
@@ -72,6 +74,20 @@ def test_registry_resolves_the_date_and_duration_field_types() -> None:
 
     assert registry.types["date"] is DateField
     assert registry.types["duration"] is DurationField
+
+
+def test_registry_resolves_the_multi_choice_and_path_field_types() -> None:
+    """The registry maps the ``multi_choice`` / ``path`` types to their classes.
+
+    **Test steps:**
+
+    * build a default registry
+    * verify each type resolves to its ``Field`` subclass
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["multi_choice"] is MultipleChoiceField
+    assert registry.types["path"] is PathField
 
 
 def test_registry_raises_on_an_unknown_type() -> None:

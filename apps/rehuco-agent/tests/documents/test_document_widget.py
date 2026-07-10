@@ -15,6 +15,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields.widgets import PathEditor
 from rehuco_core import RehuDocument
 
 
@@ -382,6 +383,93 @@ def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: Documen
     assert widget.restore_state(cbor2.dumps(payload)) is True
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not stashed
+
+
+# endregion
+
+
+# region location path field
+def location_editor(widget: DocumentWidget) -> PathEditor:
+    """Return the widget's editor-surface location `PathEditor`.
+
+    :param widget: the document widget to inspect.
+    :returns: the location field's editor.
+    """
+    editors = widget.findChildren(PathEditor)
+    assert len(editors) == 1
+    return editors[0]
+
+
+def test_save_state_round_trips_the_path_field_expand_state(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """The location field's expand state is persisted per-``.rehu`` and restored on a fresh widget.
+
+    **Test steps:**
+
+    * expand the location editor and save the widget's state
+    * build a fresh widget (collapsed) and restore that state
+    * verify the fresh widget's location editor is now expanded
+    """
+    location_editor(widget).expanded = True
+    state = widget.save_state()
+
+    fresh = DocumentWidget(
+        RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
+    )
+    qtbot.addWidget(fresh)
+    assert location_editor(fresh).expanded is False
+
+    fresh.restore_state(state)
+
+    assert location_editor(fresh).expanded is True
+
+
+def test_restore_state_tolerates_a_payload_without_path_field_expand_state(widget: DocumentWidget) -> None:
+    """A dict payload missing the path-field expand entry still restores cleanly.
+
+    **Test steps:**
+
+    * save the widget's real state, then strip its ``path_field_expanded`` entry
+    * verify ``restore_state`` still reports success
+    """
+    payload = cbor2.loads(widget.save_state())
+    del payload["path_field_expanded"]
+
+    assert widget.restore_state(cbor2.dumps(payload)) is True
+
+
+def test_restore_state_ignores_an_expand_entry_for_an_unknown_field(widget: DocumentWidget) -> None:
+    """A saved expand entry naming no current field is ignored, and the known one still applies.
+
+    **Test steps:**
+
+    * save state, then add a bogus field name to the expand entry and expand the real one
+    * restore it and verify the real editor expanded and no error was raised for the bogus name
+    """
+    payload = cbor2.loads(widget.save_state())
+    payload["path_field_expanded"] = {"location": True, "no_such_field": True}
+
+    assert widget.restore_state(cbor2.dumps(payload)) is True
+    assert location_editor(widget).expanded is True
+
+
+def test_clicking_a_location_suggestion_renames_through_the_model(
+    mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """Activating a location rename suggestion calls ``model.rename_location`` with its name.
+
+    **Test steps:**
+
+    * patch ``model.rename_location`` and find a suggestion label on the location editor
+    * activate its link and verify the model was asked to rename to that suggestion
+    """
+    rename = mocker.patch.object(model, "rename_location")
+    editor = location_editor(widget)
+    labels = editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    name, label = next(iter(labels.items()))
+
+    label.linkActivated.emit("#")
+
+    rename.assert_called_once_with(name)
 
 
 # endregion
