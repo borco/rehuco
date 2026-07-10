@@ -66,11 +66,14 @@ class FieldViewerWidgets:
     :param tab: the viewer surface this row belongs to.
     :param label: the field's name label, or ``None`` for none.
     :param viewer: the read-only value widget, or ``None`` for none.
+    :param vertical: when ``True``, the row spans the whole grid width with the ``label`` stacked
+        above the ``viewer`` instead of side by side; defaults to ``False``.
     """
 
     tab: FieldsTab
     label: QWidget | None
     viewer: QWidget | None
+    vertical: bool = False
 
 
 @dataclass
@@ -85,12 +88,15 @@ class FieldEditorWidgets:
     :param editor: the editor widget, or ``None`` for none.
     :param misc: the optional middle-column control (e.g. the ``path`` expand toggle); defaults to
         ``None``.
+    :param vertical: when ``True``, the row spans the whole grid width with the ``label`` (and
+        ``misc``, if any) stacked above the ``editor`` instead of side by side; defaults to ``False``.
     """
 
     tab: FieldsTab
     label: QWidget | None
     editor: QWidget | None
     misc: QWidget | None = None
+    vertical: bool = False
 
 
 @runtime_checkable

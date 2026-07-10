@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, Final
 
-from PySide6.QtWidgets import QGridLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from rehuco_agent.fields.field import Field, FieldEditorWidgets, FieldModel, FieldsTab, FieldViewerWidgets
 
@@ -21,6 +21,11 @@ class FieldsForm:
     ``path`` field's expand toggle, the ``misc`` slot of its
     :class:`~rehuco_agent.fields.field.FieldEditorWidgets`) in the middle column. The label and misc
     columns take their preferred width and don't grow; the content column takes the remaining width.
+
+    A bundle may instead request a **vertical** row (``vertical=True``): it spans the whole grid width
+    and stacks its widgets in an inner ``QVBoxLayout`` -- the label (and the editor's optional
+    ``misc``) on top, the viewer/editor full-width below -- which reads better for prose (the Markdown
+    ``description``).
 
     Emptiness cascades: a field whose row widgets are all ``None`` contributes no row, and a tab that
     ends up with no rows is absent from the returned mapping (so no empty dock is built).
@@ -50,6 +55,9 @@ class FieldsForm:
             widget = QWidget()
             grid = self.__make_grid(widget)
             for row, bundle in enumerate(bundles):
+                if bundle.vertical:
+                    self.__add_vertical_row(grid, row, (bundle.label,), bundle.viewer)
+                    continue
                 if bundle.label is not None:
                     grid.addWidget(bundle.label, row, LABEL_COLUMN)
                 if bundle.viewer is not None:
@@ -76,6 +84,9 @@ class FieldsForm:
             widget = QWidget()
             grid = self.__make_grid(widget)
             for row, bundle in enumerate(bundles):
+                if bundle.vertical:
+                    self.__add_vertical_row(grid, row, (bundle.label, bundle.misc), bundle.editor)
+                    continue
                 if bundle.label is not None:
                     grid.addWidget(bundle.label, row, LABEL_COLUMN)
                 if bundle.misc is not None:
@@ -84,6 +95,40 @@ class FieldsForm:
                     grid.addWidget(bundle.editor, row, CONTENT_COLUMN)
             grids[tab] = widget
         return grids
+
+    @staticmethod
+    def __add_vertical_row(
+        grid: QGridLayout,
+        row: int,
+        header: tuple[QWidget | None, ...],
+        content: QWidget | None,
+    ) -> None:
+        """Add a full-width vertical row: the ``header`` widgets on a top line, ``content`` stacked below.
+
+        The row spans all three grid columns. Its widgets are stacked in an inner ``QVBoxLayout``; the
+        header widgets (label, and the editor's optional ``misc``) share the top line via a
+        ``QHBoxLayout`` when more than one is present. ``None`` slots are skipped.
+
+        :param grid: the grid to add the row to.
+        :param row: the grid row index.
+        :param header: the top-line widgets (label, optional misc), in order.
+        :param content: the full-width body widget (viewer or editor) placed below the header.
+        """
+        container = QWidget()
+        column = QVBoxLayout(container)
+        column.setContentsMargins(0, 0, 0, 0)
+        top = [widget for widget in header if widget is not None]
+        if len(top) == 1:
+            column.addWidget(top[0])
+        elif top:
+            line = QHBoxLayout()
+            for widget in top:
+                line.addWidget(widget)
+            line.addStretch()
+            column.addLayout(line)
+        if content is not None:
+            column.addWidget(content)
+        grid.addWidget(container, row, LABEL_COLUMN, 1, CONTENT_COLUMN - LABEL_COLUMN + 1)
 
     @staticmethod
     def __make_grid(widget: QWidget) -> QGridLayout:

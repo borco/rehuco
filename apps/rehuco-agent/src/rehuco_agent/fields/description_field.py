@@ -4,6 +4,7 @@ own dock ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]).
 
 from typing import override
 
+from borco_pyside.widgets import HorizontalLine
 from PySide6.QtCore import QSignalBlocker
 from pyside6_scintilla import ScintillaEdit
 
@@ -25,7 +26,7 @@ class DescriptionField(Field[str]):
         viewer = MarkdownView()
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
-        return FieldViewerWidgets(self.viewer_tab, self.make_label(), viewer)
+        return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True)
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
@@ -35,7 +36,7 @@ class DescriptionField(Field[str]):
         editor.notifyChange.connect(lambda *_: binding.set_value(self.__text(editor)))
         binding.changed.connect(lambda value: self.__echo(editor, value))
         # no label for the editor tab, since the tab itself is the label
-        return FieldEditorWidgets(self.editor_tab, None, editor)
+        return FieldEditorWidgets(self.editor_tab, None, editor, vertical=True)
 
     @staticmethod
     def __text(editor: ScintillaEdit) -> str:
