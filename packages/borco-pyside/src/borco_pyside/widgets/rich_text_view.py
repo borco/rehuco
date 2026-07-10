@@ -82,7 +82,8 @@ class RichTextView(QTextBrowser):
         return True
 
     @override
-    def heightForWidth(self, width: int) -> int:  # noqa: N802  (Qt API name)
+    def heightForWidth(self, _width: int) -> int:  # noqa: N802  (Qt API name)
+        # width is ignored: the content height is cached from the last reflow, not recomputed here
         return self.__content_height
 
     @override

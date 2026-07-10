@@ -2,6 +2,8 @@
 expand toggle, and the live suggestion/current-name wiring.
 """
 
+from pathlib import Path
+
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QObject, Signal
 from pytestqt.qtbot import QtBot
@@ -65,7 +67,8 @@ def test_viewer_is_an_elided_native_path_link(qtbot: QtBot, model: RehuDocumentM
 
     assert viewer.openExternalLinks() is True
     assert viewer.text().startswith('<a href="file:')
-    assert ">C:\\tutorials\\foo</a>" in viewer.text()
+    # native separators: backslashes on Windows, forward slashes elsewhere
+    assert f">{Path('C:/tutorials/foo')}</a>" in viewer.text()
 
 
 def test_viewer_renders_nothing_when_empty(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -100,7 +103,7 @@ def test_viewer_tracks_the_bound_value(qtbot: QtBot, model: RehuDocumentModel) -
 
     model.location = "C:/x/y"
 
-    assert ">C:\\x\\y</a>" in viewer.text()
+    assert f">{Path('C:/x/y')}</a>" in viewer.text()
 
 
 # endregion

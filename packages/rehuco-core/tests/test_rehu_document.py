@@ -334,8 +334,8 @@ def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
     * verify a document with no ``hidden_images`` key reads ``[]``
     * verify a document whose ``hidden_images`` is a non-list reads ``[]``
     """
-    assert RehuDocument({}).hidden_images == []
-    assert RehuDocument({"hidden_images": "info00.jpg"}).hidden_images == []
+    assert not RehuDocument({}).hidden_images
+    assert not RehuDocument({"hidden_images": "info00.jpg"}).hidden_images
 
 
 def test_hidden_images_reads_and_coerces_stored_names() -> None:
