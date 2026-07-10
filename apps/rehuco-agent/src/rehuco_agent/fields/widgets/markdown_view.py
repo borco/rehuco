@@ -1,18 +1,19 @@
-"""A read-only Markdown viewer: renders Markdown to HTML into a `QTextBrowser`, capping over-wide
-images ([[plugins#field-toolkit]]).
+"""A read-only Markdown viewer: renders Markdown to HTML into a content-sizing :class:`RichTextView`,
+capping over-wide images ([[plugins#field-toolkit]]).
 
 Rendering is isolated behind :func:`render_markdown` so the library/options can change (or become a
-preference) without touching the widget. ``QTextBrowser`` renders Qt **rich text**, not a full
-browser -- only a subset of HTML/CSS, no scripting, and it does not fetch network images -- so the
-extension set is kept to what its engine actually renders.
+preference) without touching the widget. The underlying `RichTextView` renders Qt **rich text**, not
+a full browser -- only a subset of HTML/CSS, no scripting, and it does not fetch network images -- so
+the extension set is kept to what its engine actually renders.
 """
 
 from typing import Any, Final, override
 
 import markdown
+from borco_pyside.widgets import RichTextView
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QImage, QTextDocument
-from PySide6.QtWidgets import QTextBrowser, QWidget
+from PySide6.QtWidgets import QWidget
 
 MAX_IMAGE_WIDTH: Final = 350
 """Default cap, in pixels, on a rendered image's width -- an over-wide embedded image is scaled down
@@ -34,10 +35,10 @@ def render_markdown(text: str) -> str:
     return markdown.markdown(text, extensions=MARKDOWN_EXTENSIONS)
 
 
-class MarkdownView(QTextBrowser):
+class MarkdownView(RichTextView):
     """A read-only Markdown viewer ([[plugins#field-toolkit]]): renders via :func:`render_markdown`
-    into the `QTextBrowser` rich-text engine, and scales any image wider than ``max_image_width`` down
-    to it, so an over-wide image never forces the viewer wide.
+    into the content-sizing :class:`RichTextView`, and scales any image wider than ``max_image_width``
+    down to it, so an over-wide image never forces the viewer wide.
 
     :param parent: optional Qt parent.
     :param max_image_width: the width, in pixels, images are capped to; defaults to :data:`MAX_IMAGE_WIDTH`.
