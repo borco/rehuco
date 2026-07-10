@@ -443,30 +443,30 @@ def test_save_state_round_trips_the_path_field_expand_state(qtbot: QtBot, widget
     assert location_editor(fresh).expanded is True
 
 
-def test_restore_state_tolerates_a_payload_without_path_field_expand_state(widget: DocumentWidget) -> None:
-    """A dict payload missing the path-field expand entry still restores cleanly.
+def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:
+    """A dict payload missing the per-widget state entry still restores cleanly.
 
     **Test steps:**
 
-    * save the widget's real state, then strip its ``path_field_expanded`` entry
+    * save the widget's real state, then strip its ``widget_state`` entry
     * verify ``restore_state`` still reports success
     """
     payload = cbor2.loads(widget.save_state())
-    del payload["path_field_expanded"]
+    del payload["widget_state"]
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
 
 
-def test_restore_state_ignores_an_expand_entry_for_an_unknown_field(widget: DocumentWidget) -> None:
-    """A saved expand entry naming no current field is ignored, and the known one still applies.
+def test_restore_state_ignores_a_widget_state_entry_for_an_unknown_widget(widget: DocumentWidget) -> None:
+    """A saved widget-state entry naming no current widget is ignored, and the known one still applies.
 
     **Test steps:**
 
-    * save state, then add a bogus field name to the expand entry and expand the real one
+    * save state, then add a bogus widget name to the ``widget_state`` entry and expand the real one
     * restore it and verify the real editor expanded and no error was raised for the bogus name
     """
     payload = cbor2.loads(widget.save_state())
-    payload["path_field_expanded"] = {"location": True, "no_such_field": True}
+    payload["widget_state"] = {"location": b"\x01", "no_such_widget": b"\x01"}
 
     assert widget.restore_state(cbor2.dumps(payload)) is True
     assert location_editor(widget).expanded is True

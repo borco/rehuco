@@ -12,13 +12,12 @@ from PySide6.QtWidgets import QMainWindow, QWidget
 
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsTab, PathField
-from rehuco_agent.fields.widgets import PathEditor
+from rehuco_agent.fields import FieldsTab, PathField, StatefulWidget
 
 LOCATION_FIELD_NAME: Final = "location"
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 1
+STATE_VERSION: Final = 2
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -28,7 +27,7 @@ the default (all-visible) layout instead."""
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
-STATE_PATH_FIELD_EXPANDED_KEY: Final = "path_field_expanded"
+STATE_WIDGET_STATE_KEY: Final = "widget_state"
 
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
@@ -131,15 +130,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         dock = self.__viewer_docks.get(tab) or self.__editor_docks.get(tab)
         if dock is None:
             raise KeyError(tab)
-        # no-member: astroid mis-infers the CDockWidget value (QtAds is a C extension)
-        return dock.toggleViewAction()  # pylint: disable=no-member
+        return dock.toggleViewAction()
 
     def save_state(self) -> bytes:
-        """Serialize this document's dock layout (visible docks, splitter sizes) and each
-        `PathField`'s expand state for persistence.
+        """Serialize this document's dock layout (visible docks, splitter sizes) and each persisting
+        widget's own state for persistence.
 
-        The path-field expand state rides along here -- persisted per ``.rehu`` together with the tab
-        layout, not in a separate global settings section (#25).
+        Widget state (e.g. the path field's expand state) rides along here -- persisted per ``.rehu``
+        together with the tab layout, not in a separate global settings section (#25).
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`
             (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
@@ -150,8 +148,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
                 STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
-                STATE_PATH_FIELD_EXPANDED_KEY: {
-                    editor.objectName(): editor.expanded for editor in self.__path_editors()
+                STATE_WIDGET_STATE_KEY: {
+                    name: widget.save_state() for name, widget in self.__stateful_widgets().items()
                 },
             }
         )
@@ -198,24 +196,31 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             if isinstance(current_dock_state, bytes):
                 self.__tracker.restore_state(current_dock_state)
 
-        expanded = values.get(STATE_PATH_FIELD_EXPANDED_KEY)
-        if isinstance(expanded, dict):
-            editors = {editor.objectName(): editor for editor in self.__path_editors()}
-            for name, was_expanded in expanded.items():
-                editor = editors.get(name)
-                if editor is not None:
-                    editor.expanded = bool(was_expanded)
+        widget_state = values.get(STATE_WIDGET_STATE_KEY)
+        if isinstance(widget_state, dict):
+            widgets = self.__stateful_widgets()
+            for name, saved in widget_state.items():
+                widget = widgets.get(name)
+                if widget is not None and isinstance(saved, bytes):
+                    widget.restore_state(saved)
         return restored
 
-    def __path_editors(self) -> list[PathEditor]:
-        """The editor docks' `PathEditor` widgets, each named after its field.
+    def __stateful_widgets(self) -> dict[str, StatefulWidget]:
+        """The persisting widgets (`StatefulWidget`) across all docks, keyed by object name.
 
-        Found by type across the dock manager rather than by holding references, so this stays
-        decoupled from how `FieldsForm` lays the editors out.
+        Found by protocol across the dock manager rather than by holding references or knowing which
+        field types persist, so persistence stays decoupled from the field toolkit's layout and its
+        set of stateful widgets. A field names its stateful widget after itself (via ``setObjectName``),
+        which is the key here.
 
-        :returns: the `PathEditor` widgets under the editor docks.
+        :returns: the stateful widgets, keyed by their object name.
         """
-        return self.__dock_manager.findChildren(PathEditor)
+        widgets: dict[str, StatefulWidget] = {}
+        for widget in self.__dock_manager.findChildren(QWidget):
+            name = widget.objectName()
+            if name and isinstance(widget, StatefulWidget):
+                widgets[name] = widget
+        return widgets
 
     def __rename_to(self, new_name: str) -> None:
         """Rename the resource to a clicked suggestion's name (delegated to the model).
