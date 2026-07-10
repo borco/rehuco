@@ -1,25 +1,26 @@
-"""Tests for UrlField: the hyperlink viewer, the line-edit editor, and the live binding."""
+"""Tests for UrlField: the elided hyperlink viewer, the line-edit editor, and the live binding."""
 
+from borco_pyside.widgets import ElidedLabel
 from PySide6.QtWidgets import QLabel, QLineEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.url_field import UrlField
 
 
-def test_url_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The viewer renders an external hyperlink and re-renders when the model changes.
+def test_url_field_viewer_is_an_elided_external_link(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The viewer is an ``ElidedLabel`` external link, rendering the URL and tracking model changes.
 
     **Test steps:**
 
-    * build a ``url`` viewer over a model seeded with a URL
-    * verify the label renders it as a hyperlink that opens externally
+    * build a ``url`` viewer over a seeded URL
+    * verify it's an ``ElidedLabel`` opening external links, shown as the full hyperlink
     * change ``model.url`` and verify the label follows
     """
     field = UrlField("url")
     viewer = field.make_viewer(model.bind(field))
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
+    assert isinstance(viewer, ElidedLabel)
     assert viewer.openExternalLinks() is True
     assert viewer.text() == '<a href="https://example.com">https://example.com</a>'
 
@@ -51,7 +52,7 @@ def test_url_field_viewer_escapes_html_in_the_value(qtbot: QtBot, model: RehuDoc
     **Test steps:**
 
     * set a URL carrying a ``"`` and a ``<``
-    * build the viewer over it
+    * build the viewer (wide, so it doesn't elide) over it
     * verify the rendered text escapes them
     """
     model.url = 'https://example.com/?a="x"<y>'
@@ -59,7 +60,7 @@ def test_url_field_viewer_escapes_html_in_the_value(qtbot: QtBot, model: RehuDoc
     viewer = field.make_viewer(model.bind(field))
     qtbot.addWidget(viewer)
 
-    assert isinstance(viewer, QLabel)
+    assert isinstance(viewer, ElidedLabel)
     assert "<y>" not in viewer.text()
     assert "&lt;y&gt;" in viewer.text()
 
