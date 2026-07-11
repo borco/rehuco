@@ -53,6 +53,34 @@ def test_model_seeds_fields_from_document_without_dirtying(model: RehuDocumentMo
     assert model.publisher == "Bar"
     assert model.url == "https://example.com"
     assert model.dirty is False
+    assert model.locked is False
+
+
+def test_model_is_locked_when_the_document_format_version_is_newer_than_supported() -> None:
+    """A document whose ``format_version`` exceeds ``RehuDocument.CURRENT_FORMAT_VERSION`` locks the
+    model at construction (A3, [[data-model#schema-version]]'s fail-safe-on-a-newer-file rule).
+
+    **Test steps:**
+
+    * construct a model over a document one version newer than this build understands
+    * verify the model is locked
+    """
+    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "format_version": newer_version}))
+    assert model.locked is True
+
+
+def test_model_is_not_locked_at_or_below_the_current_format_version() -> None:
+    """A document at (or below, or missing) the current ``format_version`` is not locked.
+
+    **Test steps:**
+
+    * construct models over documents at the current version, an older version, and no version at all
+    * verify none of them lock
+    """
+    assert RehuDocumentModel(RehuDocument({"format_version": RehuDocument.CURRENT_FORMAT_VERSION})).locked is False
+    assert RehuDocumentModel(RehuDocument({"format_version": 0})).locked is False
+    assert RehuDocumentModel(RehuDocument({})).locked is False
 
 
 def test_model_seeds_empty_from_a_sourceless_document() -> None:
@@ -606,6 +634,32 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     assert model.description == "# Reloaded\n\nprose"
     assert model.hidden_images == ["reloaded.jpg"]
     assert model.dirty is False
+
+
+def test_revert_recomputes_locked_from_the_reloaded_format_version(
+    mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """revert() recomputes :attr:`~RehuDocumentModel.locked` from the reloaded document's
+    ``format_version``, picking up an out-of-band change to it just like any other field.
+
+    **Test steps:**
+
+    * start with a clean, unlocked model
+    * mock ``document.reload`` to simulate the on-disk file now carrying a newer ``format_version``
+    * call ``model.revert()``
+    * verify the model is now locked
+    """
+    assert model.locked is False
+    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+
+    def fake_reload() -> None:
+        document.data["format_version"] = newer_version
+
+    mocker.patch.object(document, "reload", side_effect=fake_reload)
+
+    model.revert()
+
+    assert model.locked is True
 
 
 def test_revert_reseeds_type_fields_too(

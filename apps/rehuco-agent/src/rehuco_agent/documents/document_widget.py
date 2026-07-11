@@ -48,7 +48,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     revert action that re-reads the document from disk (#41). Save is enabled only while the model is
     :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert stays enabled
     unconditionally: it is also how a clean document picks up a change made outside this app, not
-    just how a dirty one discards in-memory edits.
+    just how a dirty one discards in-memory edits. The editor docks' content is disabled outright
+    while the model is :attr:`~RehuDocumentModel.locked` (A3, [[data-model#schema-version]]) -- a
+    ``format_version`` newer than this build understands, so editing isn't safe.
 
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
@@ -89,6 +91,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         self.__save_action.setEnabled(model.dirty)
         model.dirty_changed.connect(self.__on_dirty_changed)  # type: ignore[attr-defined]
+
+        self.__set_editors_locked(model.locked)
+        model.locked_changed.connect(self.__on_locked_changed)  # type: ignore[attr-defined]
 
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
@@ -227,6 +232,25 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param dirty: the model's new dirty state.
         """
         self.__save_action.setEnabled(dirty)
+
+    def __on_locked_changed(self, locked: bool) -> None:
+        """Disable/re-enable the editor docks as :attr:`~RehuDocumentModel.locked` changes (e.g. on revert).
+
+        :param locked: the model's new locked state.
+        """
+        self.__set_editors_locked(locked)
+
+    def __set_editors_locked(self, locked: bool) -> None:
+        """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is
+        newer than this build understands ([[data-model#schema-version]]), so editing it isn't safe.
+
+        Only the content widget is disabled, not the dock itself: the tab/toggle stay usable, so the
+        editor is still viewable, just not editable.
+
+        :param locked: whether to disable (``True``) or re-enable (``False``) the editor docks.
+        """
+        for dock in self.__editor_docks.values():
+            dock.widget().setEnabled(not locked)
 
     def __add_docks(
         self, grids: dict[FieldsTab, QWidget], kind: str, position: QtAds.DockWidgetArea

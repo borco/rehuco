@@ -18,6 +18,16 @@ LOG: Final = logging.getLogger(__name__)
 DIRTY_DOCK_MARKER: Final = "⬤ "
 """Marker prepended to the title of dirty document tabs."""
 
+LOCKED_DOCK_MARKER: Final = "⚿ "
+"""Marker prepended to the title of locked document tabs (A3, [[data-model#schema-version]]); takes
+precedence over :data:`DIRTY_DOCK_MARKER` -- a locked document's editors are disabled, so it can never
+actually be dirty too. A plain Unicode symbol (Miscellaneous Symbols, not an emoji-presentation
+codepoint), same as :data:`DIRTY_DOCK_MARKER` -- renders in the tab's own text color with no font
+wiring, unlike a Phosphor glyph, which would need the tab label's font swapped mid-string (unverified
+whether ``CElidingLabel``'s own eliding logic tolerates that) and can't be a ``CDockWidget.setIcon()``
+icon either, since that single shared property also backs the tabs-menu entry, which has no notion of
+"is this the current tab" for a state-dependent color to key off (confirmed the hard way)."""
+
 
 class DocumentsDock(QMainWindow):
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
@@ -199,6 +209,7 @@ class DocumentsDock(QMainWindow):
 
         tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
         model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
+        model.locked_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
         self.__update_dock_title(dock)
 
         # tab the new document into the current dock's area (a fresh area when nothing is current
@@ -232,16 +243,24 @@ class DocumentsDock(QMainWindow):
         LOG.info("Tab label double-clicked; not implemented yet")
 
     def __update_dock_title(self, dock: QtAds.CDockWidget) -> None:
-        """Set ``dock``'s tab title/tooltip from its document's label, marking it dirty when unsaved.
+        """Set ``dock``'s tab title/tooltip from its document's label, marking it locked or dirty.
 
-        The tab title is the document's :attr:`~RehuDocumentModel.label`, with :data:`DIRTY_DOCK_MARKER`
-        prepended while unsaved; the tooltip always shows the full path.
+        The tab title is the document's :attr:`~RehuDocumentModel.label`, with
+        :data:`LOCKED_DOCK_MARKER` prepended while locked (A3, [[data-model#schema-version]]) or
+        :data:`DIRTY_DOCK_MARKER` while unsaved -- locked takes precedence, since a locked document's
+        disabled editors mean it can never be dirty too. The tooltip always shows the full path.
 
         :param dock: the dock whose title to refresh.
         """
         widget = self.__document_docks[dock]
         name = widget.model.label
-        dock.setWindowTitle(f"{DIRTY_DOCK_MARKER}{name}" if widget.model.dirty else name)
+        if widget.model.locked:
+            title = f"{LOCKED_DOCK_MARKER}{name}"
+        elif widget.model.dirty:
+            title = f"{DIRTY_DOCK_MARKER}{name}"
+        else:
+            title = name
+        dock.setWindowTitle(title)
         dock.setTabToolTip(str(widget.model.path) if widget.model.path else "")
 
     def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:

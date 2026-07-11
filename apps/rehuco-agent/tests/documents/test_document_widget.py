@@ -177,6 +177,49 @@ def test_save_enables_and_disables_with_dirty_while_revert_stays_enabled(
     assert widget.revert_action.isEnabled() is True
 
 
+def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:
+    """A model locked at construction (A3, [[data-model#schema-version]]) starts with its editor
+    controls disabled, so a newer-format-version file can't be edited unsafely.
+
+    **Test steps:**
+
+    * build a model over a document whose ``format_version`` is newer than this build understands
+    * build a widget over it
+    * verify every editor ``QLineEdit`` reports disabled (cascades from the disabled editor dock content)
+    """
+    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    locked_model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "type": "Tutorial",
+                "format_version": newer_version,
+                "sources": [{"title": "Foo", "publisher": "Bar", "url": "https://example.com", "primary": True}],
+            }
+        )
+    )
+    locked_widget = DocumentWidget(locked_model)
+    qtbot.addWidget(locked_widget)
+
+    editors = locked_widget.findChildren(QLineEdit)
+    assert editors
+    assert all(not editor.isEnabled() for editor in editors)
+
+
+def test_editors_disable_and_reenable_as_locked_changes(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """The editor controls track the model's ``locked`` flag live, same as save tracks dirty.
+
+    **Test steps:**
+
+    * lock the model and verify every editor disables
+    * unlock it again and verify every editor re-enables
+    """
+    model.locked = True
+    assert all(not editor.isEnabled() for editor in widget.findChildren(QLineEdit))
+
+    model.locked = False
+    assert all(editor.isEnabled() for editor in widget.findChildren(QLineEdit))
+
+
 def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> None:
     """The viewer/editor toggle actions are checkable and start checked (both docks visible).
 

@@ -32,6 +32,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     :param path: the file this document was loaded from, used as the default save target.
     """
 
+    CURRENT_FORMAT_VERSION: Final = 1
+    """The file-wide ``format_version`` this build understands and stamps on save
+    ([[data-model#schema-version]]). A loaded document whose :attr:`format_version` is higher than this
+    was written by a newer build; callers (e.g. rehuco-agent) compare against it to decide whether to
+    lock the document read-only."""
+
     def __init__(self, data: dict[str, Any], path: Path | None = None) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
         # setter edits __data (or a dict nested inside it) in place, so it is always current
@@ -60,12 +66,20 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def save(self, path: Path | str | None = None) -> None:
         """Atomically write the document back to disk as pretty-printed JSON.
 
+        Stamps :attr:`format_version` up to :data:`CURRENT_FORMAT_VERSION` when it is currently lower
+        (the upgrade-on-write half of [[data-model#schema-version]]) -- but never lowers it: a document
+        loaded at a *newer* format version than this build understands still carries fields from that
+        newer schema verbatim ([[data-model#schema-version]]'s preserve-unknown-fields rule), so
+        overwriting its version stamp with this build's lower one would mislabel it.
+
         :param path: destination; defaults to the path the document was loaded from.
         :raises ValueError: if no path is given and the document has no loaded path.
         """
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("no path given and document was not loaded from a file")
+        if self.format_version < self.CURRENT_FORMAT_VERSION:
+            self.__data["format_version"] = self.CURRENT_FORMAT_VERSION
         text = json.dumps(self.__data, indent=2, ensure_ascii=False) + "\n"
         atomic_write_text(target, text)
         self.__path = target
@@ -96,6 +110,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def path(self) -> Path | None:
         """The file this document was loaded from or last saved to, if any."""
         return self.__path
+
+    @property
+    def format_version(self) -> int:
+        """The file-wide format-version field ([[data-model#schema-version]]); ``0`` when absent (the
+        historical `.tc`-origin shape, format v0, [[acquisition-tooling#tc-to-rehu]]) or malformed (#35)."""
+        value = self.__data.get("format_version", 0)
+        return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
     @property
     def type(self) -> str:
