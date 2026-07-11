@@ -38,6 +38,6 @@ POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
 :data:`NEGATIVE_RATING_GLYPH`'s codepoint, so only the font-family swap (fill vs. outline) tells the
 two apart."""
 
-NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor")
+NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Bold")
 """Phosphor's "star" glyph, outline, for `RatingField`'s negative-rating stars -- see
 :data:`POSITIVE_RATING_GLYPH`."""
