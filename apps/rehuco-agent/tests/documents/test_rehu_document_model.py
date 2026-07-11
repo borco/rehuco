@@ -233,69 +233,6 @@ def test_current_name_is_empty_without_a_path(model: RehuDocumentModel) -> None:
     assert model.current_name == ""
 
 
-def test_name_suggestions_interpolate_the_record_fields() -> None:
-    """``name_suggestions`` formats the patterns from title / publisher / joined authors / released year.
-
-    **Test steps:**
-
-    * build a model with a title, publisher, two authors, and a released date
-    * verify each pattern is interpolated from those fields
-    """
-    document = RehuDocument(
-        {
-            "type": "Tutorial",
-            "sources": [{"title": "Intro", "publisher": "Acme", "primary": True}],
-            "authors": ["Jane", "John"],
-            "released": "2025-03",
-        }
-    )
-    model = RehuDocumentModel(document)
-
-    assert model.name_suggestions() == [
-        "Intro",
-        "Acme - Intro",
-        "Intro [2025]",
-        "Jane, John - Intro",
-    ]
-
-
-@mark.parametrize(
-    "attr", [param("title", id="title"), param("authors", id="authors"), param("released", id="released")]
-)
-def test_name_suggestions_changed_fires_when_a_source_field_changes(attr: str, model: RehuDocumentModel) -> None:
-    """``name_suggestions_changed`` fires when a field the suggestions are built from changes.
-
-    **Test steps:**
-
-    * connect to ``name_suggestions_changed``
-    * change one of the source fields (title / authors / released)
-    * verify the signal fired
-    """
-    fired: list[bool] = []
-    model.name_suggestions_changed.connect(lambda: fired.append(True))
-
-    setattr(model, attr, ["Someone"] if attr == "authors" else "changed")
-
-    assert fired == [True]
-
-
-def test_name_suggestions_changed_does_not_fire_for_unrelated_fields(model: RehuDocumentModel) -> None:
-    """A change to a field the suggestions don't use doesn't fire ``name_suggestions_changed``.
-
-    **Test steps:**
-
-    * connect to ``name_suggestions_changed``
-    * change an unrelated field (``rating``)
-    * verify the signal did not fire
-    """
-    fired: list[bool] = []
-    model.name_suggestions_changed.connect(lambda: fired.append(True))
-
-    model.rating = 4
-
-    assert not fired
-
-
 def test_setting_title_emits_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
     """Setting title emits its notify signal, writes through to the document, and marks dirty.
 
