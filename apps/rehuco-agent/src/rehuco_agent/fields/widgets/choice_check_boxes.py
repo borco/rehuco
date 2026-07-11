@@ -36,6 +36,13 @@ class ChoiceCheckBoxes(QWidget):
             self.__checkboxes[choice] = checkbox  # pylint: disable=unsupported-assignment-operation
 
     @property
+    def header_height(self) -> int:
+        """One checkbox's natural height, stable regardless of how many rows the `FlowLayout` wraps
+        into (`HeaderPinned` contract, [[plugins#field-toolkit]])."""
+        checkbox = next(iter(self.__checkboxes.values()), None)
+        return (checkbox if checkbox is not None else QCheckBox()).sizeHint().height()
+
+    @property
     def value(self) -> list[str]:
         """The currently-checked choices, in ``choices`` order (the value-widget contract getter)."""
         return [choice for choice in self.__choices if self.__checkboxes[choice].isChecked()]

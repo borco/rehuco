@@ -165,6 +165,25 @@ def test_expanded_shows_and_hides_the_suggestions_panel(qtbot: QtBot) -> None:
     assert suggestions_widget(editor).isVisibleTo(editor) is False
 
 
+def test_header_height_is_the_name_label_height_regardless_of_expanded(qtbot: QtBot) -> None:
+    """``header_height`` tracks the current-name label's height, unaffected by :attr:`expanded`.
+
+    **Test steps:**
+
+    * build an editor with suggestions and read ``header_height`` collapsed
+    * expand the editor and verify ``header_height`` is unchanged
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_suggestions(["Alpha", "Beta"])
+    collapsed_height = editor.header_height
+    assert collapsed_height == name_label(editor).sizeHint().height()
+
+    editor.expanded = True
+
+    assert editor.header_height == collapsed_height
+
+
 def test_set_suggestions_updates_the_list_live(qtbot: QtBot) -> None:
     """Re-setting the suggestions rebuilds the labels to the new set.
 

@@ -161,6 +161,22 @@ class StatefulWidget(Protocol):
         ...  # pylint: disable=unnecessary-ellipsis
 
 
+@runtime_checkable
+class HeaderPinned(Protocol):  # pylint: disable=too-few-public-methods
+    """An editor whose overall height can change after construction -- a collapsible panel (the
+    ``path`` editor's suggestions list), a reflowing group (``multi_choice``'s checkbox `FlowLayout`)
+    -- while its **first line** stays a stable height. `FieldsForm` pins a row's label (and optional
+    ``misc`` control) to that first line instead of re-centering them against the row's live height,
+    which would otherwise make them visibly jump as the editor grows or shrinks.
+    """
+
+    @property
+    def header_height(self) -> int:
+        """This editor's first line's natural height, stable regardless of whatever makes the
+        editor's overall height vary."""
+        ...  # pylint: disable=unnecessary-ellipsis
+
+
 class Field[T]:
     """Base for a field: binds one logical value to the widgets that view and edit it
     ([[plugins#field-toolkit]]).

@@ -65,6 +65,12 @@ class PathEditor(QWidget):
         self.expanded_changed.connect(self.__on_expanded_changed)
         self.__on_expanded_changed(self.expanded)
 
+    @property
+    def header_height(self) -> int:
+        """The current-name line's natural height, stable regardless of :attr:`expanded`
+        (`HeaderPinned` contract, [[plugins#field-toolkit]])."""
+        return self.__name_label.sizeHint().height()
+
     def set_current_name(self, name: str) -> None:
         """Set the resource's current name and re-render.
 
