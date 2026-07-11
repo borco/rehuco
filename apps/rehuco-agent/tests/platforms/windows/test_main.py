@@ -17,7 +17,7 @@ from rehuco_agent.windows_registration import (  # noqa: E402  # pylint: disable
     AUMID,
     DIRECTORY_MENU_TEXT,
     DIRECTORY_SUB_KEY,
-    EXTENSION,
+    EXTENSIONS,
     FRIENDLY_NAME,
     PROGID,
 )
@@ -122,7 +122,9 @@ def test_register_registers_the_running_exe(monkeypatch: pytest.MonkeyPatch, moc
 
     assert main() == 0
     file_command, directory_command, icon = expected_command_and_icon(FAKE_EXE)
-    register.assert_called_once_with(PROGID, EXTENSION, FRIENDLY_NAME, file_command, icon, AUMID)
+    assert register.call_count == len(EXTENSIONS)
+    for extension in EXTENSIONS:
+        register.assert_any_call(PROGID, extension, FRIENDLY_NAME, file_command, icon, AUMID)
     register_folder.assert_called_once_with(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
     register_background.assert_called_once_with(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
     register_archive.assert_called_once_with(
@@ -150,7 +152,9 @@ def test_unregister_calls_file_association(monkeypatch: pytest.MonkeyPatch, mock
     unregister_archive = mocker.patch(ARCHIVE_UNREGISTER)
 
     assert main() == 0
-    unregister.assert_called_once_with(PROGID, EXTENSION)
+    assert unregister.call_count == len(EXTENSIONS)
+    for extension in EXTENSIONS:
+        unregister.assert_any_call(PROGID, extension)
     unregister_folder.assert_called_once_with(DIRECTORY_SUB_KEY)
     unregister_background.assert_called_once_with(DIRECTORY_SUB_KEY)
     unregister_archive.assert_called_once_with(ARCHIVE_EXTENSIONS, ARCHIVE_SUB_KEY)

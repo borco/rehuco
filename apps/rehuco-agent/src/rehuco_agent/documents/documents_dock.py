@@ -1,4 +1,5 @@
-"""One dock per open `.rehu` document, with focus-and-reuse-by-path ([[nodes#single-instance]])."""
+"""One dock per open `.rehu` (or legacy `.tc`) document, with focus-and-reuse-by-path
+([[nodes#single-instance]])."""
 
 import logging
 from pathlib import Path
@@ -8,7 +9,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker, tab_label
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
-from rehuco_core import RehuDocument, RehuFormatError
+from rehuco_core import RehuDocument, RehuFormatError, load_tc
 
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
@@ -61,7 +62,9 @@ class DocumentsDock(QMainWindow):
     def open_document(self, path: Path) -> DocumentWidget | None:
         """Open ``path`` in a new dock, or focus its dock if already open.
 
-        :param path: absolute filesystem path to a ``.rehu`` file (``MainWindow.open_file`` resolves it).
+        :param path: absolute filesystem path to a ``.rehu`` file, or a legacy ``.tc`` file (A3.1,
+            [[acquisition-tooling#tc-to-rehu]], opened locked and read-only) -- ``MainWindow.open_file``
+            resolves it.
         :returns: the document's widget, or ``None`` when the file could not be read (an error
             dialog was shown instead of a dock, #35).
         """
@@ -70,13 +73,15 @@ class DocumentsDock(QMainWindow):
     def open_folder(self, folder: Path) -> DocumentWidget | None:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
 
-        Opens ``folder/info.rehu`` exactly like :meth:`open_document` if it already exists. If it
-        doesn't, starts a new document already bound to that path and dirty (:meth:`RehuDocumentModel.create_new`)
-        -- nothing is written to disk until the user saves, so discarding it (closing without
-        saving) never creates the file.
+        Opens ``folder/info.rehu`` exactly like :meth:`open_document` if it already exists; falls
+        back to a legacy ``folder/info.tc`` if it doesn't (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]).
+        If neither exists, starts a new document already bound to the ``.rehu`` path and dirty
+        (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves, so
+        discarding it (closing without saving) never creates the file.
 
         :param folder: absolute filesystem path to the directory to open.
-        :returns: the document's widget, or ``None`` when `info.rehu` exists but could not be read.
+        :returns: the document's widget, or ``None`` when `info.rehu`/`info.tc` exists but could not
+            be read.
         """
         return self.__open_companion(folder / INFO_REHU_FILENAME)
 
@@ -84,28 +89,36 @@ class DocumentsDock(QMainWindow):
         """Open the file-scoped resource for ``archive_path`` ([[data-model#resource-scoping]]).
 
         Opens ``archive_path`` with its suffix replaced by ``.rehu`` (e.g. ``foo.zip`` ->
-        ``foo.rehu``) exactly like :meth:`open_document` if that companion already exists. If it
-        doesn't, starts a new document already bound to that path and dirty
+        ``foo.rehu``) exactly like :meth:`open_document` if that companion already exists; falls
+        back to a legacy ``foo.tc`` if it doesn't (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]).
+        If neither exists, starts a new document already bound to the ``.rehu`` path and dirty
         (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves.
 
         :param archive_path: absolute filesystem path to the archive file (e.g. ``foo.zip``).
-        :returns: the document's widget, or ``None`` when the companion ``.rehu`` exists but
+        :returns: the document's widget, or ``None`` when the companion ``.rehu``/``.tc`` exists but
             could not be read.
         """
         return self.__open_companion(archive_path.with_suffix(".rehu"))
 
     def __open_companion(self, info_path: Path) -> DocumentWidget | None:
-        """Open ``info_path`` if it exists, or start a new document bound to it.
+        """Open ``info_path`` if it exists, its legacy ``.tc`` sibling if that exists instead, or
+        start a new document bound to ``info_path``.
 
         Shared by :meth:`open_folder` and :meth:`open_archive`, which differ only in how they
-        derive ``info_path`` from the path the user actually clicked.
+        derive ``info_path`` from the path the user actually clicked. The ``.tc`` fallback is A3.1
+        Phase 2 ([[acquisition-tooling#tc-to-rehu]]) -- it makes Phase 1's locked, read-only ``.tc``
+        view reachable through normal folder/archive open, not just direct loading.
 
         :param info_path: the resource's own ``.rehu`` path (an ``info.rehu`` under a folder, or a
             same-stem companion of an archive file).
-        :returns: the document's widget, or ``None`` when ``info_path`` exists but could not be read.
+        :returns: the document's widget, or ``None`` when ``info_path`` or its ``.tc`` sibling exists
+            but could not be read.
         """
         if info_path.exists():
             return self.open_document(info_path)
+        tc_path = info_path.with_suffix(".tc")
+        if tc_path.exists():
+            return self.open_document(tc_path)
         return self.__activate(self.__find_dock_by_path(info_path) or self.__make_new_dock(info_path, new=True))
 
     def open_document_widgets(self) -> list[DocumentWidget]:
@@ -174,18 +187,21 @@ class DocumentsDock(QMainWindow):
     def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget | None:
         """Load ``path`` and build its document dock, or show an error dialog and return ``None``.
 
-        :param path: absolute filesystem path to the ``.rehu`` file to load, or to create if ``new``.
+        :param path: absolute filesystem path to the ``.rehu`` file to load, or to create if ``new``;
+            a ``.tc`` suffix loads through :func:`rehuco_core.load_tc` instead (A3.1 Phase 2,
+            [[acquisition-tooling#tc-to-rehu]]), producing a locked, read-only document.
         :param new: when true, skip loading and start an empty, already-dirty document bound to
             ``path`` instead (:meth:`RehuDocumentModel.create_new`) -- used by :meth:`open_folder`
             when the directory has no `info.rehu` yet; nothing is written to disk until the user saves.
-        :returns: the new dock, or ``None`` when the file is missing/unreadable (``OSError``) or
-            not valid ``.rehu`` JSON (:class:`RehuFormatError`) -- no dock is created then (#35).
+        :returns: the new dock, or ``None`` when the file is missing/unreadable (``OSError``) or not
+            valid ``.rehu`` JSON or ``.tc`` YAML (:class:`RehuFormatError`) -- no dock is created then
+            (#35).
         """
         if new:
             model = RehuDocumentModel.create_new(path, self)
         else:
             try:
-                document = RehuDocument.load(path)
+                document = load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
             except (OSError, RehuFormatError) as exc:
                 QMessageBox.critical(self, "Cannot Open File", f"Could not open {path}:\n\n{exc}")
                 return None

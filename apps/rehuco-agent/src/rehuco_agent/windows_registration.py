@@ -19,10 +19,12 @@ from borco_core.platforms.windows.file_association import FileAssociation
 from borco_core.platforms.windows.file_extension_context_menu import FileExtensionContextMenu
 
 PROGID: Final = "Rehuco.Document"
-"""HKCU ProgID under ``Software\\Classes`` that owns the ``.rehu`` association."""
+"""HKCU ProgID under ``Software\\Classes`` that owns the ``.rehu``/``.tc`` associations."""
 
-EXTENSION: Final = "rehu"
-"""File extension (without the leading dot) registered to :data:`PROGID`."""
+EXTENSIONS: Final = ("rehu", "tc")
+"""File extensions (each without the leading dot) registered to :data:`PROGID` -- ``.tc`` gets the
+same handler as ``.rehu`` so a legacy file opens straight into its locked view (A3.1,
+[[acquisition-tooling#tc-to-rehu]])."""
 
 AUMID: Final = "borco.rehuco.agent"
 """Application User Model ID the running process declares via ``SetCurrentProcessExplicitAppUserModelID``."""
@@ -58,7 +60,7 @@ def is_running_from_exe(exe_path: Path) -> bool:
 
 
 def register(exe_path: Path, archive_extensions: Sequence[str]) -> None:
-    """Register ``exe_path`` as the ``.rehu`` handler, plus the folder/folder-background and
+    """Register ``exe_path`` as the ``.rehu``/``.tc`` handler, plus the folder/folder-background and
     archive-file shell verbs (#43).
 
     No separate icon path: falls back to ``exe_path``'s own icon (``DefaultIcon`` ``{exe_path},0``)
@@ -74,18 +76,20 @@ def register(exe_path: Path, archive_extensions: Sequence[str]) -> None:
     icon = f"{exe_path},0"
     file_command = f'"{exe_path}" "%1"'
     directory_command = f'"{exe_path}"'
-    FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, file_command, icon, AUMID)
+    for extension in EXTENSIONS:
+        FileAssociation.register(PROGID, extension, FRIENDLY_NAME, file_command, icon, AUMID)
     DirectoryContextMenu.register_folder(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
     DirectoryContextMenu.register_background(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
     FileExtensionContextMenu.register(archive_extensions, ARCHIVE_SUB_KEY, ARCHIVE_MENU_TEXT, directory_command, icon)
 
 
 def unregister(archive_extensions: Sequence[str]) -> None:
-    """Remove the ``.rehu`` handler and the folder/folder-background and archive-file shell verbs.
+    """Remove the ``.rehu``/``.tc`` handler and the folder/folder-background and archive-file shell verbs.
 
     :param archive_extensions: same as :func:`register`.
     """
-    FileAssociation.unregister(PROGID, EXTENSION)
+    for extension in EXTENSIONS:
+        FileAssociation.unregister(PROGID, extension)
     DirectoryContextMenu.unregister_folder(DIRECTORY_SUB_KEY)
     DirectoryContextMenu.unregister_background(DIRECTORY_SUB_KEY)
     FileExtensionContextMenu.unregister(archive_extensions, ARCHIVE_SUB_KEY)
@@ -97,14 +101,17 @@ def is_registered(exe_path: Path, archive_extensions: Sequence[str]) -> bool:
 
     :param exe_path: same as :func:`register`.
     :param archive_extensions: same as :func:`register`.
-    :returns: ``True`` iff the file association, both directory verbs, and every archive
-        extension's verb all already match.
+    :returns: ``True`` iff the file association (for every extension), both directory verbs, and
+        every archive extension's verb all already match.
     """
     icon = f"{exe_path},0"
     file_command = f'"{exe_path}" "%1"'
     directory_command = f'"{exe_path}"'
     return (
-        FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, file_command, icon, AUMID)
+        all(
+            FileAssociation.is_registered(PROGID, extension, FRIENDLY_NAME, file_command, icon, AUMID)
+            for extension in EXTENSIONS
+        )
         and DirectoryContextMenu.is_folder_registered(DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon)
         and DirectoryContextMenu.is_background_registered(
             DIRECTORY_SUB_KEY, DIRECTORY_MENU_TEXT, directory_command, icon

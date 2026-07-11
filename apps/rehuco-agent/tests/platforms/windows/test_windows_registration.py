@@ -54,15 +54,17 @@ def test_is_running_from_exe_rejects_a_py_source_path() -> None:
 
 
 @mark.windows
-def test_register_calls_all_four_with_rehuco_identity(mocker: MockerFixture) -> None:
-    """``register`` calls the file association, both directory verbs, and the archive verb, all with
-    rehuco's own identity and the command/icon derived from ``exe_path``.
+def test_register_registers_both_extensions_and_all_shell_verbs(mocker: MockerFixture) -> None:
+    """``register`` calls the file association once per extension (``.rehu`` and ``.tc``), plus both
+    directory verbs and the archive verb, all with rehuco's own identity and the command/icon derived
+    from ``exe_path``.
 
     **Test steps:**
 
-    * mock all four ``register``/``register_folder``/``register_background`` classmethods
+    * mock ``register``/``register_folder``/``register_background`` classmethods
     * call ``register``
-    * verify each was called once with rehuco's identity plus the derived command/icon
+    * verify the file association was called once per extension with rehuco's identity plus the
+      derived command/icon, and the other three verbs were each called once
     """
     register = mocker.patch(f"{FILE_ASSOCIATION}.register")
     register_folder = mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.register_folder")
@@ -72,14 +74,16 @@ def test_register_calls_all_four_with_rehuco_identity(mocker: MockerFixture) -> 
     windows_registration.register(EXE_PATH, ARCHIVE_EXTENSIONS)
 
     file_command, directory_command, icon = expected_commands_and_icon()
-    register.assert_called_once_with(
-        windows_registration.PROGID,
-        windows_registration.EXTENSION,
-        windows_registration.FRIENDLY_NAME,
-        file_command,
-        icon,
-        windows_registration.AUMID,
-    )
+    assert register.call_count == len(windows_registration.EXTENSIONS)
+    for extension in windows_registration.EXTENSIONS:
+        register.assert_any_call(
+            windows_registration.PROGID,
+            extension,
+            windows_registration.FRIENDLY_NAME,
+            file_command,
+            icon,
+            windows_registration.AUMID,
+        )
     register_folder.assert_called_once_with(
         windows_registration.DIRECTORY_SUB_KEY, windows_registration.DIRECTORY_MENU_TEXT, directory_command, icon
     )
@@ -96,14 +100,16 @@ def test_register_calls_all_four_with_rehuco_identity(mocker: MockerFixture) -> 
 
 
 @mark.windows
-def test_unregister_calls_all_four(mocker: MockerFixture) -> None:
-    """``unregister`` calls the file association, both directory verbs, and the archive verb.
+def test_unregister_unregisters_both_extensions_and_all_shell_verbs(mocker: MockerFixture) -> None:
+    """``unregister`` calls the file association once per extension (``.rehu`` and ``.tc``), plus both
+    directory verbs and the archive verb.
 
     **Test steps:**
 
-    * mock all four ``unregister``/``unregister_folder``/``unregister_background`` classmethods
+    * mock ``unregister``/``unregister_folder``/``unregister_background`` classmethods
     * call ``unregister``
-    * verify each was called once with rehuco's identity
+    * verify the file association was called once per extension with rehuco's identity, and the
+      other three verbs were each called once
     """
     unregister = mocker.patch(f"{FILE_ASSOCIATION}.unregister")
     unregister_folder = mocker.patch(f"{DIRECTORY_CONTEXT_MENU}.unregister_folder")
@@ -112,7 +118,9 @@ def test_unregister_calls_all_four(mocker: MockerFixture) -> None:
 
     windows_registration.unregister(ARCHIVE_EXTENSIONS)
 
-    unregister.assert_called_once_with(windows_registration.PROGID, windows_registration.EXTENSION)
+    assert unregister.call_count == len(windows_registration.EXTENSIONS)
+    for extension in windows_registration.EXTENSIONS:
+        unregister.assert_any_call(windows_registration.PROGID, extension)
     unregister_folder.assert_called_once_with(windows_registration.DIRECTORY_SUB_KEY)
     unregister_background.assert_called_once_with(windows_registration.DIRECTORY_SUB_KEY)
     unregister_archive.assert_called_once_with(ARCHIVE_EXTENSIONS, windows_registration.ARCHIVE_SUB_KEY)
