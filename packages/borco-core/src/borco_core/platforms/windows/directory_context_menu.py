@@ -46,6 +46,19 @@ class DirectoryContextMenu:
         LOG.info("registered folder context menu %r", sub_key)
 
     @classmethod
+    def is_folder_registered(cls, sub_key: str, text: str, command: str, icon: str) -> bool:
+        """Whether the "right-click a folder" verb :meth:`register_folder` with these same
+        arguments would write already matches what's currently in HKCU.
+
+        :param sub_key: same as :meth:`register_folder`.
+        :param text: same as :meth:`register_folder`.
+        :param command: same as :meth:`register_folder` (without the trailing path argument).
+        :param icon: same as :meth:`register_folder`.
+        :returns: ``True`` iff every value :meth:`register_folder` would write already matches.
+        """
+        return hkcu_registry.matches_verb(rf"{cls.__DIRECTORY_ROOT}\{sub_key}", text, icon, f'{command} "%1"')
+
+    @classmethod
     def unregister_folder(cls, sub_key: str) -> None:
         """Remove the folder shell-verb key tree.
 
@@ -68,6 +81,19 @@ class DirectoryContextMenu:
         hkcu_registry.write_verb(rf"{cls.__BACKGROUND_ROOT}\{sub_key}", text, icon, f'{command} "%V"')
         hkcu_registry.notify_shell()
         LOG.info("registered folder-background context menu %r", sub_key)
+
+    @classmethod
+    def is_background_registered(cls, sub_key: str, text: str, command: str, icon: str) -> bool:
+        """Whether the "right-click inside a folder's background" verb :meth:`register_background`
+        with these same arguments would write already matches what's currently in HKCU.
+
+        :param sub_key: same as :meth:`register_background`.
+        :param text: same as :meth:`register_background`.
+        :param command: same as :meth:`register_background` (without the trailing path argument).
+        :param icon: same as :meth:`register_background`.
+        :returns: ``True`` iff every value :meth:`register_background` would write already matches.
+        """
+        return hkcu_registry.matches_verb(rf"{cls.__BACKGROUND_ROOT}\{sub_key}", text, icon, f'{command} "%V"')
 
     @classmethod
     def unregister_background(cls, sub_key: str) -> None:

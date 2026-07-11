@@ -50,6 +50,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__dialog_manager: Final = DockableDialogManager()
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__settings_dialog: Final = SettingsDialog()
+        self.__register_settings_pages()
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
@@ -82,6 +83,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
 
+    def __register_settings_pages(self) -> None:
+        """Register every settings category page this platform supports (#47).
+
+        The Registry page is Windows-only (it wraps ``winreg``-backed HKCU registration) --
+        imported lazily, only here, mirroring the same gate ``rehuco_agent.windows_registration``
+        (and the ``borco_core.platforms.windows.*`` modules it wraps) already requires.
+        """
+        if sys.platform == "win32":
+            # pylint: disable-next=import-outside-toplevel
+            from rehuco_agent.dialogs.settings_pages.registry_page import RegistryPage
+
+            self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
+
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")
         central_dock.setWidget(self.__documents_dock)
@@ -89,7 +103,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         central_area = self.__dock_manager.setCentralWidget(central_dock)
 
-        # no pages registered yet -- Registry/Markdown-rendering pages land in later slices (#47)
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )

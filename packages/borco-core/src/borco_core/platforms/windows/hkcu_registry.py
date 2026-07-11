@@ -61,6 +61,24 @@ def notify_shell() -> None:
     ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)
 
 
+def get_value(key_path: str, name: str) -> str | None:
+    """Read a ``REG_SZ`` value under HKCU, or ``None`` if ``key_path`` or ``name`` doesn't exist.
+
+    The read-back counterpart to :func:`set_value`, for verifying a registration is (still)
+    exactly what it should be -- e.g. a "Check registration" settings-page button (#47).
+
+    :param key_path: registry path relative to ``HKEY_CURRENT_USER``.
+    :param name: value name; empty string reads the default value.
+    :returns: the string value, or ``None`` if either the key or the value is missing.
+    """
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            value, _ = winreg.QueryValueEx(key, name)
+            return str(value)
+    except OSError:
+        return None
+
+
 # endregion
 
 # region composites
@@ -78,6 +96,25 @@ def write_verb(key_path: str, text: str, icon: str, command: str) -> None:
     set_value(key_path, "", text)
     set_value(key_path, "Icon", icon)
     set_value(rf"{key_path}\command", "", command)
+
+
+def matches_verb(key_path: str, text: str, icon: str, command: str) -> bool:
+    """Whether the shell-verb key :func:`write_verb` would write at ``key_path`` already holds
+    exactly ``text``/``icon``/``command``.
+
+    :param key_path: registry path relative to ``HKEY_CURRENT_USER``, as passed to
+        :func:`write_verb`.
+    :param text: expected menu label.
+    :param icon: expected ``Icon`` value.
+    :param command: expected full command value.
+    :returns: whether every value :func:`write_verb` would write already matches what's currently
+        in HKCU.
+    """
+    return (
+        get_value(key_path, "") == text
+        and get_value(key_path, "Icon") == icon
+        and get_value(rf"{key_path}\command", "") == command
+    )
 
 
 # endregion

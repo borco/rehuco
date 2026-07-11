@@ -9,7 +9,9 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 
 from pytest import mark  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent.__main__ import (  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.__main__ import main  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.main_window import ARCHIVE_EXTENSIONS  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.windows_registration import (  # noqa: E402  # pylint: disable=wrong-import-position
     ARCHIVE_MENU_TEXT,
     ARCHIVE_SUB_KEY,
     AUMID,
@@ -18,9 +20,7 @@ from rehuco_agent.__main__ import (  # noqa: E402  # pylint: disable=wrong-impor
     EXTENSION,
     FRIENDLY_NAME,
     PROGID,
-    main,
 )
-from rehuco_agent.main_window import ARCHIVE_EXTENSIONS  # noqa: E402  # pylint: disable=wrong-import-position
 
 FAKE_EXE: Final = r"C:\fake\rehuco-agent-dev.exe"
 FAKE_SCRIPT: Final = r"C:\fake\rehuco_agent\__main__.py"

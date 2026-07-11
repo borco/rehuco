@@ -41,6 +41,24 @@ class FileExtensionContextMenu:
         LOG.info("registered file-extension context menu %r for %s", sub_key, extensions)
 
     @classmethod
+    def is_registered(cls, extensions: Sequence[str], sub_key: str, text: str, command: str, icon: str) -> bool:
+        """Whether every extension in ``extensions`` already has exactly the shell verb
+        :meth:`register` with these same arguments would write.
+
+        :param extensions: same as :meth:`register`.
+        :param sub_key: same as :meth:`register`.
+        :param text: same as :meth:`register`.
+        :param command: same as :meth:`register` (without the trailing path argument).
+        :param icon: same as :meth:`register`.
+        :returns: ``True`` iff every value :meth:`register` would write already matches, for every
+            extension -- ``False`` if even one is missing or stale.
+        """
+        return all(
+            hkcu_registry.matches_verb(rf"{cls.__ROOT}\{extension}\shell\{sub_key}", text, icon, f'{command} "%1"')
+            for extension in extensions
+        )
+
+    @classmethod
     def unregister(cls, extensions: Sequence[str], sub_key: str) -> None:
         """Remove the shell-verb key tree from every extension in ``extensions``.
 

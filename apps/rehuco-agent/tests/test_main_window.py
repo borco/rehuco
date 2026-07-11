@@ -7,7 +7,7 @@ from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
@@ -87,6 +87,28 @@ def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) ->
 
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert settings_dock.toggleViewAction() in ui.action_bar.actions()
+
+
+@mark.windows
+def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
+    """On Windows, the Registry settings page (#47) is registered into the settings dialog.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``RegistryPage``
+    """
+    from rehuco_agent.dialogs.settings_pages.registry_page import (  # pylint: disable=import-outside-toplevel
+        RegistryPage,
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, RegistryPage) for page in pages)
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(

@@ -57,6 +57,39 @@ class FileAssociation:
         LOG.info("registered ProgID %r for .%s", progid, extension)
 
     @classmethod
+    def is_registered(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        cls,
+        progid: str,
+        extension: str,
+        friendly_name: str,
+        command: str,
+        icon: str,
+        aumid: str | None = None,
+    ) -> bool:
+        """Whether HKCU already holds exactly the registration :meth:`register` with these same
+        arguments would write.
+
+        :param progid: same as :meth:`register`.
+        :param extension: same as :meth:`register`.
+        :param friendly_name: same as :meth:`register`.
+        :param command: same as :meth:`register`.
+        :param icon: same as :meth:`register`.
+        :param aumid: same as :meth:`register` -- when ``None``, the ``Application`` key is not
+            checked at all (its presence or absence either way doesn't matter).
+        :returns: ``True`` iff every value :meth:`register` would write already matches.
+        """
+        progid_key = rf"Software\Classes\{progid}"
+        if hkcu_registry.get_value(progid_key, "") != friendly_name:
+            return False
+        if hkcu_registry.get_value(rf"{progid_key}\DefaultIcon", "") != icon:
+            return False
+        if hkcu_registry.get_value(rf"{progid_key}\shell\open\command", "") != command:
+            return False
+        if aumid is not None and hkcu_registry.get_value(rf"{progid_key}\Application", "AppUserModelId") != aumid:
+            return False
+        return hkcu_registry.get_value(rf"Software\Classes\.{extension}", "") == progid
+
+    @classmethod
     def unregister(cls, progid: str, extension: str) -> None:
         """Remove the HKCU ``progid`` key tree and, if it still points at it, the extension binding.
 
