@@ -207,6 +207,23 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """
         self.__type_fields_or_create()[key] = value
 
+    def remove_type_field(self, key: str) -> bool:
+        """Delete a key from the type-keyed plugin block ([[field-schema#resource-types]]).
+
+        Generic value access only -- **not** the live/inert block save invariant (A3,
+        [[data-model#rehu-format]]). Used to drop an unrecognized field the user explicitly discards
+        via the fallback editor's remove action ([[plugins#fallback-editor]], A2.8/#28); an unremoved
+        unknown field is otherwise carried verbatim on round-trip.
+
+        :param key: the key to delete inside the block.
+        :returns: ``True`` if the key was present and removed, ``False`` if the block or key was absent.
+        """
+        block = self.__data.get(self.type_fields_key)
+        if isinstance(block, dict) and key in block:
+            del block[key]
+            return True
+        return False
+
     def __type_fields_or_create(self) -> dict[str, Any]:
         """Return the mutable plugin block, installing a fresh one when absent or malformed.
 
