@@ -4,7 +4,7 @@ from borco_pyside.widgets import Rating
 from PySide6.QtWidgets import QSlider
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.rating_field import POSITIVE_STAR_GLYPH
+from rehuco_agent.glyphs import POSITIVE_RATING_GLYPH
 
 from fields.field_testers import RatingFieldTester as RatingField
 
@@ -35,7 +35,7 @@ def test_rating_field_viewer_is_a_rating_widget_tracking_the_model(qtbot: QtBot,
     assert label_text(viewer) == ""
 
     model.rating = 3
-    assert label_text(viewer) == POSITIVE_STAR_GLYPH * 3
+    assert label_text(viewer) == POSITIVE_RATING_GLYPH.codepoint * 3
 
 
 def test_rating_field_editor_writes_back_a_negative_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -75,7 +75,7 @@ def test_rating_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBo
     editor.setValue(4)
 
     assert model.rating == 4
-    assert label_text(viewer) == POSITIVE_STAR_GLYPH * 4
+    assert label_text(viewer) == POSITIVE_RATING_GLYPH.codepoint * 4
     assert editor.value() == 4
 
 

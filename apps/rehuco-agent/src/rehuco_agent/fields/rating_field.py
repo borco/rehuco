@@ -10,27 +10,12 @@ from PySide6.QtWidgets import QSlider
 
 from rehuco_agent.fields.colors import WARNING_COLOR
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from rehuco_agent.glyphs import NEGATIVE_RATING_GLYPH, POSITIVE_RATING_GLYPH
 
-POSITIVE_STAR_GLYPH: Final = "\ue46a"
-"""Phosphor's "star" icon codepoint for a positive rating: shared across every Phosphor weight
-font, so :data:`POSITIVE_STYLESHEET`'s ``font-family`` (:data:`FILLED_STAR_FONT_FAMILY`) alone
-renders it filled."""
-
-NEGATIVE_STAR_GLYPH: Final = "\ue46a"
-"""Phosphor's "star" icon codepoint for a negative rating: the same codepoint as
-:data:`POSITIVE_STAR_GLYPH` -- :data:`NEGATIVE_STYLESHEET`'s ``font-family``
-(:data:`OUTLINE_STAR_FONT_FAMILY`) is what renders it outlined instead."""
-
-FILLED_STAR_FONT_FAMILY: Final = "Phosphor-Fill"
-"""Font family for a positive rating's filled stars; registered app-wide at startup (``app.py``)."""
-
-OUTLINE_STAR_FONT_FAMILY: Final = "Phosphor"
-"""Font family for a negative rating's outline stars; registered app-wide at startup (``app.py``)."""
-
-POSITIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{FILLED_STAR_FONT_FAMILY}"; }}'
+POSITIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{POSITIVE_RATING_GLYPH.family}"; }}'
 """Stylesheet for the viewer's positive stars ([[plugins#field-toolkit]]): filled font, inherited color."""
 
-NEGATIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{OUTLINE_STAR_FONT_FAMILY}"; color: {WARNING_COLOR}; }}'
+NEGATIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{NEGATIVE_RATING_GLYPH.family}"; color: {WARNING_COLOR}; }}'
 """Stylesheet for the viewer's negative stars (§17.4): outline font, warning color."""
 
 
@@ -74,9 +59,9 @@ class RatingField(Field[int]):
     def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
         rating = Rating(
             positive_style=POSITIVE_STYLESHEET,
-            positive_text=POSITIVE_STAR_GLYPH,
+            positive_text=POSITIVE_RATING_GLYPH.codepoint,
             negative_style=NEGATIVE_STYLESHEET,
-            negative_text=NEGATIVE_STAR_GLYPH,
+            negative_text=NEGATIVE_RATING_GLYPH.codepoint,
             value=binding.value,
         )
         binding.changed.connect(rating.set_value)  # type: ignore[attr-defined]
