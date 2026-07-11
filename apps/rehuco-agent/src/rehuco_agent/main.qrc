@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="icons/app_settings.svg">../../../../design/icons/app_settings.svg</file>
         <file alias="icons/document_description.svg">../../../../design/icons/document_description.svg</file>
         <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
         <file alias="icons/document_images.svg">../../../../design/icons/document_images.svg</file>

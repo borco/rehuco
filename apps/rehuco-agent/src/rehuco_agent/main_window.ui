@@ -27,6 +27,17 @@
    </attribute>
    <addaction name="theme_action"/>
   </widget>
+  <widget class="QToolBar" name="action_bar">
+   <property name="windowTitle">
+    <string>Actions</string>
+   </property>
+   <attribute name="toolBarArea">
+    <enum>LeftToolBarArea</enum>
+   </attribute>
+   <attribute name="toolBarBreak">
+    <bool>false</bool>
+   </attribute>
+  </widget>
   <action name="theme_action">
    <property name="icon">
     <iconset resource="main.qrc">
