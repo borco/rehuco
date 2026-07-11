@@ -10,17 +10,9 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QWidget
 
-from rehuco_agent.documents.document_fields import (
-    EDITOR_IMAGES_TAB,
-    EDITOR_MAIN_TAB,
-    VIEWER_TAB,
-    build_document_form,
-)
+from rehuco_agent.documents.document_fields import build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsTab, ImagesField, PathField, StatefulWidget
-
-LOCATION_FIELD_NAME: Final = "location"
-IMAGES_FIELD_NAME: Final = "hidden_images"
+from rehuco_agent.fields import FieldsTab, StatefulWidget
 
 STATE_VERSION_KEY: Final = "version"
 STATE_VERSION: Final = 3
@@ -70,24 +62,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
-        location_field = PathField(
-            LOCATION_FIELD_NAME,
-            suggestions=model.name_suggestions,
-            on_suggestion_selected=self.__rename_to,
-            current_name=lambda: model.current_name,
-            suggestions_changed=model.name_suggestions_changed,
-            viewer_tab=VIEWER_TAB,
-            editor_tab=EDITOR_MAIN_TAB,
-        )
-        images_field = ImagesField(
-            IMAGES_FIELD_NAME,
-            image_files=model.image_files,
-            viewer_tab=VIEWER_TAB,
-            editor_tab=EDITOR_IMAGES_TAB,
-        )
-        # location leads so its editor keeps the Main Editor tab first/current; the images strip
-        # still sits high in the viewer, above the description, and its editor gets its own tab
-        form = build_document_form(leading_fields=[location_field, images_field])
+        # the whole field composition (location + images + record fields + unknown fallbacks) is
+        # authored in document_fields; this widget only hosts the resulting docks
+        form = build_document_form(model)
         # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
         self.__editor_docks: Final = self.__add_docks(form.make_editor(model), "editor", QtAds.LeftDockWidgetArea)
         self.__viewer_docks: Final = self.__add_docks(form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea)
@@ -240,13 +217,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 if name and isinstance(widget, StatefulWidget):
                     widgets[name] = widget
         return widgets
-
-    def __rename_to(self, new_name: str) -> None:
-        """Rename the resource to a clicked suggestion's name (delegated to the model).
-
-        :param new_name: the sanitized suggestion name that was clicked.
-        """
-        self.__model.rename_location(new_name)
 
     def __on_dirty_changed(self, dirty: bool) -> None:
         """Enable save only while the model holds unsaved edits -- there is nothing to save otherwise.

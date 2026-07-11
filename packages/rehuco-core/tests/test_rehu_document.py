@@ -509,6 +509,36 @@ def test_set_type_field_replaces_a_malformed_block() -> None:
     assert doc.data["tutorial"] == {"rating": 3}
 
 
+def test_remove_type_field_deletes_a_present_key() -> None:
+    """``remove_type_field`` deletes a key from the block and reports it was present.
+
+    **Test steps:**
+
+    * construct a Tutorial document whose block holds an extra (unknown) key
+    * remove that key
+    * verify it returns ``True`` and the key is gone while the rest of the block is intact
+    """
+    doc = RehuDocument({"type": "Tutorial", "tutorial": {"rating": 5, "mystery": 42}})
+    assert doc.remove_type_field("mystery") is True
+    assert doc.data["tutorial"] == {"rating": 5}
+
+
+def test_remove_type_field_is_a_noop_when_absent() -> None:
+    """``remove_type_field`` reports ``False`` when the key or block is absent, changing nothing.
+
+    **Test steps:**
+
+    * a Tutorial document with a block missing the key -> ``False``
+    * a document with no block at all -> ``False``
+    """
+    doc = RehuDocument({"type": "Tutorial", "tutorial": {"rating": 5}})
+    assert doc.remove_type_field("mystery") is False
+    assert doc.data["tutorial"] == {"rating": 5}
+
+    blockless = RehuDocument({"type": "Tutorial"})
+    assert blockless.remove_type_field("mystery") is False
+
+
 def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
     """A ``.rehu`` with malformed JSON is rejected as a ``RehuFormatError``.
 

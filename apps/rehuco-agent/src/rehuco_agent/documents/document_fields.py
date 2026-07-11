@@ -6,11 +6,27 @@ nothing of *this* document's fields, tabs, or ``level`` choices; only this modul
 ``documents`` layer that owns the view-model and surfaces) does.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_agent.fields import Field, FieldRegistry, FieldsForm, FieldsTab
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields import (
+    PROVENANCE_NEWER_VERSION,
+    Field,
+    FieldRegistry,
+    FieldsForm,
+    FieldsTab,
+    ImagesField,
+    PathField,
+    UnknownField,
+)
+
+LOCATION_FIELD_NAME: Final = "location"
+"""The special `path` field's model name -- the resource's file location ([[field-schema#field-mapping]])."""
+
+IMAGES_FIELD_NAME: Final = "hidden_images"
+"""The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
 
 VIEWER_TAB: Final = FieldsTab("Viewer", ":/icons/document_viewer.svg")
 """The document viewer surface ([[plugins#field-toolkit]]) -- the default all record fields' viewers
@@ -32,7 +48,7 @@ LEVEL_CHOICES: Final = ("beginner", "intermediate", "advanced", "any")
 
 
 class FieldSpec(NamedTuple):
-    """One :data:`DOCUMENT_FIELD_SPECS` entry: which toolkit type renders a model field, plus any
+    """One :data:`MODEL_AGNOSTIC_FIELD_SPECS` entry: which toolkit type renders a model field, plus any
     extra constructor arguments and its viewer/editor tabs.
 
     :param type: the field-type selector the registry resolves.
@@ -54,7 +70,7 @@ class FieldSpec(NamedTuple):
     editor_tab: FieldsTab = EDITOR_MAIN_TAB
 
 
-DOCUMENT_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
+MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("text", "title"),
     FieldSpec("text_list", "authors"),
     FieldSpec("date", "released"),
@@ -77,31 +93,81 @@ DOCUMENT_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("text_list", "extra_tags"),
     FieldSpec("description", "description", editor_tab=EDITOR_DESCRIPTION_TAB),
 )
-"""The document's record field list: the common-core title/authors/released/publisher/url, the
-Tutorial plugin-block duration fields, the common-core original/current size pair, the shared
-resource-type scalar flags, rating, the Tutorial-only ``level`` tags, the tag lists, and the
-common-core Markdown ``description`` (which lands on its own editor dock, :data:`EDITOR_DESCRIPTION_TAB`)
-([[field-schema#resource-types]], [[field-schema#duration-size]]). The special ``location`` `PathField`
-is **not** here -- it is model-aware (its rename suggestions read other fields), so its owner
-(`DocumentWidget`) constructs it and passes it as a leading field to :func:`build_document_form`. A
-hardcoded constant for now; per-type field lists and where this is authored long-term are open questions
-([[field-schema#deferred-items]], [[appendices.open-questions#still-open]])."""
+"""The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
+``(type, name)`` pair alone, with no runtime model wiring. This is a **model-layer** statement of
+*which* fields the document has and their toolkit type, not a layout: :func:`build_document_form`
+happens to emit them after the model-aware ``location``/images fields and before the `UnknownField`
+fallbacks, but that ordering is only how the form is assembled, not a meaningful grouping.
+
+**Registration order is not display order.** How fields are ordered and placed on screen is a
+presentation concern the viewer/editor own; that they currently render fields in this registration
+order is incidental (the tracer's simplification) and expected to diverge -- per-type field lists and
+where the display order is authored are open questions
+([[field-schema#deferred-items]], [[appendices.open-questions#still-open]]).
+
+Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
+fields, the common-core original/current size pair, the shared resource-type scalar flags, rating, the
+Tutorial-only ``level`` tags, the tag lists, and the common-core Markdown ``description`` (which lands
+on its own editor dock, :data:`EDITOR_DESCRIPTION_TAB`) ([[field-schema#resource-types]],
+[[field-schema#duration-size]]). A hardcoded constant for now."""
 
 
-def build_document_form(registry: FieldRegistry | None = None, leading_fields: Sequence[Field[Any]] = ()) -> FieldsForm:
-    """Build the document's :class:`FieldsForm` from its field list.
+def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None = None) -> FieldsForm:
+    """Build the document's complete :class:`FieldsForm` for ``model``.
 
-    :param registry: the field registry to resolve types with; a default one when omitted.
-    :param leading_fields: pre-built fields to place first, before the record fields -- how the
-        model-aware ``location`` `PathField` (which the registry can't build generically) is
-        threaded in by its owner.
-    :returns: a form composing ``leading_fields`` then the record fields, in
-        :data:`DOCUMENT_FIELD_SPECS` order.
+    The whole field composition lives here, in one place: the model-aware **leading** fields (the
+    ``location`` `PathField` and the images strip/selector, whose runtime callbacks the registry can't
+    build generically), then the declarative record fields in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then
+    one generic `UnknownField` fallback per unrecognized live-block key
+    ([[plugins#fallback-editor]], A2.8/#28). All of it is driven from ``model`` alone, so
+    `DocumentWidget` only hosts the resulting docks.
+
+    :param model: the reactive view-model the fields bind to and read their runtime state from.
+    :param registry: the field registry to resolve the record types with; a default one when omitted.
+    :returns: a form composing location + images, then the record fields, then the unknown fallbacks.
     """
     registry = registry or FieldRegistry()
-    fields: list[Field[Any]] = list(leading_fields)
-    for spec in DOCUMENT_FIELD_SPECS:
+
+    def rename_to(name: str) -> None:
+        # a wrapper, not the bound method directly: it discards ``rename_location``'s bool result (the
+        # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
+        # click time, so a test that swaps it after construction is still seen
+        model.rename_location(name)
+
+    location_field = PathField(
+        LOCATION_FIELD_NAME,
+        suggestions=model.name_suggestions,
+        on_suggestion_selected=rename_to,
+        current_name=lambda: model.current_name,
+        suggestions_changed=model.name_suggestions_changed,
+        viewer_tab=VIEWER_TAB,
+        editor_tab=EDITOR_MAIN_TAB,
+    )
+    images_field = ImagesField(
+        IMAGES_FIELD_NAME,
+        image_files=model.image_files,
+        viewer_tab=VIEWER_TAB,
+        editor_tab=EDITOR_IMAGES_TAB,
+    )
+    # location leads so its editor keeps the Main Editor tab first/current; the images strip still
+    # sits high in the viewer, above the description, and its editor gets its own tab
+    fields: list[Field[Any]] = [location_field, images_field]
+    for spec in MODEL_AGNOSTIC_FIELD_SPECS:
         fields.append(
             registry.create(spec.type, spec.name, viewer_tab=spec.viewer_tab, editor_tab=spec.editor_tab, **spec.kwargs)
+        )
+    # the unknown-field fallbacks trail after the record fields, each shown labeled by provenance and
+    # carried verbatim, with a remove action that drops it from the document
+    for name in model.unknown_field_names():
+        fields.append(
+            UnknownField(
+                name,
+                provenance=PROVENANCE_NEWER_VERSION,
+                on_remove=lambda name=name: model.remove_unknown_field(name),
+                is_present=lambda name=name: name in model.document.type_fields,
+                current_value=lambda name=name: model.document.type_field(name),
+                viewer_tab=VIEWER_TAB,
+                editor_tab=EDITOR_MAIN_TAB,
+            )
         )
     return FieldsForm(fields)

@@ -26,6 +26,9 @@ class DescriptionField(Field[str]):
         viewer = MarkdownView()
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
+        # not fill: in the viewer the description is one row among others (the unknown-field fallbacks
+        # follow it), so it keeps its natural height and the trailing stretch sits after them all --
+        # unlike the editor, where the description has its own tab and should take the whole height
         return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True)
 
     @override
@@ -36,7 +39,7 @@ class DescriptionField(Field[str]):
         editor.notifyChange.connect(lambda *_: binding.set_value(self.__text(editor)))
         binding.changed.connect(lambda value: self.__echo(editor, value))
         # no label for the editor tab, since the tab itself is the label
-        return FieldEditorWidgets(self.editor_tab, None, editor, vertical=True)
+        return FieldEditorWidgets(self.editor_tab, None, editor, vertical=True, fill=True)
 
     @staticmethod
     def __text(editor: ScintillaEdit) -> str:

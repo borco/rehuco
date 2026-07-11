@@ -5,11 +5,10 @@ checkboxes ([[plugins#field-toolkit]]).
 from collections.abc import Sequence
 from typing import Final, override
 
-from borco_pyside.widgets import FlowLayout
-from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QCheckBox, QLabel, QWidget
+from PySide6.QtWidgets import QLabel
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from rehuco_agent.fields.widgets import ChoiceCheckBoxes
 
 
 class MultipleChoiceField(Field[list[str]]):
@@ -50,30 +49,11 @@ class MultipleChoiceField(Field[list[str]]):
 
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
-        container = QWidget()
-        layout = FlowLayout(container)
-        checkboxes: dict[str, QCheckBox] = {}
-        for choice in self.__choices:
-            checkbox = QCheckBox(choice)
-            checkbox.setChecked(choice in binding.value)
-            layout.addWidget(checkbox)
-            checkboxes[choice] = checkbox
-        for checkbox in checkboxes.values():
-            checkbox.toggled.connect(lambda _checked: self.__on_toggled(binding, checkboxes))
-        binding.changed.connect(lambda value: self.__echo(checkboxes, value))
-        return FieldEditorWidgets(self.editor_tab, self.make_label(), container)
-
-    def __on_toggled(self, binding: FieldBinding[list[str]], checkboxes: dict[str, QCheckBox]) -> None:
-        """Write the checkboxes' current combined state through to the binding, in ``choices`` order.
-
-        Reads every checkbox's live ``isChecked()`` rather than ``binding.value`` -- the latter is
-        the snapshot the binding was resolved with, not a live getter, so it wouldn't see this
-        same handler's own prior toggles within one editor.
-
-        :param binding: the binding to write the updated list through.
-        :param checkboxes: the choice -> checkbox map to read the current selection from.
-        """
-        binding.set_value([choice for choice in self.__choices if checkboxes[choice].isChecked()])
+        editor = ChoiceCheckBoxes(self.__choices)
+        # pyright compares the class-level Signal against the protocol's SignalInstance and rejects the
+        # descriptor duality PySide resolves at access time; the wiring is sound (see bind_value_widget).
+        self.bind_value_widget(editor, binding)  # type: ignore[arg-type]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)
 
     def __display(self, values: list[str]) -> str:
         """Join the selected values for the read-only viewer, in ``choices`` order.
@@ -83,17 +63,3 @@ class MultipleChoiceField(Field[list[str]]):
         """
         selected = set(values)
         return ", ".join(choice for choice in self.__choices if choice in selected)
-
-    @staticmethod
-    def __echo(checkboxes: dict[str, QCheckBox], values: list[str]) -> None:
-        """Resync every checkbox from a binding change without re-emitting ``toggled`` (echo guard).
-
-        :param checkboxes: the choice -> checkbox map to resync.
-        :param values: the new bound list.
-        """
-        selected = set(values)
-        for choice, checkbox in checkboxes.items():
-            wanted = choice in selected
-            if checkbox.isChecked() != wanted:
-                with QSignalBlocker(checkbox):
-                    checkbox.setChecked(wanted)

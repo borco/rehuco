@@ -68,12 +68,18 @@ class FieldViewerWidgets:
     :param viewer: the read-only value widget, or ``None`` for none.
     :param vertical: when ``True``, the row spans the whole grid width with the ``label`` stacked
         above the ``viewer`` instead of side by side; defaults to ``False``.
+    :param fill: when ``True``, this row **takes all the available vertical space** on its tab -- the
+        assembler gives it the leftover height (e.g. the prose ``description``, the image strip).
+        When no row on a tab fills, the assembler instead packs the rows at the top so they keep their
+        natural height rather than stretching apart. Independent of :attr:`vertical` (a full-width row
+        need not fill, and vice versa); defaults to ``False``.
     """
 
     tab: FieldsTab
     label: QWidget | None
     viewer: QWidget | None
     vertical: bool = False
+    fill: bool = False
 
 
 @dataclass
@@ -90,6 +96,10 @@ class FieldEditorWidgets:
         ``None``.
     :param vertical: when ``True``, the row spans the whole grid width with the ``label`` (and
         ``misc``, if any) stacked above the ``editor`` instead of side by side; defaults to ``False``.
+    :param fill: when ``True``, this row **takes all the available vertical space** on its tab -- the
+        assembler gives it the leftover height (e.g. the prose ``description`` editor, the image
+        selector). When no row on a tab fills, the assembler instead packs the rows at the top so they
+        keep their natural height. Independent of :attr:`vertical`; defaults to ``False``.
     """
 
     tab: FieldsTab
@@ -97,6 +107,36 @@ class FieldEditorWidgets:
     editor: QWidget | None
     misc: QWidget | None = None
     vertical: bool = False
+    fill: bool = False
+
+
+@runtime_checkable
+class ValueWidget[T](Protocol):
+    """The **value-widget contract** a content field's editor satisfies ([[plugins#field-toolkit]]):
+    a ``value`` property, a ``value_changed`` signal, and a ``set_value`` slot -- as ``DurationEdit`` /
+    ``FileSizeEdit`` / ``DateEdit`` / ``LineEdit`` already do. :meth:`Field.bind_value_widget` binds any
+    such widget two-way to a :class:`FieldBinding` in one call, so the standard four-line wiring lives
+    once instead of per field. A scalar-or-list value fits directly (a ``multi_choice`` editor is just
+    ``value: list[str]`` + ``value_changed``). The ``path`` field is deliberately **not** a value widget
+    -- it is a location control, not content ([[plugins#field-toolkit]], #46).
+    """
+
+    @property
+    def value(self) -> T:
+        """The widget's current value."""
+        ...  # pylint: disable=unnecessary-ellipsis
+
+    @property
+    def value_changed(self) -> SignalInstance:
+        """The signal that fires with the new value on every user edit."""
+        ...  # pylint: disable=unnecessary-ellipsis
+
+    def set_value(self, value: T) -> None:
+        """Write ``value`` in without re-emitting ``value_changed`` (the echo guard).
+
+        :param value: the new value.
+        """
+        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @runtime_checkable
@@ -197,6 +237,22 @@ class Field[T]:
         :raises NotImplementedError: unless a subclass overrides it.
         """
         raise NotImplementedError
+
+    @staticmethod
+    def bind_value_widget(widget: ValueWidget[T], binding: FieldBinding[T]) -> None:
+        """Wire a value widget two-way to a binding ([[plugins#field-toolkit]]): seed it, push user
+        edits through to the model, and echo model changes back under the widget's own guard.
+
+        Collapses the standard four-line ``make_editor`` wiring (seed, ``value_changed`` ->
+        ``set_value``, ``changed`` -> ``set_value``) into one call, so every content field that meets
+        the :class:`ValueWidget` contract binds identically.
+
+        :param widget: the editor satisfying the value-widget contract.
+        :param binding: the resolved value/signal/setter to bind it to.
+        """
+        widget.set_value(binding.value)
+        widget.value_changed.connect(binding.set_value)
+        binding.changed.connect(widget.set_value)
 
     def make_label(self) -> QWidget | None:
         """Build the field's name label for the row's label column; override for a custom label widget

@@ -1,4 +1,4 @@
-"""Tests for the document form composition: build_document_form over DOCUMENT_FIELD_SPECS.
+"""Tests for the document form composition: build_document_form over MODEL_AGNOSTIC_FIELD_SPECS.
 
 (These cover ``documents.document_fields``; the file keeps its historical location under ``tests/fields``.)
 """
@@ -8,12 +8,11 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_DESCRIPTION_TAB,
     EDITOR_MAIN_TAB,
-    VIEWER_TAB,
     build_document_form,
 )
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
-from rehuco_agent.fields.text_field import TextField
+from rehuco_core import RehuDocument
 
 
 def form_labels(widget: QWidget) -> list[str]:
@@ -33,28 +32,26 @@ def form_labels(widget: QWidget) -> list[str]:
     return texts
 
 
-def test_build_document_form_puts_record_fields_on_the_main_editor_and_description_on_its_own_tab(
+def test_build_document_form_leads_with_location_then_the_record_fields_with_description_on_its_own_tab(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """build_document_form composes the record fields on the main editor tab, in declaration order, and
-    the Markdown ``description`` on its own editor tab.
-
-    The special ``location`` field is not part of ``DOCUMENT_FIELD_SPECS`` (its owner threads it in as
-    a leading field), so it does not appear here.
+    """build_document_form leads the main editor tab with ``location``, then the record fields in
+    declaration order, and puts the Markdown ``description`` on its own editor tab.
 
     **Test steps:**
 
-    * build the document form's editor grids with no leading fields
-    * verify the main editor tab has the configured rows in declaration order
+    * build the document form's editor grids for the model
+    * verify the main editor tab leads with ``Location`` then the configured rows in declaration order
     * verify the description lands on its own editor tab
     """
-    grids = build_document_form().make_editor(model)
+    grids = build_document_form(model).make_editor(model)
     main = grids[EDITOR_MAIN_TAB]
     description = grids[EDITOR_DESCRIPTION_TAB]
     qtbot.addWidget(main)
     qtbot.addWidget(description)
 
     assert form_labels(main) == [
+        "Location",
         "Title",
         "Authors",
         "Released",
@@ -80,18 +77,17 @@ def test_build_document_form_puts_record_fields_on_the_main_editor_and_descripti
     assert not form_labels(description)
 
 
-def test_build_document_form_places_leading_fields_first(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Leading fields are laid out before the record fields on the main editor tab, in order.
+def test_build_document_form_trails_unknown_fields_after_the_record_fields(qtbot: QtBot) -> None:
+    """A live-block key the model doesn't recognize is composed as a trailing `UnknownField`.
 
     **Test steps:**
 
-    * build the form with a leading text field on the main editor tab
-    * verify its label comes before the first record field's label
+    * build the form over a model whose Tutorial block carries an unrecognized ``mystery`` key
+    * verify the main editor's last row is the unknown field, after the last record field (``Extra Tags``)
     """
-    leading = TextField("location", viewer_tab=VIEWER_TAB, editor_tab=EDITOR_MAIN_TAB)
-    main = build_document_form(leading_fields=[leading]).make_editor(model)[EDITOR_MAIN_TAB]
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "tutorial": {"mystery": 1}}))
+    main = build_document_form(model).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(main)
 
     labels = form_labels(main)
-    assert labels[0] == "Location"
-    assert labels[1] == "Title"
+    assert labels[-2:] == ["Extra Tags", "Mystery"]
