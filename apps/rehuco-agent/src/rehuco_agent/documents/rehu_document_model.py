@@ -148,12 +148,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """True when the model holds edits not yet saved to disk."""
 
     locked = SimpleProperty(False)
-    """True when :attr:`document`'s ``format_version`` is newer than this build understands
-    ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule). Recomputed at construction and on
-    every :meth:`revert` (never by an edit -- there is no setter path back to a lower version).
-    ``DocumentWidget`` disables its editor docks while this is true; nothing else in the model changes,
-    since the underlying `RehuDocument` already preserves that newer file's fields verbatim and never
-    downgrades its version stamp on save ([[data-model#schema-version]])."""
+    """True when either :attr:`document`'s ``format_version`` is newer than this build understands
+    ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule), or the document was mapped from a
+    legacy ``.tc`` file not yet converted ([[acquisition-tooling#tc-to-rehu]], `RehuDocument.legacy_tc`)
+    -- a document *older* than this build's format version, which the first rule alone would never
+    catch. Recomputed at construction and on every :meth:`revert` (never by an edit -- there is no
+    setter path back to either locked state). ``DocumentWidget`` disables its editor docks while this
+    is true; nothing else in the model changes, since the underlying `RehuDocument` already preserves
+    a newer file's fields verbatim and never downgrades its version stamp on save
+    ([[data-model#schema-version]])."""
 
     def __init__(self, document: RehuDocument, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -163,7 +166,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # Seed the fields from the document *before* wiring the write-through handlers, so seeding a
         # freshly-loaded model never looks like an edit (no dirty, no document write-back).
         self.__seed_from_document()
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION
+        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
@@ -311,7 +314,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         finally:
             self.__reverting = False
         self.dirty = False
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION
+        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
         self.unknown_fields_changed.emit()
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:

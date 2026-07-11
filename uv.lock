@@ -1224,10 +1224,14 @@ name = "rehuco-core"
 source = { editable = "packages/rehuco-core" }
 dependencies = [
     { name = "borco-core" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "borco-core", editable = "packages/borco-core" }]
+requires-dist = [
+    { name = "borco-core", editable = "packages/borco-core" },
+    { name = "pyyaml" },
+]
 
 [[package]]
 name = "rehuco-node"

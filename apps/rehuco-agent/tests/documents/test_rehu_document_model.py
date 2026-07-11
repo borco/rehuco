@@ -83,6 +83,20 @@ def test_model_is_not_locked_at_or_below_the_current_format_version() -> None:
     assert RehuDocumentModel(RehuDocument({})).locked is False
 
 
+def test_model_is_locked_for_a_legacy_tc_document() -> None:
+    """A document mapped from a legacy ``.tc`` file locks the model, independent of ``format_version``
+    ([[acquisition-tooling#tc-to-rehu]]'s Phase 1) -- format_version 0 is *older* than this build's,
+    so the newer-format-version rule alone would never catch it.
+
+    **Test steps:**
+
+    * construct a model over a document with ``legacy_tc=True`` (format_version defaults to 0)
+    * verify the model is locked
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    assert model.locked is True
+
+
 def test_model_seeds_empty_from_a_sourceless_document() -> None:
     """A document with no sources seeds the model to empty fields without error.
 

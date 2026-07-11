@@ -30,6 +30,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
     :param data: the parsed JSON object backing this document.
     :param path: the file this document was loaded from, used as the default save target.
+    :param legacy_tc: whether this document was mapped from a legacy ``.tc`` file
+        ([[acquisition-tooling#tc-to-rehu]]) rather than loaded from a genuine ``.rehu``; see
+        :attr:`legacy_tc`.
     """
 
     CURRENT_FORMAT_VERSION: Final = 1
@@ -38,13 +41,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     was written by a newer build; callers (e.g. rehuco-agent) compare against it to decide whether to
     lock the document read-only."""
 
-    def __init__(self, data: dict[str, Any], path: Path | None = None) -> None:
+    def __init__(self, data: dict[str, Any], path: Path | None = None, *, legacy_tc: bool = False) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
         # setter edits __data (or a dict nested inside it) in place, so it is always current
         # and save() never needs a separate sync step. __path has no such guarantee: save()
         # legitimately rebinds it when called with an explicit path.
         self.__data: Final = data
         self.__path = path
+        self.__legacy_tc: Final = legacy_tc
 
     @classmethod
     def load(cls, path: Path | str) -> RehuDocument:
@@ -92,6 +96,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         (the same backing :attr:`data` object a caller may already hold a reference to): the dict is
         cleared and refilled, not replaced.
 
+        Always re-reads :attr:`path` as JSON, even when :attr:`legacy_tc` is set -- nothing calls
+        ``reload()`` on a ``.tc``-backed document yet ([[acquisition-tooling#tc-to-rehu]]'s Phase 1 is
+        exercised directly, not through the app's real open/revert path), so re-parsing a `.tc` path as
+        JSON here would raise; that follow-up lands with Phase 2's open-path wiring.
+
         :raises ValueError: if this document has no path (never loaded from or saved to a file).
         :raises RehuFormatError: if the file's top-level JSON value is not an object.
         """
@@ -110,6 +119,18 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def path(self) -> Path | None:
         """The file this document was loaded from or last saved to, if any."""
         return self.__path
+
+    @property
+    def legacy_tc(self) -> bool:
+        """Whether this document was mapped from a legacy ``.tc`` file rather than loaded from a
+        genuine ``.rehu`` ([[acquisition-tooling#tc-to-rehu]]).
+
+        Set only by :func:`rehuco_core.tc_document.load_tc`. Locks the document independently of
+        :attr:`format_version` -- a ``.tc``-derived document maps to format version 0, which is
+        *older* than :data:`CURRENT_FORMAT_VERSION`, so the newer-format-version lock rule alone would
+        never catch it; this flag is the document's own reason to lock, checked by
+        ``RehuDocumentModel.locked``."""
+        return self.__legacy_tc
 
     @property
     def format_version(self) -> int:
