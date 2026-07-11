@@ -9,8 +9,9 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QLabel, QMainWindow
+from PySide6.QtWidgets import QDialog, QMainWindow
 
+from rehuco_agent.dialogs.settings_dialog import SettingsDialog
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -28,7 +29,7 @@ companion ([[data-model#resource-scoping]]) via :meth:`MainWindow.open_archive`,
 opened directly like a bare ``.rehu`` file."""
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`,
     with a settings dock (#47) as a sibling -- beside the documents area, not merged into it.
 
@@ -48,6 +49,7 @@ class MainWindow(QMainWindow):
 
         self.__dialog_manager: Final = DockableDialogManager()
         self.__dock_manager: Final = QtAds.CDockManager(self)
+        self.__settings_dialog: Final = SettingsDialog()
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
@@ -87,15 +89,14 @@ class MainWindow(QMainWindow):
 
         central_area = self.__dock_manager.setCentralWidget(central_dock)
 
-        # placeholder content -- the real settings shell (tree/filter/toolbar/pages) lands in a
-        # later slice (#47); this slice only proves the dock/action-bar/restore-on-start machinery
-        settings_dialog = DockableDialog(
-            self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", QLabel("Settings")
+        # no pages registered yet -- Registry/Markdown-rendering pages land in later slices (#47)
+        settings_dock = DockableDialog(
+            self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )
-        self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, settings_dialog.dock, central_area)
-        self.__dialog_manager.register(settings_dialog)
-        ActionIconThemeHandler(settings_dialog.toggle_action, SETTINGS_ICON_RESOURCE)
-        self.__ui.action_bar.addAction(settings_dialog.toggle_action)
+        self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, settings_dock.dock, central_area)
+        self.__dialog_manager.register(settings_dock)
+        ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
+        self.__ui.action_bar.addAction(settings_dock.toggle_action)
 
     @override
     def closeEvent(self, event: QCloseEvent) -> None:
