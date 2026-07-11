@@ -25,8 +25,11 @@ class DockableDialog:
     the single long-lived instance built at startup and its :attr:`toggle_action` checked state stay
     in sync, matching every other toggleable dock in this app (`plugins#dock-shell`).
 
-    The dock is constructed but not placed -- add :attr:`dock` to ``dock_manager`` via
-    ``addDockWidget``/``setCentralWidget`` separately.
+    The dock is constructed but not placed -- call :meth:`place_floating` (the framework's default:
+    floating-first, not docking-first, so a fresh install with nothing in settings yet shows a
+    normal, independent app window rather than pre-split into the caller's layout), or place
+    :attr:`dock` via ``addDockWidget``/``setCentralWidget`` directly for a caller that wants
+    docked-first instead.
 
     :param dock_manager: the manager this dialog's dock is associated with.
     :param object_name: this dock's ``objectName`` -- its identity for `CDockManager` persistence and
@@ -36,6 +39,7 @@ class DockableDialog:
     """
 
     def __init__(self, dock_manager: QtAds.CDockManager, object_name: str, title: str, content: QWidget) -> None:
+        self.__dock_manager: Final = dock_manager
         self.__object_name: Final = object_name
         self.__frame: Final = DockableDialogFrame(content)
 
@@ -59,6 +63,25 @@ class DockableDialog:
     def dock(self) -> QtAds.CDockWidget:
         """The hosting dock -- place it via ``addDockWidget``/``setCentralWidget``."""
         return self.__dock
+
+    def place_floating(self) -> None:
+        """Place this dialog's dock as its own floating top-level window -- the framework's default
+        initial placement (floating-first, not docking-first).
+
+        Confirmed empirically not to jump the gun on a not-yet-shown top-level window: unlike
+        ``CDockManager.restoreState()`` recreating a previously-floating dock (which forces its
+        floating container visible immediately, independent of the owning top-level window's own
+        visibility -- callers restoring saved state should do so only after their own ``show()``, to
+        avoid a floating dialog appearing before the window that owns it), a *freshly* floated dock
+        via ``addDockWidgetFloating`` follows ordinary Qt parent/child show semantics and stays
+        hidden until its top-level ancestor is shown. Safe to call during setup, before the owning
+        window is ever shown.
+
+        A later ``CDockManager.restoreState()`` call (if there's anything saved) freely re-docks or
+        repositions this dock regardless of this initial placement -- this is only the fallback for
+        "nothing saved yet".
+        """
+        self.__dock_manager.addDockWidgetFloating(self.__dock)
 
     @property
     def content(self) -> QWidget:

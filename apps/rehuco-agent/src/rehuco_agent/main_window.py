@@ -31,7 +31,10 @@ opened directly like a bare ``.rehu`` file."""
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`,
-    with a settings dock (#47) as a sibling -- beside the documents area, not merged into it.
+    with a settings dock (#47) registered on the same outer manager -- not merged into
+    `DocumentsDock`'s own nested one. Floating-first by default (see
+    `DockableDialog.place_floating`), so it starts as its own independent window rather than
+    pre-split into the documents area; a saved layout freely re-docks or repositions it.
 
     Dock-in-dock (a `CDockManager` inside the central dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
@@ -112,12 +115,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         central_dock.setWidget(self.__documents_dock)
         central_dock.setFeature(QtAds.CDockWidget.NoTab, True)
 
-        central_area = self.__dock_manager.setCentralWidget(central_dock)
+        self.__dock_manager.setCentralWidget(central_dock)
 
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )
-        self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, settings_dock.dock, central_area)
+        # floating-first, not docking-first: the fallback placement for "nothing saved yet" --
+        # restore_dock_state()'s later CDockManager.restoreState() call freely re-docks or
+        # repositions it if there's anything actually saved
+        settings_dock.place_floating()
         self.__dialog_manager.register(settings_dock)
         ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
         self.__ui.action_bar.addAction(settings_dock.toggle_action)

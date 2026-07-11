@@ -49,15 +49,15 @@ def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
     assert original_central.isHidden()
 
 
-def test_installs_a_settings_dock_beside_the_central_widget(qtbot: QtBot) -> None:
-    """The settings dock (#47) is a sibling of the central documents dock, on the *outer* manager --
-    not nested inside `DocumentsDock`'s own manager.
+def test_installs_a_settings_dock_on_the_outer_manager(qtbot: QtBot) -> None:
+    """The settings dock (#47) is registered on the *outer* manager -- not nested inside
+    `DocumentsDock`'s own manager -- so it never gets tangled up with per-document docks.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * find the outer dock manager's registered dock named :data:`SETTINGS_DIALOG_OBJECT_NAME`
-    * verify it exists and shares a dock area with the central dock (a genuine sibling split)
+    * verify it exists and is placed somewhere (has its own dock area)
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -67,6 +67,26 @@ def test_installs_a_settings_dock_beside_the_central_widget(qtbot: QtBot) -> Non
 
     assert settings_dock is not None
     assert settings_dock.dockAreaWidget() is not None
+
+
+def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
+    """With nothing saved yet, the settings dock defaults to floating -- not docked/split into the
+    documents area -- so a fresh install shows it as a normal, independent app window (#47).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the settings dock
+    * verify it reports itself as floating
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert settings_dock is not None
+    assert settings_dock.isFloating()
 
 
 def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) -> None:

@@ -74,6 +74,48 @@ def test_toggle_action_shows_and_hides_the_dock(manager: QtAds.CDockManager) -> 
     assert not dialog.dock.isClosed()
 
 
+def test_place_floating_makes_the_dock_float(manager: QtAds.CDockManager) -> None:
+    """``place_floating`` places the dock in its own floating container, not docked into any area.
+
+    **Test steps:**
+
+    * build a dialog and call ``place_floating``
+    * verify the dock reports itself as floating, with a real floating container
+    """
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", QLabel())
+
+    dialog.place_floating()
+
+    assert dialog.dock.isFloating()
+    assert dialog.dock.floatingDockContainer() is not None
+
+
+def test_place_floating_stays_hidden_until_the_manager_is_shown(qtbot: QtBot, manager: QtAds.CDockManager) -> None:
+    """A freshly-floated dock follows ordinary Qt show semantics -- hidden until its top-level
+    ancestor is actually shown -- unlike a later ``CDockManager.restoreState()`` recreating a
+    previously-floating dock, which shows its container immediately regardless (#47).
+
+    **Test steps:**
+
+    * build a dialog and call ``place_floating`` without showing the manager
+    * verify its floating container is not visible
+    * show the manager
+    * verify the floating container becomes visible too
+    """
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", QLabel())
+
+    dialog.place_floating()
+
+    container = dialog.dock.floatingDockContainer()
+    assert container is not None
+    assert not container.isVisible()
+
+    manager.show()
+    qtbot.waitExposed(manager)
+
+    assert container.isVisible()
+
+
 def test_save_settings_reflects_current_visibility_and_checkbox(manager: QtAds.CDockManager) -> None:
     """``save_settings`` captures the dock's current open/closed state and the checkbox value.
 

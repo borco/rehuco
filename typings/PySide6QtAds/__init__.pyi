@@ -86,6 +86,11 @@ class CDockWidgetTab(QWidget):
     """The clickable tab representing a `CDockWidget` within its `CDockAreaWidget`'s tab bar.
     `toolTip()` (inherited from `QWidget`) reflects `CDockWidget.setTabToolTip`."""
 
+class CFloatingDockContainer(QWidget):
+    """The top-level window hosting one or more docks torn out of a `CDockManager` (drag-out, or
+    `CDockManager.addDockWidgetFloating`). A plain `QWidget` for typing purposes -- callers only
+    ever need `isVisible()`/`show()`/etc., inherited from it."""
+
 class CDockWidget(QWidget):
     """One dockable pane: a titled, taggable container around a single content `QWidget`
     (`setWidget`), placed into a `CDockManager` via `addDockWidget`/`setCentralWidget`."""
@@ -190,6 +195,14 @@ class CDockWidget(QWidget):
     def isClosed(self) -> bool:
         """Whether this dock is currently closed/hidden (its `toggleViewAction` unchecked)."""
 
+    def isFloating(self) -> bool:
+        """Whether this dock currently lives in its own floating container, rather than docked
+        into a `CDockAreaWidget` split within its manager's normal layout."""
+
+    def floatingDockContainer(self) -> CFloatingDockContainer | None:
+        """This dock's floating container, or `None` if it isn't currently floating
+        (`isFloating()` is `False`)."""
+
     def toggleView(self, open: bool = ...) -> None:
         """Show (`open=True`) or hide (`open=False`) this dock, as its `toggleViewAction` does --
         firing `viewToggled` with the new visibility."""
@@ -259,6 +272,16 @@ class CDockManager(QWidget):
         when every other area is empty.
 
         :returns: the tabbed area `dock_widget` ended up in.
+        """
+
+    def addDockWidgetFloating(self, dock_widget: CDockWidget) -> CFloatingDockContainer:
+        """Place `dock_widget` in its own new floating top-level window, not docked into any area.
+
+        Confirmed empirically to follow ordinary Qt parent/child show semantics -- the floating
+        container stays hidden until its own top-level ancestor is shown, unlike `restoreState`
+        recreating a previously-floating dock (which shows its container immediately regardless).
+
+        :returns: the new floating container.
         """
 
     def splitterSizes(self, dock_area_widget: CDockAreaWidget) -> list[int]:
