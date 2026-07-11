@@ -13,8 +13,7 @@ Briefcase over
 PyInstaller and *why*).
 
 This appendix starts from the macOS half of the file-association spike
-([#13](https://github.com/borco/rehuco/issues/13), macOS; the Windows half closed in
-[#1](https://github.com/borco/rehuco/issues/1)) and is meant to **evolve** as production Briefcase
+(#13, macOS; the Windows half closed in #1) and is meant to **evolve** as production Briefcase
 config lands in `apps/rehuco-agent/` and as Windows and Linux packaging are wired up. Where a
 detail is still spike-proven rather than production-shipped, it says so.
 

@@ -9,8 +9,8 @@
 Test-writing conventions (docstring format, etc.) live in [[appendices.code-conventions#testing]]; this page
 is about how rehuco's tests and static checks are structured and run, and the cross-platform gotchas that
 took real time to work through — most of them surfaced by the **first full `make qa` run on
-macOS** (issue [#15](https://github.com/borco/rehuco/issues/15)); several also gate the planned
-cross-platform CI ([#14](https://github.com/borco/rehuco/issues/14)).
+macOS** (issue #15); several also gate the planned
+cross-platform CI (#14).
 
 The guiding model (stated in the repo-root `conftest.py`): **each platform's test set runs on that
 platform's own runner.** A test that can't apply on the current OS is *skipped*, not failed; code
@@ -48,10 +48,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 to watch windows during GUI debugging. None of conftest's own imports pull in Qt, so setting it at
 conftest import time is early enough.
 
-**Linux needs more than `offscreen`** (surfaced by the cross-platform CI in
-[#14](https://github.com/borco/rehuco/issues/14); the fix above was only ever exercised on macOS,
-where it sufficed). On the `ubuntu-latest` leg the same `test_application_singleton.py` still
-segfaulted (exit 139) with `offscreen` set — this time the C stack ran through
+**Linux needs more than `offscreen`** (surfaced by the cross-platform CI in #14; the fix above was only ever
+exercised on macOS, where it sufficed). On the `ubuntu-latest` leg the same `test_application_singleton.py`
+still segfaulted (exit 139) with `offscreen` set — this time the C stack ran through
 `QEventDispatcherGlib::processEvents` → `QCoreApplicationPrivate::sendPostedEvents` into a
 `~QLocalServer` → `deleteChildren` → `~QLocalSocket` chain, i.e. a deferred `deleteLater()` firing
 during teardown. Root cause: `ApplicationSingleton.shutdown()` disposes of its `QLocalServer` (and
