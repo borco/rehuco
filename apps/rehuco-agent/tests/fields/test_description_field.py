@@ -4,6 +4,7 @@ from pyside6_scintilla import ScintillaEdit
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import MarkdownView
+from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 from fields.field_testers import DescriptionFieldTester as DescriptionField
 
@@ -37,6 +38,30 @@ def test_description_viewer_is_a_markdown_view_tracking_the_model(qtbot: QtBot, 
 
     model.description = "changed prose"
     assert "changed prose" in viewer.toPlainText()
+
+
+def test_description_viewer_follows_live_rendering_settings_changes(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The viewer picks up the shared Markdown-rendering settings' current values whenever they
+    change (#26, #47) -- not just when it's first built -- so a Save on the settings page updates
+    an already-open document's viewer immediately.
+
+    **Test steps:**
+
+    * build the viewer (default engine/width)
+    * change the shared settings' engine and image-width cap
+    * verify the viewer's own engine/width followed
+    """
+    field = DescriptionField("description")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, MarkdownView)
+    qtbot.addWidget(viewer)
+
+    settings = shared_markdown_rendering_settings()
+    settings.engine = "mistletoe"
+    settings.max_image_width = 123
+
+    assert viewer._MarkdownView__engine == "mistletoe"  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer._MarkdownView__max_image_width == 123  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def test_description_editor_is_a_scintilla_seeded_from_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:

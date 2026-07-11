@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Final, override
 
 import PySide6QtAds as QtAds
-from borco_pyside.theming import ThemeManager
+from borco_pyside.dialogs import DockableDialog, DockableDialogManager
+from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
@@ -15,8 +16,13 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
-from rehuco_agent.settings.main_window_settings import MainWindowSettings
+from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings
+from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+
+SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
+SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
 
 ARCHIVE_EXTENSIONS: Final = (".zip",)
 """Archive file extensions (each including the leading dot) that get a file-scoped ``.rehu``
@@ -24,12 +30,17 @@ companion ([[data-model#resource-scoping]]) via :meth:`MainWindow.open_archive`,
 opened directly like a bare ``.rehu`` file."""
 
 
-class MainWindow(QMainWindow):
-    """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`.
+class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
+    """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`,
+    with a settings dock (#47) registered on the same outer manager -- not merged into
+    `DocumentsDock`'s own nested one. Floating-first by default (see
+    `DockableDialog.place_floating`), so it starts as its own independent window rather than
+    pre-split into the documents area; a saved layout freely re-docks or repositions it.
 
     Dock-in-dock (a `CDockManager` inside the central dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
-    open documents ([[packaging-deployment#qml-regression]]) without restructuring this shell.
+    open documents ([[packaging-deployment#qml-regression]]) without restructuring this shell -- the
+    settings dock is the first thing to actually use that room.
     """
 
     def __init__(self) -> None:
@@ -40,6 +51,11 @@ class MainWindow(QMainWindow):
         self.centralWidget().hide()
         self.__base_window_title: Final = self.windowTitle()
 
+        self.__dialog_manager: Final = DockableDialogManager()
+        self.__dock_manager: Final = QtAds.CDockManager(self)
+        self.__settings_dialog: Final = SettingsDialog()
+        self.__register_settings_pages()
+
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
@@ -48,6 +64,7 @@ class MainWindow(QMainWindow):
         self.__window_settings.load(persistent_settings())
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
+        self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
@@ -60,6 +77,19 @@ class MainWindow(QMainWindow):
             dark_icon=":/icons/theme_dark.svg",
         )
 
+    def restore_dock_state(self) -> None:
+        """Restore the outer dock layout (the settings dock's floating/visible state) and every
+        dockable dialog's restore-on-start visibility.
+
+        Deliberately **not** called from ``__init__`` -- QtAds' ``CDockManager.restoreState``
+        synchronously shows a previously-floating dock's own top-level window as part of restoring
+        the layout, and calling this before this window's own ``show()`` let that floating window
+        appear on screen ahead of the main window itself. Call once, after
+        ``show()``/``raise_and_activate()`` (``Application.show_main_window()``).
+        """
+        self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+        self.__dialog_manager.restore_all(persistent_settings())
+
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.
 
@@ -68,14 +98,38 @@ class MainWindow(QMainWindow):
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
 
-    def __setup_docking_system(self) -> None:
-        dock_manager = QtAds.CDockManager(self)
+    def __register_settings_pages(self) -> None:
+        """Register every settings category page this platform supports (#47).
 
-        central_dock = QtAds.CDockWidget(dock_manager, "Central Widget")
+        Markdown Rendering is cross-platform. The Registry page is Windows-only (it wraps
+        ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
+        ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
+        it wraps) already requires.
+        """
+        self.__settings_dialog.add_page(MarkdownRenderingPage())
+        if sys.platform == "win32":
+            # pylint: disable-next=import-outside-toplevel
+            from rehuco_agent.settings.ui.registry_page import RegistryPage
+
+            self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
+
+    def __setup_docking_system(self) -> None:
+        central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")
         central_dock.setWidget(self.__documents_dock)
         central_dock.setFeature(QtAds.CDockWidget.NoTab, True)
 
-        dock_manager.setCentralWidget(central_dock)
+        self.__dock_manager.setCentralWidget(central_dock)
+
+        settings_dock = DockableDialog(
+            self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
+        )
+        # floating-first, not docking-first: the fallback placement for "nothing saved yet" --
+        # restore_dock_state()'s later CDockManager.restoreState() call freely re-docks or
+        # repositions it if there's anything actually saved
+        settings_dock.place_floating()
+        self.__dialog_manager.register(settings_dock)
+        ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
+        self.__ui.action_bar.addAction(settings_dock.toggle_action)
 
     @override
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -95,7 +149,12 @@ class MainWindow(QMainWindow):
             for model in dialog.selected_models():
                 model.save()
 
-        self.__save_window_geometry()
+        # must run before __save_window_state captures the outer CDockManager's saveState(), or a
+        # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on
+        # the next launch before restore_dock_state notices the checkbox (#47)
+        self.__dialog_manager.enforce_restore_on_start()
+        self.__save_window_state()
+        self.__dialog_manager.save_all(persistent_settings())
         self.__save_session()
         super().closeEvent(event)
 
@@ -123,9 +182,11 @@ class MainWindow(QMainWindow):
         if focused_path is not None and focused_path in opened:
             self.__documents_dock.open_document(focused_path)  # re-focuses an already-open dock
 
-    def __save_window_geometry(self) -> None:
-        """Persist this window's current size and position."""
+    def __save_window_state(self) -> None:
+        """Persist this window's current size/position, toolbar layout, and outer dock layout."""
         self.__window_settings.geometry = bytes(self.saveGeometry().data())
+        self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
+        self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:

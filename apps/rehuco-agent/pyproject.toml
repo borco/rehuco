@@ -32,6 +32,7 @@ dependencies = [
     "pathvalidate>=3.3.1",
     "pyside6-scintilla>=1.4.0",
     "markdown>=3.7",
+    "mistletoe>=1.4.0",
 ]
 
 [project.urls]

@@ -95,7 +95,13 @@ class Application(QApplication):
                 | config_flags.MiddleMouseButtonClosesTab
             )
             self.__main_window = MainWindow()
-        self.__main_window.raise_and_activate()
+            self.__main_window.raise_and_activate()
+            # after raise_and_activate(), not before: restoring the outer dock layout can
+            # synchronously show a previously-floating dialog's own top-level window (#47), and
+            # doing that before this window's own show() let it appear on screen first
+            self.__main_window.restore_dock_state()
+        else:
+            self.__main_window.raise_and_activate()
         return self.__main_window
 
     def open_path(self, path: str) -> None:

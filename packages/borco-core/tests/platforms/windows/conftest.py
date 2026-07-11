@@ -79,8 +79,12 @@ class FakeRegistry:
         self.values.setdefault(key.path, {})[name] = value
 
     def query_value_ex(self, key: FakeKey, name: str) -> tuple[str, int]:
-        """Fake for ``winreg.QueryValueEx``."""
-        return self.values[key.path][name], winreg.REG_SZ
+        """Fake for ``winreg.QueryValueEx`` -- raises ``FileNotFoundError`` if ``name`` doesn't exist,
+        mirroring real ``winreg`` (an ``OSError`` subclass, not a bare ``KeyError``)."""
+        values = self.values.get(key.path, {})
+        if name not in values:
+            raise FileNotFoundError(f"no such value: {key.path}[{name!r}]")
+        return values[name], winreg.REG_SZ
 
     def delete_key(self, _root: int, path: str) -> None:
         """Fake for ``winreg.DeleteKey`` -- raises ``OSError`` if ``path`` doesn't exist."""

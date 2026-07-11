@@ -1,5 +1,5 @@
 # Claude Code
-/.claude/settings.local*
+/.claude/*local*
 
 # Qt generated files
 *_rc.py

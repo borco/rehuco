@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SettingsDialog</class>
+ <widget class="QWidget" name="SettingsDialog">
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QToolBar" name="toolbar">
+     <addaction name="save_all_action"/>
+     <addaction name="save_current_page_action"/>
+     <addaction name="separator"/>
+     <addaction name="drop_all_action"/>
+     <addaction name="drop_current_page_action"/>
+    </widget>
+   </item>
+   <item>
+    <widget class="QSplitter" name="splitter">
+     <property name="orientation">
+      <enum>Qt::Orientation::Horizontal</enum>
+     </property>
+     <widget class="QWidget" name="tree_panel">
+      <layout class="QVBoxLayout" name="tree_panel_layout">
+       <item>
+        <widget class="QLineEdit" name="filter_edit">
+         <property name="placeholderText">
+          <string>Filter...</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTreeView" name="category_tree">
+         <property name="headerHidden">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QStackedWidget" name="page_stack"/>
+    </widget>
+   </item>
+  </layout>
+  <action name="save_all_action">
+   <property name="text">
+    <string>Save All</string>
+   </property>
+   <property name="toolTip">
+    <string>Save changes on every page</string>
+   </property>
+  </action>
+  <action name="save_current_page_action">
+   <property name="text">
+    <string>Save</string>
+   </property>
+   <property name="toolTip">
+    <string>Save the current page's changes</string>
+   </property>
+  </action>
+  <action name="drop_all_action">
+   <property name="text">
+    <string>Drop All</string>
+   </property>
+   <property name="toolTip">
+    <string>Discard changes on every page</string>
+   </property>
+  </action>
+  <action name="drop_current_page_action">
+   <property name="text">
+    <string>Drop</string>
+   </property>
+   <property name="toolTip">
+    <string>Discard the current page's changes</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

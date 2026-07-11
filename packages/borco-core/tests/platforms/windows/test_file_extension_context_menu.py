@@ -52,6 +52,57 @@ def test_register_notifies_shell(fake_registry: FakeRegistry) -> None:
 
 
 @mark.windows
+def test_is_registered_is_true_right_after_register(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``True`` immediately after a matching ``register`` call.
+
+    **Test steps:**
+
+    * register two extensions
+    * check ``is_registered`` with the same arguments
+    * verify ``True``
+    """
+    file_extension_context_menu.FileExtensionContextMenu.register([".zip", ".7z"], SUB_KEY, TEXT, COMMAND, ICON)
+
+    assert file_extension_context_menu.FileExtensionContextMenu.is_registered(
+        [".zip", ".7z"], SUB_KEY, TEXT, COMMAND, ICON
+    )
+    assert fake_registry.shell_notify_calls == 1
+
+
+@mark.windows
+def test_is_registered_is_false_when_never_registered(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when nothing was ever registered.
+
+    **Test steps:**
+
+    * check ``is_registered`` without a prior ``register``
+    * verify ``False``
+    """
+    assert not file_extension_context_menu.FileExtensionContextMenu.is_registered(
+        [".zip"], SUB_KEY, TEXT, COMMAND, ICON
+    )
+    assert fake_registry.values == {}
+
+
+@mark.windows
+def test_is_registered_is_false_when_only_some_extensions_are_registered(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` if even one of the checked extensions is missing.
+
+    **Test steps:**
+
+    * register only ``.zip``
+    * check ``is_registered`` for both ``.zip`` and ``.7z``
+    * verify ``False``
+    """
+    file_extension_context_menu.FileExtensionContextMenu.register([".zip"], SUB_KEY, TEXT, COMMAND, ICON)
+
+    assert not file_extension_context_menu.FileExtensionContextMenu.is_registered(
+        [".zip", ".7z"], SUB_KEY, TEXT, COMMAND, ICON
+    )
+    assert rf"Software\Classes\SystemFileAssociations\.7z\shell\{SUB_KEY}" not in fake_registry.values
+
+
+@mark.windows
 def test_unregister_removes_key_tree_for_every_extension(fake_registry: FakeRegistry) -> None:
     """``unregister`` deletes the whole sub-key tree under every extension.
 

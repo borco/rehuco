@@ -3,15 +3,17 @@
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QByteArray
+from borco_pyside.dialogs import DockableDialogManager
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.main_window import MainWindow
+from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
+from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 
 
 @fixture(autouse=True)
@@ -46,6 +48,104 @@ def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
     assert original_central is not None
     assert window.centralWidget() is not original_central
     assert original_central.isHidden()
+
+
+def test_installs_a_settings_dock_on_the_outer_manager(qtbot: QtBot) -> None:
+    """The settings dock (#47) is registered on the *outer* manager -- not nested inside
+    `DocumentsDock`'s own manager -- so it never gets tangled up with per-document docks.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the outer dock manager's registered dock named :data:`SETTINGS_DIALOG_OBJECT_NAME`
+    * verify it exists and is placed somewhere (has its own dock area)
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert settings_dock is not None
+    assert settings_dock.dockAreaWidget() is not None
+
+
+def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
+    """With nothing saved yet, the settings dock defaults to floating -- not docked/split into the
+    documents area -- so a fresh install shows it as a normal, independent app window (#47).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the settings dock
+    * verify it reports itself as floating
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert settings_dock is not None
+    assert settings_dock.isFloating()
+
+
+def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) -> None:
+    """The settings dock's ``toggleViewAction`` is added to the new vertical action-bar toolbar.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the settings dock and its own toggle action
+    * verify that action is among the action bar's actions
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert settings_dock.toggleViewAction() in ui.action_bar.actions()
+
+
+@mark.windows
+def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
+    """On Windows, the Registry settings page (#47) is registered into the settings dialog.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``RegistryPage``
+    """
+    from rehuco_agent.settings.ui.registry_page import RegistryPage  # pylint: disable=import-outside-toplevel
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, RegistryPage) for page in pages)
+
+
+def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
+    """The Markdown Rendering settings page (#26, #47) is registered into the settings dialog,
+    on every platform (unlike the Windows-only Registry page).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``MarkdownRenderingPage``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, MarkdownRenderingPage) for page in pages)
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
@@ -513,6 +613,182 @@ def test_close_event_saves_the_window_geometry(mocker: MockerFixture, qtbot: QtB
     window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert window_settings.geometry == b"new-geometry"
     save.assert_called_once()
+
+
+def test_close_event_saves_the_outer_docks_state(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves the outer dock manager's own layout (central dock + settings dock, #47).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``MainWindowSettings.save`` to detect the call
+    * dispatch a close event
+    * verify the recorded outer dock state is real, non-empty ``CDockManager`` state
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.outer_docks_state != b""
+    save.assert_called_once()
+
+
+def test_close_event_saves_an_unchecked_settings_dock_as_closed_even_while_open(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A settings dock left open (e.g. floated out) but with "Restore on start" unchecked is saved
+    as closed -- not saved open-then-corrected on the next restore, which would flash the floating
+    window open before hiding it again (#47).
+
+    **Test steps:**
+
+    * construct a window; leave the settings dock open (its default) and "Restore on start" unchecked
+    * dispatch a close event
+    * construct a second window seeded (via a mocked ``load``) with the saved outer dock state, then
+      call ``restore_dock_state``
+    * verify the second window's settings dock is closed, having never needed to be shown at all
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    assert not settings_dock.isClosed()  # open by default; "Restore on start" defaults unchecked
+
+    first.closeEvent(QCloseEvent())
+
+    window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved_state = window_settings.outer_docks_state
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+    second.restore_dock_state()
+    second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert second_settings_dock is not None
+    assert second_settings_dock.isClosed()
+
+
+def test_outer_docks_state_round_trips_the_settings_dock_visibility(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A settings dock closed before saving stays closed once a fresh window restores that state.
+
+    **Test steps:**
+
+    * construct a window, close its settings dock, then capture the real outer dock state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state, then call
+      ``restore_dock_state`` (not automatic -- see its own docstring)
+    * verify the second window's settings dock is also closed
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    settings_dock.toggleView(False)
+
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved_state = window_settings.outer_docks_state
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+    second.restore_dock_state()
+    second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert second_settings_dock is not None
+    assert second_settings_dock.isClosed()
+
+
+def test_close_event_saves_every_registered_dockable_dialog(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app persists every registered dockable dialog's own settings (#47).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``DockableDialogManager.save_all`` to detect the call
+    * dispatch a close event
+    * verify ``save_all`` was called once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save_all = mocker.patch.object(DockableDialogManager, "save_all")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    save_all.assert_called_once()
+
+
+def test_close_event_saves_the_toolbars_state(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves the toolbars' own layout (``theme_toolbar``/``action_bar`` areas).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``MainWindowSettings.save`` to detect the call
+    * dispatch a close event
+    * verify the recorded toolbars state is real, non-empty ``QMainWindow`` state
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.toolbars_state != b""
+    save.assert_called_once()
+
+
+def test_toolbars_state_round_trips_the_action_bar_area(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Moving the action bar to a different toolbar area survives a save/restore round trip.
+
+    **Test steps:**
+
+    * construct a window, move its action bar to the bottom area, then capture the real toolbars
+      state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state
+    * verify the second window's action bar is also in the bottom area
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    first_ui = first._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first.addToolBar(Qt.ToolBarArea.BottomToolBarArea, first_ui.action_bar)
+
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved_state = window_settings.toolbars_state
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.toolbars_state = saved_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+    second_ui = second._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert second.toolBarArea(second_ui.action_bar) == Qt.ToolBarArea.BottomToolBarArea
 
 
 def test_restore_session_refocuses_the_previously_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -75,6 +75,104 @@ def test_register_notifies_shell(fake_registry: FakeRegistry) -> None:
 
 
 @mark.windows
+def test_is_registered_is_true_right_after_register(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``True`` immediately after a matching ``register`` call.
+
+    **Test steps:**
+
+    * register
+    * check ``is_registered`` with the same arguments
+    * verify ``True``
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+    assert file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    assert fake_registry.shell_notify_calls == 1
+
+
+@mark.windows
+def test_is_registered_is_false_when_never_registered(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when nothing was ever registered.
+
+    **Test steps:**
+
+    * check ``is_registered`` without a prior ``register``
+    * verify ``False``
+    """
+    assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    assert fake_registry.values == {}
+
+
+@mark.windows
+def test_is_registered_is_false_when_the_command_is_stale(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when the registered command points elsewhere now.
+
+    **Test steps:**
+
+    * register, then overwrite the command as if the exe moved
+    * check ``is_registered`` against the original command
+    * verify ``False``
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    progid_key = rf"Software\Classes\{PROGID}"
+    fake_registry.values[f"{progid_key}\\shell\\open\\command"][""] = '"C:\\elsewhere\\test-app.exe" "%1"'
+
+    assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+
+@mark.windows
+def test_is_registered_is_false_when_the_icon_is_stale(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when the registered icon points elsewhere now.
+
+    **Test steps:**
+
+    * register, then overwrite the icon as if the exe moved
+    * check ``is_registered`` against the original icon
+    * verify ``False``
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    progid_key = rf"Software\Classes\{PROGID}"
+    fake_registry.values[f"{progid_key}\\DefaultIcon"][""] = r"C:\elsewhere\test-app.exe,0"
+
+    assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+
+@mark.windows
+def test_is_registered_is_false_when_the_aumid_is_stale(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when an expected AUMID doesn't match the registered one.
+
+    **Test steps:**
+
+    * register with one AUMID
+    * check ``is_registered`` expecting a different AUMID
+    * verify ``False``
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+    assert not file_association.FileAssociation.is_registered(
+        PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, "some.other.app"
+    )
+    progid_key = rf"Software\Classes\{PROGID}"
+    assert fake_registry.values[f"{progid_key}\\Application"]["AppUserModelId"] == AUMID
+
+
+@mark.windows
+def test_is_registered_ignores_the_application_key_when_no_aumid_is_expected(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` doesn't check the ``Application`` key at all when ``aumid`` is ``None``.
+
+    **Test steps:**
+
+    * register with an AUMID, but check ``is_registered`` without one
+    * verify ``True`` regardless of the (unrelated) ``Application`` key's presence
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+    assert file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON)
+    progid_key = rf"Software\Classes\{PROGID}"
+    assert fake_registry.values[f"{progid_key}\\Application"]["AppUserModelId"] == AUMID
+
+
+@mark.windows
 def test_unregister_removes_progid_and_extension_binding(fake_registry: FakeRegistry) -> None:
     """``unregister`` deletes the whole ProgID key tree and the extension binding it owns.
 

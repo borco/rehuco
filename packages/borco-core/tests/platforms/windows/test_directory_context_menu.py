@@ -52,6 +52,35 @@ def test_register_folder_notifies_shell(fake_registry: FakeRegistry) -> None:
 
 
 @mark.windows
+def test_is_folder_registered_is_true_right_after_register_folder(fake_registry: FakeRegistry) -> None:
+    """``is_folder_registered`` reports ``True`` immediately after a matching ``register_folder``.
+
+    **Test steps:**
+
+    * register the folder verb
+    * check ``is_folder_registered`` with the same arguments
+    * verify ``True``
+    """
+    directory_context_menu.DirectoryContextMenu.register_folder(SUB_KEY, TEXT, COMMAND, ICON)
+
+    assert directory_context_menu.DirectoryContextMenu.is_folder_registered(SUB_KEY, TEXT, COMMAND, ICON)
+    assert fake_registry.shell_notify_calls == 1
+
+
+@mark.windows
+def test_is_folder_registered_is_false_when_never_registered(fake_registry: FakeRegistry) -> None:
+    """``is_folder_registered`` reports ``False`` when nothing was ever registered.
+
+    **Test steps:**
+
+    * check ``is_folder_registered`` without a prior ``register_folder``
+    * verify ``False``
+    """
+    assert not directory_context_menu.DirectoryContextMenu.is_folder_registered(SUB_KEY, TEXT, COMMAND, ICON)
+    assert fake_registry.values == {}
+
+
+@mark.windows
 def test_unregister_folder_removes_key_tree(fake_registry: FakeRegistry) -> None:
     """``unregister_folder`` deletes the whole sub-key tree.
 
@@ -113,6 +142,36 @@ def test_register_background_notifies_shell(fake_registry: FakeRegistry) -> None
     """
     directory_context_menu.DirectoryContextMenu.register_background(SUB_KEY, TEXT, COMMAND, ICON)
     assert fake_registry.shell_notify_calls == 1
+
+
+@mark.windows
+def test_is_background_registered_is_true_right_after_register_background(fake_registry: FakeRegistry) -> None:
+    """``is_background_registered`` reports ``True`` immediately after a matching
+    ``register_background``.
+
+    **Test steps:**
+
+    * register the background verb
+    * check ``is_background_registered`` with the same arguments
+    * verify ``True``
+    """
+    directory_context_menu.DirectoryContextMenu.register_background(SUB_KEY, TEXT, COMMAND, ICON)
+
+    assert directory_context_menu.DirectoryContextMenu.is_background_registered(SUB_KEY, TEXT, COMMAND, ICON)
+    assert fake_registry.shell_notify_calls == 1
+
+
+@mark.windows
+def test_is_background_registered_is_false_when_never_registered(fake_registry: FakeRegistry) -> None:
+    """``is_background_registered`` reports ``False`` when nothing was ever registered.
+
+    **Test steps:**
+
+    * check ``is_background_registered`` without a prior ``register_background``
+    * verify ``False``
+    """
+    assert not directory_context_menu.DirectoryContextMenu.is_background_registered(SUB_KEY, TEXT, COMMAND, ICON)
+    assert fake_registry.values == {}
 
 
 @mark.windows
