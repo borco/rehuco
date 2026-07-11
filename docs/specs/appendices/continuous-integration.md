@@ -6,10 +6,9 @@
 
 [[[appendices.continuous-integration#overview]]]
 
-Why the cross-platform CI workflow ([#14](https://github.com/borco/rehuco/issues/14)) isn't just
-`make qa` wrapped in a GitHub Actions matrix, and the toolchain gaps it had to work around. Builds
-on the cross-platform QA groundwork in [[appendices.testing#overview]] (issue
-[#15](https://github.com/borco/rehuco/issues/15)).
+Why the cross-platform CI workflow (#14) isn't just `make qa` wrapped in a GitHub Actions matrix, and the
+toolchain gaps it had to work around. Builds on the cross-platform QA groundwork in
+[[appendices.testing#overview]] (issue #15).
 
 ## 1. `make qa` mutates sources — CI needs a non-mutating equivalent
 
@@ -151,7 +150,7 @@ to `node24` as floating tags, so neither needed a change.
 [[[appendices.continuous-integration#per-os-coverage]]]
 
 `make cov` only ever printed `term-missing` to the job log — nothing was uploaded anywhere, so the
-README's per-OS coverage badges ([#19](https://github.com/borco/rehuco/issues/19)) had no live data
+README's per-OS coverage badges (#19) had no live data
 source. Getting them working needed both account-side setup outside this repo and two workflow-side
 changes.
 

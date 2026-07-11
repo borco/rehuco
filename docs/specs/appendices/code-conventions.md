@@ -84,6 +84,18 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
   checked when the issue is closed, unchecked while it is open. You may check the box in the same
   change that closes the issue (i.e. tick `- [x]` just before running `gh issue close`), rather than
   waiting for a separate follow-up.
+- **Cross-renderer link rendering.** Docs are read both on GitHub (blob view, PRs) and the published
+  mkdocs site, which render some references differently:
+  - A bare `#123` issue/PR reference autolinks natively on GitHub already; `pymdownx.magiclink`
+    (`mkdocs.yml`) gives it the same treatment on the published site. Its issue-shorthand pattern
+    requires digits right after `#`, so it never collides with a `[[doc#slug]]` cross-reference
+    token (slug segments are never all-digit) — see "Symbolic cross-references" in
+    [`docs/specs/README.md`](../README.md).
+  - A plain relative link from a doc into a repo file outside `docs/` (e.g. a `.py` source file
+    under `apps/`/`packages/`) resolves natively on GitHub, but 404s on the built mkdocs site,
+    since only `docs/` is ever published. Write such links as plain relative paths regardless —
+    `tools/mkdocs_relative_link_hook.py` rewrites, at build time only, any link whose target falls
+      outside `docs_dir` to an absolute `{repo_url}/blob/{branch}/...` link; GitHub needs no change.
 
 ## 4. Testing
 
