@@ -79,6 +79,20 @@ class DockableDialog:
             visible=not self.__dock.isClosed(), restore_on_start=self.__frame.restore_on_start
         )
 
+    def enforce_restore_on_start(self) -> None:
+        """Close this dialog's dock now if "Restore on start" is unchecked.
+
+        Call before the owning ``CDockManager``'s ``saveState()`` is captured for persistence (on
+        app close) -- otherwise a floating-and-visible dock whose checkbox is unchecked gets saved
+        that way anyway, and the next launch's ``restoreState()`` faithfully recreates it (showing
+        its floating window) a moment before :meth:`restore_settings` notices the checkbox and
+        hides it again -- a visible show-then-hide flash. Forcing the "shouldn't reopen" state into
+        the saved layout itself, instead of only correcting it after restore, is what removes the
+        flash rather than just reordering it.
+        """
+        if not self.__frame.restore_on_start:
+            self.__dock.toggleView(False)
+
     def restore_settings(self, settings: DockableDialogSettings) -> None:
         """Apply previously-saved settings: the restore-on-start checkbox, and the dialog's
         visibility -- open only if it was both visible and restore-on-start was checked when last

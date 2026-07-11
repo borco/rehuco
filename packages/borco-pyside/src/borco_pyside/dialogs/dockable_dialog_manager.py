@@ -26,6 +26,15 @@ class DockableDialogManager:
         """
         self.__dialogs.append(dialog)
 
+    def enforce_restore_on_start(self) -> None:
+        """Close every registered dialog whose "Restore on start" is unchecked.
+
+        Call before capturing the owning ``CDockManager``'s ``saveState()`` for persistence -- see
+        :meth:`~borco_pyside.dialogs.dockable_dialog.DockableDialog.enforce_restore_on_start`.
+        """
+        for dialog in self.__dialogs:
+            dialog.enforce_restore_on_start()
+
     def save_all(self, settings: QSettings) -> None:
         """Persist every registered dialog's current settings.
 

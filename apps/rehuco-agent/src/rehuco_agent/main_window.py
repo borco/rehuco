@@ -61,8 +61,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
-        self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
-        self.__dialog_manager.restore_all(persistent_settings())
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
@@ -74,6 +72,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             light_icon=":/icons/theme_light.svg",
             dark_icon=":/icons/theme_dark.svg",
         )
+
+    def restore_dock_state(self) -> None:
+        """Restore the outer dock layout (the settings dock's floating/visible state) and every
+        dockable dialog's restore-on-start visibility.
+
+        Deliberately **not** called from ``__init__`` -- QtAds' ``CDockManager.restoreState``
+        synchronously shows a previously-floating dock's own top-level window as part of restoring
+        the layout, and calling this before this window's own ``show()`` let that floating window
+        appear on screen ahead of the main window itself. Call once, after
+        ``show()``/``raise_and_activate()`` (``Application.show_main_window()``).
+        """
+        self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+        self.__dialog_manager.restore_all(persistent_settings())
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.
@@ -129,6 +140,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             for model in dialog.selected_models():
                 model.save()
 
+        # must run before __save_window_state captures the outer CDockManager's saveState(), or a
+        # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on
+        # the next launch before restore_dock_state notices the checkbox (#47)
+        self.__dialog_manager.enforce_restore_on_start()
         self.__save_window_state()
         self.__dialog_manager.save_all(persistent_settings())
         self.__save_session()

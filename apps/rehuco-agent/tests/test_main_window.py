@@ -600,13 +600,57 @@ def test_close_event_saves_the_outer_docks_state(mocker: MockerFixture, qtbot: Q
     save.assert_called_once()
 
 
+def test_close_event_saves_an_unchecked_settings_dock_as_closed_even_while_open(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A settings dock left open (e.g. floated out) but with "Restore on start" unchecked is saved
+    as closed -- not saved open-then-corrected on the next restore, which would flash the floating
+    window open before hiding it again (#47).
+
+    **Test steps:**
+
+    * construct a window; leave the settings dock open (its default) and "Restore on start" unchecked
+    * dispatch a close event
+    * construct a second window seeded (via a mocked ``load``) with the saved outer dock state, then
+      call ``restore_dock_state``
+    * verify the second window's settings dock is closed, having never needed to be shown at all
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    assert not settings_dock.isClosed()  # open by default; "Restore on start" defaults unchecked
+
+    first.closeEvent(QCloseEvent())
+
+    window_settings = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved_state = window_settings.outer_docks_state
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+    second.restore_dock_state()
+    second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    assert second_settings_dock is not None
+    assert second_settings_dock.isClosed()
+
+
 def test_outer_docks_state_round_trips_the_settings_dock_visibility(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A settings dock closed before saving stays closed once a fresh window restores that state.
 
     **Test steps:**
 
     * construct a window, close its settings dock, then capture the real outer dock state it saves
-    * construct a second window seeded (via a mocked ``load``) with that saved state
+    * construct a second window seeded (via a mocked ``load``) with that saved state, then call
+      ``restore_dock_state`` (not automatic -- see its own docstring)
     * verify the second window's settings dock is also closed
     """
     first = MainWindow()
@@ -628,6 +672,7 @@ def test_outer_docks_state_round_trips_the_settings_dock_visibility(mocker: Mock
 
     second = MainWindow()
     qtbot.addWidget(second)
+    second.restore_dock_state()
     second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
 

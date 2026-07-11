@@ -116,3 +116,40 @@ def test_restore_settings_reopens_the_dock_only_when_both_flags_were_set(
 
     dialog.restore_settings(DockableDialogSettings(visible=True, restore_on_start=True))
     assert not dialog.dock.isClosed()
+
+
+def test_enforce_restore_on_start_closes_an_open_dock_when_unchecked(manager: QtAds.CDockManager) -> None:
+    """An open dock whose "Restore on start" checkbox is unchecked gets closed.
+
+    **Test steps:**
+
+    * build a dialog, add its (open-by-default) dock, leave "Restore on start" unchecked
+    * call ``enforce_restore_on_start``
+    * verify the dock is now closed
+    """
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock)
+    assert not dialog.dock.isClosed()
+
+    dialog.enforce_restore_on_start()
+
+    assert dialog.dock.isClosed()
+
+
+def test_enforce_restore_on_start_leaves_an_open_dock_alone_when_checked(manager: QtAds.CDockManager) -> None:
+    """An open dock whose "Restore on start" checkbox is checked stays open.
+
+    **Test steps:**
+
+    * build a dialog, add its (open-by-default) dock, check "Restore on start"
+    * call ``enforce_restore_on_start``
+    * verify the dock is still open
+    """
+    dialog = DockableDialog(manager, "some_dialog", "Some Dialog", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock)
+    frame = cast(DockableDialogFrame, dialog.dock.widget())
+    frame.restore_on_start = True
+
+    dialog.enforce_restore_on_start()
+
+    assert not dialog.dock.isClosed()
