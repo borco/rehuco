@@ -1,5 +1,6 @@
-"""Phosphor glyphs -- each its own codepoint/font-family pair -- for the app's `QLineEdit` trailing
-actions.
+"""Every icon-font glyph used across the app -- each its own codepoint/font-family pair -- kept in one
+place so the in-use codepoint/weight set can be audited without grepping every field/widget module
+(#37). Currently all Phosphor, but nothing here assumes a single icon-font family.
 """
 
 from typing import Final, NamedTuple
@@ -31,3 +32,12 @@ EXPAND_ACTION_GLYPH: Final = Glyph("\ue3d4", "Phosphor-Bold")
 COLLAPSE_ACTION_GLYPH: Final = Glyph("\ue32a", "Phosphor-Bold")
 """Phosphor's "minus" glyph, `PathField`'s suggestions-panel collapse toggle (expanded state); shares
 :data:`EXPAND_ACTION_GLYPH`'s font family, so the toggle button sets its font once and only swaps text."""
+
+POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
+"""Phosphor's "star" glyph, filled, for `RatingField`'s positive-rating stars; shares
+:data:`NEGATIVE_RATING_GLYPH`'s codepoint, so only the font-family swap (fill vs. outline) tells the
+two apart."""
+
+NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Bold")
+"""Phosphor's "star" glyph, outline, for `RatingField`'s negative-rating stars -- see
+:data:`POSITIVE_RATING_GLYPH`."""
