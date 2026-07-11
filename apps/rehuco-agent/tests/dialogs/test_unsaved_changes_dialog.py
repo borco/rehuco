@@ -3,13 +3,28 @@
 from pathlib import Path
 from typing import Any, Final
 
-from PySide6.QtCore import QEvent, Qt
-from PySide6.QtWidgets import QDialogButtonBox, QStyleOptionViewItem
+from PySide6.QtCore import QByteArray, QEvent, Qt
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QStyleOptionViewItem
+from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from rehuco_agent.settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
 
 PATH: Final = Path.cwd() / "fake" / "info.rehu"
+
+
+@fixture(autouse=True)
+def mock_persistent_settings(mocker: MockerFixture) -> Any:
+    """Stand in for ``persistent_settings()`` so geometry load/save never touch real QSettings storage.
+
+    ``value`` must return whatever default it was called with, so ``UnsavedChangesDialogSettings.load``
+    sees no saved geometry (a bare ``MagicMock`` would return truthy junk and spuriously trigger
+    ``restoreGeometry``).
+    """
+    settings = mocker.MagicMock()
+    settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
+    return mocker.patch("rehuco_agent.dialogs.unsaved_changes_dialog.persistent_settings", return_value=settings)
 
 
 def make_model(mocker: MockerFixture, path: Path | None) -> Any:
@@ -140,3 +155,65 @@ def test_other_editor_events_fall_through_to_the_base_delegate(mocker: MockerFix
     view.itemDelegate().editorEvent(event, list_model, QStyleOptionViewItem(), index)
 
     assert list_model.item(0).checkState() == Qt.CheckState.Checked
+
+
+def test_restores_geometry_when_previously_saved(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Previously-saved dialog geometry is restored on construction.
+
+    **Test steps:**
+
+    * seed ``UnsavedChangesDialogSettings.load`` to report saved geometry bytes
+    * mock ``restoreGeometry`` to detect the call
+    * build the dialog
+    * verify ``restoreGeometry`` was called with those bytes
+    """
+
+    def fake_load(self: UnsavedChangesDialogSettings, settings: object) -> None:
+        del settings
+        self.geometry = b"geometry-bytes"
+
+    mocker.patch.object(UnsavedChangesDialogSettings, "load", fake_load)
+    restore_geometry = mocker.patch.object(UnsavedChangesDialog, "restoreGeometry")
+
+    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    qtbot.addWidget(dialog)
+
+    restore_geometry.assert_called_once_with(QByteArray(b"geometry-bytes"))
+
+
+def test_skips_restoring_geometry_when_nothing_was_saved(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With no previously-saved geometry, construction doesn't call ``restoreGeometry`` at all.
+
+    **Test steps:**
+
+    * mock ``restoreGeometry`` to detect an unwanted call
+    * build the dialog (the default mocked settings report no saved geometry)
+    * verify ``restoreGeometry`` was never called
+    """
+    restore_geometry = mocker.patch.object(UnsavedChangesDialog, "restoreGeometry")
+
+    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    qtbot.addWidget(dialog)
+
+    restore_geometry.assert_not_called()
+
+
+def test_done_saves_the_geometry_on_every_exit_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the dialog through ``done`` saves its current geometry, whatever the result code.
+
+    **Test steps:**
+
+    * build the dialog and mock ``saveGeometry`` to return known bytes
+    * call ``done`` (as Cancel/Escape/close all do)
+    * verify ``UnsavedChangesDialogSettings.save`` was called with those bytes recorded on the instance
+    """
+    dialog = UnsavedChangesDialog([make_model(mocker, PATH)])
+    qtbot.addWidget(dialog)
+    mocker.patch.object(dialog, "saveGeometry", return_value=QByteArray(b"new-geometry"))
+    save = mocker.patch.object(UnsavedChangesDialogSettings, "save")
+
+    dialog.done(QDialog.DialogCode.Rejected)
+
+    settings = dialog._UnsavedChangesDialog__settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert settings.geometry == b"new-geometry"
+    save.assert_called_once()

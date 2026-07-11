@@ -11,7 +11,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
-from rehuco_agent.settings.window_settings import WindowSettings
+from rehuco_agent.settings.main_window_settings import MainWindowSettings
 
 
 @fixture(autouse=True)
@@ -457,17 +457,17 @@ def test_restores_window_geometry_when_previously_saved(mocker: MockerFixture, q
 
     **Test steps:**
 
-    * seed ``WindowSettings.load`` to report saved geometry bytes
+    * seed ``MainWindowSettings.load`` to report saved geometry bytes
     * mock ``restoreGeometry`` to detect the call
     * construct ``MainWindow``
     * verify ``restoreGeometry`` was called with those bytes
     """
 
-    def fake_load(self: WindowSettings, settings: object) -> None:
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
         del settings
         self.geometry = b"geometry-bytes"
 
-    mocker.patch.object(WindowSettings, "load", fake_load)
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
     restore_geometry = mocker.patch.object(MainWindow, "restoreGeometry")
 
     window = MainWindow()
@@ -500,12 +500,12 @@ def test_close_event_saves_the_window_geometry(mocker: MockerFixture, qtbot: QtB
 
     * mock ``saveGeometry`` to return known bytes
     * dispatch a close event
-    * verify ``WindowSettings.save`` was called with those bytes recorded on the instance
+    * verify ``MainWindowSettings.save`` was called with those bytes recorded on the instance
     """
     window = MainWindow()
     qtbot.addWidget(window)
     mocker.patch.object(window, "saveGeometry", return_value=QByteArray(b"new-geometry"))
-    save = mocker.patch.object(WindowSettings, "save")
+    save = mocker.patch.object(MainWindowSettings, "save")
     event = QCloseEvent()
 
     window.closeEvent(event)
