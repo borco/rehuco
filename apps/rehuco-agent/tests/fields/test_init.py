@@ -26,8 +26,9 @@ def form_labels(widget: QWidget) -> list[str]:
     texts: list[str] = []
     for row in range(layout.rowCount()):
         item = layout.itemAtPosition(row, LABEL_COLUMN)
-        label = item.widget() if item is not None else None
-        if isinstance(label, QLabel):
+        cell = item.widget() if item is not None else None
+        label = cell if isinstance(cell, QLabel) else cell.findChild(QLabel) if cell is not None else None
+        if label is not None:
             texts.append(label.text())
     return texts
 

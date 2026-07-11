@@ -73,6 +73,34 @@ def test_choice_check_boxes_value_setter_writes_through_set_value(qtbot: QtBot) 
     assert not seen
 
 
+def test_header_height_is_one_checkboxs_height(qtbot: QtBot) -> None:
+    """``header_height`` is a single checkbox's natural height.
+
+    **Test steps:**
+
+    * build the group over the four choices
+    * verify ``header_height`` matches any one checkbox's sizeHint height
+    """
+    widget = ChoiceCheckBoxes(CHOICES)
+    qtbot.addWidget(widget)
+
+    assert widget.header_height == next(iter(checkboxes(widget).values())).sizeHint().height()
+
+
+def test_header_height_falls_back_to_a_throwaway_checkbox_when_choices_is_empty(qtbot: QtBot) -> None:
+    """With no choices (no boxes to measure), ``header_height`` falls back to a plain ``QCheckBox``.
+
+    **Test steps:**
+
+    * build the group over an empty choice set
+    * verify ``header_height`` matches a throwaway ``QCheckBox``'s sizeHint height
+    """
+    widget = ChoiceCheckBoxes(())
+    qtbot.addWidget(widget)
+
+    assert widget.header_height == QCheckBox().sizeHint().height()
+
+
 def test_choice_check_boxes_set_value_resyncs_without_re_emitting(qtbot: QtBot) -> None:
     """``set_value`` applies a selection under the echo guard, emitting nothing, ignoring unknowns.
 

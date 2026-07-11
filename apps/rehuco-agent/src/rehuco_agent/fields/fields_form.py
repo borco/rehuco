@@ -5,7 +5,14 @@ from typing import Any, Final
 
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
-from rehuco_agent.fields.field import Field, FieldEditorWidgets, FieldModel, FieldsTab, FieldViewerWidgets
+from rehuco_agent.fields.field import (
+    Field,
+    FieldEditorWidgets,
+    FieldModel,
+    FieldsTab,
+    FieldViewerWidgets,
+    HeaderPinned,
+)
 
 LABEL_COLUMN: Final = 0
 MISC_COLUMN: Final = 1
@@ -88,6 +95,11 @@ class FieldsForm:
                 if bundle.vertical:
                     self.__add_vertical_row(grid, row, (bundle.label, bundle.misc), bundle.editor)
                     continue
+                if isinstance(bundle.editor, HeaderPinned):
+                    self.__add_header_pinned_row(
+                        grid, row, bundle.label, bundle.misc, bundle.editor, bundle.editor.header_height
+                    )
+                    continue
                 if bundle.label is not None:
                     grid.addWidget(bundle.label, row, LABEL_COLUMN)
                 if bundle.misc is not None:
@@ -131,6 +143,59 @@ class FieldsForm:
         if content is not None:
             column.addWidget(content)
         grid.addWidget(container, row, LABEL_COLUMN, 1, CONTENT_COLUMN - LABEL_COLUMN + 1)
+
+    @staticmethod
+    def __add_header_pinned_row(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+        grid: QGridLayout,
+        row: int,
+        label: QWidget | None,
+        misc: QWidget | None,
+        editor: QWidget,
+        header_height: int,
+    ) -> None:
+        """Add a label | misc | editor row whose label and misc are pinned to ``editor``'s first
+        line instead of re-centering against the row's live height ([[plugins#field-toolkit]]'s
+        `HeaderPinned` contract) -- e.g. the ``path`` editor's suggestions panel or a `multi_choice`
+        checkbox `FlowLayout`, both of which grow well past their first line.
+
+        Each widget is wrapped in its own top-pinned container (:meth:`__pin_to_top`), so none of
+        them is stretched by the grid to the row's full height; ``label`` and ``misc`` additionally
+        get a fixed top margin sized to *look* centered against ``header_height`` -- reproducing the
+        plain-fill appearance when the editor is at its natural (single-line) height, but as a fixed
+        offset that can't drift when the editor grows.
+
+        :param grid: the grid to add the row to.
+        :param row: the grid row index.
+        :param label: the field's name label, or ``None`` for none.
+        :param misc: the optional middle-column control, or ``None`` for none.
+        :param editor: the `HeaderPinned` editor.
+        :param header_height: ``editor.header_height``, passed in already resolved.
+        """
+        if label is not None:
+            margin = max(0, (header_height - label.sizeHint().height()) // 2)
+            grid.addWidget(FieldsForm.__pin_to_top(label, margin), row, LABEL_COLUMN)
+        if misc is not None:
+            margin = max(0, (header_height - misc.sizeHint().height()) // 2)
+            grid.addWidget(FieldsForm.__pin_to_top(misc, margin), row, MISC_COLUMN)
+        grid.addWidget(FieldsForm.__pin_to_top(editor, 0), row, CONTENT_COLUMN)
+
+    @staticmethod
+    def __pin_to_top(widget: QWidget, top_margin: int) -> QWidget:
+        """Wrap ``widget`` in a container that holds it at its natural height, ``top_margin`` pixels
+        below the container's top, with the rest of any leftover space absorbed by a trailing stretch
+        -- so a grid cell taller than ``widget`` can't grow or re-center it.
+
+        :param widget: the widget to pin (opaque to this method -- any `QWidget` works).
+        :param top_margin: the fixed vertical offset, in pixels.
+        :returns: the wrapping container, ready to add to the grid.
+        """
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, top_margin, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(widget)
+        layout.addStretch()
+        return container
 
     @staticmethod
     def __distribute_vertical_space(

@@ -1,7 +1,7 @@
 """Tests for FieldsForm: composing an ordered field list into a 3-column viewer or editor grid."""
 
 from dataclasses import replace
-from typing import override
+from typing import Final, override
 
 from PySide6.QtWidgets import (
     QGridLayout,
@@ -105,6 +105,49 @@ class VerticalContentlessField(VerticalField):
         return replace(super().make_viewer(binding), viewer=None)
 
 
+class HeaderPinnedEditor(QLineEdit):
+    """A sample editor with a fixed :attr:`header_height` (the ``HeaderPinned`` contract), standing in
+    for the real dynamic-height editors (``PathEditor``, ``ChoiceCheckBoxes``) in layout-only tests.
+    """
+
+    def __init__(self, header_height: int) -> None:
+        super().__init__()
+        self.__header_height: Final = header_height
+
+    @property
+    def header_height(self) -> int:
+        """This editor's fixed, test-controlled first-line height."""
+        return self.__header_height
+
+
+HEADER_HEIGHT: Final = 40
+"""Taller than a plain label/tool button's sizeHint, so pinned rows get a non-zero top margin."""
+
+
+class HeaderPinnedField(TextField):
+    """A sample field whose editor implements ``HeaderPinned`` (a fixed :data:`HEADER_HEIGHT`)."""
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), editor=HeaderPinnedEditor(HEADER_HEIGHT))
+
+
+class HeaderPinnedMiscField(HeaderPinnedField):
+    """A ``HeaderPinned`` sample field that also contributes a misc-column widget."""
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), misc=QToolButton())
+
+
+class HeaderPinnedLabellessField(HeaderPinnedField):
+    """A ``HeaderPinned`` sample field with no label (its row has no label to pin)."""
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), label=None)
+
+
 # endregion
 
 
@@ -173,6 +216,17 @@ def grid_of(widget: QWidget) -> QGridLayout:
     layout = widget.layout()
     assert isinstance(layout, QGridLayout)
     return layout
+
+
+def pin_top_margin(cell: QWidget) -> int:
+    """Read a pinned-row cell's top margin (its wrapping container's ``QVBoxLayout`` top margin).
+
+    :param cell: the grid cell widget (the pin-to-top container).
+    :returns: the container layout's top content margin, in pixels.
+    """
+    layout = cell.layout()
+    assert isinstance(layout, QVBoxLayout)
+    return layout.contentsMargins().top()
 
 
 def label_texts(grid: QGridLayout) -> list[str]:
@@ -453,3 +507,81 @@ def test_vertical_row_omits_missing_content(qtbot: QtBot, model: RehuDocumentMod
     stacked = descendant_widgets(vertical_container(grid, 0))
     assert len(stacked) == 1
     assert isinstance(stacked[0], QLabel)
+
+
+def test_header_pinned_editor_row_wraps_label_misc_and_editor_each_in_a_pin_container(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A ``HeaderPinned`` editor's row wraps its label, misc, and editor each in their own container,
+    instead of placing them directly in the grid cell -- so the grid can't stretch/re-center them.
+
+    **Test steps:**
+
+    * build an editor form over a ``HeaderPinned`` field that also contributes a misc widget
+    * verify each column holds a plain container (not the label/misc/editor itself)
+    * verify the label/misc/editor are still reachable as descendants, in the expected type
+    """
+    form = FieldsForm([HeaderPinnedMiscField("title")])
+    widget = sole_grid_widget(form.make_editor(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    label_cell = widget_at(grid, 0, LABEL_COLUMN)
+    misc_cell = widget_at(grid, 0, MISC_COLUMN)
+    editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
+    assert label_cell is not None and not isinstance(label_cell, QLabel)
+    assert misc_cell is not None and not isinstance(misc_cell, QToolButton)
+    assert editor_cell is not None and not isinstance(editor_cell, HeaderPinnedEditor)
+
+    assert isinstance(label_cell.findChild(QLabel), QLabel)
+    assert isinstance(misc_cell.findChild(QToolButton), QToolButton)
+    assert isinstance(editor_cell.findChild(HeaderPinnedEditor), HeaderPinnedEditor)
+
+
+def test_header_pinned_editor_row_gives_label_and_misc_a_centering_top_margin(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The label and misc containers get a fixed top margin sized to look centered against the
+    editor's ``header_height``; the editor's own container gets none (it *is* the reference).
+
+    **Test steps:**
+
+    * build an editor form over a ``HeaderPinned`` field with a misc widget
+    * verify each container's top margin matches ``(header_height - widget height) // 2``
+    """
+    form = FieldsForm([HeaderPinnedMiscField("title")])
+    widget = sole_grid_widget(form.make_editor(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    label_cell = widget_at(grid, 0, LABEL_COLUMN)
+    misc_cell = widget_at(grid, 0, MISC_COLUMN)
+    editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
+    assert label_cell is not None and misc_cell is not None and editor_cell is not None
+    label = label_cell.findChild(QLabel)
+    misc = misc_cell.findChild(QToolButton)
+    assert label is not None and misc is not None
+
+    assert pin_top_margin(label_cell) == (HEADER_HEIGHT - label.sizeHint().height()) // 2
+    assert pin_top_margin(misc_cell) == (HEADER_HEIGHT - misc.sizeHint().height()) // 2
+    assert pin_top_margin(editor_cell) == 0
+
+
+def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A ``HeaderPinned`` row with no label leaves the label column empty and still pins the editor
+    (the label-less branch of the pinned-row builder).
+
+    **Test steps:**
+
+    * build an editor form over a label-less ``HeaderPinned`` field
+    * verify the label column is empty and the editor is still reachable, pinned, in the content column
+    """
+    form = FieldsForm([HeaderPinnedLabellessField("title")])
+    widget = sole_grid_widget(form.make_editor(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    assert widget_at(grid, 0, LABEL_COLUMN) is None
+    editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
+    assert editor_cell is not None
+    assert isinstance(editor_cell.findChild(HeaderPinnedEditor), HeaderPinnedEditor)
