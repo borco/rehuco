@@ -68,8 +68,8 @@ class ImagesField(Field[list[str]]):
         selector.set_images(list(self.__image_files()), binding.value)
         selector.hidden_changed.connect(binding.set_value)
         binding.changed.connect(lambda hidden: self.__resync_selector(selector, hidden))
-        # no label for the editor tab, since the tab itself is the label
-        return FieldEditorWidgets(self.editor_tab, None, selector, vertical=True)
+        # no label for the editor tab, since the tab itself is the label; fills its dedicated tab
+        return FieldEditorWidgets(self.editor_tab, None, selector, vertical=True, fill=True)
 
     def __fill_strip(self, strip: ImageStrip, hidden: list[str]) -> None:
         """Show the visible screenshots (all siblings minus ``hidden``) in the strip.

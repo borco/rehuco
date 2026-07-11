@@ -41,6 +41,18 @@ class VerticalField(TextField):
         return replace(super().make_editor(binding), vertical=True)
 
 
+class FillField(TextField):
+    """A sample field whose viewer and editor bundles request a space-filling row (``fill=True``)."""
+
+    @override
+    def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
+        return replace(super().make_viewer(binding), vertical=True, fill=True)
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), vertical=True, fill=True)
+
+
 class VerticalMiscField(VerticalField):
     """A vertical sample field that also contributes a misc widget (to test the shared top line)."""
 
@@ -192,6 +204,58 @@ def test_columns_are_fixed_label_and_misc_with_stretching_content(qtbot: QtBot, 
     assert grid.columnStretch(LABEL_COLUMN) == 0
     assert grid.columnStretch(MISC_COLUMN) == 0
     assert grid.columnStretch(CONTENT_COLUMN) == 1
+
+
+def test_plain_grid_gets_a_trailing_stretch_row(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A grid with no filling row gets a trailing stretch row so its fields keep their natural height.
+
+    **Test steps:**
+
+    * build a viewer form of two plain fields (none filling)
+    * verify the row past the last field has stretch 1 while the field rows have none
+    """
+    widget = sole_grid_widget(FieldsForm([TextField("title"), TextField("publisher")]).make_viewer(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    assert grid.rowStretch(0) == 0
+    assert grid.rowStretch(1) == 0
+    assert grid.rowStretch(2) == 1
+
+
+def test_a_filling_row_takes_the_stretch_and_there_is_no_trailing_row(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A ``fill`` row is given the stretch (owns the slack); no trailing stretch row is added.
+
+    **Test steps:**
+
+    * build an editor form whose second field fills (``fill=True``)
+    * verify that row carries the stretch and no other row (including the trailing index) does
+    """
+    widget = sole_grid_widget(FieldsForm([TextField("title"), FillField("publisher")]).make_editor(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    # only the two field rows exist -- no trailing stretch row was appended (rowCount stays 2)
+    assert grid.rowCount() == 2
+    assert grid.rowStretch(0) == 0
+    assert grid.rowStretch(1) == 1
+
+
+def test_a_vertical_non_filling_row_still_gets_the_trailing_stretch(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A vertical row that doesn't fill (e.g. the fixed-height image strip) counts as a plain row.
+
+    **Test steps:**
+
+    * build a viewer form whose second field is vertical but not filling
+    * verify the trailing stretch row is still added (the vertical row keeps its natural height)
+    """
+    widget = sole_grid_widget(FieldsForm([TextField("title"), VerticalField("publisher")]).make_viewer(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    assert grid.rowStretch(0) == 0
+    assert grid.rowStretch(1) == 0
+    assert grid.rowStretch(2) == 1
 
 
 def test_viewer_lays_out_label_and_viewer_rows_in_order(qtbot: QtBot, model: RehuDocumentModel) -> None:

@@ -22,6 +22,7 @@ from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.unknown_field import UnknownField
 from rehuco_agent.fields.url_field import UrlField
 
 TEST_VIEWER_TAB = FieldsTab("Test Viewer", ":/test/viewer.svg")
@@ -121,6 +122,13 @@ class DescriptionFieldTester(DescriptionField):
 
 class ImagesFieldTester(ImagesField):
     """`ImagesField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class UnknownFieldTester(UnknownField):
+    """`UnknownField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

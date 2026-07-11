@@ -15,6 +15,7 @@ from rehuco_agent.fields.field import (
     FieldsTab,
     FieldViewerWidgets,
     StatefulWidget,
+    ValueWidget,
 )
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.fields_form import FieldsForm
@@ -26,6 +27,7 @@ from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.unknown_field import PROVENANCE_NEWER_VERSION, UnknownField
 from rehuco_agent.fields.url_field import UrlField
 
 __all__ = [
@@ -34,6 +36,7 @@ __all__ = [
     "FieldViewerWidgets",
     "FieldEditorWidgets",
     "StatefulWidget",
+    "ValueWidget",
     "FieldRegistry",
     "FieldsForm",
     "TextField",
@@ -49,4 +52,6 @@ __all__ = [
     "PathField",
     "DescriptionField",
     "ImagesField",
+    "UnknownField",
+    "PROVENANCE_NEWER_VERSION",
 ]

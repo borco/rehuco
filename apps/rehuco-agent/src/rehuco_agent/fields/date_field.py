@@ -29,7 +29,5 @@ class DateField(Field[str]):
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         editor = DateEdit()
-        editor.value = binding.value
-        editor.value_changed.connect(binding.set_value)
-        binding.changed.connect(editor.set_value)  # type: ignore[attr-defined]
+        self.bind_value_widget(editor, binding)  # type: ignore[arg-type]  # set_value is a synthesized slot
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

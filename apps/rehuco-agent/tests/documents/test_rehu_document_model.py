@@ -1046,4 +1046,77 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
     assert model.dirty is True
 
 
+def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: RehuDocument) -> None:
+    """``unknown_field_names`` returns the live block's unrecognized keys, sorted, excluding known ones.
+
+    **Test steps:**
+
+    * seed the block with a known field plus two unknown keys
+    * verify only the unknown keys come back, in sorted order
+    """
+    document.set_type_field("rating", 5)
+    document.set_type_field("zeta", 1)
+    document.set_type_field("alpha", 2)
+    model = RehuDocumentModel(document)
+
+    assert model.unknown_field_names() == ["alpha", "zeta"]
+
+
+def test_bind_resolves_an_unknown_field_to_its_verbatim_value(document: RehuDocument) -> None:
+    """``bind`` resolves an unknown key to its stored value and the block-change signal.
+
+    **Test steps:**
+
+    * seed an unknown key and bind a field named after it
+    * verify the binding carries the verbatim value
+    """
+    document.set_type_field("mystery", [1, 2, 3])
+    model = RehuDocumentModel(document)
+    field = Field("mystery")
+
+    binding = model.bind(field)
+
+    assert binding.value == [1, 2, 3]
+    assert binding.changed is model.unknown_fields_changed
+
+
+def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) -> None:
+    """``remove_unknown_field`` deletes the key, emits its signal, and marks the model dirty.
+
+    **Test steps:**
+
+    * seed an unknown key and record ``unknown_fields_changed`` emissions
+    * remove it and verify the key is gone, the signal fired, and the model is dirty
+    """
+    document.set_type_field("mystery", 42)
+    model = RehuDocumentModel(document)
+    fired: list[None] = []
+    model.unknown_fields_changed.connect(lambda: fired.append(None))
+
+    model.remove_unknown_field("mystery")
+
+    assert "mystery" not in document.type_fields
+    assert fired == [None]
+    assert model.dirty is True
+
+
+def test_remove_unknown_field_is_a_noop_when_absent(document: RehuDocument) -> None:
+    """Removing an absent key changes nothing -- no signal, no dirtying.
+
+    **Test steps:**
+
+    * record ``unknown_fields_changed`` emissions on a clean model
+    * remove a key that isn't there
+    * verify nothing fired and the model stayed clean
+    """
+    model = RehuDocumentModel(document)
+    fired: list[None] = []
+    model.unknown_fields_changed.connect(lambda: fired.append(None))
+
+    model.remove_unknown_field("nonexistent")
+
+    assert not fired
+    assert model.dirty is False
+
+
 # endregion

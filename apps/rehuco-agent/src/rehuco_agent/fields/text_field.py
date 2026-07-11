@@ -1,16 +1,20 @@
-"""The `text` leaf field: a read-only label viewer and a `QLineEdit` editor ([[plugins#field-toolkit]])."""
+"""The `text` leaf field: a read-only label viewer and a `LineEdit` value-widget editor ([[plugins#field-toolkit]])."""
 
 from typing import override
 
-from PySide6.QtCore import QSignalBlocker
-from PySide6.QtWidgets import QLabel, QLineEdit
+from PySide6.QtWidgets import QLabel
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from rehuco_agent.fields.widgets import LineEdit
 
 
 class TextField(Field[str]):
-    """A single-line `text` field ([[plugins#field-toolkit]]): a label viewer + a `QLineEdit` editor,
+    """A single-line `text` field ([[plugins#field-toolkit]]): a label viewer + a `LineEdit` editor,
     live-bound to the binding.
+
+    The editor is a `LineEdit` value widget ([[plugins#field-toolkit]]) rather than a raw ``QLineEdit``,
+    so the echo/cursor guard (#35) lives in that widget once and the two-way wiring goes through
+    :meth:`~rehuco_agent.fields.field.Field.bind_value_widget` like every other content field.
     """
 
     TYPE = "text"
@@ -24,22 +28,8 @@ class TextField(Field[str]):
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
-        line_edit = QLineEdit(binding.value)
-        line_edit.textChanged.connect(binding.set_value)
-        binding.changed.connect(lambda value: self.__echo(line_edit, value))
-        return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit)
-
-    @staticmethod
-    def __echo(line_edit: QLineEdit, value: str) -> None:
-        """Update the editor from a binding change without re-emitting ``textChanged`` (echo guard).
-
-        The text-equality check is not an optimization: ``setText`` resets the cursor to the end
-        even for identical text, so echoing the editor's own edit back into it unguarded would
-        teleport the cursor on every mid-string keystroke (#35).
-
-        :param line_edit: the editor to update.
-        :param value: the new value.
-        """
-        if line_edit.text() != value:
-            with QSignalBlocker(line_edit):
-                line_edit.setText(value)
+        editor = LineEdit()
+        # pyright compares the class-level Signal against the protocol's SignalInstance and rejects the
+        # descriptor duality PySide resolves at access time; the wiring is sound (see bind_value_widget).
+        self.bind_value_widget(editor, binding)  # type: ignore[arg-type]
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

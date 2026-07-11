@@ -27,7 +27,5 @@ class FileSizeField(Field[int]):
     @override
     def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
         editor = FileSizeEdit()
-        editor.value = binding.value
-        editor.value_changed.connect(binding.set_value)  # type: ignore[attr-defined]
-        binding.changed.connect(editor.set_value)  # type: ignore[attr-defined]
+        self.bind_value_widget(editor, binding)  # type: ignore[arg-type]  # set_value is a synthesized slot
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

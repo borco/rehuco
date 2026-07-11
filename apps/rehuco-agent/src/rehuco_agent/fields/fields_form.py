@@ -62,6 +62,7 @@ class FieldsForm:
                     grid.addWidget(bundle.label, row, LABEL_COLUMN)
                 if bundle.viewer is not None:
                     grid.addWidget(bundle.viewer, row, CONTENT_COLUMN)
+            self.__distribute_vertical_space(grid, bundles)
             grids[tab] = widget
         return grids
 
@@ -93,6 +94,7 @@ class FieldsForm:
                     grid.addWidget(bundle.misc, row, MISC_COLUMN)
                 if bundle.editor is not None:
                     grid.addWidget(bundle.editor, row, CONTENT_COLUMN)
+            self.__distribute_vertical_space(grid, bundles)
             grids[tab] = widget
         return grids
 
@@ -129,6 +131,28 @@ class FieldsForm:
         if content is not None:
             column.addWidget(content)
         grid.addWidget(container, row, LABEL_COLUMN, 1, CONTENT_COLUMN - LABEL_COLUMN + 1)
+
+    @staticmethod
+    def __distribute_vertical_space(
+        grid: QGridLayout, bundles: Sequence[FieldViewerWidgets | FieldEditorWidgets]
+    ) -> None:
+        """Decide which grid row(s) absorb a tab's leftover vertical height.
+
+        Each row a field marks ``fill`` (the prose ``description``, the image *selector* editor) is
+        given the stretch, so it grows to take the available space. When **no** row fills, a trailing
+        empty stretch row is added instead, so the plain fields keep their natural height and pack at
+        the top rather than spreading apart to fill a taller dock. A vertical row that doesn't fill
+        (the fixed-height image *strip* in the viewer) is treated as a plain row here.
+
+        :param grid: the grid to set row stretches on.
+        :param bundles: the tab's row bundles, in order (index = row; its length is the trailing row).
+        """
+        fill_rows = [row for row, bundle in enumerate(bundles) if bundle.fill]
+        if fill_rows:
+            for row in fill_rows:
+                grid.setRowStretch(row, 1)
+        else:
+            grid.setRowStretch(len(bundles), 1)
 
     @staticmethod
     def __make_grid(widget: QWidget) -> QGridLayout:

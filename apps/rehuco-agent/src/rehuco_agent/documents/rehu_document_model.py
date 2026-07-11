@@ -31,6 +31,11 @@ TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
 mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
 at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
+KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES)
+"""Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
+key in the live block is an **unknown field** surfaced through the generic fallback
+([[plugins#fallback-editor]], A2.8/#28)."""
+
 NAME_SUGGESTION_PATTERNS: Final = (
     "{title}",
     "{publisher} - {title}",
@@ -69,6 +74,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :param document: the document to wrap.
     :param parent: optional Qt parent.
     """
+
+    unknown_fields_changed = Signal()
+    """Fires when the set of unrecognized live-block fields changes -- i.e. one is dropped via
+    :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
     name_suggestions_changed = Signal()
     """Fires when a field the rename suggestions are built from
@@ -319,6 +328,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         too. Reseeding is guarded the same way construction is, so it never looks like an edit --
         no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
 
+        The reload also restores any unknown live-block fields dropped this session, so
+        ``unknown_fields_changed`` is emitted to let the generic fallbacks re-show themselves
+        ([[plugins#fallback-editor]], A2.8/#28).
+
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
         self.__document.reload()
@@ -328,20 +341,55 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         finally:
             self.__reverting = False
         self.dirty = False
+        self.unknown_fields_changed.emit()
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
         """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
 
-        :param field: the field to resolve; its :attr:`~Field.name` must match a `SimpleProperty`
-            declared on this class.
+        :param field: the field to resolve; its :attr:`~Field.name` matches either a `SimpleProperty`
+            declared on this class or an unrecognized key in the live plugin block (an unknown field,
+            [[plugins#fallback-editor]]).
         :returns: the field's current value, its notify signal, and a setter.
         """
         name = field.name
+        try:
+            signal_name = SimpleProperty.notify_signal_name(type(self), name)
+        except KeyError:
+            # not a declared property -> an unknown live-block key surfaced through the generic
+            # fallback (A2.8/#28); bind it to its verbatim stored value and the block-change signal.
+            return FieldBinding(
+                value=self.__document.type_field(name),
+                changed=self.unknown_fields_changed,
+                set_value=lambda value: self.__document.set_type_field(name, value),
+            )
         return FieldBinding(
             value=getattr(self, name),
-            changed=getattr(self, SimpleProperty.notify_signal_name(type(self), name)),
+            changed=getattr(self, signal_name),
             set_value=lambda value: setattr(self, name, value),
         )
+
+    def unknown_field_names(self) -> list[str]:
+        """The live plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], A2.8/#28).
+
+        Every key in the type-keyed block ([[field-schema#resource-types]]) that isn't a known field
+        (:data:`KNOWN_TYPE_FIELD_NAMES`) -- e.g. a field written by a newer plugin version than the one
+        installed here. Carried verbatim on round-trip unless explicitly dropped via
+        :meth:`remove_unknown_field`.
+
+        :returns: the unknown keys, sorted for a stable display order.
+        """
+        return sorted(key for key in self.__document.type_fields if key not in KNOWN_TYPE_FIELD_NAMES)
+
+    def remove_unknown_field(self, name: str) -> None:
+        """Drop an unknown live-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).
+
+        No-op if ``name`` isn't present, so a double remove (e.g. a stale button click) is harmless.
+
+        :param name: the unknown block key to delete.
+        """
+        if self.__document.remove_type_field(name):
+            self.unknown_fields_changed.emit()
+            self.dirty = True
 
     def __seed_from_document(self) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction and :meth:`revert`)."""
