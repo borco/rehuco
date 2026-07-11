@@ -3,7 +3,7 @@
 from PySide6.QtCore import QModelIndex
 from PySide6.QtWidgets import QWidget
 from pytestqt.qtbot import QtBot
-from rehuco_agent.dialogs.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 
 # region Sample classes

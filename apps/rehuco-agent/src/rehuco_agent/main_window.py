@@ -11,8 +11,6 @@ from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
-from rehuco_agent.dialogs.settings_dialog import SettingsDialog
-from rehuco_agent.dialogs.settings_pages.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -20,6 +18,8 @@ from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings
+from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(MarkdownRenderingPage())
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
-            from rehuco_agent.dialogs.settings_pages.registry_page import RegistryPage
+            from rehuco_agent.settings.ui.registry_page import RegistryPage
 
             self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
 

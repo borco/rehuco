@@ -5,9 +5,9 @@ from typing import Final
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QWidget
 
-from rehuco_agent.dialogs.settings_pages.markdown_rendering_page_ui import Ui_MarkdownRenderingPage
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.persistent_settings import persistent_settings
+from rehuco_agent.settings.ui.markdown_rendering_page_ui import Ui_MarkdownRenderingPage
 
 
 class MarkdownRenderingPage(QWidget):

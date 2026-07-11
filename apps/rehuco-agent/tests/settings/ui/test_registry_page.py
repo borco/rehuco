@@ -7,8 +7,7 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from pytestqt.qtbot import QtBot  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent.dialogs.settings_pages import registry_page  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent.dialogs.settings_pages.registry_page import RegistryPage  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.settings.ui import registry_page  # noqa: E402  # pylint: disable=wrong-import-position
 
 WINDOWS_REGISTRATION = "rehuco_agent.windows_registration"
 
@@ -26,7 +25,7 @@ def test_status_starts_as_not_checked_when_running_from_exe(qtbot: QtBot, mocker
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -49,7 +48,7 @@ def test_buttons_disabled_when_not_running_from_exe(qtbot: QtBot, mocker: Mocker
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=False)
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
@@ -72,7 +71,7 @@ def test_register_button_registers_and_updates_status(qtbot: QtBot, mocker: Mock
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     register = mocker.patch(f"{WINDOWS_REGISTRATION}.register")
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -96,7 +95,7 @@ def test_unregister_button_unregisters_and_updates_status(qtbot: QtBot, mocker: 
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     unregister = mocker.patch(f"{WINDOWS_REGISTRATION}.unregister")
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -120,7 +119,7 @@ def test_check_button_shows_registered_when_true(qtbot: QtBot, mocker: MockerFix
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_registered", return_value=True)
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -143,7 +142,7 @@ def test_check_button_shows_not_registered_when_false(qtbot: QtBot, mocker: Mock
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_registered", return_value=False)
 
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
@@ -162,7 +161,7 @@ def test_title_is_registry(qtbot: QtBot, mocker: MockerFixture) -> None:
     * verify ``title``
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
     assert page.title == "Registry"
@@ -178,7 +177,7 @@ def test_field_labels_lists_the_actions(qtbot: QtBot, mocker: MockerFixture) -> 
     * verify ``field_labels`` includes the three action names
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
     assert page.field_labels() == ["Register", "Unregister", "Check registration"]
@@ -194,7 +193,7 @@ def test_is_dirty_is_always_false(qtbot: QtBot, mocker: MockerFixture) -> None:
     * verify ``is_dirty`` is ``False``
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
     assert page.is_dirty() is False
@@ -211,7 +210,7 @@ def test_save_and_drop_changes_are_no_ops(qtbot: QtBot, mocker: MockerFixture) -
     * verify neither raises and the status label is untouched
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
-    page = RegistryPage((".zip",))
+    page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 

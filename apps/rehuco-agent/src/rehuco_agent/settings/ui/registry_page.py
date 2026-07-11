@@ -8,7 +8,7 @@ from typing import Final
 from PySide6.QtWidgets import QWidget
 
 from rehuco_agent import windows_registration
-from rehuco_agent.dialogs.settings_pages.registry_page_ui import Ui_RegistryPage
+from rehuco_agent.settings.ui.registry_page_ui import Ui_RegistryPage
 
 NOT_RUNNING_FROM_EXE_STATUS: Final = (
     "Cannot register/unregister -- not running from a real .exe (started via `python -m rehuco_agent`)."

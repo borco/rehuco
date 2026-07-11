@@ -6,10 +6,10 @@ from typing import Any
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.dialogs.settings_pages import markdown_rendering_page
-from rehuco_agent.dialogs.settings_pages.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.settings import markdown_rendering_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from rehuco_agent.settings.ui import markdown_rendering_page
+from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 
 
 # region fixtures

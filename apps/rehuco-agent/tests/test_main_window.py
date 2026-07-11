@@ -10,10 +10,10 @@ from PySide6.QtWidgets import QDialog, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.dialogs.settings_pages.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
+from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 
 
 @fixture(autouse=True)
@@ -119,9 +119,7 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     * construct a real ``MainWindow``
     * verify the settings dialog's page stack holds a ``RegistryPage``
     """
-    from rehuco_agent.dialogs.settings_pages.registry_page import (  # pylint: disable=import-outside-toplevel
-        RegistryPage,
-    )
+    from rehuco_agent.settings.ui.registry_page import RegistryPage  # pylint: disable=import-outside-toplevel
 
     window = MainWindow()
     qtbot.addWidget(window)
