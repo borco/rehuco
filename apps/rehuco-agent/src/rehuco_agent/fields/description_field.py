@@ -10,6 +10,10 @@ from pyside6_scintilla import ScintillaEdit
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 from rehuco_agent.fields.widgets import MarkdownView
+from rehuco_agent.settings.markdown_rendering_settings import (
+    MarkdownRenderingSettings,
+    shared_markdown_rendering_settings,
+)
 
 
 class DescriptionField(Field[str]):
@@ -23,13 +27,41 @@ class DescriptionField(Field[str]):
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
-        viewer = MarkdownView()
+        settings = shared_markdown_rendering_settings()
+        viewer = MarkdownView(
+            engine=settings.engine,
+            css=settings.css_for_current_engine(),
+            max_image_width=settings.max_image_width,
+        )
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
+        self.__wire_rendering_settings(viewer, settings)
         # not fill: in the viewer the description is one row among others (the unknown-field fallbacks
         # follow it), so it keeps its natural height and the trailing stretch sits after them all --
         # unlike the editor, where the description has its own tab and should take the whole height
         return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True)
+
+    @staticmethod
+    def __wire_rendering_settings(viewer: MarkdownView, settings: MarkdownRenderingSettings) -> None:
+        """Re-render ``viewer`` with the shared Markdown-rendering settings' current values whenever
+        any of them changes (#26, #47) -- so a Save on the settings page updates an already-open
+        viewer immediately, not just newly-opened ones.
+
+        :param viewer: the viewer to keep in sync.
+        :param settings: the shared, live-reactive settings instance to follow.
+        """
+
+        def apply_current_settings(*_args: object) -> None:
+            viewer.apply_rendering_settings(
+                engine=settings.engine,
+                css=settings.css_for_current_engine(),
+                max_image_width=settings.max_image_width,
+            )
+
+        settings.engine_changed.connect(apply_current_settings)
+        settings.markdown_css_changed.connect(apply_current_settings)
+        settings.mistletoe_css_changed.connect(apply_current_settings)
+        settings.max_image_width_changed.connect(apply_current_settings)
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:

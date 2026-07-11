@@ -12,6 +12,7 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QMainWindow
 
 from rehuco_agent.dialogs.settings_dialog import SettingsDialog
+from rehuco_agent.dialogs.settings_pages.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -100,10 +101,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).
 
-        The Registry page is Windows-only (it wraps ``winreg``-backed HKCU registration) --
-        imported lazily, only here, mirroring the same gate ``rehuco_agent.windows_registration``
-        (and the ``borco_core.platforms.windows.*`` modules it wraps) already requires.
+        Markdown Rendering is cross-platform. The Registry page is Windows-only (it wraps
+        ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
+        ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
+        it wraps) already requires.
         """
+        self.__settings_dialog.add_page(MarkdownRenderingPage())
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from rehuco_agent.dialogs.settings_pages.registry_page import RegistryPage

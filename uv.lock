@@ -614,6 +614,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mistletoe"
+version = "1.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/ae/d33647e2a26a8899224f36afc5e7b7a670af30f1fd87231e9f07ca19d673/mistletoe-1.5.1.tar.gz", hash = "sha256:c5571ce6ca9cfdc7ce9151c3ae79acb418e067812000907616427197648030a3", size = 111769, upload-time = "2025-12-07T16:19:01.066Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/60/0980fefdc4d12c18c1bbab9d62852f27aded8839233c7b0a9827aaf395f5/mistletoe-1.5.1-py3-none-any.whl", hash = "sha256:d3e97664798261503f685f6a6281b092628367cf3128fc68a015a993b0c4feb3", size = 55331, upload-time = "2025-12-07T16:18:59.65Z" },
+]
+
+[[package]]
 name = "mkdocs"
 version = "1.6.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1183,6 +1192,7 @@ dependencies = [
     { name = "cbor2" },
     { name = "humanize" },
     { name = "markdown" },
+    { name = "mistletoe" },
     { name = "pathvalidate" },
     { name = "pyside6" },
     { name = "pyside6-qtads" },
@@ -1199,6 +1209,7 @@ requires-dist = [
     { name = "cbor2", specifier = ">=6.1.3" },
     { name = "humanize", specifier = ">=4.16.0" },
     { name = "markdown", specifier = ">=3.7" },
+    { name = "mistletoe", specifier = ">=1.4.0" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pyside6", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0" },

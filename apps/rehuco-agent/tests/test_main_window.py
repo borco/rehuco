@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QDialog, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.dialogs.settings_pages.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
@@ -129,6 +130,24 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, RegistryPage) for page in pages)
+
+
+def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
+    """The Markdown Rendering settings page (#26, #47) is registered into the settings dialog,
+    on every platform (unlike the Windows-only Registry page).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``MarkdownRenderingPage``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, MarkdownRenderingPage) for page in pages)
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
