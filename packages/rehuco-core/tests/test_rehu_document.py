@@ -22,6 +22,7 @@ TUTORIAL: Final = {
             "publisher": "Example Publisher",
             "url": "https://example.com/x",
             "primary": True,
+            "some_future_source_key": "kept verbatim",
         },
         {"title": "Extended Cut", "publisher": "Second Platform", "url": "https://second.example/x"},
     ],
@@ -62,6 +63,7 @@ def test_common_field_accessors(mocker: MockerFixture) -> None:
     doc = load_doc(mocker, TUTORIAL)
     assert doc.path == FAKE_PATH
     assert doc.data["type"] == "Tutorial"
+    assert doc.format_version == 1
     assert doc.type == "Tutorial"
     assert doc.id == "550e8400-e29b-41d4-a716-446655440000"
     assert doc.title == "Intro to Sculpting"
@@ -77,14 +79,17 @@ def test_common_field_accessors(mocker: MockerFixture) -> None:
 
 
 def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
-    """A load/edit/save cycle keeps unknown keys and the plugin block in the saved JSON.
+    """A load/edit/save cycle keeps unknown top-level keys, an unknown sibling key inside a known
+    nested object (a ``sources[]`` entry), and the plugin block, in the saved JSON
+    ([[data-model#schema-version]]'s preserve-unknown-fields guarantee).
 
     **Test steps:**
 
     * mock ``Path.read_text`` to return the Tutorial fixture
     * mock ``atomic_write_text`` to capture the written JSON
     * load, edit the title, save
-    * parse the captured JSON and verify the edit applied, plugin block and unknown key intact
+    * parse the captured JSON and verify the edit applied, and every unknown key -- top-level,
+      nested-sibling, and the plugin block -- survived untouched
     """
     doc = load_doc(mocker, TUTORIAL)
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
@@ -94,9 +99,77 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
 
     saved = json.loads(mock_write.call_args[0][1])
     assert saved["sources"][0]["title"] == "Renamed Title"
+    assert saved["sources"][0]["some_future_source_key"] == "kept verbatim"
     assert saved["tutorial"] == {"format_version": 0, "rating": 4, "complete": True}
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
     assert saved["updated"] == TUTORIAL["updated"]  # A0 does not auto-touch timestamps
+
+
+def test_format_version_defaults_to_zero_when_absent() -> None:
+    """``format_version`` reads ``0`` for a document with no such key (the historical `.tc`-origin
+    shape, format v0, [[acquisition-tooling#tc-to-rehu]]).
+
+    **Test steps:**
+
+    * construct a document with no ``format_version`` key
+    * verify the accessor reads ``0``
+    """
+    assert RehuDocument({"type": "Tutorial"}).format_version == 0
+
+
+def test_format_version_defensively_coerces_a_malformed_value() -> None:
+    """A non-``int`` (or ``bool``) stored ``format_version`` reads back as ``0`` rather than raising
+    or returning the malformed value (#35).
+
+    **Test steps:**
+
+    * construct a document whose ``format_version`` is a string
+    * verify the accessor reads ``0``
+    """
+    assert RehuDocument({"format_version": "v1"}).format_version == 0
+
+
+def test_save_stamps_current_format_version_when_older(mocker: MockerFixture) -> None:
+    """Saving a document loaded at an older ``format_version`` upgrades it to
+    ``RehuDocument.CURRENT_FORMAT_VERSION`` -- the upgrade-on-write half of
+    [[data-model#schema-version]].
+
+    **Test steps:**
+
+    * load a document whose ``format_version`` is below the current one (and one with the key absent)
+    * save each
+    * verify the saved JSON's ``format_version`` is ``CURRENT_FORMAT_VERSION``
+    """
+    for original in (RehuDocument.CURRENT_FORMAT_VERSION - 1, None):
+        data = {"type": "Tutorial"} if original is None else {"type": "Tutorial", "format_version": original}
+        doc = load_doc(mocker, data)
+        mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+        doc.save()
+
+        saved = json.loads(mock_write.call_args[0][1])
+        assert saved["format_version"] == RehuDocument.CURRENT_FORMAT_VERSION
+
+
+def test_save_does_not_downgrade_a_newer_format_version(mocker: MockerFixture) -> None:
+    """Saving a document loaded at a *newer* ``format_version`` than this build understands leaves
+    the stamped version untouched -- lowering it would mislabel a file that still carries fields from
+    that newer schema ([[data-model#schema-version]]'s "must fail safe, not lossy" rule).
+
+    **Test steps:**
+
+    * load a document whose ``format_version`` is above the current one
+    * save it
+    * verify the saved JSON's ``format_version`` is still the newer, unlowered value
+    """
+    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    doc = load_doc(mocker, {"type": "Tutorial", "format_version": newer_version})
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["format_version"] == newer_version
 
 
 def test_primary_source_prefers_flagged_entry() -> None:

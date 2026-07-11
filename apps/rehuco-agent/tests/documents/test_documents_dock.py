@@ -9,7 +9,8 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, DocumentsDock
+from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
+from rehuco_core import RehuDocument
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -133,6 +134,31 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
 
     widget.model.dirty = False
     assert cdock.windowTitle() == FAKE_LABEL
+
+
+def test_dock_title_gains_a_lock_marker_that_takes_precedence_over_dirty(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A locked document's dock tab gets the lock marker instead of the dirty one, even if -- not
+    reachable through the UI, since a locked document's editors are disabled, but resolved explicitly
+    rather than assumed away -- it were somehow dirty too (A3, [[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * open a document whose ``format_version`` is newer than this build understands
+    * verify the dock title gains the lock marker
+    * force ``dirty`` true directly on the model and verify the title still shows the lock marker,
+      not the dirty one
+    """
+    load_document(mocker, {**TUTORIAL, "format_version": RehuDocument.CURRENT_FORMAT_VERSION + 1})
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    cdock = dock_for(dock, widget)
+    assert cdock.windowTitle() == f"{LOCKED_DOCK_MARKER}{FAKE_LABEL}"
+
+    widget.model.dirty = True
+    assert cdock.windowTitle() == f"{LOCKED_DOCK_MARKER}{FAKE_LABEL}"
 
 
 def test_dock_tab_tooltip_always_shows_the_full_path(mocker: MockerFixture, qtbot: QtBot) -> None:

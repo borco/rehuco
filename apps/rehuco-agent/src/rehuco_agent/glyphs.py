@@ -20,24 +20,19 @@ class Glyph(NamedTuple):
 
 
 CLEAR_ACTION_GLYPH: Final = Glyph("\ue0ae", "Phosphor-Bold")
-"""Phosphor's "backspace" glyph, the app-wide `QLineEdit` clear action's icon
-([[plugins#field-toolkit]], ``app.py``)."""
+"""`QLineEdit` clear action's icon ([[plugins#field-toolkit]], ``app.py``)."""
 
 CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
-"""Phosphor's "calendar" glyph, `DateField`'s popup-calendar trailing action icon."""
+"""`DateField`'s popup-calendar trailing action icon."""
 
 EXPAND_ACTION_GLYPH: Final = Glyph("\ue3d4", "Phosphor-Bold")
-"""Phosphor's "plus" glyph, `PathField`'s suggestions-panel expand toggle (collapsed state)."""
+"""`PathField`'s suggestions-panel expand toggle (collapsed state)."""
 
 COLLAPSE_ACTION_GLYPH: Final = Glyph("\ue32a", "Phosphor-Bold")
-"""Phosphor's "minus" glyph, `PathField`'s suggestions-panel collapse toggle (expanded state); shares
-:data:`EXPAND_ACTION_GLYPH`'s font family, so the toggle button sets its font once and only swaps text."""
+"""`PathField`'s suggestions-panel collapse toggle (expanded state)."""
 
 POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
-"""Phosphor's "star" glyph, filled, for `RatingField`'s positive-rating stars; shares
-:data:`NEGATIVE_RATING_GLYPH`'s codepoint, so only the font-family swap (fill vs. outline) tells the
-two apart."""
+"""Positive-rating stars -- see :data:`NEGATIVE_RATING_GLYPH`."""
 
 NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Bold")
-"""Phosphor's "star" glyph, outline, for `RatingField`'s negative-rating stars -- see
-:data:`POSITIVE_RATING_GLYPH`."""
+"""Negative-rating stars -- see :data:`POSITIVE_RATING_GLYPH`."""
