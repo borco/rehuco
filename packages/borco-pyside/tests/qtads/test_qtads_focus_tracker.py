@@ -635,7 +635,7 @@ def test_state_restore_with_a_current_dock_that_has_no_area_is_a_noop(
     tracker = QtAdsFocusTracker(manager)
     fake_current = mocker.MagicMock()
     fake_current.dockAreaWidget.return_value = None
-    tracker._QtAdsFocusTracker__current_dock = fake_current  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    mocker.patch.object(tracker, "_QtAdsFocusTracker__current_dock", fake_current)
 
     manager.stateRestored.emit()
 
@@ -658,7 +658,7 @@ def test_state_restore_ignores_a_restored_tab_that_is_not_tracked(
     fake_area.dockWidget.return_value = mocker.MagicMock()
     fake_current = mocker.MagicMock()
     fake_current.dockAreaWidget.return_value = fake_area
-    tracker._QtAdsFocusTracker__current_dock = fake_current  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    mocker.patch.object(tracker, "_QtAdsFocusTracker__current_dock", fake_current)
 
     manager.stateRestored.emit()
 
