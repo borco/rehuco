@@ -27,16 +27,17 @@ ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the app icon, registered by importing :mod:`rehuco_agent.main_rc`."""
 
 ICON_FONT_RESOURCES: Final = (
-    ":/fonts/Phosphor-Thin.ttf",
-    ":/fonts/Phosphor-Light.ttf",
     ":/fonts/Phosphor.ttf",
     ":/fonts/Phosphor-Bold.ttf",
     ":/fonts/Phosphor-Fill.ttf",
 )
-"""qrc paths to the custom icon fonts loaded at startup. No ``Phosphor-Duotone.ttf`` -- Phosphor's
-duotone rendering isn't implemented in the font files at all, only in their web/Flutter packages, so
-a glyph drawn from it can only ever be a flat, single-color silhouette
-([[appendices.theming_and_styling#duotone-font-limitation]])."""
+"""qrc paths to the custom icon fonts loaded at startup: regular (rating field outline stars) and
+fill (rating field filled stars) -- see :mod:`rehuco_agent.fields.rating_field` -- plus bold (dock
+tab close-button glyph, :data:`~borco_pyside.qtads.QtAdsFocusTracker.CLOSE_BUTTON_FONT`). Thin and
+Light were vendored for close-button experimentation but never adopted, so they're pruned (#37). No
+``Phosphor-Duotone.ttf`` -- Phosphor's duotone rendering isn't implemented in the font files at all,
+only in their web/Flutter packages, so a glyph drawn from it can only ever be a flat, single-color
+silhouette ([[appendices.theming_and_styling#duotone-font-limitation]])."""
 
 
 class Application(QApplication):
