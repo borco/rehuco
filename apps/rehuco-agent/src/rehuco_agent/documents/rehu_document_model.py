@@ -36,20 +36,6 @@ KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT
 key in the live block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], A2.8/#28)."""
 
-NAME_SUGGESTION_PATTERNS: Final = (
-    "{title}",
-    "{publisher} - {title}",
-    "{title} [{year}]",
-    "{authors} - {title}",
-)
-"""The folder/file-name suggestion patterns offered when renaming a resource ([[field-schema#field-mapping]]):
-each is formatted from the record's own fields (``title`` / ``publisher`` / ``authors`` / the released
-``year``) into a candidate name. A constant for now; a future revision may make it configurable."""
-
-NAME_SUGGESTION_SOURCE_FIELDS: Final = ("title", "authors", "publisher", "released")
-"""The fields :data:`NAME_SUGGESTION_PATTERNS` interpolate; a change to any of them re-emits
-``name_suggestions_changed`` so a `PathField` re-pulls the suggestions live."""
-
 IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
 """Screenshot file extensions the lightbox enumerates ([[data-model#image-meanings]]); matched
 case-insensitively."""
@@ -78,11 +64,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     unknown_fields_changed = Signal()
     """Fires when the set of unrecognized live-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
-
-    name_suggestions_changed = Signal()
-    """Fires when a field the rename suggestions are built from
-    (:data:`NAME_SUGGESTION_SOURCE_FIELDS`) changes, so a `PathField` can re-pull
-    :meth:`name_suggestions` live -- e.g. editing ``authors`` updates the offered names."""
 
     location = SimpleProperty("")
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
@@ -189,9 +170,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
-        for name in NAME_SUGGESTION_SOURCE_FIELDS:
-            signal_name = SimpleProperty.notify_signal_name(type(self), name)
-            getattr(self, signal_name).connect(lambda *_: self.name_suggestions_changed.emit())
 
     @classmethod
     def create_new(cls, path: Path | str | None = None, parent: QObject | None = None) -> RehuDocumentModel:
@@ -277,23 +255,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             if sibling.suffix.lower() in IMAGE_EXTENSIONS and pattern.match(sibling.stem)
         ]
         return sorted(matches, key=lambda sibling: sibling.name)
-
-    def name_suggestions(self) -> list[str]:
-        """Build the rename-candidate names from this record's fields via :data:`NAME_SUGGESTION_PATTERNS`.
-
-        Raw strings only -- interpolated from ``title`` / ``publisher`` / joined ``authors`` / the
-        released ``year`` -- left unsanitized; the `PathField` editor transliterates and
-        filesystem-sanitizes them before display, and drops any that reduce to nothing.
-
-        :returns: one candidate string per pattern, in pattern order.
-        """
-        values = {
-            "title": self.title,
-            "publisher": self.publisher,
-            "authors": ", ".join(self.authors),
-            "year": self.released[:4],
-        }
-        return [pattern.format(**values) for pattern in NAME_SUGGESTION_PATTERNS]
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""

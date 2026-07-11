@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
+from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
     PROVENANCE_NEWER_VERSION,
@@ -134,12 +135,13 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         # click time, so a test that swaps it after construction is still seen
         model.rename_location(name)
 
+    name_suggestions = NameSuggestionModel(model, parent=model)
     location_field = PathField(
         LOCATION_FIELD_NAME,
-        suggestions=model.name_suggestions,
+        suggestions=name_suggestions.suggestions,
         on_suggestion_selected=rename_to,
         current_name=lambda: model.current_name,
-        suggestions_changed=model.name_suggestions_changed,
+        suggestions_changed=name_suggestions.changed,
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
