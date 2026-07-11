@@ -2,7 +2,7 @@
 
 from typing import Final, override
 
-from PySide6.QtCore import QAbstractItemModel, QEvent, QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtCore import QAbstractItemModel, QByteArray, QEvent, QModelIndex, QPersistentModelIndex, Qt
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QDialog,
@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
 
 from rehuco_agent.dialogs.unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.settings.persistent_settings import persistent_settings
+from rehuco_agent.settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
 
 
 class UnsavedChangesDialog(QDialog):
@@ -24,9 +26,9 @@ class UnsavedChangesDialog(QDialog):
     the close). **Discard All** closes without saving anything, regardless of the checkboxes.
     **Cancel** aborts the app close entirely -- see :meth:`MainWindow.closeEvent`.
 
-    Geometry (size/position) is not yet restored across runs -- deferred to #38, which must
-    capture it on every exit path (Save Selected, Discard All, Cancel, Escape, and the titlebar
-    close button all funnel through :meth:`QDialog.done`, the one hook that fires for all of them).
+    Geometry (size/position) is persisted across runs (#38): restored in :meth:`__init__` and
+    captured in :meth:`done`, the one hook every exit path (Save Selected, Discard All, Cancel,
+    Escape, and the titlebar close button) funnels through.
 
     :param models: the dirty document models to offer for saving.
     :param parent: optional Qt parent.
@@ -73,6 +75,21 @@ class UnsavedChangesDialog(QDialog):
             item.setCheckState(Qt.CheckState.Checked)
             self.__list_model.appendRow(item)
         self.__ui.documents_list_view.setModel(self.__list_model)
+
+        self.__settings: Final = UnsavedChangesDialogSettings()
+        self.__settings.load(persistent_settings())
+        if self.__settings.geometry:
+            self.restoreGeometry(QByteArray(self.__settings.geometry))
+
+    @override
+    def done(self, result: int) -> None:
+        """Persist the dialog's geometry before closing, on every exit path.
+
+        :param result: the dialog's result code, passed straight through to :meth:`QDialog.done`.
+        """
+        self.__settings.geometry = bytes(self.saveGeometry().data())
+        self.__settings.save(persistent_settings())
+        super().done(result)
 
     def selected_models(self) -> list[RehuDocumentModel]:
         """The models to save: none if Discard All was chosen, otherwise the still-checked ones."""

@@ -1,4 +1,4 @@
-"""Tests for WindowSettings: MainWindow's persisted geometry.
+"""Tests for MainWindowSettings: MainWindow's persisted geometry.
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_document_session_settings.py``
 for the same rationale) rather than a real one or ``tmp_path``.
@@ -7,15 +7,19 @@ for the same rationale) rather than a real one or ``tmp_path``.
 from typing import Any
 
 from pytest import fixture
-from rehuco_agent.settings.window_settings import WindowSettings
+from rehuco_agent.settings.main_window_settings import MainWindowSettings
 
 
 # region fixtures
+# Mirrors test_unsaved_changes_dialog_settings.py's FakeSettings exactly -- kept as a separate
+# copy rather than a shared fixture module since MainWindowSettings and UnsavedChangesDialogSettings
+# themselves are deliberately separate classes (see main_window_settings.py).
+# pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
     """A minimal in-memory stand-in for the ``QSettings`` group/value API.
 
     Method names and the ``type=`` parameter deliberately mirror ``QSettings``'s own C++-derived
-    API, since :meth:`WindowSettings.load`/:meth:`~WindowSettings.save` call them by name.
+    API, since :meth:`MainWindowSettings.load`/:meth:`~MainWindowSettings.save` call them by name.
     """
 
     def __init__(self) -> None:
@@ -54,11 +58,11 @@ def test_save_then_load_round_trips_the_geometry(settings: FakeSettings) -> None
     * load into a fresh instance from the same settings stand-in
     * verify the geometry came back unchanged
     """
-    window_settings = WindowSettings(geometry=b"some-geometry-blob")
+    window_settings = MainWindowSettings(geometry=b"some-geometry-blob")
 
     window_settings.save(settings)  # type: ignore[arg-type]
 
-    restored = WindowSettings()
+    restored = MainWindowSettings()
     restored.load(settings)  # type: ignore[arg-type]
 
     assert restored.geometry == b"some-geometry-blob"
@@ -72,8 +76,11 @@ def test_load_defaults_to_empty_geometry_when_nothing_was_saved(settings: FakeSe
     * load into a fresh instance from an empty settings stand-in
     * verify the geometry is empty
     """
-    window_settings = WindowSettings()
+    window_settings = MainWindowSettings()
 
     window_settings.load(settings)  # type: ignore[arg-type]
 
     assert window_settings.geometry == b""
+
+
+# pylint: enable=duplicate-code

@@ -15,8 +15,8 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
+from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings
-from rehuco_agent.settings.window_settings import WindowSettings
 
 ARCHIVE_EXTENSIONS: Final = (".zip",)
 """Archive file extensions (each including the leading dot) that get a file-scoped ``.rehu``
@@ -44,7 +44,7 @@ class MainWindow(QMainWindow):
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
 
-        self.__window_settings: Final = WindowSettings()
+        self.__window_settings: Final = MainWindowSettings()
         self.__window_settings.load(persistent_settings())
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
