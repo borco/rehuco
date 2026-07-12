@@ -12,6 +12,7 @@ import pytest
 from fields.field_testers import FieldTester as Field
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
+from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 
@@ -81,6 +82,20 @@ def test_model_is_not_locked_at_or_below_the_current_format_version() -> None:
     assert RehuDocumentModel(RehuDocument({"format_version": RehuDocument.CURRENT_FORMAT_VERSION})).locked is False
     assert RehuDocumentModel(RehuDocument({"format_version": 0})).locked is False
     assert RehuDocumentModel(RehuDocument({})).locked is False
+
+
+def test_model_is_locked_for_a_legacy_tc_document() -> None:
+    """A document mapped from a legacy ``.tc`` file locks the model, independent of ``format_version``
+    ([[acquisition-tooling#tc-to-rehu]]'s Phase 1) -- format_version 0 is *older* than this build's,
+    so the newer-format-version rule alone would never catch it.
+
+    **Test steps:**
+
+    * construct a model over a document with ``legacy_tc=True`` (format_version defaults to 0)
+    * verify the model is locked
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    assert model.locked is True
 
 
 def test_model_seeds_empty_from_a_sourceless_document() -> None:
@@ -382,52 +397,7 @@ def test_setting_hidden_images_writes_through_and_dirties(model: RehuDocumentMod
     assert model.dirty is True
 
 
-def test_image_files_returns_empty_without_a_path(model: RehuDocumentModel) -> None:
-    """A pathless document has no screenshot siblings to enumerate.
-
-    **Test steps:**
-
-    * use a model whose document was never given a path
-    * verify ``image_files`` is empty
-    """
-    assert model.image_files() == []
-
-
-def test_image_files_matches_stem_numbered_siblings(mocker: MockerFixture) -> None:
-    """``image_files`` returns the ``<stem>NN`` image siblings, sorted, ignoring everything else.
-
-    **Test steps:**
-
-    * wrap a document at ``/fake/info.rehu`` and mock its directory listing
-    * include matching ``info00``/``info01`` screenshots, a non-image and a mismatched-stem sibling
-    * verify only the two screenshots come back, sorted by name
-    """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
-    siblings = [
-        Path("/fake/info01.png"),
-        Path("/fake/info00.jpg"),
-        Path("/fake/info.rehu"),
-        Path("/fake/info00.txt"),
-        Path("/fake/cover.jpg"),
-        Path("/fake/info0.jpg"),
-    ]
-    mocker.patch.object(Path, "iterdir", return_value=siblings)
-
-    assert model.image_files() == [Path("/fake/info00.jpg"), Path("/fake/info01.png")]
-
-
-def test_image_files_tolerates_a_missing_directory(mocker: MockerFixture) -> None:
-    """A missing/offline directory yields no screenshots rather than raising.
-
-    **Test steps:**
-
-    * wrap a document with a path and mock ``iterdir`` to raise ``FileNotFoundError``
-    * verify ``image_files`` swallows it and returns empty
-    """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
-    mocker.patch.object(Path, "iterdir", side_effect=FileNotFoundError)
-
-    assert model.image_files() == []
+# image_files() moved to RehuScanner (rehuco_agent.documents.image_scanner) -- see test_image_scanner.py
 
 
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
@@ -736,6 +706,185 @@ def test_revert_without_a_path_propagates(model: RehuDocumentModel, document: Re
     assert document.path is None
     with raises(ValueError, match="no path to reload from"):
         model.revert()
+
+
+def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture) -> None:
+    """convert() adopts ``convert_tc``'s result as the wrapped document, reseeds every field, clears
+    dirty, and drops locked to ``False``.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document
+    * mock ``convert_tc`` to return a fresh, unlocked document with a different title
+    * call ``model.convert(keep_backups=True)``
+    * verify the model now reflects the fresh document, and is unlocked and clean
+    """
+    tc_document = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "Old Title", "primary": True}]},
+        Path("/fake/info.tc"),
+        legacy_tc=True,
+    )
+    model = RehuDocumentModel(tc_document)
+    assert model.locked is True
+
+    converted = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "New Title", "primary": True}]}, Path("/fake/info.rehu")
+    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+
+    model.convert(keep_backups=True)
+
+    assert model.document is converted
+    assert model.title == "New Title"
+    assert model.dirty is False
+    assert model.locked is False
+
+
+def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture) -> None:
+    """convert() forwards this document's path and keyword arguments to ``convert_tc`` unchanged.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document at a known path
+    * mock ``convert_tc``
+    * call ``model.convert`` with specific ``keep_backups``/``overwrite`` values
+    * verify ``convert_tc`` was called with the document's path and those exact values
+    """
+    tc_path = Path("/fake/info.tc")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True))
+    mock_convert = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
+    )
+
+    model.convert(keep_backups=False, overwrite=True)
+
+    mock_convert.assert_called_once_with(tc_path, keep_backups=False, overwrite=True)
+
+
+def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """convert() refuses to run on a document that isn't a legacy ``.tc`` mapping.
+
+    **Test steps:**
+
+    * mock ``convert_tc``
+    * call ``model.convert()`` on the sample (non-legacy) model
+    * verify ``ValueError`` and that ``convert_tc`` was never called
+    """
+    mock_convert = mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc")
+
+    with raises(ValueError, match="legacy .tc"):
+        model.convert(keep_backups=True)
+
+    mock_convert.assert_not_called()
+
+
+def test_convert_without_a_path_raises(mocker: MockerFixture) -> None:
+    """convert() refuses to run on a legacy document that was never loaded from a file.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document with no path
+    * call ``model.convert()``
+    * verify ``ValueError``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    mock_convert = mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc")
+
+    with raises(ValueError, match="no path to convert"):
+        model.convert(keep_backups=True)
+
+    mock_convert.assert_not_called()
+
+
+def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFixture) -> None:
+    """A failure from ``convert_tc`` propagates and leaves ``document``/``locked``/``dirty`` exactly
+    as they were before the call.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document
+    * mock ``convert_tc`` to raise ``FileExistsError``
+    * call ``model.convert()``
+    * verify the exception propagates and the model still wraps the original document, still locked
+    """
+    tc_document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True)
+    model = RehuDocumentModel(tc_document)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("stale backup"))
+
+    with raises(FileExistsError):
+        model.convert(keep_backups=True)
+
+    assert model.document is tc_document
+    assert model.locked is True
+
+
+def test_image_scanner_is_a_tc_scanner_for_a_legacy_document() -> None:
+    """A model over a legacy ``.tc``-backed document constructs with a ``TcScanner``.
+
+    **Test steps:**
+
+    * construct a model over a document with ``legacy_tc=True``
+    * verify ``image_scanner`` is a ``TcScanner``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    assert isinstance(model.image_scanner, TcScanner)
+
+
+def test_image_scanner_is_a_rehu_scanner_for_a_normal_document(model: RehuDocumentModel) -> None:
+    """A model over a normal (non-legacy) document constructs with a ``RehuScanner``.
+
+    **Test steps:**
+
+    * read ``image_scanner`` off the shared (non-legacy) fixture
+    * verify it is a ``RehuScanner``
+    """
+    assert isinstance(model.image_scanner, RehuScanner)
+
+
+def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
+    """``convert()`` reassigns ``image_scanner`` to a **new** ``RehuScanner`` instance, never derived
+    from whatever scanner was already there.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document and record its original scanner
+    * mock ``convert_tc`` to return a fresh, unlocked document
+    * call ``model.convert()``
+    * verify ``image_scanner`` is now a different ``RehuScanner`` instance
+    """
+    tc_document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True)
+    model = RehuDocumentModel(tc_document)
+    original_scanner = model.image_scanner
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+    )
+
+    model.convert(keep_backups=True)
+
+    assert isinstance(model.image_scanner, RehuScanner)
+    assert model.image_scanner is not original_scanner
+
+
+def test_revert_leaves_the_image_scanner_untouched(mocker: MockerFixture) -> None:
+    """``revert()`` never changes ``legacy_tc``-ness, so it leaves ``image_scanner`` untouched.
+
+    **Test steps:**
+
+    * build a model over a normal document and record its scanner
+    * mock ``document.reload`` as a no-op
+    * call ``model.revert()``
+    * verify ``image_scanner`` is the exact same instance
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    original_scanner = model.image_scanner
+    mocker.patch.object(document, "reload")
+
+    model.revert()
+
+    assert model.image_scanner is original_scanner
 
 
 def test_document_exposes_the_wrapped_document(model: RehuDocumentModel, document: RehuDocument) -> None:

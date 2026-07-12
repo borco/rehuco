@@ -28,6 +28,16 @@ TUTORIAL: Final = {
     "sources": [{"title": "Foo", "publisher": "Bar", "url": "https://example.com", "primary": True}],
 }
 
+TC_TUTORIAL: Final = """
+type: Tutorial
+title: Legacy Title
+publisher: Legacy Publisher
+url: https://legacy.example/foo
+"""
+"""A legacy tc4 ``.tc`` (YAML) fixture, shaped like Phase 1's ``TUTORIAL_TC``
+([[acquisition-tooling#tc-to-rehu]]) -- opens through :func:`rehuco_core.load_tc` instead of
+``RehuDocument.load``."""
+
 
 def load_document(mocker: MockerFixture, data: dict[str, Any] | None = None) -> None:
     """Mock the filesystem so ``RehuDocument.load`` serves ``data`` (defaults to :data:`TUTORIAL`).
@@ -560,16 +570,15 @@ def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:
     assert dock.restore_state(b"") is False
 
 
-def test_dock_object_name_prefers_the_documents_own_id(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock's object name is its document's stable id when the document has one.
-
-    Needed for ``restore_state`` to match a saved layout entry back up to the dock recreated for
-    the same document on the next launch (``CDockManager`` matches docks up by ``objectName()``).
+def test_dock_object_name_is_the_document_path_regardless_of_id(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dock's object name is its document's path, whether or not the document has an ``id`` --
+    deliberately not the id itself, since a ``.tc``-backed document has none until a live conversion
+    mints one partway through an already-open dock's lifetime ([[acquisition-tooling#tc-to-rehu]]).
 
     **Test steps:**
 
     * open a document whose data includes an ``id``
-    * verify its dock's object name is that id, not its path
+    * verify its dock's object name is the path, not the id
     """
     load_document(mocker, {**TUTORIAL, "id": "some-stable-id"})
     dock = DocumentsDock()
@@ -578,16 +587,16 @@ def test_dock_object_name_prefers_the_documents_own_id(mocker: MockerFixture, qt
     widget = dock.open_document(FAKE_PATH)
 
     assert widget is not None
-    assert dock_for(dock, widget).objectName() == "some-stable-id"
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
 def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock's object name falls back to its document's path when the document has no id.
+    """A dock's object name is the path when the document has no id too (e.g. a not-yet-imported file).
 
     **Test steps:**
 
-    * open a document whose data has no ``id`` (e.g. a not-yet-imported file)
-    * verify its dock's object name is its path
+    * open a document whose data has no ``id``
+    * verify its dock's object name is the path
     """
     load_document(mocker)
     dock = DocumentsDock()
@@ -596,6 +605,33 @@ def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFix
     widget = dock.open_document(FAKE_PATH)
 
     assert widget is not None
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
+
+
+def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A live ``.tc`` -> ``.rehu`` conversion ([[acquisition-tooling#tc-to-rehu]]) resyncs the
+    already-open dock's object name to the converted path, via :attr:`RehuDocumentModel.path_changed`
+    -- not by the identifier being transition-immune by construction.
+
+    **Test steps:**
+
+    * open a ``.tc`` document and note its dock's initial object name
+    * convert it in place
+    * verify the dock's object name is now the ``.rehu`` path
+    """
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    tc_path = FAKE_PATH.with_suffix(".tc")
+    widget = dock.open_document(tc_path)
+    assert widget is not None
+    assert dock_for(dock, widget).objectName() == str(tc_path)
+
+    load_document(mocker)
+    rehu_document = RehuDocument.load(FAKE_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=rehu_document)
+    widget.model.convert(keep_backups=False)
+
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
@@ -771,3 +807,114 @@ def test_open_archive_reopening_the_new_unsaved_document_focuses_it(qtbot: QtBot
 
     assert first is second
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def only_tc_exists(path: Path) -> bool:
+    """``Path.exists`` stand-in: only a ``.tc`` path reports as present.
+
+    Used with ``autospec=True`` so the mock actually receives ``self`` per call -- a plain
+    (non-autospec) ``mocker.patch.object(Path, "exists", ...)`` never does, which is why every other
+    test in this file uses a single blanket ``return_value`` instead.
+
+    :param path: the ``Path`` instance ``.exists()`` was called on.
+    :returns: whether ``path``'s suffix is ``.tc``.
+    """
+    return path.suffix == ".tc"
+
+
+def test_open_folder_falls_back_to_a_tc_companion_when_info_rehu_is_missing(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Opening a folder with no ``info.rehu`` but a legacy ``info.tc`` opens the ``.tc`` instead
+    (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]), locked and read-only.
+
+    **Test steps:**
+
+    * mock the filesystem so only ``info.tc`` exists, serving a tc4 YAML fixture
+    * open the folder (not the ``info.tc`` path itself)
+    * verify the resulting document's path is ``folder/info.tc``, it is locked, not dirty, and its
+      fields came from the ``.tc`` mapping
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=only_tc_exists)
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_PATH.with_suffix(".tc")
+    assert widget.model.locked is True
+    assert widget.model.dirty is False
+    assert widget.model.title == "Legacy Title"
+
+
+def test_open_archive_falls_back_to_a_tc_companion_when_rehu_is_missing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening an archive with no ``.rehu`` companion but a legacy ``.tc`` one opens the ``.tc``
+    instead (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]), locked and read-only.
+
+    **Test steps:**
+
+    * mock the filesystem so only the ``.tc`` companion exists, serving a tc4 YAML fixture
+    * open the archive (not the companion path itself)
+    * verify the resulting document's path is the ``.tc`` companion, it is locked, and not dirty
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=only_tc_exists)
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_archive(FAKE_ARCHIVE_PATH)
+
+    assert widget is not None
+    assert widget.model.path == FAKE_ARCHIVE_INFO_PATH.with_suffix(".tc")
+    assert widget.model.locked is True
+    assert widget.model.dirty is False
+
+
+def test_open_document_with_a_tc_path_loads_it_as_legacy(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a ``.tc`` path directly (a registered double-click or shell verb, A3.1 Phase 2,
+    [[acquisition-tooling#tc-to-rehu]]) routes through ``load_tc``, not ``RehuDocument.load``.
+
+    **Test steps:**
+
+    * mock the filesystem to serve a tc4 YAML fixture
+    * open a ``.tc`` path directly via ``open_document``
+    * verify the resulting document is locked and its fields came from the ``.tc`` mapping
+    """
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+
+    assert widget is not None
+    assert widget.model.locked is True
+    assert widget.model.title == "Legacy Title"
+
+
+def test_open_folder_with_a_corrupted_tc_fallback_shows_an_error_and_no_dock(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A folder whose ``info.tc`` fallback exists but is corrupted gets the same error dialog as a bad
+    ``.rehu`` file (#35) -- the ``.tc`` fallback never silently falls through to "start a new document".
+
+    **Test steps:**
+
+    * mock the filesystem so only ``info.tc`` exists, with content that isn't valid YAML
+    * mock the error dialog (a real modal would block the headless test)
+    * open the folder
+    * verify ``None`` came back, no dock was created, and the dialog named the ``info.tc`` path
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=only_tc_exists)
+    mocker.patch.object(Path, "read_text", return_value="tags: [unterminated")
+    critical = mocker.patch.object(QMessageBox, "critical")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget is None
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_called_once()
+    assert str(FAKE_PATH.with_suffix(".tc")) in critical.call_args[0][2]

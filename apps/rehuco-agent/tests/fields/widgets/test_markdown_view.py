@@ -6,23 +6,7 @@ from PySide6.QtWidgets import QTextBrowser
 from pytest import raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.markdown_view import MAX_IMAGE_WIDTH, MarkdownView, render_markdown
-
-
-def load_image_resource(view: MarkdownView, mocker: MockerFixture, width: int, height: int) -> object:
-    """Drive ``view.loadResource`` for an image the base class resolves to ``width`` x ``height``.
-
-    The base ``QTextBrowser.loadResource`` is mocked to hand back that image, so the test exercises
-    only the override's capping decision, not Qt's resource lookup.
-
-    :param view: the viewer under test.
-    :param mocker: the pytest-mock fixture.
-    :param width: the resolved image's width in pixels.
-    :param height: the resolved image's height in pixels.
-    :returns: whatever the override returns for that image resource.
-    """
-    mocker.patch.object(QTextBrowser, "loadResource", return_value=QImage(width, height, QImage.Format.Format_RGB32))
-    return view.loadResource(int(QTextDocument.ResourceType.ImageResource), QUrl("image.png"))
+from rehuco_agent.fields.widgets.markdown_view import MarkdownView, render_markdown
 
 
 def test_render_markdown_renders_common_elements() -> None:
@@ -125,81 +109,108 @@ def test_apply_rendering_settings_re_renders_with_the_new_engine(qtbot: QtBot) -
     view.set_markdown("# Heading")
     assert "Heading" in view.toPlainText()
 
-    view.apply_rendering_settings(engine="mistletoe", css="", max_image_width=MAX_IMAGE_WIDTH)
+    view.apply_rendering_settings(engine="mistletoe", css="")
 
     assert "Heading" in view.toPlainText()
 
 
-def test_apply_rendering_settings_updates_the_image_width_cap(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """``apply_rendering_settings`` changes the width cap used by a later ``loadResource``.
+def test_load_resource_uses_the_image_scanner_when_it_resolves_the_name(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """`loadResource` returns the ``ImageScanner``'s resolved image for an ``ImageResource``,
+    without ever touching the base class's own (CWD-dependent, unscaled) resolution.
 
     **Test steps:**
 
-    * build a viewer with a wide cap, then apply settings with a narrower one
-    * resolve a wide image
-    * verify it's scaled to the new, narrower cap
+    * attach a scanner mocked to resolve any name to a real ``QImage``
+    * resolve an image resource
+    * verify the scanner's image comes back and the base ``loadResource`` was never called
     """
-    view = MarkdownView(max_image_width=1000)
+    scanner_image = QImage(100, 50, QImage.Format.Format_RGB32)
+    scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=scanner_image))
+    base_load = mocker.patch.object(QTextBrowser, "loadResource")
+    view = MarkdownView(image_scanner=scanner)
     qtbot.addWidget(view)
 
-    view.apply_rendering_settings(engine="markdown", css="", max_image_width=100)
+    loaded = view.loadResource(int(QTextDocument.ResourceType.ImageResource), QUrl("cover.jpg"))
 
-    loaded = load_image_resource(view, mocker, 400, 200)
-    assert isinstance(loaded, QImage)
-    assert loaded.width() == 100
+    assert loaded is scanner_image
+    scanner.get_markdown_viewer_image.assert_called_once_with("cover.jpg", view.devicePixelRatio())
+    base_load.assert_not_called()
 
 
-def test_markdown_view_takes_an_image_width_cap(qtbot: QtBot) -> None:
-    """The viewer accepts an image-width cap, defaulting to :data:`MAX_IMAGE_WIDTH`.
-
-    The actual scaling only bites once images resolve (a follow-up), so this covers construction --
-    the default and an explicit override both build.
+def test_load_resource_falls_back_when_the_scanner_cannot_resolve_the_name(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """`loadResource` falls back to the base class when the scanner returns ``None``.
 
     **Test steps:**
 
-    * build a viewer with the default cap and one with an explicit cap
-    * verify both construct
+    * attach a scanner mocked to fail to resolve a name
+    * resolve an image resource
+    * verify the base class's own return value comes back
     """
-    default_view = MarkdownView()
-    capped_view = MarkdownView(max_image_width=MAX_IMAGE_WIDTH // 2)
-    qtbot.addWidget(default_view)
-    qtbot.addWidget(capped_view)
-
-    assert isinstance(default_view, MarkdownView)
-    assert isinstance(capped_view, MarkdownView)
-
-
-def test_load_resource_scales_an_over_wide_image_down_to_the_cap(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """`loadResource` scales an image wider than the cap down to it, preserving aspect ratio.
-
-    **Test steps:**
-
-    * resolve a 400x200 image on a viewer capped to 100 px
-    * verify the returned image is 100x50
-    """
-    view = MarkdownView(max_image_width=100)
+    scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=None))
+    base_load = mocker.patch.object(QTextBrowser, "loadResource", return_value="base-fallback")
+    view = MarkdownView(image_scanner=scanner)
     qtbot.addWidget(view)
 
-    loaded = load_image_resource(view, mocker, 400, 200)
+    loaded = view.loadResource(int(QTextDocument.ResourceType.ImageResource), QUrl("missing.jpg"))
 
-    assert isinstance(loaded, QImage)
-    assert loaded.width() == 100
-    assert loaded.height() == 50
+    assert loaded == "base-fallback"
+    base_load.assert_called_once()
 
 
-def test_load_resource_leaves_an_image_within_the_cap_untouched(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """`loadResource` returns an image no wider than the cap unchanged.
+def test_load_resource_ignores_the_scanner_for_a_non_image_resource(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """`loadResource` never consults the scanner for a non-``ImageResource`` type.
 
     **Test steps:**
 
-    * resolve an 80x40 image on a viewer capped to 100 px
-    * verify its size is unchanged
+    * attach a scanner
+    * resolve a ``StyleSheetResource``
+    * verify the scanner was never called and the base class's return value comes back
     """
-    view = MarkdownView(max_image_width=100)
+    scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=None))
+    mocker.patch.object(QTextBrowser, "loadResource", return_value="base-fallback")
+    view = MarkdownView(image_scanner=scanner)
     qtbot.addWidget(view)
 
-    loaded = load_image_resource(view, mocker, 80, 40)
+    loaded = view.loadResource(int(QTextDocument.ResourceType.StyleSheetResource), QUrl("style.css"))
 
-    assert isinstance(loaded, QImage)
-    assert loaded.width() == 80
-    assert loaded.height() == 40
+    assert loaded == "base-fallback"
+    scanner.get_markdown_viewer_image.assert_not_called()
+
+
+def test_assigning_a_new_image_scanner_re_renders_the_current_text(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Assigning a new ``image_scanner`` re-renders the currently-set text, so already-shown images
+    are re-resolved through the new scanner (e.g. a `.tc` -> `.rehu` conversion,
+    [[acquisition-tooling#tc-to-rehu]]).
+
+    **Test steps:**
+
+    * set some Markdown that embeds an image
+    * assign a new scanner
+    * verify the new scanner's ``get_markdown_viewer_image`` is consulted on the next render
+    """
+    view = MarkdownView()
+    qtbot.addWidget(view)
+    view.set_markdown("![](cover.jpg)")
+
+    new_scanner = mocker.Mock(get_markdown_viewer_image=mocker.Mock(return_value=None))
+    view.image_scanner = new_scanner
+
+    assert new_scanner.get_markdown_viewer_image.called
+
+
+def test_load_resource_without_a_scanner_always_falls_back(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """`loadResource` always uses the base class's own resolution when no scanner is attached.
+
+    **Test steps:**
+
+    * build a viewer with no ``image_scanner``
+    * resolve an image resource
+    * verify the base class's return value comes back unchanged
+    """
+    mocker.patch.object(QTextBrowser, "loadResource", return_value="base-fallback")
+    view = MarkdownView()
+    qtbot.addWidget(view)
+
+    loaded = view.loadResource(int(QTextDocument.ResourceType.ImageResource), QUrl("cover.jpg"))
+
+    assert loaded == "base-fallback"

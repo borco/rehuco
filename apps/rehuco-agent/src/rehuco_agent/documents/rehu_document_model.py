@@ -1,14 +1,14 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 import logging
-import re
 from pathlib import Path
 from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import RehuDocument
+from rehuco_core import RehuDocument, convert_tc
 
+from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
 
 LOG: Final = logging.getLogger(__name__)
@@ -36,10 +36,6 @@ KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT
 key in the live block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], A2.8/#28)."""
 
-IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
-"""Screenshot file extensions the lightbox enumerates ([[data-model#image-meanings]]); matched
-case-insensitively."""
-
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
@@ -64,6 +60,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     unknown_fields_changed = Signal()
     """Fires when the set of unrecognized live-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
+
+    path = SimpleProperty[Path | None](None)
+    """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
+    it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, A5),
+    so a consumer that needs to react to the document's identity changing (e.g. `DocumentsDock`
+    resyncing a dock's persisted identity) can bind to `path_changed` instead of polling it."""
 
     location = SimpleProperty("")
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
@@ -141,29 +143,42 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     hidden_images = SimpleProperty[list[str]](default_factory=list)
     """The screenshot filenames curated *out* of the lightbox ([[data-model#image-meanings]], #27); a
-    top-level common-core list. The lightbox shows every :meth:`image_files` sibling by default, so only
-    the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
+    top-level common-core list. The lightbox shows every ``ImageScanner.files()`` sibling by default, so
+    only the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
 
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
     locked = SimpleProperty(False)
-    """True when :attr:`document`'s ``format_version`` is newer than this build understands
-    ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule). Recomputed at construction and on
-    every :meth:`revert` (never by an edit -- there is no setter path back to a lower version).
-    ``DocumentWidget`` disables its editor docks while this is true; nothing else in the model changes,
-    since the underlying `RehuDocument` already preserves that newer file's fields verbatim and never
-    downgrades its version stamp on save ([[data-model#schema-version]])."""
+    """True when either :attr:`document`'s ``format_version`` is newer than this build understands
+    ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule), or the document was mapped from a
+    legacy ``.tc`` file not yet converted ([[acquisition-tooling#tc-to-rehu]], `RehuDocument.legacy_tc`)
+    -- a document *older* than this build's format version, which the first rule alone would never
+    catch. Recomputed at construction and on every :meth:`revert`/:meth:`convert` (never by an edit --
+    there is no setter path back to either locked state). ``DocumentWidget`` disables its editor docks while this
+    is true; nothing else in the model changes, since the underlying `RehuDocument` already preserves
+    a newer file's fields verbatim and never downgrades its version stamp on save
+    ([[data-model#schema-version]])."""
+
+    image_scanner = SimpleProperty[ImageScanner | None](None)
+    """The current screenshot-resolution strategy -- `TcScanner` while :attr:`~RehuDocument.legacy_tc`,
+    `RehuScanner` once converted or genuinely `.rehu`-native. `ImageStrip`/`ImageSelector`/`MarkdownView`
+    each hold their own copy and bind to `image_scanner_changed` to pick up a `.tc` -> `.rehu`
+    conversion's switch in naming convention without rebuilding the field composition
+    ([[acquisition-tooling#tc-to-rehu]])."""
 
     def __init__(self, document: RehuDocument, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__document: Final = document
-        self.__reverting = False
+        self.__document = document
 
-        # Seed the fields from the document *before* wiring the write-through handlers, so seeding a
-        # freshly-loaded model never looks like an edit (no dirty, no document write-back).
+        self.__seeding = False
+        """True only while :meth:`__seed_from_document` is applying field values pulled from the
+        document -- guards every write-through handler below so a seed is never mistaken for a user
+        edit."""
+
         self.__seed_from_document()
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION
+        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.image_scanner = TcScanner(self) if self.__document.legacy_tc else RehuScanner(self)
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
@@ -203,11 +218,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return self.__document
 
     @property
-    def path(self) -> Path | None:
-        """The document's file path, if any (the dock shell reuses-and-focuses by path)."""
-        return self.__document.path
-
-    @property
     def label(self) -> str:
         """This document's display label: the parent directory's name, trailing-slashed, for
         `info.rehu` ([[data-model#resource-scoping]]), the bare filename otherwise.
@@ -236,34 +246,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def sources(self) -> list[dict[str, Any]]:
         """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
         return self.__document.sources
-
-    def image_files(self) -> list[Path]:
-        """Enumerate this resource's screenshot siblings for the lightbox ([[data-model#image-meanings]], #27).
-
-        Screenshots are the basename-matched, two-digit-numbered siblings of the ``.rehu`` -- for
-        ``info.rehu`` these are ``info00.jpg`` / ``info01.png`` / ..., for ``foo.rehu`` they are
-        ``foo00.jpg`` / ... -- with an :data:`IMAGE_EXTENSIONS` extension, matched case-insensitively.
-        Independent of :attr:`hidden_images`: this is *every* screenshot on disk; the lightbox subtracts
-        the hidden ones. Empty when the document has no path yet or its directory holds none.
-
-        :returns: the matching sibling paths, sorted by filename.
-        """
-        path = self.path
-        if path is None:
-            return []
-        pattern = re.compile(rf"^{re.escape(path.stem)}\d{{2}}$", re.IGNORECASE)
-        try:
-            siblings = list(path.parent.iterdir())
-        except OSError:
-            # the resource's directory may be absent or on an offline mount ([[mounts-and-storage#offline-mounts]]) --
-            # no screenshots to show, rather than a crash
-            return []
-        matches = [
-            sibling
-            for sibling in siblings
-            if sibling.suffix.lower() in IMAGE_EXTENSIONS and pattern.match(sibling.stem)
-        ]
-        return sorted(matches, key=lambda sibling: sibling.name)
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""
@@ -295,7 +277,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         Re-reads the file (:meth:`RehuDocument.reload`) rather than just resetting to the
         last-loaded snapshot, so an out-of-band edit ([[data-model#write-integrity]]) is picked up
-        too. Reseeding is guarded the same way construction is, so it never looks like an edit --
+        too. :meth:`__seed_from_document` guards itself against the reseed looking like an edit --
         no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
 
         The reload also restores any unknown live-block fields dropped this session, so
@@ -305,13 +287,36 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
         self.__document.reload()
-        self.__reverting = True
-        try:
-            self.__seed_from_document()
-        finally:
-            self.__reverting = False
+        self.__seed_from_document()
         self.dirty = False
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION
+        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.unknown_fields_changed.emit()
+
+    def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
+        """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
+        (A3.1 Phase 4, [[acquisition-tooling#tc-to-rehu]]).
+
+        Delegates the file-system work to :func:`rehuco_core.convert_tc`, then adopts its result as
+        this model's document -- reseeding every field and recomputing :attr:`locked` (which drops to
+        ``False``, since the result is never :attr:`~RehuDocument.legacy_tc`) -- so the same dock keeps
+        showing the same resource, now unlocked, without a reload round-trip.
+
+        :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
+        :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.
+        :raises ValueError: this document isn't :attr:`~RehuDocument.legacy_tc`, or has no path.
+        :raises OSError: propagated from :func:`rehuco_core.convert_tc` (``FileExistsError`` for an
+            unconfirmed overwrite or a stale backup; any other ``OSError`` from the underlying file
+            operations) -- this model's ``document``/``locked``/``dirty`` are left untouched.
+        """
+        if not self.__document.legacy_tc:
+            raise ValueError("only a legacy .tc-backed document can be converted")
+        if self.path is None:
+            raise ValueError("no path to convert -- document was not loaded from a file")
+        self.__document = convert_tc(self.path, keep_backups=keep_backups, overwrite=overwrite)
+        self.__seed_from_document()
+        self.dirty = False
+        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.image_scanner = RehuScanner(self)
         self.unknown_fields_changed.emit()
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
@@ -363,36 +368,42 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.dirty = True
 
     def __seed_from_document(self) -> None:
-        """Set every field from :attr:`document`'s current in-memory state (construction and :meth:`revert`)."""
-        self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
-        self.title = self.__document.title
-        self.authors = self.__document.authors
-        self.publisher = self.__document.publisher
-        self.url = self.__document.url
-        self.released = self.__document.released
-        self.description = self.__document.description
-        self.hidden_images = self.__document.hidden_images
-        self.original_size = self.__document.original_size
-        self.current_size = self.__document.current_size
-        self.advertised_tags = self.__document.advertised_tags
-        self.extra_tags = self.__document.extra_tags
+        """Set every field from :attr:`document`'s current in-memory state (construction,
+        :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit."""
+        self.__seeding = True
+        try:
+            self.path = self.__document.path
+            self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
+            self.title = self.__document.title
+            self.authors = self.__document.authors
+            self.publisher = self.__document.publisher
+            self.url = self.__document.url
+            self.released = self.__document.released
+            self.description = self.__document.description
+            self.hidden_images = self.__document.hidden_images
+            self.original_size = self.__document.original_size
+            self.current_size = self.__document.current_size
+            self.advertised_tags = self.__document.advertised_tags
+            self.extra_tags = self.__document.extra_tags
 
-        # The type-field scalar fields read/write generically through the type-keyed plugin block
-        # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
-        # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
-        # hand-duplicated literal here -- so there is exactly one place per field to change its default.
-        for name in TYPE_FIELD_BOOL_NAMES:
-            default = SimpleProperty.default_value(type(self), name)
-            setattr(self, name, bool(self.__document.type_field(name, default)))
-        for name in TYPE_FIELD_INT_NAMES:
-            default = SimpleProperty.default_value(type(self), name)
-            value = self.__document.type_field(name, default)
-            setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
-        for name in TYPE_FIELD_STR_LIST_NAMES:
-            default = SimpleProperty.default_value(type(self), name)
-            value = self.__document.type_field(name, default)
-            coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
-            setattr(self, name, coerced)
+            # The type-field scalar fields read/write generically through the type-keyed plugin block
+            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
+            # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
+            # hand-duplicated literal here -- so there is exactly one place per field to change its default.
+            for name in TYPE_FIELD_BOOL_NAMES:
+                default = SimpleProperty.default_value(type(self), name)
+                setattr(self, name, bool(self.__document.type_field(name, default)))
+            for name in TYPE_FIELD_INT_NAMES:
+                default = SimpleProperty.default_value(type(self), name)
+                value = self.__document.type_field(name, default)
+                setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+            for name in TYPE_FIELD_STR_LIST_NAMES:
+                default = SimpleProperty.default_value(type(self), name)
+                value = self.__document.type_field(name, default)
+                coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
+                setattr(self, name, coerced)
+        finally:
+            self.__seeding = False
 
     def __move(self, new_name: str) -> bool:
         """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
@@ -417,11 +428,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_title_changed(self, value: str) -> None:
         """Write an edited title through to the document's primary source and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new title.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.title = value
         self.dirty = True
@@ -429,11 +440,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_authors_changed(self, value: list[str]) -> None:
         """Write an edited authors list through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new authors list.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.authors = value
         self.dirty = True
@@ -441,11 +452,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_publisher_changed(self, value: str) -> None:
         """Write an edited publisher through to the document's primary source and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new publisher.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.publisher = value
         self.dirty = True
@@ -453,11 +464,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_url_changed(self, value: str) -> None:
         """Write an edited url through to the document's primary source and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new url.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.url = value
         self.dirty = True
@@ -465,11 +476,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_released_changed(self, value: str) -> None:
         """Write an edited released date through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new released date.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.released = value
         self.dirty = True
@@ -477,11 +488,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_description_changed(self, value: str) -> None:
         """Write an edited description through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new description.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.description = value
         self.dirty = True
@@ -489,11 +500,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_hidden_images_changed(self, value: list[str]) -> None:
         """Write an edited hidden-images list through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new hidden-images list.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.hidden_images = value
         self.dirty = True
@@ -501,11 +512,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_original_size_changed(self, value: int) -> None:
         """Write an edited original_size through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new original_size.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.original_size = value
         self.dirty = True
@@ -513,11 +524,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_current_size_changed(self, value: int) -> None:
         """Write an edited current_size through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new current_size.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.current_size = value
         self.dirty = True
@@ -525,11 +536,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_advertised_tags_changed(self, value: list[str]) -> None:
         """Write an edited advertised_tags list through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new advertised_tags list.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.advertised_tags = value
         self.dirty = True
@@ -537,11 +548,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_extra_tags_changed(self, value: list[str]) -> None:
         """Write an edited extra_tags list through to the document and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param value: the new extra_tags list.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.extra_tags = value
         self.dirty = True
@@ -549,12 +560,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_type_field_changed(self, key: str, value: Any) -> None:
         """Write an edited type-field scalar through to the document's plugin block and mark dirty.
 
-        No-op while :meth:`revert` is reseeding -- see the comment there.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param key: the type-field key that changed.
         :param value: the new value.
         """
-        if self.__reverting:
+        if self.__seeding:
             return
         self.__document.set_type_field(key, value)
         self.dirty = True

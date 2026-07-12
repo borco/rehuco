@@ -7,8 +7,8 @@ import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import QMainWindow, QWidget
+from PySide6.QtGui import QAction, QIcon, QKeySequence
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 
 from rehuco_agent.documents.document_fields import build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -29,6 +29,8 @@ STATE_WIDGET_STATE_KEY: Final = "widget_state"
 
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
+CONVERT_KEEP_BACKUPS_ICON_RESOURCE: Final = ":/icons/tc_convert_with_backup.svg"
+CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -51,6 +53,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     just how a dirty one discards in-memory edits. The editor docks' content is disabled outright
     while the model is :attr:`~RehuDocumentModel.locked` (A3, [[data-model#schema-version]]) -- a
     ``format_version`` newer than this build understands, so editing isn't safe.
+
+    While viewing a legacy ``.tc`` (:attr:`~RehuDocument.legacy_tc`, A3.1,
+    [[acquisition-tooling#tc-to-rehu]]), Save and Revert are hidden -- there is nothing to save, and
+    Revert would try to re-parse the ``.tc`` path as JSON and raise -- and two convert actions take
+    their place instead, each running :meth:`~RehuDocumentModel.convert`'s safe-replace sequence. On
+    success the model swaps in the converted, unlocked document in place: the same toolbar swap runs
+    in reverse (Save/Revert reappear, the convert actions hide) and the dock's lock marker drops, with
+    no new dock and no reload round-trip.
 
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
@@ -89,15 +99,30 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__revert_action.triggered.connect(model.revert)
         self.addAction(self.__revert_action)
 
+        self.__convert_keep_backups_action: Final = QAction("Convert, &Keep Backups", self)
+        ActionIconThemeHandler(self.__convert_keep_backups_action, CONVERT_KEEP_BACKUPS_ICON_RESOURCE)
+        self.__convert_keep_backups_action.triggered.connect(lambda: self.__on_convert_triggered(keep_backups=True))
+        self.addAction(self.__convert_keep_backups_action)
+
+        self.__convert_discard_originals_action: Final = QAction("Convert, &Discard Originals", self)
+        self.__convert_discard_originals_action.setIcon(QIcon(CONVERT_DISCARD_ICON_RESOURCE))
+        self.__convert_discard_originals_action.triggered.connect(
+            lambda: self.__on_convert_triggered(keep_backups=False)
+        )
+        self.addAction(self.__convert_discard_originals_action)
+
         self.__save_action.setEnabled(model.dirty)
         model.dirty_changed.connect(self.__on_dirty_changed)  # type: ignore[attr-defined]
 
         self.__set_editors_locked(model.locked)
+        self.__set_legacy_tc_actions_visible(model.document.legacy_tc)
         model.locked_changed.connect(self.__on_locked_changed)  # type: ignore[attr-defined]
 
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
+        toolbar.addAction(self.__convert_keep_backups_action)
+        toolbar.addAction(self.__convert_discard_originals_action)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values()):
             toolbar.addAction(dock.toggleViewAction())
 
@@ -234,11 +259,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__save_action.setEnabled(dirty)
 
     def __on_locked_changed(self, locked: bool) -> None:
-        """Disable/re-enable the editor docks as :attr:`~RehuDocumentModel.locked` changes (e.g. on revert).
+        """Disable/re-enable the editor docks as :attr:`~RehuDocumentModel.locked` changes (e.g. on
+        revert or a successful :meth:`~RehuDocumentModel.convert`).
 
         :param locked: the model's new locked state.
         """
         self.__set_editors_locked(locked)
+        self.__set_legacy_tc_actions_visible(self.__model.document.legacy_tc)
 
     def __set_editors_locked(self, locked: bool) -> None:
         """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is
@@ -251,6 +278,46 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         for dock in self.__editor_docks.values():
             dock.widget().setEnabled(not locked)
+
+    def __set_legacy_tc_actions_visible(self, legacy_tc: bool) -> None:
+        """Swap Save/Revert for the two convert actions while viewing a legacy ``.tc`` document.
+
+        Keyed on :attr:`~RehuDocument.legacy_tc` specifically, not the broader
+        :attr:`~RehuDocumentModel.locked` -- a document locked for the *other* reason (a newer
+        ``format_version`` than this build understands) has no ``.tc`` to convert and must keep
+        showing (disabled) Save/Revert exactly as before.
+
+        :param legacy_tc: whether the model's document is a not-yet-converted legacy ``.tc``.
+        """
+        self.__save_action.setVisible(not legacy_tc)
+        self.__revert_action.setVisible(not legacy_tc)
+        self.__convert_keep_backups_action.setVisible(legacy_tc)
+        self.__convert_discard_originals_action.setVisible(legacy_tc)
+
+    def __on_convert_triggered(self, *, keep_backups: bool) -> None:
+        """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``.
+
+        :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
+        """
+        path = self.__model.path
+        target = path.with_suffix(".rehu") if path is not None else None
+        overwrite = False
+        if target is not None and target.exists():
+            buttons = QMessageBox.StandardButton
+            answer = QMessageBox.warning(
+                self,
+                "Overwrite Existing File",
+                f'"{target.name}" already exists. Convert and overwrite it?',
+                buttons.Yes | buttons.No,
+                buttons.No,
+            )
+            if answer != buttons.Yes:
+                return
+            overwrite = True
+        try:
+            self.__model.convert(keep_backups=keep_backups, overwrite=overwrite)
+        except OSError as exc:
+            QMessageBox.critical(self, "Conversion Failed", f"Could not convert the document:\n\n{exc}")
 
     def __add_docks(
         self, grids: dict[FieldsTab, QWidget], kind: str, position: QtAds.DockWidgetArea

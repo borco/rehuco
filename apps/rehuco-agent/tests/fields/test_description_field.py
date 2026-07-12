@@ -1,12 +1,24 @@
 """Tests for DescriptionField: the Markdown viewer and the ScintillaEdit editor binding."""
 
+from PySide6.QtCore import QObject, Signal
 from pyside6_scintilla import ScintillaEdit
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import MarkdownView
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 from fields.field_testers import DescriptionFieldTester as DescriptionField
+
+
+# region Sample classes
+class Emitter(QObject):
+    """A minimal signal source standing in for a model's ``image_scanner_changed``."""
+
+    changed = Signal(object)
+
+
+# endregion
 
 
 def editor_text(editor: ScintillaEdit) -> str:
@@ -40,16 +52,20 @@ def test_description_viewer_is_a_markdown_view_tracking_the_model(qtbot: QtBot, 
     assert "changed prose" in viewer.toPlainText()
 
 
-def test_description_viewer_follows_live_rendering_settings_changes(qtbot: QtBot, model: RehuDocumentModel) -> None:
+def test_description_viewer_follows_live_rendering_settings_changes(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
     """The viewer picks up the shared Markdown-rendering settings' current values whenever they
     change (#26, #47) -- not just when it's first built -- so a Save on the settings page updates
     an already-open document's viewer immediately.
 
     **Test steps:**
 
-    * build the viewer (default engine/width)
-    * change the shared settings' engine and image-width cap
-    * verify the viewer's own engine/width followed
+    * build the viewer (default engine)
+    * change the shared settings' engine and verify the viewer's own engine followed
+    * change the image-width cap and verify the viewer re-renders -- the ``ImageScanner`` reads that
+      setting live on the next ``loadResource``, so a re-render (not a value threaded through here)
+      is what makes an already-open viewer pick it up
     """
     field = DescriptionField("description")
     viewer = field.make_viewer(model.bind(field)).viewer
@@ -58,10 +74,48 @@ def test_description_viewer_follows_live_rendering_settings_changes(qtbot: QtBot
 
     settings = shared_markdown_rendering_settings()
     settings.engine = "mistletoe"
-    settings.max_image_width = 123
-
     assert viewer._MarkdownView__engine == "mistletoe"  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert viewer._MarkdownView__max_image_width == 123  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    set_markdown = mocker.patch.object(viewer, "set_markdown")
+    settings.max_image_width = 123
+    set_markdown.assert_called_once()
+
+
+def test_viewer_forwards_image_scanner_changed_to_the_markdown_view(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A scanner swap forwarded through ``image_scanner_changed`` reaches the viewer's own scanner.
+
+    **Test steps:**
+
+    * build the viewer wired to an emitter standing in for the model's signal
+    * fire the emitter with a new scanner
+    * verify the viewer's own scanner is the new one
+    """
+    emitter = Emitter()
+    field = DescriptionField("description", image_scanner_changed=emitter.changed)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, MarkdownView)
+    qtbot.addWidget(viewer)
+
+    new_scanner = object()
+    emitter.changed.emit(new_scanner)
+
+    assert viewer.image_scanner is new_scanner
+
+
+def test_viewer_without_image_scanner_changed_makes_no_connection(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Omitting ``image_scanner_changed`` builds a viewer with no reactive scanner wiring, without error.
+
+    **Test steps:**
+
+    * build the viewer with no ``image_scanner_changed``
+    * verify it builds successfully and its scanner is unset
+    """
+    field = DescriptionField("description")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, MarkdownView)
+    qtbot.addWidget(viewer)
+
+    assert viewer.image_scanner is None
 
 
 def test_description_editor_is_a_scintilla_seeded_from_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
