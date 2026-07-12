@@ -2,7 +2,18 @@
 
 from rehuco_core.rehu_document import RehuDocument, RehuFormatError
 from rehuco_core.tc_document import TcDocument, load_tc, tc_to_rehu_data
+from rehuco_core.tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshots
 
 __version__ = "0.0.1"
 
-__all__ = ["__version__", "RehuDocument", "RehuFormatError", "TcDocument", "load_tc", "tc_to_rehu_data"]
+__all__ = [
+    "__version__",
+    "RehuDocument",
+    "RehuFormatError",
+    "ScreenshotRename",
+    "TcDocument",
+    "TcScreenshotScanner",
+    "load_tc",
+    "scan_tc_screenshots",
+    "tc_to_rehu_data",
+]
