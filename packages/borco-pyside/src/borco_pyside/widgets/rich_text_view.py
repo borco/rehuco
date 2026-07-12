@@ -70,7 +70,14 @@ class RichTextView(QTextBrowser):
     @override
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802  (Qt API name)
         super().resizeEvent(event)
-        self.__reflow()
+        # width-only guard: a height-only resize (the common case, since an enclosing scroll area
+        # resizes this view to its own cached __content_height on every documentSizeChanged) can't
+        # change how the document wraps, so it needs no reflow. Skipping it also breaks an observed
+        # runaway loop on large/complex documents: relaying out at an unchanged width can still
+        # answer with a different height than last time, which would re-trigger updateGeometry() ->
+        # another resize -> another reflow, without end.
+        if event.size().width() != event.oldSize().width():
+            self.__reflow()
 
     def __reflow(self) -> None:
         """Wrap the live document to the current viewport width, forcing a single layout pass whose
