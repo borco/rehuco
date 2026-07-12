@@ -209,7 +209,7 @@ class DocumentsDock(QMainWindow):
         widget = DocumentWidget(model, self)
 
         dock = QtAds.CDockWidget(self.__dock_manager, "")
-        dock.setObjectName(self.__dock_object_name(model.document))
+        dock.setObjectName(self.__dock_object_name(model.path))
         dock_features = QtAds.CDockWidget.DockWidgetFeature
         dock.setFeatures(
             dock_features.CustomCloseHandling
@@ -226,6 +226,9 @@ class DocumentsDock(QMainWindow):
         tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
         model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
         model.locked_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
+        model.path_changed.connect(  # type: ignore[attr-defined]
+            lambda path: dock.setObjectName(self.__dock_object_name(path))
+        )
         self.__update_dock_title(dock)
 
         # tab the new document into the current dock's area (a fresh area when nothing is current
@@ -237,30 +240,24 @@ class DocumentsDock(QMainWindow):
         return dock
 
     @staticmethod
-    def __dock_object_name(document: RehuDocument) -> str:
-        """A stable identifier for ``document``'s dock, immune to a ``.tc`` -> ``.rehu`` conversion
-        and surviving across app restarts.
+    def __dock_object_name(path: Path | None) -> str:
+        """A stable identifier for a document's dock, used only for :meth:`restore_state` to match
+        a saved layout entry back up to the dock recreated for the same document on the next launch
+        (``CDockManager`` matches docks up by ``objectName()``).
 
-        Needed for :meth:`restore_state` to match a saved layout entry back up to the dock
-        recreated for the same document on the next launch (``CDockManager`` matches docks up by
-        ``objectName()``).
+        Just the path itself, not the resource's UUID ([[data-model#stable-identity]]) -- a
+        ``.tc``-backed document has no UUID until a live :meth:`~RehuDocumentModel.convert` mints
+        one partway through an already-open dock's lifetime. Renaming an already-registered dock's
+        ``objectName()`` is itself safe and propagates correctly (confirmed empirically:
+        ``CDockManager.saveState()`` reads ``objectName()`` fresh, not from a stale add-time cache),
+        so :meth:`__make_new_dock` resyncs it on every :attr:`~RehuDocumentModel.path_changed`
+        instead of needing this identifier to be transition-immune by construction.
 
-        Deliberately the extension-stripped path, not the resource's UUID
-        ([[data-model#stable-identity]]) -- a ``.tc``-backed document has no UUID until a live
-        :meth:`~RehuDocumentModel.convert` mints one partway through an already-open dock's
-        lifetime, and nothing can safely re-key an already-registered ``CDockManager`` dock
-        afterward (confirmed empirically: renaming ``objectName()`` post-hoc doesn't update
-        ``CDockManager``'s own internal registry, and a remove-then-re-add to force a re-key
-        segfaults once the dock's previous area has been destroyed). The extension-stripped path
-        sidesteps this entirely, since :func:`rehuco_core.convert_tc`'s target is always the same
-        directory and stem, only a different suffix ([[acquisition-tooling#tc-to-rehu]]).
-
-        :param document: the loaded document to derive an identifier for.
-        :returns: the document's path with its suffix stripped, or a placeholder if it has no path
-            yet (every real call site here already has a concrete path in hand).
+        :param path: the document's current path.
+        :returns: the path as a string, or a placeholder if it has no path yet (every real call
+            site here already has a concrete path in hand).
         """
-        path = document.path
-        return str(path.with_suffix("")) if path is not None else "untitled"
+        return str(path) if path is not None else "untitled"
 
     def __on_tab_label_double_clicked(self) -> None:
         """Handle a double-click on a document's tab label."""

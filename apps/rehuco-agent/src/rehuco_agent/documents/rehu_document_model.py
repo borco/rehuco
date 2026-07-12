@@ -61,6 +61,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires when the set of unrecognized live-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
+    path = SimpleProperty[Path | None](None)
+    """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
+    it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, A5),
+    so a consumer that needs to react to the document's identity changing (e.g. `DocumentsDock`
+    resyncing a dock's persisted identity) can bind to `path_changed` instead of polling it."""
+
     location = SimpleProperty("")
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
     folder/location links). The viewer binds to it (rendered as a native-path link); it is not edited
@@ -210,11 +216,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def document(self) -> RehuDocument:
         """The wrapped document."""
         return self.__document
-
-    @property
-    def path(self) -> Path | None:
-        """The document's file path, if any (the dock shell reuses-and-focuses by path)."""
-        return self.__document.path
 
     @property
     def label(self) -> str:
@@ -371,6 +372,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit."""
         self.__seeding = True
         try:
+            self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
             self.title = self.__document.title
             self.authors = self.__document.authors

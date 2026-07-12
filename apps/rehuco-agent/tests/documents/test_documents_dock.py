@@ -570,16 +570,15 @@ def test_restore_state_returns_false_for_empty_state(qtbot: QtBot) -> None:
     assert dock.restore_state(b"") is False
 
 
-def test_dock_object_name_is_the_extension_stripped_path_regardless_of_id(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock's object name is its document's path with the suffix stripped, whether or not the
-    document has an ``id`` -- deliberately not the id itself, since a ``.tc``-backed document has none
-    until a live conversion mints one partway through an already-open dock's lifetime, and nothing can
-    safely re-key an already-registered dock at that point ([[acquisition-tooling#tc-to-rehu]]).
+def test_dock_object_name_is_the_document_path_regardless_of_id(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dock's object name is its document's path, whether or not the document has an ``id`` --
+    deliberately not the id itself, since a ``.tc``-backed document has none until a live conversion
+    mints one partway through an already-open dock's lifetime ([[acquisition-tooling#tc-to-rehu]]).
 
     **Test steps:**
 
     * open a document whose data includes an ``id``
-    * verify its dock's object name is the extension-stripped path, not the id
+    * verify its dock's object name is the path, not the id
     """
     load_document(mocker, {**TUTORIAL, "id": "some-stable-id"})
     dock = DocumentsDock()
@@ -588,17 +587,16 @@ def test_dock_object_name_is_the_extension_stripped_path_regardless_of_id(mocker
     widget = dock.open_document(FAKE_PATH)
 
     assert widget is not None
-    assert dock_for(dock, widget).objectName() == str(FAKE_PATH.with_suffix(""))
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
 def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock's object name is the extension-stripped path when the document has no id too (e.g. a
-    not-yet-imported file).
+    """A dock's object name is the path when the document has no id too (e.g. a not-yet-imported file).
 
     **Test steps:**
 
     * open a document whose data has no ``id``
-    * verify its dock's object name is the extension-stripped path
+    * verify its dock's object name is the path
     """
     load_document(mocker)
     dock = DocumentsDock()
@@ -607,33 +605,34 @@ def test_dock_object_name_falls_back_to_the_path_without_an_id(mocker: MockerFix
     widget = dock.open_document(FAKE_PATH)
 
     assert widget is not None
-    assert dock_for(dock, widget).objectName() == str(FAKE_PATH.with_suffix(""))
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
-def test_dock_object_name_is_stable_across_a_tc_to_rehu_conversion(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The identifier is identical whether the document was loaded from ``.tc`` or ``.rehu`` at the
-    same directory and stem -- the actual property a live conversion needs
-    ([[acquisition-tooling#tc-to-rehu]]): converting never has to re-key an already-open dock, because
-    the name it would compute never changes in the first place.
+def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A live ``.tc`` -> ``.rehu`` conversion ([[acquisition-tooling#tc-to-rehu]]) resyncs the
+    already-open dock's object name to the converted path, via :attr:`RehuDocumentModel.path_changed`
+    -- not by the identifier being transition-immune by construction.
 
     **Test steps:**
 
-    * open the ``.tc`` path directly, and separately open the ``.rehu`` path at the same stem
-    * verify both docks get the identical object name
+    * open a ``.tc`` document and note its dock's initial object name
+    * convert it in place
+    * verify the dock's object name is now the ``.rehu`` path
     """
     mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
-    tc_dock = DocumentsDock()
-    qtbot.addWidget(tc_dock)
-    tc_widget = tc_dock.open_document(FAKE_PATH.with_suffix(".tc"))
-    assert tc_widget is not None
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    tc_path = FAKE_PATH.with_suffix(".tc")
+    widget = dock.open_document(tc_path)
+    assert widget is not None
+    assert dock_for(dock, widget).objectName() == str(tc_path)
 
     load_document(mocker)
-    rehu_dock = DocumentsDock()
-    qtbot.addWidget(rehu_dock)
-    rehu_widget = rehu_dock.open_document(FAKE_PATH)
-    assert rehu_widget is not None
+    rehu_document = RehuDocument.load(FAKE_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=rehu_document)
+    widget.model.convert(keep_backups=False)
 
-    assert dock_for(tc_dock, tc_widget).objectName() == dock_for(rehu_dock, rehu_widget).objectName()
+    assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
 
 
 def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
