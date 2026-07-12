@@ -12,6 +12,16 @@ from rehuco_agent.fields.widgets.image_selector import ImageSelector, PreviewLab
 PATHS = [Path("/fake/info00.jpg"), Path("/fake/info01.png"), Path("/fake/info02.gif")]
 
 
+def fake_scanner(mocker: MockerFixture, files: list[Path]) -> object:
+    """A minimal ``ImageScanner`` stand-in returning a fixed file list.
+
+    :param mocker: pytest-mock fixture.
+    :param files: the fixed file list ``.files()`` reports.
+    :returns: the stand-in scanner.
+    """
+    return mocker.Mock(files=mocker.Mock(return_value=files))
+
+
 def checkable_model(selector: ImageSelector) -> QStandardItemModel:
     """The selector's list model, reached through its list view child.
 
@@ -157,6 +167,85 @@ def test_unchecking_a_row_emits_the_new_hidden_list(qtbot: QtBot) -> None:
     checkable_model(selector).item(0).setCheckState(Qt.CheckState.Unchecked)
 
     assert emitted == [["info00.jpg"]]
+
+
+def test_set_hidden_skips_a_rebuild_when_unchanged(qtbot: QtBot) -> None:
+    """``set_hidden`` is a no-op when ``hidden`` already matches what's shown -- the echo-suppression
+    for the selector's own toggle coming back through the model binding.
+
+    No scanner is ever attached here (stays the default ``None``): if the guard failed to skip, the
+    rebuild would run against that ``None`` scanner and empty the list -- so an empty list would prove
+    the guard didn't fire, while the original three rows surviving proves it did.
+
+    **Test steps:**
+
+    * seed the selector directly via ``set_images``, with no scanner attached
+    * call ``set_hidden`` with the *same* hidden list already shown
+    * verify the rows are untouched (still the original ``set_images`` seed)
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.set_images(PATHS, ["info01.png"])
+
+    selector.set_hidden(["info01.png"])
+
+    assert checkable_model(selector).rowCount() == 3
+
+
+def test_set_hidden_rebuilds_from_the_current_scanner_when_it_actually_changes(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """``set_hidden`` rebuilds from the current scanner's files when ``hidden`` actually changes.
+
+    **Test steps:**
+
+    * seed the selector, attach a scanner reporting a different, smaller file set
+    * call ``set_hidden`` with a genuinely different hidden list
+    * verify the rebuild reflects the scanner's files, not the original seed
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.set_images(PATHS, [])
+    selector.image_scanner = fake_scanner(mocker, PATHS[:1])  # type: ignore[assignment]
+
+    selector.set_hidden(["info01.png"])
+
+    assert checkable_model(selector).rowCount() == 1
+
+
+def test_assigning_a_new_scanner_rebuilds_unconditionally(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Assigning a new ``image_scanner`` always rebuilds, even with an unchanged hidden list.
+
+    **Test steps:**
+
+    * seed the selector via ``set_images`` with nothing hidden
+    * assign a scanner reporting a different, smaller file set
+    * verify the rebuild reflects the new scanner despite ``hidden_filenames()`` staying ``[]``
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.set_images(PATHS, [])
+    assert selector.hidden_filenames() == []
+
+    selector.image_scanner = fake_scanner(mocker, PATHS[:1])  # type: ignore[assignment]
+
+    assert checkable_model(selector).rowCount() == 1
+
+
+def test_no_scanner_shows_nothing(qtbot: QtBot) -> None:
+    """A scanner change to ``None``-backed refresh paths show nothing rather than raising.
+
+    **Test steps:**
+
+    * call ``set_hidden`` on a selector with no scanner assigned (the default)
+    * verify the list stays empty
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    selector.set_hidden([])
+
+    assert checkable_model(selector).rowCount() == 0
 
 
 def size_overlay(selector: ImageSelector) -> QLabel:

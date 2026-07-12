@@ -5,7 +5,7 @@ own dock ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]).
 from typing import TYPE_CHECKING, Final, override
 
 from borco_pyside.widgets import HorizontalLine
-from PySide6.QtCore import QSignalBlocker
+from PySide6.QtCore import QSignalBlocker, SignalInstance
 from pyside6_scintilla import ScintillaEdit
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
@@ -34,21 +34,25 @@ class DescriptionField(Field[str]):
     :param label: display label; derived from ``name`` when omitted.
     :param image_scanner: resolves the description's embedded images; omit for a viewer that can't
         resolve any (e.g. a bare, model-less instance in isolation/tests).
+    :param image_scanner_changed: fires when ``image_scanner`` changes (e.g. a `.tc` -> `.rehu`
+        conversion, [[acquisition-tooling#tc-to-rehu]]), so the viewer can pick up the new scanner.
     """
 
     TYPE = "description"
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
         label: str | None = None,
         image_scanner: ImageScanner | None = None,
+        image_scanner_changed: SignalInstance | None = None,
         *,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__image_scanner: Final = image_scanner
+        self.__image_scanner_changed: Final = image_scanner_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
@@ -60,6 +64,8 @@ class DescriptionField(Field[str]):
         )
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
+        if self.__image_scanner_changed is not None:
+            self.__image_scanner_changed.connect(viewer.set_image_scanner)  # type: ignore[attr-defined]
         self.__wire_rendering_settings(viewer, settings)
         # not fill: in the viewer the description is one row among others (the unknown-field fallbacks
         # follow it), so it keeps its natural height and the trailing stretch sits after them all --

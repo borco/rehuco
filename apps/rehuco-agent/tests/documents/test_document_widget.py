@@ -6,11 +6,14 @@ that it wires two real docks from one model, exposes toggle actions for them, an
 the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
+from pathlib import Path
+from typing import Final
+
 import cbor2
 import PySide6QtAds as QtAds
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QLabel, QLineEdit
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -20,6 +23,9 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
 from rehuco_core import RehuDocument
+
+TC_PATH: Final = Path("/fake/info.tc")
+TARGET_PATH: Final = Path("/fake/info.rehu")
 
 
 # region fixtures
@@ -47,6 +53,22 @@ def model() -> RehuDocumentModel:
 def widget(qtbot: QtBot, model: RehuDocumentModel) -> DocumentWidget:
     """A constructed :class:`DocumentWidget` over the sample model, registered for teardown."""
     widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+@fixture
+def legacy_model() -> RehuDocumentModel:
+    """A view-model wrapping a legacy ``.tc``-backed document, locked for conversion."""
+    return RehuDocumentModel(
+        RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TC_PATH, legacy_tc=True)
+    )
+
+
+@fixture
+def legacy_widget(qtbot: QtBot, legacy_model: RehuDocumentModel) -> DocumentWidget:
+    """A constructed :class:`DocumentWidget` over the legacy ``.tc``-backed model, registered for teardown."""
+    widget = DocumentWidget(legacy_model)
     qtbot.addWidget(widget)
     return widget
 
@@ -218,6 +240,152 @@ def test_editors_disable_and_reenable_as_locked_changes(widget: DocumentWidget, 
 
     model.locked = False
     assert all(editor.isEnabled() for editor in widget.findChildren(QLineEdit))
+
+
+def test_normal_document_shows_save_revert_and_hides_convert_actions(widget: DocumentWidget) -> None:
+    """A widget over a normal (non-legacy) document shows Save/Revert and hides both convert actions.
+
+    **Test steps:**
+
+    * build a widget over the sample (non-legacy) model
+    * verify save/revert are visible and both convert actions are hidden
+    """
+    assert widget.save_action.isVisible() is True
+    assert widget.revert_action.isVisible() is True
+    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert keep_backups.isVisible() is False
+    assert discard.isVisible() is False
+
+
+def test_legacy_document_hides_save_revert_and_shows_convert_actions(legacy_widget: DocumentWidget) -> None:
+    """A widget over a legacy ``.tc``-backed document hides Save/Revert and shows both convert actions.
+
+    Closes a latent crash for free: Revert would otherwise re-read the ``.tc`` path as JSON and raise.
+
+    **Test steps:**
+
+    * build a widget over a legacy model
+    * verify save/revert are hidden and both convert actions are visible
+    """
+    assert legacy_widget.save_action.isVisible() is False
+    assert legacy_widget.revert_action.isVisible() is False
+    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert keep_backups.isVisible() is True
+    assert discard.isVisible() is True
+
+
+def test_convert_action_with_no_existing_target_calls_model_convert(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """Triggering a convert action with no existing target ``.rehu`` (the common case) converts
+    straight away, with no confirmation dialog.
+
+    **Test steps:**
+
+    * mock ``model.convert`` (the target path genuinely doesn't exist on this machine, so no
+      ``Path.exists`` mocking is needed)
+    * trigger the "keep backups" convert action
+    * verify ``model.convert`` was called with ``keep_backups=True, overwrite=False``
+    """
+    convert = mocker.patch.object(legacy_model, "convert")
+    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    convert.assert_called_once_with(keep_backups=True, overwrite=False)
+
+
+def test_convert_action_prompts_before_overwriting_and_cancels_on_no(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """Triggering a convert action when the target ``.rehu`` already exists prompts first; answering
+    No leaves the document unconverted.
+
+    **Test steps:**
+
+    * mock the target path as already existing and the warning dialog to answer No
+    * trigger the "discard originals" convert action
+    * verify ``model.convert`` was never called
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == TARGET_PATH)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.No)
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    convert.assert_not_called()
+
+
+def test_convert_action_prompts_before_overwriting_and_proceeds_on_yes(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """Answering Yes to the overwrite prompt proceeds with ``overwrite=True``.
+
+    **Test steps:**
+
+    * mock the target path as already existing and the warning dialog to answer Yes
+    * trigger the "discard originals" convert action
+    * verify ``model.convert`` was called with ``overwrite=True``
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == TARGET_PATH)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    convert = mocker.patch.object(legacy_model, "convert")
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    discard.trigger()
+
+    convert.assert_called_once_with(keep_backups=False, overwrite=True)
+
+
+def test_convert_action_shows_a_critical_dialog_on_failure(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """A conversion failure shows a critical dialog instead of propagating.
+
+    **Test steps:**
+
+    * mock ``model.convert`` to raise ``OSError``
+    * mock the critical dialog
+    * trigger a convert action
+    * verify the critical dialog was shown
+    """
+    mocker.patch.object(legacy_model, "convert", side_effect=OSError("disk full"))
+    critical = mocker.patch.object(QMessageBox, "critical")
+    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    critical.assert_called_once()
+
+
+def test_successful_convert_flips_the_toolbar_back_to_save_revert(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """A real, successful conversion flips the toolbar in place: Save/Revert reappear, the convert
+    actions hide, with no new dock and no reload round-trip.
+
+    **Test steps:**
+
+    * mock ``convert_tc`` (the underlying core call ``model.convert`` delegates to) to return a
+      fresh, unlocked document
+    * trigger a convert action for real
+    * verify save/revert are visible again and both convert actions are hidden
+    """
+    converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    assert legacy_model.locked is False
+    assert legacy_widget.save_action.isVisible() is True
+    assert legacy_widget.revert_action.isVisible() is True
+    assert keep_backups.isVisible() is False
+    discard = legacy_widget._DocumentWidget__convert_discard_originals_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert discard.isVisible() is False
 
 
 def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> None:

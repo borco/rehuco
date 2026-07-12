@@ -2,16 +2,21 @@
 
 Like the ``path`` field, this one is **model-aware** -- its widgets need the resource's screenshot
 siblings on disk, which the toolkit's value binding cannot supply -- so its owner (`DocumentWidget`)
-constructs it directly with an ``image_files`` callback rather than resolving it generically through the
+constructs it directly with an ``image_scanner`` rather than resolving it generically through the
 field list. Its bound value is the list of *hidden* screenshot filenames ([[data-model#image-meanings]]).
+Pure wiring only: `ImageStrip`/`ImageSelector` each hold their own `image_scanner` and know how to
+re-fetch and rebuild themselves, so this field never touches a screenshot path list directly.
 """
 
-from collections.abc import Callable, Sequence
-from pathlib import Path
-from typing import Final, override
+from typing import TYPE_CHECKING, Final, override
+
+from PySide6.QtCore import SignalInstance
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from rehuco_agent.fields.widgets import ImageSelector, ImageStrip
+
+if TYPE_CHECKING:
+    from rehuco_agent.documents.image_scanner import ImageScanner
 
 IMAGE_STRIP_HEIGHT: Final = 150
 """The lightbox strip viewer's fixed pixel height (#27). A constant for now; a future preferences slice
@@ -33,7 +38,9 @@ class ImagesField(Field[list[str]]):
     row (checked = visible) beside a sized preview, on its own editor tab.
 
     :param name: the field's identifier on its model (the bound ``hidden_images`` list).
-    :param image_files: called with no arguments for the resource's current screenshot sibling paths.
+    :param image_scanner: resolves the resource's current screenshot siblings; seeds both widgets.
+    :param image_scanner_changed: fires when ``image_scanner`` changes (e.g. a `.tc` -> `.rehu`
+        conversion, [[acquisition-tooling#tc-to-rehu]]), forwarded into each widget's own scanner.
     :param label: display label; derived from ``name`` when omitted.
     :param viewer_tab: the surface the strip lands on (keyword-only, required).
     :param editor_tab: the surface the curation editor lands on (keyword-only, required).
@@ -41,23 +48,28 @@ class ImagesField(Field[list[str]]):
 
     TYPE = "images"
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
-        image_files: Callable[[], Sequence[Path]],
+        image_scanner: ImageScanner | None,
+        image_scanner_changed: SignalInstance | None = None,
         label: str | None = None,
         *,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
-        self.__image_files: Final = image_files
+        self.__image_scanner: Final = image_scanner
+        self.__image_scanner_changed: Final = image_scanner_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         strip = ImageStrip(height=IMAGE_STRIP_HEIGHT)
-        self.__fill_strip(strip, binding.value)
-        binding.changed.connect(lambda hidden: self.__fill_strip(strip, hidden))
+        strip.image_scanner = self.__image_scanner
+        strip.set_hidden(binding.value)
+        binding.changed.connect(strip.set_hidden)
+        if self.__image_scanner_changed is not None:
+            self.__image_scanner_changed.connect(strip.set_image_scanner)  # type: ignore[attr-defined]
         # no label: the strip is a self-explanatory hero, stacked full-width above the description
         return FieldViewerWidgets(self.viewer_tab, None, strip, vertical=True)
 
@@ -65,31 +77,13 @@ class ImagesField(Field[list[str]]):
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         selector = ImageSelector()
         selector.setObjectName(self.name)
-        selector.set_images(list(self.__image_files()), binding.value)
+        selector.image_scanner = self.__image_scanner
+        # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip
+        # populating a brand-new, empty selector whenever the initial hidden list happens to be empty too
+        selector.set_images(list(self.__image_scanner.files()) if self.__image_scanner else [], binding.value)
         selector.hidden_changed.connect(binding.set_value)
-        binding.changed.connect(lambda hidden: self.__resync_selector(selector, hidden))
+        binding.changed.connect(selector.set_hidden)
+        if self.__image_scanner_changed is not None:
+            self.__image_scanner_changed.connect(selector.set_image_scanner)  # type: ignore[attr-defined]
         # no label for the editor tab, since the tab itself is the label; fills its dedicated tab
         return FieldEditorWidgets(self.editor_tab, None, selector, vertical=True, fill=True)
-
-    def __fill_strip(self, strip: ImageStrip, hidden: list[str]) -> None:
-        """Show the visible screenshots (all siblings minus ``hidden``) in the strip.
-
-        :param strip: the strip to fill.
-        :param hidden: the filenames curated out of the lightbox.
-        """
-        hidden_names = set(hidden)
-        strip.set_images([path for path in self.__image_files() if path.name not in hidden_names])
-
-    def __resync_selector(self, selector: ImageSelector, hidden: list[str]) -> None:
-        """Reseed the editor from an *external* hidden-list change (e.g. a revert), skipping its own edits.
-
-        The editor's own toggle already wrote ``hidden`` through the binding, which echoes back here; a
-        rebuild in that case would needlessly reset the selection, so it is skipped when the value already
-        matches what the selector shows.
-
-        :param selector: the curation editor to reseed.
-        :param hidden: the new hidden-filenames list.
-        """
-        if hidden == selector.hidden_filenames():
-            return
-        selector.set_images(list(self.__image_files()), hidden)

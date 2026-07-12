@@ -11,16 +11,16 @@ here directly would need to duplicate the scanner's own decode step anyway.
 """
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Final, override
+from typing import Any, Final, override
 
 import markdown
+from borco_pyside.core import SimpleProperty
 from borco_pyside.widgets import RichTextView
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QWidget
 
-if TYPE_CHECKING:
-    from rehuco_agent.documents.image_scanner import ImageScanner
+from rehuco_agent.documents.image_scanner import ImageScanner
 
 DEFAULT_ENGINE: Final = "markdown"
 """The renderer used when nothing overrides it -- the engine this app always used before #47 made
@@ -83,6 +83,10 @@ class MarkdownView(RichTextView):
     forces the viewer wide and a relative reference resolves against the resource's own directory
     regardless of process CWD.
 
+    Holds its own :attr:`image_scanner`, so it can re-render whenever that changes (e.g. a `.tc` ->
+    `.rehu` conversion switching naming conventions, [[acquisition-tooling#tc-to-rehu]]) and pick up
+    already-embedded images resolving correctly, without its owner re-rendering explicitly.
+
     :param parent: optional Qt parent.
     :param image_scanner: resolves an embedded image's filename to a scaled, ready-to-show image;
         omit for a viewer that can't resolve any (e.g. a bare instance in isolation/tests).
@@ -90,6 +94,9 @@ class MarkdownView(RichTextView):
     :param css: stylesheet applied to the rendered HTML (``QTextDocument.setDefaultStyleSheet``);
         empty (no extra styling) by default.
     """
+
+    image_scanner = SimpleProperty[ImageScanner | None](None)
+    """Resolves an embedded image's filename to a scaled, ready-to-show image; ``None`` resolves none."""
 
     def __init__(
         self,
@@ -99,11 +106,13 @@ class MarkdownView(RichTextView):
         css: str = "",
     ) -> None:
         super().__init__(parent)
-        self.__image_scanner = image_scanner
+        self.image_scanner = image_scanner
         self.__engine = engine
         self.__text = ""
         self.setOpenExternalLinks(True)
         self.document().setDefaultStyleSheet(css)
+        changed = self.image_scanner_changed  # type: ignore[attr-defined]
+        changed.connect(lambda _scanner: self.set_markdown(self.__text))
 
     def set_markdown(self, text: str) -> None:
         """Render ``text`` and show it.
@@ -151,10 +160,11 @@ class MarkdownView(RichTextView):
             scanner is attached and it resolves ``name``; otherwise whatever the base class's own
             (CWD-dependent, unscaled) resolution returns.
         """
-        if self.__image_scanner is not None and resource_type == QTextDocument.ResourceType.ImageResource:
+        scanner = self.image_scanner
+        if scanner is not None and resource_type == QTextDocument.ResourceType.ImageResource:
             # QUrl's Python str() gives a debug repr, not the URL text -- .toString() is the real one
             url = name if isinstance(name, QUrl) else QUrl(name)
-            image = self.__image_scanner.get_markdown_viewer_image(url.toString(), self.devicePixelRatio())
+            image = scanner.get_markdown_viewer_image(url.toString(), self.devicePixelRatio())
             if image is not None:
                 return image
         return super().loadResource(resource_type, name)

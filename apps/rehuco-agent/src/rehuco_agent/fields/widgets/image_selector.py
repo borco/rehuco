@@ -10,9 +10,12 @@ exceptions are emitted -- because checked-by-default reads more naturally ([[dat
 from pathlib import Path
 from typing import Final, override
 
+from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtGui import QPixmap, QResizeEvent, QShowEvent, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QGridLayout, QLabel, QListView, QSizePolicy, QSplitter, QWidget
+
+from rehuco_agent.documents.image_scanner import ImageScanner
 
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The item-data role storing each list entry's screenshot :class:`~pathlib.Path`."""
@@ -86,11 +89,18 @@ class ImageSelector(QSplitter):
     re-emits :attr:`hidden_changed` with the current hidden filenames. Right pane -- the selected
     screenshot scaled to fit, with a ``W x H`` pixel-dimension overlay pinned bottom-right.
 
+    Holds its own :attr:`image_scanner`, so it can re-fetch its screenshots and rebuild itself whenever
+    that changes (e.g. a `.tc` -> `.rehu` conversion switching naming conventions,
+    [[acquisition-tooling#tc-to-rehu]]) without its owner having to push a fresh file list explicitly.
+
     :param parent: optional Qt parent.
     """
 
     hidden_changed = Signal(list)
     """Fires with the current list of hidden screenshot filenames whenever a row is checked/unchecked."""
+
+    image_scanner = SimpleProperty[ImageScanner | None](None)
+    """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(Qt.Orientation.Horizontal, parent)
@@ -114,6 +124,32 @@ class ImageSelector(QSplitter):
 
         self.__list_model.itemChanged.connect(self.__on_item_changed)
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
+        self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
+
+    def set_hidden(self, hidden: list[str]) -> None:
+        """Resync the checked/unchecked rows from ``hidden``, rebuilding from the current scanner.
+
+        Skips a redundant rebuild when ``hidden`` already matches what's shown -- the echo of this
+        selector's *own* toggle coming back through the model binding.
+
+        :param hidden: the filenames to leave unchecked.
+        """
+        if hidden == self.hidden_filenames():
+            return
+        self.__rebuild(hidden)
+
+    def __refresh(self) -> None:
+        """Rebuild unconditionally -- the scanner changed, so even an unchanged hidden list needs a resync."""
+        self.__rebuild(self.hidden_filenames())
+
+    def __rebuild(self, hidden: list[str]) -> None:
+        """Rebuild the list from the current scanner's screenshots.
+
+        :param hidden: the filenames to leave unchecked.
+        """
+        scanner = self.image_scanner
+        files = list(scanner.files()) if scanner is not None else []
+        self.set_images(files, hidden)
 
     def set_images(self, paths: list[Path], hidden: list[str]) -> None:
         """Populate the list with ``paths``, checking each one not named in ``hidden``.

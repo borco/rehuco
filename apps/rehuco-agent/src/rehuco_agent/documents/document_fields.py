@@ -10,7 +10,6 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
@@ -149,18 +148,20 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
-    # a legacy .tc shows exactly the screenshots a real conversion would keep (A3.1,
-    # [[acquisition-tooling#tc-to-rehu]]); everything else uses the target .rehu {stem}NN convention
-    scanner: ImageScanner = TcScanner(model) if model.document.legacy_tc else RehuScanner(model)
+    # model.image_scanner is a legacy .tc's TcScanner or a real .rehu's RehuScanner (A3.1,
+    # [[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'
+    # widgets forward image_scanner_changed into their own scanner to pick that up live
     images_field = ImagesField(
         IMAGES_FIELD_NAME,
-        image_files=scanner.files,
+        image_scanner=model.image_scanner,
+        image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
     )
     description_field = DescriptionField(
         "description",
-        image_scanner=scanner,
+        image_scanner=model.image_scanner,
+        image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )
