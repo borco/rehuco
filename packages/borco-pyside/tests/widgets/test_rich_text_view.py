@@ -6,6 +6,7 @@ growth (more content is taller) rather than exact pixel counts, which depend on 
 
 from borco_pyside.widgets import RichTextView
 from PySide6.QtCore import Qt
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
 
@@ -78,6 +79,33 @@ def test_resizing_reflows_the_document_to_the_new_viewport_width(qtbot: QtBot) -
     view.resize(500, 200)
 
     assert view.document().textWidth() == view.viewport().width()
+
+
+def test_height_only_resize_does_not_reflow(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A resize that leaves the width unchanged skips the reflow -- the wrapping can't have changed.
+
+    Guards against a runaway resize loop seen on a large, complex document: an enclosing scroll
+    area resizes this view to its own cached content height on every ``documentSizeChanged``, and
+    reflowing on that height-only resize could re-lay-out the same width and (for such a document)
+    come back with a *different* height, re-triggering another resize forever.
+
+    **Test steps:**
+
+    * show a view over some content
+    * resize it with the same width but a different height
+    * verify the document was not asked to re-wrap
+    """
+    view = RichTextView()
+    qtbot.addWidget(view)
+    view.setHtml("<p>some wrapping content here</p>")
+    view.resize(300, 200)
+    view.show()
+    qtbot.waitExposed(view)
+    set_text_width = mocker.spy(view.document(), "setTextWidth")
+
+    view.resize(300, 400)
+
+    set_text_width.assert_not_called()
 
 
 def test_height_for_width_matches_the_size_hint_height(qtbot: QtBot) -> None:
