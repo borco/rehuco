@@ -298,6 +298,24 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__data["released"] = value
 
     @property
+    def created(self) -> str:
+        """When this record was first written ([[field-schema#record-timestamps]]), as stored; empty if absent."""
+        return str(self.__data.get("created", ""))
+
+    @created.setter
+    def created(self, value: str) -> None:
+        self.__data["created"] = value
+
+    @property
+    def updated(self) -> str:
+        """When this record was last edited ([[field-schema#record-timestamps]]), as stored; empty if absent."""
+        return str(self.__data.get("updated", ""))
+
+    @updated.setter
+    def updated(self, value: str) -> None:
+        self.__data["updated"] = value
+
+    @property
     def original_size(self) -> int:
         """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]]);
         ``0`` when absent (e.g. a Collection, which has none of its own) or malformed (#35)."""

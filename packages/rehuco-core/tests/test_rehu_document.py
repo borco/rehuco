@@ -317,6 +317,34 @@ def test_released_setter_replaces_the_value() -> None:
     assert doc.released == "2025-03-08"
 
 
+@mark.parametrize("attr", [param("created", id="created"), param("updated", id="updated")])
+def test_record_timestamp_defaults_to_empty_when_absent(attr: str) -> None:
+    """``created``/``updated`` default to an empty string when the key is absent.
+
+    **Test steps:**
+
+    * construct a document with neither key
+    * verify the attribute reads ``""``
+    """
+    doc = RehuDocument({})
+    assert getattr(doc, attr) == ""
+
+
+@mark.parametrize("attr", [param("created", id="created"), param("updated", id="updated")])
+def test_record_timestamp_setter_replaces_the_value(attr: str) -> None:
+    """Setting ``created``/``updated`` replaces the stored datetime.
+
+    **Test steps:**
+
+    * construct a document with an existing value
+    * assign a new value
+    * verify the document reflects it
+    """
+    doc = RehuDocument({attr: "2024-01-01T00:00:00Z"})
+    setattr(doc, attr, "2025-03-08T12:00:00Z")
+    assert getattr(doc, attr) == "2025-03-08T12:00:00Z"
+
+
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
 def test_size_field_defaults_to_zero_when_absent(attr: str) -> None:
     """``original_size``/``current_size`` default to ``0`` when the key is absent (e.g. a Collection).
