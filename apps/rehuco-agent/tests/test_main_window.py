@@ -925,19 +925,27 @@ def test_raise_and_activate_restores_a_minimized_window(mocker: MockerFixture, q
 def test_raise_and_activate_forces_foreground_on_windows(mocker: MockerFixture, qtbot: QtBot) -> None:
     """On Windows, the process-input-attach foreground helper is invoked with this window.
 
+    Builds the window *before* faking ``sys.platform`` -- ``MainWindow.__init__`` has its own,
+    unrelated ``sys.platform == "win32"`` check (``__register_settings_pages``, #47) that would
+    otherwise also see the faked value and genuinely try to import the Windows-only
+    ``rehuco_agent.windows_registration`` (-> ``winreg``) on whatever OS actually runs this test,
+    crashing on macOS/Linux CI instead of being about ``raise_and_activate`` at all.
+
     **Test steps:**
 
+    * build the window with the real platform still in effect
     * force ``sys.platform`` to ``"win32"`` and mock the Windows-only helper
     * call ``raise_and_activate``
     * verify the helper was called with this window
     """
-    mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
-    force_foreground = mocker.patch("borco_pyside.platforms.windows.window_activation.force_foreground")
     window = MainWindow()
     qtbot.addWidget(window)
     mocker.patch.object(window, "show")
     mocker.patch.object(window, "raise_")
     mocker.patch.object(window, "activateWindow")
+
+    mocker.patch("rehuco_agent.main_window.sys.platform", "win32")
+    force_foreground = mocker.patch("borco_pyside.platforms.windows.window_activation.force_foreground")
 
     window.raise_and_activate()
 
