@@ -12,15 +12,12 @@ from typing import TYPE_CHECKING, Final
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QImage
-from rehuco_core import scan_tc_screenshots
+from rehuco_core import IMAGE_EXTENSIONS, scan_tc_screenshots
 
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 if TYPE_CHECKING:
     from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-
-IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
-"""Screenshot file extensions :class:`RehuScanner` recognizes, matched case-insensitively."""
 
 
 class ImageScanner:

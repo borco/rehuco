@@ -52,13 +52,15 @@ def test_rehu_scanner_matches_stem_numbered_siblings(mocker: MockerFixture) -> N
     **Test steps:**
 
     * wrap a document at ``/fake/info.rehu`` and mock its directory listing
-    * include matching ``info00``/``info01`` screenshots, a non-image and a mismatched-stem sibling
-    * verify only the two screenshots come back, sorted by name
+    * include matching ``info00``/``info01``/``info02`` screenshots (one a ``.webp``), a non-image
+      and a mismatched-stem sibling
+    * verify only the three screenshots come back, sorted by name
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
     siblings = [
         Path("/fake/info01.png"),
         Path("/fake/info00.jpg"),
+        Path("/fake/info02.webp"),
         Path("/fake/info.rehu"),
         Path("/fake/info00.txt"),
         Path("/fake/cover.jpg"),
@@ -66,7 +68,11 @@ def test_rehu_scanner_matches_stem_numbered_siblings(mocker: MockerFixture) -> N
     ]
     mocker.patch.object(Path, "iterdir", return_value=siblings)
 
-    assert RehuScanner(model).files() == [Path("/fake/info00.jpg"), Path("/fake/info01.png")]
+    assert RehuScanner(model).files() == [
+        Path("/fake/info00.jpg"),
+        Path("/fake/info01.png"),
+        Path("/fake/info02.webp"),
+    ]
 
 
 def test_rehu_scanner_tolerates_a_missing_directory(mocker: MockerFixture) -> None:

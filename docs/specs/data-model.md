@@ -61,7 +61,7 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 
 Two patterns for what a `.rehu` describes:
 
-- **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif` images and an `info.sfv`/`.md5`/`.sha256` checksum
+- **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif/webp` images and an `info.sfv`/`.md5`/`.sha256` checksum
   manifest. Covers tutorials (flat or nested) and folder-based resources generally. The checksum manifest covers
   everything in the directory **except** `info.rehu` and the `infoXX.*` images, so description/images stay freely
   editable without invalidating integrity checks.
@@ -102,7 +102,7 @@ Two patterns for what a `.rehu` describes:
 The design uses "image" for two unrelated things; conflating them caused real ambiguity, so they're separated
 explicitly:
 
-- **Screenshots (`infoXX.jpg`/`.png`/`.gif` — the basename-matched, two-digit-numbered siblings of the `.rehu`,
+- **Screenshots (`infoXX.jpg`/`.png`/`.gif`/`.webp` — the basename-matched, two-digit-numbered siblings of the `.rehu`,
   [[data-model#resource-scoping]])** — app-managed presentation metadata that accompanies a `.rehu`. Editable, **not**
   checksummed, part of the editable record (subject to the online-only-editing rule for resource metadata in v1,
   [[sync#overview]]/[[offline-editing#overview]]). These are what "images" refers to in the viewer's image strip and in

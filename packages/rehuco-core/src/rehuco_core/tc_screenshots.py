@@ -15,10 +15,7 @@ from typing import Final
 
 from PIL import Image
 
-IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
-"""Screenshot file extensions to recognize, case-insensitively -- mirrors
-``rehuco_agent.documents.rehu_document_model.IMAGE_EXTENSIONS`` (duplicated here since rehuco-core
-cannot depend on rehuco-agent)."""
+from rehuco_core.constants import IMAGE_EXTENSIONS
 
 
 @dataclass(frozen=True)
