@@ -2,18 +2,21 @@
 own dock ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]).
 """
 
-from typing import override
+from typing import TYPE_CHECKING, Final, override
 
 from borco_pyside.widgets import HorizontalLine
 from PySide6.QtCore import QSignalBlocker
 from pyside6_scintilla import ScintillaEdit
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from rehuco_agent.fields.widgets import MarkdownView
 from rehuco_agent.settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
 )
+
+if TYPE_CHECKING:
+    from rehuco_agent.documents.image_scanner import ImageScanner
 
 
 class DescriptionField(Field[str]):
@@ -21,17 +24,39 @@ class DescriptionField(Field[str]):
     Markdown prose. The **viewer** renders it (`MarkdownView`); the **editor** is a
     :class:`~pyside6_scintilla.ScintillaEdit` placed on its own editor tab, so it can be torn out and
     maximized while writing. Covers the common-core ``description``.
+
+    Model-aware like `PathField`/`ImagesField`: an ``image_scanner`` resolves the description's
+    embedded ``![...](...)`` references against the resource's own directory
+    ([[data-model#image-meanings]]), independent of process CWD -- so it is constructed directly by
+    its owner (`document_fields.build_document_form`), not resolved generically through the field list.
+
+    :param name: the field's identifier on its model.
+    :param label: display label; derived from ``name`` when omitted.
+    :param image_scanner: resolves the description's embedded images; omit for a viewer that can't
+        resolve any (e.g. a bare, model-less instance in isolation/tests).
     """
 
     TYPE = "description"
+
+    def __init__(
+        self,
+        name: str,
+        label: str | None = None,
+        image_scanner: ImageScanner | None = None,
+        *,
+        viewer_tab: FieldsTab,
+        editor_tab: FieldsTab,
+    ) -> None:
+        super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
+        self.__image_scanner: Final = image_scanner
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
         settings = shared_markdown_rendering_settings()
         viewer = MarkdownView(
+            image_scanner=self.__image_scanner,
             engine=settings.engine,
             css=settings.css_for_current_engine(),
-            max_image_width=settings.max_image_width,
         )
         viewer.set_markdown(binding.value)
         binding.changed.connect(viewer.set_markdown)
@@ -47,16 +72,17 @@ class DescriptionField(Field[str]):
         any of them changes (#26, #47) -- so a Save on the settings page updates an already-open
         viewer immediately, not just newly-opened ones.
 
+        ``max_image_width_changed`` still triggers a re-render even though it's no longer threaded
+        through :meth:`MarkdownView.apply_rendering_settings` explicitly -- the ``ImageScanner`` reads
+        the live setting itself on each ``loadResource`` call, so re-rendering (which re-triggers
+        ``loadResource`` per image) is all that's needed for an already-open viewer to pick it up.
+
         :param viewer: the viewer to keep in sync.
         :param settings: the shared, live-reactive settings instance to follow.
         """
 
         def apply_current_settings(*_args: object) -> None:
-            viewer.apply_rendering_settings(
-                engine=settings.engine,
-                css=settings.css_for_current_engine(),
-                max_image_width=settings.max_image_width,
-            )
+            viewer.apply_rendering_settings(engine=settings.engine, css=settings.css_for_current_engine())
 
         settings.engine_changed.connect(apply_current_settings)
         settings.markdown_css_changed.connect(apply_current_settings)

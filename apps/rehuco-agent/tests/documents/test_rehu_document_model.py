@@ -396,52 +396,7 @@ def test_setting_hidden_images_writes_through_and_dirties(model: RehuDocumentMod
     assert model.dirty is True
 
 
-def test_image_files_returns_empty_without_a_path(model: RehuDocumentModel) -> None:
-    """A pathless document has no screenshot siblings to enumerate.
-
-    **Test steps:**
-
-    * use a model whose document was never given a path
-    * verify ``image_files`` is empty
-    """
-    assert model.image_files() == []
-
-
-def test_image_files_matches_stem_numbered_siblings(mocker: MockerFixture) -> None:
-    """``image_files`` returns the ``<stem>NN`` image siblings, sorted, ignoring everything else.
-
-    **Test steps:**
-
-    * wrap a document at ``/fake/info.rehu`` and mock its directory listing
-    * include matching ``info00``/``info01`` screenshots, a non-image and a mismatched-stem sibling
-    * verify only the two screenshots come back, sorted by name
-    """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
-    siblings = [
-        Path("/fake/info01.png"),
-        Path("/fake/info00.jpg"),
-        Path("/fake/info.rehu"),
-        Path("/fake/info00.txt"),
-        Path("/fake/cover.jpg"),
-        Path("/fake/info0.jpg"),
-    ]
-    mocker.patch.object(Path, "iterdir", return_value=siblings)
-
-    assert model.image_files() == [Path("/fake/info00.jpg"), Path("/fake/info01.png")]
-
-
-def test_image_files_tolerates_a_missing_directory(mocker: MockerFixture) -> None:
-    """A missing/offline directory yields no screenshots rather than raising.
-
-    **Test steps:**
-
-    * wrap a document with a path and mock ``iterdir`` to raise ``FileNotFoundError``
-    * verify ``image_files`` swallows it and returns empty
-    """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
-    mocker.patch.object(Path, "iterdir", side_effect=FileNotFoundError)
-
-    assert model.image_files() == []
+# image_files() moved to RehuScanner (rehuco_agent.documents.image_scanner) -- see test_image_scanner.py
 
 
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])

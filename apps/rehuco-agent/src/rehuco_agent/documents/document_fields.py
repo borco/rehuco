@@ -10,10 +10,12 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
+from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
     PROVENANCE_NEWER_VERSION,
+    DescriptionField,
     Field,
     FieldRegistry,
     FieldsForm,
@@ -92,7 +94,6 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("multi_choice", "level", {"choices": LEVEL_CHOICES}),
     FieldSpec("text_list", "advertised_tags"),
     FieldSpec("text_list", "extra_tags"),
-    FieldSpec("description", "description", editor_tab=EDITOR_DESCRIPTION_TAB),
 )
 """The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
 ``(type, name)`` pair alone, with no runtime model wiring. This is a **model-layer** statement of
@@ -108,24 +109,27 @@ where the display order is authored are open questions
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
 fields, the common-core original/current size pair, the shared resource-type scalar flags, rating, the
-Tutorial-only ``level`` tags, the tag lists, and the common-core Markdown ``description`` (which lands
-on its own editor dock, :data:`EDITOR_DESCRIPTION_TAB`) ([[field-schema#resource-types]],
-[[field-schema#duration-size]]). A hardcoded constant for now."""
+Tutorial-only ``level`` tags, and the tag lists ([[field-schema#resource-types]],
+[[field-schema#duration-size]]). The Markdown ``description`` is model-aware too (it needs an
+`ImageScanner` to resolve embedded images, [[data-model#image-meanings]]) and so is constructed
+directly in :func:`build_document_form` alongside ``location``/images, not listed here. A hardcoded
+constant for now."""
 
 
 def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None = None) -> FieldsForm:
     """Build the document's complete :class:`FieldsForm` for ``model``.
 
     The whole field composition lives here, in one place: the model-aware **leading** fields (the
-    ``location`` `PathField` and the images strip/selector, whose runtime callbacks the registry can't
-    build generically), then the declarative record fields in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then
-    one generic `UnknownField` fallback per unrecognized live-block key
-    ([[plugins#fallback-editor]], A2.8/#28). All of it is driven from ``model`` alone, so
-    `DocumentWidget` only hosts the resulting docks.
+    ``location`` `PathField`, the images strip/selector, and the Markdown ``description``, whose
+    runtime callbacks the registry can't build generically), then the declarative record fields in
+    :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then one generic `UnknownField` fallback per
+    unrecognized live-block key ([[plugins#fallback-editor]], A2.8/#28). All of it is driven from
+    ``model`` alone, so `DocumentWidget` only hosts the resulting docks.
 
     :param model: the reactive view-model the fields bind to and read their runtime state from.
     :param registry: the field registry to resolve the record types with; a default one when omitted.
-    :returns: a form composing location + images, then the record fields, then the unknown fallbacks.
+    :returns: a form composing location + images + description, then the record fields, then the
+        unknown fallbacks.
     """
     registry = registry or FieldRegistry()
 
@@ -145,11 +149,20 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
+    # a legacy .tc shows exactly the screenshots a real conversion would keep (A3.1,
+    # [[acquisition-tooling#tc-to-rehu]]); everything else uses the target .rehu {stem}NN convention
+    scanner: ImageScanner = TcScanner(model) if model.document.legacy_tc else RehuScanner(model)
     images_field = ImagesField(
         IMAGES_FIELD_NAME,
-        image_files=model.image_files,
+        image_files=scanner.files,
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
+    )
+    description_field = DescriptionField(
+        "description",
+        image_scanner=scanner,
+        viewer_tab=VIEWER_TAB,
+        editor_tab=EDITOR_DESCRIPTION_TAB,
     )
     # location leads so its editor keeps the Main Editor tab first/current; the images strip still
     # sits high in the viewer, above the description, and its editor gets its own tab
@@ -158,6 +171,9 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         fields.append(
             registry.create(spec.type, spec.name, viewer_tab=spec.viewer_tab, editor_tab=spec.editor_tab, **spec.kwargs)
         )
+    # description trails the record fields, preserving today's viewer stacking order, even though
+    # it's now constructed directly above rather than resolved out of MODEL_AGNOSTIC_FIELD_SPECS
+    fields.append(description_field)
     # the unknown-field fallbacks trail after the record fields, each shown labeled by provenance and
     # carried verbatim, with a remove action that drops it from the document
     for name in model.unknown_field_names():

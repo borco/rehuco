@@ -20,8 +20,9 @@ directly, since anything under ``rehuco_agent.fields`` transitively loads ``desc
 which imports this module (a cyclic import, confirmed empirically)."""
 
 DEFAULT_MAX_IMAGE_WIDTH: Final = 350
-"""Mirrors ``rehuco_agent.fields.widgets.markdown_view.MAX_IMAGE_WIDTH`` -- see
-:data:`DEFAULT_ENGINE` for why it's duplicated rather than imported."""
+"""Default cap, in pixels, an embedded image is scaled to when no persisted value exists yet (a
+fresh install with no ``.ini``) -- read by ``rehuco_agent.documents.image_scanner.ImageScanner``,
+via :attr:`MarkdownRenderingSettings.max_image_width`, on every image resolution."""
 
 
 class MarkdownRenderingSettings(QObject):

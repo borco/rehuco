@@ -1,7 +1,6 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 import logging
-import re
 from pathlib import Path
 from typing import Any, Final
 
@@ -35,10 +34,6 @@ KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT
 """Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
 key in the live block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], A2.8/#28)."""
-
-IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif")
-"""Screenshot file extensions the lightbox enumerates ([[data-model#image-meanings]]); matched
-case-insensitively."""
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -141,8 +136,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     hidden_images = SimpleProperty[list[str]](default_factory=list)
     """The screenshot filenames curated *out* of the lightbox ([[data-model#image-meanings]], #27); a
-    top-level common-core list. The lightbox shows every :meth:`image_files` sibling by default, so only
-    the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
+    top-level common-core list. The lightbox shows every ``ImageScanner.files()`` sibling by default, so
+    only the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
 
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
@@ -239,34 +234,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def sources(self) -> list[dict[str, Any]]:
         """The document's ``sources`` list ([[field-schema#sources]]); the model edits its primary entry."""
         return self.__document.sources
-
-    def image_files(self) -> list[Path]:
-        """Enumerate this resource's screenshot siblings for the lightbox ([[data-model#image-meanings]], #27).
-
-        Screenshots are the basename-matched, two-digit-numbered siblings of the ``.rehu`` -- for
-        ``info.rehu`` these are ``info00.jpg`` / ``info01.png`` / ..., for ``foo.rehu`` they are
-        ``foo00.jpg`` / ... -- with an :data:`IMAGE_EXTENSIONS` extension, matched case-insensitively.
-        Independent of :attr:`hidden_images`: this is *every* screenshot on disk; the lightbox subtracts
-        the hidden ones. Empty when the document has no path yet or its directory holds none.
-
-        :returns: the matching sibling paths, sorted by filename.
-        """
-        path = self.path
-        if path is None:
-            return []
-        pattern = re.compile(rf"^{re.escape(path.stem)}\d{{2}}$", re.IGNORECASE)
-        try:
-            siblings = list(path.parent.iterdir())
-        except OSError:
-            # the resource's directory may be absent or on an offline mount ([[mounts-and-storage#offline-mounts]]) --
-            # no screenshots to show, rather than a crash
-            return []
-        matches = [
-            sibling
-            for sibling in siblings
-            if sibling.suffix.lower() in IMAGE_EXTENSIONS and pattern.match(sibling.stem)
-        ]
-        return sorted(matches, key=lambda sibling: sibling.name)
 
     def save(self) -> None:
         """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""
