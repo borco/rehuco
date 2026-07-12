@@ -11,10 +11,17 @@ Registered via ``[tool.coverage.run] plugins`` in ``pyproject.toml``; importable
 """
 
 import sys
-from typing import Any
+from typing import Any, Final
 
-WINDOWS_ONLY_OMIT = "*/platforms/windows/*"
-"""Glob for the wholly-Windows package to omit from the report off Windows."""
+WINDOWS_ONLY_OMIT: Final = [
+    "*/platforms/windows/*",
+    # wholly-Windows modules that live outside a platforms/windows/ dir (they import from it at
+    # module scope, so they can't even be collected off Windows) -- their tests self-skip via
+    # `pytest.importorskip("winreg")`, leaving no non-Windows exerciser to give them coverage.
+    "*/rehuco_agent/windows_registration.py",
+    "*/rehuco_agent/settings/ui/registry_page.py",
+]
+"""Globs for wholly-Windows modules to omit from the report off Windows."""
 
 WINDOWS_ONLY_EXCLUDE = r'if sys\.platform == "win32":'
 """Regex matching the ``__main__`` win32 guard lines, whose blocks are excluded off Windows."""
@@ -36,7 +43,7 @@ class PlatformCoverageConfigurer:
             return
 
         omit = list(config.get_option("run:omit") or [])
-        omit.append(WINDOWS_ONLY_OMIT)
+        omit.extend(WINDOWS_ONLY_OMIT)
         config.set_option("run:omit", omit)
 
         exclude = list(config.get_option("report:exclude_lines") or [])
