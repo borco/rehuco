@@ -203,13 +203,13 @@ def test_clearing_the_filter_shows_every_page_again(qtbot: QtBot) -> None:
     assert dialog_ui(dialog).category_tree.model().rowCount() == 2  # type: ignore[attr-defined]
 
 
-def test_save_current_page_action_saves_only_the_selected_page(qtbot: QtBot) -> None:
-    """Triggering "Save" saves the currently-selected page and leaves the other untouched.
+def test_apply_current_page_action_saves_only_the_selected_page(qtbot: QtBot) -> None:
+    """Triggering "Apply" saves the currently-selected page and leaves the other untouched.
 
     **Test steps:**
 
     * add two pages, select the second
-    * trigger ``save_current_page_action``
+    * trigger ``apply_current_page_action``
     * verify only the second page's ``save_changes`` was called
     """
     dialog = SettingsDialog()
@@ -220,19 +220,19 @@ def test_save_current_page_action_saves_only_the_selected_page(qtbot: QtBot) -> 
     dialog.add_page(second)
     select_page(dialog, "Markdown Rendering")
 
-    dialog_ui(dialog).save_current_page_action.trigger()  # type: ignore[attr-defined]
+    dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
 
     assert first.save_calls == 0
     assert second.save_calls == 1
 
 
-def test_save_all_action_saves_every_page(qtbot: QtBot) -> None:
-    """Triggering "Save All" saves every registered page, not just the selected one.
+def test_apply_all_action_saves_every_page(qtbot: QtBot) -> None:
+    """Triggering "Apply All" saves every registered page, not just the selected one.
 
     **Test steps:**
 
     * add two pages, select the first (the default)
-    * trigger ``save_all_action``
+    * trigger ``apply_all_action``
     * verify both pages' ``save_changes`` were called
     """
     dialog = SettingsDialog()
@@ -242,19 +242,19 @@ def test_save_all_action_saves_every_page(qtbot: QtBot) -> None:
     dialog.add_page(first)
     dialog.add_page(second)
 
-    dialog_ui(dialog).save_all_action.trigger()  # type: ignore[attr-defined]
+    dialog_ui(dialog).apply_all_action.trigger()  # type: ignore[attr-defined]
 
     assert first.save_calls == 1
     assert second.save_calls == 1
 
 
-def test_drop_current_page_action_drops_only_the_selected_page(qtbot: QtBot) -> None:
-    """Triggering "Drop" discards only the currently-selected page's changes.
+def test_reset_current_page_action_drops_only_the_selected_page(qtbot: QtBot) -> None:
+    """Triggering "Reset" discards only the currently-selected page's changes.
 
     **Test steps:**
 
     * add two pages, select the second
-    * trigger ``drop_current_page_action``
+    * trigger ``reset_current_page_action``
     * verify only the second page's ``drop_changes`` was called
     """
     dialog = SettingsDialog()
@@ -265,19 +265,19 @@ def test_drop_current_page_action_drops_only_the_selected_page(qtbot: QtBot) -> 
     dialog.add_page(second)
     select_page(dialog, "Markdown Rendering")
 
-    dialog_ui(dialog).drop_current_page_action.trigger()  # type: ignore[attr-defined]
+    dialog_ui(dialog).reset_current_page_action.trigger()  # type: ignore[attr-defined]
 
     assert first.drop_calls == 0
     assert second.drop_calls == 1
 
 
-def test_drop_all_action_drops_every_page(qtbot: QtBot) -> None:
-    """Triggering "Drop All" discards every registered page's changes, not just the selected one.
+def test_reset_all_action_drops_every_page(qtbot: QtBot) -> None:
+    """Triggering "Reset All" discards every registered page's changes, not just the selected one.
 
     **Test steps:**
 
     * add two pages, select the first (the default)
-    * trigger ``drop_all_action``
+    * trigger ``reset_all_action``
     * verify both pages' ``drop_changes`` were called
     """
     dialog = SettingsDialog()
@@ -287,7 +287,7 @@ def test_drop_all_action_drops_every_page(qtbot: QtBot) -> None:
     dialog.add_page(first)
     dialog.add_page(second)
 
-    dialog_ui(dialog).drop_all_action.trigger()  # type: ignore[attr-defined]
+    dialog_ui(dialog).reset_all_action.trigger()  # type: ignore[attr-defined]
 
     assert first.drop_calls == 1
     assert second.drop_calls == 1
@@ -325,7 +325,7 @@ def test_actions_are_no_ops_with_no_pages_registered(qtbot: QtBot) -> None:
     qtbot.addWidget(dialog)
     ui = dialog_ui(dialog)
 
-    ui.save_all_action.trigger()  # type: ignore[attr-defined]
-    ui.save_current_page_action.trigger()  # type: ignore[attr-defined]
-    ui.drop_all_action.trigger()  # type: ignore[attr-defined]
-    ui.drop_current_page_action.trigger()  # type: ignore[attr-defined]
+    ui.apply_all_action.trigger()  # type: ignore[attr-defined]
+    ui.apply_current_page_action.trigger()  # type: ignore[attr-defined]
+    ui.reset_all_action.trigger()  # type: ignore[attr-defined]
+    ui.reset_current_page_action.trigger()  # type: ignore[attr-defined]

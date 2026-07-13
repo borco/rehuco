@@ -20,11 +20,11 @@
    </property>
    <item>
     <widget class="QToolBar" name="toolbar">
-     <addaction name="save_all_action"/>
-     <addaction name="save_current_page_action"/>
+     <addaction name="apply_all_action"/>
+     <addaction name="apply_current_page_action"/>
      <addaction name="separator"/>
-     <addaction name="drop_all_action"/>
-     <addaction name="drop_current_page_action"/>
+     <addaction name="reset_all_action"/>
+     <addaction name="reset_current_page_action"/>
     </widget>
    </item>
    <item>
@@ -54,33 +54,33 @@
     </widget>
    </item>
   </layout>
-  <action name="save_all_action">
+  <action name="apply_all_action">
    <property name="text">
-    <string>Save All</string>
+    <string>Apply All</string>
    </property>
    <property name="toolTip">
-    <string>Save changes on every page</string>
+    <string>Apply changes on every page</string>
    </property>
   </action>
-  <action name="save_current_page_action">
+  <action name="apply_current_page_action">
    <property name="text">
-    <string>Save</string>
+    <string>Apply</string>
    </property>
    <property name="toolTip">
-    <string>Save the current page's changes</string>
+    <string>Apply the current page's changes</string>
    </property>
   </action>
-  <action name="drop_all_action">
+  <action name="reset_all_action">
    <property name="text">
-    <string>Drop All</string>
+    <string>Reset All</string>
    </property>
    <property name="toolTip">
     <string>Discard changes on every page</string>
    </property>
   </action>
-  <action name="drop_current_page_action">
+  <action name="reset_current_page_action">
    <property name="text">
-    <string>Drop</string>
+    <string>Reset</string>
    </property>
    <property name="toolTip">
     <string>Discard the current page's changes</string>
