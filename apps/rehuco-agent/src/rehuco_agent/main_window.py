@@ -70,6 +70,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__session.load(persistent_settings())
         self.__restore_session()
 
+        self.__dialog_manager.restore_all(persistent_settings())
+
         ThemeManager(
             self.__ui.theme_action,
             system_icon=":/icons/theme_auto.svg",
@@ -77,18 +79,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             dark_icon=":/icons/theme_dark.svg",
         )
 
-    def restore_dock_state(self) -> None:
-        """Restore the outer dock layout (the settings dock's floating/visible state) and every
-        dockable dialog's restore-on-start visibility.
-
-        Deliberately **not** called from ``__init__`` -- QtAds' ``CDockManager.restoreState``
-        synchronously shows a previously-floating dock's own top-level window as part of restoring
-        the layout, and calling this before this window's own ``show()`` let that floating window
-        appear on screen ahead of the main window itself. Call once, after
-        ``show()``/``raise_and_activate()`` (``Application.show_main_window()``).
-        """
+        # must be called after restoring the geometry and the session (open documents) so
+        # the outer dock layout can be restored to the right place, and any floating
+        # dialog's own window is already created and ready to be restored to its prior
+        # visibility (#47, #55)
         self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
-        self.__dialog_manager.restore_all(persistent_settings())
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.
@@ -124,8 +119,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )
         # floating-first, not docking-first: the fallback placement for "nothing saved yet" --
-        # restore_dock_state()'s later CDockManager.restoreState() call freely re-docks or
-        # repositions it if there's anything actually saved
+        # __init__'s later CDockManager.restoreState() call freely re-docks or repositions it if
+        # there's anything actually saved
         settings_dock.place_floating()
         self.__dialog_manager.register(settings_dock)
         ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
@@ -151,7 +146,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         # must run before __save_window_state captures the outer CDockManager's saveState(), or a
         # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on
-        # the next launch before restore_dock_state notices the checkbox (#47)
+        # the next launch before __init__'s dialog_manager.restore_all() notices the checkbox (#47)
         self.__dialog_manager.enforce_restore_on_start()
         self.__save_window_state()
         self.__dialog_manager.save_all(persistent_settings())

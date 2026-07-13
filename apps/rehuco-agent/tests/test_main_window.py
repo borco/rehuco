@@ -76,8 +76,9 @@ def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * construct a real ``MainWindow``
-    * find the settings dock
+    * construct a real ``MainWindow`` and find the settings dock -- ``__init__``'s
+      ``dialog_manager.restore_all()`` (#55) closes it by default since nothing is persisted, so
+      reopen it to inspect its placement
     * verify it reports itself as floating
     """
     window = MainWindow()
@@ -87,6 +88,7 @@ def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
     settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
 
     assert settings_dock is not None
+    settings_dock.toggleView(True)
     assert settings_dock.isFloating()
 
 
@@ -646,10 +648,10 @@ def test_close_event_saves_an_unchecked_settings_dock_as_closed_even_while_open(
 
     **Test steps:**
 
-    * construct a window; leave the settings dock open (its default) and "Restore on start" unchecked
+    * construct a window; reopen the settings dock (``__init__``'s ``dialog_manager.restore_all()``,
+      #55, closes it by default since nothing is persisted yet) and leave "Restore on start" unchecked
     * dispatch a close event
-    * construct a second window seeded (via a mocked ``load``) with the saved outer dock state, then
-      call ``restore_dock_state``
+    * construct a second window seeded (via a mocked ``load``) with the saved outer dock state
     * verify the second window's settings dock is closed, having never needed to be shown at all
     """
     first = MainWindow()
@@ -657,7 +659,7 @@ def test_close_event_saves_an_unchecked_settings_dock_as_closed_even_while_open(
     dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
     assert settings_dock is not None
-    assert not settings_dock.isClosed()  # open by default; "Restore on start" defaults unchecked
+    settings_dock.toggleView(True)  # "Restore on start" defaults unchecked
 
     first.closeEvent(QCloseEvent())
 
@@ -672,7 +674,6 @@ def test_close_event_saves_an_unchecked_settings_dock_as_closed_even_while_open(
 
     second = MainWindow()
     qtbot.addWidget(second)
-    second.restore_dock_state()
     second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
 
@@ -686,8 +687,7 @@ def test_outer_docks_state_round_trips_the_settings_dock_visibility(mocker: Mock
     **Test steps:**
 
     * construct a window, close its settings dock, then capture the real outer dock state it saves
-    * construct a second window seeded (via a mocked ``load``) with that saved state, then call
-      ``restore_dock_state`` (not automatic -- see its own docstring)
+    * construct a second window seeded (via a mocked ``load``) with that saved state
     * verify the second window's settings dock is also closed
     """
     first = MainWindow()
@@ -709,7 +709,6 @@ def test_outer_docks_state_round_trips_the_settings_dock_visibility(mocker: Mock
 
     second = MainWindow()
     qtbot.addWidget(second)
-    second.restore_dock_state()
     second_dock_manager = second._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     second_settings_dock = second_dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
 

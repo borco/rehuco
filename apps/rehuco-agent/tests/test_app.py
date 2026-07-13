@@ -23,9 +23,7 @@ def test_show_main_window_builds_it_once_and_reuses_it(mocker: MockerFixture) ->
     * mock ``MainWindow`` and build a stand-in ``self`` with no main window yet
     * call ``show_main_window`` twice
     * verify ``MainWindow`` was constructed exactly once, both calls returned that same instance,
-      each call brought it to the foreground, and ``restore_dock_state`` ran exactly once -- after
-      ``raise_and_activate``, not before (#47: a floating dialog's window mustn't appear before the
-      main window's own ``show()``)
+      and each call brought it to the foreground
     """
     window_cls = mocker.patch("rehuco_agent.app.MainWindow")
     fake_self = SimpleNamespace(_Application__main_window=None)
@@ -37,9 +35,6 @@ def test_show_main_window_builds_it_once_and_reuses_it(mocker: MockerFixture) ->
     window_cls.assert_called_once_with()
     assert first is second is window_cls.return_value
     assert window_cls.return_value.raise_and_activate.call_count == 2
-    window_cls.return_value.restore_dock_state.assert_called_once_with()
-    method_names = [call[0] for call in window_cls.return_value.mock_calls]
-    assert method_names.index("raise_and_activate") < method_names.index("restore_dock_state")
 
 
 def test_open_path_delegates_to_the_main_window(mocker: MockerFixture) -> None:
