@@ -427,6 +427,45 @@ def test_extra_tags_setter_replaces_the_list() -> None:
     assert doc.extra_tags == ["new"]
 
 
+@mark.parametrize(
+    ("stored", "expected"),
+    [
+        param("line one\r\nline two", "line one\nline two", id="crlf"),
+        param("line one\rline two", "line one\nline two", id="bare-cr"),
+        param("line one\nline two", "line one\nline two", id="already-lf"),
+        param("one\r\ntwo\rthree\nfour", "one\ntwo\nthree\nfour", id="mixed"),
+    ],
+)
+def test_description_normalizes_line_endings_to_lf(stored: str, expected: str) -> None:
+    """``description`` reads back with every CRLF/bare-CR line ending normalized to LF, regardless
+    of which platform wrote the file, so editing reads the same either way.
+
+    **Test steps:**
+
+    * construct a document with ``description`` stored using CRLF, bare CR, LF, or a mix
+    * verify it reads back LF-only
+    """
+    doc = RehuDocument({"description": stored})
+    assert doc.description == expected
+
+
+def test_description_does_not_mutate_the_backing_data_on_read() -> None:
+    """Reading ``description`` normalizes the returned value only -- the backing dict (what a
+    ``save()`` of an otherwise-untouched document would write back out) keeps the original,
+    un-normalized line endings until something actually calls the setter.
+
+    **Test steps:**
+
+    * construct a document with a CRLF-terminated ``description``
+    * read the property once
+    * verify the backing dict's raw value is still CRLF
+    """
+    doc = RehuDocument({"description": "line one\r\nline two"})
+
+    assert doc.description == "line one\nline two"
+    assert doc.data["description"] == "line one\r\nline two"
+
+
 def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
     """``hidden_images`` reads as an empty list when the key is missing or not a list (#35).
 

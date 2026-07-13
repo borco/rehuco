@@ -1,0 +1,247 @@
+"""Tests for MarkdownEdit: Scintilla configuration for a Markdown source editor (#74)."""
+
+from pathlib import Path
+
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QApplication
+from pyside6_scintilla import Scintilla
+from pytest import mark, param
+from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.widgets.markdown_edit import EOL_REPRESENTATION, MarkdownEdit
+
+
+def test_line_number_margin_is_visible(qtbot: QtBot) -> None:
+    """The line-number margin is shown with a nonzero width, not Scintilla's default 0px (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify its margin 0 has a nonzero width and reports the `Number` margin type
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    assert editor.marginWidthN(0) > 0
+    assert editor.marginTypeN(0) == int(Scintilla.MarginType.Number)
+
+
+def test_symbol_margin_is_hidden(qtbot: QtBot) -> None:
+    """The (unused) symbol margin stays hidden, not Scintilla's default 16px (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify its margin 1 has zero width
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    assert editor.marginWidthN(1) == 0
+
+
+def test_end_of_line_characters_are_visible(qtbot: QtBot) -> None:
+    """End-of-line characters are shown as visible glyphs, not Scintilla's default hidden (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify `viewEOL` is on
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    assert editor.viewEOL() is True
+
+
+@mark.parametrize(
+    "sequence",
+    [
+        param("\r", id="CR"),
+        param("\n", id="LF"),
+        param("\r\n", id="CRLF"),
+    ],
+)
+def test_end_of_line_shows_one_platform_independent_glyph(qtbot: QtBot, sequence: str) -> None:
+    """Every end-of-line sequence -- CR, LF, or CRLF -- shows the same plain glyph, not Scintilla's
+    default boxed ``CR``/``LF``/``CR LF`` labels, so editing reads the same regardless of which
+    platform wrote the file (#74).
+
+    CRLF has its own representation slot, separate from CR's and LF's own -- if it were left
+    unset, Scintilla would fall back to drawing CR's and LF's individual representations side by
+    side, doubling the glyph on a CRLF-terminated line.
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify the sequence's representation is the single configured glyph
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    representation = bytes(editor.representation(sequence).data()).decode("utf-8")
+
+    assert representation == EOL_REPRESENTATION
+
+
+def test_end_of_line_glyph_uses_the_disabled_text_colour(qtbot: QtBot) -> None:
+    """The EOL glyph is coloured from the current theme's disabled ``Text`` colour, not left in the
+    ordinary text colour (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify the EOL representation's colour matches the application palette's disabled ``Text``
+      colour, encoded as `setRepresentationColour` expects (0xAARRGGBB)
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    color = QApplication.palette().color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+    expected_argb = (color.alpha() << 24) | (color.red() << 16) | (color.green() << 8) | color.blue()
+
+    # & 0xFFFFFFFF: the Scintilla getter returns a signed 32-bit int, so a colour with the high
+    # (alpha) bit set comes back negative -- the same bit pattern as the unsigned expected value
+    assert editor.representationColour("\n") & 0xFFFFFFFF == expected_argb
+
+
+def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A theme switch (palette change) re-colours the EOL glyph immediately, not just at
+    construction (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * spy on the colour setter and emit ``QApplication.paletteChanged``
+    * verify it ran again
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    set_representation_colour = mocker.spy(editor, "setRepresentationColour")
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+
+    app.paletteChanged.emit(app.palette())
+
+    set_representation_colour.assert_called()
+
+
+def test_long_lines_wrap(qtbot: QtBot) -> None:
+    """Long lines wrap instead of scrolling horizontally, not Scintilla's default no-wrap (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify its wrap mode is `Wrap.Word`
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    assert editor.wrapMode() == int(Scintilla.Wrap.Word)
+
+
+def test_autocomplete_offers_image_filenames_inside_an_image_link(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Typing inside an in-progress ``![alt](...)`` reference shows the resource's own image
+    filenames (#74).
+
+    **Test steps:**
+
+    * attach a scanner resolving two image files
+    * set the buffer to an in-progress image link and fire `charAdded` as if typed
+    * verify the completion popup becomes active
+    """
+    scanner = mocker.Mock(files=mocker.Mock(return_value=[Path("/res/b.png"), Path("/res/a.jpg")]))
+    editor = MarkdownEdit(image_scanner=scanner)
+    qtbot.addWidget(editor)
+    editor.setText("![alt](")
+    editor.gotoPos(editor.length())
+
+    editor.charAdded.emit(ord("("))
+
+    assert editor.autoCActive()
+
+
+def test_autocomplete_is_not_shown_outside_an_image_link(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Typing plain text, not inside ``![alt](...)``, never shows the popup (#74).
+
+    **Test steps:**
+
+    * attach a scanner resolving an image file
+    * set the buffer to plain prose and fire `charAdded`
+    * verify the popup stays inactive
+    """
+    scanner = mocker.Mock(files=mocker.Mock(return_value=[Path("/res/a.jpg")]))
+    editor = MarkdownEdit(image_scanner=scanner)
+    qtbot.addWidget(editor)
+    editor.setText("just some prose")
+    editor.gotoPos(editor.length())
+
+    editor.charAdded.emit(ord("e"))
+
+    assert not editor.autoCActive()
+
+
+def test_autocomplete_is_not_shown_without_an_image_scanner(qtbot: QtBot) -> None:
+    """No ``image_scanner`` attached means no autocomplete is ever offered (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` with no ``image_scanner``
+    * set the buffer to an in-progress image link and fire `charAdded`
+    * verify the popup stays inactive
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    editor.setText("![alt](")
+    editor.gotoPos(editor.length())
+
+    editor.charAdded.emit(ord("("))
+
+    assert not editor.autoCActive()
+
+
+def test_autocomplete_is_not_shown_when_the_scanner_resolves_no_images(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """An attached scanner resolving no files never shows an empty popup (#74).
+
+    **Test steps:**
+
+    * attach a scanner resolving no files
+    * set the buffer to an in-progress image link and fire `charAdded`
+    * verify the popup stays inactive
+    """
+    scanner = mocker.Mock(files=mocker.Mock(return_value=[]))
+    editor = MarkdownEdit(image_scanner=scanner)
+    qtbot.addWidget(editor)
+    editor.setText("![alt](")
+    editor.gotoPos(editor.length())
+
+    editor.charAdded.emit(ord("("))
+
+    assert not editor.autoCActive()
+
+
+def test_autocomplete_prefix_detection_handles_multi_byte_characters_before_the_caret(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The image-link context is detected correctly even with a multi-byte character earlier on the
+    same line -- `currentPos()` is a byte offset, so naively slicing the decoded line by that same
+    number would cut into the wrong character (#74).
+
+    **Test steps:**
+
+    * attach a scanner resolving two image files
+    * set the buffer to prose containing an accented character, followed by an in-progress image
+      link with nothing typed for the filename yet, and position the caret right after the ``(``
+    * fire `charAdded` and verify the popup becomes active -- if the byte-slicing were wrong, the
+      truncated/corrupted prefix would fail to match ``![alt](`` and the popup would stay closed
+    """
+    scanner = mocker.Mock(files=mocker.Mock(return_value=[Path("/res/a.jpg"), Path("/res/b.png")]))
+    editor = MarkdownEdit(image_scanner=scanner)
+    qtbot.addWidget(editor)
+    text = "café ![alt]("
+    editor.setText(text)
+    editor.gotoPos(len(text.encode("utf-8")))
+
+    editor.charAdded.emit(ord("("))
+
+    assert editor.autoCActive()

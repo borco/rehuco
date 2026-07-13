@@ -359,8 +359,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
     @property
     def description(self) -> str:
-        """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent."""
-        return str(self.__data.get("description", ""))
+        """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent.
+
+        Line endings are normalized to LF regardless of the source platform's convention (CRLF,
+        bare CR, or already LF) -- editing should read the same no matter which platform wrote the
+        file. Read-time only, like every other coercion here: this does not mutate the backing
+        dict, so a file whose description is never actually edited keeps its original on-disk line
+        endings until something calls the setter.
+        """
+        value = str(self.__data.get("description", ""))
+        return value.replace("\r\n", "\n").replace("\r", "\n")
 
     @description.setter
     def description(self, value: str) -> None:
