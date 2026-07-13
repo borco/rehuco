@@ -150,6 +150,19 @@ def test_anchor_only_link_is_left_untouched() -> None:
     assert '<a href="#some-heading">' in html
 
 
+def test_anchor_with_no_href_is_skipped() -> None:
+    """An `<a>` element with no (or an empty) `href` is left alone, not treated as a rewrite target.
+
+    **Test steps:**
+
+    * render an empty-target link, producing an `<a>` with `href=""`
+    * verify it comes through unrewritten
+    """
+    html = render("[empty]()")
+
+    assert '<a href="">empty</a>' in html
+
+
 def test_link_inside_fenced_code_block_is_never_reached() -> None:
     """A link shown as a literal example inside a fenced code block is never touched, since the
     tree-based rewrite only ever sees real `<a>` elements, and code-block text is never parsed
