@@ -171,6 +171,14 @@ def test_additional_selection_typing_is_enabled(qtbot: QtBot) -> None:
     assert editor.additionalSelectionTyping() is True
 
 
+# Scintilla's column<->pixel text measurement (pointXFromPosition) collapses to a constant under
+# the offscreen QPA platform the instant any QFontDatabase.addApplicationFont() call happens
+# anywhere in the process -- app.py's own icon-font loading triggers it, so this is unavoidable in
+# the shared-QApplication test session, not this test's own doing (confirmed: even an
+# already-loaded font, referenced explicitly by name, still collapses). Does not reproduce on a
+# real platform. Needs an upstream pyside6-scintilla/Qt report, matching #74's own
+# borco/pyside6-scintilla#12 precedent, before this can run headless.
+@mark.fails_offscreen
 def test_typing_reaches_every_line_of_a_block_selection(qtbot: QtBot) -> None:
     """Typing a character with a rectangular (block) selection spanning several equal-length lines
     inserts it on every one of them, not just the last-touched line (#74).

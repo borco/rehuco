@@ -77,7 +77,9 @@ markers = [
     "windows: marks tests that only run on Windows",
     "macos: marks tests that only run on macOS",
     "linux: marks tests that only run on Linux",
+    "fails_offscreen: marks tests that fail when run offscreen (e.g. in CI)",
 ]
+explicit-only = ["fails_offscreen"]
 
 [tool.coverage.run]
 branch = true
