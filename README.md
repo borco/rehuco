@@ -101,18 +101,20 @@ Issues and milestones are tracked at <https://github.com/users/borco/projects/5>
 
 ## History
 
-| Project | Host | First Commit | Last Commit | Duration | Language | Qt |
-| --- | --- | --- | --- | --- | --- | --- |
-| [ibocator](https://sourceforge.net/projects/ibocator/) | SourceForge | 2010/01/26 | 2010/07/19 | 3 months | C++ | Qt4 |
-| [tutcatalog](https://gitlab.com/iborco-software/tutcatalog/tutcatalog) | GitLab | 2016/08/09 | 2020/09/30 | 4 years | C++ | Qt5 |
-| [tutcatalog (v3)](https://gitlab.com/iborco-software/tutcatalog/tutcatalog3) | GitLab | 2017/05/02 | 2017/05/29 | 1 month | C++/Python | Qt5 |
-| [tutcatalogpy](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy) | GitLab | 2020/08/19 | 2021/01/28 | 6 months | Python | Qt5 |
-| [TutCatalogPy2](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy2) | GitLab | 2021/06/01 | 2022/01/04 | 7 months | Python | Qt5 |
-| [tutcatalogpy3](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy3) | GitLab | 2022/02/07 | 2022/07/28 | 6 months | Python | Qt6 |
-| [tutcatalog4](https://gitlab.com/iborco-software/tutcatalog/tutcatalog4) | GitLab | 2022/09/19 | 2024/12/22 | 2 years 3 months | C++/Python | Qt6 |
-| [tutcatalog5](https://gitlab.com/iborco-software/tutcatalog/tutcatalog5) | GitLab | 2024/12/22 | 2025/04/15 | 4 months | Python | Qt6 |
-| [resource-hub](https://gitlab.com/iborco-software/tutcatalog/resource-hub) | GitLab | 2026/04/27 | 2026/06 | 2 months | Python | Qt6 |
-| **rehuco** | GitHub | 2026/06 | present | | Python | Qt6 |
+| Project | Host | First Commit | Last Commit | Commits | Duration | Language | Qt |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| [ibocator](https://sourceforge.net/projects/ibocator/) | SourceForge | 2010/01/26 | 2010/07/19 | 427 | 3 months | C++ | Qt4 |
+| [tutcatalog](https://gitlab.com/iborco-software/tutcatalog/tutcatalog) | GitLab | 2016/08/09 | 2020/09/30 | 743 | 4 years | C++ | Qt5 |
+| [tutcatalog (v3)](https://gitlab.com/iborco-software/tutcatalog/tutcatalog3) | GitLab | 2017/05/02 | 2017/05/29 | 81 | 1 month | C++/Python | Qt5 |
+| [tutcatalogpy](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy) | GitLab | 2020/08/19 | 2021/01/28 | 407 | 6 months | Python | Qt5 |
+| [TutCatalogPy2](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy2) | GitLab | 2021/06/01 | 2022/01/04 | 392 | 7 months | Python | Qt5 |
+| [daz3d-personal-database](https://gitlab.com/iborco-software/daz3d/daz3d-personal-database) | GitLab | 2022/01/01 | 2023/11/11 | 754 | 1 year 10 months | Python | Qt6 |
+| [tutcatalogpy3](https://gitlab.com/iborco-software/tutcatalog/tutcatalogpy3) | GitLab | 2022/02/07 | 2022/07/28 | 205 | 6 months | Python | Qt6 |
+| [tutcatalog4](https://gitlab.com/iborco-software/tutcatalog/tutcatalog4) | GitLab | 2022/09/19 | 2024/12/22 | 519 | 2 years 3 months | C++/Python | Qt6 |
+| [daz3d-personal-database-2](https://gitlab.com/iborco-software/daz3d/daz3d-personal-database-2) | GitLab | 2023/05/10 | 2023/09/16 | 1053 | 4 months | Python | Qt6 |
+| [tutcatalog5](https://gitlab.com/iborco-software/tutcatalog/tutcatalog5) | GitLab | 2024/12/22 | 2025/04/15 | 408 | 4 months | Python | Qt6 |
+| [resource-hub](https://gitlab.com/iborco-software/tutcatalog/resource-hub) | GitLab | 2026/04/27 | 2026/06 | 449 | 2 months | Python | Qt6 |
+| **rehuco** | GitHub | 2026/06 | present | | | Python | Qt6 |
 
 GitHub mirrors:
 [tutcatalog (v3)](https://github.com/borco/tutcatalog) ·
