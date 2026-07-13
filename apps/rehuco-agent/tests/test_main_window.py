@@ -6,7 +6,7 @@ from typing import Any
 from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -971,3 +971,105 @@ def test_raise_and_activate_skips_the_windows_helper_elsewhere(mocker: MockerFix
     window.raise_and_activate()
 
     force_foreground.assert_not_called()
+
+
+def test_docks_menu_lists_open_documents_alphabetically_by_title(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The ``View`` menu lists every open document, sorted alphabetically (case-insensitively) by title (#61).
+
+    **Test steps:**
+    * construct ``MainWindow`` and stand in three open documents with titles out of order/case
+    * populate the docks menu
+    * verify each entry's title label reads back in alphabetical order
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    widgets = [
+        mocker.MagicMock(model=mocker.MagicMock(label=label, path=Path(f"/{label}/info.rehu"), dirty=False))
+        for label in ("Charlie", "alpha", "Bravo")
+    ]
+    for widget in widgets:
+        widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_widgets", return_value=widgets)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    titles = [action.defaultWidget().findChildren(QLabel)[0].text() for action in menu.actions()]
+    assert titles == ["alpha", "Bravo", "Charlie"]
+
+
+def test_docks_menu_shows_a_disabled_placeholder_when_nothing_is_open(qtbot: QtBot) -> None:
+    """With no documents open, the ``View`` menu shows a single disabled placeholder entry.
+
+    **Test steps:**
+    * construct ``MainWindow`` with nothing open
+    * populate the docks menu
+    * verify exactly one, disabled action is present
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    actions = menu.actions()
+    assert len(actions) == 1
+    assert not actions[0].isEnabled()
+
+
+def test_docks_menu_repopulates_on_every_show(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The docks menu is rebuilt fresh every time it's about to show, not just once.
+
+    **Test steps:**
+    * construct ``MainWindow`` with one open document and populate the menu once
+    * stand in a second open document and emit the menu's ``aboutToShow`` again
+    * verify the menu now reflects both documents
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first_widget = mocker.MagicMock(model=mocker.MagicMock(label="First", path=Path("/first/info.rehu"), dirty=False))
+    first_widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    mocker.patch.object(
+        window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        "open_document_widgets",
+        return_value=[first_widget],
+    )
+    menu.aboutToShow.emit()
+    assert len(menu.actions()) == 1
+
+    second_widget = mocker.MagicMock(
+        model=mocker.MagicMock(label="Second", path=Path("/second/info.rehu"), dirty=False)
+    )
+    second_widget.save_state.return_value = b"snapshot"
+    mocker.patch.object(
+        window._MainWindow__documents_dock,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        "open_document_widgets",
+        return_value=[first_widget, second_widget],
+    )
+    menu.aboutToShow.emit()
+
+    assert len(menu.actions()) == 2
+
+
+def test_docks_menu_entry_triggering_focuses_that_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Selecting a document's entry in the ``View`` menu focuses/raises its dock (#61).
+
+    **Test steps:**
+    * construct ``MainWindow`` and stand in one open document
+    * populate the docks menu and trigger its single entry
+    * verify ``DocumentsDock.focus_document`` was called with that document's widget
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
+    widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
+    focus_document = mocker.patch.object(documents_dock, "focus_document")
+
+    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu.actions()[0].trigger()
+
+    focus_document.assert_called_once_with(widget)
