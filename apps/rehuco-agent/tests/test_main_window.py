@@ -1,5 +1,10 @@
 """Tests for MainWindow: the top-level dock-in-dock shell hosting DocumentsDock."""
 
+# the shell has a broad surface (docks, session restore, geometry, docks menu, close handling);
+# its test suite is correspondingly long -- one cohesive module reads better than an arbitrary
+# split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 from pathlib import Path
 from typing import Any
 
