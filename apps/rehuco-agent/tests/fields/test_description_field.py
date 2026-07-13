@@ -1,11 +1,10 @@
-"""Tests for DescriptionField: the Markdown viewer and the ScintillaEdit editor binding."""
+"""Tests for DescriptionField: the Markdown viewer and the MarkdownEdit editor binding."""
 
 from PySide6.QtCore import QObject, Signal
-from pyside6_scintilla import ScintillaEdit
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.widgets import MarkdownView
+from rehuco_agent.fields.widgets import MarkdownEdit, MarkdownView
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 from fields.field_testers import DescriptionFieldTester as DescriptionField
@@ -21,8 +20,8 @@ class Emitter(QObject):
 # endregion
 
 
-def editor_text(editor: ScintillaEdit) -> str:
-    """Read a `ScintillaEdit`'s full text as a string.
+def editor_text(editor: MarkdownEdit) -> str:
+    """Read a `MarkdownEdit`'s full text as a string.
 
     :param editor: the editor to read.
     :returns: its UTF-8 text.
@@ -118,25 +117,83 @@ def test_viewer_without_image_scanner_changed_makes_no_connection(qtbot: QtBot, 
     assert viewer.image_scanner is None
 
 
-def test_description_editor_is_a_scintilla_seeded_from_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The editor is a ``ScintillaEdit`` seeded with the model's current description.
+def test_editor_forwards_image_scanner_changed_to_the_markdown_edit(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A scanner swap forwarded through ``image_scanner_changed`` reaches the editor's own scanner
+    too (#74), not just the viewer's.
+
+    **Test steps:**
+
+    * build the editor wired to an emitter standing in for the model's signal
+    * fire the emitter with a new scanner
+    * verify the editor's own scanner is the new one
+    """
+    emitter = Emitter()
+    field = DescriptionField("description", image_scanner_changed=emitter.changed)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+
+    new_scanner = object()
+    emitter.changed.emit(new_scanner)
+
+    assert editor.image_scanner is new_scanner
+
+
+def test_editor_without_image_scanner_changed_makes_no_connection(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Omitting ``image_scanner_changed`` builds an editor with no reactive scanner wiring, without error.
+
+    **Test steps:**
+
+    * build the editor with no ``image_scanner_changed``
+    * verify it builds successfully and its scanner is unset
+    """
+    field = DescriptionField("description")
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+
+    assert editor.image_scanner is None
+
+
+def test_editor_is_seeded_with_the_field_s_image_scanner(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The editor's ``image_scanner`` starts out as the one the field was constructed with (#74),
+    so autocomplete offers this resource's own images from the very first build.
+
+    **Test steps:**
+
+    * build the editor with an ``image_scanner``
+    * verify the editor's own scanner is that same instance
+    """
+    scanner = mocker.Mock()
+    field = DescriptionField("description", image_scanner=scanner)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+
+    assert editor.image_scanner is scanner
+
+
+def test_description_editor_is_a_markdown_edit_seeded_from_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The editor is a ``MarkdownEdit`` seeded with the model's current description.
 
     **Test steps:**
 
     * seed ``model.description`` and build the editor
-    * verify it's a ``ScintillaEdit`` holding that text
+    * verify it's a ``MarkdownEdit`` holding that text
     """
     model.description = "hello prose"
     field = DescriptionField("description")
     editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, ScintillaEdit)
+    assert isinstance(editor, MarkdownEdit)
     qtbot.addWidget(editor)
 
     assert editor_text(editor) == "hello prose"
 
 
 def test_description_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Editing the ScintillaEdit writes through to the model.
+    """Editing the MarkdownEdit writes through to the model.
 
     **Test steps:**
 
@@ -145,7 +202,7 @@ def test_description_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDo
     """
     field = DescriptionField("description")
     editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, ScintillaEdit)
+    assert isinstance(editor, MarkdownEdit)
     qtbot.addWidget(editor)
 
     editor.setText("typed prose")
@@ -163,7 +220,7 @@ def test_description_editor_follows_an_external_model_change(qtbot: QtBot, model
     """
     field = DescriptionField("description")
     editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, ScintillaEdit)
+    assert isinstance(editor, MarkdownEdit)
     qtbot.addWidget(editor)
 
     model.description = "external prose"
@@ -182,7 +239,7 @@ def test_description_editor_and_viewer_stay_live_together(qtbot: QtBot, model: R
     field = DescriptionField("description")
     editor = field.make_editor(model.bind(field)).editor
     viewer = field.make_viewer(model.bind(field)).viewer
-    assert isinstance(editor, ScintillaEdit)
+    assert isinstance(editor, MarkdownEdit)
     assert isinstance(viewer, MarkdownView)
     qtbot.addWidget(editor)
     qtbot.addWidget(viewer)

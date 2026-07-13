@@ -1,4 +1,4 @@
-"""The `description` field: a rendered-Markdown viewer over a `ScintillaEdit` editor that lives in its
+"""The `description` field: a rendered-Markdown viewer over a `MarkdownEdit` editor that lives in its
 own dock ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]).
 """
 
@@ -6,10 +6,9 @@ from typing import TYPE_CHECKING, Final, override
 
 from borco_pyside.widgets import HorizontalLine
 from PySide6.QtCore import QSignalBlocker, SignalInstance
-from pyside6_scintilla import ScintillaEdit
 
 from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from rehuco_agent.fields.widgets import MarkdownView
+from rehuco_agent.fields.widgets import MarkdownEdit, MarkdownView
 from rehuco_agent.settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
@@ -21,9 +20,9 @@ if TYPE_CHECKING:
 
 class DescriptionField(Field[str]):
     """A ``description`` field ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]): the resource's
-    Markdown prose. The **viewer** renders it (`MarkdownView`); the **editor** is a
-    :class:`~pyside6_scintilla.ScintillaEdit` placed on its own editor tab, so it can be torn out and
-    maximized while writing. Covers the common-core ``description``.
+    Markdown prose. The **viewer** renders it (`MarkdownView`); the **editor** is a `MarkdownEdit`
+    placed on its own editor tab, so it can be torn out and maximized while writing. Covers the
+    common-core ``description``.
 
     Model-aware like `PathField`/`ImagesField`: an ``image_scanner`` resolves the description's
     embedded ``![...](...)`` references against the resource's own directory
@@ -32,10 +31,12 @@ class DescriptionField(Field[str]):
 
     :param name: the field's identifier on its model.
     :param label: display label; derived from ``name`` when omitted.
-    :param image_scanner: resolves the description's embedded images; omit for a viewer that can't
-        resolve any (e.g. a bare, model-less instance in isolation/tests).
+    :param image_scanner: resolves the description's embedded images for the viewer, and this
+        resource's own image filenames offered by the editor's autocomplete (#74); omit for a
+        viewer/editor that can't resolve any (e.g. a bare, model-less instance in isolation/tests).
     :param image_scanner_changed: fires when ``image_scanner`` changes (e.g. a `.tc` -> `.rehu`
-        conversion, [[acquisition-tooling#tc-to-rehu]]), so the viewer can pick up the new scanner.
+        conversion, [[acquisition-tooling#tc-to-rehu]]), so the viewer and editor can pick up the
+        new scanner.
     """
 
     TYPE = "description"
@@ -97,16 +98,18 @@ class DescriptionField(Field[str]):
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
-        editor = ScintillaEdit()
+        editor = MarkdownEdit(image_scanner=self.__image_scanner)
         editor.setObjectName(self.name)
         editor.setText(binding.value)
         editor.notifyChange.connect(lambda *_: binding.set_value(self.__text(editor)))
         binding.changed.connect(lambda value: self.__echo(editor, value))
+        if self.__image_scanner_changed is not None:
+            self.__image_scanner_changed.connect(editor.set_image_scanner)  # type: ignore[attr-defined]
         # no label for the editor tab, since the tab itself is the label
         return FieldEditorWidgets(self.editor_tab, None, editor, vertical=True, fill=True)
 
     @staticmethod
-    def __text(editor: ScintillaEdit) -> str:
+    def __text(editor: MarkdownEdit) -> str:
         """Read the editor's full text as a string.
 
         :param editor: the Scintilla editor.
@@ -115,7 +118,7 @@ class DescriptionField(Field[str]):
         return bytes(editor.getText(editor.length() + 1).data()).decode("utf-8")
 
     @staticmethod
-    def __echo(editor: ScintillaEdit, value: str) -> None:
+    def __echo(editor: MarkdownEdit, value: str) -> None:
         """Update the editor from a binding change without re-emitting a change notification (echo guard).
 
         `ScintillaEdit.setText` also resets the caret, so echoing the editor's own edit back into it

@@ -8,6 +8,7 @@ from rehuco_agent.fields.widgets.file_size_edit import FileSizeEdit
 from rehuco_agent.fields.widgets.image_selector import ImageSelector
 from rehuco_agent.fields.widgets.image_strip import ImageStrip
 from rehuco_agent.fields.widgets.line_edit import LineEdit
+from rehuco_agent.fields.widgets.markdown_edit import MarkdownEdit
 from rehuco_agent.fields.widgets.markdown_view import MarkdownView
 from rehuco_agent.fields.widgets.path_editor import PathEditor
 
@@ -20,6 +21,7 @@ __all__ = [
     "ImageSelector",
     "ImageStrip",
     "LineEdit",
+    "MarkdownEdit",
     "MarkdownView",
     "PathEditor",
 ]
