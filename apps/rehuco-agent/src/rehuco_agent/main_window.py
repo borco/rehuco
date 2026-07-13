@@ -9,9 +9,10 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QMainWindow
+from PySide6.QtWidgets import QDialog, QMainWindow, QWidgetAction
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from rehuco_agent.docks_menu_entry import DocksMenuEntry
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.main_window_ui import Ui_MainWindow
@@ -59,6 +60,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
+        self.__ui.view_menu.aboutToShow.connect(self.__populate_docks_menu)
 
         self.__window_settings: Final = MainWindowSettings()
         self.__window_settings.load(persistent_settings())
@@ -92,6 +94,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
+
+    def __populate_docks_menu(self) -> None:
+        """Rebuild ``View`` with every currently open document, alphabetically by title (#61).
+
+        Listed directly under ``View`` rather than a ``Docks`` submenu, for now. Rebuilt fresh on
+        every ``aboutToShow`` rather than kept in sync incrementally -- the open set, titles, and
+        paths all change independently (open/close/rename/save-as), and a menu only actually needs
+        to be correct while it's showing.
+        """
+        menu = self.__ui.view_menu
+        menu.clear()
+        widgets = sorted(
+            self.__documents_dock.open_document_widgets(), key=lambda widget: widget.model.label.casefold()
+        )
+        if not widgets:
+            placeholder = menu.addAction("No Open Docks")
+            placeholder.setEnabled(False)
+            return
+        for widget in widgets:
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(DocksMenuEntry(widget.model.label, widget.model.path, menu))
+            action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
+            menu.addAction(action)
 
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).

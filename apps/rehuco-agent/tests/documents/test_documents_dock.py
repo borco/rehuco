@@ -480,6 +480,65 @@ def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> Non
     assert dock.focused_document_path() is None
 
 
+def test_focus_document_makes_the_given_widgets_dock_current(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Focusing a document's widget makes its dock the current one (#61).
+
+    Registers two stand-in docks directly in the private map (as
+    :func:`test_open_document_tracks_a_dock_with_no_area` does), rather than opening real documents
+    -- :meth:`focus_document` only needs to find and activate the right dock, not exercise document
+    loading.
+
+    **Test steps:**
+
+    * register two stand-in docks, and focus the second one
+    * focus the first widget instead
+    * verify it is now the focused document
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first_cdock, first_widget = mocker.MagicMock(), mocker.MagicMock()
+    first_widget.model.path = FAKE_PATH
+    second_cdock, second_widget = mocker.MagicMock(), mocker.MagicMock()
+    second_widget.model.path = OTHER_PATH
+    docks[first_cdock] = first_widget
+    docks[second_cdock] = second_widget
+    dock.focus_document(second_widget)
+    assert dock.focused_document_path() == OTHER_PATH
+
+    dock.focus_document(first_widget)
+
+    assert dock.focused_document_path() == FAKE_PATH
+
+
+def test_focus_document_works_for_a_document_with_no_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Focusing a document's widget works even with no path yet, unlike
+    :meth:`DocumentsDock.open_document`, which needs a path to look a dock up by (a genuinely
+    path-less "New Document" dock, pending A5, could otherwise never be focused this way).
+
+    **Test steps:**
+
+    * register two stand-in docks, one with no path, and focus the one with a path
+    * focus the path-less widget instead
+    * verify it is now the focused document (reported as ``None``, its own path)
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    other_cdock, other_widget = mocker.MagicMock(), mocker.MagicMock()
+    other_widget.model.path = OTHER_PATH
+    fake_cdock, fake_widget = mocker.MagicMock(), mocker.MagicMock()
+    fake_widget.model.path = None
+    docks[other_cdock] = other_widget
+    docks[fake_cdock] = fake_widget
+    dock.focus_document(other_widget)
+    assert dock.focused_document_path() == OTHER_PATH
+
+    dock.focus_document(fake_widget)
+
+    assert dock.focused_document_path() is None
+
+
 def test_double_clicking_a_tab_label_does_not_raise(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Double-clicking a document's tab label doesn't raise -- wired to a placeholder for now,
     pending the future preview-tab-mode feature the double-click is meant to drive.

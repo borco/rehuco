@@ -147,6 +147,19 @@ class DocumentsDock(QMainWindow):
         """
         return [widget.model for widget in self.open_document_widgets()]
 
+    def focus_document(self, widget: DocumentWidget) -> None:
+        """Make ``widget``'s dock the current one, raising/focusing it.
+
+        Used by the ``View`` menu's open-documents list (#61) to jump to an already-open document
+        by widget identity rather than path, since a not-yet-saved document has no path (yet) for
+        :meth:`open_document` to look up.
+
+        :param widget: an already-open document's widget (one returned by
+            :meth:`open_document_widgets`).
+        """
+        dock = next(dock for dock, w in self.__document_docks.items() if w is widget)
+        self.__activate(dock)
+
     def save_state(self) -> bytes:
         """Serialize this dock's own layout (splits/tabs between currently open documents).
 
