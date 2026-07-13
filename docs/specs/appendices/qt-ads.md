@@ -191,3 +191,121 @@ activation and would re-apply the 16px size otherwise; (2) set the glyph's font/
 button *after* emitting `dockWidgetAdded` (and after a restore) for the tab it then makes active,
 overwriting an eager restyle. `TabCloseButtonIsToolButton` aside, the button is a `QPushButton`
 named `tabCloseButton`, reachable via `dock.tabWidget().findChild(QAbstractButton, "tabCloseButton")`.
+
+## 5. A fully custom tab widget crashes when routed through `CDockComponentsFactory`
+
+[[[appendices.qt-ads#custom-tab-widget]]]
+
+**Question (spike #60):** can QtAds's tab widget be replaced wholesale with a custom widget, rather
+than styling/appending to the bundled one (as in [[appendices.qt-ads#tab-close-button]])? **Finding:**
+partially — the sanctioned extension point exists and is bound, but returning a Python-subclassed tab
+through it crashes; a different, code-only path covers the actual need instead.
+
+### 5.1 The extension point is bound, and works for the title bar/tab bar
+
+[[[appendices.qt-ads#components-factory-bound]]]
+
+QtAds's own extension point for this is `CDockComponentsFactory` (`DockComponentsFactory.h`): a global
+factory whose `create...` virtuals (`createDockWidgetTab`, `createDockAreaTitleBar`,
+`createDockAreaTabBar`, `createDockWidgetSideTab`) build every dock/tab/title-bar widget instance,
+replaceable wholesale via `CDockComponentsFactory.setFactory(...)`. `pyside6-qtads`'s `bindings.xml`
+does bind it (`object-type`, all four virtuals), with inject-code on `setFactory` specifically to keep
+a Python override callable afterwards — confirmed live too (`setFactory`/`createDockWidgetTab` both
+present in `dir(QtAds.CDockComponentsFactory)`, per [[appendices.qt-ads#verify-bindings-live]]'s rule of
+never trusting the header alone). Overriding `createDockAreaTitleBar`/`createDockAreaTabBar` alone, each
+returning a plain (non-subclassed) base-class instance from Python, works end-to-end through
+`addDockWidget` with no crash.
+
+### 5.2 But a Python-subclassed `CDockWidgetTab` segfaults on insertion
+
+[[[appendices.qt-ads#custom-tab-segfault]]]
+
+**Symptom:** overriding `createDockWidgetTab` to return a *Python subclass* of `CDockWidgetTab` — even
+an empty one whose `__init__` does nothing but call `super().__init__()` — builds the tab object fine
+(the override runs and returns successfully during `CDockWidget()` construction itself, before any dock
+area exists), then **segfaults** later inside `addDockWidget`/`addDockWidgetTabToArea`, the moment
+QtAds' C++ side tries to insert that tab into its area's tab bar. Isolated to a 5-line repro; not
+present when `createDockWidgetTab` is left at its default, or overridden to return a vanilla
+(non-subclassed) `CDockWidgetTab`. Root cause not chased past this point (out of scope for a spike):
+`bindings.xml` marks `CDockAreaTabBar::insertTab(int, ads::CDockWidgetTab*)`'s tab argument `parent
+action="add"` — ordinary Qt-parent reparenting for a C++-constructed pointer, but likely mishandled by
+shiboken's shell/ownership machinery when the pointer instead originates from a Python virtual-function
+return. Not an application-level mistake to work around: a fully custom Python-defined tab class routed
+through the sanctioned factory hook is not viable in the current binding.
+
+### 5.3 Working alternative: extend the default tab's own layout post-construction
+
+[[[appendices.qt-ads#tab-layout-insert]]]
+
+Skip the factory/subclass path entirely. After `addDockWidget()`/`addDockWidgetTabToArea()`,
+`dock.tabWidget()` still returns the ordinary C++-built `CDockWidgetTab`; inserting an extra widget
+straight into its own `layout()` works with no crash and needs no `CDockComponentsFactory` registration
+at all. The default layout is, left to right: `dockWidgetTabLabel` (title, stretch 1) → spacing →
+`tabCloseButton` → trailing spacing (`DockWidgetTabPrivate::createLayout()`) — confirmed by walking
+`layout().itemAt(i)` after construction. `layout().insertWidget(1, widget)` lands a new widget between
+the title and the close button; `insertWidget(0, widget)` lands it ahead of the title. Being a real
+child `QWidget` rather than a stylesheet-driven icon (contrast [[appendices.qt-ads#tab-close-button]]),
+it takes an ordinary `clicked` signal connection with none of that section's icon-recoloring workarounds.
+
+## 6. Customizing or disabling the per-area tabs menu
+
+[[[appendices.qt-ads#tabs-menu]]]
+
+**Question (spike #60 follow-up):** the "tabs menu" — the dropdown behind `TitleBarButtonTabsMenu`,
+shown once an area's tabs overflow/elide — lists every tab in that area, built straight from each tab's
+`text()`/`icon()`/`toolTip()`. Since `DocumentsDock.__update_dock_title` bakes the dirty/locked marker
+into `CDockWidget.windowTitle()`
+([documents_dock.py:29](../../../apps/rehuco-agent/src/rehuco_agent/documents/documents_dock.py#L29)),
+that marker shows up in this menu too, with no separate state to key a color off. Three questions:
+can the menu's contents be changed (e.g. two-line entries instead of a tooltip)? Can the whole menu be
+replaced with a custom widget? Can it be disabled for one `CDockManager` only (the outer documents
+dock) while staying on for others (the per-document editor/viewer splits, #61's actual replacement)?
+
+### 6.1 Contents are rebuildable — no subclassing needed
+
+[[[appendices.qt-ads#tabs-menu-rebuild]]]
+
+`CDockAreaTitleBar::onTabsMenuAboutToShow()` is a **private**, non-virtual slot — there's no override
+hook for it (contrast `buildContextMenu`, which is `virtual` and `public`). But the button and its menu
+are both reachable through public API: `titleBar.button(QtAds.TitleBarButtonTabsMenu).menu()`. QtAds
+connects its own rebuild to that menu's `aboutToShow` in the title bar's constructor, which runs before
+application code can reach the button at all — so any later `menu.aboutToShow.connect(...)` from Python
+fires *after* QtAds' own rebuild on every open, letting a handler `menu.clear()` and repopulate freely
+without racing it. Confirmed: replacing each plain `QAction` with a `QWidgetAction` wrapping a small
+`QWidget` (bold name label over a full-path label) renders correctly — real two-line entries, no
+tooltip-on-hover needed. Click-to-switch still works for free: QtAds' own `onTabsMenuActionTriggered`
+just reads `action->data().toInt()` as the tab index, so a replacement action only needs `setData(i)` to
+keep that behavior.
+
+### 6.2 The button/menu itself has no factory hook — it's hardcoded
+
+[[[appendices.qt-ads#tabs-menu-no-factory]]]
+
+Unlike the tab widget ([[appendices.qt-ads#components-factory-bound]]), `TabsMenuButton` is built
+directly in `DockAreaTitleBarPrivate::createLayout()`, not routed through `CDockComponentsFactory` at
+all. There is nothing to subclass or replace wholesale here, safely or otherwise — augmenting the
+existing menu's contents (§6.1) is the only lever, matching the same "extend after construction" shape
+as [[appendices.qt-ads#tab-layout-insert]].
+
+### 6.3 Disabling it for one manager only needs reactive re-hiding, not just a flag
+
+[[[appendices.qt-ads#tabs-menu-per-manager]]]
+
+`DockAreaHasTabsMenuButton` (`eConfigFlag`) is a `CDockManager` **static** — shared process-wide across
+every manager, same category as [[appendices.qt-ads#requires-focushighlighting]]. Turning it off is
+all-or-nothing; it cannot single out one manager (e.g. the outer documents dock, per #61) while leaving
+others (per-document editor/viewer splits) on.
+
+A genuinely per-manager alternative exists: `CDockManager.dockAreaCreated(area)` fires only for areas
+created under that specific manager instance — confirmed an outer manager's connection never fired for
+an untouched inner manager's area. But naively hiding the button synchronously from that signal doesn't
+stick: `DockContainerWidgetPrivate::onVisibleDockAreaCountChanged()` unconditionally forces the tabs-menu
+button back to visible whenever a container's visible-area-count transitions to/from exactly 1 (the
+sole/"top-level" area case), on **both** add and remove, regardless of any flag -- confirmed empirically
+(a hide made during `dockAreaCreated` reverted itself for the first/sole area, and later removing a
+second/split area reverted the first area's hide too). Fix: defer the hide with
+`QTimer.singleShot(0, ...)` — the same "let QtAds' own synchronous bookkeeping finish first" shape as
+[[appendices.qt-ads#tab-close-button]]'s icon-restyle timing trap — and re-apply it from **both**
+`dockAreaCreated` (new areas) and `dockWidgetRemoved` (re-hide every remaining area, since removal can
+also flip the count through 1). With both hooked and deferred, an outer manager's button stayed hidden
+through add, split, and remove, while an untouched inner manager kept the global default.
