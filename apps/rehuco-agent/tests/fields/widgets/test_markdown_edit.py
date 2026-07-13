@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QApplication
 from pyside6_scintilla import Scintilla
-from pytest import mark, param
+from pytest import mark, param, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.markdown_edit import EOL_REPRESENTATION, MarkdownEdit
@@ -124,6 +124,22 @@ def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mo
     app.paletteChanged.emit(app.palette())
 
     set_representation_colour.assert_called()
+
+
+def test_construction_raises_without_a_running_qapplication(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Construction requires a running QApplication, to have somewhere to connect paletteChanged.
+
+    **Test steps:**
+
+    * mock QApplication.instance() to return None
+    * construct a MarkdownEdit
+    * verify RuntimeError is raised
+    """
+    del qtbot  # only needed so a real QApplication already exists for Qt's own widget machinery
+    mocker.patch("rehuco_agent.fields.widgets.markdown_edit.QApplication.instance", return_value=None)
+
+    with raises(RuntimeError, match="QApplication"):
+        MarkdownEdit()
 
 
 def test_long_lines_wrap(qtbot: QtBot) -> None:
