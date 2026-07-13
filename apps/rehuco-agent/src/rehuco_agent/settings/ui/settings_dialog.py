@@ -22,7 +22,7 @@ PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 
 class SettingsDialog(QWidget):
     """The settings dialog's shell: a filterable category tree on the left, the selected category's
-    page on the right, and a toolbar to save/drop changes (#47).
+    page on the right, and a toolbar to apply/reset changes (#47).
 
     Holds no settings pages itself -- :meth:`add_page` registers each one (a plain ``QWidget``
     additionally satisfying `SettingsPage`, mirroring the field toolkit's structural-protocol style),
@@ -47,10 +47,10 @@ class SettingsDialog(QWidget):
 
         self.__ui.filter_edit.textChanged.connect(self.__proxy.set_filter_text)
 
-        self.__ui.save_all_action.triggered.connect(self.__save_all)
-        self.__ui.save_current_page_action.triggered.connect(self.__save_current_page)
-        self.__ui.drop_all_action.triggered.connect(self.__drop_all)
-        self.__ui.drop_current_page_action.triggered.connect(self.__drop_current_page)
+        self.__ui.apply_all_action.triggered.connect(self.__apply_all)
+        self.__ui.apply_current_page_action.triggered.connect(self.__apply_current_page)
+        self.__ui.reset_all_action.triggered.connect(self.__reset_all)
+        self.__ui.reset_current_page_action.triggered.connect(self.__reset_current_page)
 
     def add_page(self, page: SettingsPage) -> None:
         """Register ``page`` as a new category: adds its tree row and stacked page.
@@ -100,22 +100,22 @@ class SettingsDialog(QWidget):
         if page is not None:
             self.__ui.page_stack.setCurrentWidget(cast(QWidget, page))
 
-    def __save_all(self) -> None:
-        """Save every registered page's changes."""
+    def __apply_all(self) -> None:
+        """Apply every registered page's changes."""
         for page in self.__pages():
             page.save_changes()
 
-    def __save_current_page(self) -> None:
-        """Save only the currently-selected page's changes."""
+    def __apply_current_page(self) -> None:
+        """Apply only the currently-selected page's changes."""
         if (page := self.__current_page()) is not None:
             page.save_changes()
 
-    def __drop_all(self) -> None:
+    def __reset_all(self) -> None:
         """Discard every registered page's in-progress changes."""
         for page in self.__pages():
             page.drop_changes()
 
-    def __drop_current_page(self) -> None:
+    def __reset_current_page(self) -> None:
         """Discard only the currently-selected page's in-progress changes."""
         if (page := self.__current_page()) is not None:
             page.drop_changes()
