@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtGui import QPalette
+from PySide6.QtGui import QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication
 from pyside6_scintilla import Scintilla
 from pytest import mark, param, raises
@@ -169,6 +169,26 @@ def test_additional_selection_typing_is_enabled(qtbot: QtBot) -> None:
     qtbot.addWidget(editor)
 
     assert editor.additionalSelectionTyping() is True
+
+
+def test_text_style_uses_the_platform_monospace_font(qtbot: QtBot) -> None:
+    """The main text style is set to the platform's fixed-width font, not Scintilla's default
+    proportional one -- required for block (rectangular) selection typing to land on the correct
+    column on every line (#75).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify style 0 -- the one used to draw text while no lexer is set -- reports the platform's
+      fixed-font family
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    expected_family = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+    font = bytes(editor.styleFont(0).data()).decode("utf-8")
+
+    assert font == expected_family
 
 
 # Scintilla's column<->pixel text measurement (pointXFromPosition) collapses to a constant under

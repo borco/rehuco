@@ -7,7 +7,7 @@ import re
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtGui import QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QFontDatabase, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla, ScintillaEdit
 
@@ -65,6 +65,7 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         touched line's caret, not every selected line's.
         """
         self.setCodePage(Scintilla.CpUtf8)  # already this binding's default; explicit for clarity
+        self.__setup_font()
 
         self.setMarginTypeN(LINE_NUMBER_MARGIN, Scintilla.MarginType.Number)
         self.setMarginWidthN(LINE_NUMBER_MARGIN, self.textWidth(Scintilla.StylesCommon.LineNumber, "9999"))
@@ -84,6 +85,25 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
 
         self.setMultipleSelection(True)
         self.setAdditionalSelectionTyping(True)
+
+    def __setup_font(self) -> None:
+        """Force a monospace font onto every style (#75).
+
+        Rectangular (block) selection derives each selected line's column from a pixel x-position
+        captured once via `setRectangularSelectionAnchor`/`setRectangularSelectionCaret`, then
+        re-derives the matching column on every other line from that same pixel offset. With a
+        proportional font -- Scintilla's own default, inherited from whatever platform UI font Qt
+        resolves -- the same column lands at a different pixel offset on lines drawn with different
+        glyphs, so typing across a block selection silently drops or misplaces characters on some
+        lines. A monospace font gives every glyph an identical pixel advance, making the
+        column<->pixel round-trip exact regardless of line content.
+
+        `styleClearAll` copies `StylesCommon.Default`'s attributes -- just set on the line above --
+        to every style, including style 0, the one actually used to draw text while no lexer is set.
+        """
+        family = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()
+        self.styleSetFont(Scintilla.StylesCommon.Default, family)
+        self.styleClearAll()
 
     def __setup_theme_reactivity(self) -> None:
         """Keep :data:`EOL_REPRESENTATION` coloured with the current theme's disabled/muted text
