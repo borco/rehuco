@@ -1,6 +1,6 @@
 """A `ScintillaEdit` configured for editing Markdown prose ([[plugins#field-toolkit]], #74): line
-numbers, wrapped long lines, a visible end-of-line glyph, and filename autocomplete for embedded
-``![alt](...)`` image references.
+numbers, wrapped long lines, a visible end-of-line glyph, typing across a block (rectangular)
+selection, and filename autocomplete for embedded ``![alt](...)`` image references.
 """
 
 import re
@@ -31,9 +31,10 @@ IMAGE_LINK_PATTERN: Final = re.compile(r"!\[[^\]]*\]\(([^)]*)$")
 
 class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
     """A `ScintillaEdit` configured as a Markdown source editor (#74): a visible line-number margin,
-    wrapped long lines, a visible end-of-line glyph, and autocomplete offering this resource's own
-    image filenames while typing an in-progress ``![alt](...)`` reference, or on demand (the full
-    list) via Ctrl+Space.
+    wrapped long lines, a visible end-of-line glyph, typing that reaches every line of a block
+    (rectangular) selection (Alt+drag / Alt+Shift+Arrow) at once, and autocomplete offering this
+    resource's own image filenames while typing an in-progress ``![alt](...)`` reference, or on
+    demand (the full list) via Ctrl+Space.
 
     :param parent: optional Qt parent.
     :param image_scanner: resolves this resource's own image filenames, offered by autocomplete;
@@ -51,12 +52,17 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.__setup_theme_reactivity()
 
     def __setup_appearance(self) -> None:
-        """Line numbers, wrapped long lines, and a visible end-of-line glyph.
+        """Line numbers, wrapped long lines, a visible end-of-line glyph, and block (rectangular)
+        select/edit.
 
-        Block (rectangular) select/edit is deliberately not configured here yet -- an earlier
-        attempt caused enough follow-on trouble (a confusing selection box past a shorter line's
-        real end, then broken keyboard block-selection extension while chasing that) that it's
-        being retried separately, from a clean slate, rather than left half-fixed (#74).
+        Rectangular selection itself (Alt+drag / Alt+Shift+Arrow) and its virtual-space placement
+        past a shorter line's real end are left at Scintilla's own defaults, deliberately not
+        configured here -- an earlier attempt to also customize those caused enough follow-on
+        trouble (a confusing selection box past a shorter line's real end, then broken keyboard
+        block-selection extension while chasing that) that it isn't worth revisiting without a
+        much more careful, separate pass (#74). `additionalSelectionTyping` is the one setting
+        actually needed on top of the defaults: without it, typing only reaches the most recently
+        touched line's caret, not every selected line's.
         """
         self.setCodePage(Scintilla.CpUtf8)  # already this binding's default; explicit for clarity
 
@@ -75,6 +81,9 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         # loaded/echoed text is already LF-only (RehuDocument.description normalizes on read) --
         # this only governs what a newly-typed Enter inserts, keeping live edits consistent too
         self.setEOLMode(Scintilla.EndOfLine.Lf)
+
+        self.setMultipleSelection(True)
+        self.setAdditionalSelectionTyping(True)
 
     def __setup_theme_reactivity(self) -> None:
         """Keep :data:`EOL_REPRESENTATION` coloured with the current theme's disabled/muted text

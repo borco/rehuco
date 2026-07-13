@@ -140,6 +140,47 @@ def test_long_lines_wrap(qtbot: QtBot) -> None:
     assert editor.wrapMode() == int(Scintilla.Wrap.Word)
 
 
+def test_additional_selection_typing_is_enabled(qtbot: QtBot) -> None:
+    """Typing reaches every selection at once, not just the most recently touched one -- not
+    Scintilla's default of only the main selection (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit`
+    * verify `additionalSelectionTyping` is on
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    assert editor.additionalSelectionTyping() is True
+
+
+def test_typing_reaches_every_line_of_a_block_selection(qtbot: QtBot) -> None:
+    """Typing a character with a rectangular (block) selection spanning several equal-length lines
+    inserts it on every one of them, not just the last-touched line (#74).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` with three equal-length lines
+    * make a rectangular selection at the same column on all three lines
+    * type a character and verify it landed at that column on every line
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+    editor.setText("aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc")
+    editor.setRectangularSelectionAnchor(3)
+    line_2_start = editor.positionFromLine(2)
+    editor.setRectangularSelectionCaret(line_2_start + 3)
+
+    qtbot.keyClicks(editor, "x")
+
+    text = bytes(editor.getText(editor.length() + 1).data()).decode("utf-8")
+    lines = text.split("\n")
+    assert lines[0] == "aaaxaaaaaaa"
+    assert lines[1] == "bbbxbbbbbbb"
+    assert lines[2] == "cccxccccccc"
+
+
 def test_autocomplete_offers_image_filenames_inside_an_image_link(qtbot: QtBot, mocker: MockerFixture) -> None:
     """Typing inside an in-progress ``![alt](...)`` reference shows the resource's own image
     filenames (#74).
