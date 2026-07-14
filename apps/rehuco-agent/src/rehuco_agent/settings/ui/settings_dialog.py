@@ -14,10 +14,14 @@ from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QWidget
 
 from rehuco_agent.settings.ui.settings_dialog_ui import Ui_SettingsDialog
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_agent.settings.ui.settings_page import SettingsPage
 
 PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 """Item-data role storing each category-tree row's page widget, for selection-driven page switching."""
+
+FILTER_ROLE: Final = Qt.ItemDataRole.UserRole + 2
+"""Item-data role storing each row's `SettingsFrameFilter`, for page- and frame-level filtering."""
 
 
 class SettingsDialog(QWidget):
@@ -45,7 +49,10 @@ class SettingsDialog(QWidget):
         selection_model = cast(QItemSelectionModel, self.__ui.category_tree.selectionModel())
         selection_model.currentChanged.connect(self.__on_current_changed)
 
+        self.__ui.show_full_page_check_box.set_text("Show full page if title matches")
         self.__ui.filter_edit.textChanged.connect(self.__proxy.set_filter_text)
+        self.__ui.filter_edit.textChanged.connect(self.__apply_filter_to_current_page)
+        self.__ui.show_full_page_check_box.toggled.connect(self.__apply_filter_to_current_page)
 
         self.__ui.apply_all_action.triggered.connect(self.__apply_all)
         self.__ui.apply_current_page_action.triggered.connect(self.__apply_current_page)
@@ -62,6 +69,7 @@ class SettingsDialog(QWidget):
         widget = cast(QWidget, page)
         item = QStandardItem(page.title)
         item.setData(widget, PAGE_ROLE)
+        item.setData(SettingsFrameFilter(widget, page.title), FILTER_ROLE)
         item.setEditable(False)
         self.__model.appendRow(item)
         self.__ui.page_stack.addWidget(widget)
@@ -79,13 +87,16 @@ class SettingsDialog(QWidget):
                 pages.append(cast(SettingsPage, item.data(PAGE_ROLE)))
         return pages
 
-    def __current_page(self) -> SettingsPage | None:
-        """The page whose row is currently selected in the tree, or ``None`` if none is."""
+    def __current_item(self) -> QStandardItem | None:
+        """The source-model item for the currently-selected tree row, or ``None`` if none is."""
         index = self.__ui.category_tree.currentIndex()
         if not index.isValid():
             return None
-        source_index = self.__proxy.mapToSource(index)
-        item = self.__model.itemFromIndex(source_index)
+        return self.__model.itemFromIndex(self.__proxy.mapToSource(index))
+
+    def __current_page(self) -> SettingsPage | None:
+        """The page whose row is currently selected in the tree, or ``None`` if none is."""
+        item = self.__current_item()
         return cast(SettingsPage, item.data(PAGE_ROLE)) if item is not None else None
 
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
@@ -99,6 +110,21 @@ class SettingsDialog(QWidget):
         page = self.__current_page()
         if page is not None:
             self.__ui.page_stack.setCurrentWidget(cast(QWidget, page))
+            self.__apply_filter_to_current_page()
+
+    def __apply_filter_to_current_page(self, *_args: object) -> None:
+        """Re-run the frame-level filter on the currently-shown page.
+
+        Called when the filter text or the "show full page if title matches" toggle changes, and
+        when a different page becomes current -- so the visible page always reflects the live filter.
+
+        :param _args: the triggering signal's argument (filter text or toggle state); unused, the
+            current values are read straight off the widgets.
+        """
+        del _args
+        if (item := self.__current_item()) is not None:
+            frame_filter = cast(SettingsFrameFilter, item.data(FILTER_ROLE))
+            frame_filter.apply(self.__ui.filter_edit.text(), self.__ui.show_full_page_check_box.is_checked())
 
     def __apply_all(self) -> None:
         """Apply every registered page's changes."""
@@ -121,9 +147,9 @@ class SettingsDialog(QWidget):
             page.drop_changes()
 
     class CategoryFilterProxyModel(QSortFilterProxyModel):
-        """Shows only rows whose page title or field labels contain the filter text, case-insensitive.
+        """Shows only rows whose page title or frame text contains the filter text, case-insensitive.
 
-        A plain-substring match against :meth:`SettingsPage.field_labels` (not a regex, unlike Qt's
+        A plain-substring match against the row's `SettingsFrameFilter` (not a regex, unlike Qt's
         own ``setFilterFixedString``/``filterRegularExpression`` -- their round trip would need
         un-escaping the fixed-string-escaped pattern back to plain text to match against, which
         :meth:`set_filter_text` avoids by keeping its own plain-text copy).
@@ -147,7 +173,7 @@ class SettingsDialog(QWidget):
         @override
         def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex | QPersistentModelIndex) -> bool:
             """Accept every row when the filter is empty, or when the row's page title or any of its
-            field labels contains the filter text (case-insensitive).
+            frames' text contains the filter text (case-insensitive).
 
             :param source_row: the row, within the flat (single-level) source model, to test.
             :param source_parent: the source model's parent index; always the invisible root, since
@@ -162,6 +188,7 @@ class SettingsDialog(QWidget):
             if item is None:  # pragma: no cover  (Qt only calls this for a row the model actually has)
                 return True
             page = cast(SettingsPage, item.data(PAGE_ROLE))
+            frame_filter = cast(SettingsFrameFilter, item.data(FILTER_ROLE))
             needle = self.__filter_text.lower()
-            haystacks = [page.title, *page.field_labels()]
+            haystacks = [page.title, *frame_filter.field_labels()]
             return any(needle in haystack.lower() for haystack in haystacks)

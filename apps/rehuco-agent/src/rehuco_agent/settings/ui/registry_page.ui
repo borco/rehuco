@@ -3,46 +3,82 @@
  <class>RegistryPage</class>
  <widget class="QWidget" name="RegistryPage">
   <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
    <item>
-    <widget class="QLabel" name="status_label">
-     <property name="wordWrap">
-      <bool>true</bool>
+    <widget class="QFrame" name="registration_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
      </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="registration_frame_layout">
+      <item>
+       <widget class="QLabel" name="registration_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Windows Integration</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="status_label">
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="buttons_layout">
+        <item>
+         <widget class="QPushButton" name="register_button">
+          <property name="text">
+           <string>Register</string>
+          </property>
+          <property name="toolTip">
+           <string>Register the .rehu file association and folder/archive context menus</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="unregister_button">
+          <property name="text">
+           <string>Unregister</string>
+          </property>
+          <property name="toolTip">
+           <string>Remove the .rehu file association and folder/archive context menus</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="check_button">
+          <property name="text">
+           <string>Check registration</string>
+          </property>
+          <property name="toolTip">
+           <string>Verify the expected registry entries are present</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
     </widget>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="buttons_layout">
-     <item>
-      <widget class="QPushButton" name="register_button">
-       <property name="text">
-        <string>Register</string>
-       </property>
-       <property name="toolTip">
-        <string>Register the .rehu file association and folder/archive context menus</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="unregister_button">
-       <property name="text">
-        <string>Unregister</string>
-       </property>
-       <property name="toolTip">
-        <string>Remove the .rehu file association and folder/archive context menus</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="check_button">
-       <property name="text">
-        <string>Check registration</string>
-       </property>
-       <property name="toolTip">
-        <string>Verify the expected registry entries are present</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
    </item>
    <item>
     <spacer name="bottom_spacer">

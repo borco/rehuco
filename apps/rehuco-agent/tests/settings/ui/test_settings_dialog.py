@@ -1,30 +1,39 @@
 """Tests for SettingsDialog: the filterable category tree + per-category stacked page shell."""
 
 from PySide6.QtCore import QModelIndex
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 
 # region Sample classes
 class FakePage(QWidget):
-    """A minimal `SettingsPage` stand-in for exercising `SettingsDialog` without a real page."""
+    """A minimal `SettingsPage` stand-in for exercising `SettingsDialog` without a real page.
 
-    def __init__(self, title: str, field_labels: list[str] | None = None, parent: QWidget | None = None) -> None:
+    Builds one top-level ``QFrame`` per entry in ``groups`` (each holding a ``QLabel`` for every
+    term), so the dialog's introspecting `SettingsFrameFilter` has real frames to show/hide.
+    """
+
+    def __init__(self, title: str, groups: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__title = title
-        self.__field_labels = field_labels or []
         self.save_calls = 0
         self.drop_calls = 0
+        self.frames: list[QFrame] = []
+
+        layout = QVBoxLayout(self)
+        for terms in groups or []:
+            frame = QFrame(self)
+            frame_layout = QVBoxLayout(frame)
+            for term in terms:
+                frame_layout.addWidget(QLabel(term, frame))
+            layout.addWidget(frame)
+            self.frames.append(frame)
 
     @property
     def title(self) -> str:
         """This page's category-tree label."""
         return self.__title
-
-    def field_labels(self) -> list[str]:
-        """The stubbed field labels this page reports for filtering."""
-        return self.__field_labels
 
     def is_dirty(self) -> bool:
         """Always clean -- not exercised by these tests."""
@@ -155,8 +164,8 @@ def test_filter_hides_a_page_whose_title_and_field_labels_dont_match(qtbot: QtBo
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", ["Register", "Unregister"]))
-    dialog.add_page(FakePage("Markdown Rendering", ["Engine", "CSS"]))
+    dialog.add_page(FakePage("Registry", [["Register", "Unregister"]]))
+    dialog.add_page(FakePage("Markdown Rendering", [["Engine", "CSS"]]))
 
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
 
@@ -176,7 +185,7 @@ def test_filter_matches_case_insensitively_against_field_labels(qtbot: QtBot) ->
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Markdown Rendering", ["Maximum image width"]))
+    dialog.add_page(FakePage("Markdown Rendering", [["Maximum image width"]]))
 
     dialog_ui(dialog).filter_edit.setText("WIDTH")  # type: ignore[attr-defined]
 
@@ -194,8 +203,8 @@ def test_clearing_the_filter_shows_every_page_again(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", ["Register"]))
-    dialog.add_page(FakePage("Markdown Rendering", ["Engine"]))
+    dialog.add_page(FakePage("Registry", [["Register"]]))
+    dialog.add_page(FakePage("Markdown Rendering", [["Engine"]]))
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
 
     dialog_ui(dialog).filter_edit.setText("")  # type: ignore[attr-defined]
@@ -329,3 +338,83 @@ def test_actions_are_no_ops_with_no_pages_registered(qtbot: QtBot) -> None:
     ui.apply_current_page_action.trigger()  # type: ignore[attr-defined]
     ui.reset_all_action.trigger()  # type: ignore[attr-defined]
     ui.reset_current_page_action.trigger()  # type: ignore[attr-defined]
+
+
+def test_typing_filter_text_hides_the_current_pages_non_matching_frames(qtbot: QtBot) -> None:
+    """Typing filter text drives the current page's frame-level filter (#67).
+
+    **Test steps:**
+
+    * add a page with two frames, then type text matching only the first
+    * verify the matching frame stays shown and the other is hidden
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry", [["Register"], ["Check registration"]])
+    dialog.add_page(page)
+
+    dialog_ui(dialog).filter_edit.setText("register")  # type: ignore[attr-defined]
+
+    register_frame, check_frame = page.frames
+    assert register_frame.isVisibleTo(page) is True
+    assert check_frame.isVisibleTo(page) is False
+
+
+def test_toggling_show_full_page_reveals_the_whole_page_on_a_title_match(qtbot: QtBot) -> None:
+    """Checking "show full page if title matches" re-runs the filter and reveals every frame (#67).
+
+    **Test steps:**
+
+    * add a page whose title matches the filter but whose second frame does not, and filter to it
+    * check the toggle
+    * verify the previously-hidden frame is now shown (whole page revealed)
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry", [["Register"], ["Check status"]])
+    dialog.add_page(page)
+    dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
+    assert page.frames[1].isVisibleTo(page) is False
+
+    dialog_ui(dialog).show_full_page_check_box.set_checked(True)  # type: ignore[attr-defined]
+
+    assert page.frames[1].isVisibleTo(page) is True
+
+
+def test_selecting_a_page_applies_the_active_filter_to_it(qtbot: QtBot) -> None:
+    """A page becoming current gets the live filter applied, so it isn't shown unfiltered (#67).
+
+    **Test steps:**
+
+    * add two pages, type a filter matching only one frame of the second, then select the second
+    * verify the second page's non-matching frame is hidden on display
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Registry", [["Register"]])
+    second = FakePage("Markdown Rendering", [["Engine"], ["Images"]])
+    dialog.add_page(first)
+    dialog.add_page(second)
+    dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
+
+    select_page(dialog, "Markdown Rendering")
+
+    engine_frame, image_frame = second.frames
+    assert engine_frame.isVisibleTo(second) is True
+    assert image_frame.isVisibleTo(second) is False
+
+
+def test_filtering_with_no_pages_registered_does_nothing(qtbot: QtBot) -> None:
+    """Changing the filter or toggle with no pages registered is a no-op and doesn't raise (#67).
+
+    **Test steps:**
+
+    * construct a dialog with no pages
+    * type filter text and toggle "show full page if title matches"
+    * verify neither raises (there is no current page to filter)
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog_ui(dialog).filter_edit.setText("anything")  # type: ignore[attr-defined]
+    dialog_ui(dialog).show_full_page_check_box.set_checked(True)  # type: ignore[attr-defined]

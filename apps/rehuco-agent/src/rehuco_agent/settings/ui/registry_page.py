@@ -64,10 +64,6 @@ class RegistryPage(QWidget):
         """This page's category-tree label."""
         return "Registry"
 
-    def field_labels(self) -> list[str]:
-        """The action labels this page exposes, for the settings dialog's filter box."""
-        return ["Register", "Unregister", "Check registration"]
-
     def is_dirty(self) -> bool:
         """Always ``False`` -- register/unregister act immediately, nothing is staged."""
         return False

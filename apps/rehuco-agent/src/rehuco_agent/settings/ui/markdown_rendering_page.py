@@ -28,6 +28,11 @@ class MarkdownRenderingPage(QWidget):
         self.__ui: Final = Ui_MarkdownRenderingPage()
         self.__ui.setupUi(self)
 
+        # Stretch the engine frame so its CSS editor fills the page; the bottom spacer only expands
+        # when the engine frame is filtered out (keeping a lone image frame at the top). Set here,
+        # not in the .ui: this pyside6-uic mistranslates a box-layout stretch property.
+        self.__ui.main_layout.setStretch(0, 1)
+
         self.__markdown_css_draft = ""
         self.__mistletoe_css_draft = ""
 
@@ -40,10 +45,6 @@ class MarkdownRenderingPage(QWidget):
     def title(self) -> str:
         """This page's category-tree label."""
         return "Markdown Rendering"
-
-    def field_labels(self) -> list[str]:
-        """The setting labels this page exposes, for the settings dialog's filter box."""
-        return ["Engine", "markdown", "mistletoe", "CSS", "Maximum image width"]
 
     def is_dirty(self) -> bool:
         """Whether any staged edit differs from the shared settings' current values."""
