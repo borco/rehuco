@@ -734,7 +734,34 @@ def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
     window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert [action.text() for action in menu.actions()] == [str(newer), str(older)]
+    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    assert paths_shown == [str(newer), str(older)]
+
+
+def test_recents_menu_derives_the_title_the_same_way_as_a_document_label(qtbot: QtBot) -> None:
+    """A recent ``info.rehu`` path shows its parent folder's name (trailing-slashed) as its title,
+    the same ``info.rehu``-aware rule as :attr:`RehuDocumentModel.label` -- not the bare
+    ``"info.rehu"`` filename (#64).
+
+    **Test steps:**
+
+    * record a directory-scoped ``info.rehu`` path and a plain ``.rehu`` path
+    * populate the recents menu
+    * verify each entry's title label reads the folder name / bare filename respectively
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    folder_path = (Path("some_folder") / "info.rehu").resolve()
+    plain_path = Path("plain.rehu").resolve()
+    recent_files.record(folder_path)
+    recent_files.record(plain_path)
+
+    window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    titles_shown = [action.defaultWidget().findChildren(QLabel)[0].text() for action in menu.actions()]
+    assert titles_shown == ["plain.rehu", "some_folder/"]
 
 
 def test_recents_menu_shows_a_disabled_placeholder_when_empty(qtbot: QtBot) -> None:
@@ -800,7 +827,8 @@ def test_recents_menu_repopulates_on_every_show(qtbot: QtBot) -> None:
     window._MainWindow__recent_files.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     menu.aboutToShow.emit()
 
-    assert [action.text() for action in menu.actions()] == [str(path)]
+    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    assert paths_shown == [str(path)]
 
 
 def test_close_event_saves_recent_files(mocker: MockerFixture, qtbot: QtBot) -> None:

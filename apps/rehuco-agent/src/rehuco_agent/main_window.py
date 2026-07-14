@@ -12,9 +12,10 @@ from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QSizePolicy, QWidget, QWidgetAction
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from rehuco_agent.docks_menu_entry import DocksMenuEntry
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.rehu_document_menu_entry import RehuDocumentMenuEntry
+from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
@@ -119,7 +120,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         for widget in widgets:
             action = QWidgetAction(menu)
-            action.setDefaultWidget(DocksMenuEntry(widget.model.label, widget.model.path, menu))
+            action.setDefaultWidget(RehuDocumentMenuEntry(widget.model.label, widget.model.path, menu))
             action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
             menu.addAction(action)
 
@@ -173,7 +174,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).
 
         Rebuilt fresh on every ``aboutToShow`` rather than kept in sync incrementally, mirroring
-        :meth:`__populate_docks_menu`.
+        :meth:`__populate_docks_menu` -- including reusing the same :class:`RehuDocumentMenuEntry`
+        title/path row, title derived the same ``info.rehu``-aware way as
+        :attr:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.label`.
         """
         menu = self.__ui.open_recents_menu
         menu.clear()
@@ -183,8 +186,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             placeholder.setEnabled(False)
             return
         for path in paths:
-            action = menu.addAction(str(path))
+            title = f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(RehuDocumentMenuEntry(title, path, menu))
             action.triggered.connect(lambda _checked=False, path=path: self.open_path(path))
+            menu.addAction(action)
 
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).
