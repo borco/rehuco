@@ -23,11 +23,28 @@
      <height>21</height>
     </rect>
    </property>
+   <widget class="QMenu" name="file_menu">
+    <property name="title">
+     <string>&amp;File</string>
+    </property>
+    <widget class="QMenu" name="open_recents_menu">
+     <property name="title">
+      <string>Open recen&amp;ts</string>
+     </property>
+    </widget>
+    <addaction name="open_rehu_action"/>
+    <addaction name="open_folder_action"/>
+    <addaction name="open_companion_action"/>
+    <addaction name="open_recents_menu"/>
+    <addaction name="save_all_action"/>
+    <addaction name="separator"/>
+   </widget>
    <widget class="QMenu" name="view_menu">
     <property name="title">
      <string>&amp;View</string>
     </property>
    </widget>
+   <addaction name="file_menu"/>
    <addaction name="view_menu"/>
   </widget>
   <widget class="QStatusBar" name="status_bar"/>
@@ -52,6 +69,48 @@
    </property>
    <property name="toolTip">
     <string>Cycle theme: follow system, light, dark</string>
+   </property>
+  </action>
+  <action name="open_rehu_action">
+   <property name="text">
+    <string>Open &amp;rehu...</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+O</string>
+   </property>
+  </action>
+  <action name="open_folder_action">
+   <property name="text">
+    <string>Open f&amp;older...</string>
+   </property>
+  </action>
+  <action name="open_companion_action">
+   <property name="text">
+    <string>Open &amp;companion...</string>
+   </property>
+  </action>
+  <action name="save_all_action">
+   <property name="text">
+    <string>&amp;Save all</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+S</string>
+   </property>
+  </action>
+  <action name="settings_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>S&amp;ettings</string>
+   </property>
+  </action>
+  <action name="quit_action">
+   <property name="text">
+    <string>&amp;Quit</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Q</string>
    </property>
   </action>
  </widget>

@@ -18,6 +18,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
+from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 
 
@@ -338,6 +339,516 @@ def test_open_path_dispatches_an_archive_path_to_open_archive(mocker: MockerFixt
     open_archive.assert_called_once_with("a.zip")
     open_file.assert_not_called()
     open_folder.assert_not_called()
+
+
+def test_open_file_records_a_successful_open_into_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A successful ``open_file`` records the resolved path into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_document`` to report success (a non-``None`` widget)
+    * call ``open_file``
+    * verify the resolved path is now the newest recent entry
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock())
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_file("a.rehu")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == [Path("a.rehu").resolve()]
+
+
+def test_open_file_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A failed ``open_file`` (no dock created) is not recorded into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_document`` to report failure (``None``, e.g. #35)
+    * call ``open_file``
+    * verify ``Open recents`` stays empty
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_file("missing.rehu")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_open_folder_records_a_successful_open_into_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A successful ``open_folder`` records the resolved path into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_folder`` to report success
+    * call ``open_folder``
+    * verify the resolved path is now the newest recent entry
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=mocker.MagicMock())
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_folder("a_folder")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == [Path("a_folder").resolve()]
+
+
+def test_open_folder_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A failed ``open_folder`` (no dock created) is not recorded into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_folder`` to report failure (``None``, e.g. an unreadable ``info.rehu``)
+    * call ``open_folder``
+    * verify ``Open recents`` stays empty
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_folder("missing_folder")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A successful ``open_archive`` records the resolved path into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_archive`` to report success
+    * call ``open_archive``
+    * verify the resolved path is now the newest recent entry
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=mocker.MagicMock())
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_archive("a.zip")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == [Path("a.zip").resolve()]
+
+
+def test_open_archive_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A failed ``open_archive`` (no dock created) is not recorded into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_archive`` to report failure (``None``, e.g. an unreadable companion)
+    * call ``open_archive``
+    * verify ``Open recents`` stays empty
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_archive("missing.zip")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
+def test_open_rehu_action_opens_the_chosen_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open rehu...`` opens whatever file the user picks (#64).
+
+    **Test steps:**
+
+    * mock the file-open dialog to report a chosen path
+    * trigger ``open_rehu_action``
+    * verify ``open_file`` was called with that path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("picked.rehu", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+
+    window._MainWindow__ui.open_rehu_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_file.assert_called_once_with("picked.rehu")
+
+
+def test_open_rehu_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open rehu...`` does nothing when the dialog is cancelled (#64).
+
+    **Test steps:**
+
+    * mock the file-open dialog to report no chosen path (cancelled)
+    * trigger ``open_rehu_action``
+    * verify ``open_file`` was never called
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_file = mocker.patch.object(window, "open_file")
+
+    window._MainWindow__ui.open_rehu_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_file.assert_not_called()
+
+
+def test_open_folder_action_opens_the_chosen_folder(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open folder...`` opens whatever folder the user picks (#64).
+
+    **Test steps:**
+
+    * mock the folder-picker dialog to report a chosen path
+    * trigger ``open_folder_action``
+    * verify ``open_folder`` was called with that path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value="picked_folder")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_folder = mocker.patch.object(window, "open_folder")
+
+    window._MainWindow__ui.open_folder_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_folder.assert_called_once_with("picked_folder")
+
+
+def test_open_folder_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open folder...`` does nothing when the dialog is cancelled (#64).
+
+    **Test steps:**
+
+    * mock the folder-picker dialog to report no chosen path (cancelled)
+    * trigger ``open_folder_action``
+    * verify ``open_folder`` was never called
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value="")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_folder = mocker.patch.object(window, "open_folder")
+
+    window._MainWindow__ui.open_folder_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_folder.assert_not_called()
+
+
+def test_open_companion_action_opens_the_chosen_archive(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open companion...`` opens whatever archive the user picks (#64).
+
+    **Test steps:**
+
+    * mock the file-open dialog to report a chosen path
+    * trigger ``open_companion_action``
+    * verify ``open_archive`` was called with that path
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("picked.zip", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_archive = mocker.patch.object(window, "open_archive")
+
+    window._MainWindow__ui.open_companion_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_archive.assert_called_once_with("picked.zip")
+
+
+def test_open_companion_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Open companion...`` does nothing when the dialog is cancelled (#64).
+
+    **Test steps:**
+
+    * mock the file-open dialog to report no chosen path (cancelled)
+    * trigger ``open_companion_action``
+    * verify ``open_archive`` was never called
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getOpenFileName", return_value=("", ""))
+    window = MainWindow()
+    qtbot.addWidget(window)
+    open_archive = mocker.patch.object(window, "open_archive")
+
+    window._MainWindow__ui.open_companion_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    open_archive.assert_not_called()
+
+
+def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Save all`` saves every dirty document, reusing #41's per-document save, and leaves
+    clean ones alone (#64).
+
+    **Test steps:**
+
+    * stand in one dirty and one clean open document model
+    * trigger ``save_all_action``
+    * verify only the dirty model was saved
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dirty, clean = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=False)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty, clean])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    dirty.save.assert_called_once_with()
+    clean.save.assert_not_called()
+
+
+def test_quit_action_closes_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Quit`` closes the window, letting the existing close guard take over (#64).
+
+    **Test steps:**
+
+    * mock ``close`` on the class, before construction -- the ``triggered`` signal is connected to
+      ``self.close`` in ``__init__``, so patching only the already-constructed instance would leave
+      that connection pointing at the original, real ``close``
+    * trigger ``quit_action``
+    * verify ``close`` was called
+    """
+    close = mocker.patch.object(MainWindow, "close")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.quit_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    close.assert_called_once()
+
+
+def test_settings_action_is_added_to_the_file_menu(qtbot: QtBot) -> None:
+    """``File > Settings`` is its own action, distinct from the toolbar's settings-dock toggle (#64):
+    sharing that one directly would carry its checked-state icon recoloring (built for a toolbar
+    button's highlighted background) into a plain menu row, rendering it unreadable there.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * verify ``settings_action`` is among ``file_menu``'s actions
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert ui.settings_action in ui.file_menu.actions()
+
+
+def test_settings_action_triggering_toggles_the_settings_dock(qtbot: QtBot) -> None:
+    """Triggering ``File > Settings`` forwards to the real settings-dock toggle (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and note the settings dock's initial visibility
+    * trigger ``settings_action``
+    * verify the dock's real toggle action's checked state flipped, and ``settings_action`` mirrors it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    before = settings_dock.toggleViewAction().isChecked()
+
+    ui.settings_action.trigger()
+
+    assert settings_dock.toggleViewAction().isChecked() != before
+    assert ui.settings_action.isChecked() == settings_dock.toggleViewAction().isChecked()
+
+
+def test_settings_action_reflects_the_dock_being_toggled_elsewhere(qtbot: QtBot) -> None:
+    """``settings_action``'s checkmark stays in sync even when the dock's real toggle action fires
+    some other way (e.g. the toolbar button) -- not just via this menu's own clicks (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and trigger the settings dock's *real* toggle action directly
+    * verify ``settings_action`` picked up the new checked state
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    settings_dock.toggleViewAction().trigger()
+
+    assert ui.settings_action.isChecked() == settings_dock.toggleViewAction().isChecked()
+
+
+def test_file_menu_about_to_show_resyncs_settings_action_after_a_silent_dock_change(qtbot: QtBot) -> None:
+    """``File``'s own ``aboutToShow`` force-corrects ``settings_action``'s checkmark even when the
+    settings dock's visibility changed through ``toggleView()`` -- which updates the real toggle
+    action's checked state *without* emitting ``toggled`` at all (confirmed empirically), the exact
+    gap plain ``toggled``-based mirroring can't catch on its own (#64). ``DockableDialog``'s own
+    ``restore_all``/``enforce_restore_on_start`` both change visibility this same silent way.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and find the settings dock
+    * flip its visibility directly via ``toggleView()``, not through any action
+    * emit ``file_menu.aboutToShow``
+    * verify ``settings_action`` now matches the dock's real toggle state
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert settings_dock is not None
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    before = settings_dock.toggleViewAction().isChecked()
+
+    settings_dock.toggleView(not before)
+    ui.file_menu.aboutToShow.emit()
+
+    assert ui.settings_action.isChecked() != before
+    assert ui.settings_action.isChecked() == settings_dock.toggleViewAction().isChecked()
+
+
+def test_quit_action_is_the_last_entry_in_the_file_menu(qtbot: QtBot) -> None:
+    """``Quit`` is appended last to ``File``, after ``Settings`` (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * verify ``quit_action`` is the final action in ``file_menu``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert ui.file_menu.actions()[-1] is ui.quit_action
+
+
+def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
+    """``Open recents`` lists every remembered path, most-recently-opened first (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and record two paths, oldest first
+    * populate the recents menu
+    * verify its entries read back newest first
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    older, newer = Path("older.rehu").resolve(), Path("newer.rehu").resolve()
+    recent_files.record(older)
+    recent_files.record(newer)
+
+    window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    assert paths_shown == [str(newer), str(older)]
+
+
+def test_recents_menu_derives_the_title_the_same_way_as_a_document_label(qtbot: QtBot) -> None:
+    """A recent ``info.rehu`` path shows its parent folder's name (trailing-slashed) as its title,
+    the same ``info.rehu``-aware rule as :attr:`RehuDocumentModel.label` -- not the bare
+    ``"info.rehu"`` filename (#64).
+
+    **Test steps:**
+
+    * record a directory-scoped ``info.rehu`` path and a plain ``.rehu`` path
+    * populate the recents menu
+    * verify each entry's title label reads the folder name / bare filename respectively
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    folder_path = (Path("some_folder") / "info.rehu").resolve()
+    plain_path = Path("plain.rehu").resolve()
+    recent_files.record(folder_path)
+    recent_files.record(plain_path)
+
+    window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    titles_shown = [action.defaultWidget().findChildren(QLabel)[0].text() for action in menu.actions()]
+    assert titles_shown == ["plain.rehu", "some_folder/"]
+
+
+def test_recents_menu_shows_a_disabled_placeholder_when_empty(qtbot: QtBot) -> None:
+    """With nothing remembered, ``Open recents`` shows a single disabled placeholder entry (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` with nothing recorded
+    * populate the recents menu
+    * verify exactly one, disabled action is present
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    actions = menu.actions()
+    assert len(actions) == 1
+    assert not actions[0].isEnabled()
+
+
+def test_recents_menu_entry_triggering_opens_that_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Selecting a remembered path in ``Open recents`` reopens it via ``open_path`` (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and record one path
+    * populate the recents menu and trigger its single entry
+    * verify ``open_path`` was called with that path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("remembered.rehu").resolve()
+    window._MainWindow__recent_files.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    open_path = mocker.patch.object(window, "open_path")
+
+    window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu.actions()[0].trigger()
+
+    open_path.assert_called_once_with(path)
+
+
+def test_recents_menu_repopulates_on_every_show(qtbot: QtBot) -> None:
+    """The recents menu is rebuilt fresh every time it's about to show, not just once (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and emit the menu's ``aboutToShow`` with nothing recorded yet
+    * record a path, then emit ``aboutToShow`` again
+    * verify the menu now reflects the newly-recorded path
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    menu.aboutToShow.emit()
+    assert len(menu.actions()) == 1
+    assert not menu.actions()[0].isEnabled()
+
+    path = Path("fresh.rehu").resolve()
+    window._MainWindow__recent_files.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    menu.aboutToShow.emit()
+
+    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    assert paths_shown == [str(path)]
+
+
+def test_close_event_saves_recent_files(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app persists the recent-files list (#64).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``RecentFilesSettings.save`` to detect the call
+    * dispatch a close event
+    * verify ``save`` was called once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save = mocker.patch.object(RecentFilesSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    save.assert_called_once()
 
 
 def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:

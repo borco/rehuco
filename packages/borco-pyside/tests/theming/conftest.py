@@ -54,6 +54,21 @@ def make_action(qtbot: QtBot) -> Iterator[QAction]:
 
 
 @fixture
+def make_companion_action(qtbot: QtBot) -> Iterator[QAction]:
+    """A second, independently torn-down `QAction`, for tests pairing two actions via
+    `ActionIconThemeHandler`'s `companion` -- same reasoning as `make_action`.
+
+    :param qtbot: pytest-qt bot, ensuring a QApplication exists and draining events on teardown.
+    :returns: a fresh `QAction`.
+    """
+    action = QAction()
+    yield action
+    action.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)
+    qtbot.wait(10)
+
+
+@fixture
 def mock_qfile(mocker: MockerFixture) -> Callable[..., Any]:
     """Provide a factory that patches `QFile` in `action_icon_theme_handler`, avoiding disk I/O.
 

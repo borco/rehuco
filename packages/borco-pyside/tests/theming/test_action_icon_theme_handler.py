@@ -94,6 +94,141 @@ def test_the_single_icon_carries_both_state_variants(make_action: QAction, mock_
     )
 
 
+def test_companion_action_icon_has_no_checked_variant(
+    make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """The ``companion`` action's icon keeps ``ButtonText`` for both the ``Off`` and ``On`` states,
+    unlike the main action's own ``HighlightedText`` checked variant -- built for a plain menu row,
+    where that recolor would render near-invisible against the menu's own background (#64).
+
+    **Test steps:**
+
+    * construct a handler with a companion action
+    * verify the companion's ``Off`` and ``On`` state pixmaps both render in ``ButtonText``
+    """
+    mock_qfile(SVG)
+    ActionIconThemeHandler(make_action, "icon.svg", companion=make_companion_action)
+
+    icon = make_companion_action.icon()
+    off = icon.pixmap(QSize(10, 10), QIcon.Mode.Normal, QIcon.State.Off)
+    on = icon.pixmap(QSize(10, 10), QIcon.Mode.Normal, QIcon.State.On)
+    expected = QApplication.palette().color(QPalette.ColorRole.ButtonText).name()
+    assert off.toImage().pixelColor(5, 5).name() == expected
+    assert on.toImage().pixelColor(5, 5).name() == expected
+
+
+def test_companion_action_starts_matching_the_main_actions_checked_state(
+    make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """The companion action's checked state is synced from the main action immediately at
+    construction, not just from then on (#64).
+
+    **Test steps:**
+
+    * make the main action checkable and checked before constructing the handler
+    * verify the companion starts out checked too
+    """
+    mock_qfile(SVG)
+    make_action.setCheckable(True)
+    make_action.setChecked(True)
+    make_companion_action.setCheckable(True)
+
+    ActionIconThemeHandler(make_action, "icon.svg", companion=make_companion_action)
+
+    assert make_companion_action.isChecked() is True
+
+
+def test_companion_action_checked_state_tracks_the_main_action(
+    make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """The companion action's checkmark keeps tracking the main action's checked state after
+    construction too -- e.g. when the main action's state changes some other way than through the
+    companion itself (#64).
+
+    **Test steps:**
+
+    * construct a handler with a companion action, both checkable
+    * check the main action directly
+    * verify the companion picked up the change
+    """
+    mock_qfile(SVG)
+    make_action.setCheckable(True)
+    make_companion_action.setCheckable(True)
+    ActionIconThemeHandler(make_action, "icon.svg", companion=make_companion_action)
+
+    make_action.setChecked(True)
+
+    assert make_companion_action.isChecked() is True
+
+
+def test_triggering_the_companion_action_triggers_the_main_action(
+    make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """Triggering the companion action forwards to the main action, so clicking it in a menu
+    actually performs the real toggle (#64).
+
+    **Test steps:**
+
+    * construct a handler with a companion action, both checkable
+    * trigger the companion action
+    * verify the main action's checked state flipped
+    """
+    mock_qfile(SVG)
+    make_action.setCheckable(True)
+    make_companion_action.setCheckable(True)
+    ActionIconThemeHandler(make_action, "icon.svg", companion=make_companion_action)
+
+    make_companion_action.trigger()
+
+    assert make_action.isChecked() is True
+
+
+def test_resync_companion_checked_state_corrects_a_stale_companion(
+    make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """``resync_companion_checked_state`` force-corrects the companion to match the main action's
+    *current* checked state -- the fix for ``toggled``-based mirroring's known gap (some ways the
+    main action's checked state changes, e.g. `QtAds`' ``DockableDialog.toggleView()``, don't emit
+    ``toggled`` at all, leaving the companion silently stale, confirmed empirically, #64).
+
+    **Test steps:**
+
+    * construct a handler with a companion, both checkable
+    * check the main action, then force the companion back out of sync directly (standing in for a
+      real desync path ``toggled`` can't observe, without needing a real `QtAds` dock to reproduce)
+    * call ``resync_companion_checked_state``
+    * verify the companion is checked again, matching the main action
+    """
+    mock_qfile(SVG)
+    make_action.setCheckable(True)
+    make_companion_action.setCheckable(True)
+    handler = ActionIconThemeHandler(make_action, "icon.svg", companion=make_companion_action)
+    make_action.setChecked(True)
+    make_companion_action.setChecked(False)
+
+    handler.resync_companion_checked_state()
+
+    assert make_companion_action.isChecked() is True
+
+
+def test_resync_companion_checked_state_is_a_noop_without_a_companion(
+    make_action: QAction, mock_qfile: Callable[..., Any]
+) -> None:
+    """Calling ``resync_companion_checked_state`` with no companion configured does nothing, and
+    doesn't raise (#64).
+
+    **Test steps:**
+
+    * construct a handler with no companion
+    * call ``resync_companion_checked_state``
+    * verify it doesn't raise
+    """
+    mock_qfile(SVG)
+    handler = ActionIconThemeHandler(make_action, "icon.svg")
+
+    handler.resync_companion_checked_state()
+
+
 def test_the_single_icon_carries_a_disabled_variant_too(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:
     """The built icon's ``Mode.Disabled`` variant is colored from the palette's own disabled group (#41).
 

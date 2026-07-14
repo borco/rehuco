@@ -9,16 +9,18 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QMainWindow, QSizePolicy, QWidget, QWidgetAction
+from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QSizePolicy, QWidget, QWidgetAction
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from rehuco_agent.docks_menu_entry import DocksMenuEntry
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.documents.rehu_document_menu_entry import RehuDocumentMenuEntry
+from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME
 from rehuco_agent.main_window_ui import Ui_MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings
+from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
@@ -61,12 +63,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(self.__populate_docks_menu)
+        self.__setup_file_menu()
 
         self.__window_settings: Final = MainWindowSettings()
         self.__window_settings.load(persistent_settings())
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
+
+        self.__recent_files: Final = RecentFilesSettings()
+        self.__recent_files.load(persistent_settings())
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
@@ -114,8 +120,76 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         for widget in widgets:
             action = QWidgetAction(menu)
-            action.setDefaultWidget(DocksMenuEntry(widget.model.label, widget.model.path, menu))
+            action.setDefaultWidget(RehuDocumentMenuEntry(widget.model.label, widget.model.path, menu))
             action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
+            menu.addAction(action)
+
+    def __setup_file_menu(self) -> None:
+        """Wire ``File``'s static actions -- open dialogs, save all, quit -- and the ``Open recents``
+        submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit`` separator are
+        appended later, in :meth:`__setup_docking_system`, once the settings dock's own toggle
+        action exists to reuse.
+        """
+        self.__ui.open_rehu_action.triggered.connect(self.__on_open_rehu)
+        self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
+        self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
+        self.__ui.save_all_action.triggered.connect(self.__on_save_all)
+        self.__ui.quit_action.triggered.connect(self.close)
+        self.__ui.open_recents_menu.aboutToShow.connect(self.__populate_recents_menu)
+        # settings_action's checked state can go stale without emitting toggled (see
+        # ActionIconThemeHandler's companion parameter docstring) -- force it correct right before
+        # it's seen, same as __populate_docks_menu/__populate_recents_menu rebuild fresh on every
+        # aboutToShow (#64)
+        self.__ui.file_menu.aboutToShow.connect(self.__settings_action_icon_handler.resync_companion_checked_state)
+
+    def __on_open_rehu(self) -> None:
+        """Prompt for a ``.rehu`` file and open it (``File`` > ``Open rehu...``, #64)."""
+        path, _ = QFileDialog.getOpenFileName(self, "Open rehu", "", "Rehu Files (*.rehu);;All Files (*)")
+        if path:
+            self.open_file(path)
+
+    def __on_open_folder(self) -> None:
+        """Prompt for a directory-scoped resource's folder and open it (``File`` > ``Open folder...``,
+        [[data-model#resource-scoping]], #64)."""
+        path = QFileDialog.getExistingDirectory(self, "Open Folder")
+        if path:
+            self.open_folder(path)
+
+    def __on_open_companion(self) -> None:
+        """Prompt for an archive file and open its ``.rehu`` companion (``File`` > ``Open companion...``,
+        [[data-model#resource-scoping]], #64)."""
+        filters = " ".join(f"*{extension}" for extension in ARCHIVE_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(self, "Open Companion", "", f"Archives ({filters});;All Files (*)")
+        if path:
+            self.open_archive(path)
+
+    def __on_save_all(self) -> None:
+        """Save every currently dirty open document (``File`` > ``Save all``, reusing #41's
+        per-document ``RehuDocumentModel.save``, #64)."""
+        for model in self.__documents_dock.open_document_models():
+            if model.dirty:
+                model.save()
+
+    def __populate_recents_menu(self) -> None:
+        """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).
+
+        Rebuilt fresh on every ``aboutToShow`` rather than kept in sync incrementally, mirroring
+        :meth:`__populate_docks_menu` -- including reusing the same :class:`RehuDocumentMenuEntry`
+        title/path row, title derived the same ``info.rehu``-aware way as
+        :attr:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.label`.
+        """
+        menu = self.__ui.open_recents_menu
+        menu.clear()
+        paths = self.__recent_files.newest_first()
+        if not paths:
+            placeholder = menu.addAction("No Recent Files")
+            placeholder.setEnabled(False)
+            return
+        for path in paths:
+            title = f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(RehuDocumentMenuEntry(title, path, menu))
+            action.triggered.connect(lambda _checked=False, path=path: self.open_path(path))
             menu.addAction(action)
 
     def __register_settings_pages(self) -> None:
@@ -148,7 +222,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # there's anything actually saved
         settings_dock.place_floating()
         self.__dialog_manager.register(settings_dock)
-        ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
+        # settings_action stands in for toggle_action in File (a plain menu row, unlike the
+        # toolbar button toggle_action was built for) -- see the companion parameter's docstring
+        # for why that needs a second, differently-themed action rather than reusing toggle_action
+        # outright (#64). Kept (unlike every other ActionIconThemeHandler call site here) since
+        # __setup_file_menu needs it to resync settings_action right before File shows.
+        self.__settings_action_icon_handler = ActionIconThemeHandler(
+            settings_dock.toggle_action, SETTINGS_ICON_RESOURCE, companion=self.__ui.settings_action
+        )
+
+        # settings_dock only exists from here on, so its menu action is appended to file_menu here
+        # rather than declared in the .ui alongside the rest of the menu (#64)
+        self.__ui.file_menu.addAction(self.__ui.settings_action)
+        self.__ui.file_menu.addSeparator()
+        self.__ui.file_menu.addAction(self.__ui.quit_action)
 
         # QToolBar has no dedicated stretch item -- an expanding QWidget is the standard stand-in,
         # pushing theme/settings to the bottom of the vertical action_bar (#59)
@@ -183,6 +270,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__save_window_state()
         self.__dialog_manager.save_all(persistent_settings())
         self.__save_session()
+        self.__recent_files.save(persistent_settings())
         super().closeEvent(event)
 
     def __restore_session(self) -> None:
@@ -262,26 +350,38 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def open_file(self, path: Path | str) -> None:
         """Open ``path`` in its document dock, focusing it if already open ([[nodes#single-instance]]).
 
+        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_folder`/:meth:`open_archive`.
+
         :param path: filesystem path to a ``.rehu`` file.
         """
-        self.__documents_dock.open_document(Path(path).resolve())
+        resolved = Path(path).resolve()
+        if self.__documents_dock.open_document(resolved) is not None:
+            self.__recent_files.record(resolved)
 
     def open_folder(self, path: Path | str) -> None:
         """Open the directory-scoped resource at ``path`` ([[data-model#resource-scoping]]), focusing
         it if already open ([[nodes#single-instance]]).
 
+        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_file`/:meth:`open_archive`.
+
         :param path: filesystem path to the directory.
         """
-        self.__documents_dock.open_folder(Path(path).resolve())
+        resolved = Path(path).resolve()
+        if self.__documents_dock.open_folder(resolved) is not None:
+            self.__recent_files.record(resolved)
 
     def open_archive(self, path: Path | str) -> None:
         """Open the file-scoped resource for the archive at ``path`` ([[data-model#resource-scoping]]),
         focusing it if already open ([[nodes#single-instance]]).
 
+        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_file`/:meth:`open_folder`.
+
         :param path: filesystem path to the archive file (e.g. ``foo.zip``); its ``.rehu`` companion
             (e.g. ``foo.rehu``) is what actually gets opened or created.
         """
-        self.__documents_dock.open_archive(Path(path).resolve())
+        resolved = Path(path).resolve()
+        if self.__documents_dock.open_archive(resolved) is not None:
+            self.__recent_files.record(resolved)
 
     def raise_and_activate(self) -> None:
         """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).
