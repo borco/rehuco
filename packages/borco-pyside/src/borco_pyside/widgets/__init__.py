@@ -10,6 +10,7 @@ from borco_pyside.widgets.line_edit_helpers import parsed_value_or_reset, resync
 from borco_pyside.widgets.rating import Rating
 from borco_pyside.widgets.rich_text_view import RichTextView
 from borco_pyside.widgets.unbounded_spin_box import UnboundedSpinBox
+from borco_pyside.widgets.wrapping_check_box import WrappingCheckBox
 
 __all__ = [
     "ElidedLabel",
@@ -19,6 +20,7 @@ __all__ = [
     "Rating",
     "RichTextView",
     "UnboundedSpinBox",
+    "WrappingCheckBox",
     "equal_width_row",
     "parsed_value_or_reset",
     "resync_line_edit",
