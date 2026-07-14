@@ -119,15 +119,62 @@ recorded shopping list, not near-term work:
 
 1. **The Daz3D plugin** ([[plugins#daz3d-plugin]]) — a `daz3d:` plugin block to receive the type-specific
    fields: `sku`, `figures`, `requires`, `provides`, install-state tracking per user/box.
-2. **A name+URL list field** — v1's `authors`/`requires`/`provides` are lists of `{name, url}` pairs.
-   `authors` maps onto the existing multi-source publisher model ([[field-schema#sources]]);
-   `requires`/`provides` need an equivalent list-of-links field in the plugin block.
+2. **Author URLs — options recorded, decision deferred** ([[appendices.daz3d-personal-database#authors-urls]]);
+   how URLs relate to the core `authors` name list is chosen during plugin work, enabled by the hook seam.
+   `requires`/`provides` (also `{name, url}` lists) live wholly in the block; only their editor is new work.
 3. **A `.dpdml → .rehu` importer** — same shape as the `.tc` migration
    ([[acquisition-tooling#tc-to-rehu]]): walk archive folders, pair each zip with its `.dpdml`, and emit a
-   `.rehu` document per package. Field mapping is direct: `product.name` → title, `product.url` +
-   `authors` → sources, `description`/`tags`/`favorite`/`published` → common core, the rest → the `daz3d:`
-   block. `index`/`total` multi-part grouping needs a decision (one document per part vs. one per product).
+   `.rehu` document per product. Field mapping is direct: `product.name` → title, `product.url` → sources,
+   `authors` names → common `authors` (URL handling per [[appendices.daz3d-personal-database#authors-urls]]),
+   `description`/`tags`/`favorite`/
+   `published` → common core, the rest → the `daz3d:` block. Multi-part (`index`/`total`) packages become
+   **one document per product** via the multi-file manifest ([[appendices.daz3d-personal-database#multi-part]]).
 4. **Preview image extraction** — v1 pulled preview images out of the zips into its DB; rehuco's importer
    must extract them next to the `.rehu` document instead (images live as files, not blobs).
 5. **`.dsx` readers** — parse `Manifest.dsx`/`Supplement.dsx` from the zip to seed documents that have no
    overlay, and to power the eventual install action.
+
+## 5. Decisions
+
+[[[appendices.daz3d-personal-database#decisions]]]
+
+Two import-mapping questions raised above were worked through in discussion (2026-07): multi-part grouping
+is settled; author-URL storage is narrowed to options, to be decided during the Daz3D plugin work.
+
+### 5.1 Author URLs: options, not a decision
+
+[[[appendices.daz3d-personal-database#authors-urls]]]
+
+How author URLs relate to the core `authors` name list ([[field-schema#field-mapping]]) is **deliberately
+left open**: the options below are recorded for when the Daz3D plugin work starts, and the choice is
+enabled — not forced — by the settled architecture in the first bullet:
+
+- **Settled: the enabling architecture.** Plugins get a non-GUI core layer loaded by agent and node alike
+  (plugins own web rendering, so a node-side layer exists anyway), plus a core-field-change hook seam in
+  `rehuco-core` so a plugin can observe core-field edits — a plugin-contract extension not yet written into
+  [[plugins#core-vs-plugin]]. Cross-block consistency stays best-effort with self-healing repair across
+  sync merges (resolved per sub-block, [[sync#overview]]) and plugin-less writers — true under every
+  option below that keeps URLs outside the core field.
+- **Option: decouple — a name-keyed URL map in the `daz3d:` block.** Core untouched, text-list editing
+  intact; the plugin syncs the map via the hook seam. A rename *detaches* its URL — visible, recoverable.
+  (An index-keyed map is off the table: shape edits silently reattach URLs to the *wrong* authors.)
+- **Option: duplicate — the block carries its own `authors: [{name, url}]` list.** Self-contained and
+  merge-friendly as a unit, but two lists can drift; the plugin reconciles the block list against the
+  core names.
+- **Option: promote — core `authors` items become `{name, url}` records** behind a tolerant reader (plain
+  strings stay legal; the record form is written only for entries with a URL). No cross-block invariant at
+  all — at the cost of a record-list editor (shared with `sources`, [[field-schema#sources]]) and a change
+  to the `authors` row in [[field-schema#field-mapping]]. Any block-side maps fold into it later.
+
+### 5.2 Multi-part archives: one document per product
+
+[[[appendices.daz3d-personal-database#multi-part]]]
+
+v1's `index`/`total` (one product sold as several zips) maps to **one `.rehu` per product**, not one per
+part: a purchase is one resource, and per-part documents would split tags/description/favorite across
+copies. The vehicle is the **multi-file manifest block** that file-scoped `.rehu` already requires for
+exactly this case ([[data-model#resource-scoping]]: naming convention alone can't bind `foo.zip` +
+`bar.zip` into one resource). The importer merges the per-part `.dpdml` overlays into the one document and
+lists every member zip in the manifest. That block is acknowledged in the data model but not yet
+specified — specifying it gates the importer for multi-part packages only; single-part packages (the vast
+majority) don't wait for it.
