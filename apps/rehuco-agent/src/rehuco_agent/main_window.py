@@ -6,10 +6,10 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
-from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
+from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QSizePolicy, QWidget, QWidgetAction
+from PySide6.QtGui import QAction, QCloseEvent
+from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
@@ -21,11 +21,25 @@ from rehuco_agent.settings.document_session_settings import DocumentSessionSetti
 from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from rehuco_agent.settings.persistent_settings import persistent_settings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
+from rehuco_agent.settings.theme_settings import ThemeSettings
 from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
+
+THEME_DEFAULT_ICON: Final = ":/icons/theme_auto.svg"
+"""Shown for the follow-system theme mode (``Qt.ColorScheme.Unknown``) -- on the toolbar's
+3-state cycling action (:class:`~borco_pyside.theming.ThemeManager`) and the ``View`` menu's
+``Default`` entry (:class:`~borco_pyside.theming.ThemeMenu`) alike, #57."""
+
+THEME_LIGHT_ICON: Final = ":/icons/theme_light.svg"
+"""Shown for the light theme mode (``Qt.ColorScheme.Light``), same two consumers as
+:data:`THEME_DEFAULT_ICON`."""
+
+THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
+"""Shown for the dark theme mode (``Qt.ColorScheme.Dark``), same two consumers as
+:data:`THEME_DEFAULT_ICON`."""
 
 ARCHIVE_EXTENSIONS: Final = (".zip",)
 """Archive file extensions (each including the leading dot) that get a file-scoped ``.rehu``
@@ -53,6 +67,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.setupUi(self)
         self.centralWidget().hide()
         self.__base_window_title: Final = self.windowTitle()
+        # every action __add_open_documents itself added on the last rebuild -- removed and
+        # rebuilt from scratch each time, so the rebuild never has to know or guess what's
+        # "static" above it (the theme entries, their separator, or anything added there later)
+        self.__dynamic_view_menu_actions: Final[list[QAction]] = []
 
         self.__dialog_manager: Final = DockableDialogManager()
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -62,7 +80,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__setup_docking_system()
-        self.__ui.view_menu.aboutToShow.connect(self.__populate_docks_menu)
+        self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()
 
         self.__window_settings: Final = MainWindowSettings()
@@ -80,12 +98,32 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__dialog_manager.restore_all(persistent_settings())
 
+        self.__theme_settings: Final = ThemeSettings()
+        self.__theme_settings.load(persistent_settings())
+
+        # the shared source of truth for both views below (#57) -- neither ever reads
+        # QApplication.styleHints().colorScheme() itself, which reports the *resolved* appearance
+        # and can't distinguish "explicitly Light" from "Default, currently resolving to Light"
+        self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
         ThemeManager(
+            self.__theme_model,
             self.__ui.theme_action,
-            system_icon=":/icons/theme_auto.svg",
-            light_icon=":/icons/theme_light.svg",
-            dark_icon=":/icons/theme_dark.svg",
+            default_icon=THEME_DEFAULT_ICON,
+            light_icon=THEME_LIGHT_ICON,
+            dark_icon=THEME_DARK_ICON,
         )
+
+        theme_menu = ThemeMenu(
+            self.__theme_model,
+            default_icon=THEME_DEFAULT_ICON,
+            light_icon=THEME_LIGHT_ICON,
+            dark_icon=THEME_DARK_ICON,
+        )
+
+        self.__ui.view_menu.addAction(theme_menu.default_action)
+        self.__ui.view_menu.addAction(theme_menu.light_action)
+        self.__ui.view_menu.addAction(theme_menu.dark_action)
+        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the dynamic docks list below
 
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
@@ -101,28 +139,38 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
 
-    def __populate_docks_menu(self) -> None:
-        """Rebuild ``View`` with every currently open document, alphabetically by title (#61).
+    def __add_open_documents(self, menu: QMenu) -> None:
+        """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
 
-        Listed directly under ``View`` rather than a ``Docks`` submenu, for now. Rebuilt fresh on
-        every ``aboutToShow`` rather than kept in sync incrementally -- the open set, titles, and
-        paths all change independently (open/close/rename/save-as), and a menu only actually needs
-        to be correct while it's showing.
+        Listed directly under ``View``, below the three static theme entries and their trailing
+        separator (#57) -- not mixed into them. Rebuilt fresh on every ``aboutToShow`` rather than
+        kept in sync incrementally -- the open set, titles, and paths all change independently
+        (open/close/rename/save-as), and a menu only actually needs to be correct while it's
+        showing. Only :attr:`__dynamic_view_menu_actions` -- this method's own additions from the
+        last rebuild -- is removed first, unlike a plain ``menu.clear()``, which would wipe
+        whatever's above them too.
+
+        :param menu: the menu to (re)populate (``View``).
         """
-        menu = self.__ui.view_menu
-        menu.clear()
+        for action in self.__dynamic_view_menu_actions:
+            menu.removeAction(action)
+            action.deleteLater()
+        self.__dynamic_view_menu_actions.clear()
+
         widgets = sorted(
             self.__documents_dock.open_document_widgets(), key=lambda widget: widget.model.label.casefold()
         )
         if not widgets:
             placeholder = menu.addAction("No Open Docks")
             placeholder.setEnabled(False)
+            self.__dynamic_view_menu_actions.append(placeholder)
             return
         for widget in widgets:
             action = QWidgetAction(menu)
             action.setDefaultWidget(RehuDocumentMenuEntry(widget.model.label, widget.model.path, menu))
             action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
             menu.addAction(action)
+            self.__dynamic_view_menu_actions.append(action)
 
     def __setup_file_menu(self) -> None:
         """Wire ``File``'s static actions -- open dialogs, save all, quit -- and the ``Open recents``
@@ -271,6 +319,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__dialog_manager.save_all(persistent_settings())
         self.__save_session()
         self.__recent_files.save(persistent_settings())
+        self.__theme_settings.mode = self.__theme_model.mode
+        self.__theme_settings.save(persistent_settings())
         super().closeEvent(event)
 
     def __restore_session(self) -> None:
