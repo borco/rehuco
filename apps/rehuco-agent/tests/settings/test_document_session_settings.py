@@ -18,6 +18,11 @@ THIRD: Final = Path.cwd() / "fake" / "third.rehu"
 
 
 # region fixtures
+# Mirrors test_recent_files_settings.py's own FakeSettings exactly (same array-capable QSettings
+# stand-in -- RecentFilesSettings uses the same beginReadArray/beginWriteArray shape as this class)
+# -- kept as a separate copy rather than a shared import, matching this codebase's settings-test
+# convention (see conftest.py's own FakeSettings for the simpler variant).
+# pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
     """A minimal in-memory stand-in for the ``QSettings`` group/array/value API.
 
@@ -71,6 +76,9 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
         if self.__in_array:
             return f"{self.__array_key}/{self.__array_index}/{key}"
         return self.__group + key
+
+
+# pylint: enable=duplicate-code
 
 
 @fixture
