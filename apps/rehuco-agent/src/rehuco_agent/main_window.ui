@@ -41,7 +41,6 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="theme_action"/>
   </widget>
   <action name="theme_action">
    <property name="icon">

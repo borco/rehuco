@@ -9,7 +9,7 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QMainWindow, QWidgetAction
+from PySide6.QtWidgets import QDialog, QMainWindow, QSizePolicy, QWidget, QWidgetAction
 
 from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.docks_menu_entry import DocksMenuEntry
@@ -149,6 +149,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         settings_dock.place_floating()
         self.__dialog_manager.register(settings_dock)
         ActionIconThemeHandler(settings_dock.toggle_action, SETTINGS_ICON_RESOURCE)
+
+        # QToolBar has no dedicated stretch item -- an expanding QWidget is the standard stand-in,
+        # pushing theme/settings to the bottom of the vertical action_bar (#59)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.__ui.action_bar.addWidget(spacer)
+        self.__ui.action_bar.addAction(self.__ui.theme_action)
         self.__ui.action_bar.addAction(settings_dock.toggle_action)
 
     @override
