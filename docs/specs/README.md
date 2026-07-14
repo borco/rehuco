@@ -36,6 +36,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | — | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
 | — | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |
 | — | `appendices.continuous-integration` | Continuous Integration — Design Decisions and Hurdles | [appendices/continuous-integration.md](appendices/continuous-integration.md) |
+| — | `appendices.daz3d-personal-database` | Daz3D Personal Database — Predecessor Projects and Import Notes | [appendices/daz3d-personal-database.md](appendices/daz3d-personal-database.md) |
 | — | `appendices.open-questions` | Open Questions — Out of Scope and Not Yet Designed | [appendices/open-questions.md](appendices/open-questions.md) |
 | — | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
 | — | `appendices.settings-pages` | Settings Pages — Managing App-Wide Configuration | [appendices/settings-pages.md](appendices/settings-pages.md) |
