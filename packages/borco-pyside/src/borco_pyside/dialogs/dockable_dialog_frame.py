@@ -21,7 +21,6 @@ class DockableDialogFrame(QWidget):
         self.__restore_on_start_check_box: Final = QCheckBox("Restore on start", self)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(content)
         layout.addWidget(self.__restore_on_start_check_box)
 
