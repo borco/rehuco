@@ -398,6 +398,25 @@ def test_open_folder_records_a_successful_open_into_recents(mocker: MockerFixtur
     assert recent_files.newest_first() == [Path("a_folder").resolve()]
 
 
+def test_open_folder_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A failed ``open_folder`` (no dock created) is not recorded into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_folder`` to report failure (``None``, e.g. an unreadable ``info.rehu``)
+    * call ``open_folder``
+    * verify ``Open recents`` stays empty
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_folder("missing_folder")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
+
+
 def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A successful ``open_archive`` records the resolved path into ``Open recents`` (#64).
 
@@ -415,6 +434,25 @@ def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixtu
 
     recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert recent_files.newest_first() == [Path("a.zip").resolve()]
+
+
+def test_open_archive_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A failed ``open_archive`` (no dock created) is not recorded into ``Open recents`` (#64).
+
+    **Test steps:**
+
+    * mock ``DocumentsDock.open_archive`` to report failure (``None``, e.g. an unreadable companion)
+    * call ``open_archive``
+    * verify ``Open recents`` stays empty
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=None)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.open_archive("missing.zip")
+
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert recent_files.newest_first() == []
 
 
 def test_open_rehu_action_opens_the_chosen_file(mocker: MockerFixture, qtbot: QtBot) -> None:
