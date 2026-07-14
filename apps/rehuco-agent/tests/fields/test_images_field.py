@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QStandardItemModel
-from PySide6.QtWidgets import QListView
+from PySide6.QtWidgets import QTreeView
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -81,8 +81,8 @@ def test_editor_seeds_the_selector_with_all_images_checked_except_hidden(
     assert isinstance(editor, ImageSelector)
     qtbot.addWidget(editor)
 
-    view = editor.findChild(QListView)
-    assert isinstance(view, QListView)
+    view = editor.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
     list_model = view.model()
     assert isinstance(list_model, QStandardItemModel)
     assert [list_model.item(row).checkState() for row in range(list_model.rowCount())] == [
@@ -108,8 +108,8 @@ def test_editor_toggle_writes_hidden_images_through_to_the_model(
     assert isinstance(editor, ImageSelector)
     qtbot.addWidget(editor)
 
-    view = editor.findChild(QListView)
-    assert isinstance(view, QListView)
+    view = editor.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
     list_model = view.model()
     assert isinstance(list_model, QStandardItemModel)
     list_model.item(0).setCheckState(Qt.CheckState.Unchecked)
@@ -182,6 +182,6 @@ def test_editor_forwards_image_scanner_changed_to_the_selector(
     emitter.changed.emit(new_scanner)
 
     assert editor.image_scanner is new_scanner
-    view = editor.findChild(QListView)
-    assert isinstance(view, QListView)
+    view = editor.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
     assert view.model().rowCount() == len(OTHER_PATHS)

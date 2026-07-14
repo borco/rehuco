@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPixmap, QStandardItemModel
-from PySide6.QtWidgets import QLabel, QListView, QStackedWidget, QWidget
+from PySide6.QtWidgets import QLabel, QStackedWidget, QTreeView, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_selector import ImageSelector, PreviewLabel
@@ -23,13 +23,13 @@ def fake_scanner(mocker: MockerFixture, files: list[Path]) -> object:
 
 
 def checkable_model(selector: ImageSelector) -> QStandardItemModel:
-    """The selector's list model, reached through its list view child.
+    """The selector's list model, reached through its tree view child.
 
     :param selector: the selector under test.
     :returns: the underlying ``QStandardItemModel``.
     """
-    view = selector.findChild(QListView)
-    assert isinstance(view, QListView)
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
     model = view.model()
     assert isinstance(model, QStandardItemModel)
     return model
@@ -271,8 +271,49 @@ def test_selecting_a_loadable_screenshot_shows_its_dimensions(mocker: MockerFixt
     qtbot.addWidget(selector)
     selector.set_images(PATHS, [])
 
-    view = selector.findChild(QListView)
-    assert isinstance(view, QListView)
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
     view.setCurrentIndex(view.model().index(0, 0))
 
     assert size_overlay(selector).text() == "320 x 180"
+
+
+def test_set_images_populates_dimensions_and_size_columns_from_disk(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A row's dimensions/size columns come from ``PIL.Image.open`` and ``Path.stat``, humanized GNU-style.
+
+    **Test steps:**
+
+    * stub ``Image.open`` to report a fixed 320x180 size and ``Path.stat`` to report a fixed byte count
+    * seed one screenshot
+    * verify the dimensions and size columns render the expected text
+    """
+    image = mocker.MagicMock(size=(320, 180))
+    image.__enter__.return_value = image
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.Image.open", return_value=image)
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=1_500_000))
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    selector.set_images(PATHS[:1], [])
+
+    model = checkable_model(selector)
+    assert model.item(0, 1).text() == "320 x 180"
+    assert model.item(0, 2).text() == "1.4M"
+
+
+def test_set_images_blanks_dimensions_and_size_for_unreadable_files(qtbot: QtBot) -> None:
+    """A path that doesn't resolve to a real, decodable image blanks both columns instead of raising.
+
+    **Test steps:**
+
+    * seed a screenshot at a nonexistent fake path (no stubbing)
+    * verify the dimensions and size columns are both blank
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    selector.set_images(PATHS[:1], [])
+
+    model = checkable_model(selector)
+    assert model.item(0, 1).text() == ""
+    assert model.item(0, 2).text() == ""

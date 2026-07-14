@@ -1,24 +1,31 @@
 """The lightbox-curation editor: a checkable screenshot list beside a sized preview ([[plugins#field-toolkit]], #27).
 
 A two-pane :class:`QSplitter` (the split position rides along in the saved dock layout): on the left a
-:class:`QListView` of *all* ``<stem>NN`` screenshot siblings, each checked by default; unchecking one
-**hides** it from the lightbox. On the right, a preview of the selected item with its pixel dimensions
-in a bottom-right overlay. The UI is the inverse of storage -- checked = visible, and only the hidden
-exceptions are emitted -- because checked-by-default reads more naturally ([[data-model#image-meanings]]).
+:class:`QTreeView` of *all* ``<stem>NN`` screenshot siblings, each checked by default and showing its
+pixel dimensions and file size; unchecking one **hides** it from the lightbox. On the right, a preview
+of the selected item with its pixel dimensions in a bottom-right overlay. The UI is the inverse of
+storage -- checked = visible, and only the hidden exceptions are emitted -- because checked-by-default
+reads more naturally ([[data-model#image-meanings]]).
 """
 
 from pathlib import Path
 from typing import Final, override
 
+import humanize
 from borco_pyside.core import SimpleProperty
+from PIL import Image
 from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtGui import QPixmap, QResizeEvent, QShowEvent, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QGridLayout, QLabel, QListView, QSizePolicy, QSplitter, QWidget
+from PySide6.QtWidgets import QGridLayout, QHeaderView, QLabel, QSizePolicy, QSplitter, QTreeView, QWidget
 
 from rehuco_agent.documents.image_scanner import ImageScanner
 
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The item-data role storing each list entry's screenshot :class:`~pathlib.Path`."""
+
+NAME_COLUMN: Final = 0
+DIMENSIONS_COLUMN: Final = 1
+SIZE_COLUMN: Final = 2
 
 
 class PreviewLabel(QLabel):
@@ -85,9 +92,10 @@ class PreviewLabel(QLabel):
 class ImageSelector(QSplitter):
     """A checkable screenshot list beside a sized preview ([[plugins#field-toolkit]], #27).
 
-    Left pane -- every screenshot as a checkable row (checked = shown in the lightbox); toggling a row
-    re-emits :attr:`hidden_changed` with the current hidden filenames. Right pane -- the selected
-    screenshot scaled to fit, with a ``W x H`` pixel-dimension overlay pinned bottom-right.
+    Left pane -- every screenshot as a checkable row (checked = shown in the lightbox), with its pixel
+    dimensions and file size read from disk into two further columns; toggling a row re-emits
+    :attr:`hidden_changed` with the current hidden filenames. Right pane -- the selected screenshot
+    scaled to fit, with a ``W x H`` pixel-dimension overlay pinned bottom-right.
 
     Holds its own :attr:`image_scanner`, so it can re-fetch its screenshots and rebuild itself whenever
     that changes (e.g. a `.tc` -> `.rehu` conversion switching naming conventions,
@@ -106,9 +114,15 @@ class ImageSelector(QSplitter):
         super().__init__(Qt.Orientation.Horizontal, parent)
 
         self.__list_model: Final = QStandardItemModel(self)
-        self.__list: Final = QListView()
+        self.__list: Final = QTreeView()
         self.__list.setModel(self.__list_model)
-        self.__list.setEditTriggers(QListView.EditTrigger.NoEditTriggers)
+        self.__list.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
+        self.__list.setRootIsDecorated(False)
+        self.__list.setUniformRowHeights(True)
+        self.__list.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
+        self.__list.header().setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
+        self.__list.header().setSectionResizeMode(DIMENSIONS_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        self.__list.header().setSectionResizeMode(SIZE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         self.addWidget(self.__list)
 
         preview_pane = QWidget()
@@ -164,12 +178,18 @@ class ImageSelector(QSplitter):
         hidden_names = set(hidden)
         self.__list_model.blockSignals(True)
         self.__list_model.clear()
+        self.__list_model.setHorizontalHeaderLabels(["Name", "Dimensions", "Size"])
         for path in paths:
-            item = QStandardItem(path.name)
-            item.setData(path, PATH_ROLE)
-            item.setCheckable(True)
-            item.setCheckState(Qt.CheckState.Unchecked if path.name in hidden_names else Qt.CheckState.Checked)
-            self.__list_model.appendRow(item)
+            name_item = QStandardItem(path.name)
+            name_item.setData(path, PATH_ROLE)
+            name_item.setCheckable(True)
+            name_item.setCheckState(Qt.CheckState.Unchecked if path.name in hidden_names else Qt.CheckState.Checked)
+            dimensions_text, size_text = self.__metrics(path)
+            dimensions_item = QStandardItem(dimensions_text)
+            dimensions_item.setEditable(False)
+            size_item = QStandardItem(size_text)
+            size_item.setEditable(False)
+            self.__list_model.appendRow([name_item, dimensions_item, size_item])
         self.__list_model.blockSignals(False)
 
         if self.__list_model.rowCount():
@@ -177,15 +197,37 @@ class ImageSelector(QSplitter):
         else:
             self.__show_preview(QPixmap())
 
+    @staticmethod
+    def __metrics(path: Path) -> tuple[str, str]:
+        """The ``W x H`` pixel dimensions and humanized file size for ``path``, read from disk.
+
+        Dimensions come from :class:`PIL.Image.Image.size`, a lazy header-only read for these formats
+        -- the same convention already used for :meth:`TcScanner`'s slot-winner scoring
+        (``rehuco_core.tc_screenshots.__pixel_area``) -- far cheaper than the full-decode
+        :class:`QPixmap` load the preview pane uses for the single selected image, and worthwhile here
+        since every row needs it. Either value blanks out (rather than raising) when the file is
+        missing or unreadable, e.g. an offline mount ([[mounts-and-storage#offline-mounts]]).
+
+        :param path: the screenshot to inspect.
+        :returns: the dimensions and humanized-size text, each blank when unavailable.
+        """
+        try:
+            with Image.open(path) as image:
+                width, height = image.size
+            file_size = path.stat().st_size
+        except OSError:
+            return "", ""
+        return f"{width} x {height}", humanize.naturalsize(file_size, gnu=True) if file_size else ""
+
     def hidden_filenames(self) -> list[str]:
         """The filenames of every currently-unchecked (hidden-from-lightbox) row, in list order.
 
         :returns: the hidden screenshot filenames.
         """
         return [
-            self.__list_model.item(row).text()
+            self.__list_model.item(row, NAME_COLUMN).text()
             for row in range(self.__list_model.rowCount())
-            if self.__list_model.item(row).checkState() == Qt.CheckState.Unchecked
+            if self.__list_model.item(row, NAME_COLUMN).checkState() == Qt.CheckState.Unchecked
         ]
 
     def __on_item_changed(self, _item: QStandardItem) -> None:
@@ -198,10 +240,12 @@ class ImageSelector(QSplitter):
     def __on_current_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
         """Load and preview the newly-selected screenshot.
 
-        :param current: the newly-selected list index.
+        :param current: the newly-selected list index, in any column -- the path lives only on the
+            row's name-column item, since selecting the row can land on any column.
         :param _previous: the previously-selected index (unused).
         """
-        path = current.data(PATH_ROLE)
+        item = self.__list_model.item(current.row(), NAME_COLUMN) if current.isValid() else None
+        path = item.data(PATH_ROLE) if item is not None else None
         self.__show_preview(QPixmap(str(path)) if isinstance(path, Path) else QPixmap())
 
     def __show_preview(self, pixmap: QPixmap) -> None:
