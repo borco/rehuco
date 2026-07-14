@@ -16,8 +16,30 @@
   `pixmap()` plumbing via `theming/utils.py`'s `painted_pixmap`.
 - **`ActionIconThemeHandler`** / **`GlyphActionIconThemeHandler`** — keep one `QAction`'s icon
   (SVG- or glyph-backed, respectively) rebuilt in the current palette's colors on every
-  `QApplication.paletteChanged`.
-- **`ThemeManager`** — cycles an action through follow-system/light/dark (`Qt.ColorScheme`).
+  `QApplication.paletteChanged`. `ActionIconThemeHandler`'s `flat` parameter skips the
+  checked-state color variant for an action living in a menu row, which paints no
+  `Highlight`-colored backdrop behind its icon the way a toolbar's checked button chrome does —
+  the row's own native checkmark communicates checked-ness there instead.
+- **`ThemeModel`** — the single source of truth for the app's theme *mode*
+  (`Qt.ColorScheme.Unknown`/`Light`/`Dark`), deliberately kept distinct from
+  `QApplication.styleHints().colorScheme()` itself: that property reports the *resolved*
+  appearance, and Qt resolves `Unknown` to whatever the OS actually is the moment it's queried —
+  it never echoes `Unknown` back. Reading it as "the current mode" cannot tell "explicitly Light"
+  apart from "Unknown, currently resolving to Light because the OS is in light mode", which breaks
+  any control cycling or checking against it (#57). Every mode-driven view reads/writes
+  `ThemeModel.mode` and listens to `mode_changed` instead — never `QStyleHints.colorSchemeChanged`
+  directly.
+- **`ThemeManager`** — cycles a toolbar action through a shared `ThemeModel`'s follow-system/
+  light/dark mode on each click, reflecting the current mode on the action's icon.
+- **`ThemeMenu`** — builds and owns three checkable actions (`default_action`/`light_action`/
+  `dark_action`, e.g. for a `View` menu's theme entries — their text/meaning has no legitimate
+  per-caller variation, so the class builds them itself rather than taking them as parameters,
+  the same way `DockableDialog` builds its own `toggle_action`) and wires them to a shared
+  `ThemeModel`, exclusive via a `QActionGroup` so exactly one is checked at a time, matching the
+  model's mode exactly (including the follow-system entry) rather than a resolved scheme. Placing
+  the three actions in an actual menu is the caller's job. `ThemeManager` and `ThemeMenu` are
+  independent of one another — each usable on its own — but both read/write the same `ThemeModel`,
+  so picking a mode in either one shows up in the other.
 - **`LineEditClearActionFilter`** (`borco_pyside.widgets`) — an app-wide consumer: installs a themed,
   glyph-rendered clear action on every `QLineEdit`, including ones this app never constructs
   directly ([[plugins#field-toolkit]]'s field toolkit line edits, and any `.ui`-file-generated one).

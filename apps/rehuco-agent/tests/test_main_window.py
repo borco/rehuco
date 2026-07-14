@@ -5,6 +5,7 @@
 # split, so the module-length cap is lifted here rather than fragmenting it.
 # pylint: disable=too-many-lines
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,19 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
     settings.beginReadArray.return_value = 0
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
+
+
+@fixture
+def dock_entries() -> Callable[[MainWindow], list[Any]]:
+    """Factory returning ``window``'s current per-document ``View`` menu entries (#57) -- the
+    dynamic tail ``__populate_docks_menu`` itself tracks and rebuilds, excluding the static theme
+    entries and separator above them -- so docks-menu tests can assert on it alone.
+    """
+
+    def factory(window: MainWindow) -> list[Any]:
+        return list(window._MainWindow__dynamic_view_menu_actions)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    return factory
 
 
 def test_installs_a_dock_manager_as_the_central_widget(qtbot: QtBot) -> None:
@@ -1489,7 +1503,9 @@ def test_raise_and_activate_skips_the_windows_helper_elsewhere(mocker: MockerFix
     force_foreground.assert_not_called()
 
 
-def test_docks_menu_lists_open_documents_alphabetically_by_title(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_docks_menu_lists_open_documents_alphabetically_by_title(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
     """The ``View`` menu lists every open document, sorted alphabetically (case-insensitively) by title (#61).
 
     **Test steps:**
@@ -1507,14 +1523,16 @@ def test_docks_menu_lists_open_documents_alphabetically_by_title(mocker: MockerF
         widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_widgets", return_value=widgets)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    titles = [action.defaultWidget().findChildren(QLabel)[0].text() for action in menu.actions()]
+    dynamic_actions = dock_entries(window)
+    titles = [action.defaultWidget().findChildren(QLabel)[0].text() for action in dynamic_actions]
     assert titles == ["alpha", "Bravo", "Charlie"]
 
 
-def test_docks_menu_shows_a_disabled_placeholder_when_nothing_is_open(qtbot: QtBot) -> None:
+def test_docks_menu_shows_a_disabled_placeholder_when_nothing_is_open(
+    dock_entries: Callable[[MainWindow], list[Any]], qtbot: QtBot
+) -> None:
     """With no documents open, the ``View`` menu shows a single disabled placeholder entry.
 
     **Test steps:**
@@ -1525,15 +1543,16 @@ def test_docks_menu_shows_a_disabled_placeholder_when_nothing_is_open(qtbot: QtB
     window = MainWindow()
     qtbot.addWidget(window)
 
-    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    actions = menu.actions()
-    assert len(actions) == 1
-    assert not actions[0].isEnabled()
+    dynamic_actions = dock_entries(window)
+    assert len(dynamic_actions) == 1
+    assert not dynamic_actions[0].isEnabled()
 
 
-def test_docks_menu_repopulates_on_every_show(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_docks_menu_repopulates_on_every_show(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
     """The docks menu is rebuilt fresh every time it's about to show, not just once.
 
     **Test steps:**
@@ -1552,7 +1571,7 @@ def test_docks_menu_repopulates_on_every_show(mocker: MockerFixture, qtbot: QtBo
         return_value=[first_widget],
     )
     menu.aboutToShow.emit()
-    assert len(menu.actions()) == 1
+    assert len(dock_entries(window)) == 1
 
     second_widget = mocker.MagicMock(
         model=mocker.MagicMock(label="Second", path=Path("/second/info.rehu"), dirty=False)
@@ -1565,10 +1584,12 @@ def test_docks_menu_repopulates_on_every_show(mocker: MockerFixture, qtbot: QtBo
     )
     menu.aboutToShow.emit()
 
-    assert len(menu.actions()) == 2
+    assert len(dock_entries(window)) == 2
 
 
-def test_docks_menu_entry_triggering_focuses_that_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_docks_menu_entry_triggering_focuses_that_document(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
     """Selecting a document's entry in the ``View`` menu focuses/raises its dock (#61).
 
     **Test steps:**
@@ -1584,8 +1605,7 @@ def test_docks_menu_entry_triggering_focuses_that_document(mocker: MockerFixture
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
     focus_document = mocker.patch.object(documents_dock, "focus_document")
 
-    window._MainWindow__populate_docks_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    menu = window._MainWindow__ui.view_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    menu.actions()[0].trigger()
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock_entries(window)[0].trigger()
 
     focus_document.assert_called_once_with(widget)

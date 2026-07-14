@@ -33,6 +33,12 @@ class ActionIconThemeHandler(QObject):
         :func:`~borco_pyside.theming.recolor_svg` actually requires -- a multi-color source loses its
         color distinctions rather than being preserved.
     :param parent: optional Qt parent; defaults to ``action`` itself.
+    :param flat: ``action`` itself lives in a context with no ``Highlight``-colored backdrop behind
+        its icon the way a toolbar's checked button chrome has -- e.g. a menu row (#57's ``View``
+        theme entries), same reasoning as the ``companion`` parameter below. Skips the
+        checked-state color variant on ``action``'s own icon (plain ``ButtonText``/disabled colors
+        only, same as a companion's), relying on the row's native checkmark to communicate
+        checked-ness instead.
     :param companion: an optional second action standing in for ``action`` in a context where the
         checked-state recolor would be unreadable -- e.g. a menu row, which paints no
         ``Highlight``-colored background behind its icon the way a toolbar's checked button chrome
@@ -61,10 +67,12 @@ class ActionIconThemeHandler(QObject):
         parent: QObject | None = None,
         *,
         companion: QAction | None = None,
+        flat: bool = False,
     ) -> None:
         super().__init__(parent if parent is not None else action)
         self.__action = action
         self.__companion_action = companion
+        self.__flat = flat
         self.__svg: bytes = self.__read_file(icon)
 
         app = QApplication.instance()
@@ -119,14 +127,10 @@ class ActionIconThemeHandler(QObject):
         disabled = QPalette.ColorGroup.Disabled
         button_text = palette.color(QPalette.ColorRole.ButtonText)
         disabled_button_text = palette.color(disabled, QPalette.ColorRole.ButtonText)
+        on_color = None if self.__flat else palette.color(QPalette.ColorRole.HighlightedText)
+        on_disabled_color = None if self.__flat else palette.color(disabled, QPalette.ColorRole.HighlightedText)
         self.__action.setIcon(
-            recolored_svg_icon(
-                self.__svg,
-                button_text,
-                palette.color(QPalette.ColorRole.HighlightedText),
-                disabled_button_text,
-                palette.color(disabled, QPalette.ColorRole.HighlightedText),
-            )
+            recolored_svg_icon(self.__svg, button_text, on_color, disabled_button_text, on_disabled_color)
         )
         if self.__companion_action is not None:
             # no on_color/on_disabled_color -- see the companion parameter's docstring
