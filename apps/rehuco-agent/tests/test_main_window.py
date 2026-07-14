@@ -590,6 +590,8 @@ def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, 
     **Test steps:**
 
     * stand in one dirty and one clean open document model
+    * mock the unsaved-changes dialog so qtbot's teardown-close doesn't block on a real modal for
+      the still-dirty stand-in
     * trigger ``save_all_action``
     * verify only the dirty model was saved
     """
@@ -597,6 +599,7 @@ def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, 
     qtbot.addWidget(window)
     dirty, clean = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=False)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty, clean])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
 
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
