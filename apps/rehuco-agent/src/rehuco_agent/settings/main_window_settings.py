@@ -20,9 +20,9 @@ would accept it and silently hide docks not present in the saved layout. Bump th
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
 keeping the default (all-visible) layout instead."""
 
-TOOLBARS_STATE_VERSION: Final = 1
+TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
-layout for ``theme_toolbar``/``action_bar`` -- distinct from :data:`OUTER_DOCKS_STATE_VERSION`,
+layout for ``action_bar`` -- distinct from :data:`OUTER_DOCKS_STATE_VERSION`,
 which is QtAds' own, separate state). Qt rejects a mismatched version itself (``restoreState``
 returns ``False`` and leaves the default layout), so this is passed straight through rather than
 checked here. Bump whenever the toolbar set changes."""
@@ -45,9 +45,9 @@ class MainWindowSettings:
     :data:`OUTER_DOCKS_STATE_VERSION`."""
 
     toolbars_state: bytes = field(default=b"")
-    """Qt's own ``QMainWindow.saveState()`` blob -- the ``theme_toolbar``/``action_bar`` toolbars'
-    area/floating layout, distinct from :attr:`outer_docks_state` (QtAds' own docks). Empty before
-    any session has been saved."""
+    """Qt's own ``QMainWindow.saveState()`` blob -- the ``action_bar`` toolbar's area/floating
+    layout, distinct from :attr:`outer_docks_state` (QtAds' own docks). Empty before any session
+    has been saved."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what's in
