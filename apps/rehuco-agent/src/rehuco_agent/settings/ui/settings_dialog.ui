@@ -2,6 +2,14 @@
 <ui version="4.0">
  <class>SettingsDialog</class>
  <widget class="QWidget" name="SettingsDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>258</width>
+    <height>256</height>
+   </rect>
+  </property>
   <layout class="QVBoxLayout" name="main_layout">
    <property name="spacing">
     <number>0</number>
@@ -40,6 +48,9 @@
           <string>Filter...</string>
          </property>
         </widget>
+       </item>
+       <item>
+        <widget class="WrappingCheckBox" name="show_full_page_check_box" native="true"/>
        </item>
        <item>
         <widget class="QTreeView" name="category_tree">
@@ -87,6 +98,13 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>WrappingCheckBox</class>
+   <extends>QWidget</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

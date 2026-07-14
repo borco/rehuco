@@ -8,6 +8,9 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from pytestqt.qtbot import QtBot  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.settings.ui import registry_page  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.settings.ui.settings_frame_filter import (  # noqa: E402  # pylint: disable=wrong-import-position
+    SettingsFrameFilter,
+)
 
 WINDOWS_REGISTRATION = "rehuco_agent.windows_registration"
 
@@ -168,19 +171,27 @@ def test_title_is_registry(qtbot: QtBot, mocker: MockerFixture) -> None:
 
 
 @mark.windows
-def test_field_labels_lists_the_actions(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page reports its action labels for the settings dialog's filter box.
+def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A `SettingsFrameFilter` finds the page's registration frame and filters it by its text (#67).
+
+    Guards the page's ``.ui`` frame structure: the registration frame must be a discoverable
+    top-level frame whose gathered caption text includes its actions.
 
     **Test steps:**
 
-    * construct the page
-    * verify ``field_labels`` includes the three action names
+    * build a frame filter over the page
+    * verify its text includes an action, then filter by nothing-matching text and check it hides
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
+    frame_filter = SettingsFrameFilter(page, page.title)
 
-    assert page.field_labels() == ["Register", "Unregister", "Check registration"]
+    assert any("register" in text for text in frame_filter.field_labels())
+
+    frame_filter.apply("zzz", show_full_on_title_match=False)
+    ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert ui.registration_frame.isVisibleTo(page) is False
 
 
 @mark.windows

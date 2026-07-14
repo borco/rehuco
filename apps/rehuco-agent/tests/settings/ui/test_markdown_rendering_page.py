@@ -10,6 +10,7 @@ from rehuco_agent.settings import markdown_rendering_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.ui import markdown_rendering_page
 from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
 
 # region fixtures
@@ -259,19 +260,23 @@ def test_title_is_markdown_rendering(qtbot: QtBot) -> None:
     assert page.title == "Markdown Rendering"
 
 
-def test_field_labels_lists_the_settings(qtbot: QtBot) -> None:
-    """The page reports its setting labels for the settings dialog's filter box.
+def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) -> None:
+    """A `SettingsFrameFilter` finds the page's labeled frames and filters them by their text (#67).
+
+    Guards the page's ``.ui`` frame structure: the engine and images frames must be discoverable
+    top-level frames whose gathered caption text drives the filter.
 
     **Test steps:**
 
-    * construct the page
-    * verify ``field_labels`` includes the key terms
+    * build a frame filter over the page, then filter by an engine-only term
+    * verify the engine frame stays shown and the images frame is hidden
     """
     page = MarkdownRenderingPage()
     qtbot.addWidget(page)
+    frame_filter = SettingsFrameFilter(page, page.title)
 
-    labels = page.field_labels()
-    assert "markdown" in labels
-    assert "mistletoe" in labels
-    assert "CSS" in labels
-    assert "Maximum image width" in labels
+    frame_filter.apply("engine", show_full_on_title_match=False)
+
+    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert ui.engine_frame.isVisibleTo(page) is True
+    assert ui.image_frame.isVisibleTo(page) is False

@@ -19,13 +19,6 @@ class SettingsPage(Protocol):
         """This page's label in the category tree."""
         ...  # pylint: disable=unnecessary-ellipsis
 
-    def field_labels(self) -> list[str]:
-        """Every field label on this page, for the filter box to match against.
-
-        :returns: the labels, in no particular order.
-        """
-        ...  # pylint: disable=unnecessary-ellipsis
-
     def is_dirty(self) -> bool:
         """Whether this page has unsaved changes.
 
