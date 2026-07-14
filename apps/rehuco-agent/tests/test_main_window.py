@@ -742,7 +742,7 @@ def test_close_event_saves_every_registered_dockable_dialog(mocker: MockerFixtur
 
 
 def test_close_event_saves_the_toolbars_state(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Closing the app saves the toolbars' own layout (``theme_toolbar``/``action_bar`` areas).
+    """Closing the app saves the toolbar's own layout (the ``action_bar`` area).
 
     **Test steps:**
 
