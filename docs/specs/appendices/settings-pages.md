@@ -16,11 +16,35 @@ style already used for the field toolkit's `StatefulWidget`/`FieldModel` ([[plug
 ```python
 class SettingsPage(Protocol):
     title: str
-    def field_labels(self) -> list[str]: ...
     def is_dirty(self) -> bool: ...
     def save_changes(self) -> None: ...
     def drop_changes(self) -> None: ...
 ```
+
+**Two-level filtering (#67).** The one filter box drives two nested filters off the same text, and a
+page implements *neither* — both are the dialog's job, driven by a `SettingsFrameFilter`
+(`settings/ui/settings_frame_filter.py`) the dialog builds for each page in `add_page`:
+
+- **Page level** (`CategoryFilterProxyModel`) — the category tree shows every page whose `title` or
+  any frame's gathered text contains the filter text.
+- **Frame level** — a page groups its controls into labeled `QFrame`s; the currently-shown page hides
+  every frame not matching the text, so a crowded page collapses to just the group being searched
+  for. **The frame is the smallest unit shown or hidden** — never a single control inside one.
+
+`SettingsFrameFilter` **discovers** a page's top-level `QFrame`s and **gathers** each one's searchable
+text by introspection — walking its child widgets for user-visible captions (`QLabel` text, button
+text, `QGroupBox` titles) once, at construction. So a page needs no hand-maintained term list: the
+filter tracks whatever the `.ui` actually says, including renamed labels and translations, and never
+recomputes per keystroke. (Only exact-type `QFrame`s count as groups, so a `QFrame` subclass like a
+decorative rule isn't mistaken for one.)
+
+A **"Show full page if title matches"** `WrappingCheckBox` (`borco_pyside.widgets`) sits under the
+filter box. When checked, text matching a page's title shows that page in full — every frame —
+regardless of which individual frames also match; when unchecked, the title is ignored for frame
+visibility and only the frames whose text matches are shown (so a title-only match shows no frames).
+Either way, a page still appears in the tree on a title *or* frame match. The dialog re-runs the
+current page's frame filter whenever the filter text or the toggle changes, and whenever a different
+page becomes current.
 
 `MainWindow.__register_settings_pages` constructs each page and calls
 `SettingsDialog.add_page(page)`; the dialog itself lives inside a floating-first, dockable
@@ -85,9 +109,17 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   `main_window.py` — `main_window.py` already imports the page module (even if lazily) to construct
   it, so a module-level import the other way round is a cyclic import (confirmed empirically the
   first time `RegistryPage` tried it).
-- `field_labels()` should return every user-facing label the page exposes, in no particular order —
-  this is exactly what the tree's filter box (`SettingsDialog.CategoryFilterProxyModel`) matches
-  against, alongside the page's own `title`: a plain case-insensitive substring match, not a regex.
+- Group the page's controls into labeled top-level `QFrame`s in the `.ui` (a bold header `QLabel`
+  plus the controls). That is *all* a page does for filtering — the dialog discovers the frames and
+  gathers their searchable text by introspection (§Overview), so a page implements no `field_labels`
+  or `apply_filter` and keeps no term list. The frame is the smallest filterable unit — don't split a
+  group's controls across separate frames expecting them to hide independently.
+- Give the page's root layout zero margins (the stack already provides padding) and end it with a
+  vertical spacer so frames stack at the top rather than stretching to fill. If one frame holds a
+  control that should grow (e.g. `MarkdownRenderingPage`'s CSS editor), stretch that frame's layout
+  item so it — not the spacer — takes the slack when shown, while the spacer keeps a lone remaining
+  frame top-aligned. Set that stretch in the controller after `setupUi()` (`main_layout.setStretch`),
+  not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property.
 
 ## 4. Making the rest of the app react to a saved change
 
