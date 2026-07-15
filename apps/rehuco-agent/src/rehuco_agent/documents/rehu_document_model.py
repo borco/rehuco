@@ -428,7 +428,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.extra_tags = self.__document.extra_tags
 
             # The type-field scalar fields read/write generically through the type-keyed plugin block
-            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default, #35).
+            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default,
+            # [[data-model#write-integrity]]).
             # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
             # hand-duplicated literal here -- so there is exactly one place per field to change its default.
             for name in TYPE_FIELD_BOOL_NAMES:

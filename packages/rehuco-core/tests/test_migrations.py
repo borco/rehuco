@@ -198,7 +198,8 @@ def test_a_malformed_stamp_is_not_trusted_and_the_payload_still_migrates() -> No
     """A corrupt ``format_version`` resolves to v0 rather than being believed
     ([[data-model#schema-version]]).
 
-    Matches `RehuDocument.format_version`'s own defensive coercion (#35). Reading the stamp raw would
+    Matches `RehuDocument.format_version`'s own defensive coercion ([[data-model#write-integrity]]).
+    Reading the stamp raw would
     make this file skip -- the key *is* present and its value simply isn't ``1`` -- and skip silently.
 
     **Test steps:**

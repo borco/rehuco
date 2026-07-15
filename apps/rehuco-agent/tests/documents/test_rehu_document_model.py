@@ -1039,7 +1039,8 @@ def test_model_seeds_type_field_values_from_the_document() -> None:
 
 
 def test_model_coerces_malformed_type_field_values_to_defaults() -> None:
-    """Malformed type-field values fall back to the field default rather than crashing (#35).
+    """Malformed type-field values fall back to the field default rather than crashing
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -1131,7 +1132,8 @@ def test_model_seeds_level_from_the_document() -> None:
 
 
 def test_model_coerces_malformed_level_to_the_default() -> None:
-    """A non-list or mixed-type ``level`` coerces to the default, dropping only the bad items (#35).
+    """A non-list or mixed-type ``level`` coerces to the default, dropping only the bad items
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 

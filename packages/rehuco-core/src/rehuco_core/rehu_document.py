@@ -202,7 +202,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         alternative buys nothing: reordering them would churn bytes this document has no business
         churning, to reorganize fields it does not understand.
 
-        A malformed block (not an object, #35) is passed through as-is rather than skipped -- it is still
+        A malformed block (not an object) is passed through as-is rather than skipped -- it is still
         the file's content, and dropping it would be exactly the silent loss the round-trip rule forbids
         ([[data-model#schema-version]]).
 
@@ -223,7 +223,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def __ordered_block(block: Any, leading: Sequence[str]) -> Any:
         """Order one block's keys: ``leading`` first, in the given order, then the rest alphabetically.
 
-        :param block: the block's value; returned untouched when it is not an object (#35).
+        :param block: the block's value; returned untouched when it is not an object
+            ([[data-model#write-integrity]]).
         :param leading: the keys to place first; those absent from ``block`` are skipped.
         :returns: the block with its keys ordered.
         """
@@ -285,7 +286,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def core(self) -> dict[str, Any]:
         """The **core block**'s fields -- the common core every type shares
         ([[field-schema#resource-types]], [[data-model#rehu-format]]); an empty dict when the block is
-        absent (a brand-new document) or malformed (not an object, #35).
+        absent (a brand-new document) or malformed (not an object, [[data-model#write-integrity]]).
 
         Read-only in the same sense every accessor here is: the typed properties below are the supported
         way to edit a common field, and they create the block on demand. Exposed because a plugin's core
@@ -316,7 +317,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         newer build, which ``RehuDocumentModel.locked`` compares against
         :data:`CURRENT_FORMAT_VERSION` to open the document read-only.
 
-        Still coerces defensively (``0`` for an absent or malformed key, #35): a `.rehu` is untrusted
+        Still coerces defensively (``0`` for an absent or malformed key): a `.rehu` is untrusted
         input ([[data-model#write-integrity]]), and this must not raise on one just because the migrator
         is expected to have gotten there first."""
         return self.__coerced_version(self.__data)
@@ -345,7 +346,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
     @staticmethod
     def __coerced_version(data: dict[str, Any]) -> int:
-        """Read a payload's ``format_version`` as a plain number (#35).
+        """Read a payload's ``format_version`` as a plain number ([[data-model#write-integrity]]).
 
         Defers the "is this stamp usable" judgement to `rehuco_core.migrations`, so this class and the
         migrator can never disagree about what a stamp says. The two differ only in what they do when it
@@ -379,7 +380,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
         The first entry flagged ``primary: true`` wins; if none is flagged, the first entry
         is treated as primary; if there are no sources, ``None``. Non-object entries in a
-        malformed ``sources`` are skipped in both passes rather than crashing the accessors (#35).
+        malformed ``sources`` are skipped in both passes rather than crashing the accessors
+        ([[data-model#write-integrity]]).
 
         :returns: the primary source object, or ``None`` when there are no sources.
         """
@@ -622,7 +624,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     @property
     def original_size(self) -> int:
         """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]]);
-        ``0`` when absent (e.g. a Collection, which has none of its own) or malformed (#35)."""
+        ``0`` when absent (e.g. a Collection, which has none of its own) or malformed
+        ([[data-model#write-integrity]])."""
         value = self.core.get("original_size", 0)
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
@@ -633,7 +636,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     @property
     def current_size(self) -> int:
         """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]); ``0``
-        when absent or malformed (#35)."""
+        when absent or malformed ([[data-model#write-integrity]])."""
         value = self.core.get("current_size", 0)
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
@@ -684,7 +687,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
         App-managed presentation metadata: the lightbox defaults to showing every ``<stem>NN`` sibling
         screenshot, so only the **hidden exceptions** are stored -- an empty/absent list means all are
-        shown. Filenames (basenames) only, never paths. Empty when the key is absent or malformed (#35)."""
+        shown. Filenames (basenames) only, never paths. Empty when the key is absent or malformed
+        ([[data-model#write-integrity]])."""
         names = self.core.get("hidden_images", [])
         return [str(name) for name in names] if isinstance(names, list) else []
 

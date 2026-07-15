@@ -222,7 +222,8 @@ class TcDocument:
         return [str(item) for item in value] if isinstance(value, list) else []
 
     def __coerced_int(self, key: str, default: int) -> int:
-        """Coerce ``data[key]`` into an int, or ``default`` when absent/malformed (bool excluded, #35-style)."""
+        """Coerce ``data[key]`` into an int, or ``default`` when absent/malformed -- ``bool`` excluded,
+        the same defensive read every accessor gets ([[data-model#write-integrity]])."""
         value = self.__data.get(key)
         return value if isinstance(value, int) and not isinstance(value, bool) else default
 

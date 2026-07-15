@@ -153,7 +153,8 @@ def test_on_disk_format_version_reports_the_file_not_the_payload(mocker: MockerF
     * load a v1 file, and verify the payload reads current while the file still reads v1
     * load a current file, and verify the two agree
     * load a file whose stamp is malformed, and verify it reads ``0`` -- a file that exists and is out of
-      date, so its upgrade is pending like any other, rather than crashing the read (#35)
+      date, so its upgrade is pending like any other, rather than crashing the read
+      ([[data-model#write-integrity]])
     """
     older = load_doc(mocker, {"format_version": 1, "type": "tutorial", "tutorial": {"rating": 4}})
     assert older.format_version == CURRENT_FORMAT_VERSION
@@ -278,7 +279,7 @@ def test_reload_adopts_the_version_the_file_now_has(mocker: MockerFixture) -> No
 
 def test_format_version_defensively_coerces_a_malformed_value() -> None:
     """A non-``int`` (or ``bool``) stored ``format_version`` reads back as ``0`` rather than raising or
-    returning the malformed value (#35).
+    returning the malformed value ([[data-model#write-integrity]]).
 
     Reached only by writing junk into :attr:`~RehuDocument.data` *after* construction, since the migrator
     repairs a malformed stamp on the way in -- but ``data`` is public and mutable, so the accessor still
@@ -374,7 +375,8 @@ def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocke
 
 
 def test_save_passes_a_malformed_block_through_untouched(mocker: MockerFixture) -> None:
-    """A block that isn't an object is written back as-is rather than dropped or coerced (#35).
+    """A block that isn't an object is written back as-is rather than dropped or coerced
+    ([[data-model#write-integrity]]).
 
     Ordering must not become a way to lose content: a malformed block is still the file's, and silently
     discarding it on the way out is exactly the loss the round-trip rule forbids
@@ -395,7 +397,7 @@ def test_save_passes_a_malformed_block_through_untouched(mocker: MockerFixture) 
 
 def test_writing_a_common_field_replaces_a_malformed_core_block(mocker: MockerFixture) -> None:
     """Editing a common field on a document whose ``core`` is malformed installs a fresh block rather
-    than crashing (#35).
+    than crashing ([[data-model#write-integrity]]).
 
     The malformed value is not content anyone can keep once the core is being written to -- unlike a
     *plugin* block, which is carried verbatim precisely because this build does not understand it, the
@@ -512,7 +514,8 @@ def test_primary_source_falls_back_to_first() -> None:
 
 
 def test_primary_source_skips_non_object_entries() -> None:
-    """Malformed non-object entries in ``sources`` are skipped, not crashed on (#35).
+    """Malformed non-object entries in ``sources`` are skipped, not crashed on
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -524,7 +527,8 @@ def test_primary_source_skips_non_object_entries() -> None:
 
 
 def test_primary_source_is_none_when_no_entry_is_an_object() -> None:
-    """A ``sources`` list holding only non-object junk yields no primary source, and empty accessors (#35).
+    """A ``sources`` list holding only non-object junk yields no primary source, and empty accessors
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -684,7 +688,7 @@ def test_size_field_defaults_to_zero_when_absent(attr: str) -> None:
 )
 def test_size_field_defensively_coerces_a_malformed_value(attr: str, malformed: object) -> None:
     """A non-``int`` (or ``bool``, technically an ``int`` subclass) stored value reads back as ``0``
-    rather than raising or returning the malformed value (#35).
+    rather than raising or returning the malformed value ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -782,7 +786,8 @@ def test_description_does_not_mutate_the_backing_data_on_read() -> None:
 
 
 def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
-    """``hidden_images`` reads as an empty list when the key is missing or not a list (#35).
+    """``hidden_images`` reads as an empty list when the key is missing or not a list
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -913,7 +918,8 @@ def test_active_field_reads_from_the_active_block() -> None:
 
 
 def test_active_field_defaults_when_block_is_absent_or_malformed() -> None:
-    """``active_field`` returns the default when the block is missing or not an object (#35).
+    """``active_field`` returns the default when the block is missing or not an object
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -954,7 +960,8 @@ def test_set_active_field_creates_the_block_when_absent() -> None:
 
 
 def test_set_active_field_replaces_a_malformed_block() -> None:
-    """``set_active_field`` replaces a non-object block with a fresh one rather than crashing (#35).
+    """``set_active_field`` replaces a non-object block with a fresh one rather than crashing
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 

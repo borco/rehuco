@@ -177,8 +177,9 @@ class RehuMigrator:  # pylint: disable=too-few-public-methods
         "unstamped", which names no layout at all, and a payload always has some layout.
 
         The stamp is authoritative whenever it holds a usable ``int``. A missing or malformed one is v0 --
-        malformed is not trusted, matching `RehuDocument.format_version`'s defensive coercion (#35), since
-        a `.rehu` is untrusted input ([[data-model#write-integrity]]).
+        malformed is not trusted: a `.rehu` is untrusted input, and a malformed value of a field this
+        build owns reads as its default rather than being believed ([[data-model#write-integrity]]) --
+        the same rule `RehuDocument.format_version` follows.
 
         **An unstamped payload is the flat v1 layout, and that is a deduction rather than a guess.**
         Saving has stamped since v1 -- there has never been a build that wrote a `.rehu` without a
