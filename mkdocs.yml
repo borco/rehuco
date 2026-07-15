@@ -115,4 +115,7 @@ nav:
           - QtAds: specs/appendices/qt-ads.md
           - Testing: specs/appendices/testing.md
           - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
+      - History:
+          - Overview: specs/history/README.md
+          - Daz3D Personal Database: specs/history/daz3d-personal-database.md
   - Implementation Plan: specs/implementation-plan.md

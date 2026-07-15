@@ -1,10 +1,10 @@
 # Daz3D Personal Database — Predecessor Projects and Import Notes
 
-[[[appendices.daz3d-personal-database]]]
+[[[daz3d-personal-database]]]
 
 ## Overview
 
-[[[appendices.daz3d-personal-database#overview]]]
+[[[daz3d-personal-database#overview]]]
 
 Two predecessor projects (both listed in the repo README's History table) managed a personal catalog of
 purchased Daz3D packages — zip archives as sold by DAZ and third-party stores — and are the direct ancestors
@@ -20,7 +20,7 @@ worth importing into rehuco, and what rehuco needs before it can import their da
 
 ## 1. daz3d-personal-database (v1)
 
-[[[appendices.daz3d-personal-database#v1]]]
+[[[daz3d-personal-database#v1]]]
 
 A QML-fronted catalog of Daz3D package archives. Its pipeline:
 
@@ -43,7 +43,7 @@ A QML-fronted catalog of Daz3D package archives. Its pipeline:
 
 ### 1.1 v1 data formats
 
-[[[appendices.daz3d-personal-database#v1-formats]]]
+[[[daz3d-personal-database#v1-formats]]]
 
 - **Config file** (YAML, path remembered via `QSettings`): `cache.path` (SQLite location), `folders:` (list
   of `{path: …}` archive folders), `dim_downloads_folder`, `my_library_folder`, `daz_folder`, plus cached
@@ -63,7 +63,7 @@ A QML-fronted catalog of Daz3D package archives. Its pipeline:
 
 ## 2. daz3d-personal-database-2 (v2)
 
-[[[appendices.daz3d-personal-database#v2]]]
+[[[daz3d-personal-database#v2]]]
 
 A ground-up rewrite in PySide6 widgets with QtAds docks (DB browser, details, tags, settings, log, job
 manager), started to escape v1's QML pain. It pivoted to a **project-file** model: instead of one global
@@ -78,7 +78,7 @@ tutcatalog5/resource-hub into today's `borco-pyside`/`rehuco-agent`.
 
 ### 2.1 v2 data formats
 
-[[[appendices.daz3d-personal-database#v2-formats]]]
+[[[daz3d-personal-database#v2-formats]]]
 
 - **`.dpd` project file** (YAML, `strictyaml`-validated): `root_folders [str]` (relative paths allowed),
   `tags` — groups of `{name, textColor, backgroundColor, items [str]}` (ARGB hex colors), and
@@ -89,7 +89,7 @@ tutcatalog5/resource-hub into today's `borco-pyside`/`rehuco-agent`.
 
 ## 3. Worth importing into rehuco
 
-[[[appendices.daz3d-personal-database#worth-importing]]]
+[[[daz3d-personal-database#worth-importing]]]
 
 **Code: almost nothing directly.** The generic patterns both projects pioneered already live on, rewritten
 to current conventions, in `borco-pyside` and `rehuco-agent` (properties, docks, layouts, settings,
@@ -112,23 +112,23 @@ database needs importing — both are declared caches, rebuildable from files.
 
 ## 4. What rehuco needs to import their data
 
-[[[appendices.daz3d-personal-database#import-needs]]]
+[[[daz3d-personal-database#import-needs]]]
 
 Daz3D support is deliberately parked past milestone C ([[implementation-plan]] scope), so this is a
 recorded shopping list, not near-term work:
 
 1. **The Daz3D plugin** ([[plugins#daz3d-plugin]]) — a `daz3d:` plugin block to receive the type-specific
    fields: `sku`, `figures`, `requires`, `provides`, install-state tracking per user/box.
-2. **Author URLs — options recorded, decision deferred** ([[appendices.daz3d-personal-database#authors-urls]]);
+2. **Author URLs — options recorded, decision deferred** ([[daz3d-personal-database#authors-urls]]);
    how URLs relate to the core `authors` name list is chosen during plugin work, enabled by the hook seam.
    `requires`/`provides` (also `{name, url}` lists) live wholly in the block; only their editor is new work.
 3. **A `.dpdml → .rehu` importer** — same shape as the `.tc` migration
    ([[acquisition-tooling#tc-to-rehu]]): walk archive folders, pair each zip with its `.dpdml`, and emit a
    `.rehu` document per product. Field mapping is direct: `product.name` → title, `product.url` → sources,
-   `authors` names → common `authors` (URL handling per [[appendices.daz3d-personal-database#authors-urls]]),
+   `authors` names → common `authors` (URL handling per [[daz3d-personal-database#authors-urls]]),
    `description`/`tags`/`favorite`/
    `published` → common core, the rest → the `daz3d:` block. Multi-part (`index`/`total`) packages become
-   **one document per product** via the multi-file manifest ([[appendices.daz3d-personal-database#multi-part]]).
+   **one document per product** via the multi-file manifest ([[daz3d-personal-database#multi-part]]).
 4. **Preview image extraction** — v1 pulled preview images out of the zips into its DB; rehuco's importer
    must extract them next to the `.rehu` document instead (images live as files, not blobs).
 5. **`.dsx` readers** — parse `Manifest.dsx`/`Supplement.dsx` from the zip to seed documents that have no
@@ -136,14 +136,14 @@ recorded shopping list, not near-term work:
 
 ## 5. Decisions
 
-[[[appendices.daz3d-personal-database#decisions]]]
+[[[daz3d-personal-database#decisions]]]
 
 Two import-mapping questions raised above were worked through in discussion (2026-07): multi-part grouping
 is settled; author-URL storage is narrowed to options, to be decided during the Daz3D plugin work.
 
 ### 5.1 Author URLs: options, not a decision
 
-[[[appendices.daz3d-personal-database#authors-urls]]]
+[[[daz3d-personal-database#authors-urls]]]
 
 How author URLs relate to the core `authors` name list ([[field-schema#field-mapping]]) is **deliberately
 left open**: the options below are recorded for when the Daz3D plugin work starts, and the choice is
@@ -168,7 +168,7 @@ enabled — not forced — by the settled architecture in the first bullet:
 
 ### 5.2 Multi-part archives: one document per product
 
-[[[appendices.daz3d-personal-database#multi-part]]]
+[[[daz3d-personal-database#multi-part]]]
 
 v1's `index`/`total` (one product sold as several zips) maps to **one `.rehu` per product**, not one per
 part: a purchase is one resource, and per-part documents would split tags/description/favorite across
