@@ -117,5 +117,15 @@ nav:
           - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
       - History:
           - Overview: specs/history/README.md
+          - ibocator: specs/history/ibocator.md
+          - TutCatalog: specs/history/tutcatalog.md
+          - Tutcatalog 3: specs/history/tutcatalog3.md
+          - TutCatalogPy: specs/history/tutcatalogpy.md
+          - TutCatalogPy2: specs/history/tutcatalogpy2.md
+          - TutCatalogPy3: specs/history/tutcatalogpy3.md
+          - TutCatalog4: specs/history/tutcatalog4.md
+          - TutCatalog5: specs/history/tutcatalog5.md
+          - Resource Hub: specs/history/resource-hub.md
           - Daz3D Personal Database: specs/history/daz3d-personal-database.md
+          - pyside-ibo (shared library): specs/history/pyside-ibo.md
   - Implementation Plan: specs/implementation-plan.md
