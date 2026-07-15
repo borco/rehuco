@@ -1179,35 +1179,58 @@ def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
     assert exc_info.value.__cause__ is not None
 
 
-@mark.parametrize(
-    ("case", "text"),
-    [
-        param("deep nesting", '{"core":' + '{"a":' * 100_000 + "1" + "}" * 100_000 + "}", id="deep-nesting"),
-        param("over-long int", '{"format_version": ' + "9" * 5000 + "}", id="over-long-int"),
-    ],
-)
-def test_load_refuses_a_hostile_payload_the_json_parser_chokes_on(case: str, text: str, mocker: MockerFixture) -> None:
+def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture) -> None:
     """A ``.rehu`` is untrusted outside input, so a payload the parser cannot survive is **refused**
     rather than escaping as whatever it raised ([[data-model#write-integrity]]).
 
-    ``json.loads`` raises more than ``JSONDecodeError``: deep nesting exhausts the interpreter stack
-    (``RecursionError``) and an over-long integer literal trips CPython's integer-digit limit (a bare
-    ``ValueError``). Either one escaping would surface as an unhandled crash in the agent instead of a
-    refused file.
+    An over-long integer literal trips CPython's integer-digit limit, which raises a bare ``ValueError``
+    -- not the ``JSONDecodeError`` one would expect ``json.loads`` to be limited to. Left uncaught it
+    surfaces as a crash in the agent instead of a refused file.
+
+    Fed a real payload because that limit is a documented, platform-independent 4300 digits
+    (``sys.int_info.str_digits_check_threshold``) -- unlike the recursion case below.
 
     Not a size defence -- the real sanity caps are #88.
 
     **Test steps:**
 
-    * mock ``Path.read_text`` to return a payload that kills the parser
-    * verify it comes back as :class:`RehuFormatError`, chained from the underlying error
+    * mock ``Path.read_text`` to return a number no ``int`` will accept
+    * verify it comes back as :class:`RehuFormatError`, chained from the ``ValueError``
     """
-    mocker.patch.object(Path, "read_text", return_value=text)
+    mocker.patch.object(Path, "read_text", return_value='{"format_version": ' + "9" * 5000 + "}")
 
     with pytest.raises(RehuFormatError) as exc_info:
         RehuDocument.load(FAKE_PATH)
 
-    assert exc_info.value.__cause__ is not None, case
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_load_refuses_a_payload_that_exhausts_the_parsers_stack(mocker: MockerFixture) -> None:
+    """A payload deep enough to exhaust the parser's stack is refused, not propagated as a
+    ``RecursionError`` ([[data-model#write-integrity]]).
+
+    **The error is injected rather than provoked with a deeply-nested payload, deliberately.** How deep
+    is "too deep" is a property of the *platform*, not of this code: CPython's JSON scanner guards on
+    real C-stack headroom rather than on ``sys.getrecursionlimit()`` (10,000 levels parse happily under
+    a limit of 1000), so the threshold moves with the stack the OS hands the interpreter. A literal
+    payload therefore asserts CPython's limits on one machine -- it passed on Linux and Windows and
+    failed on macOS, whose larger stack swallowed 100,000 levels without complaint.
+
+    What this module owes the caller is not "N levels raise" but "**whatever the parser raises, the file
+    is refused**", and that is what is checked here.
+
+    **Test steps:**
+
+    * make the parser raise ``RecursionError``, as an over-deep payload would on some platform
+    * verify it comes back as :class:`RehuFormatError`, chained from it
+    """
+    mocker.patch.object(Path, "read_text", return_value='{"core": {}}')
+    mocker.patch("rehuco_core.rehu_document.json.loads", side_effect=RecursionError("maximum recursion depth"))
+
+    with pytest.raises(RehuFormatError) as exc_info:
+        RehuDocument.load(FAKE_PATH)
+
+    assert isinstance(exc_info.value.__cause__, RecursionError)
 
 
 def test_load_rejects_non_object(mocker: MockerFixture) -> None:
