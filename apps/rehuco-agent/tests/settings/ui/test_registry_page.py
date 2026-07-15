@@ -155,8 +155,8 @@ def test_check_button_shows_not_registered_when_false(qtbot: QtBot, mocker: Mock
 
 
 @mark.windows
-def test_title_is_registry(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page's category-tree title is "Registry".
+def test_title_is_system_integration(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The page's category-tree title is "System Integration" (#76).
 
     **Test steps:**
 
@@ -167,7 +167,7 @@ def test_title_is_registry(qtbot: QtBot, mocker: MockerFixture) -> None:
     page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
 
-    assert page.title == "Registry"
+    assert page.title == "System Integration"
 
 
 @mark.windows

@@ -7,6 +7,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import markdown_rendering_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from rehuco_agent.settings.ui import settings_dialog
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
@@ -47,10 +48,26 @@ def isolate_shared_markdown_rendering_settings(mocker: MockerFixture) -> Iterato
     -- for the rest of the whole test session: leaking state between tests, and reading the
     developer's actual on-disk settings file rather than a hermetic fake. A test that specifically
     exercises this settings object (e.g. ``test_markdown_rendering_settings.py``,
-    ``test_markdown_rendering_page.py``) patches ``persistent_settings`` itself, which simply
+    ``test_descriptions_page.py``) patches ``persistent_settings`` itself, which simply
     overrides this default for its own module.
     """
     shared_markdown_rendering_settings.cache_clear()
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_markdown_rendering_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_settings_dialog_settings(mocker: MockerFixture) -> FakeSettings:
+    """Isolate every test building a `SettingsDialog` from real persistent storage (#76).
+
+    The dialog restores its filter toggles on construction and saves them on every change, so
+    without this any test constructing one (directly, or via ``MainWindow``) would read -- and
+    overwrite -- the developer's own on-disk settings, and leak toggle state into later tests.
+
+    :returns: the in-memory stand-in the dialog loads from and saves to, for a test that wants to
+        seed it or assert on what was written.
+    """
+    fake = FakeSettings()
+    mocker.patch.object(settings_dialog, "persistent_settings", return_value=fake)
+    return fake

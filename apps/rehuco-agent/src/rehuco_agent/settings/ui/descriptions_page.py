@@ -1,4 +1,4 @@
-"""Markdown-rendering settings page: engine choice, per-engine CSS, and image-width cap (#26, #47)."""
+"""Descriptions settings page: renderer engine choice, per-engine CSS, and image-width cap (#26, #47)."""
 
 from typing import Final
 
@@ -7,12 +7,12 @@ from PySide6.QtWidgets import QWidget
 
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.persistent_settings import persistent_settings
-from rehuco_agent.settings.ui.markdown_rendering_page_ui import Ui_MarkdownRenderingPage
+from rehuco_agent.settings.ui.descriptions_page_ui import Ui_DescriptionsPage
 
 
-class MarkdownRenderingPage(QWidget):
-    """Configure the Markdown renderer (#26's constants, made configurable): engine, per-engine
-    CSS, and the image-width cap.
+class DescriptionsPage(QWidget):
+    """Configure how every document's description field renders (#26's constants, made
+    configurable): the Markdown engine, its per-engine CSS, and the image-width cap.
 
     Edits are staged locally (including a separate CSS draft per engine, swapped into the one
     ``css_edit`` box as the engine radio changes) until :meth:`save_changes` pushes them into the
@@ -25,7 +25,7 @@ class MarkdownRenderingPage(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.__ui: Final = Ui_MarkdownRenderingPage()
+        self.__ui: Final = Ui_DescriptionsPage()
         self.__ui.setupUi(self)
 
         # Stretch the engine frame so its CSS editor fills the page; the bottom spacer only expands
@@ -44,7 +44,7 @@ class MarkdownRenderingPage(QWidget):
     @property
     def title(self) -> str:
         """This page's category-tree label."""
-        return "Markdown Rendering"
+        return "Descriptions"
 
     def is_dirty(self) -> bool:
         """Whether any staged edit differs from the shared settings' current values."""

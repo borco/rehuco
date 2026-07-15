@@ -1,4 +1,4 @@
-"""Tests for MarkdownRenderingPage: the Markdown-rendering settings category page (#26, #47)."""
+"""Tests for DescriptionsPage: the Descriptions settings category page (#26, #47, #76)."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -8,8 +8,8 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import markdown_rendering_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
-from rehuco_agent.settings.ui import markdown_rendering_page
-from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui import descriptions_page
+from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
 
@@ -48,11 +48,11 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 
     Patched on both modules that imported their own reference to it: the shared settings module
     (used by :func:`shared_markdown_rendering_settings`'s lazy load) and the page module itself
-    (used by :meth:`MarkdownRenderingPage.save_changes`).
+    (used by :meth:`DescriptionsPage.save_changes`).
     """
     fake = FakeSettings()
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=fake)
-    mocker.patch.object(markdown_rendering_page, "persistent_settings", return_value=fake)
+    mocker.patch.object(descriptions_page, "persistent_settings", return_value=fake)
     return fake
 
 
@@ -83,10 +83,10 @@ def test_starts_with_the_shared_settings_current_values(qtbot: QtBot) -> None:
     settings.mistletoe_css = "mistletoe-css"
     settings.max_image_width = 500
 
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
 
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.mistletoe_engine_radio_button.isChecked()
     assert ui.css_edit.toPlainText() == "mistletoe-css"
     assert ui.max_image_width_spin_box.value() == 500
@@ -107,9 +107,9 @@ def test_switching_engine_shows_the_other_engines_css_draft(qtbot: QtBot) -> Non
     settings.markdown_css = "markdown-css"
     settings.mistletoe_css = "mistletoe-css"
 
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     ui.mistletoe_engine_radio_button.setChecked(True)
     assert ui.css_edit.toPlainText() == "mistletoe-css"
@@ -127,9 +127,9 @@ def test_editing_css_preserves_the_other_engines_draft(qtbot: QtBot) -> None:
     * switch back to markdown
     * verify the markdown edit survived
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     ui.css_edit.setPlainText("edited-markdown-css")
     ui.mistletoe_engine_radio_button.setChecked(True)
@@ -148,7 +148,7 @@ def test_is_dirty_is_false_right_after_construction(qtbot: QtBot) -> None:
     * build the page
     * verify ``is_dirty`` is ``False``
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
 
     assert page.is_dirty() is False
@@ -162,9 +162,9 @@ def test_is_dirty_is_true_after_an_edit(qtbot: QtBot) -> None:
     * build the page and change the image-width spin box
     * verify ``is_dirty`` is ``True``
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     ui.max_image_width_spin_box.setValue(999)
 
@@ -183,9 +183,9 @@ def test_save_changes_updates_the_shared_settings_and_persists(
     * verify the shared settings object reflects every change
     * verify a fresh load from the persisted store reflects them too
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.mistletoe_engine_radio_button.setChecked(True)
     ui.css_edit.setPlainText("new-mistletoe-css")
     ui.max_image_width_spin_box.setValue(777)
@@ -212,9 +212,9 @@ def test_save_changes_clears_dirty(qtbot: QtBot) -> None:
     * build the page, edit a field, save
     * verify ``is_dirty`` is now ``False``
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.max_image_width_spin_box.setValue(999)
 
     page.save_changes()
@@ -231,9 +231,9 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
     * call ``drop_changes``
     * verify every field is back to the (unsaved, still-default) shared settings values
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.mistletoe_engine_radio_button.setChecked(True)
     ui.css_edit.setPlainText("unsaved-css")
     ui.max_image_width_spin_box.setValue(999)
@@ -246,18 +246,18 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_markdown_rendering(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Markdown Rendering".
+def test_title_is_descriptions(qtbot: QtBot) -> None:
+    """The page's category-tree title is "Descriptions" (#76).
 
     **Test steps:**
 
     * construct the page
     * verify ``title``
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
 
-    assert page.title == "Markdown Rendering"
+    assert page.title == "Descriptions"
 
 
 def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) -> None:
@@ -271,12 +271,12 @@ def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) ->
     * build a frame filter over the page, then filter by an engine-only term
     * verify the engine frame stays shown and the images frame is hidden
     """
-    page = MarkdownRenderingPage()
+    page = DescriptionsPage()
     qtbot.addWidget(page)
     frame_filter = SettingsFrameFilter(page, page.title)
 
     frame_filter.apply("engine", show_full_on_title_match=False)
 
-    ui = page._MarkdownRenderingPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.engine_frame.isVisibleTo(page) is True
     assert ui.image_frame.isVisibleTo(page) is False

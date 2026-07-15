@@ -20,7 +20,8 @@ from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
-from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
+from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 
 @fixture(autouse=True)
@@ -152,14 +153,14 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
-def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
-    """The Markdown Rendering settings page (#26, #47) is registered into the settings dialog,
-    on every platform (unlike the Windows-only Registry page).
+def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
+    """The Descriptions settings page (#26, #47) is registered into the settings dialog,
+    on every platform (unlike the Windows-only System Integration page).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``MarkdownRenderingPage``
+    * verify the settings dialog's page stack holds a ``DescriptionsPage``
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -167,7 +168,25 @@ def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    assert any(isinstance(page, MarkdownRenderingPage) for page in pages)
+    assert any(isinstance(page, DescriptionsPage) for page in pages)
+
+
+def test_registers_the_descriptions_page_under_the_editors_group(qtbot: QtBot) -> None:
+    """The Descriptions page is registered under the "Editors" category group (#76).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's category tree holds an "Editors" row with "Descriptions" under it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Editors"]
+    assert len(groups) == 1
+    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Descriptions"]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
@@ -866,6 +885,29 @@ def test_close_event_saves_recent_files(mocker: MockerFixture, qtbot: QtBot) -> 
     window.closeEvent(event)
 
     save.assert_called_once()
+
+
+def test_close_event_saves_the_settings_dialogs_filter_state(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app persists the settings dialog's filter text and toggles (#76).
+
+    The dialog lives in a dock and never closes on its own, so this is the only moment its filter
+    state is written.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``SettingsDialog.save_filter_state`` to detect the call
+    * dispatch a close event
+    * verify ``save_filter_state`` was called once
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save_filter_state = mocker.patch.object(SettingsDialog, "save_filter_state")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    save_filter_state.assert_called_once()
 
 
 def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerFixture, qtbot: QtBot) -> None:

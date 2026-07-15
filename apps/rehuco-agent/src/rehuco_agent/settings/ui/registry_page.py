@@ -62,7 +62,7 @@ class RegistryPage(QWidget):
     @property
     def title(self) -> str:
         """This page's category-tree label."""
-        return "Registry"
+        return "System Integration"
 
     def is_dirty(self) -> bool:
         """Always ``False`` -- register/unregister act immediately, nothing is staged."""
