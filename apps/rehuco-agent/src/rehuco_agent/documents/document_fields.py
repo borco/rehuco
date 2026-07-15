@@ -14,6 +14,7 @@ from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
     PROVENANCE_NEWER_VERSION,
+    PROVENANCE_NOT_CURRENT_TYPE,
     DescriptionField,
     Field,
     FieldRegistry,
@@ -122,13 +123,14 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
     ``location`` `PathField`, the images strip/selector, and the Markdown ``description``, whose
     runtime callbacks the registry can't build generically), then the declarative record fields in
     :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then one generic `UnknownField` fallback per
-    unrecognized live-block key ([[plugins#fallback-editor]], A2.8/#28). All of it is driven from
-    ``model`` alone, so `DocumentWidget` only hosts the resulting docks.
+    unrecognized key in the active block, and finally one per **inactive block**
+    ([[plugins#fallback-editor]], A2.8/#28, A4.0/#80). All of it is driven from ``model`` alone, so
+    `DocumentWidget` only hosts the resulting docks.
 
     :param model: the reactive view-model the fields bind to and read their runtime state from.
     :param registry: the field registry to resolve the record types with; a default one when omitted.
     :returns: a form composing location + images + description, then the record fields, then the
-        unknown fallbacks.
+        unknown fallbacks, then the inactive blocks.
     """
     registry = registry or FieldRegistry()
 
@@ -183,8 +185,23 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
                 name,
                 provenance=PROVENANCE_NEWER_VERSION,
                 on_remove=lambda name=name: model.remove_unknown_field(name),
-                is_present=lambda name=name: name in model.document.type_fields,
-                current_value=lambda name=name: model.document.type_field(name),
+                is_present=lambda name=name: name in model.document.active_block,
+                current_value=lambda name=name: model.document.active_field(name),
+                viewer_tab=VIEWER_TAB,
+                editor_tab=EDITOR_MAIN_TAB,
+            )
+        )
+    # each inactive block trails as a single flagged, read-only row naming the whole block -- this
+    # file's type doesn't name it, so it is payload this file is merely custodian of and is carried
+    # verbatim ([[plugins#plugin-blocks]]). No remove action: the carry-vs-drop UI, and the
+    # drop-on-abandon rule behind it, are A4.4/A4.2 ([[plugins#fallback-editor]])
+    for key in model.inactive_block_keys():
+        fields.append(
+            UnknownField(
+                key,
+                provenance=PROVENANCE_NOT_CURRENT_TYPE,
+                is_present=lambda key=key: key in model.document.data,
+                current_value=lambda key=key: model.document.data.get(key),
                 viewer_tab=VIEWER_TAB,
                 editor_tab=EDITOR_MAIN_TAB,
             )

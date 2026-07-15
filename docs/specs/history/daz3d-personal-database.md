@@ -150,9 +150,11 @@ left open**: the options below are recorded for when the Daz3D plugin work start
 enabled — not forced — by the settled architecture in the first bullet:
 
 - **Settled: the enabling architecture.** Plugins get a non-GUI core layer loaded by agent and node alike
-  (plugins own web rendering, so a node-side layer exists anyway), plus a core-field-change hook seam in
-  `rehuco-core` so a plugin can observe core-field edits — a plugin-contract extension not yet written into
-  [[plugins#core-vs-plugin]]. Cross-block consistency stays best-effort with self-healing repair across
+  (plugins own web rendering, so a node-side layer exists anyway) — now described, along with what declares
+  a plugin, in [[plugins#core-vs-plugin]] — plus a core-field-change hook seam in `rehuco-core` so a plugin
+  can observe core-field edits. The **hook seam is still unwritten** there: it has no client until this
+  plugin, so it is built when one exists rather than guessed at now. Cross-block consistency stays
+  best-effort with self-healing repair across
   sync merges (resolved per sub-block, [[sync#overview]]) and plugin-less writers — true under every
   option below that keeps URLs outside the core field.
 - **Option: decouple — a name-keyed URL map in the `daz3d:` block.** Core untouched, text-list editing

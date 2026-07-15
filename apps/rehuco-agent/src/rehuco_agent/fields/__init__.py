@@ -27,7 +27,7 @@ from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
-from rehuco_agent.fields.unknown_field import PROVENANCE_NEWER_VERSION, UnknownField
+from rehuco_agent.fields.unknown_field import PROVENANCE_NEWER_VERSION, PROVENANCE_NOT_CURRENT_TYPE, UnknownField
 from rehuco_agent.fields.url_field import UrlField
 
 __all__ = [
@@ -54,4 +54,5 @@ __all__ = [
     "ImagesField",
     "UnknownField",
     "PROVENANCE_NEWER_VERSION",
+    "PROVENANCE_NOT_CURRENT_TYPE",
 ]

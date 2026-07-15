@@ -22,7 +22,7 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
-from rehuco_core import RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
@@ -209,7 +209,7 @@ def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:
     * build a widget over it
     * verify every editor ``QLineEdit`` reports disabled (cascades from the disabled editor dock content)
     """
-    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    newer_version = CURRENT_FORMAT_VERSION + 1
     locked_model = RehuDocumentModel(
         RehuDocument(
             {

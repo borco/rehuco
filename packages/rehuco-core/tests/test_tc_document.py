@@ -5,7 +5,7 @@ from typing import Final
 
 import pytest
 from pytest_mock import MockerFixture
-from rehuco_core import RehuDocument, RehuFormatError, TcDocument, load_tc, tc_to_rehu_data
+from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument, RehuFormatError, TcDocument, load_tc, tc_to_rehu_data
 
 FAKE_PATH: Final = Path("/fake/info.tc")
 
@@ -107,7 +107,8 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
     """
     doc = load_tc_doc(mocker, TUTORIAL_TC)
     assert doc.legacy_tc is True
-    assert doc.type == "Tutorial"
+    assert doc.format_version == CURRENT_FORMAT_VERSION
+    assert doc.type == "tutorial"
     assert doc.id == ""
     assert doc.title == "Some Title"
     assert doc.publisher == "Some Publisher"
@@ -119,8 +120,8 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
     assert doc.advertised_tags == ["tag 1", "tag 2"]
     assert doc.extra_tags == ["extra tag 1", "extra tag 2", "extra tag 3"]
 
-    assert doc.type_fields_key == "tutorial"
-    block = doc.type_fields
+    assert doc.active_block_key == "tutorial"
+    block = doc.active_block
     assert block["rating"] == 5
     assert block["complete"] is True
     assert block["online"] is True
@@ -148,9 +149,9 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
       to an empty ``collections`` list
     """
     doc = load_tc_doc(mocker, REFERENCE_IMAGES_TC)
-    assert doc.type == "ReferenceImages"
-    assert doc.type_fields_key == "reference_images"
-    block = doc.type_fields
+    assert doc.type == "reference_images"
+    assert doc.active_block_key == "reference_images"
+    block = doc.active_block
     assert block["rating"] == -5
     assert block["complete"] is False
     assert block["collections"] == []
@@ -171,12 +172,14 @@ def test_collection_mapping_has_no_plugin_block(mocker: MockerFixture) -> None:
       block at all ([[field-schema#resource-types]])
     """
     doc = load_tc_doc(mocker, COLLECTION_TC)
-    assert doc.type == "Collection"
+    assert doc.type == "collection"
     assert doc.title == "Some Title"
     assert doc.original_size == 0
     assert "tutorial" not in doc.data
     assert "reference_images" not in doc.data
-    assert doc.type_fields == {}
+    assert "collection" not in doc.data
+    assert doc.active_block == {}
+    assert doc.plugin_blocks() == []
 
 
 def test_empty_tc_maps_to_a_blank_default_document(mocker: MockerFixture) -> None:
@@ -190,11 +193,11 @@ def test_empty_tc_maps_to_a_blank_default_document(mocker: MockerFixture) -> Non
     """
     doc = load_tc_doc(mocker, "")
     assert doc.legacy_tc is True
-    assert doc.type == "Tutorial"
+    assert doc.type == "tutorial"
     assert doc.title == ""
     assert doc.primary_source == {"title": "", "publisher": "", "url": "", "primary": True}
-    assert doc.type_fields["complete"] is True
-    assert doc.type_fields["collections"] == []
+    assert doc.active_block["complete"] is True
+    assert doc.active_block["collections"] == []
 
 
 def test_missing_or_unrecognized_type_defaults_to_tutorial(mocker: MockerFixture) -> None:
@@ -204,10 +207,10 @@ def test_missing_or_unrecognized_type_defaults_to_tutorial(mocker: MockerFixture
 
     * load a ``.tc`` with no ``type`` key at all
     * load a ``.tc`` with an unrecognized ``type`` value
-    * verify both default to ``Tutorial`` rather than raising
+    * verify both default to the tutorial type rather than raising
     """
-    assert load_tc_doc(mocker, "title: No Type").type == "Tutorial"
-    assert load_tc_doc(mocker, "type: SomethingElse\ntitle: Bad Type").type == "Tutorial"
+    assert load_tc_doc(mocker, "title: No Type").type == "tutorial"
+    assert load_tc_doc(mocker, "type: SomethingElse\ntitle: Bad Type").type == "tutorial"
 
 
 def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture) -> None:
@@ -227,6 +230,29 @@ def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture) -> None:
         load_tc(FAKE_PATH)
 
 
+def test_the_mapping_stamps_the_current_format_but_mints_no_resource_bookkeeping() -> None:
+    """The mapped object is stamped with the current format, yet carries no ``id``/``created``/``updated``
+    ([[acquisition-tooling#tc-to-rehu]], [[data-model#schema-version]]).
+
+    The two are different kinds of fact and that is the whole distinction: ``format_version`` describes
+    the *encoding* this function just built, so it can only be current and writing it down is free. The
+    others describe the *resource* and are an importer's to mint -- an ``id`` minted here would be a new
+    UUID on every open.
+
+    **Test steps:**
+
+    * map a ``.tc`` dict
+    * verify it is stamped at the current version, so it needs no migration to be read
+    * verify no resource bookkeeping was invented
+    """
+    data = tc_to_rehu_data({"type": "Tutorial", "title": "Some Title"})
+
+    assert data["format_version"] == CURRENT_FORMAT_VERSION
+    assert "id" not in data["core"]
+    assert "created" not in data["core"]
+    assert "updated" not in data["core"]
+
+
 def test_legacy_size_and_duration_string_fallback() -> None:
     """tc4's legacy human-readable size/duration strings parse the same as its C++ fallback.
 
@@ -243,8 +269,8 @@ def test_legacy_size_and_duration_string_fallback() -> None:
             "duration": "2h 15m",
         }
     )
-    assert data["original_size"] == int(1.5 * 1000**3)
-    assert data["current_size"] == int(500 * 1000**2)
+    assert data["core"]["original_size"] == int(1.5 * 1000**3)
+    assert data["core"]["current_size"] == int(500 * 1000**2)
     assert data["tutorial"]["original_duration"] == 2 * 3600 + 15 * 60
 
 
@@ -256,9 +282,9 @@ def test_legacy_size_string_edge_cases() -> None:
     * map ``.tc`` dicts with an empty string, a non-numeric magnitude, and an unrecognized suffix
     * verify each parses to ``0`` (``Tutorial::parsedFileSize``'s own fallback-to-zero behavior)
     """
-    assert tc_to_rehu_data({"original_size": ""})["original_size"] == 0
-    assert tc_to_rehu_data({"original_size": "not-a-number GB"})["original_size"] == 0
-    assert tc_to_rehu_data({"original_size": "5 XB"})["original_size"] == 0
+    assert tc_to_rehu_data({"original_size": ""})["core"]["original_size"] == 0
+    assert tc_to_rehu_data({"original_size": "not-a-number GB"})["core"]["original_size"] == 0
+    assert tc_to_rehu_data({"original_size": "5 XB"})["core"]["original_size"] == 0
 
 
 def test_legacy_duration_string_edge_cases() -> None:

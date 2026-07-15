@@ -4,8 +4,15 @@ Reads the legacy tutcatalog4 file format and adapts it into a fresh ``.rehu``-sh
 ([[field-schema#field-mapping]]) -- ground-truthed against tc4's own ``Tutorial`` data model
 (``tutorial.h``/``tutorial.cpp``), not the later tc5/resource-hub rewrites, which were never shipped
 for this purpose. No line of any old reader survives verbatim; only the field list drives this
-mapping. Read-only: no ``id``/``created``/``updated``/``format_version`` are minted or seeded here --
-that is an import (write) concern for the actual conversion, not this view-only mapping.
+mapping. Read-only: no ``id``/``created``/``updated`` are minted or seeded here -- those are facts about
+the *resource*, and minting them is an import (write) concern for the actual conversion, not this
+view-only mapping. An ``id`` minted here would be a fresh UUID on every open; ``created``/``updated``
+would timestamp a write that never happened.
+
+``format_version`` is **not** in that category and *is* stamped ([[data-model#schema-version]]): it is a
+fact about the *encoding*, not the resource. This module builds the object here and now, so it can only
+ever emit the current layout -- the version is something it already knows rather than something an
+importer must decide, and writing it down has no side effect and is idempotent.
 """
 
 from pathlib import Path
@@ -13,6 +20,8 @@ from typing import Any, Final
 
 import yaml
 
+from rehuco_core.migrations import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY
+from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY
 from rehuco_core.rehu_document import RehuDocument, RehuFormatError
 
 
@@ -53,8 +62,12 @@ class TcDocument:
     """Fallback for a missing/unrecognized ``type``, matching tc4's own
     ``EnumHelper::fromString<TutorialType>(...).value_or(TutorialType::Tutorial)``."""
 
-    __TYPE_FIELDS_KEYS: Final = {"Tutorial": "tutorial", "ReferenceImages": "reference_images"}
-    """Plugin-block key per type ([[field-schema#resource-types]]); ``Collection`` has none."""
+    __TYPES_WITH_BLOCK: Final = ("Tutorial", "ReferenceImages")
+    """The tc4 types whose fields need a plugin block ([[plugins#plugin-blocks]]); ``Collection`` has none.
+
+    Which *key* that block takes is not spelled here: a type's normalized name **is** its block's key
+    ([[plugins#plugin-blocks]]), so both come from the plugin's own declaration rather than from a second
+    table that could drift out of step with it."""
 
     __SIZE_SUFFIXES: Final = {
         "B": 1,
@@ -119,22 +132,31 @@ class TcDocument:
     def to_rehu_data(self) -> dict[str, Any]:
         """Map this document into a fresh ``.rehu``-shaped JSON object.
 
+        tc4's capitalized type spellings (``Tutorial``, ``ReferenceImages``) are aliases of the plugins'
+        declared main keys ([[plugins#plugin-blocks]]), so they normalize here on the way out rather than
+        being carried into rehuco's vocabulary. Together with the ``format_version`` stamp, that makes
+        this a genuinely ``.rehu``-shaped object -- self-describing, and canonical on its own rather than
+        only once a :class:`RehuDocument` is built around it.
+
         :returns: a JSON object ready to back a :class:`RehuDocument`.
         """
+        resource_type = DEFAULT_PLUGIN_REGISTRY.main_key(self.__type)
         data: dict[str, Any] = {
-            "type": self.__type,
-            "sources": [self.__source()],
-            "authors": self.__str_list("author"),
-            "released": str(self.__data.get("released", "")),
-            "description": str(self.__data.get("description", "")),
-            "advertised_tags": self.__str_list("tags"),
-            "extra_tags": self.__str_list("extraTags"),
-            "original_size": self.__parsed_size("original_size"),
-            "current_size": self.__parsed_size("current_size"),
+            FORMAT_VERSION_KEY: CURRENT_FORMAT_VERSION,
+            CORE_BLOCK_KEY: {
+                "type": resource_type,
+                "sources": [self.__source()],
+                "authors": self.__str_list("author"),
+                "released": str(self.__data.get("released", "")),
+                "description": str(self.__data.get("description", "")),
+                "advertised_tags": self.__str_list("tags"),
+                "extra_tags": self.__str_list("extraTags"),
+                "original_size": self.__parsed_size("original_size"),
+                "current_size": self.__parsed_size("current_size"),
+            },
         }
-        type_fields_key = self.__TYPE_FIELDS_KEYS.get(self.__type)
-        if type_fields_key is not None:
-            data[type_fields_key] = self.__type_fields()
+        if self.__type in self.__TYPES_WITH_BLOCK:
+            data[resource_type] = self.__type_fields()
         return data
 
     def __source(self) -> dict[str, Any]:
@@ -200,7 +222,8 @@ class TcDocument:
         return [str(item) for item in value] if isinstance(value, list) else []
 
     def __coerced_int(self, key: str, default: int) -> int:
-        """Coerce ``data[key]`` into an int, or ``default`` when absent/malformed (bool excluded, #35-style)."""
+        """Coerce ``data[key]`` into an int, or ``default`` when absent/malformed -- ``bool`` excluded,
+        the same defensive read every accessor gets ([[data-model#write-integrity]])."""
         value = self.__data.get(key)
         return value if isinstance(value, int) and not isinstance(value, bool) else default
 

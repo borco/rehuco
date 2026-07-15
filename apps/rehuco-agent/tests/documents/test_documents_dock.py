@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
-from rehuco_core import RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -158,7 +158,7 @@ def test_dock_title_gains_a_lock_marker_that_takes_precedence_over_dirty(mocker:
     * force ``dirty`` true directly on the model and verify the title still shows the lock marker,
       not the dirty one
     """
-    load_document(mocker, {**TUTORIAL, "format_version": RehuDocument.CURRENT_FORMAT_VERSION + 1})
+    load_document(mocker, {**TUTORIAL, "format_version": CURRENT_FORMAT_VERSION + 1})
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 

@@ -14,7 +14,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
 
 
 # region fixtures
@@ -58,7 +58,7 @@ def test_model_seeds_fields_from_document_without_dirtying(model: RehuDocumentMo
 
 
 def test_model_is_locked_when_the_document_format_version_is_newer_than_supported() -> None:
-    """A document whose ``format_version`` exceeds ``RehuDocument.CURRENT_FORMAT_VERSION`` locks the
+    """A document whose ``format_version`` exceeds ``CURRENT_FORMAT_VERSION`` locks the
     model at construction (A3, [[data-model#schema-version]]'s fail-safe-on-a-newer-file rule).
 
     **Test steps:**
@@ -66,7 +66,7 @@ def test_model_is_locked_when_the_document_format_version_is_newer_than_supporte
     * construct a model over a document one version newer than this build understands
     * verify the model is locked
     """
-    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    newer_version = CURRENT_FORMAT_VERSION + 1
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "format_version": newer_version}))
     assert model.locked is True
 
@@ -79,22 +79,30 @@ def test_model_is_not_locked_at_or_below_the_current_format_version() -> None:
     * construct models over documents at the current version, an older version, and no version at all
     * verify none of them lock
     """
-    assert RehuDocumentModel(RehuDocument({"format_version": RehuDocument.CURRENT_FORMAT_VERSION})).locked is False
+    assert RehuDocumentModel(RehuDocument({"format_version": CURRENT_FORMAT_VERSION})).locked is False
     assert RehuDocumentModel(RehuDocument({"format_version": 0})).locked is False
     assert RehuDocumentModel(RehuDocument({})).locked is False
 
 
 def test_model_is_locked_for_a_legacy_tc_document() -> None:
     """A document mapped from a legacy ``.tc`` file locks the model, independent of ``format_version``
-    ([[acquisition-tooling#tc-to-rehu]]'s Phase 1) -- format_version 0 is *older* than this build's,
-    so the newer-format-version rule alone would never catch it.
+    ([[acquisition-tooling#tc-to-rehu]]'s Phase 1).
+
+    The newer-format-version rule can never catch it: the mapping emits the **current** layout, stamp
+    included, so a real `.tc`-derived document is at this build's own version. What locks it is that no
+    ``.rehu`` exists for it yet -- a fact about the file, not about any schema version -- which is why
+    the flag is checked separately and holds at *any* version.
 
     **Test steps:**
 
-    * construct a model over a document with ``legacy_tc=True`` (format_version defaults to 0)
+    * construct a model over a ``legacy_tc=True`` document at the current format version
     * verify the model is locked
     """
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    current = CURRENT_FORMAT_VERSION
+    document = RehuDocument({"format_version": current, "core": {"type": "tutorial"}}, legacy_tc=True)
+    assert document.format_version == current  # not the newer-version rule's doing
+    model = RehuDocumentModel(document)
+
     assert model.locked is True
 
 
@@ -570,7 +578,8 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
     assert model.dirty is True
 
     def fake_reload() -> None:
-        document.data["sources"] = [
+        core = document.data.setdefault("core", {})
+        core["sources"] = [
             {
                 "title": "Reloaded Title",
                 "publisher": "Reloaded Publisher",
@@ -578,14 +587,14 @@ def test_revert_reseeds_from_a_reloaded_document_and_clears_dirty(
                 "primary": True,
             }
         ]
-        document.data["authors"] = ["Reloaded Author"]
-        document.data["released"] = "2030-01"
-        document.data["original_size"] = 5368709120
-        document.data["current_size"] = 1073741824
-        document.data["advertised_tags"] = ["reloaded-tag"]
-        document.data["extra_tags"] = ["reloaded-extra"]
-        document.data["description"] = "# Reloaded\n\nprose"
-        document.data["hidden_images"] = ["reloaded.jpg"]
+        core["authors"] = ["Reloaded Author"]
+        core["released"] = "2030-01"
+        core["original_size"] = 5368709120
+        core["current_size"] = 1073741824
+        core["advertised_tags"] = ["reloaded-tag"]
+        core["extra_tags"] = ["reloaded-extra"]
+        core["description"] = "# Reloaded\n\nprose"
+        core["hidden_images"] = ["reloaded.jpg"]
 
     reload = mocker.patch.object(document, "reload", side_effect=fake_reload)
 
@@ -620,7 +629,7 @@ def test_revert_recomputes_locked_from_the_reloaded_format_version(
     * verify the model is now locked
     """
     assert model.locked is False
-    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
+    newer_version = CURRENT_FORMAT_VERSION + 1
 
     def fake_reload() -> None:
         document.data["format_version"] = newer_version
@@ -1030,7 +1039,8 @@ def test_model_seeds_type_field_values_from_the_document() -> None:
 
 
 def test_model_coerces_malformed_type_field_values_to_defaults() -> None:
-    """Malformed type-field values fall back to the field default rather than crashing (#35).
+    """Malformed type-field values fall back to the field default rather than crashing
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -1054,7 +1064,7 @@ def test_setting_a_type_field_flag_writes_through_and_dirties(model: RehuDocumen
     """
     model.complete = False
 
-    assert document.type_field("complete") is False
+    assert document.active_field("complete") is False
     assert model.dirty is True
 
 
@@ -1068,7 +1078,7 @@ def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentMod
     """
     model.rating = -4
 
-    assert document.type_field("rating") == -4
+    assert document.active_field("rating") == -4
 
 
 def test_model_seeds_duration_fields_from_the_document() -> None:
@@ -1104,7 +1114,7 @@ def test_setting_duration_fields_writes_through_to_the_type_fields(
     """
     model.original_duration = 8100
 
-    assert document.type_field("original_duration") == 8100
+    assert document.active_field("original_duration") == 8100
 
 
 def test_model_seeds_level_from_the_document() -> None:
@@ -1122,7 +1132,8 @@ def test_model_seeds_level_from_the_document() -> None:
 
 
 def test_model_coerces_malformed_level_to_the_default() -> None:
-    """A non-list or mixed-type ``level`` coerces to the default, dropping only the bad items (#35).
+    """A non-list or mixed-type ``level`` coerces to the default, dropping only the bad items
+    ([[data-model#write-integrity]]).
 
     **Test steps:**
 
@@ -1148,7 +1159,7 @@ def test_setting_level_writes_through_to_the_type_fields(model: RehuDocumentMode
     """
     model.level = ["advanced", "any"]
 
-    assert document.type_field("level") == ["advanced", "any"]
+    assert document.active_field("level") == ["advanced", "any"]
     assert model.dirty is True
 
 
@@ -1194,12 +1205,77 @@ def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: Rehu
     * seed the block with a known field plus two unknown keys
     * verify only the unknown keys come back, in sorted order
     """
-    document.set_type_field("rating", 5)
-    document.set_type_field("zeta", 1)
-    document.set_type_field("alpha", 2)
+    document.set_active_field("rating", 5)
+    document.set_active_field("zeta", 1)
+    document.set_active_field("alpha", 2)
     model = RehuDocumentModel(document)
 
     assert model.unknown_field_names() == ["alpha", "zeta"]
+
+
+def test_inactive_block_keys_lists_every_block_the_type_does_not_name(document: RehuDocument) -> None:
+    """``inactive_block_keys`` reports the blocks this file is merely custodian of
+    ([[plugins#plugin-blocks]]).
+
+    Installed-ness is irrelevant: ``reference_images`` has a plugin here and ``daz3d`` does not, yet
+    both are inactive purely because the document's ``type`` names neither.
+
+    **Test steps:**
+
+    * add a ``reference_images`` and a ``daz3d`` block beside the tutorial document's own
+    * verify both come back, in document order, and the active block is not among them
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    document.data["daz3d"] = {"sku": "12345"}
+    document.set_active_field("rating", 5)
+    model = RehuDocumentModel(document)
+
+    assert model.inactive_block_keys() == ["reference_images", "daz3d"]
+
+
+def test_bind_resolves_an_inactive_block_to_its_verbatim_contents(document: RehuDocument) -> None:
+    """``bind`` resolves a whole inactive block, not just a field inside the active one
+    ([[plugins#plugin-blocks]]).
+
+    An inactive block is a *top-level* key while an unknown field is a key *inside* the active block, so
+    without this the block would bind to an absent field and read as ``None``.
+
+    **Test steps:**
+
+    * add an inactive block and bind a field named after it
+    * verify the binding carries the block's contents verbatim
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    model = RehuDocumentModel(document)
+
+    binding = model.bind(Field("reference_images"))
+
+    assert binding.value == {"images_count": 12}
+    assert binding.changed is model.unknown_fields_changed
+
+
+def test_an_inactive_blocks_binding_refuses_to_write(caplog: pytest.LogCaptureFixture, document: RehuDocument) -> None:
+    """An inactive block is carried, never edited -- its setter refuses rather than writing
+    ([[plugins#plugin-blocks]]).
+
+    Whatever affordance it eventually gets is A4.4's, and the drop-on-abandon rule behind it is A4.2's
+    ([[plugins#fallback-editor]]).
+
+    **Test steps:**
+
+    * bind an inactive block and call its setter
+    * verify the block is untouched, the model is still clean, and the refusal was logged
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    model = RehuDocumentModel(document)
+    binding = model.bind(Field("reference_images"))
+
+    with caplog.at_level(logging.ERROR):
+        binding.set_value({"images_count": 99})
+
+    assert document.data["reference_images"] == {"images_count": 12}
+    assert model.dirty is False
+    assert "Refusing to edit inactive block" in caplog.text
 
 
 def test_bind_resolves_an_unknown_field_to_its_verbatim_value(document: RehuDocument) -> None:
@@ -1210,7 +1286,7 @@ def test_bind_resolves_an_unknown_field_to_its_verbatim_value(document: RehuDocu
     * seed an unknown key and bind a field named after it
     * verify the binding carries the verbatim value
     """
-    document.set_type_field("mystery", [1, 2, 3])
+    document.set_active_field("mystery", [1, 2, 3])
     model = RehuDocumentModel(document)
     field = Field("mystery")
 
@@ -1228,14 +1304,14 @@ def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) 
     * seed an unknown key and record ``unknown_fields_changed`` emissions
     * remove it and verify the key is gone, the signal fired, and the model is dirty
     """
-    document.set_type_field("mystery", 42)
+    document.set_active_field("mystery", 42)
     model = RehuDocumentModel(document)
     fired: list[None] = []
     model.unknown_fields_changed.connect(lambda: fired.append(None))
 
     model.remove_unknown_field("mystery")
 
-    assert "mystery" not in document.type_fields
+    assert "mystery" not in document.active_block
     assert fired == [None]
     assert model.dirty is True
 

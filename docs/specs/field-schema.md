@@ -43,7 +43,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `type` | — | *(type selector)* | enum | — | Tutorial / ReferenceImages / Collection | keep — selects resource type / plugin |
+| `type` | — | `core.type` | enum | common | tutorial / reference_images / collection | keep — selects resource type / plugin; tc4's capitalized spellings are aliases and normalize on write ([[plugins#core-vs-plugin]]) |
 | `title` | Title | `sources[].title` | text | common | record + primary¹ | keep — see [[field-schema#sources]] |
 | `publisher` | Publisher | `sources[].publisher` | text | common | record¹ | keep — see [[field-schema#sources]] |
 | `url` | Homepage | `sources[].url` | URL | common | record¹ | keep — see [[field-schema#sources]] |
@@ -110,12 +110,11 @@ only:
   subfolders). This is separate from the `collections` membership fields, which are settled
   ([[field-schema#sources]]).
 
-**On disk:** the common core is top-level; every non-common field is nested under a **plugin
-block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own `format_version`
-([[data-model#schema-version]], [[plugins#plugin-blocks]]), so the file already has the plugin shape and won't need
-restructuring when
-plugins land. A block `format_version` of **0 means "no plugin yet"** — the fields live there
-but no plugin owns them; the first real plugin bumps it to `1`. Fields shared by Tutorial and
+**On disk:** the common core is nested in the reserved **`core` block**; every non-common field is nested under a
+**plugin block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own `format_version`
+([[data-model#rehu-format]], [[data-model#schema-version]], [[plugins#plugin-blocks]]), so the file already has the
+plugin shape and won't need restructuring when plugins land. A block `format_version` of **0 means "no plugin yet"** —
+the fields live there but no plugin owns them; the first real plugin bumps it to `1`. Fields shared by Tutorial and
 ReferenceImages (`rating`, the boolean flags, `collections`, `learning_paths`)
 live inside whichever plugin block the file has. Collection has no block yet. See the [[field-schema#example-files]]
 fixtures.
@@ -408,12 +407,15 @@ Field order, in the three groups the layout separates:
 Concrete `.rehu` documents (JSON, [[data-model#rehu-format]]) that exercise the field set above — usable as
 parser/schema validation fixtures.
 
-- **Common core** sits at the top level; everything a type owns is nested under a **plugin block
-  keyed by `type`** (`tutorial` / `reference_images`), each with its own `format_version`
+- A `.rehu` is `format_version` plus a **map of keyed blocks** ([[data-model#rehu-format]]): the **common core** sits in
+  the reserved `core` block, and everything a type owns is nested under a **plugin block keyed by `type`** (`tutorial` /
+  `reference_images`), each with its own `format_version`
 ([[data-model#schema-version]], [[plugins#plugin-blocks]]) — **`0` = no plugin yet**, bumped to `1` by the first real
 plugin — so the
   layout already matches the future plugin structure. A **Collection** has no block yet
   (deferred, [[field-schema#resource-types]]) and carries only common core.
+- `core["type"]` **is** the active block's key ([[plugins#plugin-blocks]]), spelled with the plugin's declared main key;
+  tc4's `Tutorial` / `ReferenceImages` are aliases that normalize on write ([[plugins#core-vs-plugin]]).
 - `sources` is a list; exactly one item carries `primary: true`.
 - **Per-user** fields (`rating`, the per-user boolean flags, private `learning_paths`) live
   **inline** in the plugin block for now — without user management a separate per-user block is
@@ -424,27 +426,29 @@ plugin — so the
 
 ```json
 {
-  "format_version": 1,
-  "id": "550e8400-e29b-41d4-a716-446655440000",
-  "type": "Tutorial",
-  "created": "2026-01-15T09:30:00Z",
-  "updated": "2026-06-20T14:12:00Z",
-  "sources": [
-    {
-      "title": "Intro to Sculpting",
-      "publisher": "Example Publisher",
-      "url": "https://example.com/intro-sculpting",
-      "primary": true
-    },
-    { "title": "Sculpting, Extended Cut", "publisher": "Second Platform", "url": "https://second.example/sculpting" }
-  ],
-  "authors": ["First Author", "Second Author"],
-  "released": "2025-03",
-  "description": "# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.",
-  "advertised_tags": ["sculpting", "3d", "modeling"],
-  "extra_tags": ["rework"],
-  "original_size": 5368709120,
-  "current_size": 1073741824,
+  "format_version": 2,
+  "core": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "tutorial",
+    "created": "2026-01-15T09:30:00Z",
+    "updated": "2026-06-20T14:12:00Z",
+    "sources": [
+      {
+        "title": "Intro to Sculpting",
+        "publisher": "Example Publisher",
+        "url": "https://example.com/intro-sculpting",
+        "primary": true
+      },
+      { "title": "Sculpting, Extended Cut", "publisher": "Second Platform", "url": "https://second.example/sculpting" }
+    ],
+    "authors": ["First Author", "Second Author"],
+    "released": "2025-03",
+    "description": "# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.",
+    "advertised_tags": ["sculpting", "3d", "modeling"],
+    "extra_tags": ["rework"],
+    "original_size": 5368709120,
+    "current_size": 1073741824
+  },
   "tutorial": {
     "format_version": 0,
     "collections": [
@@ -473,26 +477,28 @@ plugin — so the
 
 ```json
 {
-  "format_version": 1,
-  "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-  "type": "ReferenceImages",
-  "created": "2026-02-01T11:00:00Z",
-  "updated": "2026-02-01T11:00:00Z",
-  "sources": [
-    {
-      "title": "Anatomy Reference Pack",
-      "publisher": "Example Publisher",
-      "url": "https://example.com/anatomy-pack",
-      "primary": true
-    }
-  ],
-  "authors": ["Third Author"],
-  "released": "2024-11-08",
-  "description": "Anatomy reference images.",
-  "advertised_tags": ["reference", "anatomy"],
-  "extra_tags": [],
-  "original_size": 2147483648,
-  "current_size": 2147483648,
+  "format_version": 2,
+  "core": {
+    "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "type": "reference_images",
+    "created": "2026-02-01T11:00:00Z",
+    "updated": "2026-02-01T11:00:00Z",
+    "sources": [
+      {
+        "title": "Anatomy Reference Pack",
+        "publisher": "Example Publisher",
+        "url": "https://example.com/anatomy-pack",
+        "primary": true
+      }
+    ],
+    "authors": ["Third Author"],
+    "released": "2024-11-08",
+    "description": "Anatomy reference images.",
+    "advertised_tags": ["reference", "anatomy"],
+    "extra_tags": [],
+    "original_size": 2147483648,
+    "current_size": 2147483648
+  },
   "reference_images": {
     "format_version": 0,
     "collections": [],
@@ -515,23 +521,25 @@ Field set provisional ([[field-schema#resource-types]]).
 
 ```json
 {
-  "format_version": 1,
-  "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
-  "type": "Collection",
-  "created": "2026-01-10T08:00:00Z",
-  "updated": "2026-01-10T08:00:00Z",
-  "sources": [
-    {
-      "title": "Sculpting Series",
-      "publisher": "Example Publisher",
-      "url": "https://example.com/series",
-      "primary": true
-    }
-  ],
-  "authors": ["First Author"],
-  "released": "2025",
-  "description": "The full sculpting series.",
-  "advertised_tags": ["sculpting", "series"],
-  "extra_tags": []
+  "format_version": 2,
+  "core": {
+    "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    "type": "collection",
+    "created": "2026-01-10T08:00:00Z",
+    "updated": "2026-01-10T08:00:00Z",
+    "sources": [
+      {
+        "title": "Sculpting Series",
+        "publisher": "Example Publisher",
+        "url": "https://example.com/series",
+        "primary": true
+      }
+    ],
+    "authors": ["First Author"],
+    "released": "2025",
+    "description": "The full sculpting series.",
+    "advertised_tags": ["sculpting", "series"],
+    "extra_tags": []
+  }
 }
 ```
