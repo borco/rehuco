@@ -9,15 +9,29 @@
 JSON, replacing the YAML `.tc`. The full schema is being designed separately ([[field-schema#overview]], the concrete
 v1 field list derived from the `.tc` format) and isn't detailed here, but its scope is settled:
 
-- **Common fields**, available to every resource type regardless of plugin. The concrete v1 list is
-  [[field-schema#resource-types]]: `sources` (title/publisher/url per platform), `authors`, `released`
-  (partial-precision date), `description` (Markdown, can embed local images), the tag lists, the measured
+**A `.rehu` is `format_version` plus a map of keyed blocks** — nothing else lives at the top level:
+
+- **The `core` block**, holding the common fields available to every resource type regardless of plugin. The concrete v1
+  list is [[field-schema#resource-types]]: `type`, `id`, `sources` (title/publisher/url per platform), `authors`,
+  `released` (partial-precision date), `description` (Markdown, can embed local images), the tag lists, the measured
   `original_size`/`current_size` pair ([[field-schema#duration-size]] — empty for a type with no files of its own, e.g.
   Collection), and the `created`/`updated` record timestamps.
-- **Plugin-specific fields**, defined per resource type, e.g.:
+- **One block per plugin**, holding that resource type's own fields ([[plugins#plugin-blocks]]), e.g.:
   - *Tutorial*: `duration` (general), `progress` (per user)
   - *Daz3D*: `installed` (per user, per box)
   - *Reference images*: `count` (general), `tag` (general and per-image), `mosaic` (per-image redaction regions)
+
+**Why the common fields are nested rather than top-level** (they were, through format v1): a block has to be
+*recognizable*, and while the common fields sat beside the blocks the only way to tell them apart was a **list of every
+common field name** — which had to be maintained in lockstep forever, and still could not classify a common field added
+by a *newer* build, since an unknown object-valued key is indistinguishable from an uninstalled plugin's block. Nesting
+the core replaces that whole list with a single reserved name: **every top-level key except `format_version` and `core`
+is a plugin block.** `core` is declared exactly like a plugin ([[plugins#core-vs-plugin]]), which is also what reserves
+the name — no plugin may claim it. Unlike a real plugin's block it is never active or inactive
+([[plugins#plugin-blocks]]): no document is ever `type: "core"`.
+
+`format_version` stays at the top level because it describes the file's own layout rather than holding fields; a v1 file
+is migrated in memory on load and re-stamped the first time it is saved ([[data-model#schema-version]]).
 
 See [[plugins#overview]] for how plugins own their field sets without the core app needing to understand their shape.
 
@@ -207,6 +221,23 @@ defensive posture applies to *reading* any `.rehu` (a double-clicked file is unt
 nesting depth — and a file exceeding them opens read-only with a warning (or is refused at import) instead of exhausting
 memory or wedging the app.
 
+**A malformed value gets one of three responses, and which one is not a matter of severity.** It follows from two
+questions: *is this field ours to interpret*, and *does the file still have a coherent reading*.
+
+| Response | When | Examples |
+| --- | --- | --- |
+| **Carry verbatim** | The content isn't ours. We don't understand it, so we have no standing to change or drop it. | An inactive plugin block; an unknown key inside the active block; a stray top-level scalar ([[plugins#plugin-blocks]], [[plugins#fallback-editor]]). |
+| **Coerce to the default** | Ours, malformed, but what it *means* is not in doubt. | `format_version: "v1"` → `0` (unversioned); a `core` that isn't an object → an empty core; `sources: ["junk"]` → the non-object entry is skipped. A getter must never crash on a value's *type*. |
+| **Refuse, with a reason** | The file contradicts the format's own grammar, so there is nothing to fall back *to*. | `format_version` holding an object — it is the file's version, not a plugin block; a `type` naming a reserved key — `core` and `format_version` are not resource types. |
+
+The middle row is the older rule and the wide one: nearly every malformed value has an obvious reading, and reading it
+is better than refusing a file over one bad field. The last row is narrow on purpose — reserved for the cases where
+*guessing would be a lie*, because the key's meaning in the format is what has been violated. Refusing must name the
+offending key and why, since the user's next move (fix the file, or stop trusting its source) depends on knowing which.
+
+Carrying and coercing are not in tension: they apply to different content. The first is about payload this file is
+merely custodian of; the second about fields this build owns and can rebuild.
+
 ## §4.10 Schema format versioning of `.rehu` itself
 
 [[[data-model#schema-version]]]
@@ -230,3 +261,50 @@ sealed DVD, a received export — every `.rehu` must carry its own **format-vers
 - **Plugin fields are versioned per-block, not under the file-wide version** ([[plugins#plugin-blocks]]): each plugin's
   keyed block carries its own independent format version, so a plugin's schema can evolve without bumping the
   common-field version or any other plugin's. The same upgrade/preserve-unknown rules apply at block granularity.
+- **Upgrades happen in memory, on load; the *file* changes only on save.** Opening an old file never rewrites it — the
+  upgraded layout reaches disk together with the new version stamp, on the first save, as one atomic write. This also
+  keeps the readers simple: only the *current* layout is understood past the load boundary.
+- **An upgrade sets the version stamp too — layout and stamp move together, never separately.** A payload whose layout
+  and stamp disagree is wrong, not merely un-finalized, and stays wrong for anything that serializes it without going
+  through the save path (a node reply, an export). So the load-time upgrade leaves the in-memory document *wholly*
+  consistent, and saving is then a plain dump rather than the place the stamp gets fixed up. The same step repairs a
+  stamp that was missing or malformed, which is what makes "the version this document reports" trustworthy everywhere
+  else — notably for the read-only lock on a newer-than-understood file. **Repairing never lowers**: a newer file keeps
+  its own version.
+- **Migrations dispatch on the version, resolved once at the load boundary.** Each step declares the version it upgrades
+  *from*, so a future migration whose change leaves no detectable shape marker (renaming a field *inside* `core`, say)
+  dispatches exactly like one that does.
+- **Resolving the version is not the same as reading the stamp.** The stamp is authoritative whenever it is present and
+  sane. A **missing or malformed** one is v0 — malformed is not trusted, matching the defensive coercion every other
+  field gets, since a `.rehu` is untrusted input ([[data-model#write-integrity]]) — and v0 is the *only* case where the
+  payload's shape is consulted, because v0 names no layout to dispatch on. Everything a version stamp is used for
+  therefore depends on the stamp being **written where it is known**: whatever builds a payload stamps it, rather than
+  leaving a later reader to infer what the writer already knew.
+
+**A foreign format is never a migration.** Two things look alike from a distance — "old shape becomes new
+shape" — and must not be merged:
+
+| | **Migration** | **Importer** |
+| --- | --- | --- |
+| Input | a `.rehu` payload | a *different file format* — `.tc` ([[acquisition-tooling#tc-to-rehu]]), `.dpdml` ([[daz3d-personal-database#import-needs]]) |
+| Effects | the in-memory payload, nothing else | writes files, renames siblings, deletes originals |
+| Identity | never mints any | mints the UUID and record timestamps ([[data-model#stable-identity]]) |
+| Trigger | **automatic**, on every load | **deliberate** — a user action, confirmed |
+
+The trigger follows from the rest: a migration may run unasked precisely *because* it is in-memory,
+idempotent and lossless. An importer is none of those, so it must never fire merely because a file was
+opened — a `.tc` opens **read-only** and offers conversion instead. The line between them is the same one
+that decides what an adapter may fill in: the **encoding**'s version is knowable and free to stamp, while
+the *resource*'s identity and timestamps are an import's to mint, once
+([[acquisition-tooling#tc-to-rehu]]).
+
+Consequently a `.tc` is *not* "format v0" — it never carried a `.rehu` version to upgrade from, and the
+adapter that reads one emits the **current** layout, stamp included.
+
+**File-wide versions so far:**
+
+| Version | Layout |
+| --- | --- |
+| **0** | **No stamp at all** — a gap, not a layout. Nothing rehuco writes lands here (saving stamps, and the `.tc` mapping stamps what it builds, [[acquisition-tooling#tc-to-rehu]]), so an unstamped file came from outside rehuco or from before stamping existed. Its layout is *inferred*: the v1 flat shape, unless it already carries a `core` block. |
+| **1** | Common fields at the top level, beside the plugin blocks. |
+| **2** | Common fields nested in the reserved `core` block ([[data-model#rehu-format]]), so a plugin block is recognizable without a list of common field names. |

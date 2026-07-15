@@ -18,7 +18,7 @@ def test_unknown_field_viewer_shows_the_verbatim_value_flagged_by_provenance(
     * seed an unknown key on the live block and bind an `UnknownField` to it
     * verify the viewer shows the value as text, carries the ``unknown`` flag, and tooltips the provenance
     """
-    model.document.set_type_field("mystery", 42)
+    model.document.set_active_field("mystery", 42)
     field = UnknownField("mystery")
     viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, QLabel)
@@ -43,12 +43,12 @@ def test_unknown_field_editor_remove_drops_the_field_and_hides_the_whole_row(
     * click Remove
     * verify the key is gone, the model is dirty, and every row widget on both surfaces is hidden
     """
-    model.document.set_type_field("mystery", 42)
+    model.document.set_active_field("mystery", 42)
     field = UnknownField(
         "mystery",
         on_remove=lambda: model.remove_unknown_field("mystery"),
-        is_present=lambda: "mystery" in model.document.type_fields,
-        current_value=lambda: model.document.type_field("mystery"),
+        is_present=lambda: "mystery" in model.document.active_block,
+        current_value=lambda: model.document.active_field("mystery"),
     )
     editor = field.make_editor(model.bind(field))
     viewer = field.make_viewer(model.bind(field))
@@ -61,7 +61,7 @@ def test_unknown_field_editor_remove_drops_the_field_and_hides_the_whole_row(
 
     remove.click()
 
-    assert "mystery" not in model.document.type_fields
+    assert "mystery" not in model.document.active_block
     assert model.dirty is True
     assert container.isHidden() is True
     assert editor_label is not None and editor_label.isHidden() is True
@@ -80,12 +80,12 @@ def test_unknown_field_reappears_with_its_value_when_the_block_restores_it(
     * restore the key in the document and fire ``unknown_fields_changed`` (what ``revert`` does)
     * verify both rows are visible again and the value labels show the restored value
     """
-    model.document.set_type_field("mystery", 42)
+    model.document.set_active_field("mystery", 42)
     field = UnknownField(
         "mystery",
         on_remove=lambda: model.remove_unknown_field("mystery"),
-        is_present=lambda: "mystery" in model.document.type_fields,
-        current_value=lambda: model.document.type_field("mystery"),
+        is_present=lambda: "mystery" in model.document.active_block,
+        current_value=lambda: model.document.active_field("mystery"),
     )
     container = field.make_editor(model.bind(field)).editor
     viewer_value = field.make_viewer(model.bind(field)).viewer
@@ -98,7 +98,7 @@ def test_unknown_field_reappears_with_its_value_when_the_block_restores_it(
     remove.click()
     assert container.isHidden() is True
 
-    model.document.set_type_field("mystery", 99)
+    model.document.set_active_field("mystery", 99)
     model.unknown_fields_changed.emit()
 
     assert container.isHidden() is False
@@ -114,7 +114,7 @@ def test_unknown_field_editor_without_on_remove_has_no_remove_button(qtbot: QtBo
     * seed an unknown key and build the editor with no ``on_remove``
     * verify the row still shows the value but offers no remove button
     """
-    model.document.set_type_field("mystery", 42)
+    model.document.set_active_field("mystery", 42)
     field = UnknownField("mystery")
     container = field.make_editor(model.bind(field)).editor
     assert isinstance(container, QWidget)

@@ -1,38 +1,51 @@
 """Tests for the .rehu document model: round-trip fidelity and field accessors."""
 
+# the document has a broad surface (common-core accessors, the plugin block model, format versions,
+# round-trip fidelity); its test suite is correspondingly long -- one cohesive module reads better than
+# an arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 import json
+import logging
 from pathlib import Path
 from typing import Any, Final
 
 import pytest
 from pytest import mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import RehuDocument, RehuFormatError
+from rehuco_core import CURRENT_FORMAT_VERSION, DEFAULT_PLUGIN_REGISTRY, RehuDocument, RehuFormatError
 
 # A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
+# Format v2: the common fields live in the ``core`` block, and every other top-level key is a plugin
+# block ([[data-model#rehu-format]]). ``core["type"]`` is the plugin's declared main key, which is also
+# its block's key ([[plugins#plugin-blocks]]) -- tc4's ``Tutorial`` spelling is an alias, exercised by
+# the normalization tests below.
 TUTORIAL: Final = {
-    "format_version": 1,
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "type": "Tutorial",
-    "created": "2026-01-15T09:30:00Z",
-    "updated": "2026-06-20T14:12:00Z",
-    "sources": [
-        {
-            "title": "Intro to Sculpting",
-            "publisher": "Example Publisher",
-            "url": "https://example.com/x",
-            "primary": True,
-            "some_future_source_key": "kept verbatim",
-        },
-        {"title": "Extended Cut", "publisher": "Second Platform", "url": "https://second.example/x"},
-    ],
-    "authors": ["First Author", "Second Author"],
-    "released": "2025-03",
-    "original_size": 5368709120,
-    "current_size": 1073741824,
-    "description": "# Intro to Sculpting\n\nSee `info01.jpg`.",
-    "advertised_tags": ["sculpting", "3d"],
-    "extra_tags": ["rework"],
+    "format_version": 2,
+    "core": {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "type": "tutorial",
+        "created": "2026-01-15T09:30:00Z",
+        "updated": "2026-06-20T14:12:00Z",
+        "sources": [
+            {
+                "title": "Intro to Sculpting",
+                "publisher": "Example Publisher",
+                "url": "https://example.com/x",
+                "primary": True,
+                "some_future_source_key": "kept verbatim",
+            },
+            {"title": "Extended Cut", "publisher": "Second Platform", "url": "https://second.example/x"},
+        ],
+        "authors": ["First Author", "Second Author"],
+        "released": "2025-03",
+        "original_size": 5368709120,
+        "current_size": 1073741824,
+        "description": "# Intro to Sculpting\n\nSee `info01.jpg`.",
+        "advertised_tags": ["sculpting", "3d"],
+        "extra_tags": ["rework"],
+        "some_future_core_key": "kept verbatim",
+    },
     "tutorial": {"format_version": 0, "rating": 4, "complete": True},
     "some_future_key": {"nested": [1, 2, 3]},
 }
@@ -62,9 +75,9 @@ def test_common_field_accessors(mocker: MockerFixture) -> None:
     """
     doc = load_doc(mocker, TUTORIAL)
     assert doc.path == FAKE_PATH
-    assert doc.data["type"] == "Tutorial"
-    assert doc.format_version == 1
-    assert doc.type == "Tutorial"
+    assert doc.core["type"] == "tutorial"
+    assert doc.format_version == 2
+    assert doc.type == "tutorial"
     assert doc.id == "550e8400-e29b-41d4-a716-446655440000"
     assert doc.title == "Intro to Sculpting"
     assert doc.publisher == "Example Publisher"
@@ -98,41 +111,343 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
-    assert saved["sources"][0]["title"] == "Renamed Title"
-    assert saved["sources"][0]["some_future_source_key"] == "kept verbatim"
+    assert saved["core"]["sources"][0]["title"] == "Renamed Title"
+    assert saved["core"]["sources"][0]["some_future_source_key"] == "kept verbatim"
+    assert saved["core"]["some_future_core_key"] == "kept verbatim"
     assert saved["tutorial"] == {"format_version": 0, "rating": 4, "complete": True}
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
-    assert saved["updated"] == TUTORIAL["updated"]  # A0 does not auto-touch timestamps
+    assert saved["core"]["updated"] == TUTORIAL["core"]["updated"]  # A0 does not auto-touch timestamps
 
 
-def test_format_version_defaults_to_zero_when_absent() -> None:
-    """``format_version`` reads ``0`` for a document with no such key (the historical `.tc`-origin
-    shape, format v0, [[acquisition-tooling#tc-to-rehu]]).
+def test_a_constructed_document_always_reports_the_version_it_actually_is() -> None:
+    """Every document reports a usable version, whatever it was built from
+    ([[data-model#schema-version]]).
+
+    A payload cannot stay unstamped or mis-stamped: the migrator repairs the stamp on the way in, so no
+    caller ever holds a document whose reported version disagrees with its layout. That is what lets
+    :meth:`save` be a plain dump and ``RehuDocumentModel.locked`` trust the number.
 
     **Test steps:**
 
-    * construct a document with no ``format_version`` key
-    * verify the accessor reads ``0``
+    * construct documents from an unstamped payload, an old-stamped one, and a malformed-stamp one
+    * verify each reports the current version
+    * verify a newer file keeps its own version -- repairing must never mean lowering
     """
-    assert RehuDocument({"type": "Tutorial"}).format_version == 0
+    assert RehuDocument({"type": "tutorial"}).format_version == CURRENT_FORMAT_VERSION
+    assert RehuDocument({"format_version": 1, "type": "tutorial"}).format_version == CURRENT_FORMAT_VERSION
+    assert RehuDocument({"format_version": "junk"}).format_version == CURRENT_FORMAT_VERSION
+
+    newer = CURRENT_FORMAT_VERSION + 1
+    assert RehuDocument({"format_version": newer, "core": {}}).format_version == newer
+
+
+def test_on_disk_format_version_reports_the_file_not_the_payload(mocker: MockerFixture) -> None:
+    """``on_disk_format_version`` is the **file**'s version, which is what says an upgrade is pending
+    ([[data-model#schema-version]], #89).
+
+    Loading upgrades the payload, so :attr:`~RehuDocument.format_version` is always current and cannot
+    answer "is the file out of date". The two differ exactly while an older file is open and unsaved.
+
+    **Test steps:**
+
+    * load a v1 file, and verify the payload reads current while the file still reads v1
+    * load a current file, and verify the two agree
+    * load a file whose stamp is malformed, and verify it reads ``0`` -- a file that exists and is out of
+      date, so its upgrade is pending like any other, rather than crashing the read (#35)
+    """
+    older = load_doc(mocker, {"format_version": 1, "type": "tutorial", "tutorial": {"rating": 4}})
+    assert older.format_version == CURRENT_FORMAT_VERSION
+    assert older.on_disk_format_version == 1
+
+    current = load_doc(mocker, {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}})
+    assert current.on_disk_format_version == CURRENT_FORMAT_VERSION
+
+    malformed = load_doc(mocker, {"format_version": "v1", "type": "tutorial"})
+    assert malformed.on_disk_format_version == 0
+
+
+def test_load_warns_about_a_file_with_a_core_block_but_no_version(
+    caplog: pytest.LogCaptureFixture, mocker: MockerFixture
+) -> None:
+    """A **file** carrying ``core`` without a ``format_version`` is self-contradictory and says so
+    ([[data-model#schema-version]]).
+
+    ``core`` arrived with format v2 and saving has stamped since v1, so no build ever wrote such a file.
+    It is read anyway -- carried verbatim, never refused -- but silently treating it as a v2 file would
+    let a broken one pass for a good one.
+
+    Only files are suspect: an in-memory payload has no stamp until the migrator adds one, so
+    constructing one directly must stay quiet.
+
+    **Test steps:**
+
+    * load a file with a ``core`` block and no version, and verify it warns and still reads
+    * construct the same payload in memory and verify it does not warn
+    """
+    with caplog.at_level(logging.WARNING):
+        doc = load_doc(mocker, {"core": {"type": "tutorial"}})
+    assert doc.type == "tutorial"
+    assert "no usable format_version" in caplog.text
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        RehuDocument({"core": {"type": "tutorial"}})
+    assert not caplog.text
+
+
+def test_on_disk_format_version_is_none_when_no_file_exists() -> None:
+    """``None`` means **no `.rehu` to upgrade**, which is not the same as ``0`` ([[data-model#schema-version]]).
+
+    ``0`` says a file exists and is unstamped -- older, and upgradeable. ``None`` says there is nothing
+    there. Collapsing them would make an upgrade look pending on a document that was never written: a new
+    document's payload is unstamped, so a naive read of its own data would report ``0``. Being handed a
+    path does not help either -- a path is a destination, not a file (`create_new`) -- and a
+    ``.tc``-derived document's path is a `.tc`, with no `.rehu` at it
+    ([[acquisition-tooling#tc-to-rehu]]).
+
+    **Test steps:**
+
+    * verify a new document reads ``None``, with and without a path
+    * verify a ``.tc``-derived document reads ``None`` even though it has a path and a current payload
+    """
+    assert RehuDocument({}).on_disk_format_version is None
+    assert RehuDocument({}, Path("/fake/never-written.rehu")).on_disk_format_version is None
+
+    tc_backed = RehuDocument({"core": {"type": "tutorial"}}, Path("/fake/info.tc"), legacy_tc=True)
+    assert tc_backed.format_version == CURRENT_FORMAT_VERSION
+    assert tc_backed.on_disk_format_version is None
+
+
+def test_saving_updates_on_disk_format_version_to_what_was_written(mocker: MockerFixture) -> None:
+    """Saving is what makes the file current, so it is what clears the pending upgrade (#89).
+
+    **Test steps:**
+
+    * load a v1 file and verify an upgrade reads as pending
+    * save it, and verify the file's version now matches the payload's
+    """
+    doc = load_doc(mocker, {"format_version": 1, "type": "tutorial"})
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    assert doc.on_disk_format_version == 1
+
+    doc.save()
+
+    assert doc.on_disk_format_version == CURRENT_FORMAT_VERSION
+
+
+def test_a_failed_save_leaves_on_disk_format_version_describing_the_real_file(mocker: MockerFixture) -> None:
+    """A save that raises must not claim the file was upgraded ([[data-model#write-integrity]]).
+
+    The old file is still the one on disk, so the pending upgrade is still pending.
+
+    **Test steps:**
+
+    * load a v1 file and make the atomic write fail
+    * verify the save raises and the file's recorded version is untouched
+    """
+    doc = load_doc(mocker, {"format_version": 1, "type": "tutorial"})
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text", side_effect=OSError("disk full"))
+
+    with pytest.raises(OSError, match="disk full"):
+        doc.save()
+
+    assert doc.on_disk_format_version == 1
+
+
+def test_reload_adopts_the_version_the_file_now_has(mocker: MockerFixture) -> None:
+    """A reload picks up an out-of-band change ([[data-model#write-integrity]]), including one that
+    rewrote the file at a different version.
+
+    **Test steps:**
+
+    * load a v1 file, then have the file on disk change to the current version underneath it
+    * reload, and verify the recorded file version follows
+    """
+    doc = load_doc(mocker, {"format_version": 1, "type": "tutorial"})
+    assert doc.on_disk_format_version == 1
+
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}}),
+    )
+    doc.reload()
+
+    assert doc.on_disk_format_version == CURRENT_FORMAT_VERSION
 
 
 def test_format_version_defensively_coerces_a_malformed_value() -> None:
-    """A non-``int`` (or ``bool``) stored ``format_version`` reads back as ``0`` rather than raising
-    or returning the malformed value (#35).
+    """A non-``int`` (or ``bool``) stored ``format_version`` reads back as ``0`` rather than raising or
+    returning the malformed value (#35).
+
+    Reached only by writing junk into :attr:`~RehuDocument.data` *after* construction, since the migrator
+    repairs a malformed stamp on the way in -- but ``data`` is public and mutable, so the accessor still
+    must not raise on one. ``bool`` counts as malformed despite being an ``int`` subclass.
 
     **Test steps:**
 
-    * construct a document whose ``format_version`` is a string
-    * verify the accessor reads ``0``
+    * construct a document, then corrupt its stored ``format_version`` directly
+    * verify the accessor reads ``0`` for a string and for a bool
     """
-    assert RehuDocument({"format_version": "v1"}).format_version == 0
+    doc = RehuDocument({"type": "tutorial"})
+
+    doc.data["format_version"] = "v1"
+    assert doc.format_version == 0
+
+    doc.data["format_version"] = True
+    assert doc.format_version == 0
 
 
-def test_save_stamps_current_format_version_when_older(mocker: MockerFixture) -> None:
-    """Saving a document loaded at an older ``format_version`` upgrades it to
-    ``RehuDocument.CURRENT_FORMAT_VERSION`` -- the upgrade-on-write half of
-    [[data-model#schema-version]].
+def saved_json(doc: RehuDocument, mocker: MockerFixture) -> dict[str, Any]:
+    """Save ``doc`` with the write mocked out and return the JSON it produced, key order intact.
+
+    :param doc: the document to save.
+    :param mocker: pytest-mock fixture.
+    :returns: the parsed written JSON.
+    """
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc.save(FAKE_PATH)
+    return json.loads(mock_write.call_args[0][1])
+
+
+def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
+    """The file is laid out in one canonical order ([[field-schema#example-files]]).
+
+    ``format_version`` leads (it describes the file), then ``core``, then every other top-level key
+    alphabetically. Inside ``core``, :data:`CORE_LEADING_KEYS` lead -- what a reader opening a `.rehu`
+    by hand looks for first, ending with ``sources``, which carries the title -- and the rest sort, so an
+    unrecognized field is never *misplaced*, merely late.
+
+    **Test steps:**
+
+    * save a document whose keys were inserted in a deliberately jumbled order
+    * verify the written top level and ``core`` both come out canonical
+    """
+    doc = RehuDocument(
+        {
+            "core": {
+                "extra_tags": ["x"],
+                "sources": [{"title": "T", "primary": True}],
+                "updated": "2026-06-20T14:12:00Z",
+                "authors": ["A"],
+                "type": "tutorial",
+                "created": "2026-01-15T09:30:00Z",
+                "id": "abc",
+            },
+            "reference_images": {"images_count": 12},
+            "tutorial": {"rating": 4},
+            "daz3d": {"sku": "1"},
+        }
+    )
+
+    saved = saved_json(doc, mocker)
+
+    assert list(saved) == ["format_version", "core", "daz3d", "reference_images", "tutorial"]
+    assert list(saved["core"]) == ["type", "id", "created", "updated", "sources", "authors", "extra_tags"]
+
+
+def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocker: MockerFixture) -> None:
+    """The active block is ordered, led by its own ``format_version``; an inactive block is copied
+    exactly as found ([[plugins#plugin-blocks]]).
+
+    An inactive block is payload this file is only custodian of, so "carried verbatim" is honoured
+    literally -- reordering it would churn bytes this document has no business churning, to reorganize
+    fields it does not understand.
+
+    **Test steps:**
+
+    * save a tutorial-typed document with a jumbled active block and a jumbled inactive one
+    * verify the active block is ordered and the inactive block's own order survives
+    """
+    doc = RehuDocument(
+        {
+            "core": {"type": "tutorial"},
+            "tutorial": {"rating": 4, "complete": True, "format_version": 0},
+            "daz3d": {"sku": "1", "figures": ["G8F"], "format_version": 0},
+        }
+    )
+
+    saved = saved_json(doc, mocker)
+
+    assert list(saved["tutorial"]) == ["format_version", "complete", "rating"]
+    assert list(saved["daz3d"]) == ["sku", "figures", "format_version"]
+
+
+def test_save_passes_a_malformed_block_through_untouched(mocker: MockerFixture) -> None:
+    """A block that isn't an object is written back as-is rather than dropped or coerced (#35).
+
+    Ordering must not become a way to lose content: a malformed block is still the file's, and silently
+    discarding it on the way out is exactly the loss the round-trip rule forbids
+    ([[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * save a document whose ``core`` and whose active block are both non-objects
+    * verify each reaches the file with its value intact
+    """
+    doc = RehuDocument({"core": "not-an-object", "tutorial": ["not", "an", "object"]})
+
+    saved = saved_json(doc, mocker)
+
+    assert saved["core"] == "not-an-object"
+    assert saved["tutorial"] == ["not", "an", "object"]
+
+
+def test_writing_a_common_field_replaces_a_malformed_core_block(mocker: MockerFixture) -> None:
+    """Editing a common field on a document whose ``core`` is malformed installs a fresh block rather
+    than crashing (#35).
+
+    The malformed value is not content anyone can keep once the core is being written to -- unlike a
+    *plugin* block, which is carried verbatim precisely because this build does not understand it, the
+    core is this build's own.
+
+    **Test steps:**
+
+    * construct a document whose ``core`` is a string, and set a common field
+    * verify a real core block now holds it, and the document saves
+    """
+    doc = RehuDocument({"core": "not-an-object"})
+
+    doc.title = "Brand New"
+
+    assert doc.core == {"sources": [{"title": "Brand New", "primary": True}]}
+    assert saved_json(doc, mocker)["core"]["sources"][0]["title"] == "Brand New"
+
+
+def test_two_documents_with_the_same_fields_save_identically_however_they_were_built(
+    mocker: MockerFixture,
+) -> None:
+    """Key order follows from the schema, not from a document's history.
+
+    The reason to impose order at the write rather than let insertion order stand: a converted ``.tc``
+    appends ``id``/``created`` after building its core, while a migrated v1 file inherits whatever order
+    that file happened to have. Same fields, same file.
+
+    **Test steps:**
+
+    * build the same resource twice -- once from a v1 payload, once field-by-field in a different order
+    * verify both save to byte-identical JSON
+    """
+    from_v1 = RehuDocument(
+        {"format_version": 1, "id": "abc", "extra_tags": ["x"], "type": "tutorial", "authors": ["A"]}
+    )
+
+    built = RehuDocument({"core": {"type": "tutorial"}})
+    built.authors = ["A"]
+    built.extra_tags = ["x"]
+    built.data["core"]["id"] = "abc"
+
+    assert saved_json(from_v1, mocker) == saved_json(built, mocker)
+    assert list(saved_json(from_v1, mocker)["core"]) == list(saved_json(built, mocker)["core"])
+
+
+def test_saving_an_older_document_writes_the_current_format_version(mocker: MockerFixture) -> None:
+    """A file loaded at an older ``format_version`` is written back at
+    ``CURRENT_FORMAT_VERSION`` -- the upgrade-on-write half of [[data-model#schema-version]].
+
+    Asserted end-to-end, through the file, because that is the contract; *where* the stamp gets applied
+    is an internal matter (the migrator does it on load, so :meth:`save` merely dumps an
+    already-consistent payload) and this test should keep passing if that ever moves again.
 
     **Test steps:**
 
@@ -140,21 +455,21 @@ def test_save_stamps_current_format_version_when_older(mocker: MockerFixture) ->
     * save each
     * verify the saved JSON's ``format_version`` is ``CURRENT_FORMAT_VERSION``
     """
-    for original in (RehuDocument.CURRENT_FORMAT_VERSION - 1, None):
-        data = {"type": "Tutorial"} if original is None else {"type": "Tutorial", "format_version": original}
+    for original in (CURRENT_FORMAT_VERSION - 1, None):
+        data = {"type": "tutorial"} if original is None else {"type": "tutorial", "format_version": original}
         doc = load_doc(mocker, data)
         mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
         doc.save()
 
         saved = json.loads(mock_write.call_args[0][1])
-        assert saved["format_version"] == RehuDocument.CURRENT_FORMAT_VERSION
+        assert saved["format_version"] == CURRENT_FORMAT_VERSION
 
 
-def test_save_does_not_downgrade_a_newer_format_version(mocker: MockerFixture) -> None:
-    """Saving a document loaded at a *newer* ``format_version`` than this build understands leaves
-    the stamped version untouched -- lowering it would mislabel a file that still carries fields from
-    that newer schema ([[data-model#schema-version]]'s "must fail safe, not lossy" rule).
+def test_saving_a_newer_document_does_not_downgrade_its_format_version(mocker: MockerFixture) -> None:
+    """A file loaded at a *newer* ``format_version`` than this build understands is written back with
+    that version untouched -- lowering it would mislabel a file that still carries fields from that
+    newer schema ([[data-model#schema-version]]'s "must fail safe, not lossy" rule).
 
     **Test steps:**
 
@@ -162,8 +477,8 @@ def test_save_does_not_downgrade_a_newer_format_version(mocker: MockerFixture) -
     * save it
     * verify the saved JSON's ``format_version`` is still the newer, unlowered value
     """
-    newer_version = RehuDocument.CURRENT_FORMAT_VERSION + 1
-    doc = load_doc(mocker, {"type": "Tutorial", "format_version": newer_version})
+    newer_version = CURRENT_FORMAT_VERSION + 1
+    doc = load_doc(mocker, {"type": "tutorial", "format_version": newer_version})
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
     doc.save()
@@ -230,7 +545,7 @@ def test_title_setter_creates_primary_source_when_absent() -> None:
     * assign a title
     * verify a single primary source with that title now exists
     """
-    doc = RehuDocument({"type": "Tutorial"})
+    doc = RehuDocument({"type": "tutorial"})
     doc.title = "Brand New"
     assert doc.sources == [{"title": "Brand New", "primary": True}]
 
@@ -244,7 +559,7 @@ def test_publisher_setter_creates_primary_source_when_absent() -> None:
     * assign a publisher
     * verify a single primary source with that publisher now exists
     """
-    doc = RehuDocument({"type": "Tutorial"})
+    doc = RehuDocument({"type": "tutorial"})
     doc.publisher = "Brand New Publisher"
     assert doc.sources == [{"publisher": "Brand New Publisher", "primary": True}]
 
@@ -258,7 +573,7 @@ def test_url_setter_creates_primary_source_when_absent() -> None:
     * assign a url
     * verify a single primary source with that url now exists
     """
-    doc = RehuDocument({"type": "Tutorial"})
+    doc = RehuDocument({"type": "tutorial"})
     doc.url = "https://example.com/new"
     assert doc.sources == [{"url": "https://example.com/new", "primary": True}]
 
@@ -460,10 +775,10 @@ def test_description_does_not_mutate_the_backing_data_on_read() -> None:
     * read the property once
     * verify the backing dict's raw value is still CRLF
     """
-    doc = RehuDocument({"description": "line one\r\nline two"})
+    doc = RehuDocument({"core": {"description": "line one\r\nline two"}})
 
     assert doc.description == "line one\nline two"
-    assert doc.data["description"] == "line one\r\nline two"
+    assert doc.core["description"] == "line one\r\nline two"
 
 
 def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
@@ -515,7 +830,7 @@ def test_save_without_path_raises() -> None:
     * call ``save()`` with no argument
     * verify ``ValueError`` is raised
     """
-    doc = RehuDocument({"type": "Tutorial"})
+    doc = RehuDocument({"type": "tutorial"})
     with pytest.raises(ValueError, match="no path given"):
         doc.save()
 
@@ -533,7 +848,7 @@ def test_reload_replaces_data_in_place_from_disk(mocker: MockerFixture) -> None:
     original_data = doc.data
 
     mocker.patch.object(
-        Path, "read_text", return_value=json.dumps({"type": "Tutorial", "authors": ["Reloaded Author"]})
+        Path, "read_text", return_value=json.dumps({"type": "tutorial", "authors": ["Reloaded Author"]})
     )
     doc.reload()
 
@@ -551,7 +866,7 @@ def test_reload_without_a_path_raises() -> None:
     * call ``reload()``
     * verify ``ValueError`` is raised
     """
-    doc = RehuDocument({"type": "Tutorial"})
+    doc = RehuDocument({"type": "tutorial"})
     with pytest.raises(ValueError, match="no path to reload from"):
         doc.reload()
 
@@ -568,47 +883,50 @@ def test_extra_tags_returns_empty_for_non_list() -> None:
     assert not doc.extra_tags
 
 
-def test_type_fields_key_is_the_type_in_snake_case() -> None:
-    """The plugin-block key is the resource ``type`` in snake_case ([[field-schema#resource-types]]).
+def test_active_block_key_is_the_type_itself() -> None:
+    """The active block's key **is** the resource ``type``, normalized ([[plugins#plugin-blocks]]).
 
     **Test steps:**
 
-    * verify a single-word type lowercases and a multi-word type snake-cases
+    * verify a main-key type names its own block
+    * verify an alias type resolves to its plugin's main key
+    * verify a type no installed plugin claims still names its own block, verbatim
     * verify a typeless document yields an empty key
     """
-    assert RehuDocument({"type": "Tutorial"}).type_fields_key == "tutorial"
-    assert RehuDocument({"type": "ReferenceImages"}).type_fields_key == "reference_images"
-    assert RehuDocument({}).type_fields_key == ""
+    assert RehuDocument({"type": "tutorial"}).active_block_key == "tutorial"
+    assert RehuDocument({"type": "ReferenceImages"}).active_block_key == "reference_images"
+    assert RehuDocument({"type": "audiopack"}).active_block_key == "audiopack"
+    assert RehuDocument({}).active_block_key == ""
 
 
-def test_type_field_reads_from_the_type_keyed_block() -> None:
-    """``type_field`` reads a key out of the ``type``-keyed plugin block ([[field-schema#resource-types]]).
+def test_active_field_reads_from_the_active_block() -> None:
+    """``active_field`` reads a key out of the active plugin block ([[plugins#plugin-blocks]]).
 
     **Test steps:**
 
     * construct a Tutorial document carrying a ``tutorial`` block with a rating
     * verify the stored key reads back, and an absent key returns the given default
     """
-    doc = RehuDocument({"type": "Tutorial", "tutorial": {"format_version": 0, "rating": 4}})
-    assert doc.type_field("rating") == 4
-    assert doc.type_field("missing", 0) == 0
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 0, "rating": 4}})
+    assert doc.active_field("rating") == 4
+    assert doc.active_field("missing", 0) == 0
 
 
-def test_type_field_defaults_when_block_is_absent_or_malformed() -> None:
-    """``type_field`` returns the default when the block is missing or not an object (#35).
+def test_active_field_defaults_when_block_is_absent_or_malformed() -> None:
+    """``active_field`` returns the default when the block is missing or not an object (#35).
 
     **Test steps:**
 
     * verify a document with no block returns the default
     * verify a document whose block is a non-object returns the default (malformed, skipped)
     """
-    assert RehuDocument({"type": "Tutorial"}).type_field("rating", 0) == 0
-    assert RehuDocument({"type": "Tutorial", "tutorial": "junk"}).type_field("rating", 0) == 0
-    assert RehuDocument({"type": "Tutorial", "tutorial": "junk"}).type_fields == {}
+    assert RehuDocument({"type": "tutorial"}).active_field("rating", 0) == 0
+    assert RehuDocument({"type": "tutorial", "tutorial": "junk"}).active_field("rating", 0) == 0
+    assert RehuDocument({"type": "tutorial", "tutorial": "junk"}).active_block == {}
 
 
-def test_set_type_field_updates_an_existing_block() -> None:
-    """``set_type_field`` writes into an existing block, leaving its other keys intact.
+def test_set_active_field_updates_an_existing_block() -> None:
+    """``set_active_field`` writes into an existing block, leaving its other keys intact.
 
     **Test steps:**
 
@@ -616,13 +934,13 @@ def test_set_type_field_updates_an_existing_block() -> None:
     * set a new value on one key
     * verify the key updated and the block's ``format_version`` is untouched
     """
-    doc = RehuDocument({"type": "Tutorial", "tutorial": {"format_version": 0, "rating": 1}})
-    doc.set_type_field("rating", 5)
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 0, "rating": 1}})
+    doc.set_active_field("rating", 5)
     assert doc.data["tutorial"] == {"format_version": 0, "rating": 5}
 
 
-def test_set_type_field_creates_the_block_when_absent() -> None:
-    """``set_type_field`` installs a fresh block keyed by ``type`` when none exists.
+def test_set_active_field_creates_the_block_when_absent() -> None:
+    """``set_active_field`` installs a fresh block keyed by ``type`` when none exists.
 
     **Test steps:**
 
@@ -630,13 +948,13 @@ def test_set_type_field_creates_the_block_when_absent() -> None:
     * set a type-field value
     * verify a ``tutorial`` block now holds it
     """
-    doc = RehuDocument({"type": "Tutorial"})
-    doc.set_type_field("complete", False)
+    doc = RehuDocument({"type": "tutorial"})
+    doc.set_active_field("complete", False)
     assert doc.data["tutorial"] == {"complete": False}
 
 
-def test_set_type_field_replaces_a_malformed_block() -> None:
-    """``set_type_field`` replaces a non-object block with a fresh one rather than crashing (#35).
+def test_set_active_field_replaces_a_malformed_block() -> None:
+    """``set_active_field`` replaces a non-object block with a fresh one rather than crashing (#35).
 
     **Test steps:**
 
@@ -644,13 +962,13 @@ def test_set_type_field_replaces_a_malformed_block() -> None:
     * set a type-field value
     * verify the malformed block was replaced by a fresh object holding it
     """
-    doc = RehuDocument({"type": "Tutorial", "tutorial": "junk"})
-    doc.set_type_field("rating", 3)
+    doc = RehuDocument({"type": "tutorial", "tutorial": "junk"})
+    doc.set_active_field("rating", 3)
     assert doc.data["tutorial"] == {"rating": 3}
 
 
-def test_remove_type_field_deletes_a_present_key() -> None:
-    """``remove_type_field`` deletes a key from the block and reports it was present.
+def test_remove_active_field_deletes_a_present_key() -> None:
+    """``remove_active_field`` deletes a key from the block and reports it was present.
 
     **Test steps:**
 
@@ -658,25 +976,186 @@ def test_remove_type_field_deletes_a_present_key() -> None:
     * remove that key
     * verify it returns ``True`` and the key is gone while the rest of the block is intact
     """
-    doc = RehuDocument({"type": "Tutorial", "tutorial": {"rating": 5, "mystery": 42}})
-    assert doc.remove_type_field("mystery") is True
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5, "mystery": 42}})
+    assert doc.remove_active_field("mystery") is True
     assert doc.data["tutorial"] == {"rating": 5}
 
 
-def test_remove_type_field_is_a_noop_when_absent() -> None:
-    """``remove_type_field`` reports ``False`` when the key or block is absent, changing nothing.
+def test_remove_active_field_is_a_noop_when_absent() -> None:
+    """``remove_active_field`` reports ``False`` when the key or block is absent, changing nothing.
 
     **Test steps:**
 
     * a Tutorial document with a block missing the key -> ``False``
     * a document with no block at all -> ``False``
     """
-    doc = RehuDocument({"type": "Tutorial", "tutorial": {"rating": 5}})
-    assert doc.remove_type_field("mystery") is False
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5}})
+    assert doc.remove_active_field("mystery") is False
     assert doc.data["tutorial"] == {"rating": 5}
 
-    blockless = RehuDocument({"type": "Tutorial"})
-    assert blockless.remove_type_field("mystery") is False
+    blockless = RehuDocument({"type": "tutorial"})
+    assert blockless.remove_active_field("mystery") is False
+
+
+def test_plugin_blocks_classifies_the_types_block_active_and_every_other_inactive() -> None:
+    """The ``type`` names the one active block; every other block is inactive ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document also carrying a ``reference_images`` and a ``daz3d`` block
+    * verify all three are enumerated, in document order
+    * verify only the ``tutorial`` block is active, and ``inactive_blocks`` is the other two
+    """
+    doc = RehuDocument(
+        {
+            "type": "tutorial",
+            "tutorial": {"rating": 4},
+            "reference_images": {"images_count": 12},
+            "daz3d": {"sku": "12345"},
+        }
+    )
+    assert [(block.key, block.active) for block in doc.plugin_blocks()] == [
+        ("tutorial", True),
+        ("reference_images", False),
+        ("daz3d", False),
+    ]
+    assert [block.key for block in doc.inactive_blocks()] == ["reference_images", "daz3d"]
+    assert doc.plugin_blocks()[0].fields == {"rating": 4}
+
+
+def test_an_installed_plugins_block_is_inactive_when_the_type_does_not_name_it() -> None:
+    """A ``reference_images`` block inside an ``audiopack``-typed file is inactive **even though** the
+    reference-images plugin is installed here ([[plugins#plugin-blocks]]'s sharp edge).
+
+    Installed-ness only decides whether the *active* block renders richly; it never promotes an
+    inactive block to active. Conversely ``audiopack`` has no plugin here at all, and is active anyway
+    -- the type decides, not the registry.
+
+    **Test steps:**
+
+    * verify the reference-images plugin really is installed in the default registry
+    * construct an ``audiopack``-typed document carrying an ``audiopack`` and a ``reference_images`` block
+    * verify the uninstalled ``audiopack`` block is the active one
+    * verify the installed-plugin ``reference_images`` block is inactive
+    """
+    assert "reference_images" in DEFAULT_PLUGIN_REGISTRY
+    assert "audiopack" not in DEFAULT_PLUGIN_REGISTRY
+
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "reference_images": {"images_count": 12}})
+    assert doc.active_block_key == "audiopack"
+    assert doc.active_block == {"bitrate": 320}
+    assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
+
+
+def test_a_non_object_top_level_key_is_not_a_plugin_block() -> None:
+    """A block is a keyed **object**; a stray scalar or list is an ordinary unknown key
+    ([[plugins#plugin-blocks]]).
+
+    This is the distinction that makes enumeration possible at all -- without it a block and a stray
+    top-level value are the same thing.
+
+    **Test steps:**
+
+    * construct a document carrying an unknown scalar, an unknown list, and one real block
+    * verify only the block is enumerated
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}, "stray_scalar": 42, "stray_list": [1, 2, 3]})
+    assert [block.key for block in doc.plugin_blocks()] == ["tutorial"]
+
+
+def test_alias_type_and_block_key_normalize_to_the_declared_main_key() -> None:
+    """A plugin declares its keys; storing rewrites an alias to the main one ([[plugins#plugin-blocks]]).
+
+    The ``type``'s value and its block's key are the same token, so one alias list normalizes both.
+
+    **Test steps:**
+
+    * construct a document using tc4's ``ReferenceImages`` type spelling and the ``refimages`` block alias
+    * verify both normalized to the declared main key ``reference_images``
+    * verify the block's contents survived the rename, and that no sibling block was disturbed
+    """
+    doc = RehuDocument(
+        {"core": {"type": "ReferenceImages"}, "refimages": {"images_count": 12}, "tutorial": {"rating": 1}}
+    )
+    assert doc.core["type"] == "reference_images"
+    assert doc.active_block_key == "reference_images"
+    assert doc.active_block == {"images_count": 12}
+    assert doc.data["tutorial"] == {"rating": 1}
+    assert "refimages" not in doc.data
+
+
+def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() -> None:
+    """An alias block never clobbers an existing main-keyed block ([[plugins#plugin-blocks]]).
+
+    It keeps its own spelling, and is therefore simply a different key -- so it classifies inactive and
+    is carried verbatim, which is exactly what foreign payload should do.
+
+    **Test steps:**
+
+    * construct a document carrying **both** ``reference_images`` and its ``refimages`` alias
+    * verify the main-keyed block is untouched and active
+    * verify the alias-keyed block kept its key, is inactive, and kept its contents
+    """
+    doc = RehuDocument(
+        {
+            "type": "reference_images",
+            "reference_images": {"images_count": 12},
+            "refimages": {"images_count": 99},
+        }
+    )
+    assert doc.active_block == {"images_count": 12}
+    assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
+
+
+def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: MockerFixture) -> None:
+    """Save carries everything -- the active block plus every inactive block ([[plugins#plugin-blocks]]).
+
+    The carry-only half of the persistence invariant: nothing is lost. Claim-tracking and the
+    drop-on-abandon rule are A4.2, so with no type switching every block simply survives.
+
+    **Test steps:**
+
+    * load a tutorial-typed document that also carries ``reference_images`` and ``daz3d`` blocks
+    * edit the active block, then save
+    * verify the edit landed and both inactive blocks were written back byte-for-byte
+    """
+    data = {
+        "type": "tutorial",
+        "tutorial": {"rating": 4},
+        "reference_images": {"images_count": 12},
+        "daz3d": {"sku": "12345", "figures": ["G8F"]},
+    }
+    doc = load_doc(mocker, data)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.set_active_field("rating", 5)
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["tutorial"] == {"rating": 5}
+    assert saved["reference_images"] == {"images_count": 12}
+    assert saved["daz3d"] == {"sku": "12345", "figures": ["G8F"]}
+
+
+def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
+    """Storing rewrites an alias to its main key -- the rename/migration path
+    ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * load a document written with tc4's ``Tutorial`` type spelling
+    * save it untouched
+    * verify the file now carries the declared main key, for both ``type`` and the block
+    """
+    doc = load_doc(mocker, {"core": {"type": "Tutorial"}, "Tutorial": {"rating": 4}})
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["type"] == "tutorial"
+    assert saved["tutorial"] == {"rating": 4}
+    assert "Tutorial" not in saved
 
 
 def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
@@ -691,6 +1170,37 @@ def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
     with pytest.raises(RehuFormatError) as exc_info:
         RehuDocument.load(FAKE_PATH)
     assert exc_info.value.__cause__ is not None
+
+
+@mark.parametrize(
+    ("case", "text"),
+    [
+        param("deep nesting", '{"core":' + '{"a":' * 100_000 + "1" + "}" * 100_000 + "}", id="deep-nesting"),
+        param("over-long int", '{"format_version": ' + "9" * 5000 + "}", id="over-long-int"),
+    ],
+)
+def test_load_refuses_a_hostile_payload_the_json_parser_chokes_on(case: str, text: str, mocker: MockerFixture) -> None:
+    """A ``.rehu`` is untrusted outside input, so a payload the parser cannot survive is **refused**
+    rather than escaping as whatever it raised ([[data-model#write-integrity]]).
+
+    ``json.loads`` raises more than ``JSONDecodeError``: deep nesting exhausts the interpreter stack
+    (``RecursionError``) and an over-long integer literal trips CPython's integer-digit limit (a bare
+    ``ValueError``). Either one escaping would surface as an unhandled crash in the agent instead of a
+    refused file.
+
+    Not a size defence -- the real sanity caps are #88.
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return a payload that kills the parser
+    * verify it comes back as :class:`RehuFormatError`, chained from the underlying error
+    """
+    mocker.patch.object(Path, "read_text", return_value=text)
+
+    with pytest.raises(RehuFormatError) as exc_info:
+        RehuDocument.load(FAKE_PATH)
+
+    assert exc_info.value.__cause__ is not None, case
 
 
 def test_load_rejects_non_object(mocker: MockerFixture) -> None:

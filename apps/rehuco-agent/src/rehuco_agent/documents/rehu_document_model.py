@@ -6,7 +6,7 @@ from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import RehuDocument, convert_tc
+from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument, convert_tc
 
 from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
@@ -33,7 +33,7 @@ at once. Defaults live on each ``SimpleProperty`` declaration below, same as :da
 
 KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES)
 """Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
-key in the live block is an **unknown field** surfaced through the generic fallback
+key in the active block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], A2.8/#28)."""
 
 
@@ -58,7 +58,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """
 
     unknown_fields_changed = Signal()
-    """Fires when the set of unrecognized live-block fields changes -- i.e. one is dropped via
+    """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
     path = SimpleProperty[Path | None](None)
@@ -177,7 +177,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         edit."""
 
         self.__seed_from_document()
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
         self.image_scanner = TcScanner(self) if self.__document.legacy_tc else RehuScanner(self)
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
@@ -280,7 +280,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         too. :meth:`__seed_from_document` guards itself against the reseed looking like an edit --
         no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
 
-        The reload also restores any unknown live-block fields dropped this session, so
+        The reload also restores any unknown active-block fields dropped this session, so
         ``unknown_fields_changed`` is emitted to let the generic fallbacks re-show themselves
         ([[plugins#fallback-editor]], A2.8/#28).
 
@@ -289,7 +289,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.reload()
         self.__seed_from_document()
         self.dirty = False
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
         self.unknown_fields_changed.emit()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
@@ -315,7 +315,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document = convert_tc(self.path, keep_backups=keep_backups, overwrite=overwrite)
         self.__seed_from_document()
         self.dirty = False
-        self.locked = self.__document.format_version > RehuDocument.CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
         self.image_scanner = RehuScanner(self)
         self.unknown_fields_changed.emit()
 
@@ -323,7 +323,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
 
         :param field: the field to resolve; its :attr:`~Field.name` matches either a `SimpleProperty`
-            declared on this class or an unrecognized key in the live plugin block (an unknown field,
+            declared on this class or an unrecognized key in the active plugin block (an unknown field,
             [[plugins#fallback-editor]]).
         :returns: the field's current value, its notify signal, and a setter.
         """
@@ -331,12 +331,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         try:
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
         except KeyError:
-            # not a declared property -> an unknown live-block key surfaced through the generic
-            # fallback (A2.8/#28); bind it to its verbatim stored value and the block-change signal.
+            # not a declared property -> a key carried verbatim and surfaced through the generic
+            # fallback ([[plugins#fallback-editor]]). Two different things reach here and they sit at
+            # different depths in the document: a whole **inactive block** is a top-level key, while an
+            # **unknown field** is a key inside the active block -- so which one this is has to be
+            # settled before reading a value, or an inactive block would read as an absent field.
+            inactive_block = self.__inactive_block_binding(name)
+            if inactive_block is not None:
+                return inactive_block
             return FieldBinding(
-                value=self.__document.type_field(name),
+                value=self.__document.active_field(name),
                 changed=self.unknown_fields_changed,
-                set_value=lambda value: self.__document.set_type_field(name, value),
+                set_value=lambda value: self.__document.set_active_field(name, value),
             )
         return FieldBinding(
             value=getattr(self, name),
@@ -344,26 +350,61 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             set_value=lambda value: setattr(self, name, value),
         )
 
-    def unknown_field_names(self) -> list[str]:
-        """The live plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], A2.8/#28).
+    def __inactive_block_binding(self, name: str) -> FieldBinding[Any] | None:
+        """Resolve ``name`` as a whole inactive plugin block, when it is one ([[plugins#plugin-blocks]]).
 
-        Every key in the type-keyed block ([[field-schema#resource-types]]) that isn't a known field
+        The binding is read-only: an inactive block is carried verbatim and is not this file's to edit,
+        so its setter refuses rather than writing. Whatever affordance an inactive block eventually gets
+        (carry vs. drop) is A4.4's ([[plugins#fallback-editor]]) -- and the drop-on-abandon rule that
+        governs it is A4.2's, so guessing at a setter here would be guessing at exactly the invariant
+        those slices exist to settle.
+
+        :param name: the field name being bound.
+        :returns: a binding over the block's verbatim contents, or ``None`` when ``name`` isn't an
+            inactive block's key.
+        """
+        block = next((block for block in self.__document.inactive_blocks() if block.key == name), None)
+        if block is None:
+            return None
+        return FieldBinding(
+            value=block.fields,
+            changed=self.unknown_fields_changed,
+            set_value=lambda _value: LOG.error("Refusing to edit inactive block %r: not editable until A4.4", name),
+        )
+
+    def unknown_field_names(self) -> list[str]:
+        """The active plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], A2.8/#28).
+
+        Every key in the active block ([[plugins#plugin-blocks]]) that isn't a known field
         (:data:`KNOWN_TYPE_FIELD_NAMES`) -- e.g. a field written by a newer plugin version than the one
         installed here. Carried verbatim on round-trip unless explicitly dropped via
         :meth:`remove_unknown_field`.
 
         :returns: the unknown keys, sorted for a stable display order.
         """
-        return sorted(key for key in self.__document.type_fields if key not in KNOWN_TYPE_FIELD_NAMES)
+        return sorted(key for key in self.__document.active_block if key not in KNOWN_TYPE_FIELD_NAMES)
+
+    def inactive_block_keys(self) -> list[str]:
+        """The keys of this document's inactive plugin blocks ([[plugins#plugin-blocks]]).
+
+        Every block the document's ``type`` doesn't name -- inactive **whether or not** its plugin is
+        installed here, since only the type decides what is active. Each is carried verbatim on save; the
+        collapsible, drop-capable fallback UI they eventually get is A4.4 ([[plugins#fallback-editor]]),
+        which is why nothing here offers a way to edit or drop one --
+        so for now they surface as read-only flagged rows.
+
+        :returns: the inactive block keys, in document order.
+        """
+        return [block.key for block in self.__document.inactive_blocks()]
 
     def remove_unknown_field(self, name: str) -> None:
-        """Drop an unknown live-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).
+        """Drop an unknown active-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).
 
         No-op if ``name`` isn't present, so a double remove (e.g. a stale button click) is harmless.
 
         :param name: the unknown block key to delete.
         """
-        if self.__document.remove_type_field(name):
+        if self.__document.remove_active_field(name):
             self.unknown_fields_changed.emit()
             self.dirty = True
 
@@ -392,14 +433,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             # hand-duplicated literal here -- so there is exactly one place per field to change its default.
             for name in TYPE_FIELD_BOOL_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                setattr(self, name, bool(self.__document.type_field(name, default)))
+                setattr(self, name, bool(self.__document.active_field(name, default)))
             for name in TYPE_FIELD_INT_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                value = self.__document.type_field(name, default)
+                value = self.__document.active_field(name, default)
                 setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
             for name in TYPE_FIELD_STR_LIST_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                value = self.__document.type_field(name, default)
+                value = self.__document.active_field(name, default)
                 coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
                 setattr(self, name, coerced)
         finally:
@@ -567,5 +608,5 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         if self.__seeding:
             return
-        self.__document.set_type_field(key, value)
+        self.__document.set_active_field(key, value)
         self.dirty = True

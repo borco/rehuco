@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
+from rehuco_core.plugins import CORE_BLOCK_KEY
 from rehuco_core.rehu_document import RehuDocument
 from rehuco_core.tc_description import rewrite_description_images
 from rehuco_core.tc_document import TcDocument
@@ -93,11 +94,12 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         :returns: the JSON object ready to back a fresh, unlocked :class:`RehuDocument`.
         """
         data = TcDocument.load(self.__tc_path).to_rehu_data()
-        data["description"] = rewrite_description_images(str(data.get("description", "")), renames)
-        data["id"] = str(uuid4())
+        core = data[CORE_BLOCK_KEY]
+        core["description"] = rewrite_description_images(str(core.get("description", "")), renames)
+        core["id"] = str(uuid4())
         seeded = self.__seeded_timestamp()
-        data["created"] = seeded
-        data["updated"] = seeded
+        core["created"] = seeded
+        core["updated"] = seeded
         return data
 
     def __seeded_timestamp(self) -> str:

@@ -1,5 +1,5 @@
 """The generic `unknown` fallback field: an unrecognized field value -- a common top-level key or a
-live plugin-block key the software here doesn't understand -- carried verbatim, with a remove action
+key in the active plugin block the software here doesn't understand -- carried verbatim, with a remove action
 in the editor ([[plugins#fallback-editor]], §13.3/§13.4).
 """
 
@@ -23,13 +23,30 @@ PROVENANCE_NEWER_VERSION: Final = (
 """Provenance for a field the software here doesn't recognize because it comes from a **newer version**
 than what's installed ([[plugins#fallback-editor]]) -- deliberately source-agnostic, since in A2.8 a
 newer **common** top-level key and a newer **plugin-block** key are indistinguishable (there's no
-core-version/plugin-registry model yet to tell them apart). The only provenance A2.8 wires up; the
-plugin-absent and not-the-current-type provenances land later with that model (A3)."""
+core-version/plugin-registry model yet to tell them apart). The plugin-absent provenance still lands
+later, with A4.4's real fallback UI ([[plugins#fallback-editor]])."""
+
+PROVENANCE_NOT_CURRENT_TYPE: Final = (
+    "This block isn't the one this file's type names, so it isn't editable here. It is kept as-is."
+)
+"""Provenance for a whole **inactive** plugin block ([[plugins#plugin-blocks]]) -- one this file's
+``type`` doesn't name. Distinct from :data:`PROVENANCE_NEWER_VERSION` because the two are different
+situations the user resolves differently ([[plugins#fallback-editor]]): a newer-version field wants an
+upgrade, whereas an inactive block is simply payload this file is custodian of. Deliberately says
+nothing about whether the block's plugin is installed -- that never affects the answer, since only the
+type decides what is active.
+
+Worded to stay true of the one case this can't tell apart: an object-valued top-level key added to the
+**common core** by a newer build is structurally identical to an uninstalled plugin's block
+(:data:`~rehuco_core.COMMON_FIELD_KEYS`), so it classifies as an inactive block here. Saying only that
+the file's ``type`` doesn't name it is accurate either way; separating the three real provenances
+(newer-plugin / plugin-absent / not-this-type) is A4.4's ([[plugins#fallback-editor]])."""
 
 
 class UnknownField(Field[Any]):
-    """The generic fallback for an unrecognized field -- a common top-level key or a live
-    plugin-block key the software here doesn't understand ([[plugins#fallback-editor]], §13.3/§13.4).
+    """The generic fallback for an unrecognized field -- a common top-level key, a key in the active
+    plugin block the software here doesn't understand, or a whole inactive block
+    ([[plugins#fallback-editor]], §13.3/§13.4).
 
     Source-agnostic: the field never inspects where its value lives; its owner supplies the
     ``current_value``/``is_present``/``on_remove`` callbacks, so the same class serves a common field
@@ -51,7 +68,8 @@ class UnknownField(Field[Any]):
     resolved generically through the registry -- the registry has no class for an unknown ``type`` and
     the provenance/remove wiring is owner-supplied, the same shape as the special ``path`` field.
 
-    :param name: the unknown key (a common top-level key or a live plugin-block key).
+    :param name: the unknown key (a common top-level key, a key in the active plugin block, or an
+        inactive block's own key).
     :param label: display label; derived from ``name`` when omitted.
     :param provenance: the human-readable reason this field is flagged (e.g.
         :data:`PROVENANCE_NEWER_VERSION`); shown as the value's tooltip.

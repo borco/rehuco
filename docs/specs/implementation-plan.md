@@ -106,7 +106,7 @@ lesson, delete the code.
 > `architecture-design.md`; they are:
 >
 > - **Sync engine** — version vector + activity log, conflict/merge, tombstones ([[sync#overview]]).
-> - **Plugin block save invariant** — the live/inert/claim-then-abandon rule ([[plugins#plugin-blocks]]).
+> - **Plugin block save invariant** — the active/inactive/claim-then-abandon rule ([[plugins#plugin-blocks]]).
 > - **Registry resolution & serve-after-resync** — preferred-authority/chatter, version-marker comparison
 > ([[discovery-trust-access#registry-home]], [[discovery-trust-access#serve-after-resync]]).
 > - **Cross-filesystem safe move** — checksum-gated, data-loss-sensitive ([[mounts-and-storage#safe-move-rename]]).
@@ -225,10 +225,12 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   (session/close-guard persistence, the per-type field widgets, multi-source and image-selection editors,
   unknown-field fallback).
 - **A3 — `.rehu` format + versioning.** JSON read/write, per-file format-version field, preserve-unknown-fields rule
-  ([[data-model#schema-version]]). Bring `.tc`→`.rehu` migration in as "format v0" ([[acquisition-tooling#tc-to-rehu]])
-  — opening a `.tc` offers migration + screenshot-name normalization.
-- **A4 — Plugin block model.** Keyed per-plugin blocks, single-live-type rule, the save-persistence invariant (live type
-  or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inert/unknown blocks with
+  ([[data-model#schema-version]]). Bring `.tc`→`.rehu` migration in as the oldest *source* format
+  ([[acquisition-tooling#tc-to-rehu]]) — opening a `.tc` offers migration + screenshot-name normalization. (It is not
+  "format v0": a `.tc` is a different file format, not an old `.rehu`, and the mapping emits the current `.rehu` layout
+  stamp included — v0 means an unstamped `.rehu`, [[data-model#schema-version]].)
+- **A4 — Plugin block model.** Keyed per-plugin blocks, single-active-type rule, the save-persistence invariant (active
+  type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inactive/unknown blocks with
   carry/map/drop ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]). This is the genuinely new core logic.
 - **A5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next,
   hideable strip, ESC), folder-rename-from-suggestions ([[plugins#tutorial-plugin]]).

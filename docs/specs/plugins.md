@@ -27,6 +27,35 @@ reference images, and Daz3D, but the architecture doesn't assume these are exhau
 A resource whose plugin isn't installed/loaded on a given machine should still degrade gracefully — at minimum showing
 the common fields — rather than failing outright, since `.rehuco` (and therefore plugin availability) is per-machine.
 
+### A plugin is two layers, and the lower one is non-GUI
+
+**Every plugin has a non-GUI core layer, loaded by agent and node alike**, plus an optional GUI layer the agent alone
+loads. This isn't a concession to testability — a node needs the lower layer anyway, since plugins own web rendering
+([[plugins#core-vs-plugin]]'s table) and a node has no widgets to render with. The split also keeps `rehuco-core`
+non-GUI, the same rule the field toolkit follows in reverse ([[plugins#field-toolkit]]).
+
+- **Core layer (non-GUI)** — the plugin's **identity** (below), its block's schema and format version
+  ([[plugins#plugin-blocks]]), and eventually its web rendering and its observers on core-field changes (the hook seam,
+  [[daz3d-personal-database#authors-urls]]). Importable by `rehuco-node` with no Qt widgets in sight.
+- **Agent layer (GUI)** — viewer/editor composition over the field toolkit, custom widgets, and custom actions (the
+  Daz3D install action, [[plugins#daz3d-plugin]]).
+
+**Identity is declared, not derived.** A plugin declares an ordered **key list**: the first entry is its **main key**,
+the rest are **aliases** accepted on read and rewritten to the main key on write — a rename/migration path for free.
+Deriving a key from a type name instead (e.g. snake-casing `ReferenceImages` → `reference_images`) cannot express a key
+like `daz3d`, which is the snake_case of no type name at all; TutCatalog5 reached the same conclusion and declared key
+lists in config (`base_item.py`'s `KEY`, `defaults.toml`'s `[types]`).
+
+A resource's `type` **is** its block's key ([[plugins#plugin-blocks]]), so one key list serves both — it resolves a
+legacy `type` spelling and the legacy block key it named, because they are the same token. tc4's capitalized `Tutorial`
+/ `ReferenceImages` ([[acquisition-tooling#tc-to-rehu]]) are therefore aliases, and normalize on write.
+
+**How this build knows a plugin exists** is a **registry**: the set of declared key lists installed here. It answers
+only identity questions ("is this key a plugin I have, and what is its main spelling") — never which block is active,
+which follows from `type` alone. The common core declares its identity the same way ([[data-model#rehu-format]]), which
+is what reserves the name `core`: the registry already refuses two declarations claiming one spelling, so a plugin
+cannot call itself `core` without a rule being written for it.
+
 **Plugins span a spectrum from declarative to code.** Two earlier ideas — a code-plugin model, and a TutCatalog5
 experiment where `.rehuco` *declared* each type's fields from a fixed toolkit — are unified by layering rather than
 choosing:
@@ -168,74 +197,86 @@ later slice (A2.1/#21). A nested surface toggle must carry the [[packaging-deplo
 workaround
 (stash `splitterSizes` on `closeRequested`, reapply on `viewToggled(True)`).
 
-## §13.3 Plugin blocks: keyed, versioned, single-live-type
+## §13.3 Plugin blocks: keyed, versioned, single-active-type
 
 [[[plugins#plugin-blocks]]]
 
 > [!NOTE]
-> **Implement the block save invariant with Opus, not the auto-switched Sonnet.** The live/inert distinction, and
+> **Implement the block save invariant with Opus, not the auto-switched Sonnet.** The active/inactive distinction, and
 > especially the *claim-then-abandon-drops-but-never-claimed-foreign-carries* rule (the worked example below), is the
 > subtle logic most likely to be implemented as the wrong-but-plausible "save the current type" — which silently deletes
 > foreign blocks. Override to `/model opus` for this and check all four steps of the worked example.
 
-Plugin fields are stored in **separate, uniquely-keyed blocks** (e.g. `tutorial:`, `refimages:`, `daz3d:`), one per
-plugin, each carrying **its own independent format version** (the per-plugin refinement of [[data-model#schema-version]]
-— a plugin can evolve its block's schema without touching the common-field version or any other plugin's). A plugin
-reads/writes only its own block and never needs to know the shape of another's.
+Plugin fields are stored in **separate, uniquely-keyed blocks** (e.g. `tutorial:`, `reference_images:`, `daz3d:`), one
+per plugin, each carrying **its own independent format version** (the per-plugin refinement of
+[[data-model#schema-version]] — a plugin can evolve its block's schema without touching the common-field version or any
+other plugin's). A plugin reads/writes only its own block and never needs to know the shape of another's. Each block's
+key is its plugin's declared main key ([[plugins#core-vs-plugin]]); an alias spelling normalizes to it on write.
 
-**Exactly one type, exactly one live block.** A `.rehu` declares a single `type`. That type — *not* which plugins happen
-to be installed — names the one block that is **live** (authoritative, editable by its plugin). Every other block in the
-file is **inert**, regardless of whether a matching plugin exists: a `refimages:` block inside an `audiopack`-typed file
-is inert and treated as unknown even when the refimages plugin is installed, because the file's type isn't refimages.
-Plugin-installed-ness only affects whether the *live* block can be rendered richly or must fall back to the generic
-editor; it never promotes an inert block to live.
+**Exactly one type, exactly one active block.** A `.rehu` declares a single `type`, whose value **is** the key of the
+one block that is **active** (authoritative, editable by its plugin) — they are the same token, which is what lets a
+reader classify blocks with no registry at all. Every other block in the file is **inactive**, regardless of whether a
+matching plugin exists: a `reference_images:` block inside an `audiopack`-typed file is inactive and treated as unknown
+even when the reference-images plugin is installed, because the file's type isn't reference-images. Conversely an
+`audiopack:` block *is* active in that file even though no `audiopack` plugin is installed anywhere — **what is
+installed never enters into it.** Plugin-installed-ness only affects whether the *active* block can be rendered richly
+or must fall back to the generic editor; it never promotes an inactive block to active.
+
+> [!NOTE]
+> **Why "active", not "live".** This document already uses **live** for *real-time* — "live `both`"
+> ([[plugins#view-model]]), live-updating viewers — and so does the code. A block that is authoritative and a widget
+> that updates as you type are unrelated ideas, so the block model says **active** / **inactive** and leaves "live" to
+> mean only "reacting now".
 
 **Block persistence invariant (the rule that governs save):** on save, a block is written **iff**
 
-- it is the **current live type's** block, **or**
-- it is **foreign payload that has never been made live during this editing session** (carried verbatim, never silently
-  dropped — a file is a custodian of blocks it doesn't own).
+- it is the **current active type's** block, **or**
+- it is **foreign payload that has never been made active during this editing session** (carried verbatim, never
+  silently dropped — a file is a custodian of blocks it doesn't own).
 
-A block that **was made live this session and then abandoned** (the user switched to it, then switched away) is
-**dropped on save** — by making it live and leaving it, the user asserted "this file is no longer that." All non-live
+A block that **was made active this session and then abandoned** (the user switched to it, then switched away) is
+**dropped on save** — by making it active and leaving it, the user asserted "this file is no longer that." All inactive
 blocks (both kinds) remain **resurrectable from memory until the file is closed**, so switching type back and forth
 within a session is non-destructive until save.
 
-Worked example (type starts at `audiopack`, file also contains an untouched `refimages` block):
+Worked example (type starts at `audiopack`, file also contains an untouched `reference_images` block):
 
-1. Switch to `tutorial`: `audiopack` hidden + kept in memory but **dropped on save** (former live type, abandoned);
-   `refimages` shown as **unknown**, carried (never live). Save writes `tutorial` + `refimages`.
+1. Switch to `tutorial`: `audiopack` hidden + kept in memory but **dropped on save** (former active type, abandoned);
+   `reference_images` shown as **unknown**, carried (never active). Save writes `tutorial` + `reference_images`.
 2. Switch back to `audiopack`: in-memory `audiopack` revives; `tutorial` hidden.
-3. Switch to `refimages`: refimages becomes **live** — the plugin reconciles it (known sub-fields populate their
-   editors; unknown sub-fields get the migrate/drop UI *within* the refimages area). Save writes **only** `refimages`.
-4. Switch away to `tutorial`/`audiopack`: `refimages` is now a former-live-and-abandoned block — no longer shown as
-   unknown, just hidden, and **saving deletes it entirely** (contrast step 1, where the same block key was carried
-   because it had never been live).
+3. Switch to `reference_images`: it becomes **active** — the plugin reconciles it (known sub-fields populate their
+   editors; unknown sub-fields get the migrate/drop UI *within* the reference-images area). Save writes **only**
+   `reference_images`.
+4. Switch away to `tutorial`/`audiopack`: `reference_images` is now a former-active-and-abandoned block — no longer
+   shown as unknown, just hidden, and **saving deletes it entirely** (contrast step 1, where the same block key was
+   carried because it had never been active).
 
-The same block key (`refimages`) thus has opposite fates in steps 1 and 4, determined solely by **"was it ever live this
-session."** Making a block live "claims" it; claiming-then-abandoning discards it; never-claiming carries it.
+The same block key (`reference_images`) thus has opposite fates in steps 1 and 4, determined solely by **"was it ever
+active this session."** Making a block active "claims" it; claiming-then-abandoning discards it; never-claiming carries
+it.
 
-**Safety net:** because making a block live arms its deletion-on-abandon (a user might switch to a type merely to
+**Safety net:** because making a block active arms its deletion-on-abandon (a user might switch to a type merely to
 preview it), a save that drops a previously-foreign claimed block records the discard in the activity log
-([[sync#overview]]) — "refimages block discarded on date X" — so the *fact* of the drop is traceable even though the
+([[sync#overview]]) — "reference_images block discarded on date X" — so the *fact* of the drop is traceable even though the
 values are gone, consistent with the document's "never silently lose reasoning" principle. Optionally the editor may
 visually distinguish "former-identity, will drop on save" from "foreign, will carry" blocks.
 
-## §13.4 Generic fallback editor for inert / unknown blocks
+## §13.4 Generic fallback editor for inactive / unknown blocks
 
 [[[plugins#fallback-editor]]]
 
-Inert blocks (and a live block whose plugin isn't installed here) are shown via a generic fallback rather than failing:
+Inactive blocks (and an active block whose plugin isn't installed here) are shown via a generic fallback rather than
+failing:
 
-- **Unknown block** (whole plugin not the live type, or not installed): a labeled, collapsible section marked with *why*
-  it's flagged — "not the current type" vs. "plugin not installed here" are different situations the user resolves
+- **Unknown block** (whole plugin not the active type, or not installed): a labeled, collapsible section marked with
+  *why* it's flagged — "not the current type" vs. "plugin not installed here" are different situations the user resolves
   differently. Default is carry-verbatim, with an explicit drop option.
-- **Unknown field inside a known live block** (e.g. the installed plugin is an older version than the file's block):
+- **Unknown field inside a known active block** (e.g. the installed plugin is an older version than the file's block):
   per-field UI to **map to a known field, drop, or carry verbatim** — most useful here because the plugin *is* present
   and the user may know where a stray field belongs. Unmapped, undropped fields are carried untouched.
 - Flagged items **stand out in the viewer**, labeled by provenance (newer-version-of-installed-plugin vs. plugin-absent
   vs. not-the-current-type) so the user knows whether the fix is "upgrade the plugin," "install it," or "this is just
-  inert payload."
+  inactive payload."
 
 ## §13.5 Resource browsers (per-type, with shelf/table modes)
 

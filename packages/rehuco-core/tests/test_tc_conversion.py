@@ -73,11 +73,11 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
     assert isinstance(document, RehuDocument)
     assert document.legacy_tc is False
     saved = json.loads(mocks["write"].call_args[0][1])
-    assert saved["sources"][0]["title"] == "Some Title"
-    assert saved["description"] == "![](info00.jpg)"
-    assert saved["id"]
-    assert saved["created"] == SEEDED_TIMESTAMP
-    assert saved["updated"] == SEEDED_TIMESTAMP
+    assert saved["core"]["sources"][0]["title"] == "Some Title"
+    assert saved["core"]["description"] == "![](info00.jpg)"
+    assert saved["core"]["id"]
+    assert saved["core"]["created"] == SEEDED_TIMESTAMP
+    assert saved["core"]["updated"] == SEEDED_TIMESTAMP
 
     originals = [TC_PATH, DIRECTORY / "cover.jpg", DIRECTORY / "sample-00.png", DIRECTORY / "sample-01.jpg"]
     assert mocks["rename"].call_args_list == [mocker.call(o, backup_path(o)) for o in originals]
