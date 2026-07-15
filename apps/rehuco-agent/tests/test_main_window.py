@@ -20,7 +20,7 @@ from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
-from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 
@@ -153,14 +153,14 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
-def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
-    """The Markdown Rendering settings page (#26, #47) is registered into the settings dialog,
-    on every platform (unlike the Windows-only Registry page).
+def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
+    """The Descriptions settings page (#26, #47) is registered into the settings dialog,
+    on every platform (unlike the Windows-only System Integration page).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``MarkdownRenderingPage``
+    * verify the settings dialog's page stack holds a ``DescriptionsPage``
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -168,11 +168,11 @@ def test_registers_the_markdown_rendering_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    assert any(isinstance(page, MarkdownRenderingPage) for page in pages)
+    assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
-def test_registers_the_markdown_rendering_page_under_the_editors_group(qtbot: QtBot) -> None:
-    """The Markdown Rendering page is registered under the "Editors" category group (#76).
+def test_registers_the_descriptions_page_under_the_editors_group(qtbot: QtBot) -> None:
+    """The Descriptions page is registered under the "Editors" category group (#76).
 
     **Test steps:**
 

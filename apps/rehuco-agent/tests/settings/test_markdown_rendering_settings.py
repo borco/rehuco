@@ -17,7 +17,7 @@ from rehuco_agent.settings.markdown_rendering_settings import (
 
 
 # region fixtures
-# Mirrors test_markdown_rendering_page.py's (and conftest.py's) FakeSettings exactly -- kept as a
+# Mirrors test_descriptions_page.py's (and conftest.py's) FakeSettings exactly -- kept as a
 # separate copy rather than a shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin

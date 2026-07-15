@@ -57,7 +57,7 @@ page becomes current.
 
 The category tree is **two levels deep at most**: `add_page(page, group="Editors")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
-top-level row of its own. Today "Descriptions" (`MarkdownRenderingPage`) sits under **Editors**, and
+top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, and
 "System Integration" (`RegistryPage`) is top-level.
 
 A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
@@ -110,7 +110,7 @@ The dialog shell dispatches, it never interprets:
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
-- **Staged-edit pages** (`MarkdownRenderingPage`, "Descriptions") — edits live in local widget/draft
+- **Staged-edit pages** (`DescriptionsPage`, "Descriptions") — edits live in local widget/draft
   state until `save_changes()` pushes them somewhere permanent; `drop_changes()` discards the draft
   and reloads the fields from whatever is currently saved (a revert, not a no-op).
 - **Immediate-effect pages** (`RegistryPage`, "System Integration") — its buttons
@@ -125,7 +125,7 @@ protocol, but not yet read by `SettingsDialog` itself.
 [[[appendices.settings-pages#persisting-changes]]]
 
 There is no generic persistence layer in the dialog shell — persisting is entirely each page's own
-job, via whatever `save_changes()` does. `MarkdownRenderingPage`'s flow is the concrete pattern to
+job, via whatever `save_changes()` does. `DescriptionsPage`'s flow is the concrete pattern to
 follow for a new staged-edit page:
 
 1. `__sync_current_css_draft()` folds the visible CSS editor's text into whichever draft slot
@@ -164,7 +164,7 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   group's controls across separate frames expecting them to hide independently.
 - Give the page's root layout zero margins (the stack already provides padding) and end it with a
   vertical spacer so frames stack at the top rather than stretching to fill. If one frame holds a
-  control that should grow (e.g. `MarkdownRenderingPage`'s CSS editor), stretch that frame's layout
+  control that should grow (e.g. `DescriptionsPage`'s CSS editor), stretch that frame's layout
   item so it — not the spacer — takes the slack when shown, while the spacer keeps a lone remaining
   frame top-aligned. Set that stretch in the controller after `setupUi()` (`main_layout.setStretch`),
   not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property.

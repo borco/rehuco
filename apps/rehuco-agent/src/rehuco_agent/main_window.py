@@ -22,7 +22,7 @@ from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, M
 from rehuco_agent.settings.persistent_settings import persistent_settings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.theme_settings import ThemeSettings
-from rehuco_agent.settings.ui.markdown_rendering_page import MarkdownRenderingPage
+from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
@@ -249,7 +249,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
         it wraps) already requires.
         """
-        self.__settings_dialog.add_page(MarkdownRenderingPage(), group="Editors")
+        self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from rehuco_agent.settings.ui.registry_page import RegistryPage

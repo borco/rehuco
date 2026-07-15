@@ -48,7 +48,7 @@ def isolate_shared_markdown_rendering_settings(mocker: MockerFixture) -> Iterato
     -- for the rest of the whole test session: leaking state between tests, and reading the
     developer's actual on-disk settings file rather than a hermetic fake. A test that specifically
     exercises this settings object (e.g. ``test_markdown_rendering_settings.py``,
-    ``test_markdown_rendering_page.py``) patches ``persistent_settings`` itself, which simply
+    ``test_descriptions_page.py``) patches ``persistent_settings`` itself, which simply
     overrides this default for its own module.
     """
     shared_markdown_rendering_settings.cache_clear()
