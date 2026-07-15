@@ -234,8 +234,20 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   hideable strip, ESC), folder-rename-from-suggestions ([[plugins#tutorial-plugin]]).
 - **A6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're
   [[plugins#refimages-plugin]] richness, not needed for "view/edit").
-- **A7 — Checksums.** Generate/verify with algorithm-tagging, as task-queue jobs ([[data-model#checksums]]) — pairs
-  naturally with migration.
+- **A7 — Log dock, task queue, checksums.** Three items, in dependency order — each is the one before it
+  made useful:
+  1. **In-app log viewer** — a log dock fed by a caching `logging.Handler` bridge (records logged before
+     the GUI exists are replayed, not lost) plus a level-filterable log widget. rehuco has only colorized
+     console logging today, while every recent predecessor shipped this; prior art, including the
+     cache-then-replay design, is in [[pyside-ibo#log-stack]]. **First** — it is the simplest real dock,
+     and it is what makes the two items below observable when they misbehave.
+  2. **Task queue / dock** ([[architecture-design#components]]) — the visible, app-wide queue of slow
+     operations (checksum, sync, scans, copies, node-notify, safe moves) with pause/resume/cancel/reorder,
+     multi-select serializing work rather than running it all at once. Specified as a component since the
+     architecture doc but never scheduled; A7 is where it lands, because checksums are its first real
+     client and every later milestone (B scans, C sync/copies) assumes it exists.
+  3. **Checksums** — generate/verify with algorithm-tagging, as task-queue jobs ([[data-model#checksums]])
+     — pairs naturally with migration.
 - **A8 — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences.
 
 **Exit criteria:** open any tutorial or ref-image `.rehu` (or migrate a `.tc`), view it richly, edit and atomic-save,
