@@ -53,6 +53,9 @@
         <widget class="WrappingCheckBox" name="show_full_page_check_box" native="true"/>
        </item>
        <item>
+        <widget class="WrappingCheckBox" name="show_full_group_check_box" native="true"/>
+       </item>
+       <item>
         <widget class="QTreeView" name="category_tree">
          <property name="headerHidden">
           <bool>true</bool>

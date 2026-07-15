@@ -243,12 +243,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).
 
-        Markdown Rendering is cross-platform. The Registry page is Windows-only (it wraps
+        Descriptions is cross-platform, and nests under the "Editors" group (#76). The System
+        Integration page is top-level and Windows-only (it wraps
         ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
         it wraps) already requires.
         """
-        self.__settings_dialog.add_page(MarkdownRenderingPage())
+        self.__settings_dialog.add_page(MarkdownRenderingPage(), group="Editors")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from rehuco_agent.settings.ui.registry_page import RegistryPage
@@ -318,6 +319,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__save_window_state()
         self.__dialog_manager.save_all(persistent_settings())
         self.__save_session()
+        self.__settings_dialog.save_filter_state()
         self.__recent_files.save(persistent_settings())
         self.__theme_settings.mode = self.__theme_model.mode
         self.__theme_settings.save(persistent_settings())

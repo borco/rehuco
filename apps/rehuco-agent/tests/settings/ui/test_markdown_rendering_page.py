@@ -246,8 +246,8 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_markdown_rendering(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Markdown Rendering".
+def test_title_is_descriptions(qtbot: QtBot) -> None:
+    """The page's category-tree title is "Descriptions" (#76).
 
     **Test steps:**
 
@@ -257,7 +257,7 @@ def test_title_is_markdown_rendering(qtbot: QtBot) -> None:
     page = MarkdownRenderingPage()
     qtbot.addWidget(page)
 
-    assert page.title == "Markdown Rendering"
+    assert page.title == "Descriptions"
 
 
 def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) -> None:

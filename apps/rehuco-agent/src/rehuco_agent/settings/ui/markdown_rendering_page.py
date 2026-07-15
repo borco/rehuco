@@ -44,7 +44,7 @@ class MarkdownRenderingPage(QWidget):
     @property
     def title(self) -> str:
         """This page's category-tree label."""
-        return "Markdown Rendering"
+        return "Descriptions"
 
     def is_dirty(self) -> bool:
         """Whether any staged edit differs from the shared settings' current values."""
