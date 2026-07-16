@@ -145,7 +145,8 @@ Title:     [title edit]
 URL:       [url edit]
 ```
 
-The list/nested widgets and their group/subtype config land in a later slice (A2.3/#23, A2.6/#26);
+The list/nested widgets and their group/subtype config land in a deferred slice (#97; the scope
+outlived A2.3/#23 and A2.6/#26);
 A2.0 ships only the leaf text field. A composite field still returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
@@ -163,7 +164,7 @@ other. Keeping the reactive layer in the agent preserves the core's non-GUI puri
 
 Common-core `title` / `publisher` / `url` are attributes of a **source record** ([[field-schema#sources]]), and
 `sources` is a list; the view-model exposes that list explicitly and, for now, edits the **primary**
-entry. The multi-source record-list *editor* is a later slice (A2.3/#23, A2.6/#26) — the view-model
+entry. The multi-source record-list *editor* is a deferred slice (#97; outlived A2.3/#23, A2.6/#26) — the view-model
 is the seam it plugs into.
 
 ### §13.2.3 Viewer / editor / both surfaces
@@ -299,6 +300,33 @@ columns plus type-specific columns.
   one sets the corresponding filter on the active browser (clicking an author shows all that author's resources, etc.).
   This couples the viewer dock to the browser's filter state — natural under the dockable-UI model — and was the primary
   filtering affordance in the usable older version.
+
+### §13.5.1 Click-to-filter URL convention
+
+[[[plugins#filter-urls]]]
+
+Click-to-filter links share one wire format, so every linkified value uses the same parser:
+
+```text
+filter://<field>?name=<percent-encoded value>
+
+filter://authors?name=Foo%20Bar
+filter://tags?name=foo%20bar
+filter://publishers?name=Example%20Publisher
+```
+
+- **One scheme, one query key.** The field is the URL's host part (always lowercase ASCII, so host normalization is
+  harmless); the value always rides the `name` query parameter, percent-encoded, so any character a name can contain
+  survives — including `/` and `,`, which a path- or delimiter-based encoding would trip over. The value is never
+  encoded into the path or a bare query string: one `name=` parser serves every field.
+- **Initial field set:** `authors`, `tags`, `publishers` — the three values [[plugins#browsers]] linkifies.
+  `advertised_tags` and `extra_tags` share the single `tags` domain: clicking a tag filters on the tag regardless of
+  which list it came from; the two-list split is an editing-side concept, not a filtering one.
+- **Dormant until Milestone B.** The viewer renders external `http(s)` links from day one (an author entry's URL,
+  [[field-schema#authors]]) but adds `filter://` anchors only once a browser exists to filter; until then the internal
+  dispatch branch is a logged no-op seam. Link handling never enables the label's own external-link opening: one
+  handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
+  link can never leak to the OS, and no other scheme is ever followed.
 
 ## §13.6 Tutorial plugin
 

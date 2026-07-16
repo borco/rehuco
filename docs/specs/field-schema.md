@@ -47,7 +47,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | `title` | Title | `sources[].title` | text | common | record + primary¹ | keep — see [[field-schema#sources]] |
 | `publisher` | Publisher | `sources[].publisher` | text | common | record¹ | keep — see [[field-schema#sources]] |
 | `url` | Homepage | `sources[].url` | URL | common | record¹ | keep — see [[field-schema#sources]] |
-| `author` | Authors | `authors` | text list | common | multi | keep, rename to `authors`; stays separate² |
+| `author` | Authors | `authors` | text list | common | multi | keep, rename to `authors`; stays separate²; entries string or `{name, url}` ([[field-schema#authors]]) |
 | `released` | Released | `released` | date | common | partial-precision | keep — Y / Y-M / Y-M-D; content publication date |
 | — | *(none in tc4)* | `created` | datetime | common | scalar | **new** — record created; seed from file timestamp on import |
 | — | *(none in tc4)* | `updated` | datetime | common | scalar | **new** — record last edited; seed from file mtime on import |
@@ -241,6 +241,37 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   migration safe to do in a later revision. `favorite` would stay separate regardless. `rating`
   never folds in (it is an integer, not a toggle).
 
+### §17.2.7 Author entries: plain name or `{name, url}` record
+
+[[[field-schema#authors]]]
+
+- [ ] [#92: feat: tolerant authors entries — string or {name, url} record](https://github.com/borco/rehuco/issues/92)
+- [ ] [#95: feat: authors viewer links (url, tooltip, status tip) + comma-editor lossless guard](https://github.com/borco/rehuco/issues/95)
+- [ ] [#97: feat: record-list editor machinery + simple/advanced authors editor](https://github.com/borco/rehuco/issues/97)
+
+`authors` entries are tolerantly **string-or-record**: a plain string is the common case, and an entry that carries an
+author-page URL is a `{ "name": …, "url": … }` record instead. Decided with
+[[daz3d-personal-database#authors-urls]] — the URL is useful well before any Daz3D work lands.
+
+- **Canonical minimal form.** The record form is written only when there is a URL to carry; a record reduced to a bare
+  name is written back as a plain string, so "are all entries simple?" stays a trivial test.
+- **Editing follows a lossless-round-trip rule.** The comma-separated single-line editor is available **iff** every
+  entry survives a round-trip through it (all plain strings, none containing a comma); otherwise only the record-list
+  editor is, and the mode never switches on its own. A name containing a comma (`Foo Bar, Jr.`) is expressible only as
+  a record entry — an accepted limitation of the comma delimiter, not of the format. The record-list editor is
+  **deferred** (#97; today's only `.rehu` source is `.tc` import, which carries no author URLs), so until it lands a
+  list failing the predicate is **view-only**: the comma editor disables itself (#95) rather than corrupt what it
+  cannot represent.
+- **Validation splits by side.** The editor enforces what it writes: a non-empty name, and a URL that parses strictly
+  as http/https. The viewer is the safety boundary for what it reads ([[data-model#write-integrity]]): names are
+  HTML-escaped before rich-text display (HTML is never *interpreted*, so no character is banned from a name), and the
+  trailing `(url)` link renders only for a valid http/https value — anything else displays as if no URL were present.
+  The URL shows as a tooltip and a status-bar message on hover, and opens in the external browser on click.
+- **No aliases in documents.** An alias set is catalog-level identity, deferred to a future metadata-only
+  **author record** type on the Collection precedent ([[field-schema#resource-types]],
+  [[daz3d-personal-database#authors-urls]]); per-document URLs fold into it then. Author names additionally render as
+  `filter://` links once browsers exist ([[plugins#filter-urls]]).
+
 ## §17.3 Duration and size model
 
 [[[field-schema#duration-size]]]
@@ -333,7 +364,7 @@ The distinct value types the viewer must handle:
 | type | notes |
 | --- | --- |
 | text | single line |
-| text list | comma-joined for display, deduplicated; `authors`, `advertised_tags`, `extra_tags` |
+| text list | comma-joined for display, deduplicated; `authors` (entries may be `{name, url}` records, [[field-schema#authors]]), `advertised_tags`, `extra_tags` |
 | url | rendered as an external hyperlink |
 | date | **partial precision** — year, year+month, or full date; sorts/compares across mixed precision |
 | duration | integer seconds; rendered per [[field-schema#duration-format]] |
@@ -373,6 +404,9 @@ Field order, in the three groups the layout separates:
 - **Collection *type* — deferred** ([[field-schema#resource-types]]) — which fields a `type: Collection` record
   shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
   collection is in hand. *(The `collections` membership fields are settled, [[field-schema#sources]].)*
+- **Author record type — deferred** — aliases and per-store URLs as a metadata-only resource type on the Collection
+  precedent ([[daz3d-personal-database#authors-urls]]); documents reference authors by name until then, and
+  per-document `{name, url}` entries ([[field-schema#authors]]) fold into it when it lands.
 - **Membership by identity** — `collections[].title` links to a series by name today; move to
   resource identity ([[data-model#stable-identity]]) once UUIDs are minted.
 - **Per-user block** — until user management exists, per-user keys (`rating`, the per-user

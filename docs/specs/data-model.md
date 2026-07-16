@@ -180,6 +180,9 @@ creates it owner-readable only (0600-equivalent).
 
 [[[data-model#write-integrity]]]
 
+- [ ] [#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty](https://github.com/borco/rehuco/issues/93)
+- [ ] [#94: feat: MessageBanner — inline document notices replace modal error boxes](https://github.com/borco/rehuco/issues/94)
+
 A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata
 writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent
 this — and which applies depends on whether the file is **managed** (a node owns its storage,
@@ -237,6 +240,26 @@ offending key and why, since the user's next move (fix the file, or stop trustin
 
 Carrying and coercing are not in tension: they apply to different content. The first is about payload this file is
 merely custodian of; the second about fields this build owns and can rebuild.
+
+**A coerced reading is safe to display, not to silently save over.** Coercion governs *reading*: it keeps a getter from
+crashing and a viewer honest about what the file most plausibly means. But when a field this build owns is **present
+and fails coercion** — as opposed to merely absent, which reads as a clean default — letting an edit session write the
+coerced default back would quietly replace the malformed-but-possibly-recoverable original. So such a document loads
+**locked**: the same read-only lock a newer-than-understood file gets ([[data-model#schema-version]]), with the
+offending key(s) named in a persistent, non-modal notice in the viewer (never a dismiss-and-it's-gone dialog — the
+lock is state, and its explanation must outlive a click). The remedy is the one refusal would have forced anyway — fix
+the file in a text editor, then revert/reopen to drop the lock — without making the file unopenable in exactly the
+tool best suited to inspecting it. The `format_version` stamp is the one deliberate exception: repairing a missing or
+malformed stamp is a specified deduction ([[data-model#schema-version]]'s repair rule), not a default masking data, so
+it never locks on its own.
+
+The same presentation extends to the *refuse* row and beyond it — **every open attempt yields a document view, never a
+modal error box.** A file that is refused (the grammar row above), one that cannot be parsed at all (or trips the
+read-time sanity caps), and one that is simply *gone* (deleted between sessions) each open as an **empty, locked**
+view — never dirty, never savable — whose notice names the failure (for a parse error, including the parser's own
+line/column). Fixing the file by hand and reverting retries in place, refreshing the notice with any new failure, so
+there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
+vanished files must never sweep away a dock whose file the user is mid-repair.
 
 ## §4.10 Schema format versioning of `.rehu` itself
 

@@ -119,8 +119,9 @@ recorded shopping list, not near-term work:
 
 1. **The Daz3D plugin** ([[plugins#daz3d-plugin]]) — a `daz3d:` plugin block to receive the type-specific
    fields: `sku`, `figures`, `requires`, `provides`, install-state tracking per user/box.
-2. **Author URLs — options recorded, decision deferred** ([[daz3d-personal-database#authors-urls]]);
-   how URLs relate to the core `authors` name list is chosen during plugin work, enabled by the hook seam.
+2. **Author URLs — decided** ([[daz3d-personal-database#authors-urls]]): core entries are tolerantly
+   string-or-`{name, url}` ([[field-schema#authors]]); aliases and per-store URLs wait for the author record type;
+   the `.dpdml` importer seeds or extends author records from its `authors [{name, url}]` lists when both exist.
    `requires`/`provides` (also `{name, url}` lists) live wholly in the block; only their editor is new work.
 3. **A `.dpdml → .rehu` importer** — same shape as the `.tc` migration
    ([[acquisition-tooling#tc-to-rehu]]): walk archive folders, pair each zip with its `.dpdml`, and emit a
@@ -139,14 +140,25 @@ recorded shopping list, not near-term work:
 [[[daz3d-personal-database#decisions]]]
 
 Two import-mapping questions raised above were worked through in discussion (2026-07): multi-part grouping
-is settled; author-URL storage is narrowed to options, to be decided during the Daz3D plugin work.
+is settled; author-URL storage is decided too ([[daz3d-personal-database#authors-urls]]) — tolerant core records now,
+an author record type later.
 
-### 5.1 Author URLs: options, not a decision
+### 5.1 Author URLs: decided — tolerant core records now, author records later
 
 [[[daz3d-personal-database#authors-urls]]]
 
-How author URLs relate to the core `authors` name list ([[field-schema#field-mapping]]) is **deliberately
-left open**: the options below are recorded for when the Daz3D plugin work starts, and the choice is
+**Decided (2026-07): the promote option, narrowed.** Core `authors` entries become tolerantly **string-or-`{name,
+url}`** ([[field-schema#authors]] is the normative spec): a plain string stays legal, the record form is written only
+for an entry that actually carries a URL, and a record reduced to a bare name is written back as a plain string.
+**Aliases stay out of documents**: an alias set is a fact about the author across the whole catalog, so its home is a
+future **author record** resource type — a metadata-only type on the Collection precedent
+([[field-schema#resource-types]]), whose `sources`-shaped list carries the alias spellings and their per-store URLs,
+referenced by name now and by identity later ([[field-schema#deferred-items]]). Per-document URLs fold into author
+records when that type lands. Of the options below (kept for the record): *promote* is taken in this narrowed form;
+*decouple* and *duplicate* are rejected — each keeps a second author list that can drift from the core one.
+
+How author URLs relate to the core `authors` name list ([[field-schema#field-mapping]]) was **deliberately
+left open** until the decision above; the options below are kept for the record, and the choice was
 enabled — not forced — by the settled architecture in the first bullet:
 
 - **Settled: the enabling architecture.** Plugins get a non-GUI core layer loaded by agent and node alike
