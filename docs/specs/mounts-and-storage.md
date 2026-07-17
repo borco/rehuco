@@ -38,6 +38,9 @@ file, local to each machine**, that explicitly declares:
 - which folder roots this machine/app should scan or track
 - for mounted roots, which node administers that content and how to reach it
 - which plugins ([[plugins#overview]]) should be loaded for this machine
+- the default **creation directory** for new grouping-entity documents (authors, cross-cutting collections, public
+  learning paths — [[plugins#grouping-entities]]); *discovery* of existing entity documents needs no declared
+  locations — it is type-based, so the scanner finds them wherever they sit in any scanned root
 
 `.rehuco` is **per-machine, not swarm-wide** — mounts inherently differ machine to machine (different mount points,
 different machines even having a given share mounted at all), so a shared/central `.rehuco` wouldn't reflect any single

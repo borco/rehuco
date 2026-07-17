@@ -155,7 +155,9 @@ future **author record** resource type — a metadata-only type on the Collectio
 ([[field-schema#resource-types]]), whose `sources`-shaped list carries the alias spellings and their per-store URLs,
 referenced by name now and by identity later ([[field-schema#deferred-items]]). Per-document URLs fold into author
 records when that type lands. Of the options below (kept for the record): *promote* is taken in this narrowed form;
-*decouple* and *duplicate* are rejected — each keeps a second author list that can drift from the core one.
+*decouple* and *duplicate* are rejected — each keeps a second author list that can drift from the core one. The
+author type is since specified as a **grouping-entity plugin**, arriving with the catalog cache
+([[plugins#grouping-entities]]).
 
 How author URLs relate to the core `authors` name list ([[field-schema#field-mapping]]) was **deliberately
 left open** until the decision above; the options below are kept for the record, and the choice was

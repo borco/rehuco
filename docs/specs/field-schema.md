@@ -114,14 +114,19 @@ only:
 **plugin block keyed by `type`** (`tutorial`, `reference_images`), each carrying its own `format_version`
 ([[data-model#rehu-format]], [[data-model#schema-version]], [[plugins#plugin-blocks]]), so the file already has the
 plugin shape and won't need restructuring when plugins land. A block `format_version` of **0 means "no plugin yet"** —
-the fields live there but no plugin owns them; the first real plugin bumps it to `1`. Fields shared by Tutorial and
+the fields live there but no plugin owns them; **`1`** is the first defined block layout — per-user state nested under
+the block's `users` map ([[field-schema#per-user-shared]]). Fields shared by Tutorial and
 ReferenceImages (`rating`, the boolean flags, `collections`, `learning_paths`)
-live inside whichever plugin block the file has. Collection has no block yet. See the [[field-schema#example-files]]
+live inside whichever plugin block the file has — the per-user subset under `users`. Collection has no block yet. See
+the [[field-schema#example-files]]
 fixtures.
 
 ### §17.2.2 Per-user vs shared
 
 [[[field-schema#per-user-shared]]]
+
+- [ ] [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
+- [ ] [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
 
 `rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **private**
 `learning_paths` are **per-user** state, not properties of the resource. v1 is single-user/local
@@ -129,10 +134,28 @@ so this is invisible, but the schema must keep them separable from shared fields
 multi-user model ([[sync#overview]], [[data-model#rehu-format]]'s per-user `progress`) does not have to relocate them
 later. The
 shared flags (`complete`, `online`) and a learning path toggled **public** (or curated by the
-admin) are propagated swarm state instead ([[field-schema#sources]], [[field-schema#boolean-flags]]). For now, with no
-user management,
-per-user keys live **inline** in the plugin block (polluting the current scope); a dedicated
-per-user block waits on the swarm/user model ([[field-schema#deferred-items]]).
+admin) are propagated swarm state instead ([[field-schema#sources]], [[field-schema#boolean-flags]]).
+
+**Stored per-user from day 1 — nested under the block's `users` map, keyed by username** (decided 2026-07, superseding
+the earlier live-inline-for-now deferral):
+
+```json
+"users": { "admin": { "favorite": true, "rating": 4, "viewed": false } }
+```
+
+- **Why now:** migrations can reshape layout but cannot mint facts — a later inline→per-user move would have to
+  *guess* whose flags these were, per file, on whichever machine touched it first. Recording the owner at write time
+  is the only unambiguous version, and the single-user era is when the assignment is a fact rather than a guess. The
+  **block `format_version` 1** defines this layout, and the v0→v1 block migration (moving inline per-user keys under
+  the currently configured username) is written while that still holds.
+- **The identity is an app setting** — a username on a settings identity page (seeded from the OS login name, `admin`
+  as the fallback), read by the editor's per-user writes and by the `.tc` importer.
+- **Keyed by username, not a minted user-UUID — considered and rejected:** pre-swarm, files move between machines by
+  manual copy, and per-machine UUIDs could never merge state the same human owns, while equal usernames merge by
+  construction. The cost — renaming a user rewrites files — is a rare, catalog-cache-era task-queue job (mass
+  rename), cheap once the cache knows every file naming the user.
+- **The future user model adopts it unchanged:** swarm users ([[discovery-trust-access#user-auth]]) take over the
+  username; per-user `progress` and Daz3D's per-user/per-box `installed` land in the same map.
 
 ### §17.2.3 Sources (multi title / publisher / URL)
 
@@ -189,6 +212,10 @@ Only the **Collection *type*** stays deferred — which fields a `type: Collecti
 shows/edits, and whether it carries a recomputed member-stats cache ([[field-schema#resource-types]],
 [[field-schema#deferred-items]]). The
 membership *fields* above are settled.
+
+Collections and learning paths (with authors) later gain optional **entity documents** — discovered vs. genuine,
+entity-as-authority, materialize-on-description — as grouping-entity plugins ([[plugins#grouping-entities]]); the
+membership fields above are the reference mechanism that design builds on and are unchanged on disk by it.
 
 ### §17.2.4 The `online` flag and local backup
 
@@ -398,23 +425,39 @@ Field order, in the three groups the layout separates:
 
 [[[field-schema#deferred-items]]]
 
+- [ ] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
+- [ ] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
+
 - **Common/plugin boundary** — the [[field-schema#field-mapping]] tiers (common core / resource fields / per-type) are a
   first cut; finalize when the field toolkit (A2) and plugin blocks ([[plugins#overview]]) land. The generic
   editor does not depend on it.
 - **Collection *type* — deferred** ([[field-schema#resource-types]]) — which fields a `type: Collection` record
   shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
-  collection is in hand. *(The `collections` membership fields are settled, [[field-schema#sources]].)*
-- **Author record type — deferred** — aliases and per-store URLs as a metadata-only resource type on the Collection
-  precedent ([[daz3d-personal-database#authors-urls]]); documents reference authors by name until then, and
-  per-document `{name, url}` entries ([[field-schema#authors]]) fold into it when it lands.
+  collection is in hand. *(The `collections` membership fields are settled, [[field-schema#sources]].)* Partially
+  designed since: placement, discovered-vs-genuine, and entity authority are recorded in [[plugins#grouping-entities]];
+  only the type's own field set still waits for a real collection.
+- **Author entity plugin — deferred to the catalog-cache era** — aliases and per-store URLs as a metadata-only
+  grouping-entity type ([[plugins#grouping-entities]], [[daz3d-personal-database#authors-urls]]), arriving with
+  Milestone B's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
+  credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
+  when it lands.
+- **Optional scalars read as `None` — decided, not yet implemented** — absent is not `0`: the measured/claimed
+  numerics (`original_size` / `current_size`, the three durations, `images_count`), `rating` (it may be negative, so
+  `0` is a real rating and unrated must be `None`), and `released` read as `None` when absent; strings, lists, and the
+  boolean flags keep their coercion defaults. Absent-on-disk ↔ `None`-in-code: JSON `null` is accepted on read but
+  never written — setting `None` omits the key (the fixtures' `images_count: null` normalizes away on save). Display
+  follows: `None` renders empty, so a genuine `0` may render honestly (revises [[field-schema#duration-format]]'s
+  "`0` renders empty" once implemented).
 - **Membership by identity** — `collections[].title` links to a series by name today; move to
   resource identity ([[data-model#stable-identity]]) once UUIDs are minted.
-- **Per-user block** — until user management exists, per-user keys (`rating`, the per-user
-  boolean flags, private `learning_paths`) live **inline** in the plugin block; move them to a
-  dedicated per-user block with the swarm/user model ([[sync#overview]], [[field-schema#per-user-shared]]).
+- **Per-user storage — resolved** ([[field-schema#per-user-shared]]): per-user keys nest under the plugin block's
+  `users` map from block layout v1. Still open here: the catalog-cache-era **mass-rename** job (old username → new,
+  across every file naming the user) and where a **public** learning path lives (below).
 - **Learning-path visibility storage** — the `public` / `private` toggle ([[field-schema#sources]]): confirm
   whether a public user path stays in the owner's per-user block (owner implicit) or moves to
-  the shared record on toggle. Swarm-era, not v1.
+  the shared record on toggle. Swarm-era, not v1. Refined by the grouping-entity design
+  ([[plugins#grouping-entities]]): a private path likely stays pure per-user state, with the entity document minted
+  **at publication** (privacy by non-existence), and ordering moves to the entity once one exists.
 - **`default_tags` consolidation — deferred** ([[field-schema#boolean-flags]]) — a later revision may fold the
   fixed-vocabulary bools (`complete`/`online`/`viewed`/`todo`/`keep`) into one toggle-set list
   with a vocabulary from `.rehuco` (scope, labels/icons), migrated via a plugin-block
@@ -444,16 +487,16 @@ parser/schema validation fixtures.
 - A `.rehu` is `format_version` plus a **map of keyed blocks** ([[data-model#rehu-format]]): the **common core** sits in
   the reserved `core` block, and everything a type owns is nested under a **plugin block keyed by `type`** (`tutorial` /
   `reference_images`), each with its own `format_version`
-([[data-model#schema-version]], [[plugins#plugin-blocks]]) — **`0` = no plugin yet**, bumped to `1` by the first real
-plugin — so the
+([[data-model#schema-version]], [[plugins#plugin-blocks]]) — **`0` = no plugin yet**, **`1`** = the per-user
+`users`-map layout ([[field-schema#per-user-shared]]) — so the
   layout already matches the future plugin structure. A **Collection** has no block yet
   (deferred, [[field-schema#resource-types]]) and carries only common core.
 - `core["type"]` **is** the active block's key ([[plugins#plugin-blocks]]), spelled with the plugin's declared main key;
   tc4's `Tutorial` / `ReferenceImages` are aliases that normalize on write ([[plugins#core-vs-plugin]]).
 - `sources` is a list; exactly one item carries `primary: true`.
-- **Per-user** fields (`rating`, the per-user boolean flags, private `learning_paths`) live
-  **inline** in the plugin block for now — without user management a separate per-user block is
-  impractical, so they pollute the current scope ([[field-schema#per-user-shared]], [[field-schema#deferred-items]]).
+- **Per-user** fields (`rating`, the per-user boolean flags, private `learning_paths`) nest under the plugin block's
+  `users` map, keyed by the configured username ([[field-schema#per-user-shared]]); the shared fields stay inline
+  beside it.
 - Values are illustrative; each example stresses the edge case named in its heading.
 
 ### Tutorial — multi-source, multi-collection, split duration, year-month date
@@ -484,13 +527,10 @@ plugin — so the
     "current_size": 1073741824
   },
   "tutorial": {
-    "format_version": 0,
+    "format_version": 1,
     "collections": [
       { "title": "Sculpting Series", "index": 1, "url": "https://example.com/series" },
       { "title": "Bundle 2025", "index": 10 }
-    ],
-    "learning_paths": [
-      { "title": "My Sculpting Path", "index": 2, "visibility": "private" }
     ],
     "original_duration": 71220,
     "current_duration": 18000,
@@ -498,11 +538,18 @@ plugin — so the
     "level": ["intermediate"],
     "complete": true,
     "online": true,
-    "viewed": false,
-    "todo": false,
-    "keep": false,
-    "favorite": true,
-    "rating": 4
+    "users": {
+      "admin": {
+        "favorite": true,
+        "keep": false,
+        "learning_paths": [
+          { "title": "My Sculpting Path", "index": 2, "visibility": "private" }
+        ],
+        "rating": 4,
+        "todo": false,
+        "viewed": false
+      }
+    }
   }
 }
 ```
@@ -534,17 +581,20 @@ plugin — so the
     "current_size": 2147483648
   },
   "reference_images": {
-    "format_version": 0,
+    "format_version": 1,
     "collections": [],
-    "learning_paths": [],
     "images_count": null,
     "complete": true,
     "online": false,
-    "viewed": false,
-    "todo": false,
-    "keep": false,
-    "favorite": false,
-    "rating": 0
+    "users": {
+      "admin": {
+        "favorite": false,
+        "keep": false,
+        "rating": 0,
+        "todo": false,
+        "viewed": false
+      }
+    }
   }
 }
 ```

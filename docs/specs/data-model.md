@@ -157,6 +157,19 @@ Scanning is load-bearing ([[architecture-design#why-distributed]], [[mounts-and-
   version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an
   out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.
 
+**Type-directed descent (design note; replaces tc4's stop-at-first-sidecar).** Whether the scanner descends past a
+directory-scoped document is a property its **type declares** (in the plugin's non-GUI core layer,
+[[plugins#core-vs-plugin]]): a *tutorial* is a **scan boundary** — its nested folders are its own content
+([[data-model#resource-scoping]]) — while a *collection* is not, which is what lets a containment-shaped collection's
+`info.rehu` sit in the parent directory whose subdirectories are its members ([[plugins#grouping-entities]]).
+File-scoped documents never terminate descent — they describe named files, not the directory. Two caveats travel with
+the rule: a mis-typed boundary document hides its subtree (an optimization's failure mode — verify-on-access and
+explicit notifications still reach nested files, and the scanner may cheaply flag "boundary document with `.rehu`
+files beneath it", in the coexistence-warning spirit of [[data-model#resource-scoping]]); and tc4's two-phase
+collect-then-parse scan existed only to give its progress bar a denominator — with parse-on-find, progress is
+reported against the previous scan's totals (an estimate that is right when little changed, the common case under
+incremental scanning), and a first-ever scan shows a running count instead of a percentage.
+
 ## §4.8 Per-node local file trio
 
 [[[data-model#local-file-trio]]]

@@ -384,7 +384,65 @@ since this is a system-integration side effect rather than a view/edit operation
 motivating "custom actions with tracked side effects" as a first-class plugin capability ([[plugins#core-vs-plugin]]),
 not just schema/viewer/editor/web.
 
-## §13.9 Shared capability worth extracting
+## §13.9 Grouping-entity plugins: collection, author, learning path
+
+[[[plugins#grouping-entities]]]
+
+Three types share one template — **a grouping entity is a metadata-only resource**: `1 entity == 1 .rehu` with its own
+`type`, no content files (the measured sizes are simply omitted), synced, retained, and rebuilt like any resource, with
+its browser/editor contributed by its plugin ([[plugins#browsers]]). All three arrive with the catalog cache (Milestone
+B's `.rehudb` — their browsers are what needs it), and none changes the v1 on-disk membership fields
+([[field-schema#sources]]), which are already the reference mechanism this design builds on.
+
+| | referenced by | natural home | own wrinkle |
+| --- | --- | --- | --- |
+| **collection** | member's `collections[]` | members' parent dir *when containment-shaped*, else the configured home | dual placement |
+| **author** | credited name in `authors` ([[field-schema#authors]]) | configured home | alias aggregation |
+| **learning path** | member's `learning_paths[]` | configured home / owner's per-user state | per-user, private/public |
+
+- **Discovered vs. genuine.** An entity needs no document to exist: the membership entries on resources alone define a
+  *discovered* entity — browsable, weightless, derived. A *genuine* entity has its own `.rehu`. The rule for which is
+  which: **an entity document exists exactly when the entity has something of its own to say** — a description, an
+  authoritative order, a public-visibility state. The browsers show the union, marked; adding a description to a
+  discovered entity is what forces materializing it.
+- **Materialization mints identity.** Creating the entity document is a deliberate act (like import,
+  [[data-model#write-integrity]]): it mints the UUID, seeds the item list from the discovered members, and stamps the
+  record timestamps. Nothing materializes as a side effect of browsing.
+- **The entity document is the source of truth — but never retroactively.** When a genuine entity exists, its item
+  list decides membership. A membership change is **one logical operation writing both documents** (the child's entry
+  and the entity's list — the agent is a node client, each document keeps its single writer), never two independent
+  field edits. A child-side entry the entity doesn't carry is pruned **only when the entity is known newer** (a
+  version comparison, [[sync#overview]] — never blind precedence), the prune is a **logged event**, and a genuinely
+  concurrent child-add vs. entity-edit is *surfaced*, not auto-lost — the same asymmetric-stakes rule as
+  delete-vs-edit. A blind "strip on child save whatever the entity omits" would destroy legitimate child-side and
+  offline additions the entity simply hasn't heard of yet.
+- **Child entries stay even when the entity exists, as derived copies** — not for authority but for self-description: a
+  resource checked out onto offline media must still know its memberships with no entity document in reach
+  ([[architecture-design#why-distributed]]). Entity authoritative, child cached, repaired on reconcile — the same
+  relationship as retained metadata copies ([[mounts-and-storage#durable-retention]]).
+- **Ordering.** A discovered entity's order comes from the member-side `index` (the only data there is); a genuine
+  entity owns the sequence in its item list, and member-side indexes become derived.
+- **Description renders per membership.** tc4's motive for collection descriptions — write shared prose once, show it
+  on every member — is served by rendering each membership's entity blurb in the member's viewer ("part of *X* — …",
+  one section per membership). Nothing needs to pick *the* collection, so the multiple-membership ambiguity that
+  killed description *inheritance* never arises.
+- **Author specifics.** The entity's alias spellings and per-store URLs ride its own `sources`-shaped list
+  ([[daz3d-personal-database#authors-urls]]); aggregating credited spellings into one entity uses the
+  duplicate-review verdict flow ([[instances-and-dedup#duplicate-review]]) — propose, human verdict, never re-ask.
+  Resources keep referencing authors by credited name; membership-by-identity (UUIDs on the references) follows the
+  same later trajectory as collections ([[field-schema#deferred-items]]).
+- **Learning-path specifics.** Paths are per-user with a private/public toggle ([[field-schema#per-user-shared]]). A
+  *private* path likely stays pure per-user state with **the entity document minted at publication** — privacy by
+  non-existence beats privacy by access rule — decided finally when the plugin is built. v1 (single-user, no
+  entities) is unaffected either way.
+- **Placement and discovery.** The directory tree is *never* the source of membership — a containment-shaped
+  collection's `info.rehu` sitting in its members' parent directory is only that entity's natural home (and depends on
+  the collection type being a scan non-boundary, [[data-model#scan-and-staleness]]). Every other grouping entity lives
+  in the **configured creation directory** declared in `.rehuco` ([[mounts-and-storage#rehuco-scope]]). *Discovery* of
+  existing entity documents needs no declared locations at all — it is type-based: the scanner finds them wherever
+  they sit in any scanned root, so a swarm arriving with its own authors is just documents in its roots.
+
+## §13.10 Shared capability worth extracting
 
 [[[plugins#shared-capability]]]
 
