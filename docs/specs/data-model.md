@@ -194,7 +194,7 @@ creates it owner-readable only (0600-equivalent).
 [[[data-model#write-integrity]]]
 
 - [x] [#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty](https://github.com/borco/rehuco/issues/93)
-- [ ] [#94: feat: MessageBanner — inline document notices replace modal error boxes](https://github.com/borco/rehuco/issues/94)
+- [x] [#94: feat: MessageBanner — inline document notices replace modal error boxes](https://github.com/borco/rehuco/issues/94)
 
 A `.rehu` is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata
 writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent
