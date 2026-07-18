@@ -13,7 +13,13 @@ from typing import Any, Final
 import pytest
 from pytest import mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import CURRENT_FORMAT_VERSION, DEFAULT_PLUGIN_REGISTRY, RehuDocument, RehuFormatError
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    DEFAULT_PLUGIN_REGISTRY,
+    RehuDocument,
+    RehuFormatError,
+    authors_comma_editable,
+)
 
 # A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
 # Format v2: the common fields live in the ``core`` block, and every other top-level key is a plugin
@@ -620,6 +626,121 @@ def test_authors_setter_replaces_the_list() -> None:
     doc.authors = new_authors
     new_authors.append("Mutated After Assignment")
     assert doc.authors == ["New Author"]
+
+
+def test_authors_getter_preserves_strings_and_records() -> None:
+    """A plain-string entry passes through and a ``{name, url}`` record is preserved
+    ([[field-schema#authors]]) -- the getter no longer stringifies every entry.
+
+    **Test steps:**
+
+    * construct a document whose ``authors`` mixes a string, a name+url record, and a comma-bearing string
+    * verify the getter yields each entry unchanged, record intact
+    """
+    doc = RehuDocument({"authors": ["A", {"name": "B", "url": "https://b.example"}, "C, D"]})
+    assert doc.authors == ["A", {"name": "B", "url": "https://b.example"}, "C, D"]
+
+
+@mark.parametrize(
+    "entry",
+    [
+        param(42, id="number"),
+        param(None, id="none"),
+        param(["nested"], id="list"),
+        param({"url": "https://x.example"}, id="record-without-name"),
+        param({"name": 5}, id="record-with-non-string-name"),
+    ],
+)
+def test_authors_getter_skips_malformed_entries(entry: Any) -> None:
+    """A malformed entry is skipped, the same coercion ``sources`` applies to a non-object entry
+    ([[data-model#write-integrity]]) -- the getter never crashes on a value's type.
+
+    **Test steps:**
+
+    * construct a document whose ``authors`` surrounds one malformed entry with valid names
+    * verify the getter drops only the malformed entry
+    """
+    doc = RehuDocument({"authors": ["Before", entry, "After"]})
+    assert doc.authors == ["Before", "After"]
+
+
+def test_authors_getter_returns_empty_for_a_non_list() -> None:
+    """A non-list ``authors`` value coerces to an empty list ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a document whose ``authors`` is a string, not a list
+    * verify the getter yields an empty list
+    """
+    doc = RehuDocument({"core": {"authors": "not-a-list"}, "format_version": 2})
+    assert not doc.authors
+
+
+def test_authors_setter_reduces_a_bare_name_record_to_a_string() -> None:
+    """A record whose only meaningful key is ``name`` is stored as a plain string -- canonical
+    minimal form ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * set ``authors`` to a name-only record, a record with an empty url, and a record with a non-string url
+    * verify each is stored as the bare name string
+    """
+    doc = RehuDocument({})
+    doc.authors = [{"name": "X"}, {"name": "Y", "url": ""}, {"name": "Z", "url": 7}]
+    assert doc.authors == ["X", "Y", "Z"]
+
+
+def test_authors_setter_keeps_a_record_that_carries_a_url() -> None:
+    """A record with a non-empty string ``url`` stays a record, reduced to just ``name`` and ``url``
+    ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * set ``authors`` to a record carrying a url alongside an extra key
+    * verify the stored entry keeps name and url and drops the extra key
+    """
+    doc = RehuDocument({})
+    doc.authors = [{"name": "X", "url": "https://x.example", "note": "dropped"}]
+    assert doc.authors == [{"name": "X", "url": "https://x.example"}]
+
+
+def test_authors_round_trip_leaves_an_untouched_mixed_list_byte_identical(mocker: MockerFixture) -> None:
+    """A mixed string/record ``authors`` list survives save unchanged when nothing edits it
+    ([[data-model#write-integrity]]) -- reading it never rewrites the backing store.
+
+    **Test steps:**
+
+    * construct a v2 document whose ``core.authors`` mixes a string, a record, and a comma-bearing string
+    * read the getter (which coerces on read), then save
+    * verify the written ``core.authors`` equals the original list exactly
+    """
+    authors = ["A", {"name": "B", "url": "https://b.example"}, "C, D"]
+    doc = RehuDocument({"core": {"type": "tutorial", "authors": authors}, "format_version": 2})
+    _ = doc.authors  # a read must not mutate the backing store
+
+    saved = saved_json(doc, mocker)
+
+    assert saved["core"]["authors"] == authors
+
+
+@mark.parametrize(
+    ("authors", "expected"),
+    [
+        param([], True, id="empty"),
+        param(["A", "B"], True, id="all-plain-strings"),
+        param(["A", {"name": "B", "url": "https://b.example"}], False, id="a-record"),
+        param(["A", "C, D"], False, id="a-comma-bearing-name"),
+    ],
+)
+def test_authors_comma_editable(authors: list[Any], expected: bool) -> None:
+    """The predicate is true iff every entry is a plain string with no comma ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * call ``authors_comma_editable`` on all-strings, a record-bearing list, and a comma-bearing list
+    * verify each verdict matches the lossless-round-trip rule
+    """
+    assert authors_comma_editable(authors) is expected
 
 
 def test_released_setter_replaces_the_value() -> None:

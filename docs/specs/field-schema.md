@@ -272,7 +272,7 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
 
 [[[field-schema#authors]]]
 
-- [ ] [#92: feat: tolerant authors entries — string or {name, url} record](https://github.com/borco/rehuco/issues/92)
+- [x] [#92: feat: tolerant authors entries — string or {name, url} record](https://github.com/borco/rehuco/issues/92)
 - [ ] [#95: feat: authors viewer links (url, tooltip, status tip) + comma-editor lossless guard](https://github.com/borco/rehuco/issues/95)
 - [ ] [#97: feat: record-list editor machinery + simple/advanced authors editor](https://github.com/borco/rehuco/issues/97)
 

@@ -28,6 +28,11 @@ LOG: Final = logging.getLogger(__name__)
 PRIMARY_KEY: Final = "primary"
 """Marker key on the canonical entry in ``sources`` ([[field-schema#sources]])."""
 
+# One ``authors`` entry ([[field-schema#authors]]): a plain name string, or a ``{"name", "url"}``
+# record carrying an author-page URL. The record form is canonical only when it has a URL to carry --
+# a bare name is stored as a plain string (:attr:`RehuDocument.authors` setter).
+type AuthorEntry = str | dict[str, Any]
+
 CORE_LEADING_KEYS: Final = ("type", "id", "created", "updated", "sources")
 """The core block's keys that lead the file, in this order; everything else follows alphabetically
 (:meth:`RehuDocument.save`).
@@ -585,14 +590,49 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__data.update(normalized)
 
     @property
-    def authors(self) -> list[str]:
-        """The shared ``authors`` list ([[field-schema#resource-types]]); empty when absent."""
+    def authors(self) -> list[AuthorEntry]:
+        """The shared ``authors`` list ([[field-schema#authors]]); empty when absent.
+
+        Entries are tolerantly **string-or-record** ([[field-schema#authors]]): a plain name string
+        passes through, and a ``{"name": <str>, "url"?: <str>}`` record is preserved so an
+        author-page URL survives a read rather than being flattened. Anything else -- a number,
+        ``None``, a list, a record without a string ``name`` -- is a malformed entry and is
+        **skipped**, the same defensive coercion ``sources`` applies to a non-object entry
+        ([[data-model#write-integrity]]): a getter must never crash on a value's type, and skipping
+        is safer than inventing a name by stringifying it. This shapes *reading* only -- the backing
+        list is untouched, so an unedited document round-trips byte-identical
+        ([[data-model#write-integrity]]); #93 later turns a skipped-because-malformed entry into a
+        read-only lock reason.
+        """
         authors = self.core.get("authors", [])
-        return [str(a) for a in authors] if isinstance(authors, list) else []
+        if not isinstance(authors, list):
+            return []
+        return [entry for entry in authors if isinstance(entry, str) or self.__is_author_record(entry)]
 
     @authors.setter
-    def authors(self, value: list[str]) -> None:
-        self.__core_or_create()["authors"] = list(value)
+    def authors(self, value: Sequence[AuthorEntry]) -> None:
+        self.__core_or_create()["authors"] = [self.__canonical_author(entry) for entry in value]
+
+    @staticmethod
+    def __is_author_record(entry: Any) -> bool:
+        """Whether ``entry`` is a valid author record: a dict with a string ``name`` ([[field-schema#authors]])."""
+        return isinstance(entry, dict) and isinstance(entry.get("name"), str)
+
+    @staticmethod
+    def __canonical_author(entry: AuthorEntry) -> AuthorEntry:
+        """Reduce one entry to its canonical minimal form for storage ([[field-schema#authors]]).
+
+        A record is written only when it carries a URL; a record reduced to a bare name -- no
+        ``url``, or a non-string/empty one -- is written back as a plain string, so "are all entries
+        simple?" stays a trivial test (:func:`authors_comma_editable`). A plain string, and anything
+        this build does not recognize as an author record, pass through untouched: the setter is a
+        lossless write boundary, while the *reading* :attr:`authors` getter is where a malformed
+        entry is skipped.
+        """
+        if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+            url = entry.get("url")
+            return {"name": entry["name"], "url": url} if isinstance(url, str) and url else entry["name"]
+        return entry
 
     @property
     def released(self) -> str:
@@ -695,3 +735,35 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     @hidden_images.setter
     def hidden_images(self, value: list[str]) -> None:
         self.__core_or_create()["hidden_images"] = list(value)
+
+
+def author_name(entry: AuthorEntry) -> str:
+    """The display name of one ``authors`` entry ([[field-schema#authors]]).
+
+    A plain-string entry is its own name; a ``{"name", "url"}`` record reduces to its ``name``. This is
+    the entry-shape knowledge in one place, for a consumer that wants names rather than the mixed
+    entries -- e.g. building a rename candidate. Assumes an entry the :attr:`RehuDocument.authors`
+    getter would yield (a string, or a record with a string ``name``); a stray non-string ``name`` is
+    stringified defensively rather than raising.
+
+    :param entry: one author entry, string or record.
+    :returns: the plain author name.
+    """
+    return entry if isinstance(entry, str) else str(entry.get("name", ""))
+
+
+def authors_comma_editable(authors: Sequence[AuthorEntry]) -> bool:
+    """Whether every ``authors`` entry survives a round-trip through the comma-separated line editor.
+
+    The single-line comma editor is lossless **iff** every entry is a plain string containing no
+    comma ([[field-schema#authors]]): a record entry (an author-page URL) has no comma-line
+    representation, and a name containing a comma (``Foo Bar, Jr.``) would split into two on
+    re-parse -- expressible only as a record ([[field-schema#authors]]). An empty list is trivially
+    editable. This is the predicate the deferred record-list editor and the comma editor's own
+    disable guard gate on (#95, #97); a pure function of the entries, so a widget can ask it directly
+    without reaching for a document.
+
+    :param authors: the entries, as :attr:`RehuDocument.authors` yields them.
+    :returns: whether the comma line editor can represent every entry without loss.
+    """
+    return all(isinstance(entry, str) and "," not in entry for entry in authors)
