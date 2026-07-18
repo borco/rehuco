@@ -6,9 +6,10 @@ import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
+from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from rehuco_agent.documents.document_fields import build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -31,6 +32,11 @@ SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 CONVERT_KEEP_BACKUPS_ICON_RESOURCE: Final = ":/icons/tc_convert_with_backup.svg"
 CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
+
+LOCK_REASON_GLYPH: Final = "⚠"
+"""The inline notice's icon glyph (#94) -- a plain Unicode symbol, same idiom as
+`DocumentsDock`'s ``⚿`` lock marker, not a Phosphor codepoint: it needs no font wired in just for
+this one warning-styled banner row."""
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -69,7 +75,21 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__model: Final = model
-        self.__dock_manager: Final = QtAds.CDockManager(self)
+
+        self.__banner: Final = MessageBanner(self)
+        # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself
+        # as its parent's central widget when that parent is a QMainWindow (confirmed empirically),
+        # which would leave no room for the banner strip above it; parenting to this container instead
+        # and setting *it* as the central widget keeps that auto-install from firing at all
+        central = QWidget(self)
+        central_layout = QVBoxLayout(central)
+        central_layout.setContentsMargins(0, 0, 0, 0)
+        central_layout.setSpacing(0)
+        central_layout.addWidget(self.__banner)
+        self.__dock_manager: Final = QtAds.CDockManager(central)
+        central_layout.addWidget(self.__dock_manager)
+        self.setCentralWidget(central)
+
         self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
@@ -116,6 +136,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         self.__set_editors_locked(model.locked)
         self.__set_legacy_tc_actions_visible(model.document.legacy_tc)
+        self.__banner.set_rows(self.__banner_rows())
         model.lock_reasons_changed.connect(self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
 
         toolbar = self.addToolBar("View")
@@ -259,16 +280,33 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__save_action.setEnabled(dirty)
 
     def __on_lock_reasons_changed(self) -> None:
-        """Disable/re-enable the editor docks as the model's lock reasons change (e.g. on revert or a
-        successful :meth:`~RehuDocumentModel.convert`).
+        """Disable/re-enable the editor docks and rebuild the inline notice strip as the model's lock
+        reasons change (e.g. on revert or a successful :meth:`~RehuDocumentModel.convert`).
 
-        Takes no arguments: this widget only needs the derived "is it locked" flag, not *which* reasons
-        (those, and their messages, are the inline notice's concern, #94). Qt lets a slot accept fewer
-        arguments than the signal emits, so the ``lock_reasons_changed(reasons)`` payload is simply
-        dropped rather than accepted and ignored.
+        Takes no arguments and re-reads ``self.__model.lock_reasons`` itself, rather than accepting the
+        signal's payload -- Qt lets a slot accept fewer arguments than the signal emits, and the banner
+        needs the same live list :meth:`__banner_rows` already reads off the model, not a stale copy
+        the signal happened to carry.
         """
         self.__set_editors_locked(self.__model.locked)
         self.__set_legacy_tc_actions_visible(self.__model.document.legacy_tc)
+        self.__banner.set_rows(self.__banner_rows())
+
+    def __banner_rows(self) -> list[MessageBannerRow]:
+        """Build the inline notice strip's current rows, one per active lock reason (#94).
+
+        Message-only, with no remedy button -- every kind's remedy is already on this widget's own
+        toolbar (Revert, always visible except during ``legacy_tc``; the convert actions, visible
+        exactly during it), so a button here would only duplicate a control already sitting right
+        above the strip.
+
+        :returns: one :class:`~borco_pyside.widgets.MessageBannerRow` per
+            :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order.
+        """
+        return [
+            MessageBannerRow(MessageBannerSeverity.WARNING, LOCK_REASON_GLYPH, reason.message)
+            for reason in self.__model.lock_reasons
+        ]
 
     def __set_editors_locked(self, locked: bool) -> None:
         """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is

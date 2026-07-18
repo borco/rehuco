@@ -11,9 +11,10 @@ from typing import Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QPushButton
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -641,6 +642,118 @@ def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: Documen
     assert widget.restore_state(cbor2.dumps(payload)) is True
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not stashed
+
+
+# endregion
+
+
+# region inline notice banner (#94)
+def banner(widget: DocumentWidget) -> MessageBanner:
+    """Return the widget's private inline notice strip.
+
+    :param widget: the document widget to inspect.
+    :returns: the widget's `MessageBanner`.
+    """
+    return widget._DocumentWidget__banner  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_a_clean_document_shows_no_banner_rows(widget: DocumentWidget) -> None:
+    """An unlocked document's banner starts with no rows.
+
+    **Test steps:**
+
+    * build a widget over the clean sample model
+    * verify the banner shows no message labels or buttons
+    """
+    assert banner(widget).findChildren(QLabel) == []
+    assert banner(widget).findChildren(QPushButton) == []
+
+
+def test_a_newer_format_reason_shows_its_message_with_no_button(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """A ``newer_format`` lock reason renders its message with no remedy button -- there is nothing to do.
+
+    **Test steps:**
+
+    * give the model a ``newer_format`` lock reason
+    * verify its message shows and no button was built
+    """
+    model.lock_reasons = [LockReason(LockReasonKind.NEWER_FORMAT, "from a newer build")]
+
+    texts = {label.text() for label in banner(widget).findChildren(QLabel)}
+    assert "from a newer build" in texts
+    assert banner(widget).findChildren(QPushButton) == []
+
+
+def test_an_invalid_field_reason_shows_its_message_with_no_button(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """An ``invalid_field`` lock reason renders its message with no remedy button -- Revert is already
+    on this widget's own toolbar, so a banner button would only duplicate it.
+
+    **Test steps:**
+
+    * give the model an ``invalid_field`` lock reason
+    * verify its message shows and no button was built
+    """
+    model.lock_reasons = [LockReason(LockReasonKind.INVALID_FIELD, "invalid authors")]
+
+    texts = {label.text() for label in banner(widget).findChildren(QLabel)}
+    assert "invalid authors" in texts
+    assert banner(widget).findChildren(QPushButton) == []
+
+
+def test_a_legacy_tc_reason_shows_its_message_with_no_button(legacy_widget: DocumentWidget) -> None:
+    """A ``legacy_tc`` lock reason renders its message with no remedy button -- the convert actions
+    are already on this widget's own toolbar (shown exactly while ``legacy_tc``), so a banner button
+    would only duplicate one of them.
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc``-backed model
+    * verify the banner shows its message and no button was built
+    """
+    texts = {label.text() for label in banner(legacy_widget).findChildren(QLabel)}
+    assert any("legacy .tc" in text for text in texts)
+    assert banner(legacy_widget).findChildren(QPushButton) == []
+
+
+def test_the_banner_rebuilds_as_lock_reasons_change(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """The banner tracks the model's lock reasons live, same as the editor docks.
+
+    **Test steps:**
+
+    * give the model a lock reason and verify the banner shows its message
+    * clear the reasons and verify the banner shows nothing again
+    """
+    model.lock_reasons = [LockReason(LockReasonKind.MISSING, "file not found: /fake/info.rehu")]
+    assert "file not found: /fake/info.rehu" in {label.text() for label in banner(widget).findChildren(QLabel)}
+
+    model.lock_reasons = []
+
+    assert banner(widget).findChildren(QLabel) == []
+
+
+def test_a_successful_convert_clears_the_banner(
+    mocker: MockerFixture, legacy_widget: DocumentWidget, legacy_model: RehuDocumentModel
+) -> None:
+    """A real, successful conversion clears the banner along with the lock (mirrors the toolbar flip).
+
+    **Test steps:**
+
+    * mock the underlying core convert call (``convert_tc``) to return a fresh, unlocked document
+    * trigger the toolbar's keep-backups convert action for real
+    * verify the model unlocked and the banner shows no rows
+    """
+    converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    keep_backups = legacy_widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    assert legacy_model.locked is False
+    assert banner(legacy_widget).findChildren(QLabel) == []
 
 
 # endregion
