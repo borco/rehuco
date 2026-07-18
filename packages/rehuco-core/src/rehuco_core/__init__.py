@@ -13,7 +13,14 @@ from rehuco_core.plugins import (
     PluginRegistry,
     PluginSpec,
 )
-from rehuco_core.rehu_document import PluginBlock, RehuDocument, RehuFormatError
+from rehuco_core.rehu_document import (
+    AuthorEntry,
+    PluginBlock,
+    RehuDocument,
+    RehuFormatError,
+    author_name,
+    authors_comma_editable,
+)
 from rehuco_core.tc_conversion import TcConverter, convert_tc
 from rehuco_core.tc_description import TcDescriptionRewriter, rewrite_description_images
 from rehuco_core.tc_document import TcDocument, load_tc, tc_to_rehu_data
@@ -23,6 +30,7 @@ __version__ = "0.0.1"
 
 __all__ = [
     "BUILTIN_PLUGINS",
+    "AuthorEntry",
     "COLLECTION_PLUGIN",
     "CORE_BLOCK_KEY",
     "CORE_PLUGIN",
@@ -39,6 +47,8 @@ __all__ = [
     "RehuDocument",
     "RehuFormatError",
     "ScreenshotRename",
+    "author_name",
+    "authors_comma_editable",
     "TcConverter",
     "TcDescriptionRewriter",
     "TcDocument",

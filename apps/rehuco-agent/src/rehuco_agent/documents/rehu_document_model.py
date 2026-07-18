@@ -1,12 +1,13 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument, convert_tc
+from rehuco_core import CURRENT_FORMAT_VERSION, AuthorEntry, RehuDocument, convert_tc
 
 from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
@@ -76,8 +77,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     title = SimpleProperty("")
     """The primary source's display title ([[field-schema#sources]])."""
 
-    authors = SimpleProperty[list[str]](default_factory=list)
-    """The shared ``authors`` list ([[field-schema#resource-types]])."""
+    authors = SimpleProperty[Sequence[AuthorEntry]](default_factory=list)
+    """The shared ``authors`` list ([[field-schema#authors]]); entries are tolerantly
+    **string-or-record** (a plain name, or a ``{"name", "url"}`` record), and an edit to one entry
+    never alters another's type -- seeding and write-through round-trip records untouched. Whether
+    every entry is losslessly comma-editable is :func:`~rehuco_core.authors_comma_editable`'s to
+    answer (#95/#97)."""
 
     publisher = SimpleProperty("")
     """The primary source's publisher ([[field-schema#sources]])."""
@@ -479,10 +484,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.title = value
         self.dirty = True
 
-    def __on_authors_changed(self, value: list[str]) -> None:
+    def __on_authors_changed(self, value: Sequence[AuthorEntry]) -> None:
         """Write an edited authors list through to the document and mark dirty.
 
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
+        The document's setter normalizes each entry to canonical minimal form
+        ([[field-schema#authors]]); a record entry passes through untouched, so editing one entry
+        never shreds another's type. No-op while the model is seeding (construction, :meth:`revert`,
+        or :meth:`convert`) -- see the comment there.
 
         :param value: the new authors list.
         """

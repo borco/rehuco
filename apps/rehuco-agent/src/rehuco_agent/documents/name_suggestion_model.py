@@ -7,6 +7,7 @@ from typing import Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
+from rehuco_core import author_name
 
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 
@@ -64,7 +65,7 @@ class NameSuggestionModel(QObject):
         values = {
             "title": self.__model.title,
             "publisher": self.__model.publisher,
-            "authors": ", ".join(self.__model.authors),
+            "authors": ", ".join(author_name(entry) for entry in self.__model.authors),
             "year": self.__model.released[:4],
         }
         return [pattern.format(**values) for pattern in NAME_SUGGESTION_PATTERNS]

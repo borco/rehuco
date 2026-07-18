@@ -499,6 +499,55 @@ def test_setting_authors_advertised_tags_extra_tags_write_through(
     assert model.dirty is True
 
 
+def test_model_seeds_a_mixed_authors_list_untouched() -> None:
+    """A string/record ``authors`` mix seeds the model verbatim ([[field-schema#authors]]) -- a record
+    entry is no longer flattened to a string.
+
+    **Test steps:**
+
+    * construct a model over a document whose ``authors`` mixes a string and a name+url record
+    * verify the model mirrors both, record intact, without dirtying
+    """
+    document = RehuDocument({"type": "Tutorial", "authors": ["A", {"name": "B", "url": "https://b.example"}]})
+    model = RehuDocumentModel(document)
+
+    assert model.authors == ["A", {"name": "B", "url": "https://b.example"}]
+    assert model.dirty is False
+
+
+def test_editing_authors_preserves_another_entry_record(document: RehuDocument) -> None:
+    """Editing one ``authors`` entry never shreds another entry's record ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * seed a document carrying a plain name plus a name+url record
+    * set the model's ``authors`` to a new list keeping the record and changing the string entry
+    * verify the document keeps the record as a record and takes the edited string
+    """
+    document.authors = ["Old Name", {"name": "Keep", "url": "https://keep.example"}]
+    model = RehuDocumentModel(document)
+
+    model.authors = ["New Name", *model.authors[1:]]
+
+    assert document.authors == ["New Name", {"name": "Keep", "url": "https://keep.example"}]
+    assert model.dirty is True
+
+
+def test_setting_authors_writes_canonical_minimal_form(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """A name-only record set on the model is stored as a plain string; a record with a url stays a
+    record -- canonical minimal form ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * set the model's ``authors`` to a name-only record and a name+url record
+    * verify the document stores the first as a bare string and the second as a record
+    """
+    model.authors = [{"name": "Bare"}, {"name": "Linked", "url": "https://linked.example"}]
+
+    assert document.authors == ["Bare", {"name": "Linked", "url": "https://linked.example"}]
+    assert model.dirty is True
+
+
 def test_setting_title_to_equal_value_is_a_no_op(model: RehuDocumentModel) -> None:
     """Assigning the current value emits nothing and leaves the model clean.
 
