@@ -7,12 +7,26 @@ single baked pixmap renders blurry once Qt requests it at any other size, e.g. a
 actual device pixel size).
 """
 
-from typing import Final, override
+from typing import Final, NamedTuple, override
 
 from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QIconEngine, QPainter, QPixmap
 
 from borco_pyside.theming.utils import painted_pixmap
+
+
+class Glyph(NamedTuple):
+    """A single glyph codepoint paired with the font family/weight it resolves in -- kept together so
+    a codepoint is never passed around without knowing which font it needs, or vice versa.
+
+    :param codepoint: the glyph character.
+    :param family: the font family ``codepoint`` resolves in; must already be loaded application-wide.
+        Empty keeps the inherited UI font, right for a plain Unicode symbol that needs no icon font at
+        all (:func:`glyph_icon` then renders it in Qt's default font).
+    """
+
+    codepoint: str
+    family: str = ""
 
 
 def glyph_icon(glyph: str, family: str, color: QColor) -> QIcon:

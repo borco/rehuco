@@ -70,7 +70,7 @@ def make_companion_action(qtbot: QtBot) -> Iterator[QAction]:
 
 @fixture
 def mock_qfile(mocker: MockerFixture) -> Callable[..., Any]:
-    """Provide a factory that patches `QFile` in `action_icon_theme_handler`, avoiding disk I/O.
+    """Provide a factory that patches `QFile` in `read_resource_bytes`, avoiding disk I/O.
 
     :param mocker: pytest-mock fixture.
     :returns: a factory ``(data: bytes, *, open_ok: bool = True) -> MagicMock`` -- each call
@@ -82,7 +82,7 @@ def mock_qfile(mocker: MockerFixture) -> Callable[..., Any]:
         file_mock = mocker.MagicMock()
         file_mock.open.return_value = open_ok
         file_mock.readAll.return_value.data.return_value = data
-        mocker.patch("borco_pyside.theming.action_icon_theme_handler.QFile", return_value=file_mock)
+        mocker.patch("borco_pyside.theming.utils.QFile", return_value=file_mock)
         return file_mock
 
     return factory

@@ -1,7 +1,25 @@
-"""Shared plumbing for `QIconEngine` subclasses that render fresh on every request."""
+"""Shared plumbing for theming: reading a resource's raw bytes, and `QIconEngine` subclasses that
+render fresh on every request.
+"""
 
-from PySide6.QtCore import QRect, QSize, Qt
+from PySide6.QtCore import QFile, QIODevice, QRect, QSize, Qt
 from PySide6.QtGui import QIcon, QIconEngine, QPainter, QPixmap
+
+
+def read_resource_bytes(path: str) -> bytes:
+    """Read ``path`` (Qt resource or filesystem) fully into memory.
+
+    :param path: the file to read, e.g. a ``:/...`` Qt resource path or a plain filesystem path.
+    :returns: the file's full contents.
+    :raises RuntimeError: if ``path`` cannot be opened for reading.
+    """
+    file = QFile(path)
+    if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+        raise RuntimeError(f"cannot open {path!r} for reading")
+    try:
+        return bytes(file.readAll().data())
+    finally:
+        file.close()
 
 
 def painted_pixmap(engine: QIconEngine, size: QSize, mode: QIcon.Mode, state: QIcon.State) -> QPixmap:

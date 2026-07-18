@@ -33,11 +33,6 @@ REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 CONVERT_KEEP_BACKUPS_ICON_RESOURCE: Final = ":/icons/tc_convert_with_backup.svg"
 CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
 
-LOCK_REASON_GLYPH: Final = "⚠"
-"""The inline notice's icon glyph (#94) -- a plain Unicode symbol, same idiom as
-`DocumentsDock`'s ``⚿`` lock marker, not a Phosphor codepoint: it needs no font wired in just for
-this one warning-styled banner row."""
-
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """One open document's **viewer** and **editor**, each in its own dock ([[plugins#viewer-editor-both]]).
@@ -303,10 +298,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: one :class:`~borco_pyside.widgets.MessageBannerRow` per
             :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order.
         """
-        return [
-            MessageBannerRow(MessageBannerSeverity.WARNING, LOCK_REASON_GLYPH, reason.message)
-            for reason in self.__model.lock_reasons
-        ]
+        return [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
 
     def __set_editors_locked(self, locked: bool) -> None:
         """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is

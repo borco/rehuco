@@ -3,21 +3,9 @@ place so the in-use codepoint/weight set can be audited without grepping every f
 (#37). Currently all Phosphor, but nothing here assumes a single icon-font family.
 """
 
-from typing import Final, NamedTuple
+from typing import Final
 
-
-class Glyph(NamedTuple):
-    """A single glyph codepoint paired with the font family/weight it resolves in -- distinct glyphs
-    can come from distinct Phosphor weights, so the family is never assumed shared across a module.
-
-    :param codepoint: the glyph character.
-    :param family: the font family ``codepoint`` resolves in; must already be loaded application-wide
-        (``app.py``).
-    """
-
-    codepoint: str
-    family: str
-
+from borco_pyside.theming import Glyph
 
 CLEAR_ACTION_GLYPH: Final = Glyph("\ue0ae", "Phosphor-Bold")
 """`QLineEdit` clear action's icon ([[plugins#field-toolkit]], ``app.py``)."""

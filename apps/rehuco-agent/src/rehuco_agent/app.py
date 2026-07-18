@@ -8,12 +8,19 @@ from typing import Final, override
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
-from borco_pyside.widgets import LineEditClearActionFilter
+from borco_pyside.theming import read_resource_bytes, recolored_svg_icon
+from borco_pyside.widgets import (
+    LineEditClearActionFilter,
+    MessageBanner,
+    MessageBannerSeverity,
+    MessageBannerSeverityStyle,
+)
 from PySide6.QtCore import QEvent
-from PySide6.QtGui import QFileOpenEvent, QFontDatabase, QIcon
+from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
+from rehuco_agent.fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from rehuco_agent.glyphs import CLEAR_ACTION_GLYPH
 from rehuco_agent.main_window import MainWindow
 from rehuco_agent.settings.persistent_settings import persistent_settings
@@ -25,6 +32,15 @@ APP_ID: Final = "rehuco-agent"
 
 ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
 """qrc path to the app icon, registered by importing :mod:`rehuco_agent.main_rc`."""
+
+WARNING_BANNER_ICON_RESOURCE: Final = ":/icons/banner_warning.svg"
+"""qrc path to the inline notice banner's ``warning`` severity icon (#94)."""
+
+INFO_BANNER_ICON_RESOURCE: Final = ":/icons/banner_info.svg"
+"""qrc path to the inline notice banner's ``info`` severity icon (#94)."""
+
+ERROR_BANNER_ICON_RESOURCE: Final = ":/icons/banner_error.svg"
+"""qrc path to the inline notice banner's ``error`` severity icon (#94)."""
 
 ICON_FONT_RESOURCES: Final = (
     ":/fonts/Phosphor-Bold.ttf",
@@ -67,7 +83,34 @@ class Application(QApplication):
             CLEAR_ACTION_GLYPH.codepoint, CLEAR_ACTION_GLYPH.family, parent=self
         )
         self.installEventFilter(clear_action_filter)
+        # give the inline notice banner (#94) this app's own icons/brand colors for every severity it
+        # uses, rather than borco-pyside's generic fallback (MessageBanner.SEVERITY_STYLES's own
+        # docstring covers the override seam this uses) -- a shared class-level table, not
+        # per-instance, so every DocumentWidget (hence every locked document's banner) picks this up
+        # automatically
+        MessageBanner.SEVERITY_STYLES.update(
+            {
+                MessageBannerSeverity.WARNING: self.__severity_style(WARNING_BANNER_ICON_RESOURCE, WARNING_COLOR),
+                MessageBannerSeverity.INFO: self.__severity_style(INFO_BANNER_ICON_RESOURCE, INFO_COLOR),
+                MessageBannerSeverity.ERROR: self.__severity_style(ERROR_BANNER_ICON_RESOURCE, ERROR_COLOR),
+            }
+        )
         self.__main_window: MainWindow | None = None
+
+    @staticmethod
+    def __severity_style(icon_resource: str, color: str) -> MessageBannerSeverityStyle:  # pragma: no cover
+        """Build one inline-notice-banner severity's style: its icon (recolored from ``icon_resource``)
+        and the same ``color`` for the row's left-border accent.
+
+        Reachable only from ``__init__`` (see its own untestability note) -- never called on its own.
+
+        :param icon_resource: qrc path to the severity's source SVG icon.
+        :param color: the accent color, for both the icon and the border.
+        :returns: the built style.
+        """
+        return MessageBannerSeverityStyle(
+            margin_color=color, icon=recolored_svg_icon(read_resource_bytes(icon_resource), QColor(color))
+        )
 
     @override
     def event(self, event: QEvent) -> bool:
