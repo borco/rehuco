@@ -20,7 +20,8 @@ from typing import Any, Final
 
 from borco_core import atomic_write_text
 
-from rehuco_core.migrations import FORMAT_VERSION_KEY, migrate_rehu_data, stamped_version
+from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
+from rehuco_core.migrations import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, migrate_rehu_data, stamped_version
 from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY, PluginRegistry
 
 LOG: Final = logging.getLogger(__name__)
@@ -64,6 +65,14 @@ class RehuFormatError(ValueError):
     """Raised when a ``.rehu`` payload is not a JSON object."""
 
 
+INVALID_AUTHORS_MESSAGE: Final = (
+    "authors: contains an entry this build cannot read -- each must be a name string or a "
+    "{name, url} record ([[field-schema#authors]])"
+)
+"""The :attr:`~LockReasonKind.INVALID_FIELD` message for a present ``authors`` the getter cannot read
+cleanly -- a non-list, or a list with an entry it would skip ([[field-schema#authors]])."""
+
+
 class RehuDocument:  # pylint: disable=too-many-public-methods
     """In-memory view over one ``.rehu`` JSON document.
 
@@ -84,6 +93,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :attr:`on_disk_format_version`. Set only by :meth:`load`, which is the only caller that knows a
         file was involved -- constructing a document does not make one exist. Defaults to ``None``: no
         file.
+    :param load_failure: the reason this document stands in for a file that could not be read at all
+        (:attr:`~LockReasonKind.MISSING` / :attr:`~LockReasonKind.INVALID_FILE`); set only by
+        :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
     """
 
     __RESERVED_KEYS: Final = frozenset({FORMAT_VERSION_KEY, CORE_BLOCK_KEY})
@@ -91,7 +103,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     version stamp, and the common core's block. Everything else at the top level is a block, which is
     the entire recognition rule -- there is no list of common field names to keep in step."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         data: dict[str, Any],
         path: Path | None = None,
@@ -99,6 +111,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         legacy_tc: bool = False,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
         on_disk_format_version: int | None = None,
+        load_failure: LockReason | None = None,
     ) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
         # setter edits __data (or a dict nested inside it) in place, so it is always current
@@ -109,6 +122,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__legacy_tc: Final = legacy_tc
         self.__plugins: Final = plugins
         self.__on_disk_format_version = on_disk_format_version
+        self.__load_failure = load_failure
+        """The load-failure reason (:attr:`load_failed`), or ``None`` for a genuinely-parsed document.
+        Not ``Final``: :meth:`reload` rebinds it, which is what makes revert the fix-retry loop
+        ([[data-model#write-integrity]])."""
         migrate_rehu_data(data)
         self.__normalize()
 
@@ -155,6 +172,55 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
             on_disk_format_version=cls.__coerced_version(data),
         )
 
+    @classmethod
+    def open_or_locked(cls, path: Path | str, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> RehuDocument:
+        """Load ``path``, or return an **empty document bound to it, locked**, when it cannot be read.
+
+        The one place the *refuse-vs-lock* line is drawn ([[data-model#write-integrity]]): a file that is
+        missing, unparseable, or refused by :meth:`load` does not raise past here and does not surface as a
+        modal error box -- it opens as a locked, never-dirty, never-savable view whose
+        :attr:`lock_reasons` name the failure, so the file stays inspectable in exactly the tool best
+        suited to hand-fixing it. :meth:`reload` retries through here, which is what makes revert the
+        fix-retry loop rather than a reopen cycle.
+
+        A ``FileNotFoundError`` is :attr:`~LockReasonKind.MISSING`; any other ``OSError`` or a
+        :class:`RehuFormatError` is :attr:`~LockReasonKind.INVALID_FILE` (:meth:`locked_stub_for_error`
+        draws that distinction once). Loading a legacy ``.tc`` is *not* routed here -- that path goes
+        through :func:`rehuco_core.load_tc` -- but its failures reach the same stub via
+        :meth:`locked_stub_for_error`.
+
+        :param path: path to the ``.rehu`` file.
+        :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
+        :returns: the loaded document, or an empty locked stub bound to ``path``.
+        """
+        path = Path(path)
+        try:
+            return cls.load(path, plugins=plugins)
+        except (OSError, RehuFormatError) as error:
+            return cls.locked_stub_for_error(path, error, plugins=plugins)
+
+    @classmethod
+    def locked_stub_for_error(
+        cls, path: Path | str, error: Exception, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY
+    ) -> RehuDocument:
+        """Build the empty, locked document that stands in for a file ``error`` prevented reading.
+
+        Bound to ``path`` so the failure is repairable in place, but with **no data** -- so nothing is
+        ever written back over the broken/absent original (:meth:`save` refuses,
+        :data:`SAVE_BLOCKING_LOCK_KINDS`). A ``FileNotFoundError`` becomes :attr:`~LockReasonKind.MISSING`;
+        anything else becomes :attr:`~LockReasonKind.INVALID_FILE`, carrying the error's own text (a JSON
+        parser's line/column included). This is the single seam both :meth:`open_or_locked` (``.rehu``) and
+        the legacy ``.tc`` open path route their failures through, so the missing-vs-unparseable line is
+        drawn exactly once.
+
+        :param path: the path the failed read was for; the stub is bound to it for a later revert.
+        :param error: the exception that prevented reading (``OSError`` or :class:`RehuFormatError`).
+        :param plugins: the plugins installed here; see :class:`RehuDocument`.
+        :returns: an empty document bound to ``path``, locked with the matching reason.
+        """
+        kind = LockReasonKind.MISSING if isinstance(error, FileNotFoundError) else LockReasonKind.INVALID_FILE
+        return cls({}, Path(path), plugins=plugins, load_failure=LockReason(kind, str(error)))
+
     def save(self, path: Path | str | None = None) -> None:
         """Atomically write the document back to disk as pretty-printed JSON, in canonical key order.
 
@@ -181,7 +247,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
         :param path: destination; defaults to the path the document was loaded from.
         :raises ValueError: if no path is given and the document has no loaded path.
+        :raises RehuFormatError: if a save-blocking lock is in force
+            (:data:`SAVE_BLOCKING_LOCK_KINDS`) -- an ``INVALID_FIELD`` document (whose coerced defaults
+            would overwrite the malformed-but-recoverable original) or an ``INVALID_FILE`` / ``MISSING``
+            stub (whose empty payload would clobber the broken/absent file). Editing is disabled while a
+            document is locked, so a save reaches here only by a path that bypassed that guard; refusing
+            is the backstop the write-integrity rule requires ([[data-model#write-integrity]]).
         """
+        blocking = next((reason for reason in self.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None)
+        if blocking is not None:
+            raise RehuFormatError(f"refusing to save a locked document ({blocking.kind}): {blocking.message}")
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("no path given and document was not loaded from a file")
@@ -249,19 +324,30 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         Always re-reads :attr:`path` as JSON, even when :attr:`legacy_tc` is set -- nothing calls
         ``reload()`` on a ``.tc``-backed document yet ([[acquisition-tooling#tc-to-rehu]]'s Phase 1 is
         exercised directly, not through the app's real open/revert path), so re-parsing a `.tc` path as
-        JSON here would raise; that follow-up lands with Phase 2's open-path wiring.
+        JSON here would lock the document rather than convert it; that follow-up lands with Phase 2's
+        open-path wiring.
+
+        **Never raises on an unreadable file** -- that is what makes revert the fix-retry loop
+        ([[data-model#write-integrity]]). The re-read goes through :meth:`open_or_locked`, so a file that
+        has since gone missing or become unparseable leaves this document **empty and locked** with a
+        refreshed reason, and a re-read that now succeeds refills the data and **drops** the lock. Only a
+        genuinely path-less document (never loaded or saved) still raises, since there is nothing to
+        re-read.
 
         :raises ValueError: if this document has no path (never loaded from or saved to a file).
-        :raises RehuFormatError: if the file's top-level JSON value is not an object.
         """
         if self.__path is None:
             raise ValueError("no path to reload from -- document was not loaded from a file")
-        fresh = RehuDocument.load(self.__path, plugins=self.__plugins)
+        fresh = RehuDocument.open_or_locked(self.__path, plugins=self.__plugins)
         self.__data.clear()
         self.__data.update(fresh.data)
         # adopt what the freshly-read file says its version is: a reload is how an out-of-band change is
         # picked up, and that change may have been another build rewriting the file at a different version
         self.__on_disk_format_version = fresh.on_disk_format_version
+        # adopt the fresh read's load-failure verdict: None when it parsed (dropping any prior lock), or a
+        # refreshed MISSING/INVALID_FILE reason when it still cannot be read. Read off the fresh document's
+        # public surface -- a stub's lock_reasons is exactly its single load-failure reason (lock_reasons)
+        self.__load_failure = fresh.lock_reasons[0] if fresh.load_failed else None
 
     @property
     def data(self) -> dict[str, Any]:
@@ -282,10 +368,98 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :attr:`format_version`, and *must*: the mapping emits the **current** layout, stamp included
         ([[acquisition-tooling#tc-to-rehu]]), so a ``.tc``-derived document is never a version this build
         would refuse -- the newer-format-version lock rule could not catch it under any stamp. This flag
-        is the document's own reason to lock, checked by ``RehuDocumentModel.locked``: what makes it
+        is the document's own reason to lock, surfaced through :attr:`lock_reasons`: what makes it
         read-only is that no ``.rehu`` exists for it yet, which is a fact about the *file*, not about
         any schema version."""
         return self.__legacy_tc
+
+    @property
+    def load_failed(self) -> bool:
+        """Whether this document is an **empty stub** standing in for a file that could not be read at all
+        ([[data-model#write-integrity]]) -- missing (:attr:`~LockReasonKind.MISSING`) or unparseable
+        (:attr:`~LockReasonKind.INVALID_FILE`), as opposed to a genuinely-loaded document that merely
+        locked (a newer format, a legacy ``.tc``, a present-but-uncoercible field).
+
+        The load-vs-lock distinction a caller needs when a lock alone is too coarse: whether anything was
+        actually read. "Don't record a file you couldn't open into recent-files", for one, keys off this
+        rather than off :attr:`lock_reasons` being non-empty (a real newer-format file is locked too).
+        Tracks :meth:`reload`, so a later re-read that succeeds clears it."""
+        return self.__load_failure is not None
+
+    @property
+    def lock_reasons(self) -> list[LockReason]:
+        """Every named cause this document is read-only ([[data-model#write-integrity]]); empty when it is
+        freely editable. ``RehuDocumentModel.locked`` is derived from whether this is non-empty.
+
+        A **load failure** (:attr:`~LockReasonKind.INVALID_FILE` / :attr:`~LockReasonKind.MISSING`) is the
+        *sole* reason when present: the document is an empty stub standing in for a file that could not be
+        read at all (:meth:`open_or_locked`), so no in-memory field could contribute a further cause.
+
+        Otherwise the causes accumulate from the genuinely-parsed payload, and a document can carry more
+        than one at once:
+
+        - :attr:`~LockReasonKind.LEGACY_TC` -- a ``.tc`` mapping with no ``.rehu`` yet (:attr:`legacy_tc`).
+        - :attr:`~LockReasonKind.NEWER_FORMAT` -- :attr:`format_version` above what this build understands
+          ([[data-model#schema-version]]). The stamp itself is never *malformed*-locked: repairing a
+          missing/bad stamp is a specified deduction, not a default masking data, so it does not appear as
+          an ``INVALID_FIELD`` here.
+        - :attr:`~LockReasonKind.INVALID_FIELD` -- one per owned field that is **present but fails
+          coercion** (:meth:`__invalid_field_reasons`), so an edit can never save the coerced default over
+          the malformed-but-recoverable original.
+
+        Recomputed on every read from the current payload, so :meth:`reload` (hence revert) picks up a
+        hand-fix without any cached-reason bookkeeping.
+
+        :returns: the lock reasons, or an empty list when the document is editable.
+        """
+        if self.__load_failure is not None:
+            return [self.__load_failure]
+        reasons: list[LockReason] = []
+        if self.__legacy_tc:
+            reasons.append(
+                LockReason(
+                    LockReasonKind.LEGACY_TC,
+                    "a legacy .tc file with no .rehu on disk yet -- convert it to edit",
+                )
+            )
+        if self.format_version > CURRENT_FORMAT_VERSION:
+            reasons.append(
+                LockReason(
+                    LockReasonKind.NEWER_FORMAT,
+                    f"format_version {self.format_version} is newer than this build understands "
+                    f"({CURRENT_FORMAT_VERSION})",
+                )
+            )
+        reasons.extend(self.__invalid_field_reasons())
+        return reasons
+
+    def __invalid_field_reasons(self) -> list[LockReason]:
+        """The :attr:`~LockReasonKind.INVALID_FIELD` reasons for owned fields present-but-uncoercible
+        ([[data-model#write-integrity]]).
+
+        An owned field that is merely **absent** reads as a clean default and is fine to save. One that is
+        **present** but whose stored value the getter has to coerce lossily is not: writing the coerced
+        default back would quietly replace a malformed value the user may yet recover by hand. Each such
+        field contributes one reason naming the key.
+
+        Only ``authors`` is checked today ([[field-schema#authors]], the seam #92 set up): its getter
+        skips an entry that is neither a name string nor a ``{name, url}`` record, and a non-list value
+        entirely, so "present but not skip-clean" is exactly the present-but-uncoercible condition. Other
+        owned fields join here as their own lossy-coercion cases are specified; the ``format_version``
+        stamp deliberately never does (see :attr:`lock_reasons`).
+
+        :returns: the invalid-field reasons, in a stable order.
+        """
+        reasons: list[LockReason] = []
+        core = self.core
+        if "authors" in core:
+            value = core["authors"]
+            clean = isinstance(value, list) and all(
+                isinstance(entry, str) or self.__is_author_record(entry) for entry in value
+            )
+            if not clean:
+                reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_AUTHORS_MESSAGE))
+        return reasons
 
     @property
     def core(self) -> dict[str, Any]:
@@ -601,8 +775,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         ([[data-model#write-integrity]]): a getter must never crash on a value's type, and skipping
         is safer than inventing a name by stringifying it. This shapes *reading* only -- the backing
         list is untouched, so an unedited document round-trips byte-identical
-        ([[data-model#write-integrity]]); #93 later turns a skipped-because-malformed entry into a
-        read-only lock reason.
+        ([[data-model#write-integrity]]). A present ``authors`` the getter has to coerce this way is
+        exactly what :attr:`lock_reasons` reports as an :attr:`~LockReasonKind.INVALID_FIELD`, so the
+        coerced reading is safe to display but the document loads **locked** rather than letting an edit
+        save the coerced list over the original.
         """
         authors = self.core.get("authors", [])
         if not isinstance(authors, list):

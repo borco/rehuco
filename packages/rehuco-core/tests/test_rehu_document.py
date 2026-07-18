@@ -16,6 +16,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
+    LockReasonKind,
     RehuDocument,
     RehuFormatError,
     authors_comma_editable,
@@ -1365,3 +1366,242 @@ def test_load_rejects_non_object(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "read_text", return_value="[1, 2, 3]")
     with pytest.raises(RehuFormatError):
         RehuDocument.load(FAKE_PATH)
+
+
+# region Lock reasons ([[data-model#write-integrity]])
+
+
+def test_a_normal_document_has_no_lock_reasons() -> None:
+    """A well-formed, current-version document is freely editable: no reasons, not a load failure.
+
+    **Test steps:**
+
+    * construct a document from the well-formed :data:`TUTORIAL` payload
+    * verify ``lock_reasons`` is empty and ``load_failed`` is ``False``
+    """
+    doc = RehuDocument(json.loads(json.dumps(TUTORIAL)))
+    assert not doc.lock_reasons
+    assert doc.load_failed is False
+
+
+def test_a_newer_format_version_locks_with_a_named_reason() -> None:
+    """A file written by a newer build locks with the ``NEWER_FORMAT`` reason
+    ([[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * construct a document whose ``format_version`` is above what this build understands
+    * verify the sole reason is ``NEWER_FORMAT`` and carries a message
+    """
+    doc = RehuDocument({"format_version": CURRENT_FORMAT_VERSION + 1})
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.NEWER_FORMAT]
+    assert doc.lock_reasons[0].message
+
+
+def test_a_legacy_tc_document_locks_with_a_named_reason() -> None:
+    """A ``.tc``-mapped document with no ``.rehu`` yet locks with the ``LEGACY_TC`` reason
+    ([[acquisition-tooling#tc-to-rehu]]).
+
+    **Test steps:**
+
+    * construct a document flagged ``legacy_tc`` at the current version
+    * verify the sole reason is ``LEGACY_TC``
+    """
+    doc = RehuDocument({"type": "tutorial"}, legacy_tc=True)
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.LEGACY_TC]
+
+
+@mark.parametrize(
+    "authors",
+    [
+        param("Solo Author", id="not-a-list"),
+        param(["Valid", 42], id="malformed-entry-among-valid"),
+        param([{"url": "https://x.example"}], id="record-without-a-name"),
+    ],
+)
+def test_a_present_but_uncoercible_authors_field_locks_as_invalid_field(authors: Any) -> None:
+    """An owned field present but failing coercion loads locked with the ``INVALID_FIELD`` reason naming
+    it, so an edit can never save the coerced default over the malformed original
+    ([[data-model#write-integrity]]); the getter still coerces for *display*.
+
+    **Test steps:**
+
+    * construct a document whose ``authors`` is present but not skip-clean
+    * verify the sole reason is ``INVALID_FIELD`` and names ``authors``
+    * verify the getter still returns a coerced (non-crashing) reading
+    """
+    doc = RehuDocument({"core": {"authors": authors}})
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert "authors" in doc.lock_reasons[0].message
+    # reading still coerces (never crashes on the value's type) -- the lock guards *writing*, not display
+    assert isinstance(doc.authors, list)
+
+
+@mark.parametrize(
+    "authors",
+    [
+        param(["A", {"name": "B", "url": "https://b.example"}], id="strings-and-records"),
+        param([], id="empty-list"),
+    ],
+)
+def test_valid_authors_do_not_lock(authors: Any) -> None:
+    """A well-formed ``authors`` (names and ``{name, url}`` records) is not an ``INVALID_FIELD``
+    ([[field-schema#authors]]).
+
+    **Test steps:**
+
+    * construct a document whose ``authors`` entries are all skip-clean
+    * verify no lock reason is produced
+    """
+    assert not RehuDocument({"core": {"authors": authors}}).lock_reasons
+
+
+def test_an_absent_authors_field_does_not_lock() -> None:
+    """A field that is merely *absent* reads as a clean default and does not lock -- only a
+    present-but-uncoercible one does ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a document with no ``authors`` key at all
+    * verify no lock reason is produced
+    """
+    assert not RehuDocument({"core": {"type": "tutorial"}}).lock_reasons
+
+
+def test_open_or_locked_returns_a_missing_stub_for_a_vanished_file(mocker: MockerFixture) -> None:
+    """A file that is gone opens as an empty ``MISSING`` stub bound to the path, never raising
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * mock the filesystem so reading raises ``FileNotFoundError``
+    * call ``open_or_locked``
+    * verify an empty document bound to the path came back, locked ``MISSING``, flagged ``load_failed``
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+
+    assert doc.path == FAKE_PATH
+    assert doc.core == {}
+    assert doc.load_failed is True
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.MISSING]
+
+
+def test_open_or_locked_returns_an_invalid_file_stub_for_unparseable_content(mocker: MockerFixture) -> None:
+    """A file that cannot be parsed opens as an empty ``INVALID_FILE`` stub whose message carries the
+    parser's own text ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * mock the filesystem to serve malformed JSON
+    * call ``open_or_locked``
+    * verify the sole reason is ``INVALID_FILE`` with a non-empty message
+    """
+    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+
+    assert doc.load_failed is True
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert doc.lock_reasons[0].message
+
+
+def test_open_or_locked_returns_a_genuinely_loaded_document_on_success(mocker: MockerFixture) -> None:
+    """When the file reads cleanly, ``open_or_locked`` returns the loaded document, not a stub.
+
+    **Test steps:**
+
+    * mock the filesystem to serve a valid payload
+    * call ``open_or_locked``
+    * verify the document loaded its fields and is not a load failure
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+
+    assert doc.load_failed is False
+    assert not doc.lock_reasons
+    assert doc.title == "Intro to Sculpting"
+
+
+def test_save_refuses_while_load_failed(mocker: MockerFixture) -> None:
+    """A load-failure stub refuses to save, so an empty document never clobbers the broken/absent file
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * build a ``MISSING`` stub via ``open_or_locked``
+    * mock ``atomic_write_text`` to prove it is never reached
+    * verify ``save()`` raises and nothing was written
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+
+    with pytest.raises(RehuFormatError, match="refusing to save"):
+        doc.save()
+    write.assert_not_called()
+
+
+def test_save_refuses_while_a_field_is_invalid(mocker: MockerFixture) -> None:
+    """An ``INVALID_FIELD`` document refuses to save, so the coerced default never overwrites the
+    malformed-but-recoverable original ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a document with a present-but-uncoercible ``authors``
+    * mock ``atomic_write_text`` to prove it is never reached
+    * verify ``save()`` raises and nothing was written
+    """
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc = RehuDocument({"core": {"authors": 42}}, FAKE_PATH)
+
+    with pytest.raises(RehuFormatError, match="refusing to save"):
+        doc.save()
+    write.assert_not_called()
+
+
+def test_reload_of_a_vanished_file_locks_in_place_without_raising(mocker: MockerFixture) -> None:
+    """Reverting onto a file that has since vanished locks the document in place rather than raising --
+    the fix-retry loop ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * load a normal document
+    * make the file vanish, then ``reload()``
+    * verify it did not raise, is now an empty ``MISSING`` load failure
+    """
+    doc = load_doc(mocker, TUTORIAL)
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+
+    doc.reload()
+
+    assert doc.load_failed is True
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.MISSING]
+    assert doc.core == {}
+
+
+def test_reload_after_a_fix_drops_the_lock(mocker: MockerFixture) -> None:
+    """Once the file reads cleanly again, ``reload()`` refills the data and drops the load-failure lock --
+    the other half of the fix-retry loop ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * build a ``MISSING`` stub via ``open_or_locked``
+    * make the path now read as a valid payload, then ``reload()``
+    * verify the lock is gone, ``load_failed`` is ``False``, and the fields are seeded
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+    assert doc.load_failed is True
+
+    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    doc.reload()
+
+    assert doc.load_failed is False
+    assert not doc.lock_reasons
+    assert doc.title == "Intro to Sculpting"
+
+
+# endregion

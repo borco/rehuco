@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import CURRENT_FORMAT_VERSION, AuthorEntry, RehuDocument, convert_tc
+from rehuco_core import AuthorEntry, LockReason, RehuDocument, convert_tc
 
 from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
@@ -154,16 +154,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
-    locked = SimpleProperty(False)
-    """True when either :attr:`document`'s ``format_version`` is newer than this build understands
-    ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule), or the document was mapped from a
-    legacy ``.tc`` file not yet converted ([[acquisition-tooling#tc-to-rehu]], `RehuDocument.legacy_tc`)
-    -- a document *older* than this build's format version, which the first rule alone would never
-    catch. Recomputed at construction and on every :meth:`revert`/:meth:`convert` (never by an edit --
-    there is no setter path back to either locked state). ``DocumentWidget`` disables its editor docks while this
-    is true; nothing else in the model changes, since the underlying `RehuDocument` already preserves
-    a newer file's fields verbatim and never downgrades its version stamp on save
-    ([[data-model#schema-version]])."""
+    lock_reasons = SimpleProperty[list[LockReason]](default_factory=list)
+    """Every named cause this document is read-only ([[data-model#write-integrity]]), mirrored from
+    :attr:`document`'s own :attr:`~RehuDocument.lock_reasons`; empty when it is freely editable. Carries
+    *why* -- a newer ``format_version`` ([[data-model#schema-version]]), an unconverted legacy ``.tc``
+    ([[acquisition-tooling#tc-to-rehu]]), an owned field present-but-uncoercible, or a file that could not
+    be read at all -- so the viewer can explain the lock and act per kind (#94). Recomputed at
+    construction and on every :meth:`revert`/:meth:`convert` (never by an edit -- there is no setter path
+    back to a locked state). ``DocumentWidget`` disables its editor docks while this is non-empty; the
+    inline notice (#94) and `DocumentsDock`'s tab marker bind to `lock_reasons_changed`."""
 
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The current screenshot-resolution strategy -- `TcScanner` while :attr:`~RehuDocument.legacy_tc`,
@@ -182,7 +181,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         edit."""
 
         self.__seed_from_document()
-        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = TcScanner(self) if self.__document.legacy_tc else RehuScanner(self)
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
@@ -221,6 +220,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def document(self) -> RehuDocument:
         """The wrapped document."""
         return self.__document
+
+    @property
+    def locked(self) -> bool:
+        """Whether the document is read-only -- derived from whether :attr:`lock_reasons` is non-empty
+        ([[data-model#write-integrity]]). A convenience over ``bool(self.lock_reasons)`` for the many
+        callers that only need "is it locked", not why; consumers that must react to the lock *changing*
+        bind to ``lock_reasons_changed``, since a derived read-only property carries no notify signal of
+        its own."""
+        return bool(self.lock_reasons)
 
     @property
     def label(self) -> str:
@@ -294,7 +302,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.reload()
         self.__seed_from_document()
         self.dirty = False
-        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
@@ -320,7 +328,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document = convert_tc(self.path, keep_backups=keep_backups, overwrite=overwrite)
         self.__seed_from_document()
         self.dirty = False
-        self.locked = self.__document.format_version > CURRENT_FORMAT_VERSION or self.__document.legacy_tc
+        self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = RehuScanner(self)
         self.unknown_fields_changed.emit()
 

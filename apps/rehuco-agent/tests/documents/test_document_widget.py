@@ -22,7 +22,7 @@ from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
@@ -228,17 +228,17 @@ def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:
 
 
 def test_editors_disable_and_reenable_as_locked_changes(widget: DocumentWidget, model: RehuDocumentModel) -> None:
-    """The editor controls track the model's ``locked`` flag live, same as save tracks dirty.
+    """The editor controls track the model's lock reasons live, same as save tracks dirty.
 
     **Test steps:**
 
-    * lock the model and verify every editor disables
-    * unlock it again and verify every editor re-enables
+    * give the model a lock reason and verify every editor disables
+    * clear the reasons again and verify every editor re-enables
     """
-    model.locked = True
+    model.lock_reasons = [LockReason(LockReasonKind.NEWER_FORMAT, "from a newer build")]
     assert all(not editor.isEnabled() for editor in widget.findChildren(QLineEdit))
 
-    model.locked = False
+    model.lock_reasons = []
     assert all(editor.isEnabled() for editor in widget.findChildren(QLineEdit))
 
 

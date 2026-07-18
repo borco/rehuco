@@ -379,11 +379,13 @@ def test_open_file_records_a_successful_open_into_recents(mocker: MockerFixture,
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_document`` to report success (a non-``None`` widget)
+    * mock ``DocumentsDock.open_document`` to return a genuinely-loaded widget (``load_failed`` False)
     * call ``open_file``
     * verify the resolved path is now the newest recent entry
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock())
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = False
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -394,15 +396,19 @@ def test_open_file_records_a_successful_open_into_recents(mocker: MockerFixture,
 
 
 def test_open_file_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A failed ``open_file`` (no dock created) is not recorded into ``Open recents`` (#64).
+    """An ``open_file`` whose file could not be read (a load-failure stub) is not recorded into
+    ``Open recents`` (#64) -- the dock still opens (locked), but a missing/unparseable file is not a file
+    you opened ([[data-model#write-integrity]]).
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_document`` to report failure (``None``, e.g. #35)
+    * mock ``DocumentsDock.open_document`` to return a load-failure stub widget (``load_failed`` True)
     * call ``open_file``
     * verify ``Open recents`` stays empty
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = True
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -417,11 +423,13 @@ def test_open_folder_records_a_successful_open_into_recents(mocker: MockerFixtur
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_folder`` to report success
+    * mock ``DocumentsDock.open_folder`` to return a genuinely-loaded widget (``load_failed`` False)
     * call ``open_folder``
     * verify the resolved path is now the newest recent entry
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=mocker.MagicMock())
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = False
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -432,15 +440,19 @@ def test_open_folder_records_a_successful_open_into_recents(mocker: MockerFixtur
 
 
 def test_open_folder_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A failed ``open_folder`` (no dock created) is not recorded into ``Open recents`` (#64).
+    """An ``open_folder`` whose resource could not be read (a load-failure stub) is not recorded into
+    ``Open recents`` (#64, [[data-model#write-integrity]]).
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_folder`` to report failure (``None``, e.g. an unreadable ``info.rehu``)
+    * mock ``DocumentsDock.open_folder`` to return a load-failure stub widget (``load_failed`` True, e.g.
+      an unreadable ``info.rehu``)
     * call ``open_folder``
     * verify ``Open recents`` stays empty
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=None)
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = True
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_folder", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -455,11 +467,13 @@ def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixtu
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_archive`` to report success
+    * mock ``DocumentsDock.open_archive`` to return a genuinely-loaded widget (``load_failed`` False)
     * call ``open_archive``
     * verify the resolved path is now the newest recent entry
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=mocker.MagicMock())
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = False
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -470,15 +484,19 @@ def test_open_archive_records_a_successful_open_into_recents(mocker: MockerFixtu
 
 
 def test_open_archive_does_not_record_a_failed_open(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A failed ``open_archive`` (no dock created) is not recorded into ``Open recents`` (#64).
+    """An ``open_archive`` whose companion could not be read (a load-failure stub) is not recorded into
+    ``Open recents`` (#64, [[data-model#write-integrity]]).
 
     **Test steps:**
 
-    * mock ``DocumentsDock.open_archive`` to report failure (``None``, e.g. an unreadable companion)
+    * mock ``DocumentsDock.open_archive`` to return a load-failure stub widget (``load_failed`` True, e.g.
+      an unreadable companion)
     * call ``open_archive``
     * verify ``Open recents`` stays empty
     """
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=None)
+    widget = mocker.MagicMock()
+    widget.model.document.load_failed = True
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_archive", return_value=widget)
     window = MainWindow()
     qtbot.addWidget(window)
 
@@ -1017,14 +1035,16 @@ def test_restore_session_reopens_open_documents_and_restores_their_state(mocker:
     widget.restore_state.assert_called_once_with(b"state-bytes")
 
 
-def test_restore_session_skips_a_document_that_fails_to_reopen(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A previously-open document that fails to reopen (missing/invalid file, #35) is skipped, not crashed on.
+def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A previously-open document whose file has since vanished still reopens on restore -- as a locked
+    dock materialized in its place, its saved state applied ([[data-model#write-integrity]]) -- rather
+    than being skipped or crashing the restore.
 
     **Test steps:**
 
     * seed one open item
-    * mock ``open_document`` to return ``None``, as it does when the file can't be loaded
-    * construct ``MainWindow`` and verify it doesn't raise
+    * mock ``open_document`` to return the (locked) dock it now yields for a file that can't be read
+    * construct ``MainWindow`` and verify the dock's saved state was still restored
     """
     path = Path("missing.rehu").resolve()
 
@@ -1033,10 +1053,13 @@ def test_restore_session_skips_a_document_that_fails_to_reopen(mocker: MockerFix
         self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state")  # pylint: disable=unsupported-assignment-operation
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+    widget = mocker.MagicMock()
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
 
     window = MainWindow()
     qtbot.addWidget(window)
+
+    widget.restore_state.assert_called_once_with(b"state")
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -1398,14 +1421,18 @@ def test_restore_session_refocuses_the_previously_focused_document(mocker: Mocke
     assert open_document.call_count == 3  # first_path, second_path, then second_path again to focus it
 
 
-def test_restore_session_does_not_refocus_a_document_that_failed_to_reopen(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A remembered focused document that fails to reopen isn't re-focused (nothing to focus).
+def test_restore_session_refocuses_a_vanished_focused_documents_locked_dock(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A remembered focused document whose file has vanished is still re-focused -- its materialized
+    locked dock is a real, focusable dock now ([[data-model#write-integrity]]), not a skipped nothing.
 
     **Test steps:**
 
-    * seed the session with a focused-document path that isn't among the successfully-opened ones
+    * seed the session with a focused-document path whose file can't be read
     * construct ``MainWindow``
-    * verify ``open_document`` was called exactly once for that path (the initial attempt), not twice
+    * verify ``open_document`` was called twice for that path: the initial open, then again to re-focus
+      its locked dock
     """
     path = Path("missing.rehu").resolve()
 
@@ -1415,12 +1442,14 @@ def test_restore_session_does_not_refocus_a_document_that_failed_to_reopen(mocke
         self.focused_path = path
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=None)
+    open_document = mocker.patch(
+        "rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock()
+    )
 
     window = MainWindow()
     qtbot.addWidget(window)
 
-    open_document.assert_called_once_with(path)
+    assert open_document.call_args_list == [mocker.call(path), mocker.call(path)]
 
 
 def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:

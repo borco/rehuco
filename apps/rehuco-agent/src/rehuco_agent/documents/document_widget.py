@@ -116,7 +116,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         self.__set_editors_locked(model.locked)
         self.__set_legacy_tc_actions_visible(model.document.legacy_tc)
-        model.locked_changed.connect(self.__on_locked_changed)  # type: ignore[attr-defined]
+        model.lock_reasons_changed.connect(self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
 
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
@@ -258,13 +258,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__save_action.setEnabled(dirty)
 
-    def __on_locked_changed(self, locked: bool) -> None:
-        """Disable/re-enable the editor docks as :attr:`~RehuDocumentModel.locked` changes (e.g. on
-        revert or a successful :meth:`~RehuDocumentModel.convert`).
+    def __on_lock_reasons_changed(self) -> None:
+        """Disable/re-enable the editor docks as the model's lock reasons change (e.g. on revert or a
+        successful :meth:`~RehuDocumentModel.convert`).
 
-        :param locked: the model's new locked state.
+        Takes no arguments: this widget only needs the derived "is it locked" flag, not *which* reasons
+        (those, and their messages, are the inline notice's concern, #94). Qt lets a slot accept fewer
+        arguments than the signal emits, so the ``lock_reasons_changed(reasons)`` payload is simply
+        dropped rather than accepted and ignored.
         """
-        self.__set_editors_locked(locked)
+        self.__set_editors_locked(self.__model.locked)
         self.__set_legacy_tc_actions_visible(self.__model.document.legacy_tc)
 
     def __set_editors_locked(self, locked: bool) -> None:
