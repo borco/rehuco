@@ -2,19 +2,22 @@
 
 from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
 from borco_pyside.theming.glyph_action_icon_handler import GlyphActionIconThemeHandler
-from borco_pyside.theming.glyph_icon import glyph_icon
+from borco_pyside.theming.glyph_icon import Glyph, glyph_icon
 from borco_pyside.theming.svg_recolor import recolor_svg, recolored_svg_icon
 from borco_pyside.theming.theme_manager import ThemeManager
 from borco_pyside.theming.theme_menu import ThemeMenu
 from borco_pyside.theming.theme_model import ThemeModel
+from borco_pyside.theming.utils import read_resource_bytes
 
 __all__ = [
     "ActionIconThemeHandler",
+    "Glyph",
     "GlyphActionIconThemeHandler",
     "ThemeManager",
     "ThemeMenu",
     "ThemeModel",
     "glyph_icon",
+    "read_resource_bytes",
     "recolor_svg",
     "recolored_svg_icon",
 ]

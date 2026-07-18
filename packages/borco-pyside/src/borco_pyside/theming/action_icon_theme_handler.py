@@ -1,10 +1,11 @@
 """Keep a checkable action's icon recolored to match the current app theme."""
 
-from PySide6.QtCore import QFile, QIODevice, QObject
+from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
 from borco_pyside.theming.svg_recolor import recolored_svg_icon
+from borco_pyside.theming.utils import read_resource_bytes
 
 
 class ActionIconThemeHandler(QObject):
@@ -73,7 +74,7 @@ class ActionIconThemeHandler(QObject):
         self.__action = action
         self.__companion_action = companion
         self.__flat = flat
-        self.__svg: bytes = self.__read_file(icon)
+        self.__svg: bytes = read_resource_bytes(icon)
 
         app = QApplication.instance()
         if not isinstance(app, QApplication):
@@ -107,7 +108,7 @@ class ActionIconThemeHandler(QObject):
         :param icon: path (Qt resource or filesystem) to the new source SVG, drawn for the light
             theme's unchecked (normal) state.
         """
-        self.__svg = self.__read_file(icon)
+        self.__svg = read_resource_bytes(icon)
         self.__apply_icon()
 
     def __on_palette_changed(self, *_args: object) -> None:
@@ -137,18 +138,3 @@ class ActionIconThemeHandler(QObject):
             self.__companion_action.setIcon(
                 recolored_svg_icon(self.__svg, button_text, None, disabled_button_text, None)
             )
-
-    def __read_file(self, path: str) -> bytes:
-        """Read ``path`` (Qt resource or filesystem) fully into memory.
-
-        :param path: the file to read, e.g. a ``:/...`` Qt resource path or a plain filesystem path.
-        :returns: the file's full contents.
-        :raises RuntimeError: if ``path`` cannot be opened for reading.
-        """
-        file = QFile(path)
-        if not file.open(QIODevice.OpenModeFlag.ReadOnly):
-            raise RuntimeError(f"cannot open {path!r} for reading")
-        try:
-            return bytes(file.readAll().data())
-        finally:
-            file.close()
