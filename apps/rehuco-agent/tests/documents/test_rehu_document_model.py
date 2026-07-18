@@ -5,6 +5,7 @@
 # arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
 # pylint: disable=too-many-lines
 
+import json
 import logging
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
 
 
 # region fixtures
@@ -104,6 +105,56 @@ def test_model_is_locked_for_a_legacy_tc_document() -> None:
     model = RehuDocumentModel(document)
 
     assert model.locked is True
+
+
+def test_model_lock_reasons_mirror_the_documents_reasons() -> None:
+    """The model's ``lock_reasons`` are the document's, and ``locked`` derives from whether any exist
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a model over a newer-than-supported document
+    * verify ``lock_reasons`` carries the document's ``NEWER_FORMAT`` reason and ``locked`` is ``True``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "format_version": CURRENT_FORMAT_VERSION + 1}))
+    assert [reason.kind for reason in model.lock_reasons] == [LockReasonKind.NEWER_FORMAT]
+    assert model.locked is True
+
+
+def test_model_over_an_invalid_field_document_locks_and_stays_clean() -> None:
+    """A document with a present-but-uncoercible owned field opens locked ``INVALID_FIELD`` and never
+    dirty, so editing can't save the coerced default over the original ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a model over a document whose ``authors`` is present but not skip-clean
+    * verify it is locked with the ``INVALID_FIELD`` reason and is not dirty
+    """
+    model = RehuDocumentModel(RehuDocument({"core": {"authors": 42}}))
+    assert model.locked is True
+    assert [reason.kind for reason in model.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert model.dirty is False
+
+
+def test_model_over_a_load_failed_document_locks_and_stays_clean(mocker: MockerFixture) -> None:
+    """A model wrapping a load-failure stub is locked and never dirty -- distinct from ``create_new``'s
+    empty-**dirty** state ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * build a ``MISSING`` stub via ``open_or_locked`` over a mocked-vanished file
+    * wrap it in a model
+    * verify the model is locked ``MISSING``, bound to the path, and not dirty
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+    document = RehuDocument.open_or_locked(Path("/fake/info.rehu"))
+
+    model = RehuDocumentModel(document)
+
+    assert model.locked is True
+    assert [reason.kind for reason in model.lock_reasons] == [LockReasonKind.MISSING]
+    assert model.path == Path("/fake/info.rehu")
+    assert model.dirty is False
 
 
 def test_model_seeds_empty_from_a_sourceless_document() -> None:
@@ -690,6 +741,39 @@ def test_revert_recomputes_locked_from_the_reloaded_format_version(
     assert model.locked is True
 
 
+def test_revert_is_the_fix_retry_loop_over_a_load_failure(mocker: MockerFixture) -> None:
+    """revert() is the fix-retry loop for an unreadable file: reverting onto a still-broken file locks in
+    place without throwing, and reverting once it reads cleanly drops the lock and seeds the fields
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * open a real document from a mocked file
+    * make the file vanish, then revert -- verify no throw, model now locked ``MISSING``, not dirty
+    * make the file read cleanly again, then revert -- verify the lock drops and fields seed
+    """
+    path = Path("/fake/info.rehu")
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"core": {"type": "tutorial"}}))
+    model = RehuDocumentModel(RehuDocument.load(path))
+    assert model.locked is False
+
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("gone"))
+    model.revert()  # must not raise
+    assert model.locked is True
+    assert [reason.kind for reason in model.lock_reasons] == [LockReasonKind.MISSING]
+    assert model.dirty is False
+
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"core": {"sources": [{"title": "Fixed", "primary": True}]}}),
+    )
+    model.revert()
+    assert model.locked is False
+    assert not model.lock_reasons
+    assert model.title == "Fixed"
+
+
 def test_revert_reseeds_type_fields_too(
     mocker: MockerFixture, model: RehuDocumentModel, document: RehuDocument
 ) -> None:
@@ -1236,7 +1320,9 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
     **Test steps:**
 
     * call ``RehuDocumentModel.create_new(path)``
-    * verify the document's path matches and the model is dirty
+    * verify the document's path matches, the model is dirty, and it is **not** locked (an empty
+      dirty-editable document about to be written -- strictly distinct from a load failure's
+      empty-locked stub bound to the same kind of path, [[data-model#write-integrity]])
     """
     path = Path("/fake/sculpting/info.rehu")
 
@@ -1244,6 +1330,8 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
 
     assert model.document.path == path
     assert model.dirty is True
+    assert model.locked is False
+    assert not model.lock_reasons
 
 
 def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: RehuDocument) -> None:

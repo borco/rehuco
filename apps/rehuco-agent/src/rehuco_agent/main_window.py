@@ -328,20 +328,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __restore_session(self) -> None:
         """Reopen every document the last session left open, restoring its dock layout and focus.
 
-        A path that no longer exists or fails to load is skipped silently (``open_document``
-        already showed an error dialog for it, #35) -- the rest of the session still restores.
-        The outer layout (splits/tabs between documents) is restored only once every document
-        it references has already been reopened above -- ``DocumentsDock.restore_state`` matches
-        saved entries up to currently-registered docks by name, it does not create any itself.
+        A path that has since gone missing or become unparseable still reopens -- as an empty, **locked**
+        dock materialized in its place ([[data-model#write-integrity]]), not skipped and not a dialog per
+        file -- so the user can fix it and revert in place rather than lose the session slot. The outer
+        layout (splits/tabs between documents) is restored only once every document it references has
+        already been reopened above -- ``DocumentsDock.restore_state`` matches saved entries up to
+        currently-registered docks by name, it does not create any itself.
         """
         opened: dict[Path, DocumentWidget] = {}
         for path, item in self.__session.items.items():
             if not item.open:
                 continue
             widget = self.__documents_dock.open_document(path)
-            if widget is not None:
-                widget.restore_state(item.state)
-                opened[path] = widget
+            widget.restore_state(item.state)
+            opened[path] = widget
 
         self.__documents_dock.restore_state(self.__session.docks_state)
 
@@ -402,37 +402,47 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def open_file(self, path: Path | str) -> None:
         """Open ``path`` in its document dock, focusing it if already open ([[nodes#single-instance]]).
 
-        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_folder`/:meth:`open_archive`.
+        Recorded into ``Open recents`` (#64) once opened, alongside :meth:`open_folder`/:meth:`open_archive`
+        -- **unless** the file could not be read at all and opened as a load-failure stub
+        (:attr:`~RehuDocument.load_failed`): a missing or unparseable file is not a file you opened, so it
+        stays out of recents even though it still yields a (locked) dock ([[data-model#write-integrity]]).
 
         :param path: filesystem path to a ``.rehu`` file.
         """
         resolved = Path(path).resolve()
-        if self.__documents_dock.open_document(resolved) is not None:
+        widget = self.__documents_dock.open_document(resolved)
+        if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
     def open_folder(self, path: Path | str) -> None:
         """Open the directory-scoped resource at ``path`` ([[data-model#resource-scoping]]), focusing
         it if already open ([[nodes#single-instance]]).
 
-        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_file`/:meth:`open_archive`.
+        Recorded into ``Open recents`` (#64) once opened, alongside :meth:`open_file`/:meth:`open_archive`
+        -- unless the resource could not be read and opened as a load-failure stub
+        (:attr:`~RehuDocument.load_failed`, [[data-model#write-integrity]]).
 
         :param path: filesystem path to the directory.
         """
         resolved = Path(path).resolve()
-        if self.__documents_dock.open_folder(resolved) is not None:
+        widget = self.__documents_dock.open_folder(resolved)
+        if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
     def open_archive(self, path: Path | str) -> None:
         """Open the file-scoped resource for the archive at ``path`` ([[data-model#resource-scoping]]),
         focusing it if already open ([[nodes#single-instance]]).
 
-        Recorded into ``Open recents`` (#64) on success, alongside :meth:`open_file`/:meth:`open_folder`.
+        Recorded into ``Open recents`` (#64) once opened, alongside :meth:`open_file`/:meth:`open_folder`
+        -- unless the companion could not be read and opened as a load-failure stub
+        (:attr:`~RehuDocument.load_failed`, [[data-model#write-integrity]]).
 
         :param path: filesystem path to the archive file (e.g. ``foo.zip``); its ``.rehu`` companion
             (e.g. ``foo.rehu``) is what actually gets opened or created.
         """
         resolved = Path(path).resolve()
-        if self.__documents_dock.open_archive(resolved) is not None:
+        widget = self.__documents_dock.open_archive(resolved)
+        if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
 
     def raise_and_activate(self) -> None:

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
 """``open_document`` asserts an absolute path; built from ``Path.cwd()`` so it's absolute on every
@@ -426,27 +426,32 @@ def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: Mo
     assert dock.focused_document_path() == OTHER_PATH
 
 
-def test_opening_a_missing_file_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A path that cannot be read gets an error dialog instead of a dock (#35).
+def test_opening_a_missing_file_opens_an_empty_locked_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A path whose file is gone opens as an empty, locked dock -- never a dialog, never ``None``
+    ([[data-model#write-integrity]]); the ``MISSING`` kind is kept distinct so a "close vanished files"
+    sweep never touches a dock the user is mid-repair on.
 
     **Test steps:**
 
-    * mock the filesystem so reading the path raises ``OSError`` (missing/unreadable file)
-    * mock the error dialog (a real modal would block the headless test)
+    * mock the filesystem so reading the path raises ``FileNotFoundError`` (the file is gone)
+    * mock the error dialog to prove it is *not* used
     * open the path
-    * verify ``None`` came back, no dock was created, and the dialog named the path
+    * verify a dock came back, locked with the ``MISSING`` reason, bound to the path, clean, no dialog
     """
-    mocker.patch.object(Path, "read_text", side_effect=OSError("no such file"))
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
     critical = mocker.patch.object(QMessageBox, "critical")
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
     widget = dock.open_document(FAKE_PATH)
 
-    assert widget is None
-    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    critical.assert_called_once()
-    assert str(FAKE_PATH) in critical.call_args[0][2]
+    assert widget is not None
+    assert widget.model.locked is True
+    assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.MISSING]
+    assert widget.model.path == FAKE_PATH
+    assert widget.model.dirty is False
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    critical.assert_not_called()
 
 
 def test_focused_document_path_reports_the_focused_documents_path(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -558,15 +563,17 @@ def test_double_clicking_a_tab_label_does_not_raise(mocker: MockerFixture, qtbot
     tab_label(cdock).doubleClicked.emit()
 
 
-def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A file that isn't valid ``.rehu`` JSON gets an error dialog instead of a dock (#35).
+def test_opening_an_invalid_rehu_opens_an_empty_locked_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A file that isn't valid ``.rehu`` JSON opens as an empty, locked dock -- never a dialog, never
+    ``None`` ([[data-model#write-integrity]]); the ``INVALID_FILE`` reason carries the parser's text so
+    the user can hand-fix the file and revert in place.
 
     **Test steps:**
 
-    * mock the filesystem to serve malformed JSON (raises ``RehuFormatError`` on load)
-    * mock the error dialog (a real modal would block the headless test)
+    * mock the filesystem to serve malformed JSON (``RehuDocument.load`` raises ``RehuFormatError``)
+    * mock the error dialog to prove it is *not* used
     * open the path
-    * verify ``None`` came back, no dock was created, and the dialog named the path
+    * verify a dock came back, locked with the ``INVALID_FILE`` reason and a non-empty message, no dialog
     """
     mocker.patch.object(Path, "read_text", return_value="{not valid json")
     critical = mocker.patch.object(QMessageBox, "critical")
@@ -575,10 +582,13 @@ def test_opening_an_invalid_rehu_shows_an_error_and_no_dock(mocker: MockerFixtur
 
     widget = dock.open_document(FAKE_PATH)
 
-    assert widget is None
-    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    critical.assert_called_once()
-    assert str(FAKE_PATH) in critical.call_args[0][2]
+    assert widget is not None
+    assert widget.model.locked is True
+    assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert all(reason.message for reason in widget.model.lock_reasons)
+    assert widget.model.dirty is False
+    assert dock_for(dock, widget).windowTitle().startswith(LOCKED_DOCK_MARKER)
+    critical.assert_not_called()
 
 
 def test_restore_state_retracks_current_tab_after_area_recreation(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -715,16 +725,17 @@ def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtb
     assert widget.model.dirty is False
 
 
-def test_open_folder_with_a_corrupted_info_rehu_shows_an_error_and_no_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A folder whose ``info.rehu`` exists but is corrupted gets the same error dialog as a bad
-    ``.rehu`` file (#35) -- the exists-branch never silently falls through to "start a new document".
+def test_open_folder_with_a_corrupted_info_rehu_opens_an_empty_locked_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A folder whose ``info.rehu`` exists but is corrupted opens the same empty, locked dock as a bad
+    ``.rehu`` file ([[data-model#write-integrity]]) -- the exists-branch never silently falls through to
+    "start a new document", and never shows a dialog.
 
     **Test steps:**
 
     * mock the filesystem so ``info.rehu`` exists but its content isn't valid JSON
-    * mock the error dialog (a real modal would block the headless test)
+    * mock the error dialog to prove it is *not* used
     * open the folder
-    * verify ``None`` came back, no dock was created, and the dialog named the ``info.rehu`` path
+    * verify a locked ``INVALID_FILE`` dock came back, bound to the ``info.rehu`` path, no dialog
     """
     mocker.patch.object(Path, "exists", return_value=True)
     mocker.patch.object(Path, "read_text", return_value="{not valid json")
@@ -734,10 +745,10 @@ def test_open_folder_with_a_corrupted_info_rehu_shows_an_error_and_no_dock(mocke
 
     widget = dock.open_folder(FAKE_PATH.parent)
 
-    assert widget is None
-    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    critical.assert_called_once()
-    assert str(FAKE_PATH) in critical.call_args[0][2]
+    assert widget is not None
+    assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert widget.model.path == FAKE_PATH
+    critical.assert_not_called()
 
 
 def test_open_folder_without_info_rehu_starts_a_new_dirty_document(qtbot: QtBot) -> None:
@@ -801,18 +812,19 @@ def test_open_archive_with_existing_rehu_companion_opens_it(mocker: MockerFixtur
     assert widget.model.dirty is False
 
 
-def test_open_archive_with_a_corrupted_rehu_companion_shows_an_error_and_no_dock(
+def test_open_archive_with_a_corrupted_rehu_companion_opens_an_empty_locked_dock(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """An archive whose ``.rehu`` companion exists but is corrupted gets the same error dialog as a
-    bad ``.rehu`` file (#35) -- the exists-branch never silently falls through to "start a new document".
+    """An archive whose ``.rehu`` companion exists but is corrupted opens the same empty, locked dock as a
+    bad ``.rehu`` file ([[data-model#write-integrity]]) -- the exists-branch never silently falls through
+    to "start a new document", and never shows a dialog.
 
     **Test steps:**
 
     * mock the filesystem so the companion exists but its content isn't valid JSON
-    * mock the error dialog (a real modal would block the headless test)
+    * mock the error dialog to prove it is *not* used
     * open the archive
-    * verify ``None`` came back, no dock was created, and the dialog named the companion path
+    * verify a locked ``INVALID_FILE`` dock came back, bound to the companion path, no dialog
     """
     mocker.patch.object(Path, "exists", return_value=True)
     mocker.patch.object(Path, "read_text", return_value="{not valid json")
@@ -822,10 +834,10 @@ def test_open_archive_with_a_corrupted_rehu_companion_shows_an_error_and_no_dock
 
     widget = dock.open_archive(FAKE_ARCHIVE_PATH)
 
-    assert widget is None
-    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    critical.assert_called_once()
-    assert str(FAKE_ARCHIVE_INFO_PATH) in critical.call_args[0][2]
+    assert widget is not None
+    assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert widget.model.path == FAKE_ARCHIVE_INFO_PATH
+    critical.assert_not_called()
 
 
 def test_open_archive_without_a_rehu_companion_starts_a_new_dirty_document(qtbot: QtBot) -> None:
@@ -952,18 +964,20 @@ def test_open_document_with_a_tc_path_loads_it_as_legacy(mocker: MockerFixture, 
     assert widget.model.title == "Legacy Title"
 
 
-def test_open_folder_with_a_corrupted_tc_fallback_shows_an_error_and_no_dock(
+def test_open_folder_with_a_corrupted_tc_fallback_opens_an_empty_locked_dock(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """A folder whose ``info.tc`` fallback exists but is corrupted gets the same error dialog as a bad
-    ``.rehu`` file (#35) -- the ``.tc`` fallback never silently falls through to "start a new document".
+    """A folder whose ``info.tc`` fallback exists but is corrupted opens the same empty, locked dock as a
+    bad ``.rehu`` file ([[data-model#write-integrity]]) -- the ``.tc`` fallback never silently falls
+    through to "start a new document", and never shows a dialog. Its failure routes through the same
+    ``locked_stub_for_error`` seam as a ``.rehu`` failure.
 
     **Test steps:**
 
     * mock the filesystem so only ``info.tc`` exists, with content that isn't valid YAML
-    * mock the error dialog (a real modal would block the headless test)
+    * mock the error dialog to prove it is *not* used
     * open the folder
-    * verify ``None`` came back, no dock was created, and the dialog named the ``info.tc`` path
+    * verify a locked ``INVALID_FILE`` dock came back, bound to the ``info.tc`` path, no dialog
     """
     mocker.patch.object(Path, "exists", autospec=True, side_effect=only_tc_exists)
     mocker.patch.object(Path, "read_text", return_value="tags: [unterminated")
@@ -973,7 +987,7 @@ def test_open_folder_with_a_corrupted_tc_fallback_shows_an_error_and_no_dock(
 
     widget = dock.open_folder(FAKE_PATH.parent)
 
-    assert widget is None
-    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    critical.assert_called_once()
-    assert str(FAKE_PATH.with_suffix(".tc")) in critical.call_args[0][2]
+    assert widget is not None
+    assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
+    assert widget.model.path == FAKE_PATH.with_suffix(".tc")
+    critical.assert_not_called()

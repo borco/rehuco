@@ -59,18 +59,18 @@ class DocumentsDock(QMainWindow):
         self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
 
-    def open_document(self, path: Path) -> DocumentWidget | None:
+    def open_document(self, path: Path) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.
 
         :param path: absolute filesystem path to a ``.rehu`` file, or a legacy ``.tc`` file (A3.1,
             [[acquisition-tooling#tc-to-rehu]], opened locked and read-only) -- ``MainWindow.open_file``
             resolves it.
-        :returns: the document's widget, or ``None`` when the file could not be read (an error
-            dialog was shown instead of a dock, #35).
+        :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
+            standing in for it ([[data-model#write-integrity]]).
         """
         return self.__activate(self.__find_dock_by_path(path) or self.__make_new_dock(path))
 
-    def open_folder(self, folder: Path) -> DocumentWidget | None:
+    def open_folder(self, folder: Path) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
 
         Opens ``folder/info.rehu`` exactly like :meth:`open_document` if it already exists; falls
@@ -80,12 +80,12 @@ class DocumentsDock(QMainWindow):
         discarding it (closing without saving) never creates the file.
 
         :param folder: absolute filesystem path to the directory to open.
-        :returns: the document's widget, or ``None`` when `info.rehu`/`info.tc` exists but could not
-            be read.
+        :returns: the document's widget (an empty **locked** dock when `info.rehu`/`info.tc` exists but
+            could not be read, [[data-model#write-integrity]]).
         """
         return self.__open_companion(folder / INFO_REHU_FILENAME)
 
-    def open_archive(self, archive_path: Path) -> DocumentWidget | None:
+    def open_archive(self, archive_path: Path) -> DocumentWidget:
         """Open the file-scoped resource for ``archive_path`` ([[data-model#resource-scoping]]).
 
         Opens ``archive_path`` with its suffix replaced by ``.rehu`` (e.g. ``foo.zip`` ->
@@ -95,12 +95,12 @@ class DocumentsDock(QMainWindow):
         (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves.
 
         :param archive_path: absolute filesystem path to the archive file (e.g. ``foo.zip``).
-        :returns: the document's widget, or ``None`` when the companion ``.rehu``/``.tc`` exists but
-            could not be read.
+        :returns: the document's widget (an empty **locked** dock when the companion ``.rehu``/``.tc``
+            exists but could not be read, [[data-model#write-integrity]]).
         """
         return self.__open_companion(archive_path.with_suffix(".rehu"))
 
-    def __open_companion(self, info_path: Path) -> DocumentWidget | None:
+    def __open_companion(self, info_path: Path) -> DocumentWidget:
         """Open ``info_path`` if it exists, its legacy ``.tc`` sibling if that exists instead, or
         start a new document bound to ``info_path``.
 
@@ -111,8 +111,8 @@ class DocumentsDock(QMainWindow):
 
         :param info_path: the resource's own ``.rehu`` path (an ``info.rehu`` under a folder, or a
             same-stem companion of an archive file).
-        :returns: the document's widget, or ``None`` when ``info_path`` or its ``.tc`` sibling exists
-            but could not be read.
+        :returns: the document's widget (an empty **locked** dock when ``info_path`` or its ``.tc``
+            sibling exists but could not be read, [[data-model#write-integrity]]).
         """
         if info_path.exists():
             return self.open_document(info_path)
@@ -186,19 +186,45 @@ class DocumentsDock(QMainWindow):
         """
         return bool(self.__dock_manager.restoreState(QByteArray(state)))
 
-    def __activate(self, dock: QtAds.CDockWidget | None) -> DocumentWidget | None:
-        """Make ``dock`` the current dock and return its widget, or ``None`` through unchanged.
+    def __activate(self, dock: QtAds.CDockWidget) -> DocumentWidget:
+        """Make ``dock`` the current dock and return its widget.
+
+        Always a real dock now -- :meth:`__make_new_dock` yields one for every open attempt (a locked
+        stub when the file cannot be read, [[data-model#write-integrity]]), so there is no "no dock was
+        created" case to pass through.
 
         :param dock: a dock found or just created by :meth:`open_document`/:meth:`open_folder`.
-        :returns: the dock's widget, or ``None`` when ``dock`` is ``None`` (no dock was created).
+        :returns: the dock's widget.
         """
-        if dock is None:
-            return None
         self.__tracker.set_current_dock(dock)
         return self.__document_docks[dock]
 
-    def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget | None:
-        """Load ``path`` and build its document dock, or show an error dialog and return ``None``.
+    @staticmethod
+    def __load_or_locked(path: Path) -> RehuDocument:
+        """Load ``path``, or an empty locked stub bound to it when the file cannot be read.
+
+        Routes a ``.tc`` through :func:`rehuco_core.load_tc` and everything else through
+        :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
+        the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the dock is
+        built around a locked, never-savable stub instead of the caller seeing an exception
+        ([[data-model#write-integrity]]).
+
+        :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
+        :returns: the loaded document, or a locked stub bound to ``path``.
+        """
+        try:
+            return load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
+        except (OSError, RehuFormatError) as error:
+            return RehuDocument.locked_stub_for_error(path, error)
+
+    def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget:
+        """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.
+
+        Every open attempt yields a document view ([[data-model#write-integrity]]): a file that is
+        missing, unparseable, or refused opens as an **empty, locked** dock bound to the path
+        (:meth:`RehuDocument.open_or_locked` / :meth:`~RehuDocument.locked_stub_for_error`) whose lock
+        reason names the failure, rather than a modal box the user dismisses with nowhere left to fix the
+        file. Hand-fixing it and reverting retries in place (:meth:`RehuDocumentModel.revert`).
 
         :param path: absolute filesystem path to the ``.rehu`` file to load, or to create if ``new``;
             a ``.tc`` suffix loads through :func:`rehuco_core.load_tc` instead (A3.1 Phase 2,
@@ -206,19 +232,14 @@ class DocumentsDock(QMainWindow):
         :param new: when true, skip loading and start an empty, already-dirty document bound to
             ``path`` instead (:meth:`RehuDocumentModel.create_new`) -- used by :meth:`open_folder`
             when the directory has no `info.rehu` yet; nothing is written to disk until the user saves.
-        :returns: the new dock, or ``None`` when the file is missing/unreadable (``OSError``) or not
-            valid ``.rehu`` JSON or ``.tc`` YAML (:class:`RehuFormatError`) -- no dock is created then
-            (#35).
+            Kept strictly distinct from the empty **locked** stub a failed load produces: a new document
+            is empty **and editable and dirty**, a document about to be written.
+        :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
             model = RehuDocumentModel.create_new(path, self)
         else:
-            try:
-                document = load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
-            except (OSError, RehuFormatError) as exc:
-                QMessageBox.critical(self, "Cannot Open File", f"Could not open {path}:\n\n{exc}")
-                return None
-            model = RehuDocumentModel(document, self)
+            model = RehuDocumentModel(self.__load_or_locked(path), self)
         widget = DocumentWidget(model, self)
 
         dock = QtAds.CDockWidget(self.__dock_manager, "")
@@ -238,7 +259,7 @@ class DocumentsDock(QMainWindow):
 
         tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
         model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
-        model.locked_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
+        model.lock_reasons_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
         model.path_changed.connect(  # type: ignore[attr-defined]
             lambda path: dock.setObjectName(self.__dock_object_name(path))
         )

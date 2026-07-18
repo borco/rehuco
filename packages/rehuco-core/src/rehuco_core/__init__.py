@@ -1,6 +1,7 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
 from rehuco_core.constants import IMAGE_EXTENSIONS
+from rehuco_core.lock_reasons import LockReason, LockReasonKind
 from rehuco_core.migrations import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, migrate_rehu_data
 from rehuco_core.plugins import (
     BUILTIN_PLUGINS,
@@ -38,6 +39,8 @@ __all__ = [
     "DEFAULT_PLUGIN_REGISTRY",
     "FORMAT_VERSION_KEY",
     "IMAGE_EXTENSIONS",
+    "LockReason",
+    "LockReasonKind",
     "REFERENCE_IMAGES_PLUGIN",
     "TUTORIAL_PLUGIN",
     "__version__",
