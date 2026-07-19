@@ -1453,6 +1453,164 @@ def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) 
     assert model.dirty is True
 
 
+def test_a_freshly_loaded_older_clean_document_is_upgradable(mocker: MockerFixture) -> None:
+    """A document read from an older-``format_version`` file, still clean, is :attr:`upgradable` (#89).
+
+    **Test steps:**
+
+    * mock a file whose stamped ``format_version`` predates the current one
+    * load it and wrap it in a model
+    * verify the model reports ``upgradable``
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
+    document = RehuDocument.load(Path("/fake/info.rehu"))
+
+    model = RehuDocumentModel(document)
+
+    assert model.upgradable is True
+
+
+def test_a_document_at_the_current_format_version_is_not_upgradable(mocker: MockerFixture) -> None:
+    """A document already at :data:`CURRENT_FORMAT_VERSION` has nothing to upgrade.
+
+    **Test steps:**
+
+    * mock a file already stamped at the current format version
+    * load it and wrap it in a model
+    * verify the model does not report ``upgradable``
+    """
+    mocker.patch.object(
+        Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "type": "Tutorial"})
+    )
+    document = RehuDocument.load(Path("/fake/info.rehu"))
+
+    model = RehuDocumentModel(document)
+
+    assert model.upgradable is False
+
+
+def test_a_pathless_document_is_never_upgradable(model: RehuDocumentModel) -> None:
+    """A document with no file on disk (the shared fixture) is never upgradable -- there is no file to
+    have been written at an older version.
+
+    **Test steps:**
+
+    * read ``upgradable`` off the pathless shared fixture model
+    * verify it is ``False``
+    """
+    assert model.upgradable is False
+
+
+def test_a_legacy_tc_document_is_never_upgradable() -> None:
+    """A legacy ``.tc``-backed document is never upgradable -- it has no ``.rehu`` on disk at any
+    version yet (:attr:`~rehuco_core.RehuDocument.on_disk_format_version` reads ``None`` for it).
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document
+    * verify ``upgradable`` is ``False``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+
+    assert model.upgradable is False
+
+
+def test_an_older_dirty_document_is_not_upgradable(mocker: MockerFixture) -> None:
+    """An older document with unsaved edits is not :attr:`upgradable` -- its remedy is Save, which
+    upgrades anyway, so no separate offer is needed (the issue's own File/Dirty table).
+
+    **Test steps:**
+
+    * load an older-format document (clean, so upgradable) and confirm it starts upgradable
+    * edit a field, dirtying the model
+    * verify ``upgradable`` drops to ``False`` immediately (live, off ``dirty_changed``)
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
+    document = RehuDocument.load(Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    assert model.upgradable is True
+
+    model.title = "Edited"
+
+    assert model.upgradable is False
+
+
+def test_an_older_locked_document_is_not_upgradable(mocker: MockerFixture) -> None:
+    """An older document that is also locked (e.g. a present-but-uncoercible field) is not
+    :attr:`upgradable` -- ``save()`` refuses a save-blocking lock, so offering Upgrade would only
+    raise.
+
+    **Test steps:**
+
+    * mock an older-format file whose ``authors`` is present but not skip-clean (``INVALID_FIELD``)
+    * load it and wrap it in a model
+    * verify the model is locked and not upgradable
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"format_version": 1, "type": "Tutorial", "authors": 42}),
+    )
+    document = RehuDocument.load(Path("/fake/info.rehu"))
+
+    model = RehuDocumentModel(document)
+
+    assert model.locked is True
+    assert model.upgradable is False
+
+
+def test_saving_an_upgradable_document_clears_the_offer(mocker: MockerFixture) -> None:
+    """``save()`` -- the upgrade mechanism itself, per its own docstring -- restamps the document and
+    immediately clears :attr:`upgradable`, even though the model was never dirty (the Upgrade path).
+
+    **Test steps:**
+
+    * load a clean, older-format document, confirming it starts upgradable
+    * call ``model.save()`` for real (the atomic write is mocked away)
+    * verify ``upgradable`` is now ``False``
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    document = RehuDocument.load(Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    assert model.upgradable is True
+    assert model.dirty is False
+
+    model.save()
+
+    assert model.upgradable is False
+
+
+def test_revert_recomputes_upgradable_from_the_reloaded_version(mocker: MockerFixture) -> None:
+    """``revert()`` recomputes :attr:`upgradable` from the reloaded document, picking up an
+    out-of-band version change the same way it does for every other field.
+
+    Drives a real reload (mocking ``Path.read_text``, not ``document.reload`` itself) rather than
+    hand-setting the document's private on-disk-version bookkeeping, since that's set only by
+    :meth:`~rehuco_core.RehuDocument.load`/:meth:`~rehuco_core.RehuDocument.reload`/
+    :meth:`~rehuco_core.RehuDocument.save`, not by editing ``data`` directly.
+
+    **Test steps:**
+
+    * load a clean, older-format document
+    * mock ``Path.read_text`` to now return the file stamped at the current version
+    * call ``model.revert()``
+    * verify ``upgradable`` dropped to ``False``
+    """
+    path = Path("/fake/info.rehu")
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 1, "type": "Tutorial"}))
+    model = RehuDocumentModel(RehuDocument.load(path))
+    assert model.upgradable is True
+
+    mocker.patch.object(
+        Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "type": "Tutorial"})
+    )
+
+    model.revert()
+
+    assert model.upgradable is False
+
+
 def test_remove_unknown_field_is_a_noop_when_absent(document: RehuDocument) -> None:
     """Removing an absent key changes nothing -- no signal, no dirtying.
 

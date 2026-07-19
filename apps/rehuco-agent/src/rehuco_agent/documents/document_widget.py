@@ -32,6 +32,13 @@ SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 CONVERT_KEEP_BACKUPS_ICON_RESOURCE: Final = ":/icons/tc_convert_with_backup.svg"
 CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
+UPGRADE_ICON_RESOURCE: Final = ":/icons/rehu_upgrade.svg"
+
+UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
+"""The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
+button by the label it actually carries, the same way the banner already names Revert/Convert as *the*
+remedy for every lock reason. The specs' own user-facing word for this is "upgrade" -- "migration" stays
+the internal name."""
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -63,11 +70,20 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     in reverse (Save/Revert reappear, the convert actions hide) and the dock's lock marker drops, with
     no new dock and no reload round-trip.
 
+    A clean document whose file on disk predates :data:`~rehuco_core.CURRENT_FORMAT_VERSION`
+    (:attr:`~RehuDocumentModel.upgradable`, #89) gets the same treatment as a legacy ``.tc``: Save
+    hides and :attr:`upgrade_action` takes its place, since the meaningful write action on a clean,
+    older-format document is the upgrade, not a no-op Save. Saving is what upgrades a document
+    (:meth:`RehuDocumentModel.save`'s own docstring), so the swap runs in reverse the moment the
+    document is no longer clean-and-old, whether from this action, an ordinary Save once dirtied, or a
+    successful Revert. The inline notice banner also gets a row for it, same as every lock reason --
+    message-only, since the remedy already sits right above the strip.
+
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
     """
 
-    def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:
+    def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:  # pylint: disable=too-many-statements
         super().__init__(parent)
         self.__model: Final = model
 
@@ -126,17 +142,26 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         self.addAction(self.__convert_discard_originals_action)
 
+        self.__upgrade_action: Final = QAction("&Upgrade", self)
+        ActionIconThemeHandler(self.__upgrade_action, UPGRADE_ICON_RESOURCE)
+        # save() upgrades a stale-on-disk document as a side effect of writing it -- there is no
+        # separate migrate call (RehuDocumentModel.upgradable's own docstring)
+        self.__upgrade_action.triggered.connect(model.save)
+        self.addAction(self.__upgrade_action)
+
         self.__save_action.setEnabled(model.dirty)
         model.dirty_changed.connect(self.__on_dirty_changed)  # type: ignore[attr-defined]
 
         self.__set_editors_locked(model.locked)
-        self.__set_legacy_tc_actions_visible(model.document.legacy_tc)
+        self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
         model.lock_reasons_changed.connect(self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
+        model.upgradable_changed.connect(self.__on_upgradable_changed)  # type: ignore[attr-defined]
 
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
+        toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values()):
@@ -156,6 +181,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def revert_action(self) -> QAction:
         """Discards in-memory edits and reloads the document from disk (#41)."""
         return self.__revert_action
+
+    @property
+    def upgrade_action(self) -> QAction:
+        """Upgrades this document to the current format by saving it (#89,
+        :attr:`~RehuDocumentModel.upgradable`). Visible on the toolbar exactly while the offer stands,
+        same as the convert actions during ``legacy_tc``."""
+        return self.__upgrade_action
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -284,21 +316,37 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         the signal happened to carry.
         """
         self.__set_editors_locked(self.__model.locked)
-        self.__set_legacy_tc_actions_visible(self.__model.document.legacy_tc)
+        self.__update_write_action_visibility()
+        self.__banner.set_rows(self.__banner_rows())
+
+    def __on_upgradable_changed(self) -> None:
+        """Swap the toolbar's write action and rebuild the inline notice strip as the model's upgrade
+        offer appears or clears (#89) -- the same toolbar-plus-banner shape
+        :meth:`__on_lock_reasons_changed` already drives for every lock reason.
+
+        Takes no arguments and re-reads ``self.__model.upgradable`` itself, same as
+        :meth:`__on_lock_reasons_changed` does for its own signal.
+        """
+        self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
 
     def __banner_rows(self) -> list[MessageBannerRow]:
-        """Build the inline notice strip's current rows, one per active lock reason (#94).
+        """Build the inline notice strip's current rows: one per active lock reason (#94), plus the
+        upgrade offer (#89) when the document has one.
 
         Message-only, with no remedy button -- every kind's remedy is already on this widget's own
         toolbar (Revert, always visible except during ``legacy_tc``; the convert actions, visible
-        exactly during it), so a button here would only duplicate a control already sitting right
-        above the strip.
+        exactly during it; :attr:`upgrade_action`, visible exactly while
+        :attr:`~RehuDocumentModel.upgradable`), so a button here would only duplicate a control already
+        sitting right above the strip.
 
-        :returns: one :class:`~borco_pyside.widgets.MessageBannerRow` per
-            :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order.
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, plus a
+            trailing upgrade row when :attr:`~RehuDocumentModel.upgradable` is set.
         """
-        return [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
+        if self.__model.upgradable:
+            rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
+        return rows
 
     def __set_editors_locked(self, locked: bool) -> None:
         """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is
@@ -312,20 +360,31 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         for dock in self.__editor_docks.values():
             dock.widget().setEnabled(not locked)
 
-    def __set_legacy_tc_actions_visible(self, legacy_tc: bool) -> None:
-        """Swap Save/Revert for the two convert actions while viewing a legacy ``.tc`` document.
+    def __update_write_action_visibility(self) -> None:
+        """Swap the toolbar's write action for whichever one is actually meaningful right now,
+        re-reading :attr:`~RehuDocument.legacy_tc` and :attr:`~RehuDocumentModel.upgradable` off the
+        model directly rather than taking either as a parameter (both :meth:`__on_lock_reasons_changed`
+        and :meth:`__on_upgradable_changed` call this on their own signal, and each needs the *other*
+        condition's current value too).
 
-        Keyed on :attr:`~RehuDocument.legacy_tc` specifically, not the broader
-        :attr:`~RehuDocumentModel.locked` -- a document locked for the *other* reason (a newer
-        ``format_version`` than this build understands) has no ``.tc`` to convert and must keep
-        showing (disabled) Save/Revert exactly as before.
+        Two independent swaps, never both active at once (a legacy ``.tc`` has no ``.rehu`` on disk at
+        any version yet, so it is never :attr:`~RehuDocumentModel.upgradable`):
 
-        :param legacy_tc: whether the model's document is a not-yet-converted legacy ``.tc``.
+        - **legacy_tc**: Save/Revert hide, the two convert actions take their place.
+        - **upgradable**: Save hides, :attr:`upgrade_action` takes its place -- the meaningful write
+          action on a clean, older-format document is the upgrade, not a no-op Save; once dirty (or
+          once the upgrade lands), :attr:`~RehuDocumentModel.upgradable` drops and Save reappears.
+
+        Revert is unaffected by ``upgradable`` -- re-reading a clean file from disk is still useful
+        regardless of its format version, so it stays visible whenever it isn't ``legacy_tc``.
         """
-        self.__save_action.setVisible(not legacy_tc)
+        legacy_tc = self.__model.document.legacy_tc
+        upgradable = self.__model.upgradable
+        self.__save_action.setVisible(not legacy_tc and not upgradable)
         self.__revert_action.setVisible(not legacy_tc)
         self.__convert_keep_backups_action.setVisible(legacy_tc)
         self.__convert_discard_originals_action.setVisible(legacy_tc)
+        self.__upgrade_action.setVisible(upgradable)
 
     def __on_convert_triggered(self, *, keep_backups: bool) -> None:
         """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``.
