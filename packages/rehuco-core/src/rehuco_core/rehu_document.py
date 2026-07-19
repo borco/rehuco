@@ -477,7 +477,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
                 LockReason(
                     LockReasonKind.NEWER_FORMAT,
                     f"format_version {self.format_version} is newer than this build understands "
-                    f"({CURRENT_FORMAT_VERSION})",
+                    f"({CURRENT_FORMAT_VERSION}).",
                 )
             )
         reasons.extend(self.__newer_block_format_reasons())
@@ -506,8 +506,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         return [
             LockReason(
                 LockReasonKind.NEWER_BLOCK_FORMAT,
-                f"the {self.active_block_key!r} block's format_version {block_version} is newer than "
-                f"the installed plugin understands ({plugin.current_block_version})",
+                f"The {self.active_block_key!r} block's format_version {block_version} is newer than "
+                f"the installed plugin understands ({plugin.current_block_version}).",
             )
         ]
 
