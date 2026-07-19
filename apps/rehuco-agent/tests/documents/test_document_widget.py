@@ -6,6 +6,7 @@ that it wires two real docks from one model, exposes toggle actions for them, an
 the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
+import json
 from pathlib import Path
 from typing import Final
 
@@ -14,7 +15,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -70,6 +71,27 @@ def legacy_model() -> RehuDocumentModel:
 def legacy_widget(qtbot: QtBot, legacy_model: RehuDocumentModel) -> DocumentWidget:
     """A constructed :class:`DocumentWidget` over the legacy ``.tc``-backed model, registered for teardown."""
     widget = DocumentWidget(legacy_model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+@fixture
+def older_model(mocker: MockerFixture) -> RehuDocumentModel:
+    """A view-model wrapping a document loaded from an older-format file -- clean, hence upgradable (#89)."""
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {"format_version": 1, "type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}
+        ),
+    )
+    return RehuDocumentModel(RehuDocument.load(Path("/fake/info.rehu")))
+
+
+@fixture
+def older_widget(qtbot: QtBot, older_model: RehuDocumentModel) -> DocumentWidget:
+    """A constructed :class:`DocumentWidget` over the older-format model, registered for teardown."""
+    widget = DocumentWidget(older_model)
     qtbot.addWidget(widget)
     return widget
 
@@ -746,6 +768,128 @@ def test_a_successful_convert_clears_the_banner(
 
     assert legacy_model.locked is False
     assert banner(legacy_widget).findChildren(QLabel) == []
+
+
+# endregion
+
+
+# region upgrade offer (#89)
+def test_a_clean_older_document_shows_the_upgrade_action_and_its_banner_message(
+    older_widget: DocumentWidget,
+) -> None:
+    """A clean, older-format document shows its upgrade toolbar button, visible exactly like the
+    convert actions are during ``legacy_tc`` -- plus a message-only banner row explaining it, the same
+    shape every lock reason already uses (a toolbar remedy, plus an explanatory row).
+
+    **Test steps:**
+
+    * build a widget over the older-format fixture
+    * verify the upgrade action reports visible and the banner shows its message
+    """
+    assert older_widget.upgrade_action.isVisible() is True
+    texts = {label.text() for label in banner(older_widget).findChildren(QLabel)}
+    assert any("older format" in text for text in texts)
+
+
+def test_a_clean_older_document_hides_save_in_favor_of_upgrade(older_widget: DocumentWidget) -> None:
+    """Save hides while the upgrade offer stands -- the meaningful write action on a clean,
+    older-format document is Upgrade, not a no-op Save, the same swap ``legacy_tc`` already makes for
+    Save/Revert vs. the convert actions. Revert stays visible regardless: re-reading a clean file from
+    disk is still useful no matter its format version.
+
+    **Test steps:**
+
+    * build a widget over the older-format fixture
+    * verify Save reports hidden and Revert stays visible
+    """
+    assert older_widget.save_action.isVisible() is False
+    assert older_widget.revert_action.isVisible() is True
+
+
+def test_a_current_format_document_hides_the_upgrade_action_and_shows_no_banner_row(
+    widget: DocumentWidget,
+) -> None:
+    """A document already at the current format version has nothing to upgrade -- the sample fixture
+    model, seeded with no explicit ``format_version``, is at the current one.
+
+    **Test steps:**
+
+    * build a widget over the sample (current-version) model
+    * verify the upgrade action reports hidden and the banner shows no upgrade message
+    """
+    assert widget.upgrade_action.isVisible() is False
+    texts = {label.text() for label in banner(widget).findChildren(QLabel)}
+    assert not any("older format" in text for text in texts)
+
+
+def test_upgrade_action_is_on_the_toolbar(older_widget: DocumentWidget) -> None:
+    """The upgrade action is a real toolbar button, same as Save/Revert/Convert -- not banner-only.
+
+    **Test steps:**
+
+    * build a widget over the older-format fixture (whose upgrade offer is showing)
+    * verify one of the widget's toolbars carries ``upgrade_action``
+    """
+    actions = {action for toolbar in older_widget.findChildren(QToolBar) for action in toolbar.actions()}
+    assert older_widget.upgrade_action in actions
+
+
+def test_clicking_the_upgrade_action_saves_the_document(
+    mocker: MockerFixture, older_widget: DocumentWidget, older_model: RehuDocumentModel
+) -> None:
+    """Triggering the upgrade action saves the document -- saving is the whole upgrade mechanism
+    (:meth:`RehuDocumentModel.save`'s own docstring); there is no separate migrate call.
+
+    **Test steps:**
+
+    * mock ``model.save``
+    * trigger the widget's upgrade action
+    * verify ``save`` was called
+    """
+    save = mocker.patch.object(older_model, "save")
+
+    older_widget.upgrade_action.trigger()
+
+    save.assert_called_once_with()
+
+
+def test_the_upgrade_offer_clears_once_the_document_is_saved(
+    mocker: MockerFixture, older_widget: DocumentWidget
+) -> None:
+    """A real save clears the offer -- the toolbar button hides and the banner rebuilds to drop its
+    message -- live, the same as every lock reason already does (#89).
+
+    **Test steps:**
+
+    * mock the atomic write and trigger the upgrade action for real
+    * verify the upgrade action is now hidden and the banner shows no upgrade message
+    """
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    older_widget.upgrade_action.trigger()
+
+    assert older_widget.upgrade_action.isVisible() is False
+    texts = {label.text() for label in banner(older_widget).findChildren(QLabel)}
+    assert not any("older format" in text for text in texts)
+
+
+def test_dirtying_an_upgradable_document_hides_the_upgrade_offer(
+    older_widget: DocumentWidget, older_model: RehuDocumentModel
+) -> None:
+    """Editing an upgradable document hides its offer immediately -- toolbar button and banner message
+    together -- since once dirty, the meaningful action is Save (which upgrades anyway), not a
+    separate Upgrade offer.
+
+    **Test steps:**
+
+    * dirty the older-format model with an edit
+    * verify the upgrade action is now hidden and the banner shows no upgrade message
+    """
+    older_model.title = "Edited"
+
+    assert older_widget.upgrade_action.isVisible() is False
+    texts = {label.text() for label in banner(older_widget).findChildren(QLabel)}
+    assert not any("older format" in text for text in texts)
 
 
 # endregion

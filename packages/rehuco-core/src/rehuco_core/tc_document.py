@@ -103,11 +103,11 @@ class TcDocument:
         try:
             data: object = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
-            raise RehuFormatError(f"invalid YAML — {exc}") from exc
+            raise RehuFormatError(f"Invalid YAML — {exc}.") from exc
         if data is None:
             data = {}
         if not isinstance(data, dict):
-            raise RehuFormatError("expected a YAML mapping at the top level")
+            raise RehuFormatError("Expected a YAML mapping at the top level.")
         return cls(data)
 
     @property

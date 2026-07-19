@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import AuthorEntry, LockReason, RehuDocument, convert_tc
+from rehuco_core import CURRENT_FORMAT_VERSION, AuthorEntry, LockReason, RehuDocument, convert_tc
 
 from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
@@ -164,6 +164,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     back to a locked state). ``DocumentWidget`` disables its editor docks while this is non-empty; the
     inline notice (#94) and `DocumentsDock`'s tab marker bind to `lock_reasons_changed`."""
 
+    upgradable = SimpleProperty(False)
+    """Whether this document can be brought to :data:`~rehuco_core.CURRENT_FORMAT_VERSION` by a plain
+    save (#89, [[data-model#schema-version]]): the file on disk is older, the model holds no unsaved
+    edits (a dirty old file's remedy is Save, which upgrades anyway -- no separate offer needed then),
+    and the document isn't :attr:`locked` (a locked document can't be saved at all). Recomputed at the
+    same seams as :attr:`lock_reasons` -- construction, :meth:`revert`, :meth:`convert` -- plus
+    :meth:`save` (since saving is what clears it), and live off `dirty_changed`/`lock_reasons_changed`
+    so an in-place edit or a newly-appearing lock hides the offer immediately rather than leaving it
+    stale until the next explicit seam. `DocumentWidget`'s upgrade toolbar button and inline notice
+    banner row both key off this flag directly, the same shape every other lock reason already uses
+    (a toolbar remedy, plus a message-only banner row explaining it)."""
+
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The current screenshot-resolution strategy -- `TcScanner` while :attr:`~RehuDocument.legacy_tc`,
     `RehuScanner` once converted or genuinely `.rehu`-native. `ImageStrip`/`ImageSelector`/`MarkdownView`
@@ -183,6 +195,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = TcScanner(self) if self.__document.legacy_tc else RehuScanner(self)
+        self.__recompute_upgradable()
+
+        # a live edit toggles dirty, and a lock can appear/clear outside revert/convert too (tests
+        # assign lock_reasons directly to simulate one) -- both must hide/reveal the upgrade offer
+        # immediately, not just at the next explicit recompute seam below
+        self.dirty_changed.connect(lambda _dirty: self.__recompute_upgradable())  # type: ignore[attr-defined]
+        self.lock_reasons_changed.connect(lambda _reasons: self.__recompute_upgradable())  # type: ignore[attr-defined]
 
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
@@ -261,9 +280,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return self.__document.sources
 
     def save(self) -> None:
-        """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag."""
+        """Atomically save the document ([[data-model#write-integrity]]) and clear the dirty flag.
+
+        Also how an :attr:`upgradable` document is actually upgraded (#89): the document's own
+        ``save()`` already restamps it to :data:`~rehuco_core.CURRENT_FORMAT_VERSION` on write, so
+        there is no separate migrate call -- this is the only one needed, whether reached from the
+        toolbar's Save action or the inline banner's Upgrade action.
+        """
         self.__document.save()
         self.dirty = False
+        # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
+        # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
+        self.__recompute_upgradable()
 
     def rename_location(self, new_name: str) -> bool:
         """Rename this resource to ``new_name`` -- clicked from a `PathField` rename suggestion.
@@ -304,6 +332,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty = False
         self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
+        self.__recompute_upgradable()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
@@ -331,6 +360,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = RehuScanner(self)
         self.unknown_fields_changed.emit()
+        self.__recompute_upgradable()
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:
         """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
@@ -420,6 +450,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if self.__document.remove_active_field(name):
             self.unknown_fields_changed.emit()
             self.dirty = True
+
+    def __recompute_upgradable(self) -> None:
+        """Recompute :attr:`upgradable` from the document's current on-disk version, dirtiness, and
+        lock state (#89) -- see :attr:`upgradable`'s own docstring for the three conditions.
+        """
+        on_disk = self.__document.on_disk_format_version
+        self.upgradable = (
+            on_disk is not None and on_disk < CURRENT_FORMAT_VERSION and not self.dirty and not self.locked
+        )
 
     def __seed_from_document(self) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction,

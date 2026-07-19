@@ -149,11 +149,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """
         if isinstance(data.get(FORMAT_VERSION_KEY), dict):
             raise RehuFormatError(
-                f"{FORMAT_VERSION_KEY!r} holds an object, but it is the file's version number, not a plugin block"
+                f"{FORMAT_VERSION_KEY!r} holds an object, but it is the file's version number, not a plugin block."
             )
         core = data.get(CORE_BLOCK_KEY)
         if isinstance(core, dict) and core.get("type") in RESERVED_KEYS:
-            raise RehuFormatError(f"'type' is {core['type']!r}, which is a reserved key rather than a resource type")
+            raise RehuFormatError(f"'type' is {core['type']!r}, which is a reserved key rather than a resource type.")
 
     @classmethod
     def load(cls, path: Path | str, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> RehuDocument:
@@ -180,9 +180,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         try:
             data: object = json.loads(path.read_text(encoding="utf-8"))
         except (ValueError, RecursionError) as exc:
-            raise RehuFormatError(f"invalid JSON — {exc}") from exc
+            raise RehuFormatError(f"Invalid JSON — {exc}.") from exc
         if not isinstance(data, dict):
-            raise RehuFormatError("expected a JSON object at the top level")
+            raise RehuFormatError("Expected a JSON object at the top level.")
         if stamped_version(data) is None and CORE_BLOCK_KEY in data:
             # No build wrote this: `core` arrived with format v2, and saving has stamped since v1, so a
             # file cannot honestly have the one without the other. Not fatal -- it is carried verbatim
@@ -282,10 +282,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """
         blocking = next((reason for reason in self.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None)
         if blocking is not None:
-            raise RehuFormatError(f"refusing to save a locked document ({blocking.kind}): {blocking.message}")
+            raise RehuFormatError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}.")
         target = Path(path) if path is not None else self.__path
         if target is None:
-            raise ValueError("no path given and document was not loaded from a file")
+            raise ValueError("No path given and document was not loaded from a file.")
         text = json.dumps(self.__ordered_for_file(), indent=2, ensure_ascii=False) + "\n"
         atomic_write_text(target, text)
         self.__path = target
