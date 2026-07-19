@@ -1,7 +1,14 @@
 """Tests for plugin identity: declared key lists and the registry that indexes them."""
 
 import pytest
-from rehuco_core import BUILTIN_PLUGINS, DEFAULT_PLUGIN_REGISTRY, REFERENCE_IMAGES_PLUGIN, PluginRegistry, PluginSpec
+from rehuco_core import (
+    BUILTIN_PLUGINS,
+    CORE_PLUGIN,
+    DEFAULT_PLUGIN_REGISTRY,
+    REFERENCE_IMAGES_PLUGIN,
+    PluginRegistry,
+    PluginSpec,
+)
 
 
 def test_the_first_declared_key_is_the_main_one_and_the_rest_are_aliases() -> None:
@@ -106,31 +113,51 @@ def test_two_plugins_may_not_claim_the_same_spelling() -> None:
 def test_the_default_registry_ships_the_builtin_plugins() -> None:
     """The default registry is this build's shipped set ([[plugins#core-vs-plugin]]).
 
-    ``daz3d`` is deliberately absent -- it is parked past milestone C, so it exercises the
-    not-installed path for real.
+    ``core`` is deliberately absent too, alongside ``daz3d`` -- it is parked past milestone C, so it
+    exercises the not-installed path for real, while ``core`` is never registered at all
+    (:data:`~rehuco_core.plugins.RESERVED_KEYS` protects it unconditionally instead).
 
     **Test steps:**
 
     * verify the default registry holds exactly the builtins
-    * verify the shipped keys are claimed, ``core`` among them, and ``daz3d`` is not
+    * verify the shipped keys are claimed, and neither ``core`` nor ``daz3d`` is
     """
     assert tuple(DEFAULT_PLUGIN_REGISTRY) == BUILTIN_PLUGINS
-    assert [spec.key for spec in DEFAULT_PLUGIN_REGISTRY] == ["core", "tutorial", "reference_images", "collection"]
+    assert [spec.key for spec in DEFAULT_PLUGIN_REGISTRY] == ["tutorial", "reference_images", "collection"]
+    assert "core" not in DEFAULT_PLUGIN_REGISTRY
     assert "daz3d" not in DEFAULT_PLUGIN_REGISTRY
 
 
 def test_no_plugin_can_claim_the_core_block_key() -> None:
-    """``core`` is reserved ([[data-model#rehu-format]]) -- and reserved by machinery that already
-    exists, not by a rule of its own.
-
-    Because the core is declared like any other plugin, the registry's existing refusal of two
-    declarations claiming one spelling is what stops a plugin calling itself ``core``.
+    """``core`` is reserved **unconditionally** ([[data-model#rehu-format]]) -- not because
+    :data:`~rehuco_core.CORE_PLUGIN` happens to occupy a registry slot (it never does; see
+    :data:`BUILTIN_PLUGINS`), but because :data:`~rehuco_core.plugins.RESERVED_KEYS` forbids any spec
+    from declaring it. This is the case that used to pass for the wrong (contingent) reason: a registry
+    that omits ``CORE_PLUGIN`` entirely still refuses an impostor.
 
     **Test steps:**
 
     * declare a plugin whose main key is ``core``, and one that merely aliases it
-    * verify building a registry with either alongside the builtins raises
+    * verify building a registry with either alongside the builtins (which do **not** include
+      ``CORE_PLUGIN``) raises
+    * verify registering ``CORE_PLUGIN`` itself raises too -- its job is purely descriptive now
     """
     for impostor in (PluginSpec(("core",)), PluginSpec(("impostor", "core"))):
-        with pytest.raises(ValueError, match="claimed by two plugins"):
+        with pytest.raises(ValueError, match="reserved"):
             PluginRegistry([*BUILTIN_PLUGINS, impostor])
+    with pytest.raises(ValueError, match="reserved"):
+        PluginRegistry([CORE_PLUGIN])
+
+
+def test_no_plugin_can_claim_the_format_version_key() -> None:
+    """``format_version`` is reserved too ([[data-model#rehu-format]]) -- previously unprotected: a
+    plugin declaring it succeeded before this check existed, since it is not a plugin and nothing
+    refused a claimant.
+
+    **Test steps:**
+
+    * declare a plugin whose main key is ``format_version``
+    * verify building a registry with it alongside the builtins raises
+    """
+    with pytest.raises(ValueError, match="reserved"):
+        PluginRegistry([*BUILTIN_PLUGINS, PluginSpec(("format_version",))])

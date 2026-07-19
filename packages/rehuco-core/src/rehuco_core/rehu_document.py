@@ -21,8 +21,14 @@ from typing import Any, Final
 from borco_core import atomic_write_text
 
 from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, migrate_rehu_data, stamped_version
-from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY, PluginRegistry
+from rehuco_core.migrations import CURRENT_FORMAT_VERSION, migrate_rehu_data, stamped_version
+from rehuco_core.plugins import (
+    CORE_BLOCK_KEY,
+    DEFAULT_PLUGIN_REGISTRY,
+    FORMAT_VERSION_KEY,
+    RESERVED_KEYS,
+    PluginRegistry,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -62,7 +68,8 @@ class PluginBlock:
 
 
 class RehuFormatError(ValueError):
-    """Raised when a ``.rehu`` payload is not a JSON object."""
+    """Raised when a ``.rehu`` payload cannot be read as valid: not a JSON object, unparseable, or
+    misusing a reserved key ([[data-model#rehu-format]])."""
 
 
 INVALID_AUTHORS_MESSAGE: Final = (
@@ -98,11 +105,6 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
     """
 
-    __RESERVED_KEYS: Final = frozenset({FORMAT_VERSION_KEY, CORE_BLOCK_KEY})
-    """The only top-level keys that are not plugin blocks ([[data-model#rehu-format]]): the file's own
-    version stamp, and the common core's block. Everything else at the top level is a block, which is
-    the entire recognition rule -- there is no list of common field names to keep in step."""
-
     def __init__(  # pylint: disable=too-many-arguments
         self,
         data: dict[str, Any],
@@ -126,8 +128,32 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """The load-failure reason (:attr:`load_failed`), or ``None`` for a genuinely-parsed document.
         Not ``Final``: :meth:`reload` rebinds it, which is what makes revert the fix-retry loop
         ([[data-model#write-integrity]])."""
+        self.__check_reserved_keys(data)
         migrate_rehu_data(data)
         self.__normalize()
+
+    def __check_reserved_keys(self, data: dict[str, Any]) -> None:
+        """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]), before anything
+        else touches it.
+
+        Must run **before** :func:`~rehuco_core.migrations.migrate_rehu_data`: an unstamped
+        ``format_version`` reads as v1, and the v1->v2 step restamps it, overwriting the very evidence
+        of misuse this checks for. Unlike an unrecognized plugin block ([[plugins#fallback-editor]]),
+        there is no coherent reading to fall back to here -- the payload contradicts the format's own
+        grammar, so construction itself refuses rather than producing a document that is quietly
+        incoherent.
+
+        :param data: the payload as handed to ``__init__``, not yet migrated or normalized.
+        :raises RehuFormatError: if ``format_version`` holds an object (a plugin's data, mistaken for
+            the version stamp), or ``core.type`` names a reserved key (which is not a resource type).
+        """
+        if isinstance(data.get(FORMAT_VERSION_KEY), dict):
+            raise RehuFormatError(
+                f"{FORMAT_VERSION_KEY!r} holds an object, but it is the file's version number, not a plugin block"
+            )
+        core = data.get(CORE_BLOCK_KEY)
+        if isinstance(core, dict) and core.get("type") in RESERVED_KEYS:
+            raise RehuFormatError(f"'type' is {core['type']!r}, which is a reserved key rather than a resource type")
 
     @classmethod
     def load(cls, path: Path | str, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> RehuDocument:
@@ -154,9 +180,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         try:
             data: object = json.loads(path.read_text(encoding="utf-8"))
         except (ValueError, RecursionError) as exc:
-            raise RehuFormatError(f"{path}: invalid JSON — {exc}") from exc
+            raise RehuFormatError(f"invalid JSON — {exc}") from exc
         if not isinstance(data, dict):
-            raise RehuFormatError(f"{path}: expected a JSON object at the top level")
+            raise RehuFormatError("expected a JSON object at the top level")
         if stamped_version(data) is None and CORE_BLOCK_KEY in data:
             # No build wrote this: `core` arrived with format v2, and saving has stamped since v1, so a
             # file cannot honestly have the one without the other. Not fatal -- it is carried verbatim
@@ -294,7 +320,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         if CORE_BLOCK_KEY in self.__data:
             ordered[CORE_BLOCK_KEY] = self.__ordered_block(self.__data[CORE_BLOCK_KEY], CORE_LEADING_KEYS)
         active_key = self.active_block_key
-        for key in sorted(key for key in self.__data if key not in self.__RESERVED_KEYS):
+        for key in sorted(key for key in self.__data if key not in RESERVED_KEYS):
             value = self.__data[key]
             ordered[key] = self.__ordered_block(value, (FORMAT_VERSION_KEY,)) if key == active_key else value
         return ordered
@@ -635,7 +661,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def plugin_blocks(self) -> list[PluginBlock]:
         """Enumerate this document's plugin blocks, each classified active or inactive ([[plugins#plugin-blocks]]).
 
-        A block is any top-level key outside :attr:`__RESERVED_KEYS` whose value is a JSON object --
+        A block is any top-level key outside :data:`~rehuco_core.plugins.RESERVED_KEYS` whose value is a JSON object --
         which is what tells a block apart from an ordinary unknown top-level key: a stray scalar or list
         is carried verbatim but is not a block. Because the common fields live in ``core`` rather than at
         the top level, no list of their names is consulted, and a common field this build has never heard
@@ -654,7 +680,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         return [
             PluginBlock(key=key, fields=value, active=key == active_key)
             for key, value in self.__data.items()
-            if key not in self.__RESERVED_KEYS and isinstance(value, dict)
+            if key not in RESERVED_KEYS and isinstance(value, dict)
         ]
 
     def inactive_blocks(self) -> list[PluginBlock]:
@@ -745,7 +771,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         taken = set(self.__data)
         renames: dict[str, str] = {}
         for key, value in self.__data.items():
-            if key in self.__RESERVED_KEYS or not isinstance(value, dict):
+            if key in RESERVED_KEYS or not isinstance(value, dict):
                 continue
             main_key = self.__plugins.main_key(key)
             if main_key == key:

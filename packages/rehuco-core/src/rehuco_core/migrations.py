@@ -35,11 +35,7 @@ one case where the payload's shape is read, to say which layout it actually has;
 
 from typing import Any, Final
 
-from rehuco_core.plugins import CORE_BLOCK_KEY
-
-FORMAT_VERSION_KEY: Final = "format_version"
-"""The file-wide schema-version key ([[data-model#schema-version]]); the one top-level key that is not a
-block, since it describes the file's own layout rather than holding fields."""
+from rehuco_core.plugins import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
 
 CURRENT_FORMAT_VERSION: Final = 2
 """The file-wide ``format_version`` this build understands, and stamps onto every payload it reads

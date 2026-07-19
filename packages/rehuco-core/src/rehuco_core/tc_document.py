@@ -20,8 +20,8 @@ from typing import Any, Final
 
 import yaml
 
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY
-from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY
+from rehuco_core.migrations import CURRENT_FORMAT_VERSION
+from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY, FORMAT_VERSION_KEY
 from rehuco_core.rehu_document import RehuDocument, RehuFormatError
 
 
@@ -103,11 +103,11 @@ class TcDocument:
         try:
             data: object = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
-            raise RehuFormatError(f"{path}: invalid YAML — {exc}") from exc
+            raise RehuFormatError(f"invalid YAML — {exc}") from exc
         if data is None:
             data = {}
         if not isinstance(data, dict):
-            raise RehuFormatError(f"{path}: expected a YAML mapping at the top level")
+            raise RehuFormatError("expected a YAML mapping at the top level")
         return cls(data)
 
     @property

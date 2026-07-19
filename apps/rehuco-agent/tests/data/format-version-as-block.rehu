@@ -1,0 +1,8 @@
+{
+  "format_version": {
+    "some": "plugin data"
+  },
+  "core": {
+    "type": "tutorial"
+  }
+}
