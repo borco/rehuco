@@ -59,8 +59,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert stays enabled
     unconditionally: it is also how a clean document picks up a change made outside this app, not
     just how a dirty one discards in-memory edits. The editor docks' content is disabled outright
-    while the model is :attr:`~RehuDocumentModel.locked` (A3, [[data-model#schema-version]]) -- a
-    ``format_version`` newer than this build understands, so editing isn't safe.
+    while the model is :attr:`~RehuDocumentModel.locked` (A3, [[data-model#schema-version]]) -- a file-wide
+    or active-block ``format_version`` newer than this build understands ([[plugins#plugin-blocks]], #81),
+    so editing isn't safe.
 
     While viewing a legacy ``.tc`` (:attr:`~RehuDocument.legacy_tc`, A3.1,
     [[acquisition-tooling#tc-to-rehu]]), Save and Revert are hidden -- there is nothing to save, and
@@ -70,7 +71,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     in reverse (Save/Revert reappear, the convert actions hide) and the dock's lock marker drops, with
     no new dock and no reload round-trip.
 
-    A clean document whose file on disk predates :data:`~rehuco_core.CURRENT_FORMAT_VERSION`
+    A clean document whose file on disk predates :data:`~rehuco_core.CURRENT_FORMAT_VERSION`, its active
+    plugin block's own version ([[plugins#plugin-blocks]], #81), or both
     (:attr:`~RehuDocumentModel.upgradable`, #89) gets the same treatment as a legacy ``.tc``: Save
     hides and :attr:`upgrade_action` takes its place, since the meaningful write action on a clean,
     older-format document is the upgrade, not a no-op Save. Saving is what upgrades a document

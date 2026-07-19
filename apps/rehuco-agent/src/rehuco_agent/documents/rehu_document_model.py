@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import CURRENT_FORMAT_VERSION, AuthorEntry, LockReason, RehuDocument, convert_tc
+from rehuco_core import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, AuthorEntry, LockReason, RehuDocument, convert_tc
 
 from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
 from rehuco_agent.fields.field import Field, FieldBinding
@@ -165,8 +165,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     inline notice (#94) and `DocumentsDock`'s tab marker bind to `lock_reasons_changed`."""
 
     upgradable = SimpleProperty(False)
-    """Whether this document can be brought to :data:`~rehuco_core.CURRENT_FORMAT_VERSION` by a plain
-    save (#89, [[data-model#schema-version]]): the file on disk is older, the model holds no unsaved
+    """Whether this document can be brought current by a plain save (#89, [[data-model#schema-version]]):
+    the file on disk is older -- at the file-wide :data:`~rehuco_core.CURRENT_FORMAT_VERSION`, at the
+    active plugin block's own version ([[plugins#plugin-blocks]], #81), or both, since the user is never
+    shown which layer is stale -- the model holds no unsaved
     edits (a dirty old file's remedy is Save, which upgrades anyway -- no separate offer needed then),
     and the document isn't :attr:`locked` (a locked document can't be saved at all). Recomputed at the
     same seams as :attr:`lock_reasons` -- construction, :meth:`revert`, :meth:`convert` -- plus
@@ -421,11 +423,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         Every key in the active block ([[plugins#plugin-blocks]]) that isn't a known field
         (:data:`KNOWN_TYPE_FIELD_NAMES`) -- e.g. a field written by a newer plugin version than the one
         installed here. Carried verbatim on round-trip unless explicitly dropped via
-        :meth:`remove_unknown_field`.
+        :meth:`remove_unknown_field`. The block's own ``format_version`` stamp (#81,
+        [[plugins#plugin-blocks]]) is excluded -- it is block-management bookkeeping, not a resource
+        field, the same way the file-wide stamp never shows up as an unknown *common* field either.
 
         :returns: the unknown keys, sorted for a stable display order.
         """
-        return sorted(key for key in self.__document.active_block if key not in KNOWN_TYPE_FIELD_NAMES)
+        return sorted(
+            key
+            for key in self.__document.active_block
+            if key not in KNOWN_TYPE_FIELD_NAMES and key != FORMAT_VERSION_KEY
+        )
 
     def inactive_block_keys(self) -> list[str]:
         """The keys of this document's inactive plugin blocks ([[plugins#plugin-blocks]]).
@@ -452,12 +460,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.dirty = True
 
     def __recompute_upgradable(self) -> None:
-        """Recompute :attr:`upgradable` from the document's current on-disk version, dirtiness, and
-        lock state (#89) -- see :attr:`upgradable`'s own docstring for the three conditions.
+        """Recompute :attr:`upgradable` from the document's current on-disk version(s), dirtiness, and
+        lock state (#89, [[plugins#plugin-blocks]]) -- see :attr:`upgradable`'s own docstring for the
+        three conditions.
+
+        A stale **file-wide** version and a stale **active-block** version (#81) are both "something
+        this document's Upgrade action would bring current" -- one offer covers either, or both, so a
+        caller never has to know which layer is actually behind.
         """
         on_disk = self.__document.on_disk_format_version
+        file_pending = on_disk is not None and on_disk < CURRENT_FORMAT_VERSION
         self.upgradable = (
-            on_disk is not None and on_disk < CURRENT_FORMAT_VERSION and not self.dirty and not self.locked
+            (file_pending or self.__document.active_block_upgrade_pending) and not self.dirty and not self.locked
         )
 
     def __seed_from_document(self) -> None:

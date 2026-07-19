@@ -17,6 +17,8 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
     LockReasonKind,
+    PluginRegistry,
+    PluginSpec,
     RehuDocument,
     RehuFormatError,
     authors_comma_editable,
@@ -60,15 +62,18 @@ TUTORIAL: Final = {
 FAKE_PATH: Final = Path("/fake/info.rehu")
 
 
-def load_doc(mocker: MockerFixture, data: dict[str, Any]) -> RehuDocument:
+def load_doc(
+    mocker: MockerFixture, data: dict[str, Any], *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY
+) -> RehuDocument:
     """Mock ``Path.read_text`` and load a ``RehuDocument`` from ``data``.
 
     :param mocker: pytest-mock fixture.
     :param data: dict to serialize as the file's JSON content.
+    :param plugins: the plugins installed for this load; defaults to this build's shipped set.
     :returns: the loaded document.
     """
     mocker.patch.object(Path, "read_text", return_value=json.dumps(data))
-    return RehuDocument.load(FAKE_PATH)
+    return RehuDocument.load(FAKE_PATH, plugins=plugins)
 
 
 def test_common_field_accessors(mocker: MockerFixture) -> None:
@@ -1107,7 +1112,7 @@ def test_remove_active_field_deletes_a_present_key() -> None:
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5, "mystery": 42}})
     assert doc.remove_active_field("mystery") is True
-    assert doc.data["tutorial"] == {"rating": 5}
+    assert doc.data["tutorial"] == {"rating": 5, "format_version": 0}
 
 
 def test_remove_active_field_is_a_noop_when_absent() -> None:
@@ -1120,7 +1125,7 @@ def test_remove_active_field_is_a_noop_when_absent() -> None:
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5}})
     assert doc.remove_active_field("mystery") is False
-    assert doc.data["tutorial"] == {"rating": 5}
+    assert doc.data["tutorial"] == {"rating": 5, "format_version": 0}
 
     blockless = RehuDocument({"type": "tutorial"})
     assert blockless.remove_active_field("mystery") is False
@@ -1149,7 +1154,7 @@ def test_plugin_blocks_classifies_the_types_block_active_and_every_other_inactiv
         ("daz3d", False),
     ]
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images", "daz3d"]
-    assert doc.plugin_blocks()[0].fields == {"rating": 4}
+    assert doc.plugin_blocks()[0].fields == {"rating": 4, "format_version": 0}
 
 
 def test_an_installed_plugins_block_is_inactive_when_the_type_does_not_name_it() -> None:
@@ -1208,7 +1213,7 @@ def test_alias_type_and_block_key_normalize_to_the_declared_main_key() -> None:
     )
     assert doc.core["type"] == "reference_images"
     assert doc.active_block_key == "reference_images"
-    assert doc.active_block == {"images_count": 12}
+    assert doc.active_block == {"images_count": 12, "format_version": 0}
     assert doc.data["tutorial"] == {"rating": 1}
     assert "refimages" not in doc.data
 
@@ -1232,7 +1237,7 @@ def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() 
             "refimages": {"images_count": 99},
         }
     )
-    assert doc.active_block == {"images_count": 12}
+    assert doc.active_block == {"images_count": 12, "format_version": 0}
     assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
 
 
@@ -1261,7 +1266,7 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
-    assert saved["tutorial"] == {"rating": 5}
+    assert saved["tutorial"] == {"format_version": 0, "rating": 5}
     assert saved["reference_images"] == {"images_count": 12}
     assert saved["daz3d"] == {"sku": "12345", "figures": ["G8F"]}
 
@@ -1283,7 +1288,7 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
 
     saved = json.loads(mock_write.call_args[0][1])
     assert saved["core"]["type"] == "tutorial"
-    assert saved["tutorial"] == {"rating": 4}
+    assert saved["tutorial"] == {"rating": 4, "format_version": 0}
     assert "Tutorial" not in saved
 
 
@@ -1693,6 +1698,190 @@ def test_reload_after_a_fix_drops_the_lock(mocker: MockerFixture) -> None:
     assert doc.load_failed is False
     assert not doc.lock_reasons
     assert doc.title == "Intro to Sculpting"
+
+
+# endregion
+
+
+# region Per-plugin-block format version (#81, [[plugins#plugin-blocks]])
+
+
+def versioned_tutorial_registry() -> PluginRegistry:
+    """A registry declaring a ``tutorial`` plugin whose block layout **v1** moves ``rating`` under a
+    ``migrated`` marker -- a stand-in real enough to exercise the v0->v1 dispatch seam end to end
+    through `RehuDocument`, without this issue owning any real plugin's real block layout (#81, #98).
+
+    :returns: a registry with one versioned ``tutorial`` plugin.
+    """
+
+    def v0_to_v1(block: dict[str, Any]) -> None:
+        block["migrated"] = block.pop("rating", None)
+
+    return PluginRegistry([PluginSpec(("tutorial",), current_block_version=1, block_migrations=((1, v0_to_v1),))])
+
+
+def test_constructing_a_document_stamps_an_unstamped_active_block() -> None:
+    """An active block for an installed plugin that has never been stamped reads as v0 and is stamped so
+    at construction, mirroring the file-wide upgrade-on-load step ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document whose block carries no ``format_version``
+    * verify the block now carries ``format_version: 0`` alongside its own fields
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}})
+    assert doc.active_block == {"rating": 4, "format_version": 0}
+
+
+def test_an_uninstalled_active_type_is_never_stamped() -> None:
+    """A type no installed plugin declares has no ``current_block_version`` to migrate toward, so its
+    block is left exactly as constructed ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a document whose active type has no installed plugin
+    * verify its block gained no stamp
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}})
+    assert doc.active_block == {"bitrate": 320}
+
+
+def test_an_inactive_blocks_version_is_never_touched() -> None:
+    """An inactive block belonging to an installed plugin is carried verbatim, unstamped -- this build
+    has no standing to restamp a block that is not the one the document's ``type`` names
+    ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a reference-images-typed document also carrying an unstamped ``tutorial`` block
+    * verify the inactive ``tutorial`` block gained no stamp
+    """
+    doc = RehuDocument({"type": "reference_images", "reference_images": {}, "tutorial": {"rating": 4}})
+    assert doc.data["tutorial"] == {"rating": 4}
+
+
+def test_a_real_v0_to_v1_block_migration_runs_through_document_construction() -> None:
+    """The v0->v1 dispatch seam a plugin declares actually runs when its block is active, exercised end
+    to end through `RehuDocument` rather than :func:`~rehuco_core.migrate_block_data` in isolation
+    ([[plugins#plugin-blocks]], the seam #98 plugs its real ``users``-map step into).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document, using a registry whose tutorial plugin declares a v0->v1 step
+    * verify the step ran (``rating`` moved to ``migrated``) and the block is stamped v1
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    assert doc.active_block == {"migrated": 4, "format_version": 1}
+
+
+def test_a_block_newer_than_the_plugin_understands_locks_and_is_carried_verbatim() -> None:
+    """An active block whose own ``format_version`` outruns the installed plugin locks with
+    ``NEWER_BLOCK_FORMAT`` and is never restamped ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document whose block is stamped above what the plugin understands
+    * verify the sole reason is ``NEWER_BLOCK_FORMAT``, naming the block and both versions
+    * verify the block's own stamp and fields are untouched
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 5, "rating": 4}})
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.NEWER_BLOCK_FORMAT]
+    message = doc.lock_reasons[0].message
+    assert "tutorial" in message and "5" in message
+    assert doc.active_block == {"format_version": 5, "rating": 4}
+
+
+def test_a_block_at_or_below_the_plugins_version_does_not_lock() -> None:
+    """A block at (or predating) what its plugin understands is not ``NEWER_BLOCK_FORMAT``.
+
+    **Test steps:**
+
+    * construct a tutorial-typed document whose block is at v0, the plugin's own current version
+    * verify no lock reason is produced
+    """
+    assert not RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}}).lock_reasons
+
+
+def test_an_uninstalled_active_type_never_locks_on_block_version() -> None:
+    """With no plugin installed for the active key, there is no ``current_block_version`` to compare
+    against, so ``NEWER_BLOCK_FORMAT`` never fires ([[plugins#plugin-blocks]]) -- the fallback-editor
+    path handles an uninstalled type instead.
+
+    **Test steps:**
+
+    * construct a document whose active type has no installed plugin, block stamped arbitrarily high
+    * verify no lock reason is produced
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"format_version": 99}})
+    assert not doc.lock_reasons
+
+
+def test_on_disk_active_block_format_version_reports_the_file_not_the_payload(mocker: MockerFixture) -> None:
+    """``on_disk_active_block_format_version`` is the on-disk block's version, distinct from the
+    already-upgraded in-memory one -- the per-block sibling of ``on_disk_format_version``
+    ([[plugins#plugin-blocks]], #89).
+
+    **Test steps:**
+
+    * load a document whose block predates its plugin
+    * verify the in-memory block reads current while the on-disk figure still reads the old value
+    """
+    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    assert doc.active_block == {"migrated": 4, "format_version": 1}
+    assert doc.on_disk_active_block_format_version == 0
+
+
+def test_on_disk_active_block_format_version_is_none_with_no_block_or_no_file(mocker: MockerFixture) -> None:
+    """``None`` distinguishes "nothing to compare" from "a block exists and is old"
+    ([[plugins#plugin-blocks]]), the same distinction :attr:`~rehuco_core.RehuDocument.on_disk_format_version`
+    draws for the file-wide stamp.
+
+    **Test steps:**
+
+    * verify a document constructed without a path has no on-disk block figure
+    * verify a loaded document with no active block at all has none either
+    """
+    assert RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}}).on_disk_active_block_format_version is None
+    assert load_doc(mocker, {"type": "tutorial"}).on_disk_active_block_format_version is None
+
+
+def test_active_block_upgrade_pending_true_only_when_the_on_disk_block_is_old(mocker: MockerFixture) -> None:
+    """:attr:`~rehuco_core.RehuDocument.active_block_upgrade_pending` folds the on-disk-vs-plugin
+    comparison into one question, so a caller offering a single "Upgrade" action never has to know which
+    layer is stale ([[plugins#plugin-blocks]], #89).
+
+    **Test steps:**
+
+    * load a document whose block predates its plugin -- pending
+    * load one already at its plugin's version -- not pending
+    """
+    behind = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    assert behind.active_block_upgrade_pending is True
+
+    current = load_doc(
+        mocker,
+        {"type": "tutorial", "tutorial": {"format_version": 1, "rating": 4}},
+        plugins=versioned_tutorial_registry(),
+    )
+    assert current.active_block_upgrade_pending is False
+
+
+def test_saving_an_upgraded_block_clears_the_pending_flag(mocker: MockerFixture) -> None:
+    """Saving is what upgrades a document, block included -- the same "there is no separate migrate
+    call" contract the file-wide stamp already has (:meth:`~rehuco_core.RehuDocument.save`).
+
+    **Test steps:**
+
+    * load a document whose block predates its plugin, confirming it starts pending
+    * save, and verify the pending flag clears
+    """
+    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    assert doc.active_block_upgrade_pending is True
+
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc.save()
+
+    assert doc.active_block_upgrade_pending is False
 
 
 # endregion

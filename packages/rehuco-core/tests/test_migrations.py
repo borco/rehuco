@@ -6,7 +6,14 @@ from typing import Any, Final
 
 from pytest import mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument, migrate_rehu_data
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    TUTORIAL_PLUGIN,
+    PluginSpec,
+    RehuDocument,
+    migrate_block_data,
+    migrate_rehu_data,
+)
 
 # A format-v1 document: the common fields still at the top level, beside the plugin blocks
 # ([[data-model#rehu-format]]).
@@ -302,7 +309,7 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert doc.type == "tutorial"
     assert doc.title == "Intro to Sculpting"
     assert doc.authors == ["First Author"]
-    assert doc.active_block == {"rating": 4}
+    assert doc.active_block == {"rating": 4, "format_version": 0}
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
     assert doc.format_version == CURRENT_FORMAT_VERSION
 
@@ -313,3 +320,137 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert saved["format_version"] == CURRENT_FORMAT_VERSION
     assert saved["core"]["type"] == "tutorial"
     assert saved["reference_images"] == {"images_count": 12}
+
+
+# region Per-block migrations ([[plugins#plugin-blocks]])
+
+
+def test_an_unstamped_block_migrates_from_v0_not_a_deduced_shape() -> None:
+    """A block's absent stamp is v0 outright -- block versioning has no pre-stamping history to predate
+    ([[plugins#plugin-blocks]]), unlike the file-wide chain's v1 deduction.
+
+    **Test steps:**
+
+    * migrate an unstamped block against a plugin whose only step targets v1
+    * verify the step ran and the block is stamped v1
+    """
+    ran: list[str] = []
+    plugin = PluginSpec(
+        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
+    )
+    block: dict[str, Any] = {"rating": 4}
+
+    migrate_block_data(block, plugin)
+
+    assert ran == ["v0->v1"]
+    assert block == {"rating": 4, "format_version": 1}
+
+
+def test_a_malformed_block_stamp_is_not_trusted() -> None:
+    """A corrupt block ``format_version`` resolves to v0 rather than being believed, the same defensive
+    coercion the file-wide stamp gets.
+
+    **Test steps:**
+
+    * migrate a block whose stamp is a string, against a plugin whose only step targets v1
+    * verify the step ran anyway
+    """
+    ran: list[str] = []
+    plugin = PluginSpec(
+        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
+    )
+    block: dict[str, Any] = {"format_version": "junk", "rating": 4}
+
+    migrate_block_data(block, plugin)
+
+    assert ran == ["v0->v1"]
+    assert block["format_version"] == 1
+
+
+def test_every_block_step_older_than_the_block_runs_in_order() -> None:
+    """A block several versions behind walks every step above its own version, in order -- the block
+    dispatch mirrors :class:`RehuMigrator`'s own chain guarantee.
+
+    **Test steps:**
+
+    * migrate a v0 block against a plugin declaring three steps up to v3, out of order
+    * verify all three ran, in ascending order
+    """
+    ran: list[str] = []
+    plugin = PluginSpec(
+        ("tutorial",),
+        current_block_version=3,
+        block_migrations=(
+            (2, lambda block: ran.append("v1->v2")),
+            (1, lambda block: ran.append("v0->v1")),
+            (3, lambda block: ran.append("v2->v3")),
+        ),
+    )
+    block: dict[str, Any] = {}
+
+    migrate_block_data(block, plugin)
+
+    assert ran == ["v0->v1", "v1->v2", "v2->v3"]
+    assert block["format_version"] == 3
+
+
+def test_migrating_an_already_current_block_changes_nothing_but_the_stamp() -> None:
+    """A block already at its plugin's current version runs no step ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * migrate a block already stamped at the plugin's current version
+    * verify no step ran and its other fields are untouched
+    """
+    ran: list[str] = []
+    plugin = PluginSpec(
+        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
+    )
+    block: dict[str, Any] = {"format_version": 1, "rating": 4}
+
+    migrate_block_data(block, plugin)
+
+    assert not ran
+    assert block == {"format_version": 1, "rating": 4}
+
+
+def test_a_block_newer_than_the_plugin_understands_is_never_restamped_or_touched() -> None:
+    """A block whose stamp is already past ``current_block_version`` runs no step and keeps its own
+    (higher) stamp -- never lowered, mirroring the file-wide fail-safe rule
+    ([[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * migrate a block stamped above the plugin's current version
+    * verify no step ran and the stamp is unchanged
+    """
+    ran: list[str] = []
+    plugin = PluginSpec(
+        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
+    )
+    block: dict[str, Any] = {"format_version": 5, "rating": 4}
+
+    migrate_block_data(block, plugin)
+
+    assert not ran
+    assert block == {"format_version": 5, "rating": 4}
+
+
+def test_a_plugin_with_no_block_version_declared_leaves_a_v0_block_stamped_v0() -> None:
+    """A plugin at ``current_block_version == 0`` (every builtin, today) simply stamps an unstamped
+    block ``0`` -- consistent with "whatever builds a payload stamps it", applied at block granularity,
+    with no step to run.
+
+    **Test steps:**
+
+    * migrate an unstamped block against a plugin declaring no block version of its own
+    * verify it gains only the stamp
+    """
+    block: dict[str, Any] = {"rating": 4}
+
+    migrate_block_data(block, TUTORIAL_PLUGIN)
+
+    assert block == {"rating": 4, "format_version": 0}
+
+
+# endregion

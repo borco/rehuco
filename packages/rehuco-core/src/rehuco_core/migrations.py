@@ -10,7 +10,16 @@ together.
 
 **Nobody invokes a migration.** `RehuDocument` upgrades whatever payload it is handed, so every reader
 past that boundary sees the current layout and no caller decides, or can forget, to migrate. The steps
-are therefore private: this module's whole surface is :func:`migrate_rehu_data`.
+are therefore private: this module's file-wide surface is :func:`migrate_rehu_data`.
+
+**Plugin blocks version independently** ([[plugins#plugin-blocks]], the per-plugin refinement of
+[[data-model#schema-version]]): each block carries its own ``format_version``, dispatched by
+:func:`migrate_block_data` against the block's own plugin (:attr:`~rehuco_core.PluginSpec.current_block_version`,
+:attr:`~rehuco_core.PluginSpec.block_migrations`) rather than against :data:`CURRENT_FORMAT_VERSION`. A
+block's absent stamp is **exactly** ``0``, never a shape to deduce -- block versioning has no history
+predating itself, unlike the file-wide chain, which has files written before it ever stamped. Only the
+**active** block is ever migrated (`RehuDocument`'s own discipline, not this module's): an inactive block
+is payload this build has no standing to restamp.
 
 **A foreign format is never a step here** ([[data-model#schema-version]]). Reading a `.tc`
 ([[acquisition-tooling#tc-to-rehu]]) -- or a `.dpdml` later ([[daz3d-personal-database#import-needs]]) --
@@ -35,7 +44,7 @@ one case where the payload's shape is read, to say which layout it actually has;
 
 from typing import Any, Final
 
-from rehuco_core.plugins import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
+from rehuco_core.plugins import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, PluginSpec
 
 CURRENT_FORMAT_VERSION: Final = 2
 """The file-wide ``format_version`` this build understands, and stamps onto every payload it reads
@@ -224,3 +233,77 @@ class RehuMigrator:  # pylint: disable=too-few-public-methods
         for key in moved:
             del self.__data[key]
         self.__data[CORE_BLOCK_KEY] = moved
+
+
+def stamped_block_version(block: dict[str, Any]) -> int | None:
+    """Read one plugin block's own ``format_version`` stamp defensively -- the block-scoped sibling of
+    :func:`stamped_version` ([[plugins#plugin-blocks]]).
+
+    :param block: one block's own fields.
+    :returns: the stamped version, or ``None`` when it is absent or malformed.
+    """
+    stamp = block.get(FORMAT_VERSION_KEY)
+    return stamp if isinstance(stamp, int) and not isinstance(stamp, bool) else None
+
+
+def migrate_block_data(block: dict[str, Any], plugin: PluginSpec) -> None:
+    """Bring one plugin block up to :attr:`~rehuco_core.PluginSpec.current_block_version`, in place --
+    the per-block sibling of :func:`migrate_rehu_data` ([[plugins#plugin-blocks]]).
+
+    :param block: the block's own fields; mutated in place.
+    :param plugin: the plugin whose :attr:`~rehuco_core.PluginSpec.current_block_version` and
+        :attr:`~rehuco_core.PluginSpec.block_migrations` this block is migrated against.
+    """
+    BlockMigrator(block, plugin).migrate()
+
+
+class BlockMigrator:  # pylint: disable=too-few-public-methods
+    """Applies one plugin's own declared block-layout migrations to one block, in place -- the
+    per-block refinement of :class:`RehuMigrator` ([[plugins#plugin-blocks]], the per-plugin refinement
+    of [[data-model#schema-version]]).
+
+    **Caller-scoped, not block-scoped.** This class has no notion of active or inactive -- it migrates
+    whatever block it is handed. Calling it only on the **active** block is the caller's own discipline
+    (`RehuDocument`): an inactive block is payload this build has no standing to restamp, and simply
+    never reaches here.
+
+    A plugin declares its steps as :attr:`~rehuco_core.PluginSpec.block_migrations` -- ``(target,
+    step)`` pairs, each ``step`` named for the transition it performs and run when the block's version
+    is below that target -- the table shape :meth:`RehuMigrator.migrate` names as what would remove its
+    own ``if``-chain, adopted here from the start since a fresh table per plugin is the natural
+    declarative shape, rather than a bespoke dispatch method every plugin would otherwise need to write.
+
+    :param block: the block's own fields; mutated in place by :meth:`migrate`.
+    :param plugin: the plugin whose declared version and steps this block is migrated against.
+    """
+
+    def __init__(self, block: dict[str, Any], plugin: PluginSpec) -> None:
+        self.__block: Final = block
+        self.__plugin: Final = plugin
+
+    def migrate(self) -> None:
+        """Upgrade the block to :attr:`~rehuco_core.PluginSpec.current_block_version`, running each
+        step it still needs, then stamp it.
+
+        **Never restamps a block newer than this plugin understands.** No declared step's target can
+        exceed ``current_block_version`` (:class:`~rehuco_core.PluginSpec` validates this at
+        construction), so when the block's own version is already past it, no step's guard is
+        satisfied -- the loop is a no-op and the stamp written back is the very value already there,
+        the same never-lowers guarantee :meth:`RehuMigrator.migrate` gives the file-wide stamp.
+        """
+        version = self.__resolved_version()
+        for step_target, step in sorted(self.__plugin.block_migrations):
+            if version < step_target:
+                step(self.__block)
+                version = step_target
+        self.__block[FORMAT_VERSION_KEY] = version
+
+    def __resolved_version(self) -> int:
+        """A block's version is exactly its stamp, defensively read, or ``0`` when absent or malformed.
+
+        Unlike :meth:`RehuMigrator.__resolved_version`, this never has a flat pre-versioning shape to
+        deduce from: block versioning has no history predating this very mechanism, so an absent stamp
+        simply *is* v0 ([[plugins#plugin-blocks]]), not evidence of an older layout to detect.
+        """
+        stamp = stamped_block_version(self.__block)
+        return stamp if stamp is not None else 0

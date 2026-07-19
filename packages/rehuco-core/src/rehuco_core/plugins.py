@@ -3,7 +3,8 @@
 A plugin is identified by a **declared key list**, not by a name transformed at runtime: the first entry
 is the **main key** and every later entry is an **alias** the reader accepts and the writer normalizes
 away ([[plugins#plugin-blocks]]). This is the non-GUI half of a plugin -- the layer agent and node alike
-load -- and for now it holds identity alone; a plugin's block schema, hooks, and rendering are added to
+load -- and for now it holds identity plus its own block's format version ([[plugins#plugin-blocks]]); a plugin's
+block *schema*, hooks, and rendering are added to
 this layer as later slices need them.
 
 A resource ``type``'s value **is** its active block's key ([[plugins#plugin-blocks]]), so one key list
@@ -12,26 +13,48 @@ the same token. That identity is what lets `RehuDocument` classify a block activ
 at all once a document is normalized -- including for a type whose plugin nobody here has installed.
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 
 @dataclass(frozen=True)
 class PluginSpec:
-    """One plugin's identity -- its declared key list ([[plugins#core-vs-plugin]]).
+    """One plugin's identity -- its declared key list -- plus the version of its own block layout this
+    build understands ([[plugins#core-vs-plugin]], [[plugins#plugin-blocks]]).
 
     :param keys: the main key first, then any aliases. Must be non-empty.
-    :raises ValueError: if ``keys`` is empty or holds a duplicate.
+    :param current_block_version: the block ``format_version`` this plugin's declared
+        :attr:`block_migrations` bring a block up to. ``0`` (the default) means this plugin has not
+        defined a versioned block layout yet -- its fields simply live in the block, unowned by any
+        schema ([[field-schema#per-user-shared]]): unlike the file-wide v0, this is not a gap predating
+        versioning, it is a real, currently-current layout for a plugin that has never needed a second one.
+    :param block_migrations: ``(target, step)`` pairs bringing a block from below ``target`` up to it, each
+        ``step`` mutating the block's own fields in place -- the per-plugin dispatch table
+        :func:`~rehuco_core.migrations.migrate_block_data` walks ([[data-model#schema-version]]'s
+        dispatch rule, applied per block). Empty by default: a plugin at ``current_block_version == 0``
+        needs none.
+    :raises ValueError: if ``keys`` is empty or holds a duplicate, two migrations target the same
+        version, or a migration targets a version past ``current_block_version``.
     """
 
     keys: tuple[str, ...]
+    current_block_version: int = 0
+    block_migrations: tuple[tuple[int, Callable[[dict[str, Any]], None]], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.keys:
             raise ValueError("a plugin must declare at least one key")
         if len(set(self.keys)) != len(self.keys):
             raise ValueError(f"duplicate key in plugin declaration: {self.keys}")
+        targets = [target for target, _ in self.block_migrations]
+        if len(set(targets)) != len(targets):
+            raise ValueError(f"duplicate block migration target in plugin declaration: {self.keys}")
+        if any(target > self.current_block_version for target in targets):
+            raise ValueError(
+                f"block migration target above current_block_version {self.current_block_version} "
+                f"in plugin declaration: {self.keys}"
+            )
 
     @property
     def key(self) -> str:

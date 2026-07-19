@@ -35,6 +35,12 @@ class LockReasonKind(StrEnum):
     ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule); the fields are carried verbatim,
     never downgraded on save."""
 
+    NEWER_BLOCK_FORMAT = "newer_block_format"
+    """The **active** plugin block's own ``format_version`` is newer than the installed plugin
+    understands ([[plugins#plugin-blocks]], the per-block refinement of :attr:`NEWER_FORMAT`'s
+    fail-safe rule); the block's fields are carried verbatim, never downgraded on save, and never
+    restamped (:func:`~rehuco_core.migrations.migrate_block_data` leaves such a block untouched)."""
+
     INVALID_FIELD = "invalid_field"
     """An owned field is **present but fails coercion** ([[data-model#write-integrity]]): reading coerces
     it for display, but editing must not be able to save the coerced default over the
@@ -74,6 +80,6 @@ SAVE_BLOCKING_LOCK_KINDS: Final = frozenset(
 """The lock kinds that make :meth:`RehuDocument.save <rehuco_core.RehuDocument.save>` refuse
 ([[data-model#write-integrity]]): saving would overwrite a malformed-but-recoverable field
 (``INVALID_FIELD``) or a broken/absent file (``INVALID_FILE`` / ``MISSING``) with coerced defaults or an
-empty document. ``LEGACY_TC`` and ``NEWER_FORMAT`` are **not** here -- a ``.tc`` saves through conversion
-and a newer file is carried verbatim, never downgraded ([[data-model#schema-version]]); both are gated at
-the UI."""
+empty document. ``LEGACY_TC``, ``NEWER_FORMAT``, and ``NEWER_BLOCK_FORMAT`` are **not** here -- a ``.tc``
+saves through conversion and a newer file or block is carried verbatim, never downgraded
+([[data-model#schema-version]]); all three are gated at the UI."""
