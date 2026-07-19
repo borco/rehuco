@@ -1,0 +1,23 @@
+{
+  "format_version": 2,
+  "core": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "tutorial",
+    "created": "2026-07-19T00:00:00Z",
+    "updated": "2026-07-19T00:00:00Z",
+    "sources": [
+      {
+        "title": "Newer Plugin Block Version Demo",
+        "publisher": "Manual Test",
+        "primary": true
+      }
+    ],
+    "authors": ["Manual Tester"],
+    "description": "The `tutorial` block below is stamped `format_version: 9999`, far past what the installed tutorial plugin understands (0). Opening this file locks the document with a NEWER_BLOCK_FORMAT reason ([[plugins#plugin-blocks]], #81) -- the per-block sibling of a file-wide `format_version` too new to understand."
+  },
+  "tutorial": {
+    "format_version": 9999,
+    "rating": 4,
+    "complete": true
+  }
+}
