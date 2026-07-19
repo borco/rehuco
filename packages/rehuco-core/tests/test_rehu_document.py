@@ -1368,6 +1368,97 @@ def test_load_rejects_non_object(mocker: MockerFixture) -> None:
         RehuDocument.load(FAKE_PATH)
 
 
+# region Reserved-key misuse (#90, [[data-model#rehu-format]])
+
+
+def test_format_version_holding_an_object_is_refused() -> None:
+    """A ``format_version`` that holds an object is someone else's plugin data mistaken for the
+    version stamp -- refused rather than silently restamped away on migration.
+
+    **Test steps:**
+
+    * construct a document whose ``format_version`` is an object
+    * verify it raises :class:`RehuFormatError` naming the key
+    """
+    with pytest.raises(RehuFormatError, match="'format_version' holds an object"):
+        RehuDocument({"format_version": {"some": "plugin data"}, "core": {"type": "tutorial"}})
+
+
+def test_core_type_naming_format_version_is_refused() -> None:
+    """A ``core.type`` naming ``format_version`` treats a reserved key as a resource type, which it
+    is not -- refused rather than silently making the ``format_version`` block the active one.
+
+    **Test steps:**
+
+    * construct a document whose ``core.type`` is ``"format_version"``
+    * verify it raises :class:`RehuFormatError` naming the offending value
+    """
+    with pytest.raises(RehuFormatError, match="'type' is 'format_version'"):
+        RehuDocument({"format_version": 2, "core": {"type": "format_version"}})
+
+
+def test_core_type_naming_core_is_refused() -> None:
+    """A ``core.type`` naming ``core`` itself is refused the same way -- the core block is never a
+    candidate type ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a document whose ``core.type`` is ``"core"``
+    * verify it raises :class:`RehuFormatError` naming the offending value
+    """
+    with pytest.raises(RehuFormatError, match="'type' is 'core'"):
+        RehuDocument({"format_version": 2, "core": {"type": "core"}})
+
+
+def test_the_combined_reserved_key_misuse_is_refused() -> None:
+    """The issue's own worked repro: both defects in one payload, `format_version` holding an object
+    *and* `core.type` naming a reserved key. Refused before either can destroy the other.
+
+    **Test steps:**
+
+    * construct the combined malformed payload
+    * verify it raises :class:`RehuFormatError`
+    """
+    with pytest.raises(RehuFormatError):
+        RehuDocument({"format_version": {"some": "plugin data"}, "core": {"type": "format_version"}})
+
+
+def test_reserved_key_misuse_is_refused_from_load_too(mocker: MockerFixture) -> None:
+    """The same refusal applies through :meth:`RehuDocument.load`, not just direct construction --
+    ``load`` doesn't catch the new raise, so it propagates to :meth:`RehuDocument.open_or_locked`
+    exactly like an unparseable file does.
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return the malformed JSON on disk
+    * verify loading raises :class:`RehuFormatError`
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": {"x": 1}}))
+    with pytest.raises(RehuFormatError, match="'format_version' holds an object"):
+        RehuDocument.load(FAKE_PATH)
+
+
+def test_reserved_key_misuse_locks_the_document_via_open_or_locked(mocker: MockerFixture) -> None:
+    """Routed through :meth:`RehuDocument.open_or_locked`, a reserved-key misuse becomes an
+    ``INVALID_FILE``-locked stub, the same as any other unparseable ``.rehu``
+    ([[data-model#write-integrity]]) -- this is what carries the message to the agent's banner (#94)
+    with no further agent-side work.
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return the malformed JSON on disk
+    * verify the returned document is an empty, load-failed stub whose lock reason carries the message
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 2, "core": {"type": "core"}}))
+    doc = RehuDocument.open_or_locked(FAKE_PATH)
+    assert doc.load_failed is True
+    assert doc.lock_reasons[0].kind is LockReasonKind.INVALID_FILE
+    assert "'type' is 'core'" in doc.lock_reasons[0].message
+
+
+# endregion
+
+
 # region Lock reasons ([[data-model#write-integrity]])
 
 

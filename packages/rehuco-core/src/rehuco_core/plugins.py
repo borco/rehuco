@@ -46,22 +46,34 @@ class PluginSpec:
         return self.keys[1:]
 
 
+FORMAT_VERSION_KEY: Final = "format_version"
+"""The file-wide schema-version key ([[data-model#schema-version]]); the one reserved key that
+describes the file's own layout rather than holding fields."""
+
 CORE_PLUGIN: Final = PluginSpec(("core",))
-"""The common core's own identity ([[data-model#rehu-format]]).
+"""The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.
 
 The core's fields live in a block like any plugin's, which is what lets a ``.rehu`` be read as nothing
 but ``format_version`` plus a map of keyed blocks -- so enumerating plugin blocks is "every block that
 isn't this one", with no list of common field names to keep in step.
 
-Declaring it here **reserves the name**: :class:`PluginRegistry` already refuses two declarations
-claiming one spelling, so a plugin that tries to call itself ``core`` fails when the registry is built,
-with no rule of its own.
+Its name is reserved by :data:`RESERVED_KEYS`, unconditionally -- not by occupying a slot in
+:data:`DEFAULT_PLUGIN_REGISTRY`, which :class:`PluginRegistry` now refuses to build for *any* spec
+declaring a reserved key, this one included. So this constant's job is purely to describe the core
+block -- :data:`CORE_BLOCK_KEY` reads its spelling from here -- not to defend its name.
 
 Reserved, not a candidate: no document is ever ``type: "core"``, so unlike every other block the core is
 never active or inactive ([[plugins#plugin-blocks]]) -- it is simply always there."""
 
 CORE_BLOCK_KEY: Final = CORE_PLUGIN.key
 """The common core's block key ([[data-model#rehu-format]]); spelled once, here."""
+
+RESERVED_KEYS: Final = frozenset({FORMAT_VERSION_KEY, CORE_BLOCK_KEY})
+"""The two top-level ``.rehu`` keys that are not plugin blocks ([[data-model#rehu-format]]): the file's
+own version stamp, and the common core's block. The single source of truth :class:`PluginRegistry` (no
+plugin may declare one) and ``RehuDocument`` (no document may misuse one as a block) both check against
+-- previously two separate facts that happened to agree, which is how ``core`` came to be protected only
+contingently on :data:`CORE_PLUGIN` being present in a given registry's specs."""
 
 TUTORIAL_PLUGIN: Final = PluginSpec(("tutorial", "Tutorial"))
 """The tutorial plugin ([[plugins#tutorial-plugin]]); ``Tutorial`` is tc4's capitalized spelling
@@ -77,10 +89,12 @@ carries none of the resource fields, so its block is normally absent -- but its 
 like any other, and a file that does carry a ``collection:`` block round-trips as a block rather than as
 a stray unknown key."""
 
-BUILTIN_PLUGINS: Final = (CORE_PLUGIN, TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN)
-"""The declarations this build ships -- :data:`CORE_PLUGIN` plus the real plugins.
+BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN)
+"""The declarations this build ships. Deliberately **excludes** :data:`CORE_PLUGIN`: the core block is
+protected by :data:`RESERVED_KEYS` unconditionally now, not by occupying a registry slot -- registering
+it would fail the very check that protects it.
 
-Deliberately **not** every key the specs name: ``daz3d`` ([[plugins#daz3d-plugin]]) is parked past
+Also deliberately **not** every key the specs name: ``daz3d`` ([[plugins#daz3d-plugin]]) is parked past
 milestone C and has no declaration here, so a ``daz3d:`` block exercises the not-installed path for real
 rather than hypothetically."""
 
@@ -95,7 +109,8 @@ class PluginRegistry:
     caller passes rather than global state a caller mutates.
 
     :param specs: the plugin declarations to index.
-    :raises ValueError: if two declarations claim the same key or alias.
+    :raises ValueError: if a declaration claims a key in :data:`RESERVED_KEYS`, or two declarations claim
+        the same key or alias.
     """
 
     def __init__(self, specs: Iterable[PluginSpec] = ()) -> None:
@@ -103,6 +118,8 @@ class PluginRegistry:
         index: dict[str, PluginSpec] = {}
         for spec in self.__specs:
             for name in spec.keys:
+                if name in RESERVED_KEYS:
+                    raise ValueError(f"key {name!r} is reserved and cannot be declared by a plugin")
                 if name in index:
                     raise ValueError(f"key {name!r} is claimed by two plugins")
                 index[name] = spec
