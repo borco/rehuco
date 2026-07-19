@@ -2,7 +2,7 @@
 
 from rehuco_core.constants import IMAGE_EXTENSIONS
 from rehuco_core.lock_reasons import LockReason, LockReasonKind
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION, migrate_rehu_data
+from rehuco_core.migrations import CURRENT_FORMAT_VERSION, migrate_block_data, migrate_rehu_data
 from rehuco_core.plugins import (
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
@@ -61,6 +61,7 @@ __all__ = [
     "TcScreenshotScanner",
     "convert_tc",
     "load_tc",
+    "migrate_block_data",
     "migrate_rehu_data",
     "rewrite_description_images",
     "scan_tc_screenshots",

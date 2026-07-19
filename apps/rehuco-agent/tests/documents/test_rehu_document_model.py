@@ -15,7 +15,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
+from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, PluginRegistry, PluginSpec, RehuDocument
 
 
 # region fixtures
@@ -1485,6 +1485,95 @@ def test_a_document_at_the_current_format_version_is_not_upgradable(mocker: Mock
     document = RehuDocument.load(Path("/fake/info.rehu"))
 
     model = RehuDocumentModel(document)
+
+    assert model.upgradable is False
+
+
+def versioned_tutorial_registry() -> PluginRegistry:
+    """A registry declaring a ``tutorial`` plugin at block version 1, for exercising :attr:`upgradable`
+    against a *block-level* stale version rather than the file-wide one (#81, [[plugins#plugin-blocks]]).
+
+    :returns: a registry with one versioned ``tutorial`` plugin.
+    """
+    return PluginRegistry(
+        [PluginSpec(("tutorial",), current_block_version=1, block_migrations=((1, lambda block: None),))]
+    )
+
+
+def test_a_freshly_loaded_document_with_a_stale_block_is_upgradable(mocker: MockerFixture) -> None:
+    """A document whose file-wide version is current but whose active block predates its plugin is still
+    :attr:`upgradable` -- one offer covers either stale layer (#81, #89, [[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * mock a file at the current file-wide version, block at v0, against a plugin now at v1
+    * load it and wrap it in a model
+    * verify the model reports ``upgradable``
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
+        ),
+    )
+    document = RehuDocument.load(Path("/fake/info.rehu"), plugins=versioned_tutorial_registry())
+
+    model = RehuDocumentModel(document)
+
+    assert model.upgradable is True
+
+
+def test_a_document_current_at_both_layers_is_not_upgradable(mocker: MockerFixture) -> None:
+    """Neither the file nor the active block is stale, so there is nothing to offer (#81, #89).
+
+    **Test steps:**
+
+    * mock a file at the current file-wide version, block already at the plugin's own version
+    * load it and wrap it in a model
+    * verify the model does not report ``upgradable``
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {
+                "format_version": CURRENT_FORMAT_VERSION,
+                "core": {"type": "tutorial"},
+                "tutorial": {"format_version": 1},
+            }
+        ),
+    )
+    document = RehuDocument.load(Path("/fake/info.rehu"), plugins=versioned_tutorial_registry())
+
+    model = RehuDocumentModel(document)
+
+    assert model.upgradable is False
+
+
+def test_saving_a_block_only_upgradable_document_clears_the_offer(mocker: MockerFixture) -> None:
+    """Saving upgrades whichever layer was stale, block included -- the same single-remedy contract the
+    file-wide offer already has (:meth:`RehuDocumentModel.save`, #81).
+
+    **Test steps:**
+
+    * load a document whose active block alone predates its plugin, confirming it starts upgradable
+    * save
+    * verify the offer clears
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "tutorial"}, "tutorial": {}}
+        ),
+    )
+    document = RehuDocument.load(Path("/fake/info.rehu"), plugins=versioned_tutorial_registry())
+    model = RehuDocumentModel(document)
+    assert model.upgradable is True
+
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    model.save()
 
     assert model.upgradable is False
 

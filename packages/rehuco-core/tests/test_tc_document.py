@@ -135,7 +135,9 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
         {"title": "Some learning path 1", "index": 1, "visibility": "private"},
         {"title": "Some learning path 2", "index": 2, "visibility": "private"},
     ]
-    assert "format_version" not in block
+    # the tutorial plugin is installed, so construction stamps the block's own version like any other
+    # ([[plugins#plugin-blocks]], #81) -- not a tc4 field, but not stray either
+    assert block["format_version"] == 0
 
 
 def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -> None:

@@ -62,6 +62,65 @@ def test_a_plugin_may_not_declare_the_same_key_twice() -> None:
         PluginSpec(("tutorial", "tutorial"))
 
 
+def test_a_plugin_defaults_to_no_block_version_of_its_own() -> None:
+    """A plugin that has not defined a versioned block layout yet reads as block version ``0`` with no
+    declared migrations ([[plugins#plugin-blocks]]) -- every builtin plugin, today.
+
+    **Test steps:**
+
+    * construct a spec giving only its keys
+    * verify ``current_block_version`` is ``0`` and ``block_migrations`` is empty
+    """
+    spec = PluginSpec(("tutorial",))
+    assert spec.current_block_version == 0
+    assert not spec.block_migrations
+
+
+def test_a_plugin_may_declare_block_migrations_up_to_its_current_version() -> None:
+    """A plugin's declared steps may target any version up to and including its own
+    ([[plugins#plugin-blocks]], [[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * construct a spec at block version 2 with steps targeting 1 and 2
+    * verify both fields round-trip
+    """
+
+    def step(block: dict) -> None:
+        block["migrated"] = True
+
+    spec = PluginSpec(("tutorial",), current_block_version=2, block_migrations=((1, step), (2, step)))
+    assert spec.current_block_version == 2
+    assert spec.block_migrations == ((1, step), (2, step))
+
+
+def test_a_plugin_may_not_declare_two_block_migrations_for_the_same_target() -> None:
+    """Two steps claiming the same target version is ambiguous -- which one is *the* v1?
+
+    **Test steps:**
+
+    * construct a spec with two steps both targeting version 1
+    * verify it raises
+    """
+    with pytest.raises(ValueError, match="duplicate block migration target"):
+        PluginSpec(
+            ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: None), (1, lambda block: None))
+        )
+
+
+def test_a_block_migration_may_not_target_past_current_block_version() -> None:
+    """A step nothing dispatches to (its target is never the layout this plugin claims to be at) is a
+    declaration bug, not a reachable state.
+
+    **Test steps:**
+
+    * construct a spec whose only step targets a version above ``current_block_version``
+    * verify it raises
+    """
+    with pytest.raises(ValueError, match="above current_block_version"):
+        PluginSpec(("tutorial",), current_block_version=1, block_migrations=((2, lambda block: None),))
+
+
 def test_resolve_finds_a_plugin_by_its_main_key_or_any_alias() -> None:
     """The registry indexes every declared spelling ([[plugins#core-vs-plugin]]).
 

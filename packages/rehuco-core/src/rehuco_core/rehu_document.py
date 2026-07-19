@@ -11,6 +11,11 @@ inactive plugin block -- are never dropped, satisfying the preserve-unknown-fiel
 a torn file ([[data-model#write-integrity]]).
 """
 
+# the document has a broad surface (common-core accessors, the plugin block model -- identity, versioning,
+# and lock reasons alike -- round-trip fidelity); one cohesive module reads better than an arbitrary split,
+# so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 import json
 import logging
 from collections.abc import Sequence
@@ -21,7 +26,13 @@ from typing import Any, Final
 from borco_core import atomic_write_text
 
 from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION, migrate_rehu_data, stamped_version
+from rehuco_core.migrations import (
+    CURRENT_FORMAT_VERSION,
+    migrate_block_data,
+    migrate_rehu_data,
+    stamped_block_version,
+    stamped_version,
+)
 from rehuco_core.plugins import (
     CORE_BLOCK_KEY,
     DEFAULT_PLUGIN_REGISTRY,
@@ -100,6 +111,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :attr:`on_disk_format_version`. Set only by :meth:`load`, which is the only caller that knows a
         file was involved -- constructing a document does not make one exist. Defaults to ``None``: no
         file.
+    :param on_disk_active_block_format_version: the active block's own version, as it was on the file
+        this payload was read from, before construction migrated it; see
+        :attr:`on_disk_active_block_format_version`. Set only by :meth:`load`, for the same reason as
+        ``on_disk_format_version``. Defaults to ``None``: no on-disk block to compare against.
     :param load_failure: the reason this document stands in for a file that could not be read at all
         (:attr:`~LockReasonKind.MISSING` / :attr:`~LockReasonKind.INVALID_FILE`); set only by
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
@@ -113,6 +128,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         legacy_tc: bool = False,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
         on_disk_format_version: int | None = None,
+        on_disk_active_block_format_version: int | None = None,
         load_failure: LockReason | None = None,
     ) -> None:
         # Final forbids rebinding __data to a different dict, not mutating this one -- every
@@ -124,6 +140,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__legacy_tc: Final = legacy_tc
         self.__plugins: Final = plugins
         self.__on_disk_format_version = on_disk_format_version
+        self.__on_disk_active_block_format_version = on_disk_active_block_format_version
         self.__load_failure = load_failure
         """The load-failure reason (:attr:`load_failed`), or ``None`` for a genuinely-parsed document.
         Not ``Final``: :meth:`reload` rebinds it, which is what makes revert the fix-retry loop
@@ -131,6 +148,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__check_reserved_keys(data)
         migrate_rehu_data(data)
         self.__normalize()
+        self.__migrate_active_block()
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]), before anything
@@ -196,6 +214,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
             path,
             plugins=plugins,
             on_disk_format_version=cls.__coerced_version(data),
+            on_disk_active_block_format_version=cls.__raw_active_block_version(data),
         )
 
     @classmethod
@@ -292,6 +311,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         # a file now exists, at whatever version was just written -- assigned only after the write, so a
         # failed save leaves the document still describing the file that is actually there
         self.__on_disk_format_version = self.format_version
+        self.__on_disk_active_block_format_version = self.__coerced_active_block_version()
 
     def __ordered_for_file(self) -> dict[str, Any]:
         """Lay the document out in canonical key order, for :meth:`save` to write.
@@ -370,6 +390,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         # adopt what the freshly-read file says its version is: a reload is how an out-of-band change is
         # picked up, and that change may have been another build rewriting the file at a different version
         self.__on_disk_format_version = fresh.on_disk_format_version
+        self.__on_disk_active_block_format_version = fresh.on_disk_active_block_format_version
         # adopt the fresh read's load-failure verdict: None when it parsed (dropping any prior lock), or a
         # refreshed MISSING/INVALID_FILE reason when it still cannot be read. Read off the fresh document's
         # public surface -- a stub's lock_reasons is exactly its single load-failure reason (lock_reasons)
@@ -429,6 +450,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
           ([[data-model#schema-version]]). The stamp itself is never *malformed*-locked: repairing a
           missing/bad stamp is a specified deduction, not a default masking data, so it does not appear as
           an ``INVALID_FIELD`` here.
+        - :attr:`~LockReasonKind.NEWER_BLOCK_FORMAT` -- the **active** block's own ``format_version``
+          above what its plugin understands ([[plugins#plugin-blocks]]); the same fail-safe as
+          ``NEWER_FORMAT``, scoped to one block.
         - :attr:`~LockReasonKind.INVALID_FIELD` -- one per owned field that is **present but fails
           coercion** (:meth:`__invalid_field_reasons`), so an edit can never save the coerced default over
           the malformed-but-recoverable original.
@@ -453,11 +477,39 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
                 LockReason(
                     LockReasonKind.NEWER_FORMAT,
                     f"format_version {self.format_version} is newer than this build understands "
-                    f"({CURRENT_FORMAT_VERSION})",
+                    f"({CURRENT_FORMAT_VERSION}).",
                 )
             )
+        reasons.extend(self.__newer_block_format_reasons())
         reasons.extend(self.__invalid_field_reasons())
         return reasons
+
+    def __newer_block_format_reasons(self) -> list[LockReason]:
+        """The :attr:`~LockReasonKind.NEWER_BLOCK_FORMAT` reason when the **active** block's own
+        ``format_version`` is newer than its plugin understands ([[plugins#plugin-blocks]], the
+        per-block refinement of :attr:`lock_reasons`'s ``NEWER_FORMAT`` check).
+
+        Only checked when a plugin is installed for the active key -- an uninstalled type's block has
+        no ``current_block_version`` to compare against, and is handled by the fallback-editor path
+        instead ([[plugins#fallback-editor]]). :meth:`__migrate_active_block` never restamps such a
+        block, so the version reported here is whatever the block actually carries.
+
+        :returns: a single-element list naming the block and its versions, or empty when it is at or
+            below what the plugin understands, or no plugin is installed for the active key.
+        """
+        plugin = self.__plugins.resolve(self.active_block_key)
+        if plugin is None:
+            return []
+        block_version = self.__coerced_active_block_version() or 0
+        if block_version <= plugin.current_block_version:
+            return []
+        return [
+            LockReason(
+                LockReasonKind.NEWER_BLOCK_FORMAT,
+                f"The {self.active_block_key!r} block's format_version {block_version} is newer than "
+                f"the installed plugin understands ({plugin.current_block_version}).",
+            )
+        ]
 
     def __invalid_field_reasons(self) -> list[LockReason]:
         """The :attr:`~LockReasonKind.INVALID_FIELD` reasons for owned fields present-but-uncoercible
@@ -549,6 +601,32 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         that isn't there."""
         return self.__on_disk_format_version
 
+    @property
+    def on_disk_active_block_format_version(self) -> int | None:
+        """The active block's own ``format_version``, as it currently sits on disk
+        ([[plugins#plugin-blocks]]); the per-block sibling of :attr:`on_disk_format_version`, same
+        ``None``-vs-``0`` distinction and the same set of seams (:meth:`load`, :meth:`reload`,
+        :meth:`save`).
+
+        ``None`` when there is no on-disk block to compare against: no file yet, or the active type
+        names no top-level object on it. A brand-new or ``.tc``-derived document also reads ``None``,
+        for the same reason :attr:`on_disk_format_version` does."""
+        return self.__on_disk_active_block_format_version
+
+    @property
+    def active_block_upgrade_pending(self) -> bool:
+        """Whether the active block, as it currently sits on disk, predates what its plugin
+        understands ([[plugins#plugin-blocks]]) -- the per-block sibling of comparing
+        :attr:`on_disk_format_version` against :data:`~rehuco_core.migrations.CURRENT_FORMAT_VERSION`,
+        so a caller offering a single, layer-agnostic "Upgrade" action (#89) can ask one question
+        instead of two.
+
+        ``False`` when there is nothing to compare -- no on-disk block (:attr:`on_disk_active_block_format_version`
+        is ``None``), or no plugin installed for the active key to say what "current" even means."""
+        on_disk = self.__on_disk_active_block_format_version
+        plugin = self.__plugins.resolve(self.active_block_key)
+        return on_disk is not None and plugin is not None and on_disk < plugin.current_block_version
+
     @staticmethod
     def __coerced_version(data: dict[str, Any]) -> int:
         """Read a payload's ``format_version`` as a plain number ([[data-model#write-integrity]]).
@@ -561,6 +639,30 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :returns: the stamped version, or ``0`` when absent or malformed.
         """
         stamp = stamped_version(data)
+        return stamp if stamp is not None else 0
+
+    @staticmethod
+    def __raw_active_block_version(data: dict[str, Any]) -> int | None:
+        """The active block's own stamp, read straight off ``data`` as parsed -- the same moment
+        :meth:`load` reads the file-wide stamp, before construction migrates anything
+        ([[plugins#plugin-blocks]]).
+
+        Resolves the active key from the raw payload's own shape (``core.type`` if present, else a
+        top-level ``type`` for a not-yet-migrated v1 file) rather than through :attr:`active_block_key`,
+        which only exists once a document -- and its normalization -- does.
+
+        :param data: the parsed JSON object, not yet touched by ``__init__``.
+        :returns: the raw block's stamp (``0`` if absent or malformed), or ``None`` when there is no
+            active block at all yet -- the type is unset, or names no top-level object.
+        """
+        core = data.get(CORE_BLOCK_KEY)
+        resource_type = core.get("type") if isinstance(core, dict) else data.get("type")
+        if not isinstance(resource_type, str) or not resource_type:
+            return None
+        block = data.get(resource_type)
+        if not isinstance(block, dict):
+            return None
+        stamp = stamped_block_version(block)
         return stamp if stamp is not None else 0
 
     @property
@@ -657,6 +759,18 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         is absent or malformed (not an object)."""
         block = self.__data.get(self.active_block_key)
         return block if isinstance(block, dict) else {}
+
+    def __coerced_active_block_version(self) -> int | None:
+        """The active block's own ``format_version``, defensively coerced -- the block-scoped sibling
+        of :meth:`__coerced_version` ([[plugins#plugin-blocks]]).
+
+        :returns: the stamped version (``0`` if absent or malformed), or ``None`` when there is no
+            active block at all -- the key is not present in :attr:`data`.
+        """
+        if self.active_block_key not in self.__data:
+            return None
+        stamp = stamped_block_version(self.active_block)
+        return stamp if stamp is not None else 0
 
     def plugin_blocks(self) -> list[PluginBlock]:
         """Enumerate this document's plugin blocks, each classified active or inactive ([[plugins#plugin-blocks]]).
@@ -788,6 +902,23 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         normalized = {renames.get(key, key): value for key, value in self.__data.items()}
         self.__data.clear()
         self.__data.update(normalized)
+
+    def __migrate_active_block(self) -> None:
+        """Bring the **active** block up to its plugin's ``current_block_version``, in place, at
+        construction -- the per-block mirror of the file-wide upgrade-on-load step
+        ([[plugins#plugin-blocks]], [[data-model#schema-version]]).
+
+        Only the active block is ever touched: an inactive block has no standing to be restamped by a
+        plugin that is not even reading it (:meth:`inactive_blocks`), and a type no installed plugin
+        declares has no ``current_block_version`` to migrate toward -- both cases are simply skipped,
+        leaving the block exactly as constructed.
+        """
+        plugin = self.__plugins.resolve(self.active_block_key)
+        if plugin is None:
+            return
+        block = self.__data.get(self.active_block_key)
+        if isinstance(block, dict):
+            migrate_block_data(block, plugin)
 
     @property
     def authors(self) -> list[AuthorEntry]:
