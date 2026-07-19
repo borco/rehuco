@@ -958,7 +958,7 @@ def test_save_without_path_raises() -> None:
     * verify ``ValueError`` is raised
     """
     doc = RehuDocument({"type": "tutorial"})
-    with pytest.raises(ValueError, match="no path given"):
+    with pytest.raises(ValueError, match="No path given"):
         doc.save()
 
 
@@ -1630,7 +1630,7 @@ def test_save_refuses_while_load_failed(mocker: MockerFixture) -> None:
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc = RehuDocument.open_or_locked(FAKE_PATH)
 
-    with pytest.raises(RehuFormatError, match="refusing to save"):
+    with pytest.raises(RehuFormatError, match="Refusing to save"):
         doc.save()
     write.assert_not_called()
 
@@ -1648,7 +1648,7 @@ def test_save_refuses_while_a_field_is_invalid(mocker: MockerFixture) -> None:
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc = RehuDocument({"core": {"authors": 42}}, FAKE_PATH)
 
-    with pytest.raises(RehuFormatError, match="refusing to save"):
+    with pytest.raises(RehuFormatError, match="Refusing to save"):
         doc.save()
     write.assert_not_called()
 
