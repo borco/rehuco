@@ -126,6 +126,23 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
     """
 
+    __OPTIONAL_INT_CORE_KEYS: Final = ("original_size", "current_size")
+    """Common-core optional integer scalars ([[field-schema#deferred-items]]): absent (or JSON ``null``)
+    reads as ``None``, a present non-int coerces to ``None`` for display **and** locks the document
+    (:attr:`~LockReasonKind.INVALID_FIELD`) -- absent is not ``0``."""
+
+    __OPTIONAL_INT_BLOCK_KEYS: Final = ("original_duration", "current_duration", "advertised_duration", "images_count")
+    """The active plugin block's shared optional integer scalars, same absent/malformed contract as
+    :data:`__OPTIONAL_INT_CORE_KEYS`."""
+
+    __OPTIONAL_INT_USER_KEYS: Final = ("rating",)
+    """The active block's **per-user** optional integer scalars ([[field-schema#per-user-shared]]); ``0`` is
+    a genuine rating (ratings may be negative), so *unrated* must read as ``None``, never ``0``."""
+
+    __OPTIONAL_STR_CORE_KEYS: Final = ("released",)
+    """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
+    non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
+
     def __init__(  # pylint: disable=too-many-arguments
         self,
         data: dict[str, Any],
@@ -157,6 +174,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         migrate_rehu_data(data)
         self.__normalize()
         self.__migrate_active_block()
+        self.__normalize_optional_scalars()
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]), before anything
@@ -558,11 +576,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         default back would quietly replace a malformed value the user may yet recover by hand. Each such
         field contributes one reason naming the key.
 
-        Only ``authors`` is checked today ([[field-schema#authors]], the seam #92 set up): its getter
-        skips an entry that is neither a name string nor a ``{name, url}`` record, and a non-list value
-        entirely, so "present but not skip-clean" is exactly the present-but-uncoercible condition. Other
-        owned fields join here as their own lossy-coercion cases are specified; the ``format_version``
-        stamp deliberately never does (see :attr:`lock_reasons`).
+        ``authors`` ([[field-schema#authors]], the seam #92 set up) and the optional scalars
+        ([[field-schema#deferred-items]]) are checked: ``authors``'s getter skips an entry that is neither a
+        name string nor a ``{name, url}`` record, and a non-list value entirely; an optional scalar's getter
+        coerces a present-but-wrong-typed value to ``None`` (:meth:`__invalid_scalar_reasons`). Both are the
+        "present but the getter had to coerce" condition. A merely *absent* scalar -- or a JSON ``null``,
+        already normalized to absent at construction (:meth:`__normalize_optional_scalars`) -- is a clean
+        ``None`` and never locks. The ``format_version`` stamp deliberately never does (see
+        :attr:`lock_reasons`).
 
         :returns: the invalid-field reasons, in a stable order.
         """
@@ -575,7 +596,46 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             )
             if not clean:
                 reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_AUTHORS_MESSAGE))
+        reasons.extend(self.__invalid_scalar_reasons())
         return reasons
+
+    def __invalid_scalar_reasons(self) -> list[LockReason]:
+        """One :attr:`~LockReasonKind.INVALID_FIELD` per optional scalar that is **present but malformed**
+        ([[field-schema#deferred-items]], the #92 ``authors`` precedent extended to the scalars).
+
+        A scalar that is absent -- or a JSON ``null``, already stripped to absent at construction
+        (:meth:`__normalize_optional_scalars`) -- reads as a clean ``None`` and does not lock. One that is
+        *present* with a value the getter must coerce away (a string where a whole number belongs, a
+        non-string where the date belongs) does, so an edit can never save the coerced ``None`` over the
+        malformed-but-recoverable original ([[data-model#write-integrity]]).
+
+        :returns: the invalid-scalar reasons, core before shared-block before per-user, in key order.
+        """
+        reasons: list[LockReason] = []
+        int_sources = (
+            (self.core, self.__OPTIONAL_INT_CORE_KEYS),
+            (self.active_block, self.__OPTIONAL_INT_BLOCK_KEYS),
+            (self.__active_user_map(), self.__OPTIONAL_INT_USER_KEYS),
+        )
+        for block, keys in int_sources:
+            for key in keys:
+                value = block.get(key)
+                if value is not None and self.__optional_int(value) is None:
+                    reasons.append(
+                        LockReason(LockReasonKind.INVALID_FIELD, self.__invalid_scalar_message(key, "a whole number"))
+                    )
+        for key in self.__OPTIONAL_STR_CORE_KEYS:
+            value = self.core.get(key)
+            if value is not None and not isinstance(value, str):
+                reasons.append(
+                    LockReason(LockReasonKind.INVALID_FIELD, self.__invalid_scalar_message(key, "a date string"))
+                )
+        return reasons
+
+    @staticmethod
+    def __invalid_scalar_message(key: str, expected: str) -> str:
+        """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present-but-malformed optional scalar."""
+        return f"{key}: present but not {expected} ([[field-schema#deferred-items]])."
 
     @property
     def core(self) -> dict[str, Any]:
@@ -950,6 +1010,34 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             users[self.__username] = user
         return user
 
+    def __active_user_map(self) -> dict[str, Any]:
+        """This document's per-user submap **as stored** ([[field-schema#per-user-shared]]), or an empty
+        dict when the block, the ``users`` map, or this user is absent or malformed.
+
+        A read-only peek for validation (:meth:`__invalid_scalar_reasons`), distinct from
+        :meth:`__active_user_or_create`: it never installs a submap, so merely inspecting a document's
+        per-user scalars cannot make it dirty."""
+        users = self.active_block.get(USERS_KEY)
+        user = users.get(self.__username) if isinstance(users, dict) else None
+        return user if isinstance(user, dict) else {}
+
+    def remove_active_user_field(self, key: str) -> bool:
+        """Delete a **per-user** key from this document's own user submap ([[field-schema#per-user-shared]]);
+        the per-user sibling of :meth:`remove_active_field`. Only this user's submap is touched, never
+        another's -- the same isolation :meth:`active_user_field` reads under.
+
+        :param key: the per-user key to delete inside this user's submap.
+        :returns: ``True`` if the key was present and removed, ``False`` if the block, the ``users`` map,
+            this user, or the key was absent.
+        """
+        block = self.__data.get(self.active_block_key)
+        users = block.get(USERS_KEY) if isinstance(block, dict) else None
+        user = users.get(self.__username) if isinstance(users, dict) else None
+        if isinstance(user, dict) and key in user:
+            del user[key]
+            return True
+        return False
+
     def __normalize(self) -> None:
         """Rewrite alias spellings to their plugin's main key, in place, at construction
         ([[plugins#plugin-blocks]]).
@@ -1010,6 +1098,35 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         if isinstance(block, dict):
             migrate_block_data(block, self.active_block_key, self.__username)
 
+    def __normalize_optional_scalars(self) -> None:
+        """Drop a JSON ``null`` stored under any known optional scalar, in place, at construction
+        ([[field-schema#deferred-items]]).
+
+        The absent-on-disk ↔ ``None``-in-code mapping's read half: ``null`` is *accepted* on disk but **is**
+        the in-memory ``None``, and ``None`` is never written -- so a loaded ``null`` normalizes to absent
+        here, matching what a cleared scalar leaves and letting :meth:`save` round-trip a ``null`` file to
+        one without the key. Only the reserved ``core`` block and the **active** block's own scalars (its
+        shared fields and *this* user's ``rating``) are touched: an inactive block or another user's submap
+        is foreign payload, carried verbatim ([[plugins#plugin-blocks]], [[field-schema#per-user-shared]]).
+        """
+        core = self.__data.get(CORE_BLOCK_KEY)
+        if isinstance(core, dict):
+            self.__drop_null_keys(core, (*self.__OPTIONAL_INT_CORE_KEYS, *self.__OPTIONAL_STR_CORE_KEYS))
+        block = self.__data.get(self.active_block_key)
+        if isinstance(block, dict):
+            self.__drop_null_keys(block, self.__OPTIONAL_INT_BLOCK_KEYS)
+            users = block.get(USERS_KEY)
+            user = users.get(self.__username) if isinstance(users, dict) else None
+            if isinstance(user, dict):
+                self.__drop_null_keys(user, self.__OPTIONAL_INT_USER_KEYS)
+
+    @staticmethod
+    def __drop_null_keys(block: dict[str, Any], keys: Sequence[str]) -> None:
+        """Delete each of ``keys`` from ``block`` when it is present with a JSON ``null`` value."""
+        for key in keys:
+            if block.get(key) is None and key in block:
+                del block[key]
+
     @property
     def authors(self) -> list[AuthorEntry]:
         """The shared ``authors`` list ([[field-schema#authors]]); empty when absent.
@@ -1058,13 +1175,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return entry
 
     @property
-    def released(self) -> str:
-        """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; empty if absent."""
-        return str(self.core.get("released", ""))
+    def released(self) -> str | None:
+        """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; ``None``
+        when absent or JSON ``null`` -- absent is not ``""`` ([[field-schema#deferred-items]]). A present
+        non-string is malformed -> ``None`` and locks the document (:attr:`~LockReasonKind.INVALID_FIELD`)."""
+        return self.__optional_str(self.core.get("released"))
 
     @released.setter
-    def released(self, value: str) -> None:
-        self.__core_or_create()["released"] = value
+    def released(self, value: str | None) -> None:
+        self.__set_or_delete(self.__core_or_create(), "released", value)
 
     @property
     def created(self) -> str:
@@ -1084,28 +1203,122 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def updated(self, value: str) -> None:
         self.__core_or_create()["updated"] = value
 
+    @staticmethod
+    def __optional_int(value: Any) -> int | None:
+        """One optional integer scalar's read value ([[field-schema#deferred-items]]): the stored ``int``
+        (``bool`` excluded, an ``int`` subclass), or ``None`` when the key is absent, JSON ``null``, or a
+        malformed non-int. Absent and malformed both display as ``None``; only *malformed* additionally
+        locks the document (:meth:`__invalid_scalar_reasons`)."""
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    @staticmethod
+    def __optional_str(value: Any) -> str | None:
+        """One optional string scalar's read value: the stored string, or ``None`` when the key is absent,
+        JSON ``null``, or a malformed non-string (which also locks). Unlike an integer field there is
+        nothing further to coerce -- a stored string is already its own value."""
+        return value if isinstance(value, str) else None
+
+    @staticmethod
+    def __set_or_delete(block: dict[str, Any], key: str, value: Any) -> None:
+        """Write ``value`` under ``key``, or **delete** the key when ``value`` is ``None`` -- the
+        absent-on-disk ↔ ``None``-in-code mapping ([[field-schema#deferred-items]]): ``None`` is never
+        written, so clearing an optional scalar leaves no key rather than a ``null``."""
+        if value is None:
+            block.pop(key, None)
+        else:
+            block[key] = value
+
+    def __set_active_or_remove(self, key: str, value: Any) -> None:
+        """Write ``value`` into the active plugin block, or **remove** the key when ``value`` is ``None`` --
+        the block-scalar sibling of :meth:`__set_or_delete` ([[field-schema#deferred-items]])."""
+        if value is None:
+            self.remove_active_field(key)
+        else:
+            self.set_active_field(key, value)
+
     @property
-    def original_size(self) -> int:
+    def original_size(self) -> int | None:
         """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]]);
-        ``0`` when absent (e.g. a Collection, which has none of its own) or malformed
-        ([[data-model#write-integrity]])."""
-        value = self.core.get("original_size", 0)
-        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+        ``None`` when absent (e.g. a Collection, which has none of its own) or JSON ``null`` -- absent is
+        not ``0`` ([[field-schema#deferred-items]]). A present non-int coerces to ``None`` for display and
+        locks the document (:attr:`~LockReasonKind.INVALID_FIELD`), so an edit never saves the coerced
+        ``None`` over a recoverable original ([[data-model#write-integrity]])."""
+        return self.__optional_int(self.core.get("original_size"))
 
     @original_size.setter
-    def original_size(self, value: int) -> None:
-        self.__core_or_create()["original_size"] = value
+    def original_size(self, value: int | None) -> None:
+        self.__set_or_delete(self.__core_or_create(), "original_size", value)
 
     @property
-    def current_size(self) -> int:
-        """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]); ``0``
-        when absent or malformed ([[data-model#write-integrity]])."""
-        value = self.core.get("current_size", 0)
-        return value if isinstance(value, int) and not isinstance(value, bool) else 0
+    def current_size(self) -> int | None:
+        """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]); ``None``
+        when absent or JSON ``null`` -- absent is not ``0`` ([[field-schema#deferred-items]]). A present
+        non-int coerces to ``None`` for display and locks ([[data-model#write-integrity]])."""
+        return self.__optional_int(self.core.get("current_size"))
 
     @current_size.setter
-    def current_size(self, value: int) -> None:
-        self.__core_or_create()["current_size"] = value
+    def current_size(self, value: int | None) -> None:
+        self.__set_or_delete(self.__core_or_create(), "current_size", value)
+
+    @property
+    def original_duration(self) -> int | None:
+        """Measured total running time, in integer seconds, of the complete download
+        ([[field-schema#duration-size]]); a shared field on the active plugin block. ``None`` when absent
+        or JSON ``null``; a present non-int coerces to ``None`` for display and locks
+        ([[field-schema#deferred-items]])."""
+        return self.__optional_int(self.active_field("original_duration"))
+
+    @original_duration.setter
+    def original_duration(self, value: int | None) -> None:
+        self.__set_active_or_remove("original_duration", value)
+
+    @property
+    def current_duration(self) -> int | None:
+        """Integer seconds still on disk for this copy ([[field-schema#duration-size]]); a shared field on
+        the active plugin block. ``None`` when absent or JSON ``null``; a present non-int coerces to ``None``
+        and locks ([[field-schema#deferred-items]])."""
+        return self.__optional_int(self.active_field("current_duration"))
+
+    @current_duration.setter
+    def current_duration(self, value: int | None) -> None:
+        self.__set_active_or_remove("current_duration", value)
+
+    @property
+    def advertised_duration(self) -> int | None:
+        """The coarse web-claimed running time in integer seconds ([[field-schema#duration-size]]); a shared
+        field on the active plugin block. ``None`` when absent or JSON ``null``; a present non-int coerces to
+        ``None`` and locks ([[field-schema#deferred-items]])."""
+        return self.__optional_int(self.active_field("advertised_duration"))
+
+    @advertised_duration.setter
+    def advertised_duration(self, value: int | None) -> None:
+        self.__set_active_or_remove("advertised_duration", value)
+
+    @property
+    def images_count(self) -> int | None:
+        """The reference-images count ([[field-schema#field-types]]); a shared field on the active plugin
+        block, filled by scanning rather than fabricated on import ([[field-schema#deferred-items]]).
+        ``None`` when absent or JSON ``null``; a present non-int coerces to ``None`` and locks."""
+        return self.__optional_int(self.active_field("images_count"))
+
+    @images_count.setter
+    def images_count(self, value: int | None) -> None:
+        self.__set_active_or_remove("images_count", value)
+
+    @property
+    def rating(self) -> int | None:
+        """This user's ``rating`` ([[field-schema#per-user-shared]]); ``None`` when *unrated* (absent or
+        JSON ``null``). ``0`` is a genuine rating -- ratings may be negative -- so unrated must read as
+        ``None``, never a coerced ``0`` ([[field-schema#deferred-items]]). A present non-int coerces to
+        ``None`` for display and locks ([[data-model#write-integrity]])."""
+        return self.__optional_int(self.active_user_field("rating"))
+
+    @rating.setter
+    def rating(self, value: int | None) -> None:
+        if value is None:
+            self.remove_active_user_field("rating")
+        else:
+            self.set_active_user_field("rating", value)
 
     @property
     def advertised_tags(self) -> list[str]:

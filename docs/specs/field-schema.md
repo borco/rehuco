@@ -554,7 +554,7 @@ parser/schema validation fixtures.
 }
 ```
 
-### ReferenceImages — empty `images_count`, no duration, full date
+### ReferenceImages — absent `images_count`, no duration, full date, unrated
 
 ```json
 {
@@ -583,14 +583,12 @@ parser/schema validation fixtures.
   "reference_images": {
     "format_version": 1,
     "collections": [],
-    "images_count": null,
     "complete": true,
     "online": false,
     "users": {
       "admin": {
         "favorite": false,
         "keep": false,
-        "rating": 0,
         "todo": false,
         "viewed": false
       }

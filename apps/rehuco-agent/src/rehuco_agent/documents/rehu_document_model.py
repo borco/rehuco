@@ -485,11 +485,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.authors = self.__document.authors
             self.publisher = self.__document.publisher
             self.url = self.__document.url
-            self.released = self.__document.released
+            # #100 made these three optional scalars read as ``None`` when absent, so absent is no longer 0/""
+            # ([[field-schema#deferred-items]]); the None-aware widgets/display are #101. Until then the model
+            # keeps coercing absent to each field's own declared default, so the view behaves exactly as
+            # before -- the same one-model split #98/#99 used for the per-user rating.
+            self.released = self.__default_if_none("released", self.__document.released)
             self.description = self.__document.description
             self.hidden_images = self.__document.hidden_images
-            self.original_size = self.__document.original_size
-            self.current_size = self.__document.current_size
+            self.original_size = self.__default_if_none("original_size", self.__document.original_size)
+            self.current_size = self.__default_if_none("current_size", self.__document.current_size)
             self.advertised_tags = self.__document.advertised_tags
             self.extra_tags = self.__document.extra_tags
 
@@ -512,6 +516,24 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 setattr(self, name, coerced)
         finally:
             self.__seeding = False
+
+    def __default_if_none[T](self, name: str, value: T | None) -> T:
+        """``value``, or field ``name``'s own :class:`SimpleProperty` default when the document read
+        ``None`` for it -- the seed bridge for the #100 optional scalars (``released`` / ``original_size`` /
+        ``current_size``) whose getters now return ``None`` when absent ([[field-schema#deferred-items]]).
+
+        The default comes from the property's declaration, not a hand-duplicated literal, so there stays one
+        place per field to change its default -- the same discipline the type-field loops in
+        :meth:`__seed_from_document` follow. Generic in the field's own type so the seeded value keeps that
+        type (``str`` / ``int``), not a widened one, which is what keeps every reader of these properties
+        (e.g. :class:`~rehuco_agent.documents.name_suggestion_model.NameSuggestionModel`) type-clean until
+        #101 makes the widgets None-aware and this bridge is retired.
+
+        :param name: the property to read the default from.
+        :param value: the document's value for it, possibly ``None``.
+        :returns: ``value`` unchanged, or the property's declared default when ``value`` is ``None``.
+        """
+        return value if value is not None else SimpleProperty.default_value(type(self), name)
 
     def __move(self, new_name: str) -> bool:
         """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
