@@ -108,7 +108,10 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
     assert set(saved["tutorial"]["users"]) == {"alice"}
     assert saved["tutorial"]["users"]["alice"]["favorite"] is False
     assert document.username == "alice"
-    assert document.active_user_field("rating", None) == 0
+    # the source `.tc` carried no rating, so none is fabricated: it is omitted, and reads back unrated
+    # ([[field-schema#deferred-items]]) -- 0 is a genuine rating, so absent must not coerce to it
+    assert "rating" not in saved["tutorial"]["users"]["alice"]
+    assert document.rating is None
 
 
 def test_keep_backups_leaves_the_orig_siblings(mocker: MockerFixture) -> None:

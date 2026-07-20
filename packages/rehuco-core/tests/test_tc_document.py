@@ -154,8 +154,9 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
 
     * mock ``Path.read_text`` to return :data:`REFERENCE_IMAGES_TC`
     * load via :func:`load_tc`
-    * verify the leaked `duration` produced no ``original_duration``, ``images_count`` is an empty
-      ``null`` (never derived from it), and per-user flags nest under ``users`` at block v1
+    * verify the leaked `duration` produced no ``original_duration``, ``images_count`` is omitted
+      entirely (never derived from it, never fabricated as ``null``), and per-user flags nest under
+      ``users`` at block v1
     """
     doc = load_tc_doc(mocker, REFERENCE_IMAGES_TC)
     assert doc.type == "reference_images"
@@ -174,9 +175,10 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
             "viewed": True,
         }
     }
-    # ``images_count`` is shared, new, and empty on import -- ``null``, never the leaked tc4 `duration`
-    # ([[field-schema#duration-size]], [[field-schema#per-user-shared]])
-    assert block["images_count"] is None
+    # ``images_count`` is shared, new, and empty on import -- *omitted*, filled later by scanning, never the
+    # leaked tc4 `duration` and never fabricated as ``null`` ([[field-schema#duration-size]],
+    # [[field-schema#deferred-items]])
+    assert "images_count" not in block
     assert "original_duration" not in block
     assert "level" not in block
     assert "rating" not in block  # moved under ``users``, not left inline

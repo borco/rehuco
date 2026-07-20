@@ -790,39 +790,320 @@ def test_record_timestamp_setter_replaces_the_value(attr: str) -> None:
     assert getattr(doc, attr) == "2025-03-08T12:00:00Z"
 
 
-@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
-def test_size_field_defaults_to_zero_when_absent(attr: str) -> None:
-    """``original_size``/``current_size`` default to ``0`` when the key is absent (e.g. a Collection).
+# region Optional scalars (#100)
 
-    **Test steps:**
-
-    * construct a document with neither key
-    * verify the attribute reads ``0``
-    """
-    doc = RehuDocument({})
-    assert getattr(doc, attr) == 0
-
-
-@mark.parametrize(
-    ("attr", "malformed"),
-    [
-        param("original_size", "5 GB", id="original_size-non-int-string"),
-        param("original_size", True, id="original_size-bool"),
-        param("current_size", "5 GB", id="current_size-non-int-string"),
-        param("current_size", True, id="current_size-bool"),
-    ],
+# The eight optional scalars read as ``None`` when absent -- absent is not 0/"" ([[field-schema#deferred-items]]).
+# Seven are integers living in three places; this table maps each to *where* a raw on-disk value must be
+# planted, so one parametrized suite can exercise every field's absent/null/value/malformed contract
+# uniformly (``released`` is a string and tested on its own below). ``OPTIONAL_INT_ATTRS`` drops the
+# location for the cases where only the getter/setter name matters (planting nothing, or writing through the
+# typed accessor, which routes to the right place itself).
+OPTIONAL_INT_SCALAR_SPECS: Final = (
+    ("original_size", "core"),
+    ("current_size", "core"),
+    ("original_duration", "block"),
+    ("current_duration", "block"),
+    ("advertised_duration", "block"),
+    ("images_count", "block"),
+    ("rating", "user"),
 )
-def test_size_field_defensively_coerces_a_malformed_value(attr: str, malformed: object) -> None:
-    """A non-``int`` (or ``bool``, technically an ``int`` subclass) stored value reads back as ``0``
-    rather than raising or returning the malformed value ([[data-model#write-integrity]]).
+OPTIONAL_INT_SCALARS: Final = [param(attr, location, id=attr) for attr, location in OPTIONAL_INT_SCALAR_SPECS]
+OPTIONAL_INT_ATTRS: Final = [param(attr, id=attr) for attr, _location in OPTIONAL_INT_SCALAR_SPECS]
+
+
+def scalar_doc(location: str, key: str, value: Any, path: Path | None = None) -> RehuDocument:
+    """Build a Tutorial document carrying a raw ``value`` under ``key`` at ``location`` -- the common core
+    (``core``), the active block's shared fields (``block``), or this user's submap (``user``).
+
+    :param location: where to plant the value (``core`` / ``block`` / ``user``).
+    :param key: the scalar's key.
+    :param value: the raw on-disk value to store (an int, ``None`` for JSON ``null``, or malformed).
+    :param path: the document's path, for the save-round-trip tests; ``None`` for read-only checks.
+    :returns: the constructed document.
+    """
+    core: dict[str, Any] = {"type": "tutorial"}
+    block: dict[str, Any] = {"format_version": 1}
+    if location == "core":
+        core[key] = value
+    elif location == "block":
+        block[key] = value
+    else:  # user
+        block["users"] = {"admin": {key: value}}
+    return RehuDocument({"core": core, "tutorial": block}, path)
+
+
+def scalar_container(source: dict[str, Any], location: str) -> dict[str, Any]:
+    """The sub-object holding a scalar at ``location``, in a raw ``.rehu`` dict (``data`` or saved JSON)."""
+    if location == "core":
+        return source.get("core", {})
+    block = source.get("tutorial", {})
+    return block if location == "block" else block.get("users", {}).get("admin", {})
+
+
+@mark.parametrize("attr", OPTIONAL_INT_ATTRS)
+def test_optional_int_scalar_reads_none_when_absent(attr: str) -> None:
+    """An optional integer scalar reads ``None`` when absent -- absent is not ``0`` -- and does not lock
+    ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
-    * construct a document with ``attr`` set to a malformed value
-    * verify the attribute reads ``0``
+    * construct a Tutorial document that carries no value for ``attr``
+    * verify the getter is ``None`` and no lock reason is raised
     """
-    doc = RehuDocument({attr: malformed})
+    doc = RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}})
+    assert getattr(doc, attr) is None
+    assert not doc.lock_reasons
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_reads_a_stored_zero_honestly(attr: str, location: str) -> None:
+    """A stored ``0`` reads back as ``0`` -- a genuine reading distinct from absent's ``None`` -- and does
+    not lock ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * store ``0`` for ``attr`` at its location
+    * verify the getter is ``0`` (not ``None``) and no lock reason is raised
+    """
+    doc = scalar_doc(location, attr, 0)
     assert getattr(doc, attr) == 0
+    assert not doc.lock_reasons
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_reads_a_stored_value(attr: str, location: str) -> None:
+    """A stored non-zero integer reads back unchanged.
+
+    **Test steps:**
+
+    * store a value for ``attr`` at its location
+    * verify the getter returns it
+    """
+    doc = scalar_doc(location, attr, 4200)
+    assert getattr(doc, attr) == 4200
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_null_reads_none_and_does_not_lock(attr: str, location: str) -> None:
+    """JSON ``null`` is accepted on read as ``None`` and does not lock -- it is the on-disk spelling of
+    absent ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * store JSON ``null`` for ``attr`` at its location
+    * verify the getter is ``None`` and no lock reason is raised
+    """
+    doc = scalar_doc(location, attr, None)
+    assert getattr(doc, attr) is None
+    assert not doc.lock_reasons
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_null_normalizes_away_on_save(attr: str, location: str, mocker: MockerFixture) -> None:
+    """A document with a ``null`` optional scalar on disk saves **without** the key -- ``null`` is accepted
+    on read but never written back ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document whose ``attr`` is JSON ``null`` on disk, bound to a path
+    * mock ``atomic_write_text`` to capture the saved JSON, and save
+    * verify the saved container has no ``attr`` key
+    """
+    doc = scalar_doc(location, attr, None, FAKE_PATH)
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(write.call_args[0][1])
+    assert attr not in scalar_container(saved, location)
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_malformed_reads_none_and_locks(attr: str, location: str) -> None:
+    """A present non-int coerces to ``None`` for display **and** locks the document with an
+    ``INVALID_FIELD`` reason naming it, so an edit never saves the coerced ``None`` over the
+    malformed-but-recoverable original ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * store a non-int (a string) for ``attr`` at its location
+    * verify the getter is ``None``, the sole lock reason is ``INVALID_FIELD``, and it names ``attr``
+    """
+    doc = scalar_doc(location, attr, "junk")
+    assert getattr(doc, attr) is None
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert attr in doc.lock_reasons[0].message
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_optional_int_scalar_malformed_refuses_to_save(attr: str, location: str, mocker: MockerFixture) -> None:
+    """A malformed optional scalar's ``INVALID_FIELD`` lock makes ``save`` refuse, so the coerced ``None``
+    never overwrites the recoverable original ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a document whose ``attr`` is malformed, bound to a path
+    * mock ``atomic_write_text`` to prove it is never reached
+    * verify ``save`` raises and nothing was written
+    """
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc = scalar_doc(location, attr, "junk", FAKE_PATH)
+
+    with pytest.raises(RehuFormatError, match="Refusing to save"):
+        doc.save()
+    write.assert_not_called()
+
+
+def test_a_stored_bool_is_malformed_for_an_int_scalar() -> None:
+    """A JSON ``true``/``false`` is not a whole number (``bool`` is an ``int`` subclass but excluded), so a
+    scalar storing one reads ``None`` and locks ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * store ``True`` under ``original_size``
+    * verify it reads ``None`` and the document locks ``INVALID_FIELD``
+    """
+    doc = RehuDocument({"core": {"type": "tutorial", "original_size": True}, "tutorial": {"format_version": 1}})
+    assert doc.original_size is None
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+
+
+@mark.parametrize("attr", OPTIONAL_INT_ATTRS)
+def test_setting_an_optional_int_scalar_stores_the_value(attr: str) -> None:
+    """Setting an optional scalar to an integer stores it.
+
+    **Test steps:**
+
+    * construct a document without ``attr``
+    * assign a value through the typed setter
+    * verify the getter reflects it
+    """
+    doc = RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}})
+    setattr(doc, attr, 123)
+    assert getattr(doc, attr) == 123
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
+def test_setting_an_optional_int_scalar_none_deletes_the_key(attr: str, location: str) -> None:
+    """Setting an optional scalar to ``None`` deletes its key rather than writing ``null``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document with a stored value for ``attr``
+    * assign ``None`` through the typed setter
+    * verify the getter is ``None`` and the key is gone from the backing data
+    """
+    doc = scalar_doc(location, attr, 7)
+    setattr(doc, attr, None)
+    assert getattr(doc, attr) is None
+    assert attr not in scalar_container(doc.data, location)
+
+
+def test_clearing_an_absent_per_user_rating_is_a_harmless_noop() -> None:
+    """Clearing ``rating`` on a document that has no ``users`` map at all is a no-op, not a crash --
+    :meth:`remove_active_user_field` tolerates an absent block/map/user ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a document with no per-user state
+    * set ``rating`` to ``None``
+    * verify it stays ``None`` and no ``users`` map was created
+    """
+    doc = RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}})
+    doc.rating = None
+    assert doc.rating is None
+    assert "users" not in doc.data["tutorial"]
+
+
+def test_a_negative_rating_round_trips(mocker: MockerFixture) -> None:
+    """A negative rating survives a save/reload -- ``0`` is a genuine rating, so *unrated* is ``None`` and a
+    negative value must never be mistaken for empty ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document rated ``-3``, bound to a path
+    * verify the getter reads ``-3``, then save and re-read the captured JSON
+    * verify the saved and reloaded rating are both ``-3``
+    """
+    doc = scalar_doc("user", "rating", -3, FAKE_PATH)
+    assert doc.rating == -3
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(write.call_args[0][1])
+    assert saved["tutorial"]["users"]["admin"]["rating"] == -3
+    assert RehuDocument(saved).rating == -3
+
+
+def test_released_reads_none_when_absent() -> None:
+    """``released`` reads ``None`` when absent -- absent is not ``""`` ([[field-schema#deferred-items]])."""
+    assert RehuDocument({"core": {"type": "tutorial"}}).released is None
+
+
+def test_released_reads_the_stored_string() -> None:
+    """A stored partial-precision date reads back unchanged."""
+    assert RehuDocument({"core": {"type": "tutorial", "released": "2025-03"}}).released == "2025-03"
+
+
+def test_released_null_reads_none_and_does_not_lock() -> None:
+    """JSON ``null`` for ``released`` reads as ``None`` and does not lock ([[field-schema#deferred-items]])."""
+    doc = RehuDocument({"core": {"type": "tutorial", "released": None}})
+    assert doc.released is None
+    assert not doc.lock_reasons
+
+
+def test_released_null_normalizes_away_on_save(mocker: MockerFixture) -> None:
+    """A ``null`` ``released`` on disk saves without the key -- ``null`` is never written back
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document whose ``released`` is JSON ``null``, bound to a path
+    * mock ``atomic_write_text`` and save
+    * verify the saved core has no ``released`` key
+    """
+    doc = RehuDocument({"core": {"type": "tutorial", "released": None}}, FAKE_PATH)
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    assert "released" not in json.loads(write.call_args[0][1])["core"]
+
+
+def test_released_malformed_reads_none_and_locks() -> None:
+    """A present non-string ``released`` coerces to ``None`` for display and locks ``INVALID_FIELD``
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * store a list under ``released``
+    * verify it reads ``None`` and the sole lock reason is ``INVALID_FIELD`` naming ``released``
+    """
+    doc = RehuDocument({"core": {"type": "tutorial", "released": [2025]}})
+    assert doc.released is None
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert "released" in doc.lock_reasons[0].message
+
+
+def test_setting_released_none_deletes_the_key() -> None:
+    """Setting ``released`` to ``None`` deletes the key rather than writing ``null``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document with a stored ``released``
+    * assign ``None``
+    * verify it reads ``None`` and the key is gone
+    """
+    doc = RehuDocument({"core": {"type": "tutorial", "released": "2025"}})
+    doc.released = None
+    assert doc.released is None
+    assert "released" not in doc.data["core"]
+
+
+# endregion
 
 
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])

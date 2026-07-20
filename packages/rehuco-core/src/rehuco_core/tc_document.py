@@ -156,23 +156,38 @@ class TcDocument:
         :returns: a JSON object ready to back a :class:`RehuDocument`.
         """
         resource_type = DEFAULT_PLUGIN_REGISTRY.main_key(self.__type)
-        data: dict[str, Any] = {
-            FORMAT_VERSION_KEY: CURRENT_FORMAT_VERSION,
-            CORE_BLOCK_KEY: {
-                "type": resource_type,
-                "sources": [self.__source()],
-                "authors": self.__str_list("author"),
-                "released": str(self.__data.get("released", "")),
-                "description": str(self.__data.get("description", "")),
-                "advertised_tags": self.__str_list("tags"),
-                "extra_tags": self.__str_list("extraTags"),
-                "original_size": self.__parsed_size("original_size"),
-                "current_size": self.__parsed_size("current_size"),
-            },
+        core: dict[str, Any] = {
+            "type": resource_type,
+            "sources": [self.__source()],
+            "authors": self.__str_list("author"),
+            "description": str(self.__data.get("description", "")),
+            "advertised_tags": self.__str_list("tags"),
+            "extra_tags": self.__str_list("extraTags"),
         }
+        # The optional scalars are *omitted* when the .tc did not carry them -- absent is not 0/"" and must
+        # not be fabricated ([[field-schema#deferred-items]]); an explicit legacy value (even 0) still
+        # imports ([[field-schema#ms-leak-history]]). The strings/lists above keep their coercion defaults.
+        self.__put_optional(core, "released", self.__optional_released())
+        self.__put_optional(core, "original_size", self.__parsed_size("original_size"))
+        self.__put_optional(core, "current_size", self.__parsed_size("current_size"))
+        data: dict[str, Any] = {FORMAT_VERSION_KEY: CURRENT_FORMAT_VERSION, CORE_BLOCK_KEY: core}
         if self.__type in self.__TYPES_WITH_BLOCK:
             data[resource_type] = self.__type_fields(resource_type, username)
         return data
+
+    @staticmethod
+    def __put_optional(block: dict[str, Any], key: str, value: Any) -> None:
+        """Store ``value`` under ``key`` only when it is not ``None`` -- a field the ``.tc`` did not carry is
+        omitted, never fabricated as ``0``/``""``/``null`` ([[field-schema#deferred-items]])."""
+        if value is not None:
+            block[key] = value
+
+    def __optional_released(self) -> str | None:
+        """The ``released`` date the ``.tc`` carried, as a string, or ``None`` when it was absent or empty --
+        an empty date is nothing to store, so it reads back as ``None`` rather than ``""``
+        ([[field-schema#deferred-items]])."""
+        text = str(self.__data.get("released", ""))
+        return text or None
 
     def __source(self) -> dict[str, Any]:
         """Build the single primary ``sources`` entry from tc4's scalar title/publisher/url.
@@ -200,37 +215,48 @@ class TcDocument:
         current and never re-migrates it.
 
         ``favorite`` is minted ``False`` -- it is new to rehuco with no tc4 source key
-        ([[field-schema#per-user-shared]]). ``rating`` keeps its ``0`` import default (the read-as-``None``
-        refinement is a separate change).
+        ([[field-schema#per-user-shared]]). The optional scalars ``rating``/``original_duration`` are
+        *omitted* unless the ``.tc`` carried them (an explicit ``0`` imports; a missing field is not
+        fabricated, [[field-schema#deferred-items]]), and ``images_count`` is always omitted -- filled later
+        by scanning, never reinterpreted from tc4's leaked ``duration`` ([[field-schema#duration-size]]).
 
         :param resource_type: the normalized block key, used to stamp the block's current version.
         :param username: the identity the per-user subset is filed under.
-        :returns: the plugin block; ``Tutorial`` additionally carries ``original_duration``/``level``, and
-            ReferenceImages an empty ``images_count`` (``null`` on import, filled later by scanning --
-            never reinterpreted from tc4's leaked `duration`, [[field-schema#duration-size]]).
+        :returns: the plugin block; ``Tutorial`` additionally carries ``level`` and, when the ``.tc`` had a
+            ``duration``, ``original_duration``.
         """
         block: dict[str, Any] = {
             FORMAT_VERSION_KEY: current_block_version(resource_type),
             "complete": self.__coerced_bool("complete", True),
             "online": self.__coerced_bool("online", False),
             "collections": self.__collections(),
-            USERS_KEY: {
-                username: {
-                    "favorite": False,
-                    "keep": self.__coerced_bool("keep", False),
-                    "learning_paths": self.__learning_paths(),
-                    "rating": self.__coerced_int("rating", 0),
-                    "todo": self.__coerced_bool("todo", False),
-                    "viewed": self.__coerced_bool("viewed", False),
-                }
-            },
+            USERS_KEY: {username: self.__user_fields()},
         }
         if self.__type == "Tutorial":
-            block["original_duration"] = self.__parsed_duration("duration")
+            self.__put_optional(block, "original_duration", self.__parsed_duration("duration"))
             block["level"] = self.__str_list("level")
-        else:  # ReferenceImages -- the only other type __type_fields is built for (see __TYPES_WITH_BLOCK)
-            block["images_count"] = None
+        # ReferenceImages (the only other type built here, see __TYPES_WITH_BLOCK) carries no extra shared
+        # scalar: images_count is omitted on import, not written as null.
         return block
+
+    def __user_fields(self) -> dict[str, Any]:
+        """Build this user's per-user subset ([[field-schema#per-user-shared]]).
+
+        The boolean flags keep their coercion defaults; the optional ``rating`` scalar is omitted unless the
+        ``.tc`` carried it (an explicit value, even ``0``, imports; absent is not ``0``,
+        [[field-schema#deferred-items]]).
+
+        :returns: the per-user field map.
+        """
+        user: dict[str, Any] = {
+            "favorite": False,
+            "keep": self.__coerced_bool("keep", False),
+            "learning_paths": self.__learning_paths(),
+            "todo": self.__coerced_bool("todo", False),
+            "viewed": self.__coerced_bool("viewed", False),
+        }
+        self.__put_optional(user, "rating", self.__optional_int_field("rating"))
+        return user
 
     def __collections(self) -> list[dict[str, Any]]:
         """Synthesize the ``collections`` membership list from tc4's scalar ``collection``/``collection_index``.
@@ -270,16 +296,29 @@ class TcDocument:
         value = self.__data.get(key)
         return value if isinstance(value, bool) else default
 
-    def __parsed_size(self, key: str) -> int:
+    def __optional_int_field(self, key: str) -> int | None:
+        """``data[key]`` as an int when the ``.tc`` carried it (even ``0``), else ``None`` so the caller
+        omits it rather than fabricating a value ([[field-schema#deferred-items]]). A present-but-malformed
+        value is treated as absent (``None``), never coerced to ``0``."""
+        if key not in self.__data:
+            return None
+        value = self.__data.get(key)
+        return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+    def __parsed_size(self, key: str) -> int | None:
         """Parse ``data[key]``: a plain int, or tc4's legacy human-readable string fallback
         (``Tutorial::fileSizeFromYaml``).
 
-        :returns: the size in bytes, or ``0`` when absent/malformed.
+        :returns: the size in bytes when the ``.tc`` carried the key (an explicit value imports, even ``0``),
+            or ``None`` when it was absent, so the caller omits it rather than fabricating a ``0``
+            ([[field-schema#deferred-items]]).
         """
+        if key not in self.__data:
+            return None
         value = self.__data.get(key)
         if isinstance(value, int) and not isinstance(value, bool):
             return value
-        return self.__parse_legacy_size_string(value) if isinstance(value, str) else 0
+        return self.__parse_legacy_size_string(value) if isinstance(value, str) else None
 
     def __parse_legacy_size_string(self, value: str) -> int:
         """Parse a tc4 legacy size string like ``"1.5 GB"``, base-1000 (``Tutorial::parsedFileSize``).
@@ -297,16 +336,20 @@ class TcDocument:
         suffix = parts[1] if len(parts) > 1 else "B"
         return int(magnitude * self.__SIZE_SUFFIXES.get(suffix, 0))
 
-    def __parsed_duration(self, key: str) -> int:
+    def __parsed_duration(self, key: str) -> int | None:
         """Parse ``data[key]``: a plain int, or tc4's legacy human-readable string fallback
         (``Tutorial::durationFromYaml``).
 
-        :returns: the duration in seconds, or ``0`` when absent/malformed.
+        :returns: the duration in seconds when the ``.tc`` carried the key (an explicit value imports, even
+            ``0``), or ``None`` when it was absent, so the caller omits it rather than fabricating a ``0``
+            ([[field-schema#deferred-items]], [[field-schema#ms-leak-history]]).
         """
+        if key not in self.__data:
+            return None
         value = self.__data.get(key)
         if isinstance(value, int) and not isinstance(value, bool):
             return value
-        return self.__parse_legacy_duration_string(value) if isinstance(value, str) else 0
+        return self.__parse_legacy_duration_string(value) if isinstance(value, str) else None
 
     def __parse_legacy_duration_string(self, value: str) -> int:
         """Parse a tc4 legacy duration string like ``"2h 15m"`` (``Tutorial::parsedDuration``).
