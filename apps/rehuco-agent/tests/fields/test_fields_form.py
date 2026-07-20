@@ -3,6 +3,7 @@
 from dataclasses import replace
 from typing import Final, override
 
+from PySide6.QtCore import QSize
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
@@ -138,6 +139,31 @@ class HeaderPinnedMiscField(HeaderPinnedField):
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         return replace(super().make_editor(binding), misc=QToolButton())
+
+
+TALL_MISC_HEIGHT: Final = HEADER_HEIGHT + 20
+"""Taller than :data:`HEADER_HEIGHT` itself -- the #104 scenario (`ExpandToggleButton`, at its
+natural size, next to `PathEditor`'s short current-name line)."""
+
+
+class TallToolButton(QToolButton):
+    """A ``QToolButton`` whose own ``sizeHint`` is fixed to :data:`TALL_MISC_HEIGHT` -- standing in
+    for a real icon-sized misc control (``setFixedSize`` alone wouldn't do: it constrains the
+    *rendered* size, not ``sizeHint()``, which is what :meth:`FieldsForm.__add_header_pinned_row`
+    actually reads).
+    """
+
+    @override
+    def sizeHint(self) -> QSize:  # noqa: N802  (Qt API name)
+        return QSize(TALL_MISC_HEIGHT, TALL_MISC_HEIGHT)
+
+
+class HeaderPinnedTallMiscField(HeaderPinnedField):
+    """A ``HeaderPinned`` sample field whose misc-column widget is taller than ``header_height``."""
+
+    @override
+    def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
+        return replace(super().make_editor(binding), misc=TallToolButton())
 
 
 class HeaderPinnedLabellessField(HeaderPinnedField):
@@ -541,13 +567,15 @@ def test_header_pinned_editor_row_wraps_label_misc_and_editor_each_in_a_pin_cont
 def test_header_pinned_editor_row_gives_label_and_misc_a_centering_top_margin(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """The label and misc containers get a fixed top margin sized to look centered against the
-    editor's ``header_height``; the editor's own container gets none (it *is* the reference).
+    """The label, misc, and editor containers each get a fixed top margin sized to look centered
+    against a shared reference -- here ``header_height`` (the editor's own first line), since it's
+    taller than the plain label/tool button, so the editor's own container gets none.
 
     **Test steps:**
 
     * build an editor form over a ``HeaderPinned`` field with a misc widget
     * verify each container's top margin matches ``(header_height - widget height) // 2``
+    * verify the editor's own container is unmoved (``header_height`` is the tallest of the three)
     """
     form = FieldsForm([HeaderPinnedMiscField("title")])
     widget = sole_grid_widget(form.make_editor(model))
@@ -565,6 +593,42 @@ def test_header_pinned_editor_row_gives_label_and_misc_a_centering_top_margin(
     assert pin_top_margin(label_cell) == (HEADER_HEIGHT - label.sizeHint().height()) // 2
     assert pin_top_margin(misc_cell) == (HEADER_HEIGHT - misc.sizeHint().height()) // 2
     assert pin_top_margin(editor_cell) == 0
+
+
+def test_header_pinned_editor_row_shifts_label_and_editor_down_for_a_tall_misc(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """When the misc control is *taller* than the editor's ``header_height`` (#104's
+    `ExpandToggleButton`, at its natural size, next to `PathEditor`'s short current-name line) --
+    the reference becomes the misc control's own height, so the label *and* the editor's first line
+    both shift down to center against it, instead of the editor staying pinned flush at the top and
+    the misc control hanging below the text baseline.
+
+    **Test steps:**
+
+    * build an editor form over a ``HeaderPinned`` field whose misc widget is taller than
+      ``header_height``
+    * verify the misc container is unmoved (it's now the tallest of the three) and the label/editor
+      containers both get a matching positive top margin, centering them against it
+    """
+    form = FieldsForm([HeaderPinnedTallMiscField("title")])
+    widget = sole_grid_widget(form.make_editor(model))
+    qtbot.addWidget(widget)
+    grid = grid_of(widget)
+
+    label_cell = widget_at(grid, 0, LABEL_COLUMN)
+    misc_cell = widget_at(grid, 0, MISC_COLUMN)
+    editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
+    assert label_cell is not None and misc_cell is not None and editor_cell is not None
+    label = label_cell.findChild(QLabel)
+    misc = misc_cell.findChild(QToolButton)
+    assert label is not None and misc is not None
+
+    misc_height = misc.sizeHint().height()
+    assert misc_height > HEADER_HEIGHT
+    assert pin_top_margin(misc_cell) == 0
+    assert pin_top_margin(label_cell) == (misc_height - label.sizeHint().height()) // 2
+    assert pin_top_margin(editor_cell) == (misc_height - HEADER_HEIGHT) // 2
 
 
 def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: QtBot, model: RehuDocumentModel) -> None:

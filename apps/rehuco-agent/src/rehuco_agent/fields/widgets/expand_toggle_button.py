@@ -1,36 +1,44 @@
-"""A square checkable expand/collapse toggle drawn with a Phosphor `[+]`/`[-]` glyph
+"""A square checkable expand/collapse toggle, its themed SVG icon swapped between the two states
 ([[plugins#field-toolkit]]).
 """
 
 from typing import Final
 
+from borco_pyside.theming import ActionIconThemeHandler
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QToolButton, QWidget
 
-from rehuco_agent.glyphs import COLLAPSE_ACTION_GLYPH, EXPAND_ACTION_GLYPH
+EXPAND_ICON_RESOURCE: Final = ":/icons/expand_off.svg"
+"""Shown unchecked (collapsed) -- the action available next is to expand."""
 
-STYLESHEET: Final = f'QToolButton {{ font-family: "{EXPAND_ACTION_GLYPH.family}"; }}'
-"""Renders the toggle's Phosphor glyph (both `[+]`/`[-]` glyphs share this weight)."""
+COLLAPSE_ICON_RESOURCE: Final = ":/icons/expand_on.svg"
+"""Shown checked (expanded) -- the action available next is to collapse."""
 
 
 class ExpandToggleButton(QToolButton):
-    """A small square checkable toggle: a `[+]` glyph when unchecked (collapsed), `[-]` when checked
-    (expanded). Purely presentational -- the owner wires ``toggled`` to whatever it expands.
+    """A small square checkable toggle: the expand icon when unchecked (collapsed), the collapse icon
+    when checked (expanded), kept theme-recolored via :class:`~borco_pyside.theming.ActionIconThemeHandler`
+    the same way every other themed control in the toolkit is (a ``QAction`` set as the button's
+    default action, #104 -- #95's authors-editor lock indicator is the sibling precedent this mirrors,
+    and this button keeps that same natural, un-shrunk size). Purely presentational -- the owner wires
+    ``toggled`` to whatever it expands.
 
     :param parent: optional Qt parent.
     """
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setCheckable(True)
-        self.setStyleSheet(STYLESHEET)
-        self.__render(self.isChecked())
+        action = QAction(self)
+        action.setCheckable(True)
+        self.__icon_handler: Final = ActionIconThemeHandler(action, EXPAND_ICON_RESOURCE)
+        self.setDefaultAction(action)
         square = self.sizeHint().height()
         self.setFixedSize(square, square)
-        self.toggled.connect(self.__render)
+        action.toggled.connect(self.__render)
 
     def __render(self, checked: bool) -> None:
-        """Show the collapse glyph when checked, the expand glyph otherwise.
+        """Swap to the collapse icon when checked, the expand icon otherwise.
 
         :param checked: the toggle's current state.
         """
-        self.setText((COLLAPSE_ACTION_GLYPH if checked else EXPAND_ACTION_GLYPH).codepoint)
+        self.__icon_handler.set_icon(COLLAPSE_ICON_RESOURCE if checked else EXPAND_ICON_RESOURCE)

@@ -153,16 +153,21 @@ class FieldsForm:
         editor: QWidget,
         header_height: int,
     ) -> None:
-        """Add a label | misc | editor row whose label and misc are pinned to ``editor``'s first
-        line instead of re-centering against the row's live height ([[plugins#field-toolkit]]'s
-        `HeaderPinned` contract) -- e.g. the ``path`` editor's suggestions panel or a `multi_choice`
-        checkbox `FlowLayout`, both of which grow well past their first line.
+        """Add a label | misc | editor row whose label, misc, and the editor's first line are all
+        pinned to a shared top-aligned reference instead of re-centering against the row's live
+        height ([[plugins#field-toolkit]]'s `HeaderPinned` contract) -- e.g. the ``path`` editor's
+        suggestions panel or a `multi_choice` checkbox `FlowLayout`, both of which grow well past
+        their first line.
 
         Each widget is wrapped in its own top-pinned container (:meth:`__pin_to_top`), so none of
-        them is stretched by the grid to the row's full height; ``label`` and ``misc`` additionally
-        get a fixed top margin sized to *look* centered against ``header_height`` -- reproducing the
-        plain-fill appearance when the editor is at its natural (single-line) height, but as a fixed
-        offset that can't drift when the editor grows.
+        them is stretched by the grid to the row's full height. The reference is whichever of
+        ``header_height``/``label``/``misc`` is tallest -- usually ``header_height`` (the editor's own
+        first line), but a misc control can be taller (#104's `ExpandToggleButton`, at its natural,
+        un-shrunk size) -- and each of the three gets a fixed top margin sized to *look* centered
+        against that shared reference, reproducing the plain-fill appearance when the editor is at its
+        natural (single-line) height, but as a fixed offset that can't drift when the editor grows.
+        Since none of the three inputs change with ``expanded``, the whole group's relative alignment
+        stays fixed regardless -- only the editor's own growth below its first line moves.
 
         :param grid: the grid to add the row to.
         :param row: the grid row index.
@@ -171,13 +176,14 @@ class FieldsForm:
         :param editor: the `HeaderPinned` editor.
         :param header_height: ``editor.header_height``, passed in already resolved.
         """
+        label_height = label.sizeHint().height() if label is not None else 0
+        misc_height = misc.sizeHint().height() if misc is not None else 0
+        reference = max(header_height, label_height, misc_height)
         if label is not None:
-            margin = max(0, (header_height - label.sizeHint().height()) // 2)
-            grid.addWidget(FieldsForm.__pin_to_top(label, margin), row, LABEL_COLUMN)
+            grid.addWidget(FieldsForm.__pin_to_top(label, (reference - label_height) // 2), row, LABEL_COLUMN)
         if misc is not None:
-            margin = max(0, (header_height - misc.sizeHint().height()) // 2)
-            grid.addWidget(FieldsForm.__pin_to_top(misc, margin), row, MISC_COLUMN)
-        grid.addWidget(FieldsForm.__pin_to_top(editor, 0), row, CONTENT_COLUMN)
+            grid.addWidget(FieldsForm.__pin_to_top(misc, (reference - misc_height) // 2), row, MISC_COLUMN)
+        grid.addWidget(FieldsForm.__pin_to_top(editor, (reference - header_height) // 2), row, CONTENT_COLUMN)
 
     @staticmethod
     def __pin_to_top(widget: QWidget, top_margin: int) -> QWidget:

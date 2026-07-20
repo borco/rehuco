@@ -11,6 +11,8 @@
         <file alias="icons/document_revert.svg">../../../../design/icons/document_revert.svg</file>
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
+        <file alias="icons/expand_off.svg">../../../../design/icons/expand_off.svg</file>
+        <file alias="icons/expand_on.svg">../../../../design/icons/expand_on.svg</file>
         <file alias="icons/lock_on.svg">../../../../design/icons/lock_on.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
