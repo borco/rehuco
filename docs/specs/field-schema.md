@@ -425,7 +425,7 @@ Field order, in the three groups the layout separates:
 
 [[[field-schema#deferred-items]]]
 
-- [ ] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
+- [x] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
 - [ ] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
 
 - **Common/plugin boundary** — the [[field-schema#field-mapping]] tiers (common core / resource fields / per-type) are a
@@ -441,7 +441,7 @@ Field order, in the three groups the layout separates:
   Milestone B's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
   credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
   when it lands.
-- **Optional scalars read as `None` — decided, not yet implemented** — absent is not `0`: the measured/claimed
+- **Optional scalars read as `None` — core done (#100), display pending (#101)** — absent is not `0`: the measured/claimed
   numerics (`original_size` / `current_size`, the three durations, `images_count`), `rating` (it may be negative, so
   `0` is a real rating and unrated must be `None`), and `released` read as `None` when absent; strings, lists, and the
   boolean flags keep their coercion defaults. Absent-on-disk ↔ `None`-in-code: JSON `null` is accepted on read but
