@@ -9,6 +9,7 @@ arguments unchanged -- a test constructs ``TextFieldTester("title")`` exactly as
 
 from typing import Any
 
+from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.description_field import DescriptionField
@@ -52,6 +53,13 @@ class UrlFieldTester(UrlField):
 
 class TextListFieldTester(TextListField):
     """`TextListField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class AuthorsFieldTester(AuthorsField):
+    """`AuthorsField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

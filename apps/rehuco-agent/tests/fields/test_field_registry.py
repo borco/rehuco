@@ -1,6 +1,7 @@
 """Tests for FieldRegistry: type -> class resolution."""
 
 from pytest import raises
+from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.duration_field import DurationField
@@ -62,6 +63,19 @@ def test_registry_resolves_the_list_and_url_field_types() -> None:
 
     assert registry.types["text_list"] is TextListField
     assert registry.types["url"] is UrlField
+
+
+def test_registry_resolves_the_authors_field_type() -> None:
+    """The registry maps the ``authors`` type to ``AuthorsField`` (#95).
+
+    **Test steps:**
+
+    * build a default registry
+    * verify the ``authors`` type resolves to ``AuthorsField``
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["authors"] is AuthorsField
 
 
 def test_registry_resolves_the_date_and_duration_field_types() -> None:

@@ -75,7 +75,7 @@ class FieldSpec(NamedTuple):
 
 MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("text", "title"),
-    FieldSpec("text_list", "authors"),
+    FieldSpec("authors", "authors"),
     FieldSpec("date", "released"),
     FieldSpec("text", "publisher"),
     FieldSpec("url", "url"),
