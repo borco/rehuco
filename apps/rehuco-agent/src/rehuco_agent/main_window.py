@@ -140,15 +140,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
 
     def __add_open_documents(self, menu: QMenu) -> None:
-        """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
+        """Rebuild ``menu`` with Close All / Close Missing Files and every currently open document,
+        alphabetically by title (#61, #96).
 
         Listed directly under ``View``, below the three static theme entries and their trailing
         separator (#57) -- not mixed into them. Rebuilt fresh on every ``aboutToShow`` rather than
-        kept in sync incrementally -- the open set, titles, and paths all change independently
-        (open/close/rename/save-as), and a menu only actually needs to be correct while it's
-        showing. Only :attr:`__dynamic_view_menu_actions` -- this method's own additions from the
-        last rebuild -- is removed first, unlike a plain ``menu.clear()``, which would wipe
-        whatever's above them too.
+        kept in sync incrementally -- the open set, titles, paths, and lock reasons all change
+        independently (open/close/rename/save-as/revert), and a menu only actually needs to be
+        correct while it's showing. Only :attr:`__dynamic_view_menu_actions` -- this method's own
+        additions from the last rebuild -- is removed first, unlike a plain ``menu.clear()``, which
+        would wipe whatever's above them too.
 
         :param menu: the menu to (re)populate (``View``).
         """
@@ -160,6 +161,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widgets = sorted(
             self.__documents_dock.open_document_widgets(), key=lambda widget: widget.model.label.casefold()
         )
+
+        close_all_action = menu.addAction("Close All")
+        close_all_action.setEnabled(bool(widgets))
+        close_all_action.triggered.connect(self.__documents_dock.close_all)
+        self.__dynamic_view_menu_actions.append(close_all_action)
+
+        close_missing_action = menu.addAction("Close Missing Files")
+        close_missing_action.setEnabled(self.__documents_dock.has_missing_documents())
+        close_missing_action.triggered.connect(self.__documents_dock.close_missing)
+        self.__dynamic_view_menu_actions.append(close_missing_action)
+
+        self.__dynamic_view_menu_actions.append(menu.addSeparator())
+
         if not widgets:
             placeholder = menu.addAction("No Open Docks")
             placeholder.setEnabled(False)

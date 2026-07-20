@@ -8,9 +8,10 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker, tab_label
 from PySide6.QtCore import QByteArray, Signal
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
-from rehuco_core import RehuDocument, RehuFormatError, load_tc
+from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
+from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
+from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from rehuco_agent.documents.document_widget import DocumentWidget
 from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
 
@@ -146,6 +147,63 @@ class DocumentsDock(QMainWindow):
         Used by the whole-app close guard (``MainWindow.closeEvent``) to find dirty documents.
         """
         return [widget.model for widget in self.open_document_widgets()]
+
+    def close_all(self) -> None:
+        """Close every open document at once, via the same batch confirmation as the whole-app
+        close guard (:class:`~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog`,
+        #96) -- not the sequential per-document guard :meth:`__close_dock` uses for a single tab's
+        own close button.
+
+        Every clean document closes immediately, with no dialog and unconditionally -- even if the
+        dialog for the dirty ones is about to be cancelled. Only if any document is dirty does a
+        single dialog appear, listing them with a checkbox each, exactly like
+        :meth:`MainWindow.closeEvent`. Cancelling it leaves every dirty document open and nothing
+        saved (the already-closed clean documents stay closed regardless). Otherwise the checked
+        documents are saved, and every remaining (dirty) document closes; an unchecked one's edits
+        are discarded along with the close, same as a whole-app quit.
+        """
+        dirty_models: list[RehuDocumentModel] = []
+        for dock, widget in list(self.__document_docks.items()):
+            if widget.model.dirty:
+                dirty_models.append(widget.model)
+            else:
+                self.__remove_dock(dock)
+
+        if not dirty_models:
+            return
+
+        dialog = UnsavedChangesDialog(dirty_models, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        for model in dialog.selected_models():
+            model.save()
+        for dock in list(self.__document_docks):
+            self.__remove_dock(dock)
+
+    def close_missing(self) -> None:
+        """Close every open document locked with the ``MISSING`` reason (#93, #96).
+
+        Never closes an ``INVALID_FILE`` dock, whose file the user may be mid-hand-fix on. A
+        ``MISSING`` document is locked and so can never be dirty, so this never prompts.
+        """
+        for dock, widget in list(self.__document_docks.items()):
+            if self.__is_missing(widget):
+                self.__remove_dock(dock)
+
+    def has_missing_documents(self) -> bool:
+        """Whether any open document is locked with the ``MISSING`` reason (#93).
+
+        Drives the ``View`` menu's "Close Missing Files" enabled state (#96) -- shares the same
+        predicate :meth:`close_missing` itself filters by, so "what counts as missing" lives in
+        one place.
+        """
+        return any(self.__is_missing(widget) for widget in self.__document_docks.values())
+
+    @staticmethod
+    def __is_missing(widget: DocumentWidget) -> bool:
+        """Whether ``widget``'s document is locked with the ``MISSING`` reason (#93)."""
+        return any(reason.kind == LockReasonKind.MISSING for reason in widget.model.lock_reasons)
 
     def focus_document(self, widget: DocumentWidget) -> None:
         """Make ``widget``'s dock the current one, raising/focusing it.
@@ -351,11 +409,38 @@ class DocumentsDock(QMainWindow):
         dock = self.sender()
         if not isinstance(dock, QtAds.CDockWidget):
             return
+        self.__close_dock(dock)
 
+    def __close_dock(self, dock: QtAds.CDockWidget) -> bool:
+        """Close ``dock``, prompting first if its document is dirty.
+
+        The close-button handler's own guard -- a single document's dirty state decides whether to
+        prompt for it alone. :meth:`close_missing` reuses it (a ``MISSING`` document is locked and
+        so can never actually prompt); :meth:`close_all` does not, since it confirms every dirty
+        document at once through a single batch dialog instead (#96).
+
+        :param dock: the dock to close.
+        :returns: ``True`` if the dock was actually closed (clean, or dirty and Save/Discard was
+            chosen); ``False`` if a dirty prompt was cancelled, leaving the dock untouched.
+        """
         widget = self.__document_docks[dock]
         if widget.model.dirty and not self.__confirm_close(widget.model):
-            return
+            return False
 
+        self.__remove_dock(dock)
+        return True
+
+    def __remove_dock(self, dock: QtAds.CDockWidget) -> None:
+        """Unconditionally remove ``dock`` from the manager and bookkeeping -- no dirty guard.
+
+        Shared by :meth:`__close_dock`, once its own guard has passed, and :meth:`close_all`/
+        :meth:`close_missing` (#96), which have already resolved (or ruled out) any dirty
+        confirmation before ever reaching here.
+
+        :param dock: the dock to remove. Removing it from the manager clears the tracker's current
+            dock (which emits :attr:`document_focus_changed` with ``None`` when it was the current
+            one).
+        """
         self.__dock_manager.removeDockWidget(dock)
         dock.deleteLater()
         self.__document_docks.pop(dock, None)
