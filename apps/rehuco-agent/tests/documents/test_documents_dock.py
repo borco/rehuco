@@ -1,12 +1,18 @@
 """Tests for DocumentsDock: one dock per open `.rehu`, focus-and-reuse by path."""
 
+# the dock owns a broad surface (open/reuse-by-path, dock titles, focus tracking, close guards,
+# close_all/close_missing, folder/archive companions); its test suite is correspondingly long --
+# one cohesive module reads better than an arbitrary split, so the module-length cap is lifted
+# here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 import json
 from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_label
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
@@ -18,6 +24,7 @@ platform (unlike a hardcoded ``/fake/...``, which isn't absolute on Windows with
 FAKE_LABEL: Final = f"{FAKE_PATH.parent.name}/"
 """``FAKE_PATH``'s expected dock-title label: an ``info.rehu``'s parent directory name, trailing-slashed."""
 OTHER_PATH: Final = Path.cwd() / "fake" / "tutorials" / "painting" / "info.rehu"
+THIRD_PATH: Final = Path.cwd() / "fake" / "tutorials" / "drawing" / "info.rehu"
 FAKE_ARCHIVE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting.zip"
 """An archive whose ``.rehu`` companion (#43) is ``FAKE_ARCHIVE_PATH.with_suffix(".rehu")``."""
 FAKE_ARCHIVE_INFO_PATH: Final = FAKE_ARCHIVE_PATH.with_suffix(".rehu")
@@ -353,6 +360,170 @@ def test_closing_a_clean_dock_does_not_prompt(mocker: MockerFixture, qtbot: QtBo
 
     warning.assert_not_called()
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_all_closes_every_clean_dock_without_a_dialog(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_all`` closes every open, clean document without showing the batch confirmation
+    dialog (#96).
+
+    **Test steps:**
+
+    * open two clean documents
+    * call ``close_all``
+    * verify the dialog was never constructed and every dock is gone
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    dock.open_document(FAKE_PATH)
+    dock.open_document(OTHER_PATH)
+    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog")
+
+    dock.close_all()
+
+    dialog_class.assert_not_called()
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_all_closes_clean_docks_first_then_shows_one_batch_dialog_for_the_dirty_ones(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """``close_all`` closes every clean document immediately -- before the batch dialog even
+    appears -- and confirms only the dirty ones through it, mirroring ``MainWindow.closeEvent``;
+    cancelling the dialog leaves the (still open) dirty documents alone, but the already-closed
+    clean one stays closed regardless (#96).
+
+    **Test steps:**
+
+    * open three documents, dirtying the first and third but leaving the second clean
+    * mock the batch dialog to report Cancelled
+    * call ``close_all``
+    * verify the dialog was built with only the dirty models, never asked for selections, the
+      clean document closed anyway, and both dirty documents are still open
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    third = dock.open_document(THIRD_PATH)
+    assert first is not None and second is not None and third is not None
+    first.model.title = "Changed"
+    third.model.title = "Changed"
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Rejected
+    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+
+    dock.close_all()
+
+    dialog_class.assert_called_once_with([first.model, third.model], dock)
+    dialog.selected_models.assert_not_called()
+    remaining = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(remaining.values()) == [first, third]
+
+
+def test_close_all_saves_checked_documents_then_closes_every_open_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Accepting the batch dialog saves only the checked (selected) documents, then closes every
+    open document regardless -- an unchecked dirty document's edits are discarded along with the
+    close, same as the whole-app close guard (#96).
+
+    **Test steps:**
+
+    * open three documents, dirtying the first and third
+    * mock the batch dialog to report Accepted, selecting only the first
+    * call ``close_all``
+    * verify only the first was saved, and every dock (checked or not) is gone
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    third = dock.open_document(THIRD_PATH)
+    assert first is not None and second is not None and third is not None
+    first.model.title = "Changed"
+    third.model.title = "Changed"
+    save_first = mocker.patch.object(first.model, "save")
+    save_third = mocker.patch.object(third.model, "save")
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = [first.model]
+    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+
+    dock.close_all()
+
+    dialog_class.assert_called_once_with([first.model, third.model], dock)
+    save_first.assert_called_once_with()
+    save_third.assert_not_called()
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_missing_closes_only_missing_docks(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_missing`` closes only ``MISSING`` docks, never ``INVALID_FILE`` ones, and never prompts
+    (#93, #96).
+
+    **Test steps:**
+
+    * open a ``MISSING`` dock and an ``INVALID_FILE`` dock
+    * call ``close_missing``
+    * verify no prompt was shown and only the ``MISSING`` dock closed
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    missing_widget = dock.open_document(FAKE_PATH)
+
+    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+    invalid_widget = dock.open_document(OTHER_PATH)
+    assert missing_widget is not None and invalid_widget is not None
+    warning = mocker.patch.object(QMessageBox, "warning")
+
+    dock.close_missing()
+
+    warning.assert_not_called()
+    remaining = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(remaining.values()) == [invalid_widget]
+
+
+def test_close_missing_is_a_no_op_when_nothing_is_missing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_missing`` leaves every dock open when none is locked with the ``MISSING`` reason (#96).
+
+    **Test steps:**
+
+    * open a clean document
+    * call ``close_missing``
+    * verify the dock is still present
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+
+    dock.close_missing()
+
+    remaining = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(remaining.values()) == [widget]
+
+
+def test_has_missing_documents_reflects_whether_any_open_dock_is_missing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``has_missing_documents`` reports whether any open dock is locked with the ``MISSING`` reason,
+    driving the ``View`` menu's "Close Missing Files" enabled state (#96).
+
+    **Test steps:**
+
+    * build an empty dock and verify it reports no missing documents
+    * open a ``MISSING`` dock
+    * verify it now reports a missing document
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    assert dock.has_missing_documents() is False
+
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
+    dock.open_document(FAKE_PATH)
+
+    assert dock.has_missing_documents() is True
 
 
 def test_close_requested_ignores_a_non_dock_sender(qtbot: QtBot) -> None:
