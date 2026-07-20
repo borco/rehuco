@@ -16,7 +16,7 @@ from borco_pyside.widgets import (
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLineEdit, QWidget
 
-from rehuco_agent.fields.colors import WARNING_COLOR
+from ..colors import WARNING_COLOR
 
 
 class FileSizeEdit(QWidget):

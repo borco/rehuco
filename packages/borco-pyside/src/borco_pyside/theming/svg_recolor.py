@@ -15,7 +15,7 @@ from PySide6.QtCore import QByteArray, QRect, QRectF, QSize
 from PySide6.QtGui import QColor, QIcon, QIconEngine, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
-from borco_pyside.theming.utils import painted_pixmap
+from .utils import painted_pixmap
 
 
 def recolor_svg(svg: bytes, color: QColor) -> bytes:

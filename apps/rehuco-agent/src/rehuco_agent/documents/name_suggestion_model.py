@@ -9,7 +9,7 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import author_name
 
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from .rehu_document_model import RehuDocumentModel
 
 NAME_SUGGESTION_PATTERNS: Final = (
     "{title}",

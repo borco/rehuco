@@ -10,7 +10,7 @@ import logging
 import winreg
 from typing import Final
 
-from borco_core.platforms.windows import hkcu_registry
+from . import hkcu_registry
 
 LOG: Final = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@ from typing import Any, Final
 
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
-from rehuco_agent.fields.field import (
+from .field import (
     Field,
     FieldEditorWidgets,
     FieldModel,

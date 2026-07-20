@@ -10,8 +10,8 @@ from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLineEdit, QSpinBox, QWidget
 
-from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.glyphs import CLEAR_ACTION_GLYPH
+from ...glyphs import CLEAR_ACTION_GLYPH
+from ..colors import WARNING_COLOR
 
 
 class DurationEdit(QWidget):

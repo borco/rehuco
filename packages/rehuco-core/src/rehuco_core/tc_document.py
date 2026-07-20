@@ -20,10 +20,10 @@ from typing import Any, Final
 
 import yaml
 
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION, current_block_version
-from rehuco_core.plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_USERNAME, USERS_KEY
-from rehuco_core.rehu_document import RehuDocument, RehuFormatError
-from rehuco_core.rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
+from .migrations import CURRENT_FORMAT_VERSION, current_block_version
+from .plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_USERNAME, USERS_KEY
+from .rehu_document import RehuDocument, RehuFormatError
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
 
 
 def load_tc(path: Path | str, *, username: str = DEFAULT_USERNAME) -> RehuDocument:

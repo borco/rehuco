@@ -5,7 +5,7 @@ from typing import override
 from borco_pyside.widgets import UnboundedSpinBox
 from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 
 class IntField(Field[int]):

@@ -6,8 +6,8 @@ from typing import override
 
 from borco_pyside.widgets import ElidedLabel
 
-from rehuco_agent.fields.field import FieldBinding, FieldViewerWidgets
-from rehuco_agent.fields.text_field import TextField
+from .field import FieldBinding, FieldViewerWidgets
+from .text_field import TextField
 
 
 class UrlField(TextField):

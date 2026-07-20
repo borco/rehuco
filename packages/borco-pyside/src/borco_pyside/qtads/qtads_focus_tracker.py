@@ -6,7 +6,7 @@ import PySide6QtAds as QtAds
 from PySide6.QtCore import QObject, QSize, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
-from borco_pyside.qtads.qtads_widgets import tab_close_button, tab_label
+from .qtads_widgets import tab_close_button, tab_label
 
 
 class QtAdsFocusTracker(QObject):

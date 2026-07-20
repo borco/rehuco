@@ -5,12 +5,12 @@ surfaces, and how its form is assembled live in the ``documents`` layer
 (:mod:`rehuco_agent.documents.document_fields`), not here.
 """
 
-from rehuco_agent.fields.authors_field import AuthorsField
-from rehuco_agent.fields.boolean_field import BooleanField
-from rehuco_agent.fields.date_field import DateField
-from rehuco_agent.fields.description_field import DescriptionField
-from rehuco_agent.fields.duration_field import DurationField
-from rehuco_agent.fields.field import (
+from .authors_field import AuthorsField
+from .boolean_field import BooleanField
+from .date_field import DateField
+from .description_field import DescriptionField
+from .duration_field import DurationField
+from .field import (
     Field,
     FieldEditorWidgets,
     FieldsTab,
@@ -18,18 +18,18 @@ from rehuco_agent.fields.field import (
     StatefulWidget,
     ValueWidget,
 )
-from rehuco_agent.fields.field_registry import FieldRegistry
-from rehuco_agent.fields.fields_form import FieldsForm
-from rehuco_agent.fields.file_size_field import FileSizeField
-from rehuco_agent.fields.images_field import ImagesField
-from rehuco_agent.fields.int_field import IntField
-from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
-from rehuco_agent.fields.path_field import PathField
-from rehuco_agent.fields.rating_field import RatingField
-from rehuco_agent.fields.text_field import TextField
-from rehuco_agent.fields.text_list_field import TextListField
-from rehuco_agent.fields.unknown_field import PROVENANCE_NEWER_VERSION, PROVENANCE_NOT_CURRENT_TYPE, UnknownField
-from rehuco_agent.fields.url_field import UrlField
+from .field_registry import FieldRegistry
+from .fields_form import FieldsForm
+from .file_size_field import FileSizeField
+from .images_field import ImagesField
+from .int_field import IntField
+from .multiple_choice_field import MultipleChoiceField
+from .path_field import PathField
+from .rating_field import RatingField
+from .text_field import TextField
+from .text_list_field import TextListField
+from .unknown_field import PROVENANCE_NEWER_VERSION, PROVENANCE_NOT_CURRENT_TYPE, UnknownField
+from .url_field import UrlField
 
 __all__ = [
     "Field",

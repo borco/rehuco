@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
-from rehuco_core.plugins import DEFAULT_USERNAME
-from rehuco_core.rehu_document import RehuDocument
-from rehuco_core.rehu_format import CORE_BLOCK_KEY
-from rehuco_core.tc_description import rewrite_description_images
-from rehuco_core.tc_document import TcDocument
-from rehuco_core.tc_screenshots import ScreenshotRename, scan_tc_screenshots
+from .plugins import DEFAULT_USERNAME
+from .rehu_document import RehuDocument
+from .rehu_format import CORE_BLOCK_KEY
+from .tc_description import rewrite_description_images
+from .tc_document import TcDocument
+from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
 
 
 def convert_tc(

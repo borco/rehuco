@@ -11,19 +11,19 @@ from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
 
-from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from rehuco_agent.documents.document_widget import DocumentWidget
-from rehuco_agent.documents.documents_dock import DocumentsDock
-from rehuco_agent.documents.rehu_document_menu_entry import RehuDocumentMenuEntry
-from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME
-from rehuco_agent.main_window_ui import Ui_MainWindow
-from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
-from rehuco_agent.settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
-from rehuco_agent.settings.persistent_settings import persistent_settings
-from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
-from rehuco_agent.settings.theme_settings import ThemeSettings
-from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
-from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from .dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from .documents.document_widget import DocumentWidget
+from .documents.documents_dock import DocumentsDock
+from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
+from .documents.rehu_document_model import INFO_REHU_FILENAME
+from .main_window_ui import Ui_MainWindow
+from .settings.document_session_settings import DocumentSessionSettings
+from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
+from .settings.persistent_settings import persistent_settings
+from .settings.recent_files_settings import RecentFilesSettings
+from .settings.theme_settings import ThemeSettings
+from .settings.ui.descriptions_page import DescriptionsPage
+from .settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
@@ -266,7 +266,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
-            from rehuco_agent.settings.ui.registry_page import RegistryPage
+            from .settings.ui.registry_page import RegistryPage
 
             self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
 

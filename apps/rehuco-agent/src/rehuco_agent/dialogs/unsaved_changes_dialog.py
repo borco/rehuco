@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from rehuco_agent.dialogs.unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.settings.persistent_settings import persistent_settings
-from rehuco_agent.settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
+from ..documents.rehu_document_model import RehuDocumentModel
+from ..settings.persistent_settings import persistent_settings
+from ..settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
+from .unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
 
 
 class UnsavedChangesDialog(QDialog):

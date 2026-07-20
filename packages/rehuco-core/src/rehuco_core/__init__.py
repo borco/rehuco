@@ -1,14 +1,14 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
-from rehuco_core.constants import IMAGE_EXTENSIONS
-from rehuco_core.lock_reasons import LockReason, LockReasonKind
-from rehuco_core.migrations import (
+from .constants import IMAGE_EXTENSIONS
+from .lock_reasons import LockReason, LockReasonKind
+from .migrations import (
     CURRENT_FORMAT_VERSION,
     current_block_version,
     migrate_block_data,
     migrate_rehu_data,
 )
-from rehuco_core.plugins import (
+from .plugins import (
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
     CORE_PLUGIN,
@@ -20,7 +20,7 @@ from rehuco_core.plugins import (
     PluginRegistry,
     PluginSpec,
 )
-from rehuco_core.rehu_document import (
+from .rehu_document import (
     AuthorEntry,
     PluginBlock,
     RehuDocument,
@@ -28,11 +28,11 @@ from rehuco_core.rehu_document import (
     author_name,
     authors_comma_editable,
 )
-from rehuco_core.rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
-from rehuco_core.tc_conversion import TcConverter, convert_tc
-from rehuco_core.tc_description import TcDescriptionRewriter, rewrite_description_images
-from rehuco_core.tc_document import TcDocument, load_tc, tc_to_rehu_data
-from rehuco_core.tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshots
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .tc_conversion import TcConverter, convert_tc
+from .tc_description import TcDescriptionRewriter, rewrite_description_images
+from .tc_document import TcDocument, load_tc, tc_to_rehu_data
+from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshots
 
 __version__ = "0.0.1"
 

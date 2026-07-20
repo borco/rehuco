@@ -14,7 +14,7 @@ from PySide6.QtCore import QDate, QPoint, QSignalBlocker, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QCalendarWidget, QHBoxLayout, QLineEdit, QWidget
 
-from rehuco_agent.glyphs import CALENDAR_ACTION_GLYPH
+from ...glyphs import CALENDAR_ACTION_GLYPH
 
 
 class DateEdit(QWidget):

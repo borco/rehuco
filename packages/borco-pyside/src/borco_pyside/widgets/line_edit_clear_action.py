@@ -6,7 +6,7 @@ from PySide6.QtCore import QEvent, QObject
 from PySide6.QtGui import QAction, QIcon, QPalette
 from PySide6.QtWidgets import QAbstractSpinBox, QLineEdit
 
-from borco_pyside.theming import GlyphActionIconThemeHandler
+from ..theming import GlyphActionIconThemeHandler
 
 
 class LineEditClearActionFilter(QObject):

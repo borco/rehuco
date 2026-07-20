@@ -25,21 +25,21 @@ from typing import Any, Final
 
 from borco_core import atomic_write_text
 
-from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
-from rehuco_core.migrations import (
+from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
+from .migrations import (
     CURRENT_FORMAT_VERSION,
     current_block_version,
     migrate_block_data,
     migrate_rehu_data,
     stamped_version,
 )
-from rehuco_core.plugins import (
+from .plugins import (
     DEFAULT_PLUGIN_REGISTRY,
     DEFAULT_USERNAME,
     USERS_KEY,
     PluginRegistry,
 )
-from rehuco_core.rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 
 LOG: Final = logging.getLogger(__name__)
 

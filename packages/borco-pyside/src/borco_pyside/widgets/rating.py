@@ -6,7 +6,7 @@ from typing import Final
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
-from borco_pyside.core import SimpleProperty
+from ..core import SimpleProperty
 
 
 class Rating(QWidget):

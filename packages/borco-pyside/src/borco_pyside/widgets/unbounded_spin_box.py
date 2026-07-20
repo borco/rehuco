@@ -6,7 +6,7 @@ from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QAbstractSpinBox, QWidget
 
-from borco_pyside.core import SimpleProperty
+from ..core import SimpleProperty
 
 
 class UnboundedSpinBox(QAbstractSpinBox):

@@ -4,8 +4,8 @@ from typing import Final
 
 from PySide6.QtCore import QSettings
 
-from borco_pyside.dialogs.dockable_dialog import DockableDialog
-from borco_pyside.dialogs.dockable_dialog_settings import DockableDialogSettings
+from .dockable_dialog import DockableDialog
+from .dockable_dialog_settings import DockableDialogSettings
 
 GROUP_PREFIX: Final = "dockable_dialogs"
 

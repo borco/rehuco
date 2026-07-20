@@ -10,8 +10,8 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QWidget
 
-from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .colors import WARNING_COLOR
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 REMOVE_ICON_RESOURCE: Final = ":/icons/document_remove_unknown_field.svg"
 """The editor remove action's theme-aware icon ([[plugins#fallback-editor]])."""

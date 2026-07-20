@@ -5,8 +5,8 @@ from typing import Final
 from PySide6.QtCore import QObject, Qt
 from PySide6.QtGui import QAction
 
-from borco_pyside.theming.action_icon_theme_handler import ActionIconThemeHandler
-from borco_pyside.theming.theme_model import ThemeModel
+from .action_icon_theme_handler import ActionIconThemeHandler
+from .theme_model import ThemeModel
 
 
 class ThemeManager(QObject):
