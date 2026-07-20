@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
 from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
 from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from ..settings.identity_settings import shared_identity_settings
 from .document_widget import DocumentWidget
 from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
 
@@ -265,15 +266,21 @@ class DocumentsDock(QMainWindow):
         :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
         the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the dock is
         built around a locked, never-savable stub instead of the caller seeing an exception
-        ([[data-model#write-integrity]]).
+        ([[data-model#write-integrity]]). Every branch is handed the **configured identity**
+        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #99), read here at
+        open time -- the document keeps it for its whole life, so a later identity-setting change
+        affects only documents opened afterwards.
 
         :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
         :returns: the loaded document, or a locked stub bound to ``path``.
         """
+        username = shared_identity_settings().username
         try:
-            return load_tc(path) if path.suffix.lower() == ".tc" else RehuDocument.load(path)
+            if path.suffix.lower() == ".tc":
+                return load_tc(path, username=username)
+            return RehuDocument.load(path, username=username)
         except (OSError, RehuFormatError) as error:
-            return RehuDocument.locked_stub_for_error(path, error)
+            return RehuDocument.locked_stub_for_error(path, error, username=username)
 
     def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget:
         """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.
@@ -295,7 +302,7 @@ class DocumentsDock(QMainWindow):
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
-            model = RehuDocumentModel.create_new(path, self)
+            model = RehuDocumentModel.create_new(path, self, username=shared_identity_settings().username)
         else:
             model = RehuDocumentModel(self.__load_or_locked(path), self)
         widget = DocumentWidget(model, self)

@@ -7,7 +7,16 @@ from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
-from rehuco_core import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, AuthorEntry, LockReason, RehuDocument, convert_tc
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    DEFAULT_USERNAME,
+    FORMAT_VERSION_KEY,
+    USERS_KEY,
+    AuthorEntry,
+    LockReason,
+    RehuDocument,
+    convert_tc,
+)
 
 from ..fields.field import Field, FieldBinding
 from .image_scanner import ImageScanner, RehuScanner, TcScanner
@@ -31,6 +40,14 @@ TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
 """The type-field string-list fields ([[field-schema#field-types]]); ``level`` is multi-choice, not a
 mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
 at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
+USER_FIELD_NAMES: Final = frozenset(("rating", "viewed", "todo", "keep", "favorite"))
+"""The subset of the groups above that is **per-user** ([[field-schema#per-user-shared]], #99): these
+route through the document's per-user accessors (`RehuDocument.active_user_field` /
+`~RehuDocument.set_active_user_field` -- nested under the active block's ``users`` map, block layout
+v1) instead of the shared inline ones. Mirrors the core importer's per-user set
+(``tc_document``'s user fields), minus ``learning_paths`` -- a record list the model doesn't expose
+yet, not a scalar of these groups."""
 
 KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES)
 """Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
@@ -221,7 +238,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
     @classmethod
-    def create_new(cls, path: Path | str | None = None, parent: QObject | None = None) -> RehuDocumentModel:
+    def create_new(
+        cls, path: Path | str | None = None, parent: QObject | None = None, *, username: str = DEFAULT_USERNAME
+    ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
 
         :param path: destination this document will save to by default. When given, the model
@@ -230,9 +249,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             directory-scoped resource with no `info.rehu` yet). When omitted, the model starts
             clean, with no destination decided yet.
         :param parent: optional Qt parent.
+        :param username: the identity the new document's per-user writes are filed under
+            ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
+            configured identity setting; core's :data:`~rehuco_core.DEFAULT_USERNAME` otherwise.
         :returns: the new model, wrapping a fresh in-memory `RehuDocument`.
         """
-        model = cls(RehuDocument({}, Path(path) if path is not None else None), parent)
+        model = cls(RehuDocument({}, Path(path) if path is not None else None, username=username), parent)
         if path is not None:
             model.dirty = True
         return model
@@ -343,7 +365,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         Delegates the file-system work to :func:`rehuco_core.convert_tc`, then adopts its result as
         this model's document -- reseeding every field and recomputing :attr:`locked` (which drops to
         ``False``, since the result is never :attr:`~RehuDocument.legacy_tc`) -- so the same dock keeps
-        showing the same resource, now unlocked, without a reload round-trip.
+        showing the same resource, now unlocked, without a reload round-trip. The conversion files
+        the imported per-user flags under this document's **own** username -- the identity it was
+        opened with -- so the block's ``users`` key and the result's
+        :attr:`~RehuDocument.username` stay in agreement (#98's invariant); an identity-setting
+        change made after this document was opened applies to later opens, not to it (#99).
 
         :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
         :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.
@@ -356,7 +382,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             raise ValueError("only a legacy .tc-backed document can be converted")
         if self.path is None:
             raise ValueError("no path to convert -- document was not loaded from a file")
-        self.__document = convert_tc(self.path, keep_backups=keep_backups, overwrite=overwrite)
+        self.__document = convert_tc(
+            self.path, keep_backups=keep_backups, overwrite=overwrite, username=self.__document.username
+        )
         self.__seed_from_document()
         self.dirty = False
         self.lock_reasons = list(self.__document.lock_reasons)
@@ -426,13 +454,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :meth:`remove_unknown_field`. The block's own ``format_version`` stamp (#81,
         [[plugins#plugin-blocks]]) is excluded -- it is block-management bookkeeping, not a resource
         field, the same way the file-wide stamp never shows up as an unknown *common* field either.
+        The block's ``users`` map (:data:`~rehuco_core.USERS_KEY`, #98/#99) is excluded for the same
+        reason -- it is the per-user storage *structure*, not a resource field; what's inside it
+        surfaces only through the declared per-user properties (:data:`USER_FIELD_NAMES`), never
+        through the generic fallback.
 
         :returns: the unknown keys, sorted for a stable display order.
         """
         return sorted(
             key
             for key in self.__document.active_block
-            if key not in KNOWN_TYPE_FIELD_NAMES and key != FORMAT_VERSION_KEY
+            if key not in KNOWN_TYPE_FIELD_NAMES and key not in (FORMAT_VERSION_KEY, USERS_KEY)
         )
 
     def inactive_block_keys(self) -> list[str]:
@@ -497,25 +529,41 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.advertised_tags = self.__document.advertised_tags
             self.extra_tags = self.__document.extra_tags
 
-            # The type-field scalar fields read/write generically through the type-keyed plugin block
+            # The type-field scalar fields read/write generically through the type-keyed plugin block,
+            # each through its own accessor -- per-user names via the users map, the rest inline
             # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default,
             # [[data-model#write-integrity]]).
             # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
             # hand-duplicated literal here -- so there is exactly one place per field to change its default.
             for name in TYPE_FIELD_BOOL_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                setattr(self, name, bool(self.__document.active_field(name, default)))
+                setattr(self, name, bool(self.__read_field(name, default)))
             for name in TYPE_FIELD_INT_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                value = self.__document.active_field(name, default)
+                value = self.__read_field(name, default)
                 setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
             for name in TYPE_FIELD_STR_LIST_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
-                value = self.__document.active_field(name, default)
+                value = self.__read_field(name, default)
                 coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
                 setattr(self, name, coerced)
         finally:
             self.__seeding = False
+
+    def __read_field(self, name: str, default: Any) -> Any:
+        """Read active-block field ``name`` through its own accessor: the per-user one for a
+        :data:`USER_FIELD_NAMES` member (`RehuDocument.active_user_field`, reaching into the block's
+        ``users`` map, [[field-schema#per-user-shared]]), the shared inline one for everything else
+        (`~RehuDocument.active_field`) -- the read half of the split
+        :meth:`__on_type_field_changed` applies on write (#99).
+
+        :param name: the field to read.
+        :param default: the value an absent field reads as.
+        :returns: the stored value, or ``default`` when absent.
+        """
+        if name in USER_FIELD_NAMES:
+            return self.__document.active_user_field(name, default)
+        return self.__document.active_field(name, default)
 
     def __default_if_none[T](self, name: str, value: T | None) -> T:
         """``value``, or field ``name``'s own :class:`SimpleProperty` default when the document read
@@ -693,12 +741,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __on_type_field_changed(self, key: str, value: Any) -> None:
         """Write an edited type-field scalar through to the document's plugin block and mark dirty.
 
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
+        A per-user key (:data:`USER_FIELD_NAMES`) lands in the block's ``users`` map under this
+        document's own username, the rest inline in the block ([[field-schema#per-user-shared]],
+        #99) -- the write half of :meth:`__read_field`'s split. No-op while the model is seeding
+        (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param key: the type-field key that changed.
         :param value: the new value.
         """
         if self.__seeding:
             return
-        self.__document.set_active_field(key, value)
+        if key in USER_FIELD_NAMES:
+            self.__document.set_active_user_field(key, value)
+        else:
+            self.__document.set_active_field(key, value)
         self.dirty = True

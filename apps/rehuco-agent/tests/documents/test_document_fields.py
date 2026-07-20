@@ -1,7 +1,7 @@
 """Tests for the document's field composition ([[plugins#field-toolkit]])."""
 
 from PySide6.QtWidgets import QLabel
-from pytest import fixture, mark
+from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -76,7 +76,6 @@ def test_an_unknown_field_in_the_active_block_keeps_its_own_provenance(qtbot: Qt
     assert tooltips["42"] == PROVENANCE_NEWER_VERSION
 
 
-@mark.xfail(run=False, reason="per-user model plumbing (RehuDocumentModel onto the users-map accessors) is #99")
 def test_the_forms_known_fields_are_not_flagged(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """A recognized field is rendered by its own field type, never through the unknown fallback.
 
