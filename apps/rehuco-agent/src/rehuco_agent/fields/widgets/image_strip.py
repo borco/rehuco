@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QWidget
 
-from rehuco_agent.documents.image_scanner import ImageScanner
+from ...documents.image_scanner import ImageScanner
 
 
 class ImageStrip(QScrollArea):

@@ -88,6 +88,29 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
     assert {call.args[0] for call in mocks["unlink"].call_args_list} == {backup_path(o) for o in originals}
 
 
+def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFixture) -> None:
+    """The identity given to :func:`convert_tc` reaches the saved block's ``users`` key, and the fresh
+    document adopts it -- so an imported resource's per-user state has a known owner from the first write
+    ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * convert a `.tc` under an explicit username
+    * verify the saved v1 block nests the per-user flags under that username, and the returned document
+      reads them back as that identity
+    """
+    mocks = mock_environment(mocker)
+
+    document = convert_tc(TC_PATH, keep_backups=True, username="alice")
+
+    saved = json.loads(mocks["write"].call_args[0][1])
+    assert saved["tutorial"]["format_version"] == 1
+    assert set(saved["tutorial"]["users"]) == {"alice"}
+    assert saved["tutorial"]["users"]["alice"]["favorite"] is False
+    assert document.username == "alice"
+    assert document.active_user_field("rating", None) == 0
+
+
 def test_keep_backups_leaves_the_orig_siblings(mocker: MockerFixture) -> None:
     """``keep_backups=True`` performs the same conversion but never deletes the backups.
 

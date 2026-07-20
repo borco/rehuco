@@ -10,9 +10,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import (
+from ..fields import (
     PROVENANCE_NEWER_VERSION,
     PROVENANCE_NOT_CURRENT_TYPE,
     DescriptionField,
@@ -24,6 +22,8 @@ from rehuco_agent.fields import (
     PathField,
     UnknownField,
 )
+from .name_suggestion_model import NameSuggestionModel
+from .rehu_document_model import RehuDocumentModel
 
 LOCATION_FIELD_NAME: Final = "location"
 """The special `path` field's model name -- the resource's file location ([[field-schema#field-mapping]])."""

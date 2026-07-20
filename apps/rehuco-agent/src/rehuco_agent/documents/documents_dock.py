@@ -11,9 +11,9 @@ from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
 from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
-from rehuco_agent.dialogs.unsaved_changes_dialog import UnsavedChangesDialog
-from rehuco_agent.documents.document_widget import DocumentWidget
-from rehuco_agent.documents.rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
+from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from .document_widget import DocumentWidget
+from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
 

@@ -15,7 +15,7 @@ from typing import Final
 
 from PIL import Image
 
-from rehuco_core.constants import IMAGE_EXTENSIONS
+from .constants import IMAGE_EXTENSIONS
 
 
 @dataclass(frozen=True)

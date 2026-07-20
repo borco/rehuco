@@ -4,8 +4,8 @@ from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
-from borco_pyside.theming.svg_recolor import recolored_svg_icon
-from borco_pyside.theming.utils import read_resource_bytes
+from .svg_recolor import recolored_svg_icon
+from .utils import read_resource_bytes
 
 
 class ActionIconThemeHandler(QObject):

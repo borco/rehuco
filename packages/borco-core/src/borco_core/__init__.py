@@ -1,6 +1,6 @@
 """borco-core: generic reusable classes with no GUI dependencies."""
 
-from borco_core.atomic_write import atomic_write_bytes, atomic_write_text
+from .atomic_write import atomic_write_bytes, atomic_write_text
 
 __version__ = "0.0.2"
 

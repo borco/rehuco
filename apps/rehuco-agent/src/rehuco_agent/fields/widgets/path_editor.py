@@ -15,7 +15,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 from unidecode import unidecode
 
-from rehuco_agent.fields.colors import WARNING_COLOR
+from ..colors import WARNING_COLOR
 
 WARNING_STYLESHEET: Final = f"QLabel {{ color: {WARNING_COLOR}; }}"
 """Applied to the current-name label when the name matches none of the suggestions ([[plugins#field-toolkit]])."""

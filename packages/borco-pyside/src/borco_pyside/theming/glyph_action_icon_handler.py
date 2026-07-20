@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
-from borco_pyside.theming.glyph_icon import glyph_icon
+from .glyph_icon import glyph_icon
 
 
 class GlyphActionIconThemeHandler(QObject):

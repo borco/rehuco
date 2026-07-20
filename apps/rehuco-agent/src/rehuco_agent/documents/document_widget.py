@@ -11,9 +11,9 @@ from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
-from rehuco_agent.documents.document_fields import build_document_form
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsTab, StatefulWidget
+from ..fields import FieldsTab, StatefulWidget
+from .document_fields import build_document_form
+from .rehu_document_model import RehuDocumentModel
 
 STATE_VERSION_KEY: Final = "version"
 STATE_VERSION: Final = 3

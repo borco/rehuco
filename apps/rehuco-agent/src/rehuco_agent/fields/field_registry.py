@@ -2,20 +2,20 @@
 
 from typing import Any, Final
 
-from rehuco_agent.fields.authors_field import AuthorsField
-from rehuco_agent.fields.boolean_field import BooleanField
-from rehuco_agent.fields.date_field import DateField
-from rehuco_agent.fields.description_field import DescriptionField
-from rehuco_agent.fields.duration_field import DurationField
-from rehuco_agent.fields.field import Field, FieldsTab
-from rehuco_agent.fields.file_size_field import FileSizeField
-from rehuco_agent.fields.int_field import IntField
-from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
-from rehuco_agent.fields.path_field import PathField
-from rehuco_agent.fields.rating_field import RatingField
-from rehuco_agent.fields.text_field import TextField
-from rehuco_agent.fields.text_list_field import TextListField
-from rehuco_agent.fields.url_field import UrlField
+from .authors_field import AuthorsField
+from .boolean_field import BooleanField
+from .date_field import DateField
+from .description_field import DescriptionField
+from .duration_field import DurationField
+from .field import Field, FieldsTab
+from .file_size_field import FileSizeField
+from .int_field import IntField
+from .multiple_choice_field import MultipleChoiceField
+from .path_field import PathField
+from .rating_field import RatingField
+from .text_field import TextField
+from .text_list_field import TextListField
+from .url_field import UrlField
 
 
 class FieldRegistry:

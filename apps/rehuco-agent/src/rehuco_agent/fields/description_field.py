@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING, Final, override
 from borco_pyside.widgets import HorizontalLine
 from PySide6.QtCore import QSignalBlocker, SignalInstance
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from rehuco_agent.fields.widgets import MarkdownEdit, MarkdownView
-from rehuco_agent.settings.markdown_rendering_settings import (
+from ..settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
 )
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .widgets import MarkdownEdit, MarkdownView
 
 if TYPE_CHECKING:
-    from rehuco_agent.documents.image_scanner import ImageScanner
+    from ..documents.image_scanner import ImageScanner
 
 
 class DescriptionField(Field[str]):

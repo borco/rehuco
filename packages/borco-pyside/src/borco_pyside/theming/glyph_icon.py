@@ -12,7 +12,7 @@ from typing import Final, NamedTuple, override
 from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QIcon, QIconEngine, QPainter, QPixmap
 
-from borco_pyside.theming.utils import painted_pixmap
+from .utils import painted_pixmap
 
 
 class Glyph(NamedTuple):

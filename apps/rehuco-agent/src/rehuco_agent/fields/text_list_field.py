@@ -7,7 +7,7 @@ from typing import Final, override
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QLabel, QLineEdit
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 
 class TextListField(Field[list[str]]):

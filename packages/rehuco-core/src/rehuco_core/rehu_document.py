@@ -25,21 +25,21 @@ from typing import Any, Final
 
 from borco_core import atomic_write_text
 
-from rehuco_core.lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
-from rehuco_core.migrations import (
+from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
+from .migrations import (
     CURRENT_FORMAT_VERSION,
+    current_block_version,
     migrate_block_data,
     migrate_rehu_data,
-    stamped_block_version,
     stamped_version,
 )
-from rehuco_core.plugins import (
-    CORE_BLOCK_KEY,
+from .plugins import (
     DEFAULT_PLUGIN_REGISTRY,
-    FORMAT_VERSION_KEY,
-    RESERVED_KEYS,
+    DEFAULT_USERNAME,
+    USERS_KEY,
     PluginRegistry,
 )
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -58,8 +58,8 @@ CORE_LEADING_KEYS: Final = ("type", "id", "created", "updated", "sources")
 What a reader looks for first when opening a `.rehu` by hand: what it is, which record it is, when it was
 made, and -- via ``sources`` -- what it is *called* ([[field-schema#sources]]). Everything after is
 alphabetical, which is why this list can stay short and needs no maintenance: a field missing from it
-merely sorts with the rest, it is never misplaced. Unlike a *recognition* list
-(:data:`~rehuco_core.migrations.V1_COMMON_FIELD_KEYS`), being incomplete here costs nothing."""
+merely sorts with the rest, it is never misplaced. Unlike a *recognition* list (a migration's frozen
+common-field set), being incomplete here costs nothing."""
 
 
 @dataclass(frozen=True)
@@ -91,7 +91,7 @@ INVALID_AUTHORS_MESSAGE: Final = (
 cleanly -- a non-list, or a list with an entry it would skip ([[field-schema#authors]])."""
 
 
-class RehuDocument:  # pylint: disable=too-many-public-methods
+class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
     """In-memory view over one ``.rehu`` JSON document.
 
     Wraps the parsed object and exposes the common-core fields as typed properties while
@@ -107,6 +107,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         alias spellings to their main key on the way in; defaults to this build's shipped set. Never
         consulted to decide which block is active -- that follows from ``type`` alone
         ([[plugins#plugin-blocks]]).
+    :param username: the active identity whose per-user state this document reads, writes, and files a
+        v0->v1 block migration under ([[field-schema#per-user-shared]]); defaults to
+        :data:`~rehuco_core.plugins.DEFAULT_USERNAME` since core has no settings to seed a real one (the
+        agent supplies that in a later slice). One value serves both consumers -- the per-user accessors
+        (:meth:`active_user_field`) and the block migration run at construction -- so they can never
+        disagree about whose data a file holds.
     :param on_disk_format_version: the version of the file this payload was read from; see
         :attr:`on_disk_format_version`. Set only by :meth:`load`, which is the only caller that knows a
         file was involved -- constructing a document does not make one exist. Defaults to ``None``: no
@@ -127,6 +133,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         *,
         legacy_tc: bool = False,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_USERNAME,
         on_disk_format_version: int | None = None,
         on_disk_active_block_format_version: int | None = None,
         load_failure: LockReason | None = None,
@@ -139,6 +146,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         self.__path = path
         self.__legacy_tc: Final = legacy_tc
         self.__plugins: Final = plugins
+        self.__username: Final = username
         self.__on_disk_format_version = on_disk_format_version
         self.__on_disk_active_block_format_version = on_disk_active_block_format_version
         self.__load_failure = load_failure
@@ -174,7 +182,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
             raise RehuFormatError(f"'type' is {core['type']!r}, which is a reserved key rather than a resource type.")
 
     @classmethod
-    def load(cls, path: Path | str, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> RehuDocument:
+    def load(
+        cls,
+        path: Path | str,
+        *,
+        plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_USERNAME,
+    ) -> RehuDocument:
         """Read and parse a ``.rehu`` file from disk.
 
         A ``.rehu`` is untrusted outside input ([[data-model#write-integrity]]) -- a double-clicked file
@@ -191,6 +205,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
+        :param username: the active identity; see :class:`RehuDocument`. Threaded so a file opened at an
+            older block layout is migrated under the caller's identity, not a bare default.
         :returns: a document backed by the parsed JSON object.
         :raises RehuFormatError: if the file cannot be parsed, or its top-level JSON value is not an object.
         """
@@ -213,12 +229,19 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
             data,
             path,
             plugins=plugins,
+            username=username,
             on_disk_format_version=cls.__coerced_version(data),
             on_disk_active_block_format_version=cls.__raw_active_block_version(data),
         )
 
     @classmethod
-    def open_or_locked(cls, path: Path | str, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY) -> RehuDocument:
+    def open_or_locked(
+        cls,
+        path: Path | str,
+        *,
+        plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_USERNAME,
+    ) -> RehuDocument:
         """Load ``path``, or return an **empty document bound to it, locked**, when it cannot be read.
 
         The one place the *refuse-vs-lock* line is drawn ([[data-model#write-integrity]]): a file that is
@@ -236,17 +259,23 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
 
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
+        :param username: the active identity; see :class:`RehuDocument`.
         :returns: the loaded document, or an empty locked stub bound to ``path``.
         """
         path = Path(path)
         try:
-            return cls.load(path, plugins=plugins)
+            return cls.load(path, plugins=plugins, username=username)
         except (OSError, RehuFormatError) as error:
-            return cls.locked_stub_for_error(path, error, plugins=plugins)
+            return cls.locked_stub_for_error(path, error, plugins=plugins, username=username)
 
     @classmethod
     def locked_stub_for_error(
-        cls, path: Path | str, error: Exception, *, plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY
+        cls,
+        path: Path | str,
+        error: Exception,
+        *,
+        plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_USERNAME,
     ) -> RehuDocument:
         """Build the empty, locked document that stands in for a file ``error`` prevented reading.
 
@@ -261,10 +290,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :param path: the path the failed read was for; the stub is bound to it for a later revert.
         :param error: the exception that prevented reading (``OSError`` or :class:`RehuFormatError`).
         :param plugins: the plugins installed here; see :class:`RehuDocument`.
+        :param username: the active identity; see :class:`RehuDocument`.
         :returns: an empty document bound to ``path``, locked with the matching reason.
         """
         kind = LockReasonKind.MISSING if isinstance(error, FileNotFoundError) else LockReasonKind.INVALID_FILE
-        return cls({}, Path(path), plugins=plugins, load_failure=LockReason(kind, str(error)))
+        return cls({}, Path(path), plugins=plugins, username=username, load_failure=LockReason(kind, str(error)))
 
     def save(self, path: Path | str | None = None) -> None:
         """Atomically write the document back to disk as pretty-printed JSON, in canonical key order.
@@ -384,7 +414,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """
         if self.__path is None:
             raise ValueError("no path to reload from -- document was not loaded from a file")
-        fresh = RehuDocument.open_or_locked(self.__path, plugins=self.__plugins)
+        fresh = RehuDocument.open_or_locked(self.__path, plugins=self.__plugins, username=self.__username)
         self.__data.clear()
         self.__data.update(fresh.data)
         # adopt what the freshly-read file says its version is: a reload is how an out-of-band change is
@@ -405,6 +435,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
     def path(self) -> Path | None:
         """The file this document was loaded from or last saved to, if any."""
         return self.__path
+
+    @property
+    def username(self) -> str:
+        """The active identity whose per-user state this document reads and writes
+        ([[field-schema#per-user-shared]]); :data:`~rehuco_core.plugins.DEFAULT_USERNAME` unless a caller
+        set one. Fixed for the document's life -- a per-user accessor is never told whose data it wants,
+        and the v0->v1 block migration filed under exactly this name at construction."""
+        return self.__username
 
     @property
     def legacy_tc(self) -> bool:
@@ -497,17 +535,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         :returns: a single-element list naming the block and its versions, or empty when it is at or
             below what the plugin understands, or no plugin is installed for the active key.
         """
-        plugin = self.__plugins.resolve(self.active_block_key)
-        if plugin is None:
+        if self.__plugins.resolve(self.active_block_key) is None:
             return []
+        head = current_block_version(self.active_block_key)
         block_version = self.__coerced_active_block_version() or 0
-        if block_version <= plugin.current_block_version:
+        if block_version <= head:
             return []
         return [
             LockReason(
                 LockReasonKind.NEWER_BLOCK_FORMAT,
                 f"The {self.active_block_key!r} block's format_version {block_version} is newer than "
-                f"the installed plugin understands ({plugin.current_block_version}).",
+                f"the installed plugin understands ({head}).",
             )
         ]
 
@@ -624,8 +662,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         ``False`` when there is nothing to compare -- no on-disk block (:attr:`on_disk_active_block_format_version`
         is ``None``), or no plugin installed for the active key to say what "current" even means."""
         on_disk = self.__on_disk_active_block_format_version
-        plugin = self.__plugins.resolve(self.active_block_key)
-        return on_disk is not None and plugin is not None and on_disk < plugin.current_block_version
+        if on_disk is None or self.__plugins.resolve(self.active_block_key) is None:
+            return False
+        return on_disk < current_block_version(self.active_block_key)
 
     @staticmethod
     def __coerced_version(data: dict[str, Any]) -> int:
@@ -662,7 +701,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         block = data.get(resource_type)
         if not isinstance(block, dict):
             return None
-        stamp = stamped_block_version(block)
+        stamp = stamped_version(block)
         return stamp if stamp is not None else 0
 
     @property
@@ -769,7 +808,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         """
         if self.active_block_key not in self.__data:
             return None
-        stamp = stamped_block_version(self.active_block)
+        stamp = stamped_version(self.active_block)
         return stamp if stamp is not None else 0
 
     def plugin_blocks(self) -> list[PluginBlock]:
@@ -859,6 +898,58 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
             self.__data[self.active_block_key] = block
         return block
 
+    def active_user_field(self, key: str, default: Any = None) -> Any:
+        """Read a **per-user** value from the active block's ``users`` map, for this document's own
+        username ([[field-schema#per-user-shared]]).
+
+        The per-user sibling of :meth:`active_field`: where that reads a shared field sitting inline in the
+        block, this reaches into ``active_block["users"][<username>]`` (block layout v1). Reading one
+        user's value never sees another's, and an absent block, an absent ``users`` map, an absent user, or
+        an absent key all read as ``default`` -- so an uninstalled or blockless type answers sanely rather
+        than crashing, the same defensive read every accessor here gives ([[data-model#write-integrity]]).
+
+        :param key: the per-user key to read inside this user's sub-map.
+        :param default: value to return when the block, the ``users`` map, this user, or the key is absent.
+        :returns: the stored value, or ``default`` when absent.
+        """
+        users = self.active_block.get(USERS_KEY)
+        if not isinstance(users, dict):
+            return default
+        user = users.get(self.__username)
+        return user.get(key, default) if isinstance(user, dict) else default
+
+    def set_active_user_field(self, key: str, value: Any) -> None:
+        """Write a **per-user** value into the active block's ``users`` map, under this document's own
+        username ([[field-schema#per-user-shared]]), creating the block, the ``users`` map, and this user's
+        sub-map on demand.
+
+        The per-user sibling of :meth:`set_active_field`. A ``users`` map or a per-user sub-map that is
+        present but malformed (not an object) is replaced rather than crashed on, the same way
+        :meth:`set_active_field` replaces a malformed block ([[data-model#write-integrity]]).
+
+        :param key: the per-user key to write inside this user's sub-map.
+        :param value: the value to store.
+        """
+        self.__active_user_or_create()[key] = value
+
+    def __active_user_or_create(self) -> dict[str, Any]:
+        """Return this user's mutable per-user sub-map, installing the ``users`` map and the sub-map when
+        either is absent or malformed.
+
+        :returns: the per-user dict for this document's username, attached by reference into ``data`` so
+            mutating it in place is reflected on the next :meth:`save`.
+        """
+        block = self.__active_block_or_create()
+        users = block.get(USERS_KEY)
+        if not isinstance(users, dict):
+            users = {}
+            block[USERS_KEY] = users
+        user = users.get(self.__username)
+        if not isinstance(user, dict):
+            user = {}
+            users[self.__username] = user
+        return user
+
     def __normalize(self) -> None:
         """Rewrite alias spellings to their plugin's main key, in place, at construction
         ([[plugins#plugin-blocks]]).
@@ -913,12 +1004,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods
         declares has no ``current_block_version`` to migrate toward -- both cases are simply skipped,
         leaving the block exactly as constructed.
         """
-        plugin = self.__plugins.resolve(self.active_block_key)
-        if plugin is None:
+        if self.__plugins.resolve(self.active_block_key) is None:
             return
         block = self.__data.get(self.active_block_key)
         if isinstance(block, dict):
-            migrate_block_data(block, plugin)
+            migrate_block_data(block, self.active_block_key, self.__username)
 
     @property
     def authors(self) -> list[AuthorEntry]:

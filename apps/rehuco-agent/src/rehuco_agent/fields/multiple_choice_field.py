@@ -7,8 +7,8 @@ from typing import Final, override
 
 from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from rehuco_agent.fields.widgets import ChoiceCheckBoxes
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .widgets import ChoiceCheckBoxes
 
 
 class MultipleChoiceField(Field[list[str]]):

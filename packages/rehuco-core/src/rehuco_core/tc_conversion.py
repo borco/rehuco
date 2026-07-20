@@ -13,14 +13,17 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
-from rehuco_core.plugins import CORE_BLOCK_KEY
-from rehuco_core.rehu_document import RehuDocument
-from rehuco_core.tc_description import rewrite_description_images
-from rehuco_core.tc_document import TcDocument
-from rehuco_core.tc_screenshots import ScreenshotRename, scan_tc_screenshots
+from .plugins import DEFAULT_USERNAME
+from .rehu_document import RehuDocument
+from .rehu_format import CORE_BLOCK_KEY
+from .tc_description import rewrite_description_images
+from .tc_document import TcDocument
+from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
 
 
-def convert_tc(tc_path: Path, *, keep_backups: bool, overwrite: bool = False) -> RehuDocument:
+def convert_tc(
+    tc_path: Path, *, keep_backups: bool, overwrite: bool = False, username: str = DEFAULT_USERNAME
+) -> RehuDocument:
     """Convert ``tc_path`` (and its recognized legacy screenshots) into a real, unlocked ``.rehu``.
 
     :param tc_path: the ``.tc`` file to convert.
@@ -29,11 +32,13 @@ def convert_tc(tc_path: Path, *, keep_backups: bool, overwrite: bool = False) ->
         once every new file is confirmed written.
     :param overwrite: must be ``True`` if the target ``.rehu`` already exists, or ``FileExistsError``
         is raised before anything on disk is touched.
+    :param username: the identity the imported per-user flags are filed under
+        ([[field-schema#per-user-shared]]); defaults to :data:`~rehuco_core.plugins.DEFAULT_USERNAME`.
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.
     """
-    return TcConverter(tc_path, keep_backups=keep_backups, overwrite=overwrite).convert()
+    return TcConverter(tc_path, keep_backups=keep_backups, overwrite=overwrite, username=username).convert()
 
 
 class TcConverter:  # pylint: disable=too-few-public-methods
@@ -50,14 +55,16 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     :param tc_path: the ``.tc`` file to convert.
     :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
     :param overwrite: whether an existing target ``.rehu`` may be replaced.
+    :param username: the identity the imported per-user flags are filed under; see :func:`convert_tc`.
     """
 
     __BACKUP_SUFFIX: Final = ".orig"
 
-    def __init__(self, tc_path: Path, *, keep_backups: bool, overwrite: bool) -> None:
+    def __init__(self, tc_path: Path, *, keep_backups: bool, overwrite: bool, username: str) -> None:
         self.__tc_path: Final = tc_path
         self.__keep_backups: Final = keep_backups
         self.__overwrite: Final = overwrite
+        self.__username: Final = username
 
     def convert(self) -> RehuDocument:
         """Run the full plan-then-replace sequence.
@@ -75,7 +82,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         backups = self.__backed_up(originals)
         installed: list[Path] = []
         try:
-            document = RehuDocument(data)
+            document = RehuDocument(data, username=self.__username)
             document.save(target)
             installed.append(target)
             self.__install_images(renames, backups, installed)
@@ -93,7 +100,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             image references and to mint each new ``id``.
         :returns: the JSON object ready to back a fresh, unlocked :class:`RehuDocument`.
         """
-        data = TcDocument.load(self.__tc_path).to_rehu_data()
+        data = TcDocument.load(self.__tc_path).to_rehu_data(username=self.__username)
         core = data[CORE_BLOCK_KEY]
         core["description"] = rewrite_description_images(str(core.get("description", "")), renames)
         core["id"] = str(uuid4())

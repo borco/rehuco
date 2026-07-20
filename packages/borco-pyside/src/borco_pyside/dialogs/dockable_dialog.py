@@ -6,8 +6,8 @@ import PySide6QtAds as QtAds
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QWidget
 
-from borco_pyside.dialogs.dockable_dialog_frame import DockableDialogFrame
-from borco_pyside.dialogs.dockable_dialog_settings import DockableDialogSettings
+from .dockable_dialog_frame import DockableDialogFrame
+from .dockable_dialog_settings import DockableDialogSettings
 
 
 class DockableDialog:

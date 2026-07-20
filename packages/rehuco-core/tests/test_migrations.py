@@ -4,16 +4,18 @@ import json
 from pathlib import Path
 from typing import Any, Final
 
+import pytest
 from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
-    TUTORIAL_PLUGIN,
-    PluginSpec,
+    DEFAULT_PLUGIN_REGISTRY,
     RehuDocument,
+    current_block_version,
     migrate_block_data,
     migrate_rehu_data,
 )
+from rehuco_core.migrations import BLOCK_TARGETS, Chain, run, validate_chain
 
 # A format-v1 document: the common fields still at the top level, beside the plugin blocks
 # ([[data-model#rehu-format]]).
@@ -91,8 +93,8 @@ def test_an_unknown_v1_scalar_moves_nowhere_and_an_unknown_object_stays_a_block(
     """The v1 recognition rule is applied verbatim, once ([[data-model#rehu-format]]).
 
     v1 called any top-level object-valued key a plugin block, so that is what they become; a key v1
-    never knew is not in :data:`V1_COMMON_FIELD_KEYS`, so it is not treated as a common field. This
-    inherits v1's own ambiguity rather than inventing a new answer for it.
+    never knew is not in the v1->v2 step's frozen common-field set, so it is not treated as a common
+    field. This inherits v1's own ambiguity rather than inventing a new answer for it.
 
     **Test steps:**
 
@@ -309,7 +311,7 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert doc.type == "tutorial"
     assert doc.title == "Intro to Sculpting"
     assert doc.authors == ["First Author"]
-    assert doc.active_block == {"rating": 4, "format_version": 0}
+    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
     assert doc.format_version == CURRENT_FORMAT_VERSION
 
@@ -322,7 +324,7 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert saved["reference_images"] == {"images_count": 12}
 
 
-# region Per-block migrations ([[plugins#plugin-blocks]])
+# region Per-block migration engine ([[plugins#plugin-blocks]])
 
 
 def test_an_unstamped_block_migrates_from_v0_not_a_deduced_shape() -> None:
@@ -331,16 +333,14 @@ def test_an_unstamped_block_migrates_from_v0_not_a_deduced_shape() -> None:
 
     **Test steps:**
 
-    * migrate an unstamped block against a plugin whose only step targets v1
+    * run a chain whose only step targets v1 over an unstamped block
     * verify the step ran and the block is stamped v1
     """
     ran: list[str] = []
-    plugin = PluginSpec(
-        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
-    )
+    chain: Chain = ((1, lambda block, _username: ran.append("v0->v1")),)
     block: dict[str, Any] = {"rating": 4}
 
-    migrate_block_data(block, plugin)
+    run(block, chain, base_version=0, username="admin")
 
     assert ran == ["v0->v1"]
     assert block == {"rating": 4, "format_version": 1}
@@ -352,16 +352,14 @@ def test_a_malformed_block_stamp_is_not_trusted() -> None:
 
     **Test steps:**
 
-    * migrate a block whose stamp is a string, against a plugin whose only step targets v1
+    * run a v1 chain over a block whose stamp is a string
     * verify the step ran anyway
     """
     ran: list[str] = []
-    plugin = PluginSpec(
-        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
-    )
+    chain: Chain = ((1, lambda block, _username: ran.append("v0->v1")),)
     block: dict[str, Any] = {"format_version": "junk", "rating": 4}
 
-    migrate_block_data(block, plugin)
+    run(block, chain, base_version=0, username="admin")
 
     assert ran == ["v0->v1"]
     assert block["format_version"] == 1
@@ -369,88 +367,337 @@ def test_a_malformed_block_stamp_is_not_trusted() -> None:
 
 def test_every_block_step_older_than_the_block_runs_in_order() -> None:
     """A block several versions behind walks every step above its own version, in order -- the block
-    dispatch mirrors :class:`RehuMigrator`'s own chain guarantee.
+    runner mirrors :class:`RehuMigrator`'s own chain guarantee.
 
     **Test steps:**
 
-    * migrate a v0 block against a plugin declaring three steps up to v3, out of order
+    * run a chain of three steps up to v3, declared out of order, over a v0 block
     * verify all three ran, in ascending order
     """
     ran: list[str] = []
-    plugin = PluginSpec(
-        ("tutorial",),
-        current_block_version=3,
-        block_migrations=(
-            (2, lambda block: ran.append("v1->v2")),
-            (1, lambda block: ran.append("v0->v1")),
-            (3, lambda block: ran.append("v2->v3")),
-        ),
+    chain: Chain = (
+        (2, lambda block, _username: ran.append("v1->v2")),
+        (1, lambda block, _username: ran.append("v0->v1")),
+        (3, lambda block, _username: ran.append("v2->v3")),
     )
     block: dict[str, Any] = {}
 
-    migrate_block_data(block, plugin)
+    run(block, chain, base_version=0, username="admin")
 
     assert ran == ["v0->v1", "v1->v2", "v2->v3"]
     assert block["format_version"] == 3
 
 
 def test_migrating_an_already_current_block_changes_nothing_but_the_stamp() -> None:
-    """A block already at its plugin's current version runs no step ([[plugins#plugin-blocks]]).
+    """A block already at its chain's head runs no step ([[plugins#plugin-blocks]]).
 
     **Test steps:**
 
-    * migrate a block already stamped at the plugin's current version
+    * run a v1 chain over a block already stamped v1
     * verify no step ran and its other fields are untouched
     """
     ran: list[str] = []
-    plugin = PluginSpec(
-        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
-    )
+    chain: Chain = ((1, lambda block, _username: ran.append("v0->v1")),)
     block: dict[str, Any] = {"format_version": 1, "rating": 4}
 
-    migrate_block_data(block, plugin)
+    run(block, chain, base_version=0, username="admin")
 
     assert not ran
     assert block == {"format_version": 1, "rating": 4}
 
 
-def test_a_block_newer_than_the_plugin_understands_is_never_restamped_or_touched() -> None:
-    """A block whose stamp is already past ``current_block_version`` runs no step and keeps its own
-    (higher) stamp -- never lowered, mirroring the file-wide fail-safe rule
-    ([[data-model#schema-version]]).
+def test_a_block_newer_than_the_chain_reaches_is_never_restamped_or_touched() -> None:
+    """A block whose stamp is already past the chain's head runs no step and keeps its own (higher) stamp
+    -- never lowered, mirroring the file-wide fail-safe rule ([[data-model#schema-version]]).
 
     **Test steps:**
 
-    * migrate a block stamped above the plugin's current version
+    * run a v1 chain over a block stamped v5
     * verify no step ran and the stamp is unchanged
     """
     ran: list[str] = []
-    plugin = PluginSpec(
-        ("tutorial",), current_block_version=1, block_migrations=((1, lambda block: ran.append("v0->v1")),)
-    )
+    chain: Chain = ((1, lambda block, _username: ran.append("v0->v1")),)
     block: dict[str, Any] = {"format_version": 5, "rating": 4}
 
-    migrate_block_data(block, plugin)
+    run(block, chain, base_version=0, username="admin")
 
     assert not ran
     assert block == {"format_version": 5, "rating": 4}
 
 
-def test_a_plugin_with_no_block_version_declared_leaves_a_v0_block_stamped_v0() -> None:
-    """A plugin at ``current_block_version == 0`` (every builtin, today) simply stamps an unstamped
-    block ``0`` -- consistent with "whatever builds a payload stamps it", applied at block granularity,
-    with no step to run.
+def test_an_empty_chain_leaves_a_v0_block_stamped_v0() -> None:
+    """A block whose plugin has no migration chain (head ``0``) gains only the v0 stamp, with no step to
+    run -- the Collection case, and any uninstalled or unknown key ([[plugins#plugin-blocks]]).
 
     **Test steps:**
 
-    * migrate an unstamped block against a plugin declaring no block version of its own
+    * run an empty chain over an unstamped block
     * verify it gains only the stamp
     """
     block: dict[str, Any] = {"rating": 4}
 
-    migrate_block_data(block, TUTORIAL_PLUGIN)
+    run(block, (), base_version=0, username="admin")
 
     assert block == {"rating": 4, "format_version": 0}
 
 
 # endregion
+
+
+# region Per-user block layout v1 (#98, [[field-schema#per-user-shared]])
+
+
+def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_tutorial_block() -> None:
+    """The real tutorial plugin's v0->v1 step relocates **exactly** the per-user subset under ``users``
+    and leaves **exactly** the shared set inline ([[field-schema#per-user-shared]]).
+
+    Both sides of the partition are asserted: a shared flag wrongly moved into the map, or a per-user key
+    wrongly left inline, is precisely the misfiling the whole design guards against -- and a test that
+    only checked one side would miss it.
+
+    **Test steps:**
+
+    * migrate a v0 tutorial block carrying every per-user key and every shared key
+    * verify the per-user subset landed under ``users[<username>]``, in full
+    * verify every shared field stayed inline and no per-user key was left behind
+    * verify the block is stamped v1
+    """
+    block: dict[str, Any] = {
+        "rating": 4,
+        "viewed": True,
+        "todo": False,
+        "keep": True,
+        "favorite": True,
+        "learning_paths": [{"title": "P", "index": 1, "visibility": "private"}],
+        "complete": True,
+        "online": True,
+        "collections": [{"title": "Series", "index": 1}],
+        "original_duration": 71220,
+        "level": ["intermediate"],
+    }
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"] == {
+        "admin": {
+            "rating": 4,
+            "viewed": True,
+            "todo": False,
+            "keep": True,
+            "favorite": True,
+            "learning_paths": [{"title": "P", "index": 1, "visibility": "private"}],
+        }
+    }
+    assert block["complete"] is True
+    assert block["online"] is True
+    assert block["collections"] == [{"title": "Series", "index": 1}]
+    assert block["original_duration"] == 71220
+    assert block["level"] == ["intermediate"]
+    assert block["format_version"] == 1
+    for key in ("rating", "viewed", "todo", "keep", "favorite", "learning_paths"):
+        assert key not in block
+
+
+def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block() -> None:
+    """The reference-images plugin runs the **same** v0->v1 step over the **same** per-user subset -- the
+    "one type left inline" trap: the two plugins must not diverge ([[field-schema#per-user-shared]]).
+
+    ``images_count`` is the shared field unique to this type; it must stay inline, never treated as
+    per-user.
+
+    **Test steps:**
+
+    * migrate a v0 reference-images block carrying the per-user keys plus its shared ``images_count``
+    * verify the per-user subset moved and ``images_count`` (and the other shared flags) stayed inline
+    """
+    block: dict[str, Any] = {
+        "rating": 0,
+        "viewed": False,
+        "todo": False,
+        "keep": False,
+        "favorite": False,
+        "learning_paths": [],
+        "complete": True,
+        "online": False,
+        "collections": [],
+        "images_count": None,
+    }
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["users"] == {
+        "admin": {
+            "rating": 0,
+            "viewed": False,
+            "todo": False,
+            "keep": False,
+            "favorite": False,
+            "learning_paths": [],
+        }
+    }
+    assert block["complete"] is True
+    assert block["online"] is False
+    assert block["collections"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert block["images_count"] is None
+    assert block["format_version"] == 1
+    assert "rating" not in block
+
+
+def test_v0_to_v1_moves_only_present_keys_and_mints_no_favorite() -> None:
+    """The step relocates whichever per-user keys a block actually has and never invents one -- a real
+    pre-#98 block predates ``favorite``, so migrating it leaves the field absent (read as ``False`` by
+    the accessor's default), not minted ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * migrate a v0 block carrying only ``rating`` (as an old ``.tc`` import would)
+    * verify only ``rating`` moved and no ``favorite`` was minted into the user's map
+    """
+    block: dict[str, Any] = {"rating": 4, "complete": True}
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"] == {"admin": {"rating": 4}}
+    assert "favorite" not in block["users"]["admin"]
+
+
+def test_v0_to_v1_gives_every_block_a_users_map_even_with_nothing_to_move() -> None:
+    """The step dispatches on version, not shape: a v0 block with no per-user keys still gains an owned
+    (empty) ``users`` map, so every v1 block has the same uniform shape ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * migrate a v0 block carrying only shared fields
+    * verify the shared fields stayed inline and an empty per-user map was minted for the user
+    """
+    block: dict[str, Any] = {"complete": True, "online": False}
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block == {"complete": True, "online": False, "format_version": 1, "users": {"admin": {}}}
+
+
+def test_migrating_a_v0_block_twice_is_idempotent() -> None:
+    """Re-running the migration is a no-op: the second pass finds a v1 block, runs no step, and rewrites
+    the same stamp ([[field-schema#per-user-shared]], the block-scoped mirror of the file-wide
+    idempotency guarantee).
+
+    **Test steps:**
+
+    * migrate a v0 tutorial block, snapshot the result, then migrate it again
+    * verify the second run changed nothing
+    """
+    block: dict[str, Any] = {"rating": 4, "complete": True}
+    migrate_block_data(block, "tutorial", "admin")
+    once = dict(block)
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block == once
+
+
+def test_a_block_newer_than_v1_is_never_restamped_or_relocated() -> None:
+    """A real-plugin block stamped past v1 runs no step and keeps its own (higher) stamp -- the
+    never-lowers guarantee still holds through the new per-user step ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * migrate a block stamped above the plugin's current version, carrying an inline per-user key
+    * verify no relocation happened and the stamp is untouched
+    """
+    block: dict[str, Any] = {"format_version": 5, "rating": 4}
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block == {"format_version": 5, "rating": 4}
+
+
+def test_two_usernames_file_into_distinct_sub_maps_with_no_cross_contamination() -> None:
+    """The migration files a block's per-user keys under the **supplied** username, and two blocks
+    migrated under different usernames never bleed into each other -- the multi-user assertion that
+    actually exercises the misfiling risk the design guards against ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * migrate two separate v0 blocks under two different usernames
+    * verify each block's data landed under only its own username
+    """
+    alice_block: dict[str, Any] = {"rating": 1}
+    bob_block: dict[str, Any] = {"rating": 2}
+
+    migrate_block_data(alice_block, "tutorial", "alice")
+    migrate_block_data(bob_block, "tutorial", "bob")
+
+    assert alice_block["users"] == {"alice": {"rating": 1}}
+    assert bob_block["users"] == {"bob": {"rating": 2}}
+
+
+def test_current_block_version_is_the_chain_head_derived_not_declared() -> None:
+    """ "What's current" is the highest target in a plugin's chain, not a number the plugin states about
+    itself ([[plugins#plugin-blocks]]) -- so the tutorial/reference-images per-user chains read head ``1``,
+    while a plugin with no chain (Collection, or any unknown key) reads ``0``.
+
+    **Test steps:**
+
+    * verify each per-user type's head is ``1``
+    * verify a chainless builtin and an unknown key both read ``0``
+    """
+    assert current_block_version("tutorial") == 1
+    assert current_block_version("reference_images") == 1
+    assert current_block_version("collection") == 0
+    assert current_block_version("audiopack") == 0
+
+
+# endregion
+
+
+# region Chain validation ([[plugins#plugin-blocks]])
+
+
+def test_validate_chain_rejects_a_gap() -> None:
+    """A chain must be contiguous from ``base_version + 1``: a gap means a later step would silently run on
+    a payload it was never written for ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * validate a chain that skips v2 (targets 1 and 3, base 0)
+    * verify it raises
+    """
+    with pytest.raises(ValueError, match="contiguous"):
+        validate_chain(((1, lambda block, username: None), (3, lambda block, username: None)), 0)
+
+
+def test_validate_chain_rejects_duplicate_targets() -> None:
+    """Two steps claiming the same target is ambiguous -- which one is *the* v1 ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * validate a chain with two steps both targeting v1
+    * verify it raises
+    """
+    with pytest.raises(ValueError, match="duplicate"):
+        validate_chain(((1, lambda block, username: None), (1, lambda block, username: None)), 0)
+
+
+def test_a_well_formed_chain_validates() -> None:
+    """A unique, contiguous chain from ``base_version + 1`` passes ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * validate a two-step chain (targets 1, 2) at base 0, and the real single-step tutorial chain at base 0
+    * verify neither raises
+    """
+    validate_chain(((2, lambda block, username: None), (1, lambda block, username: None)), 0)
+    validate_chain(((1, lambda block, username: None),), 0)
+
+
+def test_every_block_migration_target_names_a_real_plugin() -> None:
+    """Every key in :data:`~rehuco_core.migrations.BLOCK_TARGETS` is a real plugin main key -- catches a
+    typo that would leave a real type's blocks silently un-migrated ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * verify the registered migration keys are a subset of the shipped plugins' main keys
+    """
+    installed = {spec.key for spec in DEFAULT_PLUGIN_REGISTRY}
+    assert set(BLOCK_TARGETS) <= installed

@@ -13,11 +13,11 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QWidget
 
-from rehuco_agent.settings.persistent_settings import persistent_settings
-from rehuco_agent.settings.settings_dialog_settings import SettingsDialogSettings
-from rehuco_agent.settings.ui.settings_dialog_ui import Ui_SettingsDialog
-from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
-from rehuco_agent.settings.ui.settings_page import SettingsPage
+from ..persistent_settings import persistent_settings
+from ..settings_dialog_settings import SettingsDialogSettings
+from .settings_dialog_ui import Ui_SettingsDialog
+from .settings_frame_filter import SettingsFrameFilter
+from .settings_page import SettingsPage
 
 PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 """Item-data role storing each category-tree row's page widget, for selection-driven page switching."""

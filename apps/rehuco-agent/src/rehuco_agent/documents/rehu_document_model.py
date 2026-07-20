@@ -9,8 +9,8 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import CURRENT_FORMAT_VERSION, FORMAT_VERSION_KEY, AuthorEntry, LockReason, RehuDocument, convert_tc
 
-from rehuco_agent.documents.image_scanner import ImageScanner, RehuScanner, TcScanner
-from rehuco_agent.fields.field import Field, FieldBinding
+from ..fields.field import Field, FieldBinding
+from .image_scanner import ImageScanner, RehuScanner, TcScanner
 
 LOG: Final = logging.getLogger(__name__)
 

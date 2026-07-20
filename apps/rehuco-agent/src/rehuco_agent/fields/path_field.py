@@ -9,8 +9,8 @@ from typing import override
 from borco_pyside.widgets import ElidedLabel
 from PySide6.QtCore import QUrl, SignalInstance
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from rehuco_agent.fields.widgets import ExpandToggleButton, PathEditor
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .widgets import ExpandToggleButton, PathEditor
 
 
 class PathField(Field[str]):

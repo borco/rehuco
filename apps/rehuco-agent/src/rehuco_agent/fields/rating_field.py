@@ -8,9 +8,9 @@ from borco_pyside.widgets import Rating
 from PySide6.QtCore import QSignalBlocker, Qt
 from PySide6.QtWidgets import QSlider
 
-from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
-from rehuco_agent.glyphs import NEGATIVE_RATING_GLYPH, POSITIVE_RATING_GLYPH
+from ..glyphs import NEGATIVE_RATING_GLYPH, POSITIVE_RATING_GLYPH
+from .colors import WARNING_COLOR
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 POSITIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{POSITIVE_RATING_GLYPH.family}"; }}'
 """Stylesheet for the viewer's positive stars ([[plugins#field-toolkit]]): filled font, inherited color."""

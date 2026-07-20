@@ -5,8 +5,8 @@ from typing import Final, override
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QCheckBox, QLabel
 
-from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .colors import WARNING_COLOR
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 
 class BooleanField(Field[bool]):

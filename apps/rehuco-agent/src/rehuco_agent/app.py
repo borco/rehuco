@@ -19,11 +19,11 @@ from PySide6.QtCore import QEvent
 from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QIcon
 from PySide6.QtWidgets import QApplication
 
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
-from rehuco_agent.fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
-from rehuco_agent.glyphs import CLEAR_ACTION_GLYPH
-from rehuco_agent.main_window import MainWindow
-from rehuco_agent.settings.persistent_settings import persistent_settings
+from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
+from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
+from .glyphs import CLEAR_ACTION_GLYPH
+from .main_window import MainWindow
+from .settings.persistent_settings import persistent_settings
 
 LOG: Final = logging.getLogger(__name__)
 

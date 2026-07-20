@@ -4,8 +4,8 @@ from typing import override
 
 from PySide6.QtWidgets import QLabel
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
-from rehuco_agent.fields.widgets import LineEdit
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .widgets import LineEdit
 
 
 class TextField(Field[str]):

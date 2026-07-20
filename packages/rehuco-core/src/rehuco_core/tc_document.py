@@ -20,28 +20,32 @@ from typing import Any, Final
 
 import yaml
 
-from rehuco_core.migrations import CURRENT_FORMAT_VERSION
-from rehuco_core.plugins import CORE_BLOCK_KEY, DEFAULT_PLUGIN_REGISTRY, FORMAT_VERSION_KEY
-from rehuco_core.rehu_document import RehuDocument, RehuFormatError
+from .migrations import CURRENT_FORMAT_VERSION, current_block_version
+from .plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_USERNAME, USERS_KEY
+from .rehu_document import RehuDocument, RehuFormatError
+from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
 
 
-def load_tc(path: Path | str) -> RehuDocument:
+def load_tc(path: Path | str, *, username: str = DEFAULT_USERNAME) -> RehuDocument:
     """Read a legacy ``.tc`` (YAML) file and map it into a ``RehuDocument`` ([[acquisition-tooling#tc-to-rehu]]).
 
     :param path: path to the ``.tc`` file.
+    :param username: the identity the imported per-user flags are filed under
+        ([[field-schema#per-user-shared]]); defaults to :data:`~rehuco_core.plugins.DEFAULT_USERNAME`.
     :returns: a document mapped to the target ``.rehu`` shape, with :attr:`RehuDocument.legacy_tc` set.
     :raises RehuFormatError: if the file's top-level YAML value is neither a mapping nor empty.
     """
-    return TcDocument.load(path).to_rehu_document(path)
+    return TcDocument.load(path).to_rehu_document(path, username=username)
 
 
-def tc_to_rehu_data(tc_data: dict[str, Any]) -> dict[str, Any]:
+def tc_to_rehu_data(tc_data: dict[str, Any], *, username: str = DEFAULT_USERNAME) -> dict[str, Any]:
     """Map a parsed ``.tc`` YAML object into a fresh ``.rehu``-shaped JSON object.
 
     :param tc_data: the parsed YAML mapping (empty for a blank ``.tc``).
+    :param username: the identity the imported per-user flags are filed under; see :func:`load_tc`.
     :returns: a JSON object ready to back a :class:`RehuDocument`.
     """
-    return TcDocument(tc_data).to_rehu_data()
+    return TcDocument(tc_data).to_rehu_data(username=username)
 
 
 class TcDocument:
@@ -120,16 +124,26 @@ class TcDocument:
         """The resolved resource type -- ``data``'s ``type`` if recognized, else :attr:`DEFAULT_TYPE`."""
         return self.__type
 
-    def to_rehu_document(self, path: Path | str | None = None) -> RehuDocument:
+    def to_rehu_document(self, path: Path | str | None = None, *, username: str = DEFAULT_USERNAME) -> RehuDocument:
         """Map this document into a fresh :class:`RehuDocument`, marked :attr:`~RehuDocument.legacy_tc`.
+
+        The same ``username`` seeds the mapped per-user flags *and* the document built around them, so the
+        block's ``users`` key and the document's own :attr:`~RehuDocument.username` can never disagree
+        ([[field-schema#per-user-shared]]).
 
         :param path: the ``RehuDocument``'s path; typically the ``.tc`` path itself, since Phase 1
             doesn't yet write a converted ``.rehu`` anywhere ([[acquisition-tooling#tc-to-rehu]]).
+        :param username: the identity the imported per-user flags are filed under; see :func:`load_tc`.
         :returns: the mapped, locked-for-its-own-reason document.
         """
-        return RehuDocument(self.to_rehu_data(), Path(path) if path is not None else None, legacy_tc=True)
+        return RehuDocument(
+            self.to_rehu_data(username=username),
+            Path(path) if path is not None else None,
+            legacy_tc=True,
+            username=username,
+        )
 
-    def to_rehu_data(self) -> dict[str, Any]:
+    def to_rehu_data(self, *, username: str = DEFAULT_USERNAME) -> dict[str, Any]:
         """Map this document into a fresh ``.rehu``-shaped JSON object.
 
         tc4's capitalized type spellings (``Tutorial``, ``ReferenceImages``) are aliases of the plugins'
@@ -138,6 +152,7 @@ class TcDocument:
         this a genuinely ``.rehu``-shaped object -- self-describing, and canonical on its own rather than
         only once a :class:`RehuDocument` is built around it.
 
+        :param username: the identity the imported per-user flags are filed under; see :func:`load_tc`.
         :returns: a JSON object ready to back a :class:`RehuDocument`.
         """
         resource_type = DEFAULT_PLUGIN_REGISTRY.main_key(self.__type)
@@ -156,7 +171,7 @@ class TcDocument:
             },
         }
         if self.__type in self.__TYPES_WITH_BLOCK:
-            data[resource_type] = self.__type_fields()
+            data[resource_type] = self.__type_fields(resource_type, username)
         return data
 
     def __source(self) -> dict[str, Any]:
@@ -172,26 +187,49 @@ class TcDocument:
             "primary": True,
         }
 
-    def __type_fields(self) -> dict[str, Any]:
-        """Build the type-keyed plugin block shared by Tutorial and ReferenceImages ([[field-schema#resource-types]]).
+    def __type_fields(self, resource_type: str, username: str) -> dict[str, Any]:
+        """Build the current type-keyed plugin block shared by Tutorial and ReferenceImages
+        ([[field-schema#resource-types]], [[field-schema#per-user-shared]]).
 
-        :returns: the plugin block; ``Tutorial`` additionally carries ``original_duration``/``level``.
-            ReferenceImages' leaked tc4 `duration` is dropped, not reinterpreted as `images_count`
-            ([[field-schema#duration-size]]) -- left absent, to be filled later by scanning.
+        Emits the current block layout directly rather than an old block that construction then migrates:
+        the per-user subset nests under ``users[username]`` from the start, so the imported flags are filed
+        to a known owner at write time -- the whole point of recording ownership while the era is
+        single-user. The shared fields (``complete`` / ``online`` / ``collections`` and each type's own
+        extras) stay inline, and the block is stamped at its plugin's current block version
+        (:func:`~rehuco_core.current_block_version`), so :meth:`~rehuco_core.RehuDocument` treats it as
+        current and never re-migrates it.
+
+        ``favorite`` is minted ``False`` -- it is new to rehuco with no tc4 source key
+        ([[field-schema#per-user-shared]]). ``rating`` keeps its ``0`` import default (the read-as-``None``
+        refinement is a separate change).
+
+        :param resource_type: the normalized block key, used to stamp the block's current version.
+        :param username: the identity the per-user subset is filed under.
+        :returns: the plugin block; ``Tutorial`` additionally carries ``original_duration``/``level``, and
+            ReferenceImages an empty ``images_count`` (``null`` on import, filled later by scanning --
+            never reinterpreted from tc4's leaked `duration`, [[field-schema#duration-size]]).
         """
         block: dict[str, Any] = {
-            "rating": self.__coerced_int("rating", 0),
+            FORMAT_VERSION_KEY: current_block_version(resource_type),
             "complete": self.__coerced_bool("complete", True),
             "online": self.__coerced_bool("online", False),
-            "viewed": self.__coerced_bool("viewed", False),
-            "todo": self.__coerced_bool("todo", False),
-            "keep": self.__coerced_bool("keep", False),
             "collections": self.__collections(),
-            "learning_paths": self.__learning_paths(),
+            USERS_KEY: {
+                username: {
+                    "favorite": False,
+                    "keep": self.__coerced_bool("keep", False),
+                    "learning_paths": self.__learning_paths(),
+                    "rating": self.__coerced_int("rating", 0),
+                    "todo": self.__coerced_bool("todo", False),
+                    "viewed": self.__coerced_bool("viewed", False),
+                }
+            },
         }
         if self.__type == "Tutorial":
             block["original_duration"] = self.__parsed_duration("duration")
             block["level"] = self.__str_list("level")
+        else:  # ReferenceImages -- the only other type __type_fields is built for (see __TYPES_WITH_BLOCK)
+            block["images_count"] = None
         return block
 
     def __collections(self) -> list[dict[str, Any]]:

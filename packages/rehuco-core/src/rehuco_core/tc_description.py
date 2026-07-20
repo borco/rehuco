@@ -11,7 +11,7 @@ import re
 from collections.abc import Sequence
 from typing import Final
 
-from rehuco_core.tc_screenshots import ScreenshotRename
+from .tc_screenshots import ScreenshotRename
 
 
 def rewrite_description_images(description: str, renames: Sequence[ScreenshotRename]) -> str:

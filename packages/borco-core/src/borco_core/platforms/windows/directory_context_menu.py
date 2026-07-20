@@ -15,7 +15,7 @@ Same per-user (``HKEY_CURRENT_USER``), no-elevation approach as
 import logging
 from typing import Final
 
-from borco_core.platforms.windows import hkcu_registry
+from . import hkcu_registry
 
 LOG: Final = logging.getLogger(__name__)
 

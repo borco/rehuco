@@ -6,7 +6,7 @@ from typing import Final, cast
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from rehuco_agent.settings.persistent_settings import persistent_settings
+from .persistent_settings import persistent_settings
 
 GROUP: Final = "markdown_rendering"
 ENGINE_KEY: Final = "engine"

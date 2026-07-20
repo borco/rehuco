@@ -14,7 +14,7 @@ from PySide6.QtGui import QAction, QCursor, QDesktopServices
 from PySide6.QtWidgets import QLabel, QLineEdit, QMainWindow, QToolButton, QToolTip, QWidget
 from rehuco_core import AuthorEntry, author_name, authors_comma_editable
 
-from rehuco_agent.fields.field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 
 LOG: Final = logging.getLogger(__name__)
 

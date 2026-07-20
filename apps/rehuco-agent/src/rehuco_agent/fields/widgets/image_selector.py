@@ -18,7 +18,7 @@ from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtGui import QPixmap, QResizeEvent, QShowEvent, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QGridLayout, QHeaderView, QLabel, QSizePolicy, QSplitter, QTreeView, QWidget
 
-from rehuco_agent.documents.image_scanner import ImageScanner
+from ...documents.image_scanner import ImageScanner
 
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The item-data role storing each list entry's screenshot :class:`~pathlib.Path`."""

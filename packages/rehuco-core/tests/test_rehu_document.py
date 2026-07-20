@@ -18,7 +18,6 @@ from rehuco_core import (
     DEFAULT_PLUGIN_REGISTRY,
     LockReasonKind,
     PluginRegistry,
-    PluginSpec,
     RehuDocument,
     RehuFormatError,
     authors_comma_editable,
@@ -55,7 +54,7 @@ TUTORIAL: Final = {
         "extra_tags": ["rework"],
         "some_future_core_key": "kept verbatim",
     },
-    "tutorial": {"format_version": 0, "rating": 4, "complete": True},
+    "tutorial": {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}},
     "some_future_key": {"nested": [1, 2, 3]},
 }
 
@@ -126,7 +125,7 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     assert saved["core"]["sources"][0]["title"] == "Renamed Title"
     assert saved["core"]["sources"][0]["some_future_source_key"] == "kept verbatim"
     assert saved["core"]["some_future_core_key"] == "kept verbatim"
-    assert saved["tutorial"] == {"format_version": 0, "rating": 4, "complete": True}
+    assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
     assert saved["core"]["updated"] == TUTORIAL["core"]["updated"]  # A0 does not auto-touch timestamps
 
@@ -375,14 +374,14 @@ def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocke
     doc = RehuDocument(
         {
             "core": {"type": "tutorial"},
-            "tutorial": {"rating": 4, "complete": True, "format_version": 0},
+            "tutorial": {"online": False, "complete": True, "format_version": 1},
             "daz3d": {"sku": "1", "figures": ["G8F"], "format_version": 0},
         }
     )
 
     saved = saved_json(doc, mocker)
 
-    assert list(saved["tutorial"]) == ["format_version", "complete", "rating"]
+    assert list(saved["tutorial"]) == ["format_version", "complete", "online"]
     assert list(saved["daz3d"]) == ["sku", "figures", "format_version"]
 
 
@@ -1036,11 +1035,11 @@ def test_active_field_reads_from_the_active_block() -> None:
 
     **Test steps:**
 
-    * construct a Tutorial document carrying a ``tutorial`` block with a rating
+    * construct a Tutorial document carrying a ``tutorial`` block with a shared field
     * verify the stored key reads back, and an absent key returns the given default
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 0, "rating": 4}})
-    assert doc.active_field("rating") == 4
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": True}})
+    assert doc.active_field("complete") is True
     assert doc.active_field("missing", 0) == 0
 
 
@@ -1067,9 +1066,9 @@ def test_set_active_field_updates_an_existing_block() -> None:
     * set a new value on one key
     * verify the key updated and the block's ``format_version`` is untouched
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 0, "rating": 1}})
-    doc.set_active_field("rating", 5)
-    assert doc.data["tutorial"] == {"format_version": 0, "rating": 5}
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": False}})
+    doc.set_active_field("complete", True)
+    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
 
 
 def test_set_active_field_creates_the_block_when_absent() -> None:
@@ -1110,9 +1109,9 @@ def test_remove_active_field_deletes_a_present_key() -> None:
     * remove that key
     * verify it returns ``True`` and the key is gone while the rest of the block is intact
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5, "mystery": 42}})
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": True, "mystery": 42}})
     assert doc.remove_active_field("mystery") is True
-    assert doc.data["tutorial"] == {"rating": 5, "format_version": 0}
+    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
 
 
 def test_remove_active_field_is_a_noop_when_absent() -> None:
@@ -1123,9 +1122,9 @@ def test_remove_active_field_is_a_noop_when_absent() -> None:
     * a Tutorial document with a block missing the key -> ``False``
     * a document with no block at all -> ``False``
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 5}})
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": True}})
     assert doc.remove_active_field("mystery") is False
-    assert doc.data["tutorial"] == {"rating": 5, "format_version": 0}
+    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
 
     blockless = RehuDocument({"type": "tutorial"})
     assert blockless.remove_active_field("mystery") is False
@@ -1154,7 +1153,7 @@ def test_plugin_blocks_classifies_the_types_block_active_and_every_other_inactiv
         ("daz3d", False),
     ]
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images", "daz3d"]
-    assert doc.plugin_blocks()[0].fields == {"rating": 4, "format_version": 0}
+    assert doc.plugin_blocks()[0].fields == {"format_version": 1, "users": {"admin": {"rating": 4}}}
 
 
 def test_an_installed_plugins_block_is_inactive_when_the_type_does_not_name_it() -> None:
@@ -1213,7 +1212,7 @@ def test_alias_type_and_block_key_normalize_to_the_declared_main_key() -> None:
     )
     assert doc.core["type"] == "reference_images"
     assert doc.active_block_key == "reference_images"
-    assert doc.active_block == {"images_count": 12, "format_version": 0}
+    assert doc.active_block == {"images_count": 12, "format_version": 1, "users": {"admin": {}}}
     assert doc.data["tutorial"] == {"rating": 1}
     assert "refimages" not in doc.data
 
@@ -1237,7 +1236,7 @@ def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() 
             "refimages": {"images_count": 99},
         }
     )
-    assert doc.active_block == {"images_count": 12, "format_version": 0}
+    assert doc.active_block == {"images_count": 12, "format_version": 1, "users": {"admin": {}}}
     assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
 
 
@@ -1262,11 +1261,11 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
     doc = load_doc(mocker, data)
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
 
-    doc.set_active_field("rating", 5)
+    doc.set_active_field("complete", True)
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
-    assert saved["tutorial"] == {"format_version": 0, "rating": 5}
+    assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
     assert saved["reference_images"] == {"images_count": 12}
     assert saved["daz3d"] == {"sku": "12345", "figures": ["G8F"]}
 
@@ -1288,7 +1287,7 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
 
     saved = json.loads(mock_write.call_args[0][1])
     assert saved["core"]["type"] == "tutorial"
-    assert saved["tutorial"] == {"rating": 4, "format_version": 0}
+    assert saved["tutorial"] == {"format_version": 1, "users": {"admin": {"rating": 4}}}
     assert "Tutorial" not in saved
 
 
@@ -1703,39 +1702,29 @@ def test_reload_after_a_fix_drops_the_lock(mocker: MockerFixture) -> None:
 # endregion
 
 
-# region Per-plugin-block format version (#81, [[plugins#plugin-blocks]])
+# region Per-plugin-block format version (#81, #98, [[plugins#plugin-blocks]])
 
 
-def versioned_tutorial_registry() -> PluginRegistry:
-    """A registry declaring a ``tutorial`` plugin whose block layout **v1** moves ``rating`` under a
-    ``migrated`` marker -- a stand-in real enough to exercise the v0->v1 dispatch seam end to end
-    through `RehuDocument`, without this issue owning any real plugin's real block layout (#81, #98).
+def test_constructing_a_document_stamps_and_migrates_an_unstamped_active_block() -> None:
+    """An active block for an installed plugin that has never been stamped reads as v0 and is carried up
+    to that plugin's current version at construction, mirroring the file-wide upgrade-on-load step
+    ([[plugins#plugin-blocks]]).
 
-    :returns: a registry with one versioned ``tutorial`` plugin.
-    """
-
-    def v0_to_v1(block: dict[str, Any]) -> None:
-        block["migrated"] = block.pop("rating", None)
-
-    return PluginRegistry([PluginSpec(("tutorial",), current_block_version=1, block_migrations=((1, v0_to_v1),))])
-
-
-def test_constructing_a_document_stamps_an_unstamped_active_block() -> None:
-    """An active block for an installed plugin that has never been stamped reads as v0 and is stamped so
-    at construction, mirroring the file-wide upgrade-on-load step ([[plugins#plugin-blocks]]).
+    Exercised against the **real** tutorial plugin, now at block v1: an unstamped block runs its v0->v1
+    step (the per-user relocation, [[field-schema#per-user-shared]]) and is stamped ``1``.
 
     **Test steps:**
 
     * construct a tutorial-typed document whose block carries no ``format_version``
-    * verify the block now carries ``format_version: 0`` alongside its own fields
+    * verify the per-user ``rating`` moved under the default user and the block is stamped v1
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}})
-    assert doc.active_block == {"rating": 4, "format_version": 0}
+    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
 
 
 def test_an_uninstalled_active_type_is_never_stamped() -> None:
-    """A type no installed plugin declares has no ``current_block_version`` to migrate toward, so its
-    block is left exactly as constructed ([[plugins#plugin-blocks]]).
+    """A type no installed plugin declares is never migrated -- construction skips it before it ever
+    reaches a chain, so its block is left exactly as constructed ([[plugins#plugin-blocks]]).
 
     **Test steps:**
 
@@ -1758,20 +1747,6 @@ def test_an_inactive_blocks_version_is_never_touched() -> None:
     """
     doc = RehuDocument({"type": "reference_images", "reference_images": {}, "tutorial": {"rating": 4}})
     assert doc.data["tutorial"] == {"rating": 4}
-
-
-def test_a_real_v0_to_v1_block_migration_runs_through_document_construction() -> None:
-    """The v0->v1 dispatch seam a plugin declares actually runs when its block is active, exercised end
-    to end through `RehuDocument` rather than :func:`~rehuco_core.migrate_block_data` in isolation
-    ([[plugins#plugin-blocks]], the seam #98 plugs its real ``users``-map step into).
-
-    **Test steps:**
-
-    * construct a tutorial-typed document, using a registry whose tutorial plugin declares a v0->v1 step
-    * verify the step ran (``rating`` moved to ``migrated``) and the block is stamped v1
-    """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
-    assert doc.active_block == {"migrated": 4, "format_version": 1}
 
 
 def test_a_block_newer_than_the_plugin_understands_locks_and_is_carried_verbatim() -> None:
@@ -1826,8 +1801,8 @@ def test_on_disk_active_block_format_version_reports_the_file_not_the_payload(mo
     * load a document whose block predates its plugin
     * verify the in-memory block reads current while the on-disk figure still reads the old value
     """
-    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
-    assert doc.active_block == {"migrated": 4, "format_version": 1}
+    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
+    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
     assert doc.on_disk_active_block_format_version == 0
 
 
@@ -1855,14 +1830,10 @@ def test_active_block_upgrade_pending_true_only_when_the_on_disk_block_is_old(mo
     * load a document whose block predates its plugin -- pending
     * load one already at its plugin's version -- not pending
     """
-    behind = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    behind = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
     assert behind.active_block_upgrade_pending is True
 
-    current = load_doc(
-        mocker,
-        {"type": "tutorial", "tutorial": {"format_version": 1, "rating": 4}},
-        plugins=versioned_tutorial_registry(),
-    )
+    current = load_doc(mocker, {"type": "tutorial", "tutorial": {"format_version": 1, "rating": 4}})
     assert current.active_block_upgrade_pending is False
 
 
@@ -1875,13 +1846,158 @@ def test_saving_an_upgraded_block_clears_the_pending_flag(mocker: MockerFixture)
     * load a document whose block predates its plugin, confirming it starts pending
     * save, and verify the pending flag clears
     """
-    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}}, plugins=versioned_tutorial_registry())
+    doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
     assert doc.active_block_upgrade_pending is True
 
     mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc.save()
 
     assert doc.active_block_upgrade_pending is False
+
+
+# endregion
+
+
+# region Per-user block state (#98, [[field-schema#per-user-shared]])
+
+
+def test_active_user_field_reads_the_current_users_nested_value() -> None:
+    """``active_user_field`` reads a value nested under ``active_block["users"][<username>]`` for this
+    document's own username ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * construct an ``admin`` document whose v1 block holds a per-user ``rating``
+    * verify the nested value reads back, and an absent per-user key returns the given default
+    """
+    doc = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": 1, "users": {"admin": {"rating": 4}}}},
+        username="admin",
+    )
+    assert doc.active_user_field("rating") == 4
+    assert doc.active_user_field("missing", 0) == 0
+
+
+def test_active_user_field_defaults_when_the_user_map_or_block_is_absent_or_malformed() -> None:
+    """A per-user read falls back to the default whenever the block, the ``users`` map, this user, or the
+    key is absent -- or any of them is malformed ([[field-schema#per-user-shared]],
+    [[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * read with no block, no ``users`` map, this user absent, and a malformed ``users`` / user value
+    * verify each reads the default rather than crashing
+    """
+    assert RehuDocument({"type": "tutorial"}, username="admin").active_user_field("rating", 0) == 0
+    no_map = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1}}, username="admin")
+    assert no_map.active_user_field("rating", 0) == 0
+    other_user = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": 1, "users": {"bob": {"rating": 9}}}},
+        username="admin",
+    )
+    assert other_user.active_user_field("rating", 0) == 0
+    bad_map = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "users": "junk"}}, username="admin")
+    assert bad_map.active_user_field("rating", 0) == 0
+    bad_user = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": 1, "users": {"admin": "junk"}}}, username="admin"
+    )
+    assert bad_user.active_user_field("rating", 0) == 0
+
+
+def test_set_active_user_field_creates_the_nested_maps_on_write() -> None:
+    """``set_active_user_field`` installs the block, the ``users`` map, and this user's sub-map on demand
+    ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * construct an ``admin`` document with no plugin block at all
+    * write a per-user field
+    * verify the whole nested path was created under the active block
+    """
+    doc = RehuDocument({"type": "tutorial"}, username="admin")
+    doc.set_active_user_field("rating", 5)
+    assert doc.data["tutorial"]["users"] == {"admin": {"rating": 5}}
+
+    # a second write reuses the existing ``users`` map and user sub-map rather than recreating them
+    doc.set_active_user_field("viewed", True)
+    assert doc.data["tutorial"]["users"] == {"admin": {"rating": 5, "viewed": True}}
+
+
+def test_set_active_user_field_replaces_a_malformed_users_map_or_sub_map() -> None:
+    """A ``users`` map or per-user sub-map that is present but not an object is replaced rather than
+    crashed on, the same defensive write ``set_active_field`` gives a malformed block
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * write a per-user field into a block whose ``users`` value is a non-object
+    * write one into a block whose user sub-map is a non-object
+    * verify each malformed value was replaced by a fresh nested map holding the write
+    """
+    bad_map = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "users": "junk"}}, username="admin")
+    bad_map.set_active_user_field("rating", 5)
+    assert bad_map.data["tutorial"]["users"] == {"admin": {"rating": 5}}
+
+    bad_user = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": 1, "users": {"admin": "junk"}}}, username="admin"
+    )
+    bad_user.set_active_user_field("rating", 5)
+    assert bad_user.data["tutorial"]["users"] == {"admin": {"rating": 5}}
+
+
+def test_per_user_writes_from_two_identities_do_not_collide() -> None:
+    """Two identities writing the same block file into distinct sub-maps, so one user's flags never
+    misfile against another's -- the multi-user guard the whole design turns on
+    ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * over one shared block, write a per-user ``rating`` as ``alice`` and another as ``bob``
+    * verify each landed under only its own username, and reading one identity never sees the other's
+    """
+    data: dict[str, Any] = {"type": "tutorial", "tutorial": {"format_version": 1}}
+    RehuDocument(data, username="alice").set_active_user_field("rating", 1)
+    RehuDocument(data, username="bob").set_active_user_field("rating", 2)
+
+    assert data["tutorial"]["users"] == {"alice": {"rating": 1}, "bob": {"rating": 2}}
+    assert RehuDocument(data, username="alice").active_user_field("rating") == 1
+    assert RehuDocument(data, username="bob").active_user_field("rating") == 2
+
+
+def test_per_user_accessors_go_through_active_block_for_an_uninstalled_type() -> None:
+    """The per-user accessors build on :attr:`~rehuco_core.RehuDocument.active_block`, so a type whose
+    plugin isn't installed here still reads and writes sanely -- no crash, present values read, absent
+    ones default ([[field-schema#per-user-shared]], [[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * read a present per-user value from an uninstalled type's block (never migrated, carried verbatim)
+    * read an absent one, and read from a document with no block at all
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"users": {"admin": {"rating": 7}}}}, username="admin")
+    assert doc.active_user_field("rating", 0) == 7
+    assert doc.active_user_field("missing", 0) == 0
+    assert RehuDocument({"type": "audiopack"}, username="admin").active_user_field("rating", 0) == 0
+
+
+def test_username_defaults_to_admin_and_is_reported() -> None:
+    """A document with no configured identity resolves per-user state to ``admin``, the spec's fallback
+    ([[field-schema#per-user-shared]]); :attr:`~rehuco_core.RehuDocument.username` reports whichever
+    identity is in force.
+
+    **Test steps:**
+
+    * verify a document constructed with no username reports ``admin`` and reads that user's state
+    * verify an explicit username is reported and used
+    """
+    default = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "users": {"admin": {"rating": 3}}}})
+    assert default.username == "admin"
+    assert default.active_user_field("rating") == 3
+
+    explicit = RehuDocument({"type": "tutorial"}, username="alice")
+    assert explicit.username == "alice"
+    explicit.set_active_user_field("rating", 8)
+    assert explicit.data["tutorial"]["users"] == {"alice": {"rating": 8}}
 
 
 # endregion
