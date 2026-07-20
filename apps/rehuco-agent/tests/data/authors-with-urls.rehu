@@ -1,0 +1,34 @@
+{
+  "format_version": 2,
+  "core": {
+    "id": "6f1d2b3a-8c4e-4a2f-9b1d-3e7f5a6c8d90",
+    "type": "tutorial",
+    "created": "2026-07-20T00:00:00Z",
+    "updated": "2026-07-20T00:00:00Z",
+    "sources": [
+      {
+        "title": "Authors With URLs Demo",
+        "publisher": "Manual Test",
+        "primary": true
+      }
+    ],
+    "authors": [
+      "Plain Author",
+      {
+        "name": "Author With A Valid Link",
+        "url": "https://example.com/author-with-a-valid-link"
+      },
+      {
+        "name": "Author With A Bad Link",
+        "url": "not-a-valid-url"
+      },
+      "Foo Bar, Jr."
+    ],
+    "description": "The `authors` list below mixes every case #95's viewer/editor guard need to tell apart ([[field-schema#authors]]): a plain name; a record with a strict http/https `url`, rendering a trailing `(url)` link in the viewer (hover it for the tooltip/status-tip, click to open); a record whose `url` doesn't parse as http/https, rendering as a plain name with no link at all; and a plain name containing a comma, which the comma editor can't losslessly round-trip. Because the list carries a record entry and a comma-bearing name, the Main Editor's `authors` field should show read-only with an explanatory tooltip rather than the usual editable line."
+  },
+  "tutorial": {
+    "format_version": 0,
+    "rating": 4,
+    "complete": true
+  }
+}

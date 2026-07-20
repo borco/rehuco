@@ -5,6 +5,7 @@ surfaces, and how its form is assembled live in the ``documents`` layer
 (:mod:`rehuco_agent.documents.document_fields`), not here.
 """
 
+from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.description_field import DescriptionField
@@ -40,6 +41,7 @@ __all__ = [
     "FieldRegistry",
     "FieldsForm",
     "TextField",
+    "AuthorsField",
     "BooleanField",
     "RatingField",
     "IntField",
