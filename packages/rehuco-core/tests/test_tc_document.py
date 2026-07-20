@@ -122,22 +122,29 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
 
     assert doc.active_block_key == "tutorial"
     block = doc.active_block
-    assert block["rating"] == 5
+    # shared fields stay inline in the block ([[field-schema#per-user-shared]])
     assert block["complete"] is True
     assert block["online"] is True
-    assert block["viewed"] is True
-    assert block["todo"] is True
-    assert block["keep"] is True
     assert block["original_duration"] == 445500
     assert block["level"] == ["beginner", "intermediate", "advanced", "any"]
     assert block["collections"] == [{"title": "Some Collection", "index": 3}]
-    assert block["learning_paths"] == [
-        {"title": "Some learning path 1", "index": 1, "visibility": "private"},
-        {"title": "Some learning path 2", "index": 2, "visibility": "private"},
-    ]
-    # the tutorial plugin is installed, so construction stamps the block's own version like any other
-    # ([[plugins#plugin-blocks]], #81) -- not a tc4 field, but not stray either
-    assert block["format_version"] == 0
+    # per-user fields nest under ``users[<username>]``, keyed by the import identity (default ``admin``)
+    assert block["users"] == {
+        "admin": {
+            "favorite": False,
+            "keep": True,
+            "learning_paths": [
+                {"title": "Some learning path 1", "index": 1, "visibility": "private"},
+                {"title": "Some learning path 2", "index": 2, "visibility": "private"},
+            ],
+            "rating": 5,
+            "todo": True,
+            "viewed": True,
+        }
+    }
+    # the importer emits block layout v1 directly ([[field-schema#per-user-shared]]), so construction
+    # finds it already current and never re-migrates it -- not a tc4 field, but not stray either
+    assert block["format_version"] == 1
 
 
 def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -> None:
@@ -147,20 +154,32 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
 
     * mock ``Path.read_text`` to return :data:`REFERENCE_IMAGES_TC`
     * load via :func:`load_tc`
-    * verify no ``original_duration``/``images_count`` key was written, and blank ``collection`` maps
-      to an empty ``collections`` list
+    * verify the leaked `duration` produced no ``original_duration``, ``images_count`` is an empty
+      ``null`` (never derived from it), and per-user flags nest under ``users`` at block v1
     """
     doc = load_tc_doc(mocker, REFERENCE_IMAGES_TC)
     assert doc.type == "reference_images"
     assert doc.active_block_key == "reference_images"
     block = doc.active_block
-    assert block["rating"] == -5
+    assert block["format_version"] == 1
     assert block["complete"] is False
     assert block["collections"] == []
-    assert block["learning_paths"] == []
+    assert block["users"] == {
+        "admin": {
+            "favorite": False,
+            "keep": True,
+            "learning_paths": [],
+            "rating": -5,
+            "todo": True,
+            "viewed": True,
+        }
+    }
+    # ``images_count`` is shared, new, and empty on import -- ``null``, never the leaked tc4 `duration`
+    # ([[field-schema#duration-size]], [[field-schema#per-user-shared]])
+    assert block["images_count"] is None
     assert "original_duration" not in block
     assert "level" not in block
-    assert "images_count" not in block
+    assert "rating" not in block  # moved under ``users``, not left inline
 
 
 def test_collection_mapping_has_no_plugin_block(mocker: MockerFixture) -> None:
@@ -313,3 +332,40 @@ def test_tc_document_data_and_type_properties() -> None:
     doc = TcDocument(raw)
     assert doc.data == raw
     assert doc.type == "ReferenceImages"
+
+
+def test_the_username_threads_from_load_tc_into_the_users_map(mocker: MockerFixture) -> None:
+    """The identity given to :func:`load_tc` reaches the block's ``users`` key end to end, and the mapped
+    document reports it as its own ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return :data:`TUTORIAL_TC` and load with an explicit username
+    * verify the per-user flags landed under that username and nowhere else, and the document adopts it
+    """
+    mocker.patch.object(Path, "read_text", return_value=TUTORIAL_TC)
+    doc = load_tc(FAKE_PATH, username="alice")
+
+    assert doc.username == "alice"
+    block = doc.active_block
+    assert set(block["users"]) == {"alice"}
+    assert block["users"]["alice"]["rating"] == 5
+
+
+def test_tc_to_rehu_data_files_per_user_flags_under_the_given_username() -> None:
+    """``tc_to_rehu_data`` files the imported per-user flags under the supplied username, and mints
+    ``favorite`` as ``False`` regardless of any tc4 value -- it is new to rehuco with no tc4 source key
+    ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * map a Tutorial ``.tc`` dict (with a stray ``favorite``) under an explicit username
+    * verify the per-user subset landed under only that username, and ``favorite`` is minted ``False``
+    """
+    data = tc_to_rehu_data({"type": "Tutorial", "rating": 3, "favorite": True}, username="bob")
+
+    users = data["tutorial"]["users"]
+    assert set(users) == {"bob"}
+    assert users["bob"]["rating"] == 3
+    assert users["bob"]["favorite"] is False
+    assert data["tutorial"]["format_version"] == 1
