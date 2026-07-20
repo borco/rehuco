@@ -13,12 +13,6 @@ CLEAR_ACTION_GLYPH: Final = Glyph("\ue0ae", "Phosphor-Bold")
 CALENDAR_ACTION_GLYPH: Final = Glyph("\ue108", "Phosphor-Bold")
 """`DateField`'s popup-calendar trailing action icon."""
 
-EXPAND_ACTION_GLYPH: Final = Glyph("\ue3d4", "Phosphor-Bold")
-"""`PathField`'s suggestions-panel expand toggle (collapsed state)."""
-
-COLLAPSE_ACTION_GLYPH: Final = Glyph("\ue32a", "Phosphor-Bold")
-"""`PathField`'s suggestions-panel collapse toggle (expanded state)."""
-
 POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
 """Positive-rating stars -- see :data:`NEGATIVE_RATING_GLYPH`."""
 
