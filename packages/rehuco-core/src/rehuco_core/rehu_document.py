@@ -369,7 +369,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         rather than needing a category of its own.
 
         Inside ``core``, :data:`CORE_LEADING_KEYS` lead and the rest sort. The **active** block is
-        ordered the same way, led by its own ``format_version`` ([[plugins#plugin-blocks]]).
+        ordered the same way, led by its own ``format_version`` ([[plugins#plugin-blocks]]) -- and if it
+        carries a ``users`` map (#98, [[field-schema#per-user-shared]]), that map is ordered too:
+        usernames alphabetically, each user's own fields alphabetically (:meth:`__ordered_block` applies
+        this one level deeper, see there).
 
         **Inactive blocks are copied untouched.** They are payload this file is merely custodian of
         ([[plugins#plugin-blocks]]), and "carried verbatim" is worth honouring literally when the
@@ -397,6 +400,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def __ordered_block(block: Any, leading: Sequence[str]) -> Any:
         """Order one block's keys: ``leading`` first, in the given order, then the rest alphabetically.
 
+        A ``users`` map (#98, [[field-schema#per-user-shared]]), if present, is ordered one level
+        deeper too (:meth:`__ordered_users_map`) -- it is per-user storage *inside* the block, not a
+        block of its own, so it doesn't get a second top-level pass through this method, but it still
+        owes the same canonical-order guarantee every other key here gets.
+
         :param block: the block's value; returned untouched when it is not an object
             ([[data-model#write-integrity]]).
         :param leading: the keys to place first; those absent from ``block`` are skipped.
@@ -405,7 +413,30 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         if not isinstance(block, dict):
             return block
         lead = [key for key in leading if key in block]
-        return {key: block[key] for key in (*lead, *sorted(set(block) - set(lead)))}
+        ordered = {key: block[key] for key in (*lead, *sorted(set(block) - set(lead)))}
+        if USERS_KEY in ordered:
+            ordered[USERS_KEY] = RehuDocument.__ordered_users_map(ordered[USERS_KEY])
+        return ordered
+
+    @staticmethod
+    def __ordered_users_map(users: Any) -> Any:
+        """Order a block's ``users`` map: usernames alphabetically, and each user's own fields
+        alphabetically ([[field-schema#per-user-shared]]) -- the same discipline
+        :meth:`__ordered_block` applies to a block's own keys, one level deeper.
+
+        :param users: the block's ``users`` value; returned untouched when it is not an object
+            ([[data-model#write-integrity]]).
+        :returns: the map with usernames and each user's fields ordered; a per-user value that isn't
+            an object is passed through as-is, the same tolerance :meth:`__ordered_block` gives a
+            malformed block.
+        """
+        if not isinstance(users, dict):
+            return users
+        ordered: dict[str, Any] = {}
+        for username in sorted(users):
+            fields = users[username]
+            ordered[username] = {key: fields[key] for key in sorted(fields)} if isinstance(fields, dict) else fields
+        return ordered
 
     def reload(self) -> None:
         """Re-read this document from its own path, replacing all in-memory data in place.

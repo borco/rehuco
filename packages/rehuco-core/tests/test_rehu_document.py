@@ -385,6 +385,62 @@ def test_save_orders_the_active_block_and_leaves_inactive_blocks_untouched(mocke
     assert list(saved["daz3d"]) == ["sku", "figures", "format_version"]
 
 
+def test_save_orders_the_active_blocks_users_map_too(mocker: MockerFixture) -> None:
+    """The active block's ``users`` map (#98, [[field-schema#per-user-shared]]) is ordered one level
+    deeper too: usernames alphabetically, and each user's own fields alphabetically -- the same
+    canonical-order guarantee every other key in the file gets (#105).
+
+    **Test steps:**
+
+    * save a document whose active block's ``users`` map has jumbled usernames and jumbled per-user fields
+    * verify both the usernames and each user's fields come back alphabetical
+    """
+    doc = RehuDocument(
+        {
+            "core": {"type": "tutorial"},
+            "tutorial": {
+                "format_version": 1,
+                "users": {
+                    "bob": {"viewed": True, "favorite": False, "keep": True, "todo": False, "rating": 2},
+                    "alice": {"rating": 4, "favorite": True},
+                },
+            },
+        }
+    )
+
+    saved = saved_json(doc, mocker)
+
+    assert list(saved["tutorial"]["users"]) == ["alice", "bob"]
+    assert list(saved["tutorial"]["users"]["alice"]) == ["favorite", "rating"]
+    assert list(saved["tutorial"]["users"]["bob"]) == ["favorite", "keep", "rating", "todo", "viewed"]
+
+
+def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: MockerFixture) -> None:
+    """A ``users`` map (or a per-user value within it) that isn't an object is passed through as-is
+    rather than crashing ([[data-model#write-integrity]]) -- the same tolerance the block-ordering
+    routine gives a malformed block.
+
+    Both blocks are pinned at the current block ``format_version`` -- otherwise construction's
+    v0->v1 migration would itself overwrite ``users`` (a v0 block never legitimately has one) before
+    save ever sees it, testing the migration's own tolerance instead of :meth:`__ordered_users_map`'s.
+
+    **Test steps:**
+
+    * save one document whose ``users`` map is a non-object, and another whose ``users`` map holds a
+      non-object per-user value
+    * verify both reach the file unchanged
+    """
+    malformed_map = RehuDocument(
+        {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1, "users": "not-an-object"}}
+    )
+    malformed_user = RehuDocument(
+        {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1, "users": {"alice": "not-an-object"}}}
+    )
+
+    assert saved_json(malformed_map, mocker)["tutorial"]["users"] == "not-an-object"
+    assert saved_json(malformed_user, mocker)["tutorial"]["users"] == {"alice": "not-an-object"}
+
+
 def test_save_passes_a_malformed_block_through_untouched(mocker: MockerFixture) -> None:
     """A block that isn't an object is written back as-is rather than dropped or coerced
     ([[data-model#write-integrity]]).
