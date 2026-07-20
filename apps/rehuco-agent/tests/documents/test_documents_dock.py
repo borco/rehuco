@@ -15,7 +15,9 @@ from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QDialog, QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents import documents_dock
 from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
+from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -1162,3 +1164,93 @@ def test_open_folder_with_a_corrupted_tc_fallback_opens_an_empty_locked_dock(
     assert [reason.kind for reason in widget.model.lock_reasons] == [LockReasonKind.INVALID_FILE]
     assert widget.model.path == FAKE_PATH.with_suffix(".tc")
     critical.assert_not_called()
+
+
+def configure_identity(mocker: MockerFixture, username: str) -> None:
+    """Stand in for the configured identity setting the dock reads at open time (#99).
+
+    :param mocker: pytest-mock fixture.
+    :param username: the username ``shared_identity_settings()`` should report.
+    """
+    mocker.patch.object(documents_dock, "shared_identity_settings", return_value=IdentitySettings(username=username))
+
+
+def test_open_document_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a ``.rehu`` hands the configured identity to ``RehuDocument.load``, so the document's
+    per-user accessors key the ``users`` map by it ([[field-schema#per-user-shared]], #99).
+
+    **Test steps:**
+
+    * configure the identity as ``alice`` and open a ``.rehu``
+    * verify the resulting document carries that username
+    """
+    configure_identity(mocker, "alice")
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget.model.document.username == "alice"
+
+
+def test_open_document_with_a_tc_path_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a legacy ``.tc`` hands the configured identity to ``load_tc``, so the imported
+    per-user flags are filed under it from the start ([[field-schema#per-user-shared]], #99).
+
+    **Test steps:**
+
+    * configure the identity as ``alice`` and open a ``.tc``
+    * verify the mapped document carries that username, and its block's ``users`` map is keyed by it
+    """
+    configure_identity(mocker, "alice")
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+
+    assert widget.model.document.username == "alice"
+    assert list(widget.model.document.data["tutorial"]["users"]) == ["alice"]
+
+
+def test_a_failed_open_threads_the_configured_username_into_the_locked_stub(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A failed load's empty locked stub carries the configured identity too, so hand-fixing the file
+    and reverting retries under the same username the open was asked for (#99).
+
+    **Test steps:**
+
+    * configure the identity as ``alice`` and open a path whose read fails
+    * verify the locked stub's document carries that username
+    """
+    configure_identity(mocker, "alice")
+    mocker.patch.object(Path, "read_text", side_effect=OSError("unreadable"))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+
+    assert widget.model.locked is True
+    assert widget.model.document.username == "alice"
+
+
+def test_a_new_document_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A folder with no ``info.rehu``/``info.tc`` starts its new document under the configured
+    identity, so its eventual per-user writes are filed correctly (#99).
+
+    **Test steps:**
+
+    * configure the identity as ``alice`` and open a folder where neither companion exists
+    * verify the new, dirty document carries that username
+    """
+    configure_identity(mocker, "alice")
+    mocker.patch.object(Path, "exists", return_value=False)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+
+    assert widget.model.dirty is True
+    assert widget.model.document.username == "alice"
