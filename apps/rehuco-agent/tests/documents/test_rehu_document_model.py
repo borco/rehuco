@@ -779,6 +779,10 @@ def test_revert_reseeds_type_fields_too(
 ) -> None:
     """revert() also reseeds the type-field-backed scalars (bool/int) from the reloaded document.
 
+    ``rating`` is per-user (#99), so the simulated on-disk state carries it where a real reload's
+    migration would put it: under the block's ``users`` map, keyed by this document's username
+    (``admin``, the default -- [[field-schema#per-user-shared]]).
+
     **Test steps:**
 
     * mock ``document.reload`` to simulate an on-disk rating change
@@ -787,7 +791,7 @@ def test_revert_reseeds_type_fields_too(
     """
 
     def fake_reload() -> None:
-        document.data["tutorial"] = {"rating": -3}
+        document.data["tutorial"] = {"users": {"admin": {"rating": -3}}}
 
     mocker.patch.object(document, "reload", side_effect=fake_reload)
 
@@ -883,17 +887,21 @@ def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture
 
 
 def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture) -> None:
-    """convert() forwards this document's path and keyword arguments to ``convert_tc`` unchanged.
+    """convert() forwards this document's path, keyword arguments, and username to ``convert_tc``.
+
+    The username is the wrapped document's **own** -- the identity it was opened with (#99), so
+    the conversion files the imported per-user flags under the same owner
+    ([[field-schema#per-user-shared]]), not whatever the identity setting says by then.
 
     **Test steps:**
 
-    * build a model over a legacy ``.tc``-backed document at a known path
+    * build a model over a legacy ``.tc``-backed document at a known path, opened as ``alice``
     * mock ``convert_tc``
     * call ``model.convert`` with specific ``keep_backups``/``overwrite`` values
-    * verify ``convert_tc`` was called with the document's path and those exact values
+    * verify ``convert_tc`` was called with the document's path, those exact values, and ``alice``
     """
     tc_path = Path("/fake/info.tc")
-    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, tc_path, legacy_tc=True, username="alice"))
     mock_convert = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.convert_tc",
         return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
@@ -901,7 +909,7 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
 
     model.convert(keep_backups=False, overwrite=True)
 
-    mock_convert.assert_called_once_with(tc_path, keep_backups=False, overwrite=True)
+    mock_convert.assert_called_once_with(tc_path, keep_backups=False, overwrite=True, username="alice")
 
 
 def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: RehuDocumentModel) -> None:
@@ -1154,7 +1162,6 @@ def test_model_seeds_type_field_defaults_when_block_is_absent(model: RehuDocumen
     assert model.dirty is False
 
 
-@mark.xfail(run=False, reason="per-user model plumbing (RehuDocumentModel onto the users-map accessors) is #99")
 def test_model_seeds_type_field_values_from_the_document() -> None:
     """The type-field-backed fields seed from the document's ``type``-keyed plugin block.
 
@@ -1203,16 +1210,80 @@ def test_setting_a_type_field_flag_writes_through_and_dirties(model: RehuDocumen
 
 
 def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentModel, document: RehuDocument) -> None:
-    """Setting the rating writes through to the document's plugin block.
+    """Setting the rating writes through to the document's plugin block -- into the ``users`` map,
+    since ``rating`` is per-user ([[field-schema#per-user-shared]], #99), never inline.
 
     **Test steps:**
 
     * set ``model.rating`` to a negative value
-    * verify the document's ``tutorial`` block holds it
+    * verify the document's ``tutorial`` block holds it under this user, and not inline
     """
     model.rating = -4
 
-    assert document.active_field("rating") == -4
+    assert document.active_user_field("rating") == -4
+    assert document.active_field("rating") is None
+
+
+def test_model_seeds_per_user_fields_from_the_users_map(document: RehuDocument) -> None:
+    """The per-user fields seed from the active block's ``users`` map, not from inline block keys
+    ([[field-schema#per-user-shared]], #99).
+
+    **Test steps:**
+
+    * file every per-user field under the document's user via ``set_active_user_field``
+    * construct a model and verify each field mirrors the stored value, with the model clean
+    """
+    document.set_active_user_field("viewed", True)
+    document.set_active_user_field("todo", True)
+    document.set_active_user_field("keep", True)
+    document.set_active_user_field("favorite", True)
+    document.set_active_user_field("rating", 3)
+
+    model = RehuDocumentModel(document)
+
+    assert model.viewed is True
+    assert model.todo is True
+    assert model.keep is True
+    assert model.favorite is True
+    assert model.rating == 3
+    assert model.dirty is False
+
+
+@mark.parametrize("name", ["viewed", "todo", "keep", "favorite"])
+def test_setting_a_per_user_flag_writes_through_to_the_users_map(
+    model: RehuDocumentModel, document: RehuDocument, name: str
+) -> None:
+    """Setting a per-user flag files it in the block's ``users`` map, never inline
+    ([[field-schema#per-user-shared]], #99), and marks the model dirty.
+
+    **Test steps:**
+
+    * set the flag on the model
+    * verify the document holds it through the per-user accessor and not the shared one
+    """
+    setattr(model, name, True)
+
+    assert document.active_user_field(name) is True
+    assert document.active_field(name) is None
+    assert model.dirty is True
+
+
+def test_per_user_state_files_under_the_documents_own_username() -> None:
+    """A per-user write lands under the username the document was **constructed** with -- the
+    configured identity at open time ([[field-schema#per-user-shared]], #99).
+
+    **Test steps:**
+
+    * build a model over a document opened as ``alice``
+    * set ``favorite`` and verify it sits at ``tutorial.users.alice``, and reads back per-user
+    """
+    document = RehuDocument({"type": "Tutorial"}, username="alice")
+    model = RehuDocumentModel(document)
+
+    model.favorite = True
+
+    assert document.data["tutorial"]["users"]["alice"]["favorite"] is True
+    assert document.active_user_field("favorite") is True
 
 
 def test_model_seeds_duration_fields_from_the_document() -> None:
@@ -1335,6 +1406,20 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
     assert not model.lock_reasons
 
 
+def test_create_new_files_per_user_state_under_the_given_username() -> None:
+    """``create_new`` hands its ``username`` to the fresh document, so the new document's per-user
+    writes are filed under the configured identity ([[field-schema#per-user-shared]], #99).
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_new`` with a username
+    * verify the wrapped document carries it (its per-user accessors key the ``users`` map by it)
+    """
+    model = RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu"), username="alice")
+
+    assert model.document.username == "alice"
+
+
 def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: RehuDocument) -> None:
     """``unknown_field_names`` returns the live block's unrecognized keys, sorted, excluding known ones.
 
@@ -1349,6 +1434,22 @@ def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: Rehu
     model = RehuDocumentModel(document)
 
     assert model.unknown_field_names() == ["alpha", "zeta"]
+
+
+def test_unknown_field_names_excludes_the_users_map(document: RehuDocument) -> None:
+    """The block's ``users`` map is per-user storage structure (#98), not an unknown resource field --
+    excluded the same way the block's own ``format_version`` stamp is (#99).
+
+    **Test steps:**
+
+    * file a per-user field (materializing the block's ``users`` map) beside one unknown key
+    * verify only the genuinely-unknown key is reported
+    """
+    document.set_active_user_field("rating", 5)
+    document.set_active_field("mystery", 1)
+    model = RehuDocumentModel(document)
+
+    assert model.unknown_field_names() == ["mystery"]
 
 
 def test_inactive_block_keys_lists_every_block_the_type_does_not_name(document: RehuDocument) -> None:

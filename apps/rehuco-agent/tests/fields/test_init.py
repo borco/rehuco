@@ -4,7 +4,6 @@
 """
 
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
-from pytest import mark
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_DESCRIPTION_TAB,
@@ -79,7 +78,6 @@ def test_build_document_form_leads_with_location_then_the_record_fields_with_des
     assert not form_labels(description)
 
 
-@mark.xfail(run=False, reason="per-user model plumbing (RehuDocumentModel onto the users-map accessors) is #99")
 def test_build_document_form_trails_unknown_fields_after_the_record_fields(qtbot: QtBot) -> None:
     """A live-block key the model doesn't recognize is composed as a trailing `UnknownField`.
 
