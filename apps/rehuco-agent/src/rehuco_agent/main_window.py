@@ -23,6 +23,7 @@ from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
 from .settings.theme_settings import ThemeSettings
 from .settings.ui.descriptions_page import DescriptionsPage
+from .settings.ui.identity_page import IdentityPage
 from .settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
@@ -257,12 +258,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).
 
-        Descriptions is cross-platform, and nests under the "Editors" group (#76). The System
+        Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
+        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76). The System
         Integration page is top-level and Windows-only (it wraps
         ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
         it wraps) already requires.
         """
+        self.__settings_dialog.add_page(IdentityPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel

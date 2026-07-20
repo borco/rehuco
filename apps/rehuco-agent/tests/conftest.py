@@ -5,7 +5,8 @@ from typing import Any
 
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.settings import markdown_rendering_settings
+from rehuco_agent.settings import identity_settings, markdown_rendering_settings
+from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.ui import settings_dialog
 
@@ -55,6 +56,22 @@ def isolate_shared_markdown_rendering_settings(mocker: MockerFixture) -> Iterato
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_markdown_rendering_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_identity_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `IdentitySettings` singleton (#99).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first
+    calls ``shared_identity_settings()`` (directly, or indirectly via ``DocumentsDock``'s open
+    paths or ``MainWindow``'s `IdentityPage`) would otherwise pin an instance loaded from the
+    developer's real on-disk settings for the rest of the session. Tests that specifically
+    exercise the identity settings patch ``persistent_settings`` themselves.
+    """
+    shared_identity_settings.cache_clear()
+    mocker.patch.object(identity_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_identity_settings.cache_clear()
 
 
 @fixture(autouse=True)
