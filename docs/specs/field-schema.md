@@ -125,7 +125,7 @@ fixtures.
 
 [[[field-schema#per-user-shared]]]
 
-- [ ] [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
+- [x] [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
 - [ ] [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
 
 `rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **private**
