@@ -436,6 +436,24 @@ def test_property_names_includes_inherited_properties() -> None:
     assert set(SimpleProperty.property_names(Sub)) == {"title", "count", "active", "extra"}
 
 
+def test_property_names_deduplicates_a_redeclared_property() -> None:
+    """A property a subclass re-declares under a name its base already uses appears once, not twice --
+    the most-derived declaration wins its position, the base's is skipped.
+
+    **Test steps:**
+
+    * declare a subclass re-declaring the inherited `title` property
+    * verify `property_names` lists `title` exactly once
+    """
+
+    class Redeclared(ObjectSample):
+        """A subclass re-declaring the inherited `title` property."""
+
+        title = SimpleProperty("")
+
+    assert SimpleProperty.property_names(Redeclared).count("title") == 1
+
+
 def test_property_names_is_empty_for_a_class_declaring_none() -> None:
     """property_names returns an empty list for a class with no `SimpleProperty` at all.
 
