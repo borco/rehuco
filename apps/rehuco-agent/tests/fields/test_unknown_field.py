@@ -1,6 +1,6 @@
 """Tests for UnknownField: the provenance-flagged verbatim viewer and the editor's remove action."""
 
-from PySide6.QtWidgets import QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QToolButton
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.unknown_field import PROVENANCE_NEWER_VERSION
@@ -52,18 +52,19 @@ def test_unknown_field_editor_remove_drops_the_field_and_hides_the_whole_row(
     )
     editor = field.make_editor(model.bind(field))
     viewer = field.make_viewer(model.bind(field))
-    editor_label, container = editor.label, editor.editor
+    editor_label, value, remove = editor.label, editor.editor, editor.misc
     viewer_label, viewer_value = viewer.label, viewer.viewer
-    assert isinstance(container, QWidget)
-    qtbot.addWidget(container)
-    remove = container.findChild(QToolButton)
+    assert isinstance(value, QLabel)
     assert isinstance(remove, QToolButton)
+    qtbot.addWidget(value)
+    qtbot.addWidget(remove)
 
     remove.click()
 
     assert "mystery" not in model.document.active_block
     assert model.dirty is True
-    assert container.isHidden() is True
+    assert value.isHidden() is True
+    assert remove.isHidden() is True
     assert editor_label is not None and editor_label.isHidden() is True
     assert viewer_label is not None and viewer_label.isHidden() is True
     assert viewer_value is not None and viewer_value.isHidden() is True
@@ -87,21 +88,22 @@ def test_unknown_field_reappears_with_its_value_when_the_block_restores_it(
         is_present=lambda: "mystery" in model.document.active_block,
         current_value=lambda: model.document.active_field("mystery"),
     )
-    container = field.make_editor(model.bind(field)).editor
+    editor = field.make_editor(model.bind(field))
+    value, remove = editor.editor, editor.misc
     viewer_value = field.make_viewer(model.bind(field)).viewer
-    assert isinstance(container, QWidget)
-    assert isinstance(viewer_value, QLabel)
-    qtbot.addWidget(container)
-    qtbot.addWidget(viewer_value)
-    remove = container.findChild(QToolButton)
+    assert isinstance(value, QLabel)
     assert isinstance(remove, QToolButton)
+    assert isinstance(viewer_value, QLabel)
+    qtbot.addWidget(value)
+    qtbot.addWidget(remove)
+    qtbot.addWidget(viewer_value)
     remove.click()
-    assert container.isHidden() is True
+    assert value.isHidden() is True
 
     model.document.set_active_field("mystery", 99)
     model.unknown_fields_changed.emit()
 
-    assert container.isHidden() is False
+    assert value.isHidden() is False
     assert viewer_value.isHidden() is False
     assert viewer_value.text() == "99"
 
@@ -116,11 +118,10 @@ def test_unknown_field_editor_without_on_remove_has_no_remove_button(qtbot: QtBo
     """
     model.document.set_active_field("mystery", 42)
     field = UnknownField("mystery")
-    container = field.make_editor(model.bind(field)).editor
-    assert isinstance(container, QWidget)
-    qtbot.addWidget(container)
+    editor = field.make_editor(model.bind(field))
+    value = editor.editor
+    assert isinstance(value, QLabel)
+    qtbot.addWidget(value)
 
-    assert container.findChild(QToolButton) is None
-    label = container.findChild(QLabel)
-    assert isinstance(label, QLabel)
-    assert label.text() == "42"
+    assert editor.misc is None
+    assert value.text() == "42"
