@@ -82,6 +82,25 @@ def test_on_type_falls_back_to_the_palette_selection_colors(qtbot: QtBot) -> Non
     assert f"color: {palette.color(QPalette.ColorRole.HighlightedText).name()}" in style
 
 
+def test_on_type_does_not_show_a_parentless_badge(qtbot: QtBot) -> None:
+    """Seeding a still-parentless badge never shows it -- guarding the empty-window flash a parentless
+    ``setVisible(True)`` would cause on load and every form rebuild, before the form parents the badge
+    into its row ([[plugins#plugin-blocks]], #83). The badge still takes its label and colors, and shows
+    normally once parented (``type_field.make_viewer`` parents it, then the surface displays it).
+
+    **Test steps:**
+
+    * build a badge (parentless, as the form does before adding it to its row) and seed a real type
+    * verify it took the label but stayed unshown -- no momentary top-level window
+    """
+    badge = make_badge(qtbot)
+
+    badge.on_type("tutorial")
+
+    assert badge.text() == "Tutorial"
+    assert badge.isVisible() is False
+
+
 def test_on_type_hides_the_badge_for_an_empty_type(qtbot: QtBot) -> None:
     """An empty type shows no badge -- the chip hides itself ([[plugins#plugin-blocks]], #83).
 

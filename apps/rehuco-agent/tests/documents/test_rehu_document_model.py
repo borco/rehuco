@@ -1672,6 +1672,54 @@ def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) 
     assert model.dirty is True
 
 
+def test_drop_inactive_block_removes_the_block_emits_and_dirties(document: RehuDocument) -> None:
+    """``drop_inactive_block`` deletes a whole foreign block, emits ``unknown_fields_changed``, and marks
+    the model dirty ([[plugins#fallback-editor]], A4.4/#84).
+
+    The block-level sibling of :meth:`remove_unknown_field` -- the explicit *drop* of a carried foreign
+    block, on the same signal the reactive fallback rows re-read to hide themselves.
+
+    **Test steps:**
+
+    * add a foreign ``reference_images`` block and record ``unknown_fields_changed`` emissions
+    * drop it and verify the block is gone, the signal fired, and the model is dirty
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    model = RehuDocumentModel(document)
+    fired: list[None] = []
+    model.unknown_fields_changed.connect(lambda: fired.append(None))
+
+    model.drop_inactive_block("reference_images")
+
+    assert "reference_images" not in document.data
+    assert fired == [None]
+    assert model.dirty is True
+
+
+def test_drop_inactive_block_is_a_noop_for_the_active_block(document: RehuDocument) -> None:
+    """``drop_inactive_block`` refuses the active block, staying clean and silent ([[plugins#fallback-editor]],
+    A4.4/#84).
+
+    The core's :meth:`~rehuco_core.RehuDocument.remove_block` never drops the active block, so this
+    reports nothing and leaves the model exactly as it was -- a stale button click is harmless.
+
+    **Test steps:**
+
+    * over a tutorial document whose active block is present, drop the active ``tutorial`` block
+    * verify the block is untouched, no signal fired, and the model stayed clean
+    """
+    document.data["tutorial"] = {"rating": 4}
+    model = RehuDocumentModel(document)
+    fired: list[None] = []
+    model.unknown_fields_changed.connect(lambda: fired.append(None))
+
+    model.drop_inactive_block("tutorial")
+
+    assert "tutorial" in document.data
+    assert not fired
+    assert model.dirty is False
+
+
 def test_a_freshly_loaded_older_clean_document_is_upgradable(mocker: MockerFixture) -> None:
     """A document read from an older-``format_version`` file, still clean, is :attr:`upgradable` (#89).
 
@@ -2113,15 +2161,19 @@ def test_reverting_a_type_switch_rebuilds_the_composition_without_re_switching(m
     assert model.dirty is False
 
 
-def test_a_plain_revert_does_not_fire_a_composition_change(mocker: MockerFixture) -> None:
-    """A revert that doesn't change the active type raises no ``active_block_changed`` -- the reactive
-    fallback rows restore themselves, so no rebuild is needed ([[plugins#plugin-blocks]], #83).
+def test_revert_always_rebuilds_the_composition(mocker: MockerFixture) -> None:
+    """Every revert fires ``active_block_changed`` so the form rebuilds from scratch, even a value-only
+    revert that switched no type -- a revert is defined to leave the model as a fresh open would
+    ([[plugins#plugin-blocks]], #83).
+
+    Rather than decide which structural axis a reload moved (type, unknown fields, or inactive-block
+    fates), the coarse user-driven revert just rebuilds -- correct by construction, and cheap.
 
     **Test steps:**
 
     * load a tutorial document, edit a field (dirtying it) without switching type
     * record ``active_block_changed``, then revert
-    * verify the type is unchanged, no composition change fired, and the model is clean
+    * verify the type is unchanged, the rebuild fired once, and the model is clean
     """
     path = Path("/fake/info.rehu")
     mocker.patch.object(
@@ -2137,8 +2189,52 @@ def test_a_plain_revert_does_not_fire_a_composition_change(mocker: MockerFixture
     model.revert()
 
     assert model.resource_type == "tutorial"
-    assert not fired
+    assert fired == [None]
     assert model.dirty is False
+
+
+def test_reverting_a_type_round_trip_restores_a_foreign_blocks_carry_or_drop(mocker: MockerFixture) -> None:
+    """A revert restores a block's carry-vs-drop shape, so a block switched *to* and back this session
+    regains its drop button ([[plugins#fallback-editor]], A4.4/#84).
+
+    A revert resets the session's claim set to the reloaded type, so a **claimed-then-abandoned** block
+    (switched to, then away from) becomes **never-claimed foreign** again -- carried, with a drop button --
+    even though the active type is ``tutorial`` throughout. The bug this guards: before revert rebuilt the
+    form unconditionally, the block stayed flagged will-drop-on-save with no drop button until the file
+    was closed and reopened; now the rebuild restores its fate, matching a fresh open.
+
+    **Test steps:**
+
+    * load a tutorial document also carrying a foreign ``reference_images`` block
+    * switch the type to ``reference_images`` and back to ``tutorial`` -- now that block is abandoned
+    * record ``active_block_changed``, then revert
+    * verify the active type is unchanged, the composition change fired, and the block's fate is
+      carried-again (not dropped)
+    """
+    path = Path("/fake/info.rehu")
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {
+                "format_version": CURRENT_FORMAT_VERSION,
+                "core": {"type": "Tutorial"},
+                "reference_images": {"images_count": 12},
+            }
+        ),
+    )
+    model = RehuDocumentModel(RehuDocument.load(path))
+    model.resource_type = "reference_images"
+    model.resource_type = "tutorial"
+    assert ("reference_images", True) in model.inactive_block_fates()  # abandoned before revert
+    fired: list[None] = []
+    model.active_block_changed.connect(lambda: fired.append(None))
+
+    model.revert()
+
+    assert model.resource_type == "tutorial"
+    assert fired == [None]
+    assert ("reference_images", False) in model.inactive_block_fates()  # carried foreign again
 
 
 # endregion

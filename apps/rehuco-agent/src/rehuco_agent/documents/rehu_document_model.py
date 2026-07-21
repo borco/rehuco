@@ -80,16 +80,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
     active_block_changed = Signal()
-    """Fires when a **different block becomes active**, so the whole field composition must be re-resolved:
-    the outgoing block's editors go away, the incoming block's fields render, and the set of unknown-field
-    and inactive-block rows changes ([[plugins#plugin-blocks]], A4.3/#83). Two seams raise it -- a type
-    switch (:meth:`__on_resource_type_changed`) and a :meth:`revert` that restores a *different* on-disk
-    type than the session had switched to (without it, the switched-to block would linger as a stale
-    inactive-block row now that it is active again). Distinct from :attr:`unknown_fields_changed` (a single
-    fallback field dropped, or a plain revert with the active block unchanged) because those stay within a
-    composition the reactive rows can show/hide, whereas this adds and removes whole rows -- so
-    ``DocumentWidget`` rebuilds its dock contents on it. Plain seeding, and a revert that doesn't change
-    the active type, do not raise it."""
+    """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
+    editors go away, the incoming block's fields render, and the set of unknown-field and inactive-block
+    rows (with their provenance and carry-vs-drop wiring) is rebuilt ([[plugins#plugin-blocks]], A4.3/#83,
+    A4.4/#84). Two seams raise it -- a type switch (:meth:`__on_resource_type_changed`) and every
+    :meth:`revert` (a reload can change the active type, its unknown fields, and the inactive-block fates
+    at once, so revert rebuilds unconditionally rather than deciding which moved). Distinct from
+    :attr:`unknown_fields_changed` (a single fallback field dropped) because that stays within a
+    composition the reactive rows can show/hide, whereas this adds, removes, and re-wires whole rows --
+    so ``DocumentWidget`` rebuilds its dock contents on it. Plain seeding does not raise it."""
 
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
@@ -375,27 +374,28 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         too. :meth:`__seed_from_document` guards itself against the reseed looking like an edit --
         no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
 
-        The reload also restores any unknown active-block fields dropped this session, so
-        ``unknown_fields_changed`` is emitted to let the generic fallbacks re-show themselves
-        ([[plugins#fallback-editor]], A2.8/#28).
+        **A revert always rebuilds the form** ([[plugins#plugin-blocks]], A4.3/#83): it fires
+        :attr:`active_block_changed` unconditionally, so the whole composition re-resolves from the
+        reloaded document -- a revert is defined to leave the model exactly as a fresh open would. A reload
+        can change the active type, the active block's unknown fields, and the inactive-block fates
+        (claimed-then-abandoned blocks revert to carried foreign, regaining their drop button, A4.4/#84)
+        all at once, and only a full rebuild re-wires a row's provenance and carry-vs-drop button -- the
+        reactive rows can only show/hide and re-read a value, never re-wire. Rather than enumerate which
+        structural axis moved (a check that has to stay exhaustive as axes are added), the coarse,
+        user-driven revert just rebuilds; the cost is negligible and it is correct by construction.
 
-        **A reverted type switch re-resolves the whole form** ([[plugins#plugin-blocks]], A4.3/#83): if the
-        on-disk type differs from the current (switched) one, reverting makes a *different* block active
-        again, so :attr:`active_block_changed` fires to rebuild the composition -- otherwise the block the
-        session had switched *to* would linger as a stale inactive-block row now that it is active once
-        more. A plain revert that doesn't change the active type needs no rebuild: the reactive fallback
-        rows already restore themselves off ``unknown_fields_changed``.
+        ``unknown_fields_changed`` is emitted too, for consumers that don't rebuild on
+        :attr:`active_block_changed` -- the source-preview docks re-serialize off it (#111), and it also
+        covers restored unknown active-block fields ([[plugins#fallback-editor]], A2.8/#28).
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
-        previous_type = self.resource_type
         self.__document.reload()
         self.__seed_from_document()
         self.dirty = False
         self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
-        if self.resource_type != previous_type:
-            self.active_block_changed.emit()
+        self.active_block_changed.emit()
         self.__recompute_upgradable()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
@@ -467,11 +467,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def __inactive_block_binding(self, name: str) -> FieldBinding[Any] | None:
         """Resolve ``name`` as a whole inactive plugin block, when it is one ([[plugins#plugin-blocks]]).
 
-        The binding is read-only: an inactive block is carried verbatim and is not this file's to edit,
-        so its setter refuses rather than writing. Whatever affordance an inactive block eventually gets
-        (carry vs. drop) is A4.4's ([[plugins#fallback-editor]]) -- and the drop-on-abandon rule that
-        governs it is A4.2's, so guessing at a setter here would be guessing at exactly the invariant
-        those slices exist to settle.
+        The binding is read-only by design: the fallback editor's only affordance on an inactive block is
+        **carry or drop**, never edit-in-place ([[plugins#fallback-editor]], A4.4/#84) -- its *values* are
+        foreign payload this file is merely custodian of. The drop half goes through
+        :meth:`drop_inactive_block` (a whole-block remove), not this setter, so the setter refuses rather
+        than writing a value into a block this document doesn't own.
 
         :param name: the field name being bound.
         :returns: a binding over the block's verbatim contents, or ``None`` when ``name`` isn't an
@@ -483,7 +483,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return FieldBinding(
             value=block.fields,
             changed=self.unknown_fields_changed,
-            set_value=lambda _value: LOG.error("Refusing to edit inactive block %r: not editable until A4.4", name),
+            set_value=lambda _value: LOG.error("Refusing to edit inactive block %r: carry or drop, never edit", name),
         )
 
     def unknown_field_names(self) -> list[str]:
@@ -512,10 +512,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """The keys of this document's inactive plugin blocks ([[plugins#plugin-blocks]]).
 
         Every block the document's ``type`` doesn't name -- inactive **whether or not** its plugin is
-        installed here, since only the type decides what is active. Each is carried verbatim on save; the
-        collapsible, drop-capable fallback UI they eventually get is A4.4 ([[plugins#fallback-editor]]),
-        which is why nothing here offers a way to edit or drop one --
-        so for now they surface as read-only flagged rows.
+        installed here, since only the type decides what is active. Each is carried verbatim on save
+        unless explicitly dropped (:meth:`drop_inactive_block`, A4.4/#84) -- its *values* are never edited
+        in place; the fallback surfaces it as a flagged, provenance-labeled row with a carry-or-drop
+        choice ([[plugins#fallback-editor]]). This list is just the keys; the fates driving the flagging
+        are :meth:`inactive_block_fates`.
 
         **Sorted** for a stable display order, the same discipline :meth:`unknown_field_names` applies to
         the active block's unknown fields -- a presentation concern, independent of the document order the
@@ -577,6 +578,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param name: the unknown block key to delete.
         """
         if self.__document.remove_active_field(name):
+            self.unknown_fields_changed.emit()
+            self.dirty = True
+
+    def drop_inactive_block(self, name: str) -> None:
+        """Drop a whole inactive plugin block the user chooses not to carry ([[plugins#fallback-editor]],
+        A4.4/#84).
+
+        The block-level sibling of :meth:`remove_unknown_field`: the *drop* half of the fallback editor's
+        carry-vs-drop choice on a foreign inactive block. Delegates the deletion to
+        :meth:`~rehuco_core.RehuDocument.remove_block` (which refuses the active block), then emits
+        ``unknown_fields_changed`` so the reactive fallback row hides itself, and marks dirty. A
+        :meth:`revert` restores the block from disk and re-shows the row, exactly like a dropped unknown
+        field. No-op if ``name`` isn't a droppable inactive block, so a stale button click is harmless.
+
+        :param name: the inactive block's top-level key to delete.
+        """
+        if self.__document.remove_block(name):
             self.unknown_fields_changed.emit()
             self.dirty = True
 

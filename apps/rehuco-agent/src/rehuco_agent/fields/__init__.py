@@ -33,6 +33,7 @@ from .unknown_field import (
     PROVENANCE_ABANDONED_TYPE,
     PROVENANCE_NEWER_VERSION,
     PROVENANCE_NOT_CURRENT_TYPE,
+    PROVENANCE_PLUGIN_ABSENT,
     UnknownField,
 )
 from .url_field import UrlField
@@ -64,5 +65,6 @@ __all__ = [
     "UnknownField",
     "PROVENANCE_NEWER_VERSION",
     "PROVENANCE_NOT_CURRENT_TYPE",
+    "PROVENANCE_PLUGIN_ABSENT",
     "PROVENANCE_ABANDONED_TYPE",
 ]

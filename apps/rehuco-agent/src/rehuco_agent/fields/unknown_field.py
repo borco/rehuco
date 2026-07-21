@@ -23,24 +23,36 @@ PROVENANCE_NEWER_VERSION: Final = (
 """Provenance for a field the software here doesn't recognize because it comes from a **newer version**
 than what's installed ([[plugins#fallback-editor]]) -- deliberately source-agnostic, since in A2.8 a
 newer **common** top-level key and a newer **plugin-block** key are indistinguishable (there's no
-core-version/plugin-registry model yet to tell them apart). The plugin-absent provenance still lands
-later, with A4.4's real fallback UI ([[plugins#fallback-editor]])."""
+core-version model yet to tell them apart). The **block**-level plugin-absent provenance now lands
+(:data:`PROVENANCE_PLUGIN_ABSENT`, A4.4/#84); refining *this* field-level flag by source is the
+map-to-known-field slice's ([[plugins#fallback-editor]], A4.5/#85)."""
 
 PROVENANCE_NOT_CURRENT_TYPE: Final = (
-    "This block isn't the one this file's type names, so it isn't editable here. It is kept as-is."
+    "This block's plugin is installed here, but the block isn't the one this file's type names, so it "
+    "isn't editable here. It is kept as-is; switch the type to it to edit, or drop it."
 )
-"""Provenance for a whole **inactive** plugin block ([[plugins#plugin-blocks]]) -- one this file's
-``type`` doesn't name. Distinct from :data:`PROVENANCE_NEWER_VERSION` because the two are different
-situations the user resolves differently ([[plugins#fallback-editor]]): a newer-version field wants an
-upgrade, whereas an inactive block is simply payload this file is custodian of. Deliberately says
-nothing about whether the block's plugin is installed -- that never affects the answer, since only the
-type decides what is active.
+"""Provenance for an **inactive** plugin block whose plugin **is** installed here ([[plugins#plugin-blocks]])
+-- one this file's ``type`` doesn't name, even though this build could render it if it were active. The
+fix the user has is *"switch to it or drop it"*, not *"install a plugin"*, which is exactly why it is
+told apart from :data:`PROVENANCE_PLUGIN_ABSENT` ([[plugins#fallback-editor]]'s third bullet, A4.4/#84):
+the two are different situations the user resolves differently. Distinct from
+:data:`PROVENANCE_NEWER_VERSION` too -- that flags a newer-version field wanting an upgrade, where an
+inactive block is simply payload this file is custodian of."""
+
+PROVENANCE_PLUGIN_ABSENT: Final = (
+    "No plugin for this block is installed here, so it isn't editable. It is kept as-is; install the "
+    "plugin to edit it, or drop it."
+)
+"""Provenance for an **inactive** plugin block whose plugin is **not installed** here
+([[plugins#plugin-blocks]]) -- the file carries the block, but no build here knows its shape, so the fix
+is *"install the plugin"* rather than *"switch the type"* (:data:`PROVENANCE_NOT_CURRENT_TYPE`). The
+split the spec's third provenance calls for ([[plugins#fallback-editor]], A4.4/#84), determinable now
+that A4.0 gives the agent the installed-plugin registry to check the block's key against.
 
 Worded to stay true of the one case this can't tell apart: an object-valued top-level key added to the
-**common core** by a newer build is structurally identical to an uninstalled plugin's block
-(:data:`~rehuco_core.COMMON_FIELD_KEYS`), so it classifies as an inactive block here. Saying only that
-the file's ``type`` doesn't name it is accurate either way; separating the three real provenances
-(newer-plugin / plugin-absent / not-this-type) is A4.4's ([[plugins#fallback-editor]])."""
+**common core** by a newer build is structurally identical to an uninstalled plugin's block, and both
+classify as an inactive block with no installed plugin here -- *"install the plugin"* is the honest
+remedy either way, since this build genuinely can't read it."""
 
 
 PROVENANCE_ABANDONED_TYPE: Final = (
@@ -139,7 +151,7 @@ class UnknownField(Field[Any]):
         if on_remove is not None:
             button = QToolButton()
             remove_action = QAction(button)
-            remove_action.setToolTip("Drop this unrecognized field from the file")
+            remove_action.setToolTip("Drop this unrecognized item from the file")
             ActionIconThemeHandler(remove_action, REMOVE_ICON_RESOURCE)
             remove_action.triggered.connect(lambda: self.__remove(on_remove))
             button.setDefaultAction(remove_action)
