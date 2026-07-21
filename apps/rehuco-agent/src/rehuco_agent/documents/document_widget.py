@@ -126,11 +126,25 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__restoring_layout = False
 
         # the whole field composition (location + images + record fields + unknown fallbacks) is
-        # authored in document_fields; this widget only hosts the resulting docks
-        form = build_document_form(model)
+        # authored in document_fields; this widget only hosts the resulting docks. The form is retained
+        # (not discarded after building) so its fields outlive the widgets they built -- a field's
+        # binding connections (Field.bind_external) are cleared when its widgets are destroyed, which
+        # needs the field still alive at that moment (a form rebuild on a type switch/revert).
+        self.__form = build_document_form(model)
+        # sever the current form's long-lived-signal connections when this widget is destroyed, so no
+        # field's lambda outlives it (the field itself is retained via self.__form, so it is still alive
+        # to be cleared). Rebuilds clear the outgoing form themselves (__rebuild_field_docks). A lambda,
+        # not a bound method: Qt drops a connection whose *receiver* is the object being destroyed, so a
+        # slot on self would never fire on its own destruction -- and it must re-read self.__form, which a
+        # rebuild may have replaced.
+        self.destroyed.connect(lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
         # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
-        self.__editor_docks: Final = self.__add_docks(form.make_editor(model), "editor", QtAds.LeftDockWidgetArea)
-        self.__viewer_docks: Final = self.__add_docks(form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea)
+        self.__editor_docks: Final = self.__add_docks(
+            self.__form.make_editor(model), "editor", QtAds.LeftDockWidgetArea
+        )
+        self.__viewer_docks: Final = self.__add_docks(
+            self.__form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea
+        )
         self.__save_preview_dock, self.__on_disk_dock = self.__add_inspection_docks(model)
 
         self.__save_action: Final = QAction("&Save", self)
@@ -373,9 +387,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         since a rebuilt grid starts enabled.
         """
         saved_state = {name: widget.save_state() for name, widget in self.__stateful_widgets().items()}
-        form = build_document_form(self.__model)
-        self.__swap_dock_contents(self.__editor_docks, form.make_editor(self.__model))
-        self.__swap_dock_contents(self.__viewer_docks, form.make_viewer(self.__model))
+        # sever the outgoing form's long-lived-signal connections *before* its widgets are swapped out and
+        # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
+        # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
+        self.__form.clear_external()
+        self.__form = build_document_form(self.__model)
+        self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model))
+        self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         self.__set_editors_locked(self.__model.locked)
         rebuilt = self.__stateful_widgets()
         for name, state in saved_state.items():

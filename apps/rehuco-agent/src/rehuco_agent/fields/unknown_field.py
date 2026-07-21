@@ -6,7 +6,6 @@ in the editor ([[plugins#fallback-editor]], §13.3/§13.4).
 from collections.abc import Callable
 from typing import Any, Final, override
 
-from borco_pyside.core import ConnectionList
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QLabel, QToolButton, QWidget
@@ -124,10 +123,6 @@ class UnknownField(Field[Any]):
         self.__row_widgets: Final[list[QWidget]] = []
         # just the value labels, refreshed with the re-read value when the block changes
         self.__value_labels: Final[list[QLabel]] = []
-        # the block-change connections this field owns, tracked so they can be severed when its widgets
-        # are destroyed (a form rebuild on a type switch) -- a ``__refresh`` lambda captures ``self`` and
-        # would otherwise keep firing into deleted widgets ([[plugins#fallback-editor]])
-        self.__connections: Final = ConnectionList()
 
     @override
     def make_viewer(self, binding: FieldBinding[Any]) -> FieldViewerWidgets:
@@ -176,12 +171,9 @@ class UnknownField(Field[Any]):
         row = [widget for widget in widgets if widget is not None]
         self.__row_widgets.extend(row)
         if self.__is_present is not None:
-            # sever this on the row's destruction, so no ``__refresh`` fires into a deleted widget after
-            # a form rebuild (a type switch); both surfaces are rebuilt together, so scoping to any of
-            # this row's widgets is enough ([[plugins#fallback-editor]])
-            self.__connections.connect(binding.changed, lambda *_: self.__refresh())
-            for widget in row:
-                self.__connections.clear_on_destroyed(widget)
+            # ``__refresh`` touches this instance's widgets on both surfaces, so the connection is scoped
+            # to all of this row's widgets -- severed when any is destroyed ([[plugins#fallback-editor]])
+            self.bind_external(binding.changed, lambda *_: self.__refresh())
 
     def __remove(self, on_remove: Callable[[], None]) -> None:
         """Drop the field via ``on_remove``, then reconcile its rows to the block's new state.

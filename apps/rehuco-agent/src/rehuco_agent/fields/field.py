@@ -3,8 +3,9 @@
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, runtime_checkable
 
+from borco_pyside.core import ConnectionList
 from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QLabel, QWidget
 
@@ -211,6 +212,10 @@ class Field[T]:
         self.__label: Final = label if label is not None else self.__make_label(name)
         self.__viewer_tab: Final = viewer_tab
         self.__editor_tab: Final = editor_tab
+        self.__connections: Final = ConnectionList()
+        """This field's connections to long-lived signals, so :meth:`bind_external` can drop them when the
+        widgets they touch are destroyed (a form rebuild). One list per field -- its widgets are built and
+        torn down together."""
 
     @property
     def name(self) -> str:
@@ -269,6 +274,36 @@ class Field[T]:
         widget.set_value(binding.value)
         widget.value_changed.connect(binding.set_value)
         binding.changed.connect(widget.set_value)
+
+    def bind_external(self, signal: SignalInstance, slot: Callable[..., Any]) -> None:
+        """Connect a **long-lived** signal (a model or settings signal that outlives this field's
+        widgets) to ``slot``, **recording** the connection so :meth:`clear_external` can drop it later
+        ([[plugins#field-toolkit]]).
+
+        Qt already drops a connection when the signal's **sender** dies, and auto-disconnects a slot that
+        is a **bound method of a `QObject`** (its receiver dies). A **lambda** has neither -- so a form
+        rebuild (a type switch / revert, #83/#113/#114) that deletes the widget the lambda writes to would
+        leave it firing into the dead widget on the next emit. Rather than tie each connection to a widget
+        `destroyed` signal (fragile: PySide does not keep the lambda's captured field alive, so the field
+        can be collected before that fires), the field just records the connection and the **owner clears
+        it deterministically** -- :class:`~rehuco_agent.documents.document_widget.DocumentWidget` calls
+        :meth:`clear_external` on every field before a rebuild and on destruction, while the fields are
+        still alive.
+
+        :param signal: the long-lived signal to connect.
+        :param slot: the slot -- typically a lambda writing to a widget.
+        """
+        self.__connections.connect(signal, slot)
+
+    def clear_external(self) -> None:
+        """Disconnect every connection :meth:`bind_external` made ([[plugins#field-toolkit]]).
+
+        The field's owner calls this the moment the field's widgets are about to go away -- a form
+        rebuild, or the hosting widget's destruction -- so the connections are severed while the field is
+        still alive, deterministically, instead of relying on a `destroyed` signal that may fire after the
+        field has been collected. Idempotent.
+        """
+        self.__connections.clear()
 
     def make_label(self) -> QWidget | None:
         """Build the field's name label for the row's label column; override for a custom label widget

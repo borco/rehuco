@@ -31,7 +31,7 @@ class BooleanField(Field[bool]):
         if self.name in self.WARN_WHEN_FALSE:
             label.setStyleSheet(self.WARNING_STYLESHEET)
         self.__render(label, binding.value)
-        binding.changed.connect(lambda value: self.__render(label, value))
+        self.bind_external(binding.changed, lambda value: self.__render(label, value))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
@@ -39,7 +39,7 @@ class BooleanField(Field[bool]):
         checkbox = QCheckBox()
         checkbox.setChecked(binding.value)
         checkbox.toggled.connect(binding.set_value)
-        binding.changed.connect(lambda value: self.__echo(checkbox, value))
+        self.bind_external(binding.changed, lambda value: self.__echo(checkbox, value))
         return FieldEditorWidgets(self.editor_tab, self.make_label(), checkbox)
 
     def __render(self, label: QLabel, value: bool) -> None:

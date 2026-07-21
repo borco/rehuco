@@ -22,7 +22,7 @@ class FileSizeField(Field[int | None]):
     @override
     def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
         label = QLabel(FileSizeEdit.format(binding.value))
-        binding.changed.connect(lambda value: label.setText(FileSizeEdit.format(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(FileSizeEdit.format(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override

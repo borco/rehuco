@@ -44,7 +44,7 @@ class MultipleChoiceField(Field[list[str]]):
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         label = QLabel(self.__display(binding.value))
         label.setWordWrap(True)
-        binding.changed.connect(lambda value: label.setText(self.__display(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(self.__display(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override

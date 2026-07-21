@@ -44,7 +44,7 @@ class IntField(Field[int | None]):
     @override
     def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
         label = QLabel(self.__label_text(binding.value))
-        binding.changed.connect(lambda value: label.setText(self.__label_text(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(self.__label_text(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @staticmethod

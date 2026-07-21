@@ -69,7 +69,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
         label.linkActivated.connect(self.__on_link_activated)
         label.linkHovered.connect(lambda href: self.__on_link_hovered(label, href))
         label.setText(self.__to_html(binding.value))
-        binding.changed.connect(lambda value: label.setText(self.__to_html(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(self.__to_html(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
@@ -78,7 +78,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
         line_edit.textChanged.connect(lambda text: binding.set_value(self.__split(text)))
         lock = self.__make_lock_indicator()
         self.__apply(line_edit, lock, binding.value)
-        binding.changed.connect(lambda value: self.__apply(line_edit, lock, value))
+        self.bind_external(binding.changed, lambda value: self.__apply(line_edit, lock, value))
         return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit, lock)
 
     # region viewer

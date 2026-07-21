@@ -73,8 +73,7 @@ class DescriptionField(Field[str]):
         # unlike the editor, where the description has its own tab and should take the whole height
         return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True)
 
-    @staticmethod
-    def __wire_rendering_settings(viewer: MarkdownView, settings: MarkdownRenderingSettings) -> None:
+    def __wire_rendering_settings(self, viewer: MarkdownView, settings: MarkdownRenderingSettings) -> None:
         """Re-render ``viewer`` with the shared Markdown-rendering settings' current values whenever
         any of them changes (#26, #47) -- so a Save on the settings page updates an already-open
         viewer immediately, not just newly-opened ones.
@@ -91,10 +90,13 @@ class DescriptionField(Field[str]):
         def apply_current_settings(*_args: object) -> None:
             viewer.apply_rendering_settings(engine=settings.engine, css=settings.css_for_current_engine())
 
-        settings.engine_changed.connect(apply_current_settings)
-        settings.markdown_css_changed.connect(apply_current_settings)
-        settings.mistletoe_css_changed.connect(apply_current_settings)
-        settings.max_image_width_changed.connect(apply_current_settings)
+        # the settings are an app-wide singleton, far longer-lived than this viewer -- so route these
+        # through bind_external, which the form clears on a rebuild/destroy, rather than a raw connect
+        # that would fire into a deleted viewer
+        self.bind_external(settings.engine_changed, apply_current_settings)
+        self.bind_external(settings.markdown_css_changed, apply_current_settings)
+        self.bind_external(settings.mistletoe_css_changed, apply_current_settings)
+        self.bind_external(settings.max_image_width_changed, apply_current_settings)
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
@@ -102,7 +104,7 @@ class DescriptionField(Field[str]):
         editor.setObjectName(self.name)
         editor.setText(binding.value)
         editor.notifyChange.connect(lambda *_: binding.set_value(self.__text(editor)))
-        binding.changed.connect(lambda value: self.__echo(editor, value))
+        self.bind_external(binding.changed, lambda value: self.__echo(editor, value))
         if self.__image_scanner_changed is not None:
             self.__image_scanner_changed.connect(editor.set_image_scanner)  # type: ignore[attr-defined]
         # no label for the editor tab, since the tab itself is the label
