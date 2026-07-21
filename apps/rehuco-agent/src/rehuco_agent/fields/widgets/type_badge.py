@@ -67,7 +67,13 @@ class TypeBadge(QLabel):
 
         :param value: the resource type key.
         """
-        self.setVisible(bool(value))
+        # never force a *show* while still parentless: setVisible(True) on a parentless widget turns it
+        # into a momentary top-level window -- the empty framed flash seen on load and on every form
+        # rebuild, before the form parents the badge into its row (type_field.make_viewer). A hide is
+        # applied regardless (harmless while parentless); once parented a QLabel is visible by default,
+        # so skipping the early show still lands the badge visible.
+        if not value or self.parent() is not None:
+            self.setVisible(bool(value))
         if not value:
             return
         self.__background, self.__foreground = self.__colors_for(value)
