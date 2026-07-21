@@ -1,0 +1,31 @@
+{
+  "format_version": 2,
+  "core": {
+    "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "type": "tutorial",
+    "created": "2026-07-21T00:00:00Z",
+    "updated": "2026-07-21T00:00:00Z",
+    "sources": [
+      {
+        "title": "Unclaimed Foreign Blocks Demo",
+        "publisher": "Manual Test",
+        "primary": true
+      }
+    ],
+    "authors": ["Manual Tester"],
+    "description": "The type is `tutorial`, so the `tutorial` block below is the one active block. The `reference_images` and `daz3d` blocks are **foreign payload** this file is merely custodian of ([[plugins#plugin-blocks]], A4.2/#82): inactive, and -- crucially -- **never made active this session**, so the block persistence invariant **carries them verbatim** on save, byte-for-byte. Contrast a block that was switched *to* and then *away* from (claimed-then-abandoned), which would instead be dropped on save. Open, save untouched, and both foreign blocks must survive; switch the type to `reference_images` and back to `tutorial`, and only *then* does `reference_images` become claimed and drop on the next save."
+  },
+  "tutorial": {
+    "format_version": 0,
+    "complete": true,
+    "rating": 4
+  },
+  "reference_images": {
+    "format_version": 1,
+    "images_count": 128
+  },
+  "daz3d": {
+    "sku": "78351",
+    "figures": ["G8F", "G9"]
+  }
+}

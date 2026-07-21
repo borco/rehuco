@@ -64,18 +64,38 @@ common-field set), being incomplete here costs nothing."""
 
 @dataclass(frozen=True)
 class PluginBlock:
-    """One plugin block found in a document, classified active or inactive ([[plugins#plugin-blocks]]).
+    """One plugin block found in a document, classified for the block persistence invariant
+    ([[plugins#plugin-blocks]]).
 
     :param key: the block's top-level key, already normalized to its plugin's main spelling when that
         plugin is installed here.
     :param fields: the block's own fields, held **by reference** into the document's backing data --
         mutating it in place is reflected on the next save.
     :param active: whether this is the one block the document's ``type`` names.
+    :param claimed: whether this block's key has been the active type at some point **this editing
+        session** (document open -> close, :attr:`RehuDocument.claimed_block_keys`). The active block is
+        always claimed; an inactive block is claimed only when it was switched *to* and then *away* from.
+        This is what decides an inactive block's fate on save -- a claimed one was abandoned and is
+        **dropped**, a never-claimed one is foreign payload and is **carried** (:attr:`dropped_on_save`).
     """
 
     key: str
     fields: dict[str, Any]
     active: bool
+    claimed: bool
+
+    @property
+    def dropped_on_save(self) -> bool:
+        """Whether this block is **dropped** on the next save rather than written ([[plugins#plugin-blocks]]).
+
+        ``True`` only for a **claimed-then-abandoned** block -- made active this session, then switched
+        away from, so by claiming and leaving it the user asserted the file is no longer that type. The
+        active block is always written (never dropped), and a never-claimed foreign block is carried
+        verbatim, so both of those read ``False``. The exact contrast in the worked example's steps 1 and
+        4 ([[plugins#plugin-blocks]]): the same key carries when it was never active, drops once it has
+        been.
+        """
+        return self.claimed and not self.active
 
 
 class RehuFormatError(ValueError):
@@ -175,6 +195,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__normalize()
         self.__migrate_active_block()
         self.__normalize_optional_scalars()
+        self.__claimed_keys: Final[set[str]] = set()
+        """The block keys made active at least once this session ([[plugins#plugin-blocks]]) -- the
+        session state the block persistence invariant turns on. Seeded below with the type the document
+        opened at (a block active from the first moment counts as claimed), grown by
+        :meth:`set_active_type`, reset by :meth:`reload`. ``Final`` forbids rebinding the set, not
+        mutating it -- :meth:`set_active_type` adds and :meth:`reload` clears the same object, so it is
+        always this session's live claim set."""
+        self.__seed_initial_claim()
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]), before anything
@@ -326,9 +354,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           version: migrations never lower a stamp, since such a file still carries fields from a schema
           this build has never seen ([[data-model#schema-version]]'s preserve-unknown-fields rule) and
           relabelling it would mislead the build that *can* read them.
-        - The **active block plus every inactive block** ([[plugins#plugin-blocks]]) are written, with
-          alias block keys already normalized to their main spelling (:meth:`__normalize`), because no
-          accessor here ever prunes ``__data``.
+        - The **block persistence invariant** decides which blocks are written (:meth:`__ordered_for_file`,
+          [[plugins#plugin-blocks]]): the active block, plus every inactive block **never claimed** this
+          session (foreign payload, carried verbatim with its alias key already normalized to its main
+          spelling, :meth:`__normalize`). An inactive block **claimed then abandoned** this session is
+          **dropped** -- the one place ``__data`` is not written wholesale. The drop is a write-time
+          filter, so the dropped block stays resurrectable in memory until close, and a save to a *new*
+          path (save-as) applies the same invariant: the session, and its claims, continue unchanged
+          across a save.
 
         **Key order is imposed here, and only here** (:meth:`__ordered_for_file`). It cannot be
         maintained in ``__data`` -- every setter appends -- and it does not need to be: JSON objects are
@@ -377,9 +410,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def __ordered_for_file(self) -> dict[str, Any]:
         """Lay the document out in canonical key order, for :meth:`save` to write.
 
-        ``format_version`` leads (it describes the file), then ``core``, then every other top-level key
-        alphabetically -- the plugin blocks, plus any stray key carried verbatim, which sorts among them
-        rather than needing a category of its own.
+        The top-level order is ``format_version`` (it describes the file), then ``core``, then the
+        **active** plugin block, then every remaining top-level key alphabetically -- the inactive/unknown
+        blocks, plus any stray key carried verbatim, which sorts among them rather than needing a category
+        of its own. The active block leads the blocks (rather than sorting among them) because it is the
+        one this file's ``type`` names -- the block a reader opening the file by hand looks for first,
+        right after the common core it belongs to.
 
         Inside ``core``, :data:`CORE_LEADING_KEYS` lead and the rest sort. The **active** block is
         ordered the same way, led by its own ``format_version`` ([[plugins#plugin-blocks]]) -- and if it
@@ -387,14 +423,19 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         usernames alphabetically, each user's own fields alphabetically (:meth:`__ordered_block` applies
         this one level deeper, see there).
 
-        **Inactive blocks are copied untouched.** They are payload this file is merely custodian of
-        ([[plugins#plugin-blocks]]), and "carried verbatim" is worth honouring literally when the
-        alternative buys nothing: reordering them would churn bytes this document has no business
-        churning, to reorganize fields it does not understand.
+        **The block persistence invariant is applied here** ([[plugins#plugin-blocks]]): a block is
+        written **iff** it is the active block, or it is inactive and its key was **never claimed** this
+        session (foreign payload the file is merely custodian of -- carried verbatim, never reordered,
+        since reordering would churn bytes to reorganize fields this document does not understand). A
+        block **claimed then abandoned** -- made active this session, then switched away from
+        (:attr:`claimed_block_keys`) -- is **dropped**: by claiming and leaving it the user asserted the
+        file is no longer that type. This is a *serialization*-time filter, not a mutation of
+        :attr:`data`, which is exactly what keeps a dropped block resurrectable in memory: switch its type
+        back before saving and it is active, hence written, again.
 
-        A malformed block (not an object) is passed through as-is rather than skipped -- it is still
-        the file's content, and dropping it would be exactly the silent loss the round-trip rule forbids
-        ([[data-model#schema-version]]).
+        A retained active/foreign block that is malformed (not an object) is passed through as-is rather
+        than skipped -- it is still the file's content, and dropping it would be exactly the silent loss
+        the round-trip rule forbids ([[data-model#schema-version]]).
 
         :returns: a fresh dict; ``__data`` is left alone, since its order is not meaningful.
         """
@@ -404,9 +445,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         if CORE_BLOCK_KEY in self.__data:
             ordered[CORE_BLOCK_KEY] = self.__ordered_block(self.__data[CORE_BLOCK_KEY], CORE_LEADING_KEYS)
         active_key = self.active_block_key
-        for key in sorted(key for key in self.__data if key not in RESERVED_KEYS):
-            value = self.__data[key]
-            ordered[key] = self.__ordered_block(value, (FORMAT_VERSION_KEY,)) if key == active_key else value
+        if active_key in self.__data:
+            # the active block leads the plugin blocks, right after the core it belongs to -- its own
+            # format_version first, then the rest of its keys ordered ([[plugins#plugin-blocks]])
+            ordered[active_key] = self.__ordered_block(self.__data[active_key], (FORMAT_VERSION_KEY,))
+        for key in sorted(key for key in self.__data if key not in RESERVED_KEYS and key != active_key):
+            if key in self.__claimed_keys:
+                # claimed-then-abandoned: made active this session and left, so the user asserted the
+                # file is no longer this type -- dropped on save ([[plugins#plugin-blocks]]).
+                continue
+            ordered[key] = self.__data[key]
         return ordered
 
     @staticmethod
@@ -472,6 +520,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         genuinely path-less document (never loaded or saved) still raises, since there is nothing to
         re-read.
 
+        **Session claim-tracking resets** ([[plugins#plugin-blocks]]): revert discards this session's
+        edits, type switches included, so the claim set is re-seeded from the freshly-read type -- the
+        block on disk is the sole claim, and any type this session had switched to and abandoned is
+        forgotten (it is back to whatever the file says it is). This is the deliberate answer to "what
+        happens to claims on revert": a reverted document begins a clean session.
+
         :raises ValueError: if this document has no path (never loaded from or saved to a file).
         """
         if self.__path is None:
@@ -479,6 +533,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         fresh = RehuDocument.open_or_locked(self.__path, plugins=self.__plugins, username=self.__username)
         self.__data.clear()
         self.__data.update(fresh.data)
+        self.__claimed_keys.clear()
+        self.__seed_initial_claim()
         # adopt what the freshly-read file says its version is: a reload is how an out-of-band change is
         # picked up, and that change may have been another build rewriting the file at a different version
         self.__on_disk_format_version = fresh.on_disk_format_version
@@ -903,6 +959,56 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         block = self.__data.get(self.active_block_key)
         return block if isinstance(block, dict) else {}
 
+    def set_active_type(self, resource_type: str) -> None:
+        """Switch the document's active type, **claiming** the newly-active block ([[plugins#plugin-blocks]]).
+
+        The session seam the block persistence invariant turns on. Making a block active "claims" it: from
+        here until the document closes, its key counts as having-been-active
+        (:attr:`claimed_block_keys`), so if the user later switches away, that block is **dropped on
+        save** rather than carried (:meth:`save`, :attr:`PluginBlock.dropped_on_save`). The switch is
+        otherwise non-destructive -- the previously-active block is left in :attr:`data`, inactive and
+        resurrectable, until the file closes, so switching back and forth is lossless until save.
+
+        The requested type is normalized to its plugin's declared main key
+        (:meth:`~rehuco_core.plugins.PluginRegistry.main_key`), the same rewrite construction applies to a
+        type read from disk (:meth:`__normalize`), so ``type`` and its block key stay one token and an
+        alias claims the same key its main spelling would. An empty type is stored verbatim and claims
+        nothing -- there is no block to claim.
+
+        The type-switching UI that drives this is A4.3 ([[plugins#plugin-blocks]]); this is the model seam
+        it edits, exercised directly here.
+
+        :param resource_type: the resource type to switch to (a main key or any alias spelling).
+        """
+        main_key = self.__plugins.main_key(resource_type)
+        self.__core_or_create()["type"] = main_key
+        if main_key:
+            self.__claimed_keys.add(main_key)
+
+    def __seed_initial_claim(self) -> None:
+        """Claim the type the document opened at, at construction ([[plugins#plugin-blocks]]).
+
+        A block active from the document's first moment has "been active this session" as much as one
+        switched to later, so it is claimed too -- which is what makes the *former* active type drop on
+        save once abandoned (the worked example's step 1). A type-less document (an empty or locked stub)
+        claims nothing.
+        """
+        if self.active_block_key:
+            self.__claimed_keys.add(self.active_block_key)
+
+    @property
+    def claimed_block_keys(self) -> frozenset[str]:
+        """The block keys made active at least once this session -- document open to close
+        ([[plugins#plugin-blocks]]).
+
+        Seeded with the type the document opened at, grown by each :meth:`set_active_type`, and reset to
+        the freshly-read type by :meth:`reload` (revert begins a clean session, the deliberate answer to
+        "what does the claim set do on revert"). A key here that is no longer the active type is a
+        **claimed-then-abandoned** block, dropped on the next save; the current active key is in the set
+        too. Exposed read-only (a copy) for callers that classify a block by its fate
+        (:attr:`PluginBlock.dropped_on_save`) without reaching into session state."""
+        return frozenset(self.__claimed_keys)
+
     def __coerced_active_block_version(self) -> int | None:
         """The active block's own ``format_version``, defensively coerced -- the block-scoped sibling
         of :meth:`__coerced_version` ([[plugins#plugin-blocks]]).
@@ -931,11 +1037,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         whether the *active* block renders richly or falls back to the generic editor
         ([[plugins#fallback-editor]]); it never promotes an inactive block to active.
 
+        Each block also carries whether it was **claimed** this session
+        (:attr:`PluginBlock.claimed`) -- active at some point since the document opened -- which is what
+        splits the inactive blocks into the *carried* (never claimed, foreign payload) and the *dropped*
+        (claimed then abandoned) on save ([[plugins#plugin-blocks]], :meth:`save`).
+
         :returns: the blocks, in document order.
         """
         active_key = self.active_block_key
         return [
-            PluginBlock(key=key, fields=value, active=key == active_key)
+            PluginBlock(key=key, fields=value, active=key == active_key, claimed=key in self.__claimed_keys)
             for key, value in self.__data.items()
             if key not in RESERVED_KEYS and isinstance(value, dict)
         ]
@@ -943,9 +1054,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def inactive_blocks(self) -> list[PluginBlock]:
         """This document's non-active plugin blocks ([[plugins#plugin-blocks]]).
 
-        All of them are carried verbatim on :meth:`save` -- the carry-only half of the block persistence
-        invariant, which is correct for a session with no type switching. Session claim-tracking and the
-        drop-on-abandon rule are A4.2 ([[plugins#plugin-blocks]]).
+        Two kinds, told apart by :attr:`PluginBlock.dropped_on_save`: a **never-claimed** block is foreign
+        payload the file is merely custodian of and is **carried verbatim** on :meth:`save`, while one
+        **claimed then abandoned** this session (switched to and away from) is **dropped on save** -- by
+        making it active and leaving it the user asserted the file is no longer that type. Both stay in
+        :attr:`data`, inactive and resurrectable, until the file closes ([[plugins#plugin-blocks]]).
 
         :returns: the inactive blocks, in document order.
         """
