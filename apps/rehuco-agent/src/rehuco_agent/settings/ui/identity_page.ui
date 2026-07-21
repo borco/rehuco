@@ -23,8 +23,8 @@
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QVBoxLayout" name="identity_frame_layout">
-      <item>
+     <layout class="QFormLayout" name="identity_frame_layout">
+      <item row="0" column="0" colspan="2">
        <widget class="QLabel" name="identity_frame_label">
         <property name="font">
          <font>
@@ -36,28 +36,38 @@
         </property>
        </widget>
       </item>
-      <item>
-       <layout class="QHBoxLayout" name="username_layout">
-        <item>
-         <widget class="QLabel" name="username_label">
-          <property name="text">
-           <string>Username</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QLineEdit" name="username_edit">
-          <property name="toolTip">
-           <string>The name your per-user fields (rating, viewed, todo, keep, favorite) are filed under</string>
-          </property>
-         </widget>
-        </item>
-       </layout>
+      <item row="1" column="0">
+       <widget class="QLabel" name="current_username_label">
+        <property name="text">
+         <string>Current user</string>
+        </property>
+       </widget>
       </item>
-      <item>
+      <item row="1" column="1">
+       <widget class="QLineEdit" name="current_username_edit">
+        <property name="toolTip">
+         <string>The name this install's own per-user edits (rating, viewed, todo, keep, favorite) are filed under</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="unknown_username_label">
+        <property name="text">
+         <string>Unknown user</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="unknown_username_edit">
+        <property name="toolTip">
+         <string>The name per-user state imported from a .tc file is filed under, since its real owner is unknown</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
        <widget class="QLabel" name="note_label">
         <property name="text">
-         <string>Per-user fields and .tc imports are filed under this name. Documents already open keep the name they were opened with; a change applies to documents opened afterwards.</string>
+         <string>Your own edits are filed under the current user; per-user state imported from a .tc file is filed under the unknown user. Documents already open keep the names they were opened with; a change applies to documents opened afterwards.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

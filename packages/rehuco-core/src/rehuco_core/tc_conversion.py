@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
-from .plugins import DEFAULT_USERNAME
+from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
 from .tc_description import rewrite_description_images
@@ -22,7 +22,7 @@ from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
 
 
 def convert_tc(
-    tc_path: Path, *, keep_backups: bool, overwrite: bool = False, username: str = DEFAULT_USERNAME
+    tc_path: Path, *, keep_backups: bool, overwrite: bool = False, username: str = DEFAULT_UNKNOWN_USERNAME
 ) -> RehuDocument:
     """Convert ``tc_path`` (and its recognized legacy screenshots) into a real, unlocked ``.rehu``.
 
@@ -33,7 +33,9 @@ def convert_tc(
     :param overwrite: must be ``True`` if the target ``.rehu`` already exists, or ``FileExistsError``
         is raised before anything on disk is touched.
     :param username: the identity the imported per-user flags are filed under
-        ([[field-schema#per-user-shared]]); defaults to :data:`~rehuco_core.plugins.DEFAULT_USERNAME`.
+        ([[field-schema#per-user-shared]], #109); defaults to
+        :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME`, since a flag carried in from the ``.tc``
+        was not set by this install's own identity.
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.

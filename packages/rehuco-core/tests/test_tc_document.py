@@ -128,9 +128,11 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
     assert block["original_duration"] == 445500
     assert block["level"] == ["beginner", "intermediate", "advanced", "any"]
     assert block["collections"] == [{"title": "Some Collection", "index": 3}]
-    # per-user fields nest under ``users[<username>]``, keyed by the import identity (default ``admin``)
+    # per-user fields nest under ``users[<username>]``, keyed by the import identity; a ``.tc`` import
+    # handed no username files them under the *unknown* user (default ``unknown``), since the flags were
+    # not set by this install's identity ([[field-schema#per-user-shared]], #109)
     assert block["users"] == {
-        "admin": {
+        "unknown": {
             "favorite": False,
             "keep": True,
             "learning_paths": [
@@ -166,7 +168,7 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     assert block["complete"] is False
     assert block["collections"] == []
     assert block["users"] == {
-        "admin": {
+        "unknown": {
             "favorite": False,
             "keep": True,
             "learning_paths": [],
@@ -352,6 +354,24 @@ def test_the_username_threads_from_load_tc_into_the_users_map(mocker: MockerFixt
     block = doc.active_block
     assert set(block["users"]) == {"alice"}
     assert block["users"]["alice"]["rating"] == 5
+
+
+def test_load_tc_files_per_user_flags_under_the_unknown_user_by_default(mocker: MockerFixture) -> None:
+    """A ``.tc`` imported without an explicit username files its per-user flags under the *unknown* user
+    (``unknown``), not this install's identity -- the flags were not set here (#109).
+
+    See [[field-schema#per-user-shared]].
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return :data:`TUTORIAL_TC` and load with no username
+    * verify the per-user flags landed under ``unknown`` and the document adopts that name
+    """
+    mocker.patch.object(Path, "read_text", return_value=TUTORIAL_TC)
+    doc = load_tc(FAKE_PATH)
+
+    assert doc.username == "unknown"
+    assert set(doc.active_block["users"]) == {"unknown"}
 
 
 def test_tc_to_rehu_data_files_per_user_flags_under_the_given_username() -> None:

@@ -9,7 +9,7 @@ from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
-    DEFAULT_USERNAME,
+    DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
     USERS_KEY,
     AuthorEntry,
@@ -247,7 +247,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     @classmethod
     def create_new(
-        cls, path: Path | str | None = None, parent: QObject | None = None, *, username: str = DEFAULT_USERNAME
+        cls, path: Path | str | None = None, parent: QObject | None = None, *, username: str = DEFAULT_CURRENT_USERNAME
     ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
 
@@ -259,7 +259,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param parent: optional Qt parent.
         :param username: the identity the new document's per-user writes are filed under
             ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
-            configured identity setting; core's :data:`~rehuco_core.DEFAULT_USERNAME` otherwise.
+            **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
         :returns: the new model, wrapping a fresh in-memory `RehuDocument`.
         """
         model = cls(RehuDocument({}, Path(path) if path is not None else None, username=username), parent)
@@ -375,9 +375,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ``False``, since the result is never :attr:`~RehuDocument.legacy_tc`) -- so the same dock keeps
         showing the same resource, now unlocked, without a reload round-trip. The conversion files
         the imported per-user flags under this document's **own** username -- the identity it was
-        opened with -- so the block's ``users`` key and the result's
-        :attr:`~RehuDocument.username` stay in agreement (#98's invariant); an identity-setting
-        change made after this document was opened applies to later opens, not to it (#99).
+        opened with, which for a legacy ``.tc`` is the **unknown** user (#109) -- so the block's
+        ``users`` key and the result's :attr:`~RehuDocument.username` stay in agreement (#98's
+        invariant); an identity-setting change made after this document was opened applies to later
+        opens, not to it (#99).
 
         :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
         :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.

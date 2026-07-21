@@ -21,24 +21,26 @@ from typing import Any, Final
 import yaml
 
 from .migrations import CURRENT_FORMAT_VERSION, current_block_version
-from .plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_USERNAME, USERS_KEY
+from .plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_UNKNOWN_USERNAME, USERS_KEY
 from .rehu_document import RehuDocument, RehuFormatError
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
 
 
-def load_tc(path: Path | str, *, username: str = DEFAULT_USERNAME) -> RehuDocument:
+def load_tc(path: Path | str, *, username: str = DEFAULT_UNKNOWN_USERNAME) -> RehuDocument:
     """Read a legacy ``.tc`` (YAML) file and map it into a ``RehuDocument`` ([[acquisition-tooling#tc-to-rehu]]).
 
     :param path: path to the ``.tc`` file.
     :param username: the identity the imported per-user flags are filed under
-        ([[field-schema#per-user-shared]]); defaults to :data:`~rehuco_core.plugins.DEFAULT_USERNAME`.
+        ([[field-schema#per-user-shared]], #109); defaults to
+        :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME` -- a flag carried in from a ``.tc`` was not
+        set by *this* install's identity, so its real owner is unknown until a caller names one.
     :returns: a document mapped to the target ``.rehu`` shape, with :attr:`RehuDocument.legacy_tc` set.
     :raises RehuFormatError: if the file's top-level YAML value is neither a mapping nor empty.
     """
     return TcDocument.load(path).to_rehu_document(path, username=username)
 
 
-def tc_to_rehu_data(tc_data: dict[str, Any], *, username: str = DEFAULT_USERNAME) -> dict[str, Any]:
+def tc_to_rehu_data(tc_data: dict[str, Any], *, username: str = DEFAULT_UNKNOWN_USERNAME) -> dict[str, Any]:
     """Map a parsed ``.tc`` YAML object into a fresh ``.rehu``-shaped JSON object.
 
     :param tc_data: the parsed YAML mapping (empty for a blank ``.tc``).
@@ -124,7 +126,9 @@ class TcDocument:
         """The resolved resource type -- ``data``'s ``type`` if recognized, else :attr:`DEFAULT_TYPE`."""
         return self.__type
 
-    def to_rehu_document(self, path: Path | str | None = None, *, username: str = DEFAULT_USERNAME) -> RehuDocument:
+    def to_rehu_document(
+        self, path: Path | str | None = None, *, username: str = DEFAULT_UNKNOWN_USERNAME
+    ) -> RehuDocument:
         """Map this document into a fresh :class:`RehuDocument`, marked :attr:`~RehuDocument.legacy_tc`.
 
         The same ``username`` seeds the mapped per-user flags *and* the document built around them, so the
@@ -143,7 +147,7 @@ class TcDocument:
             username=username,
         )
 
-    def to_rehu_data(self, *, username: str = DEFAULT_USERNAME) -> dict[str, Any]:
+    def to_rehu_data(self, *, username: str = DEFAULT_UNKNOWN_USERNAME) -> dict[str, Any]:
         """Map this document into a fresh ``.rehu``-shaped JSON object.
 
         tc4's capitalized type spellings (``Tutorial``, ``ReferenceImages``) are aliases of the plugins'

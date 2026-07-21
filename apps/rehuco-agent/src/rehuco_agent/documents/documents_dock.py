@@ -266,17 +266,23 @@ class DocumentsDock(QMainWindow):
         :meth:`RehuDocument.load`, but funnels *both* loaders' failures through the one seam that draws
         the missing-vs-unparseable line (:meth:`RehuDocument.locked_stub_for_error`) -- so the dock is
         built around a locked, never-savable stub instead of the caller seeing an exception
-        ([[data-model#write-integrity]]). Every branch is handed the **configured identity**
-        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #99), read here at
+        ([[data-model#write-integrity]]). Each branch is handed the identity that matches its provenance
+        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`, #109), read here at
         open time -- the document keeps it for its whole life, so a later identity-setting change
-        affects only documents opened afterwards.
+        affects only documents opened afterwards. A ``.tc`` import files its per-user state under the
+        **unknown** user, since a flag carried in from the file was not set by this install's identity; a
+        ``.rehu`` (whose per-user writes this UI makes) is opened under the **current** user. A locked stub
+        adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
+        identity the open was asked for.
 
         :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
         :returns: the loaded document, or a locked stub bound to ``path``.
         """
-        username = shared_identity_settings().username
+        settings = shared_identity_settings()
+        is_tc = path.suffix.lower() == ".tc"
+        username = settings.unknown_username if is_tc else settings.current_username
         try:
-            if path.suffix.lower() == ".tc":
+            if is_tc:
                 return load_tc(path, username=username)
             return RehuDocument.load(path, username=username)
         except (OSError, RehuFormatError) as error:
@@ -302,7 +308,7 @@ class DocumentsDock(QMainWindow):
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
-            model = RehuDocumentModel.create_new(path, self, username=shared_identity_settings().username)
+            model = RehuDocumentModel.create_new(path, self, username=shared_identity_settings().current_username)
         else:
             model = RehuDocumentModel(self.__load_or_locked(path), self)
         widget = DocumentWidget(model, self)

@@ -1,4 +1,4 @@
-"""Tests for IdentityPage: the Identity settings category page (#99)."""
+"""Tests for IdentityPage: the Identity settings category page, current + unknown usernames (#109)."""
 
 from collections.abc import Iterator
 from typing import Any
@@ -68,22 +68,24 @@ def clear_shared_instance_cache() -> Iterator[None]:
 # endregion
 
 
-def test_starts_with_the_shared_settings_current_username(qtbot: QtBot) -> None:
-    """A freshly-built page's field reflects the shared settings' current username.
+def test_starts_with_the_shared_settings_usernames(qtbot: QtBot) -> None:
+    """A freshly-built page's fields reflect the shared settings' current and unknown usernames.
 
     **Test steps:**
 
-    * seed the shared settings with a known username
+    * seed the shared settings with known usernames
     * build the page
-    * verify the field shows it
+    * verify both fields show them
     """
-    shared_identity_settings().username = "alice"
+    shared_identity_settings().current_username = "alice"
+    shared_identity_settings().unknown_username = "strangers"
 
     page = IdentityPage()
     qtbot.addWidget(page)
 
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert ui.username_edit.text() == "alice"
+    assert ui.current_username_edit.text() == "alice"
+    assert ui.unknown_username_edit.text() == "strangers"
 
 
 def test_is_dirty_is_false_right_after_construction(qtbot: QtBot) -> None:
@@ -100,19 +102,36 @@ def test_is_dirty_is_false_right_after_construction(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_is_dirty_is_true_after_an_edit(qtbot: QtBot) -> None:
-    """Editing the username makes the page dirty.
+def test_is_dirty_is_true_after_editing_the_current_username(qtbot: QtBot) -> None:
+    """Editing the current username makes the page dirty.
 
     **Test steps:**
 
-    * build the page and change the username field
+    * build the page and change the current username field
     * verify ``is_dirty`` is ``True``
     """
     page = IdentityPage()
     qtbot.addWidget(page)
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    ui.username_edit.setText("alice")
+    ui.current_username_edit.setText("alice")
+
+    assert page.is_dirty() is True
+
+
+def test_is_dirty_is_true_after_editing_the_unknown_username(qtbot: QtBot) -> None:
+    """Editing the unknown username makes the page dirty too.
+
+    **Test steps:**
+
+    * build the page and change the unknown username field
+    * verify ``is_dirty`` is ``True``
+    """
+    page = IdentityPage()
+    qtbot.addWidget(page)
+    ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.unknown_username_edit.setText("strangers")
 
     assert page.is_dirty() is True
 
@@ -120,67 +139,91 @@ def test_is_dirty_is_true_after_an_edit(qtbot: QtBot) -> None:
 def test_save_changes_updates_the_shared_settings_and_persists(
     qtbot: QtBot, fake_persistent_settings: FakeSettings
 ) -> None:
-    """``save_changes`` pushes the staged username into the shared settings object and persists it.
+    """``save_changes`` pushes both staged usernames into the shared settings object and persists them.
 
     **Test steps:**
 
-    * build the page and edit the username
+    * build the page and edit both usernames
     * call ``save_changes``
-    * verify the shared settings object reflects it, cleared dirty, and a fresh load does too
+    * verify the shared settings object reflects them, cleared dirty, and a fresh load does too
     """
     page = IdentityPage()
     qtbot.addWidget(page)
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    ui.username_edit.setText("alice")
+    ui.current_username_edit.setText("alice")
+    ui.unknown_username_edit.setText("strangers")
 
     page.save_changes()
 
-    assert shared_identity_settings().username == "alice"
+    assert shared_identity_settings().current_username == "alice"
+    assert shared_identity_settings().unknown_username == "strangers"
     assert page.is_dirty() is False
 
     reloaded = IdentitySettings()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
-    assert reloaded.username == "alice"
+    assert reloaded.current_username == "alice"
+    assert reloaded.unknown_username == "strangers"
 
 
-def test_a_blank_staged_username_saves_as_the_os_login_default(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """A blank (whitespace-only) staged username stands for "no name" and saves as the OS-login
+def test_a_blank_staged_current_username_saves_as_the_os_login_default(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A blank (whitespace-only) staged current username stands for "no name" and saves as the OS-login
     default instead -- an identity is never saved empty ([[field-schema#per-user-shared]]).
 
     **Test steps:**
 
-    * build the page, blank the field, and save
+    * build the page, blank the current-user field, and save
     * verify the shared settings hold the (mocked) OS login name
     """
     mocker.patch("getpass.getuser", return_value="alice")
     page = IdentityPage()
     qtbot.addWidget(page)
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    ui.username_edit.setText("   ")
+    ui.current_username_edit.setText("   ")
 
     page.save_changes()
 
-    assert shared_identity_settings().username == "alice"
+    assert shared_identity_settings().current_username == "alice"
 
 
-def test_drop_changes_reverts_the_edit(qtbot: QtBot) -> None:
-    """``drop_changes`` reverts the field back to the shared settings' current username.
+def test_a_blank_staged_unknown_username_saves_as_the_unknown_default(qtbot: QtBot) -> None:
+    """A blank (whitespace-only) staged unknown username saves as core's ``unknown`` default instead (#109).
 
     **Test steps:**
 
-    * seed the shared settings, build the page, and edit the field
-    * call ``drop_changes``
-    * verify the field is back to the shared settings' value and the page is clean
+    * build the page, blank the unknown-user field, and save
+    * verify the shared settings hold ``unknown``
     """
-    shared_identity_settings().username = "alice"
     page = IdentityPage()
     qtbot.addWidget(page)
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    ui.username_edit.setText("unsaved-edit")
+    ui.unknown_username_edit.setText("   ")
+
+    page.save_changes()
+
+    assert shared_identity_settings().unknown_username == "unknown"
+
+
+def test_drop_changes_reverts_both_edits(qtbot: QtBot) -> None:
+    """``drop_changes`` reverts both fields back to the shared settings' current values.
+
+    **Test steps:**
+
+    * seed the shared settings, build the page, and edit both fields
+    * call ``drop_changes``
+    * verify the fields are back to the shared settings' values and the page is clean
+    """
+    shared_identity_settings().current_username = "alice"
+    shared_identity_settings().unknown_username = "strangers"
+    page = IdentityPage()
+    qtbot.addWidget(page)
+    ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.current_username_edit.setText("unsaved-current")
+    ui.unknown_username_edit.setText("unsaved-unknown")
 
     page.drop_changes()
 
-    assert ui.username_edit.text() == "alice"
+    assert ui.current_username_edit.text() == "alice"
+    assert ui.unknown_username_edit.text() == "strangers"
     assert page.is_dirty() is False
 
 
@@ -202,11 +245,11 @@ def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> No
     """A `SettingsFrameFilter` finds the page's labeled frame and filters it by its text (#67).
 
     Guards the page's ``.ui`` frame structure: the identity frame must be a discoverable top-level
-    frame whose gathered caption text (including the "Username" field label) drives the filter.
+    frame whose gathered caption text (including the "Current user" field label) drives the filter.
 
     **Test steps:**
 
-    * build a frame filter over the page, then filter by the username label's text
+    * build a frame filter over the page, then filter by the current-user label's text
     * verify the identity frame stays shown; filter by a non-matching term and verify it hides
     """
     page = IdentityPage()
@@ -214,7 +257,7 @@ def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> No
     frame_filter = SettingsFrameFilter(page, page.title)
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    frame_filter.apply("username", show_full_on_title_match=False)
+    frame_filter.apply("current user", show_full_on_title_match=False)
     assert ui.identity_frame.isVisibleTo(page) is True
 
     frame_filter.apply("no-such-term", show_full_on_title_match=False)

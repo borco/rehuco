@@ -34,8 +34,8 @@ from .migrations import (
     stamped_version,
 )
 from .plugins import (
+    DEFAULT_CURRENT_USERNAME,
     DEFAULT_PLUGIN_REGISTRY,
-    DEFAULT_USERNAME,
     USERS_KEY,
     PluginRegistry,
 )
@@ -109,7 +109,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         ([[plugins#plugin-blocks]]).
     :param username: the active identity whose per-user state this document reads, writes, and files a
         v0->v1 block migration under ([[field-schema#per-user-shared]]); defaults to
-        :data:`~rehuco_core.plugins.DEFAULT_USERNAME` since core has no settings to seed a real one (the
+        :data:`~rehuco_core.plugins.DEFAULT_CURRENT_USERNAME` since core has no settings to seed a real one (the
         agent supplies that in a later slice). One value serves both consumers -- the per-user accessors
         (:meth:`active_user_field`) and the block migration run at construction -- so they can never
         disagree about whose data a file holds.
@@ -150,7 +150,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         *,
         legacy_tc: bool = False,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
-        username: str = DEFAULT_USERNAME,
+        username: str = DEFAULT_CURRENT_USERNAME,
         on_disk_format_version: int | None = None,
         on_disk_active_block_format_version: int | None = None,
         load_failure: LockReason | None = None,
@@ -205,7 +205,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         path: Path | str,
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
-        username: str = DEFAULT_USERNAME,
+        username: str = DEFAULT_CURRENT_USERNAME,
     ) -> RehuDocument:
         """Read and parse a ``.rehu`` file from disk.
 
@@ -258,7 +258,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         path: Path | str,
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
-        username: str = DEFAULT_USERNAME,
+        username: str = DEFAULT_CURRENT_USERNAME,
     ) -> RehuDocument:
         """Load ``path``, or return an **empty document bound to it, locked**, when it cannot be read.
 
@@ -293,7 +293,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         error: Exception,
         *,
         plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
-        username: str = DEFAULT_USERNAME,
+        username: str = DEFAULT_CURRENT_USERNAME,
     ) -> RehuDocument:
         """Build the empty, locked document that stands in for a file ``error`` prevented reading.
 
@@ -488,7 +488,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @property
     def username(self) -> str:
         """The active identity whose per-user state this document reads and writes
-        ([[field-schema#per-user-shared]]); :data:`~rehuco_core.plugins.DEFAULT_USERNAME` unless a caller
+        ([[field-schema#per-user-shared]]); :data:`~rehuco_core.plugins.DEFAULT_CURRENT_USERNAME` unless a caller
         set one. Fixed for the document's life -- a per-user accessor is never told whose data it wants,
         and the v0->v1 block migration filed under exactly this name at construction."""
         return self.__username

@@ -1166,25 +1166,34 @@ def test_open_folder_with_a_corrupted_tc_fallback_opens_an_empty_locked_dock(
     critical.assert_not_called()
 
 
-def configure_identity(mocker: MockerFixture, username: str) -> None:
-    """Stand in for the configured identity setting the dock reads at open time (#99).
+def configure_identity(mocker: MockerFixture, *, current: str = "admin", unknown: str = "unknown") -> None:
+    """Stand in for the configured identity settings the dock reads at open time (#109).
+
+    Both usernames are set to distinct values in each test that cares, so an assertion proves the dock
+    routed the *right* one: the **current** user for a ``.rehu``/new document (where this UI's edits land),
+    the **unknown** user for a ``.tc`` import (whose per-user state was set elsewhere).
 
     :param mocker: pytest-mock fixture.
-    :param username: the username ``shared_identity_settings()`` should report.
+    :param current: the current username ``shared_identity_settings()`` should report.
+    :param unknown: the unknown username ``shared_identity_settings()`` should report.
     """
-    mocker.patch.object(documents_dock, "shared_identity_settings", return_value=IdentitySettings(username=username))
+    mocker.patch.object(
+        documents_dock,
+        "shared_identity_settings",
+        return_value=IdentitySettings(current_username=current, unknown_username=unknown),
+    )
 
 
-def test_open_document_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Opening a ``.rehu`` hands the configured identity to ``RehuDocument.load``, so the document's
-    per-user accessors key the ``users`` map by it ([[field-schema#per-user-shared]], #99).
+def test_open_document_threads_the_current_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a ``.rehu`` hands the **current** identity to ``RehuDocument.load`` -- this UI's edits land
+    under it -- not the unknown one ([[field-schema#per-user-shared]], #109).
 
     **Test steps:**
 
-    * configure the identity as ``alice`` and open a ``.rehu``
-    * verify the resulting document carries that username
+    * configure current ``alice`` / unknown ``strangers`` and open a ``.rehu``
+    * verify the resulting document carries the current username, not the unknown one
     """
-    configure_identity(mocker, "alice")
+    configure_identity(mocker, current="alice", unknown="strangers")
     load_document(mocker)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
@@ -1194,38 +1203,40 @@ def test_open_document_threads_the_configured_username(mocker: MockerFixture, qt
     assert widget.model.document.username == "alice"
 
 
-def test_open_document_with_a_tc_path_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Opening a legacy ``.tc`` hands the configured identity to ``load_tc``, so the imported
-    per-user flags are filed under it from the start ([[field-schema#per-user-shared]], #99).
+def test_open_document_with_a_tc_path_threads_the_unknown_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Opening a legacy ``.tc`` hands the **unknown** identity to ``load_tc`` -- the imported per-user flags
+    were not set by this install, so they file under it, not the current user (#109).
+
+    See [[field-schema#per-user-shared]].
 
     **Test steps:**
 
-    * configure the identity as ``alice`` and open a ``.tc``
-    * verify the mapped document carries that username, and its block's ``users`` map is keyed by it
+    * configure current ``alice`` / unknown ``strangers`` and open a ``.tc``
+    * verify the mapped document carries the unknown username, and its block's ``users`` map is keyed by it
     """
-    configure_identity(mocker, "alice")
+    configure_identity(mocker, current="alice", unknown="strangers")
     mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
 
     widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
 
-    assert widget.model.document.username == "alice"
-    assert list(widget.model.document.data["tutorial"]["users"]) == ["alice"]
+    assert widget.model.document.username == "strangers"
+    assert list(widget.model.document.data["tutorial"]["users"]) == ["strangers"]
 
 
-def test_a_failed_open_threads_the_configured_username_into_the_locked_stub(
+def test_a_failed_rehu_open_threads_the_current_username_into_the_locked_stub(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
-    """A failed load's empty locked stub carries the configured identity too, so hand-fixing the file
-    and reverting retries under the same username the open was asked for (#99).
+    """A failed ``.rehu`` load's empty locked stub carries the **current** identity, so hand-fixing the
+    file and reverting retries under the same username the open was asked for (#109).
 
     **Test steps:**
 
-    * configure the identity as ``alice`` and open a path whose read fails
-    * verify the locked stub's document carries that username
+    * configure current ``alice`` / unknown ``strangers`` and open a ``.rehu`` whose read fails
+    * verify the locked stub's document carries the current username
     """
-    configure_identity(mocker, "alice")
+    configure_identity(mocker, current="alice", unknown="strangers")
     mocker.patch.object(Path, "read_text", side_effect=OSError("unreadable"))
     dock = DocumentsDock()
     qtbot.addWidget(dock)
@@ -1236,16 +1247,38 @@ def test_a_failed_open_threads_the_configured_username_into_the_locked_stub(
     assert widget.model.document.username == "alice"
 
 
-def test_a_new_document_threads_the_configured_username(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A folder with no ``info.rehu``/``info.tc`` starts its new document under the configured
-    identity, so its eventual per-user writes are filed correctly (#99).
+def test_a_failed_tc_open_threads_the_unknown_username_into_the_locked_stub(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A failed ``.tc`` load's empty locked stub carries the **unknown** identity, matching the branch a
+    successful ``.tc`` import would have used (#109).
 
     **Test steps:**
 
-    * configure the identity as ``alice`` and open a folder where neither companion exists
-    * verify the new, dirty document carries that username
+    * configure current ``alice`` / unknown ``strangers`` and open a ``.tc`` whose read fails
+    * verify the locked stub's document carries the unknown username
     """
-    configure_identity(mocker, "alice")
+    configure_identity(mocker, current="alice", unknown="strangers")
+    mocker.patch.object(Path, "read_text", side_effect=OSError("unreadable"))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH.with_suffix(".tc"))
+
+    assert widget.model.locked is True
+    assert widget.model.document.username == "strangers"
+
+
+def test_a_new_document_threads_the_current_username(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A folder with no ``info.rehu``/``info.tc`` starts its new document under the **current** identity,
+    so its eventual per-user writes are filed correctly (#109).
+
+    **Test steps:**
+
+    * configure current ``alice`` / unknown ``strangers`` and open a folder where neither companion exists
+    * verify the new, dirty document carries the current username
+    """
+    configure_identity(mocker, current="alice", unknown="strangers")
     mocker.patch.object(Path, "exists", return_value=False)
     dock = DocumentsDock()
     qtbot.addWidget(dock)
