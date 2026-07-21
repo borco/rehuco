@@ -36,6 +36,22 @@ def test_starting_value(qtbot: QtBot, value: int, minimum: int | None, maximum: 
     assert spin_box.lineEdit().text() == str(expected)
 
 
+def test_starting_value_of_none_is_the_empty_state(qtbot: QtBot) -> None:
+    """An explicit ``value=None`` starts the widget in the empty state -- blank text, not the string
+    ``"None"``.
+
+    **Test steps:**
+
+    * build the widget with ``value=None``
+    * verify its value is ``None`` and the line edit is blank
+    """
+    spin_box = UnboundedSpinBox(value=None)
+    qtbot.addWidget(spin_box)
+
+    assert spin_box.value is None
+    assert spin_box.lineEdit().text() == ""
+
+
 def test_value_changed_carries_the_exact_python_int_uncoerced(qtbot: QtBot) -> None:
     """``value_changed`` emits the exact Python ``int``, not a C++-``int``-coerced copy.
 
@@ -156,6 +172,32 @@ def test_step_by(  # pylint: disable=too-many-arguments,too-many-positional-argu
     assert spin_box.value == expected
 
 
+@mark.parametrize(
+    ("minimum", "steps", "expected"),
+    [
+        param(None, 1, 1, id="steps-from-zero-when-unbounded"),
+        param(5, 1, 6, id="steps-from-minimum-when-bounded-below"),
+    ],
+)
+def test_step_by_from_the_empty_state(qtbot: QtBot, minimum: int | None, steps: int, expected: int) -> None:
+    """``stepBy`` from the empty state (``None``) steps from zero when unbounded, or from ``minimum``
+    when bounded below -- there is no stored number to step from, so an effective baseline stands in
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build a widget with ``value=None`` and the given ``minimum``
+    * call ``stepBy(steps)``
+    * verify the resulting value matches ``expected``
+    """
+    spin_box = UnboundedSpinBox(value=None, minimum=minimum)
+    qtbot.addWidget(spin_box)
+
+    spin_box.stepBy(steps)
+
+    assert spin_box.value == expected
+
+
 # endregion
 
 
@@ -193,6 +235,21 @@ def test_step_enabled_reflects_position_within_range(
     qtbot.addWidget(spin_box)
 
     assert spin_box.stepEnabled() == expected
+
+
+def test_step_enabled_treats_the_empty_state_as_its_effective_baseline(qtbot: QtBot) -> None:
+    """``stepEnabled`` at the empty state (``None``) reflects the same effective baseline
+    (``minimum``, or zero when unbounded) :meth:`stepBy` steps from.
+
+    **Test steps:**
+
+    * build a widget with ``value=None`` at its minimum
+    * verify stepping down is disabled, same as sitting at that minimum with a concrete value
+    """
+    spin_box = UnboundedSpinBox(value=None, minimum=0)
+    qtbot.addWidget(spin_box)
+
+    assert spin_box.stepEnabled() == UnboundedSpinBox.StepEnabledFlag.StepUpEnabled
 
 
 # endregion
@@ -261,6 +318,22 @@ def test_fixup(  # pylint: disable=too-many-arguments,too-many-positional-argume
     assert spin_box.fixup(text) == expected
 
 
+def test_fixup_of_blank_text_is_blank_not_the_current_value(qtbot: QtBot) -> None:
+    """``fixup`` of blank text returns blank -- the empty state (``None``), not a fallback to
+    whatever ``value`` currently holds ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build a widget holding a concrete value
+    * call ``fixup`` with blank text
+    * verify the returned text is blank
+    """
+    spin_box = UnboundedSpinBox(value=7)
+    qtbot.addWidget(spin_box)
+
+    assert spin_box.fixup("   ") == ""
+
+
 # endregion
 
 
@@ -295,6 +368,24 @@ def test_typed_text_write_through(  # pylint: disable=too-many-arguments,too-man
     assert spin_box.value == expected
 
 
+def test_typed_blank_text_writes_the_empty_state(qtbot: QtBot) -> None:
+    """Emptying the line edit writes ``None`` (the empty state) through, distinct from mid-typing text
+    like a bare ``-`` ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build a widget holding a concrete value
+    * clear the line edit's text
+    * verify ``value`` is ``None``
+    """
+    spin_box = UnboundedSpinBox(value=7)
+    qtbot.addWidget(spin_box)
+
+    spin_box.lineEdit().clear()
+
+    assert spin_box.value is None
+
+
 def test_value_change_re_renders_the_line_edit(qtbot: QtBot) -> None:
     """Setting ``value`` directly re-renders the line edit's text to match.
 
@@ -310,6 +401,24 @@ def test_value_change_re_renders_the_line_edit(qtbot: QtBot) -> None:
     spin_box.value = 123
 
     assert spin_box.lineEdit().text() == "123"
+
+
+def test_value_change_to_none_blanks_the_line_edit(qtbot: QtBot) -> None:
+    """Setting ``value`` to ``None`` directly re-renders the line edit as blank, not the string
+    ``"None"``.
+
+    **Test steps:**
+
+    * build a widget holding a concrete value
+    * set ``value`` to ``None``
+    * verify the line edit's text is blank
+    """
+    spin_box = UnboundedSpinBox(value=123)
+    qtbot.addWidget(spin_box)
+
+    spin_box.value = None
+
+    assert spin_box.lineEdit().text() == ""
 
 
 # endregion

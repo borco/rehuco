@@ -58,7 +58,9 @@ class NameSuggestionModel(QObject):
 
         Raw strings only -- interpolated from ``title`` / ``publisher`` / joined ``authors`` / the
         released ``year`` -- left unsanitized; the `PathField` editor transliterates and
-        filesystem-sanitizes them before display, and drops any that reduce to nothing.
+        filesystem-sanitizes them before display, and drops any that reduce to nothing. ``released``
+        may be ``None`` (absent, [[field-schema#deferred-items]]) -- the year is empty then, same as
+        for a too-short ``released`` string.
 
         :returns: one candidate string per pattern, in pattern order.
         """
@@ -66,6 +68,6 @@ class NameSuggestionModel(QObject):
             "title": self.__model.title,
             "publisher": self.__model.publisher,
             "authors": ", ".join(author_name(entry) for entry in self.__model.authors),
-            "year": self.__model.released[:4],
+            "year": (self.__model.released or "")[:4],
         }
         return [pattern.format(**values) for pattern in NAME_SUGGESTION_PATTERNS]

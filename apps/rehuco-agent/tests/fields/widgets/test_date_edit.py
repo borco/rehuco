@@ -60,18 +60,19 @@ def test_parse(text: str, expected: str | None) -> None:
 
 
 # region widget tests
-def test_date_edit_starts_empty_by_default(qtbot: QtBot) -> None:
-    """A freshly built ``DateEdit`` shows an empty line edit.
+def test_date_edit_starts_none_by_default(qtbot: QtBot) -> None:
+    """A freshly built ``DateEdit`` starts unreleased/unknown (``None``), with an empty line edit
+    ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
     * build a default ``DateEdit``
-    * verify its value and internal line edit are both empty
+    * verify its value is ``None`` and the internal line edit is empty
     """
     edit = DateEdit()
     qtbot.addWidget(edit)
 
-    assert edit.value == ""
+    assert edit.value is None
     assert internal_line_edit(edit).text() == ""
 
 
@@ -110,6 +111,25 @@ def test_date_edit_line_edit_does_not_write_through_unparseable_text(qtbot: QtBo
     assert edit.value == "2025-03"
 
 
+def test_date_edit_clearing_the_line_edit_resets_value_to_none(qtbot: QtBot) -> None:
+    """Emptying the line edit writes ``None`` (unreleased/unknown) through, not a stored ``""``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build the widget with a valid starting value
+    * clear the internal line edit's text
+    * verify ``value`` is ``None``
+    """
+    edit = DateEdit()
+    qtbot.addWidget(edit)
+    edit.value = "2025-03"
+
+    internal_line_edit(edit).clear()
+
+    assert edit.value is None
+
+
 @mark.parametrize(
     "set_value",
     [
@@ -134,6 +154,24 @@ def test_date_edit_setting_the_value_any_way_updates_the_line_edit(
     set_value(edit)
 
     assert internal_line_edit(edit).text() == "2025-03-08"
+
+
+def test_date_edit_setting_the_value_to_none_blanks_the_line_edit(qtbot: QtBot) -> None:
+    """Setting ``value`` to ``None`` directly (as a model reseed would) blanks the line edit.
+
+    **Test steps:**
+
+    * build the widget with a valid starting value
+    * set ``value`` to ``None``
+    * verify the line edit is blank
+    """
+    edit = DateEdit()
+    qtbot.addWidget(edit)
+    edit.value = "2025-03-08"
+
+    edit.value = None
+
+    assert internal_line_edit(edit).text() == ""
 
 
 def test_date_edit_keeps_typed_human_text_once_it_matches_value(qtbot: QtBot) -> None:

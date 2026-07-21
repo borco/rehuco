@@ -10,7 +10,7 @@ from typing import Final
 from borco_pyside.core import SimpleProperty
 from borco_pyside.theming import GlyphActionIconThemeHandler
 from dateutil import parser as dateutil_parser
-from PySide6.QtCore import QDate, QPoint, QSignalBlocker, Qt, Signal
+from PySide6.QtCore import QDate, QPoint, QSignalBlocker, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QCalendarWidget, QHBoxLayout, QLineEdit, QWidget
 
@@ -30,6 +30,12 @@ class DateEdit(QWidget):
     picking a date writes the full ``YYYY-MM-DD`` straight to ``value``, without going through
     :meth:`parse` at all.
 
+    ``value`` may also be ``None`` -- unreleased/unknown, distinct from a genuine stored ``""``
+    ([[field-schema#deferred-items]]): emptying the line edit writes ``None`` through. :meth:`parse`
+    itself keeps its own three-way contract unchanged (``""`` for blank text, ``None`` for
+    unparseable, the canonical string otherwise) -- :meth:`__on_text_changed` is what maps a blank
+    parse to the widget's ``None``, so "cleared" and "still typing" stay distinguishable.
+
     :param parent: optional Qt parent.
     """
 
@@ -38,10 +44,9 @@ class DateEdit(QWidget):
     ``-``) used consistently between parts. Handled directly, never handed to :mod:`dateutil`, which
     silently drops the month from a dot-separated ``YYYY.MM`` (confirmed empirically, #24)."""
 
-    value_changed = Signal(str)
-    value = SimpleProperty("")
-    """The current canonical ``YYYY``/``YYYY-MM``/``YYYY-MM-DD`` string (or ``""`` for unknown);
-    ``set_value`` is the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
+    value = SimpleProperty[str | None](None)
+    """The current canonical ``YYYY``/``YYYY-MM``/``YYYY-MM-DD`` string, or ``None`` when unreleased/
+    unknown; ``set_value`` is the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -61,7 +66,7 @@ class DateEdit(QWidget):
         layout.addWidget(self.__line_edit)
 
         self.__line_edit.textChanged.connect(self.__on_text_changed)
-        self.value_changed.connect(self.__render)
+        self.value_changed.connect(self.__render)  # type: ignore[attr-defined]
 
     @classmethod
     def parse(cls, text: str) -> str | None:
@@ -139,13 +144,15 @@ class DateEdit(QWidget):
         return f"{first.year:04d}"
 
     def __on_text_changed(self, text: str) -> None:
-        """Write a keystroke through to :attr:`value` only once it parses to a valid partial date.
+        """Write a keystroke through to :attr:`value` only once it parses to a valid partial date;
+        blank text writes ``None`` (unreleased/unknown), distinct from unparseable text, which is
+        left unwritten so mid-keystroke typing is never clobbered.
 
         :param text: the line edit's current text.
         """
         parsed = self.parse(text)
         if parsed is not None:
-            self.value = parsed
+            self.value = parsed if parsed else None
 
     def __open_calendar(self) -> None:
         """Open the popup calendar under the line edit; picking a date writes the full date to
@@ -197,16 +204,18 @@ class DateEdit(QWidget):
         year, month, day = (int(part) for part in parsed.split("-"))
         return QDate(year, month, day)
 
-    def __render(self, value: str) -> None:
+    def __render(self, value: str | None) -> None:
         """Update the line edit from a :attr:`value` change without re-emitting ``textChanged`` (echo guard).
 
         Compares the line edit's own *parsed* text against the incoming value (mirrors
         :class:`~rehuco_agent.fields.text_list_field.TextListField`'s guard) -- a keystroke that
         round-trips through :attr:`value` does not bounce back and reset the cursor, and typed text
         that hasn't (yet) reached a parseable state is left alone rather than overwritten mid-edit.
+        ``None`` renders the same blank text as a stored ``""`` (:meth:`parse`'s own blank-text result).
 
-        :param value: the new value.
+        :param value: the new value, or ``None`` when unreleased/unknown.
         """
-        if self.parse(self.__line_edit.text()) != value:
+        canonical = value if value is not None else ""
+        if self.parse(self.__line_edit.text()) != canonical:
             with QSignalBlocker(self.__line_edit):
-                self.__line_edit.setText(value)
+                self.__line_edit.setText(canonical)

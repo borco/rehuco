@@ -9,12 +9,13 @@ from fields.field_testers import IntFieldTester as IntField
 
 
 def test_int_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The viewer label shows the integer and re-renders when the model changes.
+    """The viewer label shows the integer and re-renders when the model changes; unset (``None``)
+    renders empty, not the string ``"None"`` ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
-    * build an ``images_count`` viewer over a model seeded ``0``
-    * verify the label starts at ``"0"``
+    * build an ``images_count`` viewer over a model seeded ``None`` (not yet scanned)
+    * verify the label starts empty
     * change ``model.images_count`` and verify the label updates live
     """
     field = IntField("images_count")
@@ -22,10 +23,46 @@ def test_int_field_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDo
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
-    assert viewer.text() == "0"
+    assert viewer.text() == ""
 
     model.images_count = 42
     assert viewer.text() == "42"
+
+
+def test_int_field_viewer_renders_a_genuine_zero_honestly(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A genuine ``0`` renders as ``"0"``, distinct from the unset (``None``) empty render
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * seed the model with a genuine zero, then build the ``images_count`` viewer
+    * verify the label shows ``"0"``, not empty
+    """
+    model.images_count = 0
+    field = IntField("images_count")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, QLabel)
+    qtbot.addWidget(viewer)
+
+    assert viewer.text() == "0"
+
+
+def test_int_field_editor_seeds_blank_when_unset(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The editor seeds blank (``None``) from a model not yet scanned, not a coerced ``0``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build the ``images_count`` editor over the default (``None``) model
+    * verify the spin box's value and displayed text are both empty
+    """
+    field = IntField("images_count")
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
+
+    assert editor.value is None
+    assert editor.lineEdit().text() == ""
 
 
 def test_int_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:

@@ -364,23 +364,26 @@ to be filled later by scanning ([[field-schema#deferred-items]]) rather than by 
 
 [[[field-schema#duration-format]]]
 
-Carried over verbatim from tc4 (it already matches the desired behavior). For a value `d` in
-seconds:
+Carried over verbatim from tc4 (it already matches the desired behavior), with one revision
+(#101): `d` itself is `int | None` now, `None` meaning unmeasured/absent rather than a fabricated
+`0` ([[field-schema#deferred-items]]). For a value `d` in seconds:
 
 ```text
+if d is None:    render ""           # unmeasured -- not "0s"
+if d == 0:       render "0s"         # a genuine zero renders honestly
 h = d // 3600 ;  m = (d % 3600) // 60 ;  s = d % 60
 parts = []
 if h:            parts += "{h}h"
 if m:            parts += "{m}m"
 if s and h == 0: parts += "{s}s"     # seconds are noise once hours are present
-render " ".join(parts)               # d == 0 → "" (not "0s")
+render " ".join(parts)
 ```
 
-- `2h 15m`, `2h` (minutes zero), `45m`, `45m 30s`, `30s`.
+- `2h 15m`, `2h` (minutes zero), `45m`, `45m 30s`, `30s`, `0s`.
 - Hours are **never** rolled into days — large values read as `123h 45m`, not a time of day.
 
-Size renders base-1000 (macOS-Finder style) with two decimals, e.g. `1.50 GB`; `0` renders
-empty.
+Size renders base-1000 (macOS-Finder style) with two decimals, e.g. `1.50 GB`; `None`
+(unmeasured/absent) renders empty, a genuine `0` renders honestly (#101).
 
 ## §17.4 Field types
 
@@ -426,7 +429,7 @@ Field order, in the three groups the layout separates:
 [[[field-schema#deferred-items]]]
 
 - [x] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
-- [ ] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
+- [x] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
 
 - **Common/plugin boundary** — the [[field-schema#field-mapping]] tiers (common core / resource fields / per-type) are a
   first cut; finalize when the field toolkit (A2) and plugin blocks ([[plugins#overview]]) land. The generic
@@ -441,13 +444,13 @@ Field order, in the three groups the layout separates:
   Milestone B's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
   credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
   when it lands.
-- **Optional scalars read as `None` — core done (#100), display pending (#101)** — absent is not `0`: the measured/claimed
+- **Optional scalars read as `None` — done (#100 core, #101 display)** — absent is not `0`: the measured/claimed
   numerics (`original_size` / `current_size`, the three durations, `images_count`), `rating` (it may be negative, so
   `0` is a real rating and unrated must be `None`), and `released` read as `None` when absent; strings, lists, and the
   boolean flags keep their coercion defaults. Absent-on-disk ↔ `None`-in-code: JSON `null` is accepted on read but
   never written — setting `None` omits the key (the fixtures' `images_count: null` normalizes away on save). Display
-  follows: `None` renders empty, so a genuine `0` may render honestly (revises [[field-schema#duration-format]]'s
-  "`0` renders empty" once implemented).
+  follows: `None` renders empty, so a genuine `0` renders honestly (revises [[field-schema#duration-format]]'s old
+  "`0` renders empty" rule).
 - **Membership by identity** — `collections[].title` links to a series by name today; move to
   resource identity ([[data-model#stable-identity]]) once UUIDs are minted.
 - **Per-user storage — resolved** ([[field-schema#per-user-shared]]): per-user keys nest under the plugin block's

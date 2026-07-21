@@ -83,7 +83,8 @@ def test_parse(text: str, expected: int | None) -> None:
 @mark.parametrize(
     ("seconds", "expected"),
     [
-        param(0, "", id="zero-is-empty-not-0s"),
+        param(None, "", id="none-is-empty-unmeasured"),
+        param(0, "0s", id="zero-renders-honestly-not-empty"),
         param(30, "30s", id="seconds-only-under-a-minute"),
         param(45 * 60 + 30, "45m 30s", id="minutes-and-seconds-under-an-hour"),
         param(45 * 60, "45m", id="minutes-only-when-seconds-are-zero"),
@@ -93,7 +94,7 @@ def test_parse(text: str, expected: int | None) -> None:
         param(123 * 3600 + 45 * 60, "123h 45m", id="large-values-never-roll-into-days"),
     ],
 )
-def test_format(seconds: int, expected: str) -> None:
+def test_format(seconds: int | None, expected: str) -> None:
     """``format`` renders whole seconds per [[field-schema#duration-format]].
 
     **Test steps:**
@@ -108,18 +109,19 @@ def test_format(seconds: int, expected: str) -> None:
 
 
 # region widget tests
-def test_duration_edit_starts_at_zero_by_default(qtbot: QtBot) -> None:
-    """A freshly built ``DurationEdit`` shows an empty line edit and a zero spin box.
+def test_duration_edit_starts_unmeasured_by_default(qtbot: QtBot) -> None:
+    """A freshly built ``DurationEdit`` starts unmeasured (``None``): an empty line edit and a zero
+    spin box, the spin box's own empty-state stand-in ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
     * build a default ``DurationEdit``
-    * verify its value is zero and both internal widgets match
+    * verify its value is ``None`` and both internal widgets match
     """
     edit = DurationEdit()
     qtbot.addWidget(edit)
 
-    assert edit.value == 0
+    assert edit.value is None
     assert internal_line_edit(edit).text() == ""
     assert internal_spin_box(edit).value() == 0
 
@@ -189,8 +191,9 @@ def test_duration_edit_spin_box_shows_the_bare_number_once_nonzero(qtbot: QtBot)
     assert internal_spin_box(edit).text() == "3661"
 
 
-def test_duration_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: QtBot) -> None:
-    """Emptying the line edit (e.g. via its clear action) resets ``value`` and the spin box to zero.
+def test_duration_edit_clearing_the_line_edit_resets_value_to_none(qtbot: QtBot) -> None:
+    """Emptying the line edit (e.g. via its clear action) resets ``value`` to ``None`` (unmeasured),
+    with the spin box showing its empty-state stand-in, zero.
 
     A blank line edit is an explicit reset, not "incomplete typing" -- unlike genuinely unparseable
     non-empty text, which leaves ``value`` untouched (confirmed empirically, #24: without this, the
@@ -200,7 +203,7 @@ def test_duration_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: Q
 
     * build the widget with a nonzero value
     * clear the internal line edit's text
-    * verify ``value`` and the spin box both reset to zero
+    * verify ``value`` resets to ``None`` and the spin box shows zero
     """
     edit = DurationEdit()
     qtbot.addWidget(edit)
@@ -208,7 +211,7 @@ def test_duration_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: Q
 
     internal_line_edit(edit).clear()
 
-    assert edit.value == 0
+    assert edit.value is None
     assert internal_spin_box(edit).value() == 0
 
 
@@ -228,6 +231,25 @@ def test_duration_edit_typing_a_valid_duration_updates_value_and_spin_box(qtbot:
 
     assert edit.value == 5400
     assert internal_spin_box(edit).value() == 5400
+
+
+def test_duration_edit_typing_a_bare_zero_writes_a_genuine_zero_not_none(qtbot: QtBot) -> None:
+    """Typing ``"0"`` writes a genuine ``0``, distinct from clearing the line edit (which writes
+    ``None``) -- both are non-blank-vs-blank on the same text-changed path
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build the widget starting unmeasured
+    * type ``"0"`` into the line edit
+    * verify ``value`` is ``0``, not ``None``
+    """
+    edit = DurationEdit()
+    qtbot.addWidget(edit)
+
+    internal_line_edit(edit).setText("0")
+
+    assert edit.value == 0
 
 
 def test_duration_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBot) -> None:
@@ -358,14 +380,16 @@ def test_duration_edit_line_edit_keeps_typed_text_once_it_matches_value(qtbot: Q
 @mark.parametrize(
     ("value", "expected_visible"),
     [
-        param(0, False, id="hidden-at-zero"),
+        param(None, False, id="hidden-when-unmeasured"),
+        param(0, True, id="visible-for-a-genuine-zero"),
         param(60, True, id="visible-once-nonzero"),
     ],
 )
 def test_duration_edit_spin_box_clear_action_visibility_matches_value(
-    qtbot: QtBot, value: int, expected_visible: bool
+    qtbot: QtBot, value: int | None, expected_visible: bool
 ) -> None:
-    """The spin box's clear action is visible exactly when ``value`` is nonzero.
+    """The spin box's clear action is visible exactly when ``value`` holds something to clear -- any
+    value but ``None``, since a genuine ``0`` is now clearable too ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
@@ -380,17 +404,18 @@ def test_duration_edit_spin_box_clear_action_visibility_matches_value(
     assert spin_box_clear_action(edit).isVisible() is expected_visible
 
 
-def test_duration_edit_spin_box_clear_action_resets_the_value_not_just_the_text(qtbot: QtBot) -> None:
-    """Triggering the spin box's clear action resets ``value`` (and the spin box's own ``value()``)
-    to zero -- not just the displayed text, which would otherwise snap back on a focus change
-    (confirmed empirically: a plain text-clear leaves ``QSpinBox.value()`` untouched, and
-    ``interpretText()`` -- what a focus-out triggers -- restores the old number).
+def test_duration_edit_spin_box_clear_action_resets_the_value_to_none(qtbot: QtBot) -> None:
+    """Triggering the spin box's clear action resets ``value`` to ``None`` (unmeasured), with the spin
+    box's own ``value()`` falling back to its empty-state stand-in, zero -- not just the displayed
+    text, which would otherwise snap back on a focus change (confirmed empirically: a plain text-clear
+    leaves ``QSpinBox.value()`` untouched, and ``interpretText()`` -- what a focus-out triggers --
+    restores the old number).
 
     **Test steps:**
 
     * build the widget with a nonzero value
     * trigger the spin box's clear action
-    * verify ``value`` and the spin box's own ``value()`` both reflect zero, and simulating a
+    * verify ``value`` is ``None`` and the spin box's own ``value()`` reflects zero, and simulating a
       focus-out doesn't resurrect the old number
     """
     edit = DurationEdit()
@@ -400,7 +425,7 @@ def test_duration_edit_spin_box_clear_action_resets_the_value_not_just_the_text(
 
     spin_box_clear_action(edit).trigger()
 
-    assert edit.value == 0
+    assert edit.value is None
     assert spin_box.value() == 0
 
     spin_box.interpretText()
