@@ -31,7 +31,7 @@ from rehuco_agent.documents.document_widget import (
     DocumentWidget,
 )
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsTab
+from rehuco_agent.fields import FieldsForm, FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
@@ -768,6 +768,29 @@ def test_restore_state_rejects_a_pre_inspection_dock_blob_and_keeps_them_hidden(
     payload["version"] = 3
 
     assert widget.restore_state(cbor2.dumps(payload)) is False
+    assert save_preview_dock(widget).toggleViewAction().isChecked() is False
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_inspection_docks_open_their_own_area_when_there_are_no_viewer_docks(
+    qtbot: QtBot, mocker: MockerFixture, model: RehuDocumentModel
+) -> None:
+    """With no viewer docks to stack into, the inspection docks fall back to opening a fresh right-side
+    area rather than centering on a viewer tab, and are still built and hidden (#111).
+
+    The document form always emits viewer tabs in practice, so this exercises the defensive fallback by
+    forcing an empty viewer set.
+
+    **Test steps:**
+
+    * build a widget whose viewer form is empty (``make_viewer`` patched to yield no tabs)
+    * verify no viewer docks exist, yet both inspection docks were still built and start hidden
+    """
+    mocker.patch.object(FieldsForm, "make_viewer", return_value={})
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    assert widget._DocumentWidget__viewer_docks == {}  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert save_preview_dock(widget).toggleViewAction().isChecked() is False
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
