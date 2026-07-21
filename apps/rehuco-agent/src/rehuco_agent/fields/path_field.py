@@ -79,9 +79,9 @@ class PathField(Field[str]):
             editor.suggestion_selected.connect(self.__on_suggestion_selected)
 
         self.__refresh(editor)
-        binding.changed.connect(lambda _value: self.__refresh(editor))
+        self.bind_external(binding.changed, lambda _value: self.__refresh(editor))
         if self.__suggestions_changed is not None:
-            self.__suggestions_changed.connect(lambda *_: self.__refresh(editor))
+            self.bind_external(self.__suggestions_changed, lambda *_: self.__refresh(editor))
 
         # expand/collapse toggle for the middle column, two-way bound to the editor's expand state
         toggle = ExpandToggleButton()
@@ -100,7 +100,7 @@ class PathField(Field[str]):
         label = ElidedLabel()
         label.setOpenExternalLinks(True)
         self.__render_link(label, binding.value)
-        binding.changed.connect(lambda value: self.__render_link(label, value))
+        self.bind_external(binding.changed, lambda value: self.__render_link(label, value))
         return label
 
     def __refresh(self, editor: PathEditor) -> None:

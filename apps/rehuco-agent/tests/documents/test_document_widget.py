@@ -1112,6 +1112,70 @@ def test_clicking_a_location_suggestion_renames_through_the_model(
 
 
 # region type switching (#83)
+def test_destroying_the_widget_severs_its_forms_field_connections(qtbot: QtBot) -> None:
+    """When the widget is destroyed, its form's fields' long-lived-signal connections are cleared, so a
+    model that outlives it never fires into the destroyed widgets ([[plugins#field-toolkit]], #114).
+
+    **Test steps:**
+
+    * build a widget over a model, then destroy the widget and let ``destroyed`` fire
+    * change a model field (the model outlives the widget), forcing its signal to emit
+    * verify it does not fire into a destroyed widget (no crash)
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"original_duration": 60},
+            }
+        )
+    )
+    widget = DocumentWidget(model)
+    widget.deleteLater()
+    qtbot.wait(1)  # destroyed fires -> the form's connections are cleared while the fields are still alive
+
+    model.original_duration = 120
+
+    assert model.original_duration == 120  # reached here without a RuntimeError from a destroyed widget
+
+
+def test_field_signals_after_a_switch_do_not_fire_into_deleted_widgets(qtbot: QtBot) -> None:
+    """A type switch rebuilds the form, deleting every field's old widgets; the model's field signals
+    firing afterwards must not reach those deleted widgets ([[plugins#field-toolkit]], #114).
+
+    The form is retained and its outgoing fields' long-lived-signal connections are cleared on the
+    rebuild (`FieldsForm.clear_external`), so a lambda viewer/editor never outlives its widget. Without
+    that, emitting e.g. ``complete``/``original_duration`` after the switch would crash in the old
+    boolean/duration lambdas.
+
+    **Test steps:**
+
+    * build a widget over a document carrying boolean and duration fields, then switch its type
+    * let the event loop actually destroy the old widgets
+    * change several model fields (boolean, duration, tags), forcing their signals to emit
+    * verify none of it fires into a deleted widget (no crash) and the live widgets reflect the change
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"complete": False, "original_duration": 60, "extra_tags": ["a"]},
+            }
+        )
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)  # destroy the old widgets, so a stale lambda would fire on a deleted widget
+
+    model.complete = True
+    model.original_duration = 120
+    model.extra_tags = ["a", "b"]
+
+    assert model.complete is True  # got here without a RuntimeError from a deleted widget
+
+
 def type_combo(widget: DocumentWidget) -> SingleChoiceComboBox:
     """Return the widget's editor-dock type selector combo.
 

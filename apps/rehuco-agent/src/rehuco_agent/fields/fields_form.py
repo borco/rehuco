@@ -43,6 +43,17 @@ class FieldsForm:
     def __init__(self, fields: Sequence[Field[Any]]) -> None:
         self.__fields: Final = tuple(fields)
 
+    def clear_external(self) -> None:
+        """Disconnect every field's long-lived-signal connections (:meth:`Field.clear_external`).
+
+        The owner (`DocumentWidget`) calls this before rebuilding the form and when the hosting widget is
+        destroyed, so each field's ``binding.changed`` (and settings) connections are severed while the
+        fields are still alive -- the deterministic teardown the lambda connections need
+        ([[plugins#field-toolkit]]).
+        """
+        for field in self.__fields:
+            field.clear_external()
+
     def make_viewer(self, model: FieldModel) -> dict[FieldsTab, QWidget]:
         """Build the read-only viewer grids, one per tab, bound to the model.
 

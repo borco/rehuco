@@ -33,14 +33,14 @@ class TextListField(Field[list[str]]):
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         label = QLabel(self.__display(binding.value))
         label.setWordWrap(True)
-        binding.changed.connect(lambda value: label.setText(self.__display(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(self.__display(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         line_edit = QLineEdit(self.__join(binding.value))
         line_edit.textChanged.connect(lambda text: binding.set_value(self.__split(text)))
-        binding.changed.connect(lambda value: self.__echo(line_edit, value))
+        self.bind_external(binding.changed, lambda value: self.__echo(line_edit, value))
         return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit)
 
     def __display(self, items: list[str]) -> str:

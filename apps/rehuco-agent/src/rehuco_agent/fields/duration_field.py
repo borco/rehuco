@@ -23,7 +23,7 @@ class DurationField(Field[int | None]):
     @override
     def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
         label = QLabel(DurationEdit.format(binding.value))
-        binding.changed.connect(lambda value: label.setText(DurationEdit.format(value)))
+        self.bind_external(binding.changed, lambda value: label.setText(DurationEdit.format(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override

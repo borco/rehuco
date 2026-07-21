@@ -29,7 +29,7 @@ class UrlField(TextField):
         label = ElidedLabel()
         label.setOpenExternalLinks(True)
         self.__render(label, binding.value)
-        binding.changed.connect(lambda value: self.__render(label, value))
+        self.bind_external(binding.changed, lambda value: self.__render(label, value))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @staticmethod

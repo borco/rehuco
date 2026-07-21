@@ -23,7 +23,7 @@ class DateField(Field[str | None]):
     @override
     def make_viewer(self, binding: FieldBinding[str | None]) -> FieldViewerWidgets:
         label = QLabel(binding.value or "")
-        binding.changed.connect(lambda value: label.setText(value or ""))
+        self.bind_external(binding.changed, lambda value: label.setText(value or ""))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
     @override
