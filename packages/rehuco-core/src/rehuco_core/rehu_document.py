@@ -361,7 +361,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           **dropped** -- the one place ``__data`` is not written wholesale. The drop is a write-time
           filter, so the dropped block stays resurrectable in memory until close, and a save to a *new*
           path (save-as) applies the same invariant: the session, and its claims, continue unchanged
-          across a save.
+          across a save. Each block the invariant drops is recorded to the activity log
+          (:meth:`__log_discarded_blocks`, #86) once the write succeeds, so the *fact* of a claimed
+          block's discard stays traceable even though its values are gone ([[sync#overview]]).
 
         **Key order is imposed here, and only here** (:meth:`__ordered_for_file`). It cannot be
         maintained in ``__data`` -- every setter appends -- and it does not need to be: JSON objects are
@@ -388,6 +390,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             raise ValueError("No path given and document was not loaded from a file.")
         atomic_write_text(target, self.serialize())
         self.__path = target
+        self.__log_discarded_blocks(target)
         # a file now exists, at whatever version was just written -- assigned only after the write, so a
         # failed save leaves the document still describing the file that is actually there
         self.__on_disk_format_version = self.format_version
@@ -449,13 +452,61 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             # the active block leads the plugin blocks, right after the core it belongs to -- its own
             # format_version first, then the rest of its keys ordered ([[plugins#plugin-blocks]])
             ordered[active_key] = self.__ordered_block(self.__data[active_key], (FORMAT_VERSION_KEY,))
+        dropped = set(self.__dropped_block_keys())
         for key in sorted(key for key in self.__data if key not in RESERVED_KEYS and key != active_key):
-            if key in self.__claimed_keys:
+            if key in dropped:
                 # claimed-then-abandoned: made active this session and left, so the user asserted the
-                # file is no longer this type -- dropped on save ([[plugins#plugin-blocks]]).
+                # file is no longer this type -- dropped on save (:meth:`__dropped_block_keys`,
+                # [[plugins#plugin-blocks]]). One predicate for both the drop here and the discard
+                # :meth:`save` records (#86), so the logged fact can never diverge from what was dropped.
                 continue
             ordered[key] = self.__data[key]
         return ordered
+
+    def __dropped_block_keys(self) -> list[str]:
+        """The block keys the persistence invariant **drops** on the next save ([[plugins#plugin-blocks]]).
+
+        A block present in :attr:`data` that is inactive and **claimed** this session -- made active and
+        then abandoned, so by claiming and leaving it the user asserted the file is no longer that type.
+        This is exactly the set :meth:`__ordered_for_file` filters out at serialization time *and* the set
+        :meth:`save` records to the activity log (#86); it is one predicate precisely so the recorded
+        discard can never name a block a save keeps, nor miss one it drops -- a wrong trigger here would be
+        a silent audit failure.
+
+        The active block and every never-claimed foreign block are absent (both are written), and a
+        claimed key with no block on :attr:`data` (a type switched to but never given a block) is absent
+        too -- nothing was dropped, so nothing is recorded.
+
+        :returns: the dropped keys, sorted for a stable order.
+        """
+        active_key = self.active_block_key
+        return sorted(
+            key for key in self.__data if key not in RESERVED_KEYS and key != active_key and key in self.__claimed_keys
+        )
+
+    def __log_discarded_blocks(self, target: Path) -> None:
+        """Record each claimed-then-abandoned block this save just dropped (#86, [[plugins#plugin-blocks]]).
+
+        The safety net for the claim rule: because making a block active **arms its deletion on abandon**
+        -- and a user may switch to a type merely to preview it -- a save that drops a previously-claimed
+        block records the discard so the *fact* of it stays traceable even though the values are gone by
+        design ([[sync#overview]]). Only the fact -- block key and the document it left -- not the values:
+        this is an audit trail, not an undo. The log record's own timestamp is the "date X" the entry
+        carries.
+
+        Fires only from :meth:`save`, and only after the write has succeeded -- never from
+        :meth:`serialize`. A read-only preview (#111) renders the same invariant but discards nothing, and
+        a failed write dropped nothing on disk, so logging in either case would cry a discard that never
+        happened -- exactly the wrong trigger :meth:`__dropped_block_keys` exists to avoid.
+
+        The sink is the process logging stack for now; the in-app log dock (A7) and the activity log proper
+        ([[sync#overview]]) re-point it at the real sink when they exist -- this method is what gets
+        re-pointed (#86).
+
+        :param target: the file just written -- the document the block was dropped from.
+        """
+        for key in self.__dropped_block_keys():
+            LOG.info("%s block discarded on save from %s", key, target)
 
     @staticmethod
     def __ordered_block(block: Any, leading: Sequence[str]) -> Any:
