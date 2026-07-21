@@ -6,6 +6,7 @@ from rehuco_core import (
     CORE_PLUGIN,
     DEFAULT_PLUGIN_REGISTRY,
     REFERENCE_IMAGES_PLUGIN,
+    TUTORIAL_PLUGIN,
     PluginRegistry,
     PluginSpec,
 )
@@ -95,6 +96,75 @@ def test_main_key_normalizes_an_alias_and_passes_an_unclaimed_name_through() -> 
     assert registry.main_key("refimages") == "reference_images"
     assert registry.main_key("reference_images") == "reference_images"
     assert registry.main_key("audiopack") == "audiopack"
+
+
+def test_main_keys_lists_each_plugins_main_spelling_in_declaration_order() -> None:
+    """``main_keys`` reports every plugin's main key, aliases omitted, in declaration order
+    ([[plugins#plugin-blocks]]).
+
+    The identity half of a type selector's offer list: aliases are left out because they normalize to
+    the main key on write, so a selector offers only the spelling a switch would store; declaration
+    order is kept so the offer list is stable and predictable.
+
+    **Test steps:**
+
+    * build a registry over two plugins, one with aliases
+    * verify only the main keys are reported, in the order the plugins were declared
+    """
+    registry = PluginRegistry([TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN])
+
+    assert registry.main_keys == ("tutorial", "reference_images")
+
+
+def test_main_keys_is_empty_for_an_empty_registry() -> None:
+    """An empty registry offers no main keys ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * verify a registry declaring no plugins reports an empty ``main_keys``
+    """
+    assert not PluginRegistry().main_keys
+
+
+def test_a_plugin_declares_optional_badge_colors_defaulting_to_none() -> None:
+    """A plugin may declare its own badge background and text colors, each defaulting to ``None`` --
+    "use the theme's selection color" ([[plugins#plugin-blocks]], #83).
+
+    The colors travel with the declaration, so a plugin from any source owns how its badge looks; an
+    undeclared color leaves the badge to the theme.
+
+    **Test steps:**
+
+    * verify a plugin declaring colors carries them
+    * verify a plugin declaring none reports ``None`` for both
+    """
+    spec = PluginSpec(("tutorial",), color="#1E88E5", text_color="#FFFFFF")
+    assert (spec.color, spec.text_color) == ("#1E88E5", "#FFFFFF")
+
+    bare = PluginSpec(("tutorial",))
+    assert (bare.color, bare.text_color) == (None, None)
+
+
+def test_registry_colors_resolve_a_plugins_colors_and_none_for_an_unclaimed_type() -> None:
+    """``color``/``text_color`` return the plugin's declared colors for an installed type (main key or
+    alias) and ``None`` for an uninstalled one ([[plugins#plugin-blocks]], #83).
+
+    The same installed-independence :meth:`main_key` keeps: a not-installed type still resolves to a
+    well-defined answer (here ``None`` -- fall back to the theme's selection color).
+
+    **Test steps:**
+
+    * build a registry over a plugin declaring a background but no text color, with an alias
+    * verify its main key and alias both resolve to the declared background and a ``None`` text
+    * verify an unclaimed type resolves to ``None`` for both
+    """
+    registry = PluginRegistry([PluginSpec(("reference_images", "ReferenceImages"), color="#8E24AA")])
+
+    assert registry.color("reference_images") == "#8E24AA"
+    assert registry.color("ReferenceImages") == "#8E24AA"
+    assert registry.text_color("reference_images") is None
+    assert registry.color("audiopack") is None
+    assert registry.text_color("audiopack") is None
 
 
 def test_two_plugins_may_not_claim_the_same_spelling() -> None:

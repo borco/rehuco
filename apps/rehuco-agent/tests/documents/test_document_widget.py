@@ -31,8 +31,8 @@ from rehuco_agent.documents.document_widget import (
     DocumentWidget,
 )
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import FieldsForm, FieldsTab
-from rehuco_agent.fields.widgets import PathEditor
+from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab
+from rehuco_agent.fields.widgets import PathEditor, SingleChoiceComboBox
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
@@ -1106,6 +1106,216 @@ def test_clicking_a_location_suggestion_renames_through_the_model(
     label.linkActivated.emit("#")
 
     rename.assert_called_once_with(name)
+
+
+# endregion
+
+
+# region type switching (#83)
+def type_combo(widget: DocumentWidget) -> SingleChoiceComboBox:
+    """Return the widget's editor-dock type selector combo.
+
+    :param widget: the document widget to inspect.
+    :returns: the type field's editor combo.
+    """
+    combos = widget.findChildren(SingleChoiceComboBox)
+    assert len(combos) == 1
+    return combos[0]
+
+
+def flagged_tooltips(widget: DocumentWidget) -> dict[str, str]:
+    """Collect every flagged (unknown/inactive) value label's text and provenance tooltip.
+
+    :param widget: the document widget to inspect.
+    :returns: a ``{label text: tooltip}`` mapping over the widget's flagged labels.
+    """
+    return {label.text(): label.toolTip() for label in widget.findChildren(QLabel) if label.property("unknown")}
+
+
+@fixture
+def block_model() -> RehuDocumentModel:
+    """A tutorial document carrying a real ``tutorial`` block, so switching away leaves an abandoned one."""
+    return RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4},
+            }
+        )
+    )
+
+
+def test_switching_type_rebuilds_the_docks_with_the_abandoned_block_flagged(
+    qtbot: QtBot, block_model: RehuDocumentModel
+) -> None:
+    """A type switch re-resolves the docks: the former-active block, absent as a flagged row before the
+    switch, appears as a will-drop-on-save row afterwards ([[plugins#plugin-blocks]], #83).
+
+    This is the whole point of rebuilding rather than reactive show/hide -- the abandoned block's row
+    did not exist in the pre-switch composition, so only a rebuild can add it.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document with a real ``tutorial`` block (active, so unflagged)
+    * verify nothing is flagged yet
+    * switch the type to ``reference_images``
+    * verify the now-inactive ``tutorial`` block appears flagged with the abandoned-type provenance
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    assert not flagged_tooltips(widget)
+
+    block_model.resource_type = "reference_images"
+
+    tooltips = flagged_tooltips(widget)
+    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 1}"] == PROVENANCE_ABANDONED_TYPE
+
+
+def test_a_rebuilt_unknown_field_row_stays_reactive_after_a_round_trip_switch(qtbot: QtBot) -> None:
+    """After a round-trip switch destroys the old unknown-field row and builds a new one, the new row is
+    still reactive -- clearing the old instance's `ConnectionList` does not sever the new one's
+    ([[plugins#fallback-editor]], #83).
+
+    Each `UnknownField` instance owns its own connection list, so the old row's ``clear_on_destroyed``
+    only disconnects the old connections; the freshly-built row keeps its own live ones.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document carrying an unrecognized ``mystery`` field
+    * switch away and back, then let the old rows be destroyed (old connections severed)
+    * verify the rebuilt ``mystery`` row is shown, then drop the field and verify it reacts by hiding --
+      proving the new connection is live
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"mystery": 1},
+            }
+        )
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)
+    model.resource_type = "tutorial"  # mystery is an active-block unknown again; a new row is built
+    qtbot.wait(1)  # destroy the old rows, firing their clear_on_destroyed
+
+    unknown_labels = [
+        label for label in widget.findChildren(QLabel) if label.property("unknown") and label.text() == "1"
+    ]
+    assert unknown_labels and not any(label.isHidden() for label in unknown_labels)
+
+    model.remove_unknown_field("mystery")
+
+    assert all(label.isHidden() for label in unknown_labels)
+
+
+def test_switching_type_updates_the_combo_selection(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
+    """After a switch, the rebuilt type combo shows the newly-selected type ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * build a widget over a tutorial document and switch its type
+    * verify the (rebuilt) combo's selected value is the new type
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+
+    block_model.resource_type = "reference_images"
+
+    assert type_combo(widget).value == "reference_images"
+
+
+def test_switching_type_preserves_the_path_field_expand_state(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
+    """A rebuilt dock keeps a stateful widget's own UI state -- the path editor stays expanded across a
+    type switch ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * build a widget, expand its location editor
+    * switch the type (rebuilding the docks)
+    * verify the freshly-built location editor is still expanded
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    location_editor(widget).expanded = True
+
+    block_model.resource_type = "reference_images"
+
+    assert location_editor(widget).expanded is True
+
+
+def test_switching_type_then_reverting_does_not_fire_into_deleted_widgets(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """After a switch rebuilds (and deletes) the field widgets, a later model emit (a **revert**) must
+    not fire into the deleted widgets ([[plugins#plugin-blocks]], #83).
+
+    The rebuild deletes the old badge/rating/unknown-field widgets. Their ``binding.changed`` slots are
+    bound methods (badge, rating) or tracked in a `ConnectionList` cleared on destruction (unknown), so
+    Qt/the list severs them when the widgets die -- where a lambda capturing the widget would dangle and
+    crash when revert reseeds ``resource_type``/``rating``/the unknown fields into it.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document (with a rating and an unknown field) bound to a save path
+    * switch the type, then let the event loop actually delete the old widgets
+    * revert (re-reading the on-disk tutorial), and verify it reseeds back with no crash into a deleted widget
+    """
+    document = RehuDocument(
+        {
+            "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+            "tutorial": {"rating": 4, "mystery": 1},
+        },
+        Path("/fake/info.rehu"),
+    )
+    model = RehuDocumentModel(document)
+    # build the widget before any read_text mock, so the description view's first markdown load isn't
+    # served the mocked JSON; the mock is scoped to the revert's on-disk re-read alone
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)  # let deleteLater actually destroy the old widgets, so a stale slot would fire on delete
+
+    # revert re-reads the original tutorial from disk (a fixed payload, not the now-switched in-memory data)
+    # pylint: disable=duplicate-code
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {
+                "format_version": CURRENT_FORMAT_VERSION,
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4, "mystery": 1},
+            }
+        ),
+    )
+    # pylint: enable=duplicate-code
+    model.revert()
+
+    assert model.resource_type == "tutorial"
+    assert type_combo(widget).value == "tutorial"
+
+
+def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(
+    qtbot: QtBot, block_model: RehuDocumentModel
+) -> None:
+    """A rebuilt editor grid re-applies the model's lock state, so a locked document's freshly-built
+    editors start disabled ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * build a widget, then simulate a lock and switch the type
+    * verify the rebuilt type combo (on the main editor) is disabled
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    block_model.lock_reasons = [LockReason(LockReasonKind.NEWER_FORMAT, "newer")]
+
+    block_model.resource_type = "reference_images"
+
+    assert type_combo(widget).isEnabled() is False
 
 
 # endregion

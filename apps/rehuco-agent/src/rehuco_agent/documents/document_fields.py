@@ -11,6 +11,7 @@ from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
 from ..fields import (
+    PROVENANCE_ABANDONED_TYPE,
     PROVENANCE_NEWER_VERSION,
     PROVENANCE_NOT_CURRENT_TYPE,
     DescriptionField,
@@ -20,10 +21,15 @@ from ..fields import (
     FieldsTab,
     ImagesField,
     PathField,
+    TypeField,
     UnknownField,
 )
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
+
+TYPE_FIELD_NAME: Final = "resource_type"
+"""The special, editor-only `type` field's model name -- the document's resource type, i.e. the key of
+its active plugin block ([[plugins#plugin-blocks]], A4.3/#83)."""
 
 LOCATION_FIELD_NAME: Final = "location"
 """The special `path` field's model name -- the resource's file location ([[field-schema#field-mapping]])."""
@@ -134,6 +140,26 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
     """
     registry = registry or FieldRegistry()
 
+    # the current type is ensured present in the offered list even when it names no installed plugin and
+    # carries no block (a bare, unresolved type), so the combo always shows the document's actual type
+    # rather than silently snapping to another; ``available_types`` already covers every resurrectable
+    # block key ([[plugins#plugin-blocks]], A4.3/#83)
+    type_choices = model.available_types()
+    if model.resource_type not in type_choices:
+        type_choices = [model.resource_type, *type_choices]
+    # the viewer badge is painted with the colors the resource's plugin declares for itself, resolved
+    # through the registry -- so a plugin from any source owns how its badge looks; an undeclared color
+    # (or a not-installed type) falls back to the theme's selection color ([[plugins#plugin-blocks]], A4.3/#83)
+    plugins = model.document.plugins
+    type_field = TypeField(
+        TYPE_FIELD_NAME,
+        "Type",
+        type_choices,
+        lambda type_key: (plugins.color(type_key), plugins.text_color(type_key)),
+        viewer_tab=VIEWER_TAB,
+        editor_tab=EDITOR_MAIN_TAB,
+    )
+
     def rename_to(name: str) -> None:
         # a wrapper, not the bound method directly: it discards ``rename_location``'s bool result (the
         # callback is a command, ``(str) -> None``) and defers the ``model.rename_location`` lookup to
@@ -167,9 +193,11 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )
-    # location leads so its editor keeps the Main Editor tab first/current; the images strip still
-    # sits high in the viewer, above the description, and its editor gets its own tab
-    fields: list[Field[Any]] = [location_field, images_field]
+    # the type selector leads the Main Editor -- it is the most fundamental choice, and re-selecting it
+    # re-resolves the whole form (A4.3/#83). It is editor-only, so it adds no viewer row and location's
+    # viewer still leads the viewer surface. Location follows so its editor sits right under the type;
+    # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
+    fields: list[Field[Any]] = [type_field, location_field, images_field]
     for spec in MODEL_AGNOSTIC_FIELD_SPECS:
         fields.append(
             registry.create(spec.type, spec.name, viewer_tab=spec.viewer_tab, editor_tab=spec.editor_tab, **spec.kwargs)
@@ -191,15 +219,16 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
                 editor_tab=EDITOR_MAIN_TAB,
             )
         )
-    # each inactive block trails as a single flagged, read-only row naming the whole block -- this
-    # file's type doesn't name it, so it is payload this file is merely custodian of and is carried
-    # verbatim ([[plugins#plugin-blocks]]). No remove action: the carry-vs-drop UI, and the
-    # drop-on-abandon rule behind it, are A4.4/A4.2 ([[plugins#fallback-editor]])
-    for key in model.inactive_block_keys():
+    # each inactive block trails as a single flagged, read-only row naming the whole block. Its
+    # provenance is the safety-net distinction A4.3 makes visible ([[plugins#plugin-blocks]], #83): a
+    # block **claimed then abandoned** this session will be dropped on save (armed deletion), while a
+    # never-claimed **foreign** block is merely payload this file is custodian of, carried verbatim. No
+    # remove action either way: the carry-vs-drop editing UI is A4.4 ([[plugins#fallback-editor]])
+    for key, dropped in model.inactive_block_fates():
         fields.append(
             UnknownField(
                 key,
-                provenance=PROVENANCE_NOT_CURRENT_TYPE,
+                provenance=PROVENANCE_ABANDONED_TYPE if dropped else PROVENANCE_NOT_CURRENT_TYPE,
                 is_present=lambda key=key: key in model.document.data,
                 current_value=lambda key=key: model.document.data.get(key),
                 viewer_tab=VIEWER_TAB,

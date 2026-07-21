@@ -19,11 +19,26 @@ from dataclasses import dataclass
 class PluginSpec:
     """One plugin's identity -- its declared key list ([[plugins#core-vs-plugin]], [[plugins#plugin-blocks]]).
 
+    A plugin may also **declare its own badge colors** ([[plugins#plugin-blocks]], #83): plain hex strings
+    (no Qt), so they stay core/non-GUI and travel with the declaration from whatever source provides the
+    plugin -- built-in today, an external plugin package later. The agent's type badge
+    (:class:`~rehuco_agent.fields.widgets.type_badge.TypeBadge`) paints with them; a node ignores them.
+    Kept here rather than derived in the agent so a plugin owns how it presents, wherever it comes from.
+    Either color is **optional**: an undeclared background falls back to the theme's selection background
+    and an undeclared text to the theme's selection text (the badge resolves ``None`` against the live
+    palette), so a plugin that declares nothing still gets a sensible, theme-consistent badge.
+
     :param keys: the main key first, then any aliases. Must be non-empty.
+    :param color: the plugin's fixed badge background color (a hex string), or ``None`` to use the
+        theme's selection background.
+    :param text_color: the plugin's fixed badge text color (a hex string), or ``None`` to use the
+        theme's selection text color.
     :raises ValueError: if ``keys`` is empty or holds a duplicate.
     """
 
     keys: tuple[str, ...]
+    color: str | None = None
+    text_color: str | None = None
 
     def __post_init__(self) -> None:
         if not self.keys:

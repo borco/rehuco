@@ -28,7 +28,13 @@ from .path_field import PathField
 from .rating_field import RatingField
 from .text_field import TextField
 from .text_list_field import TextListField
-from .unknown_field import PROVENANCE_NEWER_VERSION, PROVENANCE_NOT_CURRENT_TYPE, UnknownField
+from .type_field import TypeField
+from .unknown_field import (
+    PROVENANCE_ABANDONED_TYPE,
+    PROVENANCE_NEWER_VERSION,
+    PROVENANCE_NOT_CURRENT_TYPE,
+    UnknownField,
+)
 from .url_field import UrlField
 
 __all__ = [
@@ -52,9 +58,11 @@ __all__ = [
     "FileSizeField",
     "MultipleChoiceField",
     "PathField",
+    "TypeField",
     "DescriptionField",
     "ImagesField",
     "UnknownField",
     "PROVENANCE_NEWER_VERSION",
     "PROVENANCE_NOT_CURRENT_TYPE",
+    "PROVENANCE_ABANDONED_TYPE",
 ]

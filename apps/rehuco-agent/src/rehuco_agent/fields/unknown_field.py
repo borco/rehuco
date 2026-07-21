@@ -6,6 +6,7 @@ in the editor ([[plugins#fallback-editor]], §13.3/§13.4).
 from collections.abc import Callable
 from typing import Any, Final, override
 
+from borco_pyside.core import ConnectionList
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QLabel, QToolButton, QWidget
@@ -41,6 +42,18 @@ Worded to stay true of the one case this can't tell apart: an object-valued top-
 (:data:`~rehuco_core.COMMON_FIELD_KEYS`), so it classifies as an inactive block here. Saying only that
 the file's ``type`` doesn't name it is accurate either way; separating the three real provenances
 (newer-plugin / plugin-absent / not-this-type) is A4.4's ([[plugins#fallback-editor]])."""
+
+
+PROVENANCE_ABANDONED_TYPE: Final = (
+    "You switched away from this type this session, so saving will delete this block. Switch back to "
+    "this type before saving to keep it."
+)
+"""Provenance for a **claimed-then-abandoned** inactive block ([[plugins#plugin-blocks]], A4.3/#83) --
+one made active this session and then switched away from, so the block persistence invariant (#82)
+**drops it on save**. Distinct from :data:`PROVENANCE_NOT_CURRENT_TYPE` (a never-claimed foreign block,
+carried verbatim) because the two are exactly the safety-net contrast the spec asks the editor to make
+visible: switching to a type merely to preview it arms its deletion, and the wording tells the user the
+block will be lost on save and how to keep it -- where a foreign block says only that it is kept as-is."""
 
 
 class UnknownField(Field[Any]):
@@ -111,6 +124,10 @@ class UnknownField(Field[Any]):
         self.__row_widgets: Final[list[QWidget]] = []
         # just the value labels, refreshed with the re-read value when the block changes
         self.__value_labels: Final[list[QLabel]] = []
+        # the block-change connections this field owns, tracked so they can be severed when its widgets
+        # are destroyed (a form rebuild on a type switch) -- a ``__refresh`` lambda captures ``self`` and
+        # would otherwise keep firing into deleted widgets ([[plugins#fallback-editor]])
+        self.__connections: Final = ConnectionList()
 
     @override
     def make_viewer(self, binding: FieldBinding[Any]) -> FieldViewerWidgets:
@@ -156,9 +173,15 @@ class UnknownField(Field[Any]):
             ``unknown_fields_changed``) drives the row's live show/hide + value refresh.
         :param widgets: the row's widgets (label, value, container); ``None`` slots are skipped.
         """
-        self.__row_widgets.extend(widget for widget in widgets if widget is not None)
+        row = [widget for widget in widgets if widget is not None]
+        self.__row_widgets.extend(row)
         if self.__is_present is not None:
-            binding.changed.connect(lambda *_: self.__refresh())
+            # sever this on the row's destruction, so no ``__refresh`` fires into a deleted widget after
+            # a form rebuild (a type switch); both surfaces are rebuilt together, so scoping to any of
+            # this row's widgets is enough ([[plugins#fallback-editor]])
+            self.__connections.connect(binding.changed, lambda *_: self.__refresh())
+            for widget in row:
+                self.__connections.clear_on_destroyed(widget)
 
     def __remove(self, on_remove: Callable[[], None]) -> None:
         """Drop the field via ``on_remove``, then reconcile its rows to the block's new state.

@@ -178,6 +178,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__banner.set_rows(self.__banner_rows())
         model.lock_reasons_changed.connect(self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
         model.upgradable_changed.connect(self.__on_upgradable_changed)  # type: ignore[attr-defined]
+        model.active_block_changed.connect(self.__rebuild_field_docks)
 
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
@@ -351,6 +352,51 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
+
+    def __rebuild_field_docks(self) -> None:
+        """Re-resolve the document's field composition into the existing viewer/editor docks after a
+        type switch (:attr:`~RehuDocumentModel.active_block_changed`, A4.3/#83).
+
+        A type switch makes a different block active ([[plugins#plugin-blocks]]): the outgoing block's
+        editors must go away, the incoming block's fields render, and the set of unknown-field and
+        inactive-block fallback rows changes -- whole rows that the fallbacks' own reactive show/hide
+        can't add or remove, so the grids are rebuilt rather than merely toggled. Each existing dock
+        keeps its identity, position, and toggle action (the dock *set* never changes across a switch --
+        the tabs are fixed surfaces); only its **content grid** is swapped, so the user's layout, the
+        inspection docks, and the persisted-layout blob all stay valid.
+
+        A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
+        swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
+        contract :meth:`save_state` persists -- so a switch doesn't reset it. The rebuild preserves the
+        set of stateful widgets (the leading fields, the path editor among them, are on every type), so a
+        captured name always names one again after the swap. The editors are re-locked to match the model,
+        since a rebuilt grid starts enabled.
+        """
+        saved_state = {name: widget.save_state() for name, widget in self.__stateful_widgets().items()}
+        form = build_document_form(self.__model)
+        self.__swap_dock_contents(self.__editor_docks, form.make_editor(self.__model))
+        self.__swap_dock_contents(self.__viewer_docks, form.make_viewer(self.__model))
+        self.__set_editors_locked(self.__model.locked)
+        rebuilt = self.__stateful_widgets()
+        for name, state in saved_state.items():
+            rebuilt[name].restore_state(state)
+
+    def __swap_dock_contents(self, docks: dict[FieldsTab, QtAds.CDockWidget], grids: dict[FieldsTab, QWidget]) -> None:
+        """Replace each dock's content widget with the freshly-built grid for its tab, disposing the old.
+
+        The old content is taken out (not deleted by ``setWidget``) and ``deleteLater``-d, so its
+        editors' connections to the model are torn down after the current signal unwinds -- deferred, not
+        immediate, since the very combo that triggered this rebuild is one of the widgets being replaced.
+        Every existing dock's tab is in ``grids`` (the tab set is fixed across a switch -- the leading
+        fields keep every surface populated), so the grid is looked up directly rather than skipped.
+
+        :param docks: the existing docks, keyed by tab.
+        :param grids: the freshly-built ``{tab: grid}`` for the same surface, one per existing dock.
+        """
+        for tab, dock in docks.items():
+            old = dock.takeWidget()
+            dock.setWidget(grids[tab])
+            old.deleteLater()
 
     def __banner_rows(self) -> list[MessageBannerRow]:
         """Build the inline notice strip's current rows: one per active lock reason (#94), plus the
