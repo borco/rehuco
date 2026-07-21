@@ -3,9 +3,14 @@
 from PySide6.QtWidgets import QLabel
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_fields import VIEWER_TAB, build_document_form
+from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import PROVENANCE_NEWER_VERSION, PROVENANCE_NOT_CURRENT_TYPE
+from rehuco_agent.fields import (
+    PROVENANCE_ABANDONED_TYPE,
+    PROVENANCE_NEWER_VERSION,
+    PROVENANCE_NOT_CURRENT_TYPE,
+)
+from rehuco_agent.fields.widgets import SingleChoiceComboBox
 from rehuco_core import RehuDocument
 
 
@@ -88,6 +93,55 @@ def test_the_forms_known_fields_are_not_flagged(qtbot: QtBot, model: RehuDocumen
     * verify only the three genuinely-unrecognized values are flagged
     """
     assert len(viewer_tooltips(qtbot, model)) == 3
+
+
+def test_the_type_selector_is_in_the_editor_but_not_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The type selector is editor-only ([[plugins#plugin-blocks]], #83) -- a combo on the main editor,
+    absent from the read-only viewer.
+
+    **Test steps:**
+
+    * build both surfaces
+    * verify the editor's main tab holds a type combo, and the viewer has none
+    """
+    form = build_document_form(model)
+    editor = form.make_editor(model)[EDITOR_MAIN_TAB]
+    viewer = form.make_viewer(model)[VIEWER_TAB]
+    qtbot.addWidget(editor)
+    qtbot.addWidget(viewer)
+
+    assert editor.findChildren(SingleChoiceComboBox)
+    assert not viewer.findChildren(SingleChoiceComboBox)
+
+
+def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot: QtBot) -> None:
+    """After a switch, a claimed-then-abandoned inactive block reads as will-drop-on-save while a
+    never-claimed foreign block reads as carried ([[plugins#plugin-blocks]]'s steps 1 vs 4, #83).
+
+    This is the "visually distinguish former-identity from foreign" the slice honours: the abandoned
+    block's provenance warns it will be deleted, the foreign block's says it is kept.
+
+    **Test steps:**
+
+    * over a tutorial document also carrying a foreign ``reference_images`` block, switch to a third type
+    * rebuild the viewer (as the widget does on a switch) and read each flagged block's provenance tooltip
+    * verify the abandoned ``tutorial`` block warns of deletion and the foreign one says it is kept
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4},
+                "reference_images": {"images_count": 12},
+            }
+        )
+    )
+    model.resource_type = "collection"
+
+    tooltips = viewer_tooltips(qtbot, model)
+
+    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 1}"] == PROVENANCE_ABANDONED_TYPE
+    assert tooltips["{'images_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
 
 
 # endregion

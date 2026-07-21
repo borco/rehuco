@@ -1931,3 +1931,185 @@ def test_remove_unknown_field_is_a_noop_when_absent(document: RehuDocument) -> N
 
 
 # endregion
+
+
+# region Type switching (A4.3, [[plugins#plugin-blocks]])
+def test_resource_type_seeds_from_the_documents_type_without_dirtying(document: RehuDocument) -> None:
+    """The model seeds ``resource_type`` from the document's (normalized) type, clean
+    ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * wrap a ``Tutorial`` document
+    * verify ``resource_type`` is the normalized main key and the model is clean
+    """
+    model = RehuDocumentModel(document)
+
+    assert model.resource_type == "tutorial"
+    assert model.dirty is False
+
+
+def test_switching_type_claims_the_new_block_reseeds_it_and_dirties(document: RehuDocument) -> None:
+    """Setting ``resource_type`` switches the active block, re-seeds its known fields, marks dirty, and
+    fires ``active_block_changed`` ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * seed a ``reference_images`` block with an ``images_count`` beside the tutorial document's own
+    * record ``active_block_changed`` emissions, then switch the type to it
+    * verify the document's active type followed, the known ``images_count`` re-seeded from the new
+      block, the model dirtied, and the composition-change signal fired
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    model = RehuDocumentModel(document)
+    fired: list[None] = []
+    model.active_block_changed.connect(lambda: fired.append(None))
+
+    model.resource_type = "reference_images"
+
+    assert model.document.type == "reference_images"
+    assert model.images_count == 12
+    assert model.dirty is True
+    assert fired == [None]
+
+
+def test_switching_type_leaves_the_common_core_fields_untouched(document: RehuDocument) -> None:
+    """A type switch re-seeds only the block-scoped scalars, never the common-core fields -- it is not a
+    reload ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * switch the tutorial document to ``reference_images``
+    * verify title/publisher/url (common core) are unchanged
+    """
+    model = RehuDocumentModel(document)
+
+    model.resource_type = "reference_images"
+
+    assert model.title == "Foo"
+    assert model.publisher == "Bar"
+    assert model.url == "https://example.com"
+
+
+def test_switching_type_normalizes_an_alias_onto_the_property(document: RehuDocument) -> None:
+    """An alias spelling normalizes to its plugin's main key, and the property reflects the stored
+    spelling ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * switch the type using the ``ReferenceImages`` alias
+    * verify both the document and the reconciled property carry the main key
+    """
+    model = RehuDocumentModel(document)
+
+    model.resource_type = "ReferenceImages"
+
+    assert model.document.type == "reference_images"
+    assert model.resource_type == "reference_images"
+
+
+def test_switching_type_away_and_back_revives_the_block_from_memory(document: RehuDocument) -> None:
+    """Switching away then back is non-destructive: the block's values come back from memory
+    ([[plugins#plugin-blocks]]'s resurrection, #83).
+
+    **Test steps:**
+
+    * seed a ``reference_images`` block, switch to it, then away to tutorial, then back
+    * verify the revived block's ``images_count`` re-seeds unchanged
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    model = RehuDocumentModel(document)
+
+    model.resource_type = "reference_images"
+    model.resource_type = "tutorial"
+    model.resource_type = "reference_images"
+
+    assert model.images_count == 12
+
+
+def test_switching_to_a_type_with_no_block_starts_empty(document: RehuDocument) -> None:
+    """Switching to a type the file has no block for starts an empty active block -- the known scalars
+    reset to their defaults ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * seed the tutorial block with a rating, then switch to a never-before-used ``reference_images`` type
+    * verify the ``images_count`` reads its absent default (``None``) rather than leaking the old block
+    """
+    document.set_active_field("rating", 5)
+    model = RehuDocumentModel(document)
+
+    model.resource_type = "reference_images"
+
+    assert model.images_count is None
+    assert model.rating is None
+
+
+def test_inactive_block_fates_splits_abandoned_from_foreign(document: RehuDocument) -> None:
+    """``inactive_block_fates`` marks a claimed-then-abandoned block as dropped-on-save and a
+    never-claimed foreign block as carried ([[plugins#plugin-blocks]]'s steps 1 vs 4, #83).
+
+    **Test steps:**
+
+    * seed an untouched foreign ``reference_images`` block beside the opening tutorial block
+    * switch to a **third** type (``collection``), so both earlier blocks are now inactive
+    * verify the abandoned ``tutorial`` block is flagged dropped and the never-claimed foreign one carried
+    """
+    document.data["reference_images"] = {"images_count": 12}
+    document.set_active_field("rating", 4)  # give the tutorial block substance to abandon
+    model = RehuDocumentModel(document)
+
+    model.resource_type = "collection"
+
+    assert model.inactive_block_fates() == [("reference_images", False), ("tutorial", True)]
+
+
+def test_available_types_unions_installed_mains_with_the_documents_own_block_keys(document: RehuDocument) -> None:
+    """``available_types`` offers every installed plugin's main key plus any block the document already
+    carries -- so a not-installed foreign block stays selectable for resurrection
+    ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * add a foreign ``audiopack`` block the build has no plugin for
+    * verify the offer list leads with the installed mains, then the extra block key
+    """
+    document.data["audiopack"] = {"bpm": 120}
+    model = RehuDocumentModel(document)
+
+    assert model.available_types() == ["tutorial", "reference_images", "collection", "audiopack"]
+
+
+def test_reverting_a_type_switch_reseeds_without_re_switching(mocker: MockerFixture) -> None:
+    """Revert re-seeds ``resource_type`` from disk without the reseed being mistaken for a switch -- the
+    reverted model is clean and fires no composition change ([[plugins#plugin-blocks]], #83).
+
+    A reverted document begins a clean session, so a type this session switched to is forgotten and the
+    property returns to whatever the file says -- but that reseed runs under the seed guard, so
+    ``active_block_changed`` never fires and the model doesn't re-dirty.
+
+    **Test steps:**
+
+    * load a tutorial document from disk and switch its type to ``reference_images`` (dirtying it)
+    * record ``active_block_changed``, then revert
+    * verify the type reseeds back to tutorial, no composition change fired, and the model is clean
+    """
+    path = Path("/fake/info.rehu")
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "Tutorial"}}),
+    )
+    model = RehuDocumentModel(RehuDocument.load(path))
+    model.resource_type = "reference_images"
+    fired: list[None] = []
+    model.active_block_changed.connect(lambda: fired.append(None))
+
+    model.revert()
+
+    assert model.resource_type == "tutorial"
+    assert not fired
+    assert model.dirty is False
+
+
+# endregion

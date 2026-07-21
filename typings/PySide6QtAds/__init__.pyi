@@ -174,6 +174,10 @@ class CDockWidget(QWidget):
     def setWidget(self, widget: QWidget) -> None:
         """Set the content widget this dock displays."""
 
+    def takeWidget(self) -> QWidget:
+        """Remove and return this dock's content widget **without deleting it**, so a caller replacing
+        the content (e.g. re-resolving a document's form on a type switch) owns the old widget's disposal."""
+
     def setTabToolTip(self, tool_tip: str) -> None:
         """Set the tooltip shown when hovering this dock's tab (independent of `setWindowTitle`,
         which sets the tab's visible label)."""

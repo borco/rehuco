@@ -43,6 +43,18 @@ the file's ``type`` doesn't name it is accurate either way; separating the three
 (newer-plugin / plugin-absent / not-this-type) is A4.4's ([[plugins#fallback-editor]])."""
 
 
+PROVENANCE_ABANDONED_TYPE: Final = (
+    "You switched away from this type this session, so saving will delete this block. Switch back to "
+    "this type before saving to keep it."
+)
+"""Provenance for a **claimed-then-abandoned** inactive block ([[plugins#plugin-blocks]], A4.3/#83) --
+one made active this session and then switched away from, so the block persistence invariant (#82)
+**drops it on save**. Distinct from :data:`PROVENANCE_NOT_CURRENT_TYPE` (a never-claimed foreign block,
+carried verbatim) because the two are exactly the safety-net contrast the spec asks the editor to make
+visible: switching to a type merely to preview it arms its deletion, and the wording tells the user the
+block will be lost on save and how to keep it -- where a foreign block says only that it is kept as-is."""
+
+
 class UnknownField(Field[Any]):
     """The generic fallback for an unrecognized field -- a common top-level key, a key in the active
     plugin block the software here doesn't understand, or a whole inactive block

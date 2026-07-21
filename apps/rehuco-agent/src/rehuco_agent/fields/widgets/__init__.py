@@ -11,6 +11,7 @@ from .line_edit import LineEdit
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
 from .path_editor import PathEditor
+from .single_choice_combo_box import SingleChoiceComboBox
 
 __all__ = [
     "ChoiceCheckBoxes",
@@ -24,4 +25,5 @@ __all__ = [
     "MarkdownEdit",
     "MarkdownView",
     "PathEditor",
+    "SingleChoiceComboBox",
 ]

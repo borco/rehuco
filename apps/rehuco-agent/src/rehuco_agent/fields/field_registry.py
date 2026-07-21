@@ -15,6 +15,7 @@ from .path_field import PathField
 from .rating_field import RatingField
 from .text_field import TextField
 from .text_list_field import TextListField
+from .type_field import TypeField
 from .url_field import UrlField
 
 
@@ -39,6 +40,7 @@ class FieldRegistry:
             FileSizeField,
             MultipleChoiceField,
             PathField,
+            TypeField,
             DescriptionField,
         ):
             self.__types[field_type.TYPE] = field_type

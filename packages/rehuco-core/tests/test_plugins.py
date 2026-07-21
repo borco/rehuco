@@ -6,6 +6,7 @@ from rehuco_core import (
     CORE_PLUGIN,
     DEFAULT_PLUGIN_REGISTRY,
     REFERENCE_IMAGES_PLUGIN,
+    TUTORIAL_PLUGIN,
     PluginRegistry,
     PluginSpec,
 )
@@ -95,6 +96,34 @@ def test_main_key_normalizes_an_alias_and_passes_an_unclaimed_name_through() -> 
     assert registry.main_key("refimages") == "reference_images"
     assert registry.main_key("reference_images") == "reference_images"
     assert registry.main_key("audiopack") == "audiopack"
+
+
+def test_main_keys_lists_each_plugins_main_spelling_in_declaration_order() -> None:
+    """``main_keys`` reports every plugin's main key, aliases omitted, in declaration order
+    ([[plugins#plugin-blocks]]).
+
+    The identity half of a type selector's offer list: aliases are left out because they normalize to
+    the main key on write, so a selector offers only the spelling a switch would store; declaration
+    order is kept so the offer list is stable and predictable.
+
+    **Test steps:**
+
+    * build a registry over two plugins, one with aliases
+    * verify only the main keys are reported, in the order the plugins were declared
+    """
+    registry = PluginRegistry([TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN])
+
+    assert registry.main_keys == ("tutorial", "reference_images")
+
+
+def test_main_keys_is_empty_for_an_empty_registry() -> None:
+    """An empty registry offers no main keys ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * verify a registry declaring no plugins reports an empty ``main_keys``
+    """
+    assert not PluginRegistry().main_keys
 
 
 def test_two_plugins_may_not_claim_the_same_spelling() -> None:

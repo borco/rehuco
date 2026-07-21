@@ -23,6 +23,7 @@ from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
+from rehuco_agent.fields.type_field import TypeField
 from rehuco_agent.fields.unknown_field import UnknownField
 from rehuco_agent.fields.url_field import UrlField
 
@@ -130,6 +131,13 @@ class DescriptionFieldTester(DescriptionField):
 
 class ImagesFieldTester(ImagesField):
     """`ImagesField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class TypeFieldTester(TypeField):
+    """`TypeField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

@@ -33,16 +33,17 @@ def form_labels(widget: QWidget) -> list[str]:
     return texts
 
 
-def test_build_document_form_leads_with_location_then_the_record_fields_with_description_on_its_own_tab(
+def test_build_document_form_leads_with_type_then_location_then_the_record_fields(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """build_document_form leads the main editor tab with ``location``, then the record fields in
-    declaration order, and puts the Markdown ``description`` on its own editor tab.
+    """build_document_form leads the main editor tab with the editor-only ``type`` selector, then
+    ``location``, then the record fields in declaration order, and puts the Markdown ``description`` on
+    its own editor tab.
 
     **Test steps:**
 
     * build the document form's editor grids for the model
-    * verify the main editor tab leads with ``Location`` then the configured rows in declaration order
+    * verify the main editor tab leads with ``Type`` then ``Location`` then the configured rows in order
     * verify the description lands on its own editor tab
     """
     grids = build_document_form(model).make_editor(model)
@@ -52,6 +53,7 @@ def test_build_document_form_leads_with_location_then_the_record_fields_with_des
     qtbot.addWidget(description)
 
     assert form_labels(main) == [
+        "Type",
         "Location",
         "Title",
         "Authors",

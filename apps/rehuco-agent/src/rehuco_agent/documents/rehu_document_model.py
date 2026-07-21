@@ -79,6 +79,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
+    active_block_changed = Signal()
+    """Fires when a type switch (:meth:`__on_resource_type_changed`) makes a different block active
+    ([[plugins#plugin-blocks]], A4.3/#83), so the whole field composition must be re-resolved: the
+    outgoing block's editors go away, the incoming block's fields render, and the set of unknown-field
+    and inactive-block rows changes. Distinct from :attr:`unknown_fields_changed` (a single fallback
+    field dropped within an unchanged composition) because a switch adds and removes whole rows that
+    reactive show/hide can't -- ``DocumentWidget`` rebuilds its dock contents on it. Never fired by
+    seeding or :meth:`revert` (which return to the composition the form was already built for)."""
+
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
     it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, A5),
@@ -90,6 +99,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     folder/location links). The viewer binds to it (rendered as a native-path link); it is not edited
     directly -- :meth:`rename_location` is the only thing that changes it, and only once the deferred
     move-on-disk (A5) actually succeeds."""
+
+    resource_type = SimpleProperty("")
+    """The document's resource type ([[field-schema#resource-types]]) -- the key of its **active**
+    plugin block ([[plugins#plugin-blocks]]). Editing it is a **type switch** (A4.3/#83): the write-through
+    (:meth:`__on_resource_type_changed`) claims the newly-active block, re-seeds the type-field scalars
+    from it, marks dirty, and fires :attr:`active_block_changed`. Switching away and back within a
+    session is non-destructive -- the outgoing block stays resurrectable in memory until save (the block
+    persistence invariant, #82). Empty when the document has no type yet (a brand-new document); its
+    editor is the special, editor-only ``TypeField`` (:mod:`~rehuco_agent.fields.type_field`)."""
 
     title = SimpleProperty("")
     """The primary source's display title ([[field-schema#sources]])."""
@@ -230,6 +248,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.dirty_changed.connect(lambda _dirty: self.__recompute_upgradable())  # type: ignore[attr-defined]
         self.lock_reasons_changed.connect(lambda _reasons: self.__recompute_upgradable())  # type: ignore[attr-defined]
 
+        self.resource_type_changed.connect(self.__on_resource_type_changed)  # type: ignore[attr-defined]
         self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
         self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
         self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
@@ -494,6 +513,49 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         return sorted(block.key for block in self.__document.inactive_blocks())
 
+    def inactive_block_fates(self) -> list[tuple[str, bool]]:
+        """Each inactive block's key paired with **whether saving will drop it** ([[plugins#plugin-blocks]],
+        A4.3/#83).
+
+        The block persistence invariant (#82) gives the same inactive block opposite fates depending on
+        whether it was ever active this session: a **claimed-then-abandoned** block (switched *to* and
+        then away from) is dropped on save (``True``), while a **never-claimed foreign** block is carried
+        verbatim (``False``). Surfacing the split is the "visually distinguish former-identity from
+        foreign" the slice decides to honour ([[plugins#plugin-blocks]]'s safety net): a user may switch
+        to a type merely to preview it, which arms its deletion, so the form flags an abandoned block
+        differently from one that will simply be carried.
+
+        **Sorted by key**, the same stable display order :meth:`inactive_block_keys` uses -- independent
+        of the document order save imposes its own canonical layout over.
+
+        :returns: ``(key, dropped_on_save)`` pairs, sorted alphabetically by key.
+        """
+        return sorted((block.key, block.dropped_on_save) for block in self.__document.inactive_blocks())
+
+    def available_types(self) -> list[str]:
+        """The resource types offerable in the type selector ([[plugins#plugin-blocks]], A4.3/#83).
+
+        The union of every installed plugin's main key
+        (:attr:`~rehuco_core.plugins.PluginRegistry.main_keys`) and every block key this document already
+        carries -- active or inactive (:meth:`~rehuco_core.RehuDocument.plugin_blocks`). The block keys
+        matter for **resurrection**: a foreign or former-active block (e.g. an ``audiopack`` this build
+        has no plugin for) must stay selectable so the user can switch back to it and revive its
+        in-memory values, non-destructively, until save ([[plugins#plugin-blocks]]'s worked example,
+        steps 2 and 4).
+
+        Installed keys lead, in declaration order (the primary, offer-these-first set); any extra block
+        key the document carries follows, sorted, so a not-installed type a file happens to hold is still
+        reachable without reordering the common offers. The empty type a brand-new document has is **not**
+        included -- it is representable by the selector's own placeholder, not a switch target.
+
+        :returns: the selectable type keys: installed mains first, then the document's own extra block
+            keys, sorted.
+        """
+        installed = list(self.__document.plugins.main_keys)
+        present = {block.key for block in self.__document.plugin_blocks()}
+        extra = sorted(present - set(installed))
+        return installed + extra
+
     def remove_unknown_field(self, name: str) -> None:
         """Drop an unknown active-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).
 
@@ -527,6 +589,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         try:
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
+            self.resource_type = self.__document.type
             self.title = self.__document.title
             self.authors = self.__document.authors
             self.publisher = self.__document.publisher
@@ -538,29 +601,39 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.current_size = self.__document.current_size
             self.advertised_tags = self.__document.advertised_tags
             self.extra_tags = self.__document.extra_tags
-
-            # The type-field scalar fields read/write generically through the type-keyed plugin block,
-            # each through its own accessor -- per-user names via the users map, the rest inline
-            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> the
-            # field's own fallback -- its declared default for bool/str-list, ``None`` for the
-            # optional-scalar ints, matching core's own absent-vs-malformed treatment,
-            # [[data-model#write-integrity]]).
-            # The bool/str-list fallback comes from each field's own SimpleProperty declaration -- not a
-            # second, hand-duplicated literal here -- so there is exactly one place per field to change
-            # its default.
-            for name in TYPE_FIELD_BOOL_NAMES:
-                default = SimpleProperty.default_value(type(self), name)
-                setattr(self, name, bool(self.__read_field(name, default)))
-            for name in TYPE_FIELD_INT_NAMES:
-                value = self.__read_field(name, None)
-                setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else None)
-            for name in TYPE_FIELD_STR_LIST_NAMES:
-                default = SimpleProperty.default_value(type(self), name)
-                value = self.__read_field(name, default)
-                coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
-                setattr(self, name, coerced)
+            self.__seed_active_block_fields()
         finally:
             self.__seeding = False
+
+    def __seed_active_block_fields(self) -> None:
+        """Set the type-field scalars from the **active** block's current state -- shared by the full
+        :meth:`__seed_from_document` reseed and the narrower one a type switch needs.
+
+        A type switch (:meth:`__on_resource_type_changed`) re-reads *only* these block-scoped scalars
+        from the newly-active block ([[plugins#plugin-blocks]], A4.3/#83), leaving the common-core
+        fields (title/publisher/...) untouched, so it calls this alone rather than the whole reseed.
+        Callers set the :attr:`__seeding` guard themselves; this never writes back to the document, so a
+        reseed is never mistaken for an edit.
+
+        The type-field scalar fields read/write generically through the type-keyed plugin block, each
+        through its own accessor -- per-user names via the users map, the rest inline
+        ([[field-schema#resource-types]]); values are coerced defensively (malformed -> the field's own
+        fallback -- its declared default for bool/str-list, ``None`` for the optional-scalar ints,
+        matching core's own absent-vs-malformed treatment, [[data-model#write-integrity]]). The
+        bool/str-list fallback comes from each field's own `SimpleProperty` declaration -- not a second,
+        hand-duplicated literal here -- so there is exactly one place per field to change its default.
+        """
+        for name in TYPE_FIELD_BOOL_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
+            setattr(self, name, bool(self.__read_field(name, default)))
+        for name in TYPE_FIELD_INT_NAMES:
+            value = self.__read_field(name, None)
+            setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else None)
+        for name in TYPE_FIELD_STR_LIST_NAMES:
+            default = SimpleProperty.default_value(type(self), name)
+            value = self.__read_field(name, default)
+            coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
+            setattr(self, name, coerced)
 
     def __read_field(self, name: str, default: Any) -> Any:
         """Read active-block field ``name`` through its own accessor: the per-user one for a
@@ -596,6 +669,51 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             new_name,
         )
         return False
+
+    def __on_resource_type_changed(self, value: str) -> None:
+        """Switch the document's active type ([[plugins#plugin-blocks]], A4.3/#83): claim the newly-active
+        block, re-resolve the form, and mark dirty.
+
+        This is the agent-side seam that **arms** the block persistence invariant (#82). The order matters:
+
+        #. :meth:`~rehuco_core.RehuDocument.set_active_type` switches ``type`` and **claims** the target
+           block -- from now until close, switching away from it drops it on save. The requested value is
+           normalized to its plugin's main key there; :attr:`resource_type` is reconciled to that main key
+           under the seed guard (no recursion, no second edit) so the selector shows the spelling actually
+           stored.
+        #. The type-field scalars re-seed from the **newly-active** block
+           (:meth:`__seed_active_block_fields`), so its values render (or reset to defaults for a
+           never-before-used type -- the empty active block the slice starts). The common-core fields are
+           deliberately left alone: a type switch is not a reload.
+        #. :attr:`dirty` is set -- a type switch is an edit, so the close guard treats it as one -- and
+           :attr:`active_block_changed`/:attr:`unknown_fields_changed` fire so the view rebuilds the
+           fallback rows and the live previews re-render.
+
+        No-op while seeding (construction, :meth:`revert`, :meth:`convert`, or the reconcile below) -- a
+        reseed sets ``type`` to whatever is already on disk and must not be mistaken for a switch.
+
+        :param value: the resource type to switch to (a main key or alias spelling).
+        """
+        if self.__seeding:
+            return
+        self.__document.set_active_type(value)
+        main = self.__document.type
+        if main != value:
+            # an alias normalized to its main key on write -- mirror it onto the property so the selector
+            # reflects the stored spelling. Guarded, so this reconcile is not itself taken for a switch.
+            self.__seeding = True
+            try:
+                self.resource_type = main
+            finally:
+                self.__seeding = False
+        self.__seeding = True
+        try:
+            self.__seed_active_block_fields()
+        finally:
+            self.__seeding = False
+        self.dirty = True
+        self.active_block_changed.emit()
+        self.unknown_fields_changed.emit()
 
     def __on_title_changed(self, value: str) -> None:
         """Write an edited title through to the document's primary source and mark dirty.

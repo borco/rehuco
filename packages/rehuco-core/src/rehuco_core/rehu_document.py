@@ -870,6 +870,18 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return str(self.core.get("type", ""))
 
     @property
+    def plugins(self) -> PluginRegistry:
+        """The plugins installed here ([[plugins#core-vs-plugin]]) -- the registry this document was
+        opened with, used to normalize aliases ([[plugins#plugin-blocks]]).
+
+        Read-only: identity, not active/inactive classification (which follows from :attr:`type` alone).
+        Exposed so a caller building a type selector can pair its
+        :attr:`~rehuco_core.plugins.PluginRegistry.main_keys` with this document's own block keys
+        (:meth:`plugin_blocks`) -- the same registry :meth:`set_active_type` normalizes a chosen type
+        against, so the selector offers exactly the spellings a switch would store."""
+        return self.__plugins
+
+    @property
     def id(self) -> str:
         """The resource UUID ([[data-model#stable-identity]]); empty string if absent (e.g. a not-yet-imported file)."""
         return str(self.core.get("id", ""))

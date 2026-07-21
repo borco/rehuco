@@ -16,6 +16,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
+    TUTORIAL_PLUGIN,
     LockReasonKind,
     PluginRegistry,
     RehuDocument,
@@ -1554,6 +1555,24 @@ def test_an_installed_plugins_block_is_inactive_when_the_type_does_not_name_it()
     assert doc.active_block_key == "audiopack"
     assert doc.active_block == {"bitrate": 320}
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
+
+
+def test_plugins_exposes_the_registry_the_document_was_opened_with() -> None:
+    """``plugins`` returns the very registry the document was constructed with, by identity
+    ([[plugins#core-vs-plugin]]).
+
+    Exposed so a caller building a type selector reads the actual installed set the switch will normalize
+    against, rather than a global -- a document opened with a custom registry reports that one.
+
+    **Test steps:**
+
+    * construct a document with an explicit, non-default registry
+    * verify ``plugins`` is that exact registry
+    * verify a default-registry document reports the shipped default
+    """
+    custom = PluginRegistry([TUTORIAL_PLUGIN])
+    assert RehuDocument({"type": "tutorial"}, plugins=custom).plugins is custom
+    assert RehuDocument({"type": "tutorial"}).plugins is DEFAULT_PLUGIN_REGISTRY
 
 
 def test_a_non_object_top_level_key_is_not_a_plugin_block() -> None:

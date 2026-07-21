@@ -70,6 +70,20 @@ class PluginRegistry:
     def __iter__(self) -> Iterator[PluginSpec]:
         return iter(self.__specs)
 
+    @property
+    def main_keys(self) -> tuple[str, ...]:
+        """Every installed plugin's main key ([[plugins#plugin-blocks]]), in declaration order.
+
+        The identity half of "which types can a document be" -- a caller building a type selector pairs
+        these with the block keys a specific document already carries (a not-installed type still names a
+        block, [[plugins#plugin-blocks]]), so both an installed type and a resurrectable foreign one are
+        offerable. Aliases are omitted: they normalize to their main key on write, so a selector offers
+        only the spelling the file would actually store.
+
+        :returns: the main keys, in the order the plugins were declared.
+        """
+        return tuple(spec.key for spec in self.__specs)
+
     def __contains__(self, name: object) -> bool:
         return name in self.__index
 
