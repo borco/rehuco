@@ -8,7 +8,7 @@ from typing import Any, Final, override
 
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QToolButton, QWidget
 
 from .colors import WARNING_COLOR
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
@@ -54,7 +54,8 @@ class UnknownField(Field[Any]):
 
     Flagged by **provenance** (why it's unrecognized) and **carried verbatim by default** -- the value
     is shown but not edited (migrate-to-known-field is deferred, §13.3). The viewer marks it so it
-    stands out; the editor adds a **remove** action that drops the field via ``on_remove``. An
+    stands out; the editor adds a **remove** action (in the row's middle/misc column) that drops the
+    field via ``on_remove``. An
     unremoved unknown field is preserved untouched on round-trip ([[data-model#schema-version]]).
 
     **Reactive to the block's live state.** When ``is_present``/``current_value`` are supplied, the
@@ -120,22 +121,19 @@ class UnknownField(Field[Any]):
 
     @override
     def make_editor(self, binding: FieldBinding[Any]) -> FieldEditorWidgets:
-        container = QWidget()
-        row = QHBoxLayout(container)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.__make_value_label(binding.value))
+        value = self.__make_value_label(binding.value)
+        button: QToolButton | None = None
         on_remove = self.__on_remove
         if on_remove is not None:
-            remove_action = QAction(container)
+            button = QToolButton()
+            remove_action = QAction(button)
             remove_action.setToolTip("Drop this unrecognized field from the file")
             ActionIconThemeHandler(remove_action, REMOVE_ICON_RESOURCE)
             remove_action.triggered.connect(lambda: self.__remove(on_remove))
-            button = QToolButton()
             button.setDefaultAction(remove_action)
-            row.addWidget(button)
         label = self.make_label()
-        self.__track(binding, label, container)
-        return FieldEditorWidgets(self.editor_tab, label, container)
+        self.__track(binding, label, button, value)
+        return FieldEditorWidgets(self.editor_tab, label, value, misc=button)
 
     def __make_value_label(self, value: Any) -> QLabel:
         """Build the flagged, verbatim value label, tooltip-marked with the provenance.
