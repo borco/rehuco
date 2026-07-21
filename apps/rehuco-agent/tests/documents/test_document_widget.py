@@ -6,12 +6,17 @@ that it wires two real docks from one model, exposes toggle actions for them, an
 the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 """
 
+# one cohesive suite over DocumentWidget's docks/toolbar/banner/inspection surfaces; a scoped disable
+# reads better than an arbitrary split (same precedent as test_rehu_document_model.py).
+# pylint: disable=too-many-lines
+
 import json
 from pathlib import Path
 from typing import Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence
@@ -20,7 +25,11 @@ from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
-from rehuco_agent.documents.document_widget import DocumentWidget
+from rehuco_agent.documents.document_widget import (
+    ON_DISK_ICON_RESOURCE,
+    SAVE_PREVIEW_ICON_RESOURCE,
+    DocumentWidget,
+)
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import FieldsTab
 from rehuco_agent.fields.widgets import PathEditor
@@ -664,6 +673,103 @@ def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: Documen
     assert widget.restore_state(cbor2.dumps(payload)) is True
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert not stashed
+
+
+# endregion
+
+
+# region inspection docks (#111)
+def save_preview_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """Return the widget's private Save Preview dock.
+
+    :param widget: the document widget to inspect.
+    :returns: the Save Preview `CDockWidget`.
+    """
+    return widget._DocumentWidget__save_preview_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def on_disk_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """Return the widget's private On Disk dock.
+
+    :param widget: the document widget to inspect.
+    :returns: the On Disk `CDockWidget`.
+    """
+    return widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_inspection_docks_exist_and_start_hidden(widget: DocumentWidget) -> None:
+    """Both inspection docks (Save Preview, On Disk) are built, but hidden by default -- a first-run
+    layout shows every other dock but these (#111).
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify both docks' toggle actions report unchecked (hidden)
+    """
+    assert save_preview_dock(widget).toggleViewAction().isChecked() is False
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_inspection_dock_toggles_carry_their_own_icons(widget: DocumentWidget) -> None:
+    """Each inspection dock's toggle action is themed from its own SVG, like every other dock toggle (#111).
+
+    **Test steps:**
+
+    * for each dock, find the ``ActionIconThemeHandler`` instances parented to its toggle action
+    * verify one was built from that dock's own icon SVG bytes
+    """
+    for dock, icon in (
+        (save_preview_dock(widget), SAVE_PREVIEW_ICON_RESOURCE),
+        (on_disk_dock(widget), ON_DISK_ICON_RESOURCE),
+    ):
+        handlers = dock.toggleViewAction().findChildren(ActionIconThemeHandler)
+        svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert read_resource_bytes(icon) in svgs
+
+
+def test_inspection_dock_toggles_are_on_the_toolbar(widget: DocumentWidget) -> None:
+    """Both inspection docks' toggle actions sit on the View toolbar alongside the viewer/editor toggles (#111).
+
+    **Test steps:**
+
+    * gather every action across the widget's toolbars
+    * verify both docks' toggle actions are among them
+    """
+    actions = {action for toolbar in widget.findChildren(QToolBar) for action in toolbar.actions()}
+    assert save_preview_dock(widget).toggleViewAction() in actions
+    assert on_disk_dock(widget).toggleViewAction() in actions
+
+
+def test_building_the_inspection_docks_leaves_the_main_viewer_current(widget: DocumentWidget) -> None:
+    """Adding the inspection docks doesn't disturb which viewer tab is current -- the main viewer stays
+    current after both are built and hidden (#111).
+
+    **Test steps:**
+
+    * build a widget over the sample model (both inspection docks added, then hidden)
+    * verify the main viewer dock is the current tab in its area, not an inspection dock
+    """
+    viewer = widget._DocumentWidget__viewer_docks[VIEWER_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer.isCurrentTab() is True  # pylint: disable=no-member  # inferred type is lost through the mangled-dict access
+
+
+def test_restore_state_rejects_a_pre_inspection_dock_blob_and_keeps_them_hidden(widget: DocumentWidget) -> None:
+    """A blob from before the inspection docks existed (an older ``version``) is ignored, keeping the
+    default layout -- so both stay hidden rather than restoring to some invented state (#111).
+
+    The ``STATE_VERSION`` bump is what draws that line: an older blob knows nothing of these docks.
+
+    **Test steps:**
+
+    * save the widget's real (v4) state, then roll its ``version`` back to the pre-inspection-dock 3
+    * verify restore reports failure and both inspection docks are still hidden
+    """
+    payload = cbor2.loads(widget.save_state())
+    payload["version"] = 3
+
+    assert widget.restore_state(cbor2.dumps(payload)) is False
+    assert save_preview_dock(widget).toggleViewAction().isChecked() is False
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
 
 # endregion

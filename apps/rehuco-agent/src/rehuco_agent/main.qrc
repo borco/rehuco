@@ -7,9 +7,11 @@
         <file alias="icons/document_description.svg">../../../../design/icons/document_description.svg</file>
         <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
         <file alias="icons/document_images.svg">../../../../design/icons/document_images.svg</file>
+        <file alias="icons/document_on_disk.svg">../../../../design/icons/document_on_disk.svg</file>
         <file alias="icons/document_remove_unknown_field.svg">../../../../design/icons/document_remove_unknown_field.svg</file>
         <file alias="icons/document_revert.svg">../../../../design/icons/document_revert.svg</file>
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
+        <file alias="icons/document_save_preview.svg">../../../../design/icons/document_save_preview.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
         <file alias="icons/expand_off.svg">../../../../design/icons/expand_off.svg</file>
         <file alias="icons/expand_on.svg">../../../../design/icons/expand_on.svg</file>

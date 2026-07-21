@@ -405,6 +405,51 @@ def test_default_value_raises_for_an_unregistered_name() -> None:
 # endregion
 
 
+# region property_names tests
+def test_property_names_lists_every_declared_property() -> None:
+    """property_names returns every `SimpleProperty` declared on a class -- declared-signal and
+    synthesized-signal alike -- which `vars()` cannot, since `__set_name__` swaps each descriptor for a
+    plain Qt property.
+
+    **Test steps:**
+
+    * call `property_names` for `ObjectSample`
+    * verify it lists all three declared properties (title, count, active)
+    """
+    assert set(SimpleProperty.property_names(ObjectSample)) == {"title", "count", "active"}
+
+
+def test_property_names_includes_inherited_properties() -> None:
+    """property_names walks the MRO, so a subclass's list includes a base class's properties.
+
+    **Test steps:**
+
+    * declare a subclass of `ObjectSample` adding one more property
+    * verify `property_names` lists both the inherited three and the new one
+    """
+
+    class Sub(ObjectSample):
+        """A subclass adding one more property on top of `ObjectSample`'s three."""
+
+        extra = SimpleProperty(0)
+
+    assert set(SimpleProperty.property_names(Sub)) == {"title", "count", "active", "extra"}
+
+
+def test_property_names_is_empty_for_a_class_declaring_none() -> None:
+    """property_names returns an empty list for a class with no `SimpleProperty` at all.
+
+    **Test steps:**
+
+    * call `property_names` for a bare `QObject`
+    * verify the result is empty
+    """
+    assert not SimpleProperty.property_names(QObject)
+
+
+# endregion
+
+
 # region SimpleProperty value-type tests
 def test_int_value_notifies_through_matching_signal() -> None:
     """An `int` property may notify through a matching `Signal(int)`; the value round-trips.

@@ -322,6 +322,43 @@ def saved_json(doc: RehuDocument, mocker: MockerFixture) -> dict[str, Any]:
     return json.loads(mock_write.call_args[0][1])
 
 
+def test_serialize_matches_exactly_what_save_writes(mocker: MockerFixture) -> None:
+    """``serialize`` returns byte-for-byte what ``save`` hands ``atomic_write_text`` -- the read-only
+    source view (#111) shows exactly what a save would write.
+
+    **Test steps:**
+
+    * load the Tutorial fixture and capture its ``serialize()`` text
+    * save it with the write mocked out
+    * verify the captured text equals the exact string ``save`` passed the writer
+    """
+    doc = load_doc(mocker, TUTORIAL)
+    text = doc.serialize()
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save(FAKE_PATH)
+
+    assert mock_write.call_args[0][1] == text
+
+
+def test_serialize_renders_a_locked_document_that_save_would_refuse() -> None:
+    """``serialize`` never checks the lock state, unlike ``save`` -- a document save refuses still has a
+    live in-memory payload worth showing (#111).
+
+    **Test steps:**
+
+    * build a locked stub standing in for an unreadable file (a save-blocking lock)
+    * verify ``save`` refuses it, but ``serialize`` still renders its (migrated, stamped) content
+    """
+    doc = RehuDocument.locked_stub_for_error(FAKE_PATH, FileNotFoundError("missing"))
+    with pytest.raises(RehuFormatError):
+        doc.save()
+
+    text = doc.serialize()
+    assert '"format_version"' in text
+    assert text.endswith("\n")
+
+
 def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
     """The file is laid out in one canonical order ([[field-schema#example-files]]).
 
