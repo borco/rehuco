@@ -1924,6 +1924,155 @@ def test_claims_persist_across_a_save_so_a_dropped_block_stays_dropped(mocker: M
     assert "audiopack" not in json.loads(mock_write.call_args[0][1])
 
 
+# The discard log (A4.6, #86): a save that drops a claimed-then-abandoned block records the *fact* of the
+# drop -- block key and the document it left -- to the activity log ([[sync#overview]]), so it stays
+# traceable even though the values are gone by design. The trigger must fire *exactly* when the invariant
+# drops a claimed block: never for a carried never-claimed block, never on a read-only preview, and never on
+# a write that failed -- a wrong trigger is a silent audit failure.
+
+
+def discard_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    """The discard-log records captured so far -- the entries A4.6 emits per dropped block (#86).
+
+    :param caplog: the log-capture fixture.
+    :returns: the records whose message is a block discard, in emission order.
+    """
+    return [record for record in caplog.records if "discarded on save" in record.getMessage()]
+
+
+def test_a_save_that_drops_a_claimed_block_records_the_discard(
+    caplog: pytest.LogCaptureFixture, mocker: MockerFixture
+) -> None:
+    """A save that drops a claimed-then-abandoned block records the discard (#86, [[plugins#plugin-blocks]]).
+
+    The safety net for the claim rule: making a block active arms its deletion on abandon, so the *fact* of
+    the drop is logged -- block key and the document it left -- even though the values are gone by design
+    ([[sync#overview]]). Only the fact, not the values: this is an audit trail, not an undo.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document, switch to ``tutorial`` (abandoning audiopack), and save
+    * verify the save dropped ``audiopack`` from the written file
+    * verify exactly one discard was logged, at INFO, naming the block and the document it left
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        doc.save(Path("/fake/info.rehu"))
+
+    assert "audiopack" not in json.loads(mock_write.call_args[0][1])
+    records = discard_records(caplog)
+    assert len(records) == 1
+    assert records[0].levelno == logging.INFO
+    assert "audiopack" in records[0].getMessage()
+    assert str(Path("/fake/info.rehu")) in records[0].getMessage()
+
+
+def test_the_discard_log_records_every_dropped_block(caplog: pytest.LogCaptureFixture, mocker: MockerFixture) -> None:
+    """Each block a single save drops gets its own discard record (#86, [[plugins#plugin-blocks]]).
+
+    Abandoning more than one type in a session leaves several claimed-then-abandoned blocks; a save drops
+    them all and records each, so the audit trail is complete rather than reporting only the first.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document also holding ``tutorial`` and ``reference_images`` blocks
+    * switch to ``tutorial`` then to ``reference_images`` -- audiopack and tutorial are now both abandoned
+    * save, and verify only ``reference_images`` survives
+    * verify both abandoned blocks were logged, one record each
+    """
+    doc = RehuDocument(
+        {
+            "type": "audiopack",
+            "audiopack": {"bitrate": 320},
+            "tutorial": {"complete": True},
+            "reference_images": {"images_count": 12},
+        }
+    )
+    doc.set_active_type("tutorial")
+    doc.set_active_type("reference_images")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        doc.save(Path("/fake/info.rehu"))
+
+    assert set(json.loads(mock_write.call_args[0][1])) == {"format_version", "core", "reference_images"}
+    logged = {record.getMessage().split(" block", 1)[0] for record in discard_records(caplog)}
+    assert logged == {"audiopack", "tutorial"}
+
+
+def test_a_save_that_carries_a_never_claimed_block_records_no_discard(
+    caplog: pytest.LogCaptureFixture, mocker: MockerFixture
+) -> None:
+    """Carrying a never-claimed foreign block records no discard (#86, [[plugins#plugin-blocks]]).
+
+    The trigger fires *exactly* when the invariant drops a claimed block, never when a never-claimed block
+    is carried verbatim -- the same key that would be logged once abandoned is silent while it is merely
+    custodial payload. A wrong trigger here would be a silent audit failure.
+
+    **Test steps:**
+
+    * construct a tutorial-typed document carrying an untouched foreign ``reference_images`` block
+    * save without any type switching (the foreign block is carried, nothing dropped)
+    * verify the foreign block was written and no discard was logged
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"complete": True}, "reference_images": {"images_count": 12}})
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        doc.save(Path("/fake/info.rehu"))
+
+    assert "reference_images" in json.loads(mock_write.call_args[0][1])
+    assert discard_records(caplog) == []
+
+
+def test_serialize_never_records_a_discard(caplog: pytest.LogCaptureFixture) -> None:
+    """A read-only preview renders the invariant but records no discard (#86, #111).
+
+    ``serialize()`` applies the same drop filter as ``save()`` so the source dock (#111) shows byte-for-byte
+    what a save would write, but it touches no disk and discards nothing -- logging a discard there would
+    cry one that never happened. Only a real save records; the block stays resurrectable.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document and switch to ``tutorial`` (audiopack would drop on save)
+    * serialize it (a preview), verifying audiopack is filtered out of the rendered text
+    * verify no discard was logged -- nothing was actually dropped
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        rendered = json.loads(doc.serialize())
+
+    assert "audiopack" not in rendered
+    assert discard_records(caplog) == []
+
+
+def test_a_failed_save_records_no_discard(caplog: pytest.LogCaptureFixture, mocker: MockerFixture) -> None:
+    """A save whose write fails records no discard (#86, [[plugins#plugin-blocks]]).
+
+    The discard is logged only *after* the write succeeds: a write that raises dropped nothing on disk, so
+    recording one would be a false audit entry. The document keeps the block, still resurrectable.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document and switch to ``tutorial`` (audiopack armed to drop)
+    * make ``atomic_write_text`` raise, and attempt the save
+    * verify the save raised and no discard was logged
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    mocker.patch("rehuco_core.rehu_document.atomic_write_text", side_effect=OSError("disk full"))
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"), pytest.raises(OSError):
+        doc.save(Path("/fake/info.rehu"))
+
+    assert discard_records(caplog) == []
+
+
 # endregion
 
 
