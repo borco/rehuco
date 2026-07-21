@@ -80,13 +80,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
 
     active_block_changed = Signal()
-    """Fires when a type switch (:meth:`__on_resource_type_changed`) makes a different block active
-    ([[plugins#plugin-blocks]], A4.3/#83), so the whole field composition must be re-resolved: the
-    outgoing block's editors go away, the incoming block's fields render, and the set of unknown-field
-    and inactive-block rows changes. Distinct from :attr:`unknown_fields_changed` (a single fallback
-    field dropped within an unchanged composition) because a switch adds and removes whole rows that
-    reactive show/hide can't -- ``DocumentWidget`` rebuilds its dock contents on it. Never fired by
-    seeding or :meth:`revert` (which return to the composition the form was already built for)."""
+    """Fires when a **different block becomes active**, so the whole field composition must be re-resolved:
+    the outgoing block's editors go away, the incoming block's fields render, and the set of unknown-field
+    and inactive-block rows changes ([[plugins#plugin-blocks]], A4.3/#83). Two seams raise it -- a type
+    switch (:meth:`__on_resource_type_changed`) and a :meth:`revert` that restores a *different* on-disk
+    type than the session had switched to (without it, the switched-to block would linger as a stale
+    inactive-block row now that it is active again). Distinct from :attr:`unknown_fields_changed` (a single
+    fallback field dropped, or a plain revert with the active block unchanged) because those stay within a
+    composition the reactive rows can show/hide, whereas this adds and removes whole rows -- so
+    ``DocumentWidget`` rebuilds its dock contents on it. Plain seeding, and a revert that doesn't change
+    the active type, do not raise it."""
 
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
@@ -376,13 +379,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ``unknown_fields_changed`` is emitted to let the generic fallbacks re-show themselves
         ([[plugins#fallback-editor]], A2.8/#28).
 
+        **A reverted type switch re-resolves the whole form** ([[plugins#plugin-blocks]], A4.3/#83): if the
+        on-disk type differs from the current (switched) one, reverting makes a *different* block active
+        again, so :attr:`active_block_changed` fires to rebuild the composition -- otherwise the block the
+        session had switched *to* would linger as a stale inactive-block row now that it is active once
+        more. A plain revert that doesn't change the active type needs no rebuild: the reactive fallback
+        rows already restore themselves off ``unknown_fields_changed``.
+
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
+        previous_type = self.resource_type
         self.__document.reload()
         self.__seed_from_document()
         self.dirty = False
         self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
+        if self.resource_type != previous_type:
+            self.active_block_changed.emit()
         self.__recompute_upgradable()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
