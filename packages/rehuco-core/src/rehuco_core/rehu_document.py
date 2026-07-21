@@ -353,13 +353,26 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")
-        text = json.dumps(self.__ordered_for_file(), indent=2, ensure_ascii=False) + "\n"
-        atomic_write_text(target, text)
+        atomic_write_text(target, self.serialize())
         self.__path = target
         # a file now exists, at whatever version was just written -- assigned only after the write, so a
         # failed save leaves the document still describing the file that is actually there
         self.__on_disk_format_version = self.format_version
         self.__on_disk_active_block_format_version = self.__coerced_active_block_version()
+
+    def serialize(self) -> str:
+        """Render this document as the exact pretty-printed JSON text :meth:`save` writes to disk.
+
+        The one place the file's *bytes* are produced -- ordered (:meth:`__ordered_for_file`),
+        ``indent=2``, ``ensure_ascii=False``, trailing newline -- so any read-only view of "what would
+        be written" (the agent's source dock, #111) shows byte-for-byte what a save would, without
+        reaching into the private ordering. Unlike :meth:`save`, this never checks the lock state and
+        never touches disk: a locked or legacy ``.tc``-backed document still has a live in-memory
+        payload worth showing, even though saving it is refused.
+
+        :returns: the document's canonical on-disk text, trailing newline included.
+        """
+        return json.dumps(self.__ordered_for_file(), indent=2, ensure_ascii=False) + "\n"
 
     def __ordered_for_file(self) -> dict[str, Any]:
         """Lay the document out in canonical key order, for :meth:`save` to write.

@@ -248,6 +248,31 @@ class SimpleProperty[T]:
             raise KeyError(f"no SimpleProperty '{name}' registered on {owner.__qualname__}") from exc
 
     @classmethod
+    def property_names(cls, owner: type) -> list[str]:
+        """Return every ``SimpleProperty`` attribute name declared on ``owner`` or any of its bases.
+
+        Generic code cannot discover these by introspecting the class dict: :meth:`__set_name__`
+        replaces each ``SimpleProperty`` descriptor with a plain Qt ``Property`` at class-build time,
+        so ``vars(owner)`` no longer holds the ``SimpleProperty`` instances. This reads the same
+        per-class registry :meth:`notify_signal_name` does, walking ``owner``'s MRO so an inherited
+        property is included and a name a subclass re-declares appears once. For code that must act on
+        *all* of a reactive model's declared fields -- e.g. binding a whole-object view to each field's
+        notify signal (#111) -- without a second, hand-maintained name list to keep in step.
+
+        :param owner: the class whose declared properties to list.
+        :returns: the property names, most-derived class first and in declaration order within each;
+            empty when ``owner`` declares none.
+        """
+        names: list[str] = []
+        seen: set[str] = set()
+        for klass in owner.__mro__:
+            for name in cls.__SIGNAL_NAMES.get(klass, {}):
+                if name not in seen:
+                    seen.add(name)
+                    names.append(name)
+        return names
+
+    @classmethod
     def default_value(cls, owner: type, name: str) -> Any:
         """Return the default declared for a ``SimpleProperty`` attribute -- the ``value`` it was
         constructed with, or a fresh ``default_factory()`` call for a factory-mode property (so a

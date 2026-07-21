@@ -14,14 +14,19 @@ from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 from ..fields import FieldsTab, StatefulWidget
 from .document_fields import build_document_form
 from .rehu_document_model import RehuDocumentModel
+from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 3
+STATE_VERSION: Final = 4
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
 on any such change; :meth:`DocumentWidget.restore_state` ignores a blob whose version differs, keeping
-the default (all-visible) layout instead."""
+the default (all-visible) layout instead.
+
+Bumped to 4 when the read-only inspection docks were added (#111): an older (v3) blob knows nothing of
+them, so ``restoreState`` would restore cleanly yet leave each new dock in whatever default state QtAds
+invents for an unknown dock, rather than the deliberately-hidden-by-default one this widget builds."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -33,6 +38,19 @@ REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
 CONVERT_KEEP_BACKUPS_ICON_RESOURCE: Final = ":/icons/tc_convert_with_backup.svg"
 CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
 UPGRADE_ICON_RESOURCE: Final = ":/icons/rehu_upgrade.svg"
+SAVE_PREVIEW_ICON_RESOURCE: Final = ":/icons/document_save_preview.svg"
+ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
+
+SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
+ON_DISK_DOCK_NAME: Final = "on_disk"
+"""Object names of the read-only inspection docks (#111); namespaced apart from the
+``viewer:``/``editor:`` docks, and the keys `restore_state` restores their hidden-by-default
+visibility under."""
+
+SAVE_PREVIEW_DOCK_TITLE: Final = "Save Preview"
+ON_DISK_DOCK_TITLE: Final = "On Disk"
+"""Tab titles of the read-only inspection docks (#111): the live model serialization (what a Save would
+write) and the verbatim on-disk file."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -113,6 +131,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
         self.__editor_docks: Final = self.__add_docks(form.make_editor(model), "editor", QtAds.LeftDockWidgetArea)
         self.__viewer_docks: Final = self.__add_docks(form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea)
+        self.__save_preview_dock, self.__on_disk_dock = self.__add_inspection_docks(model)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -166,7 +185,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
-        for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values()):
+        inspection_docks = (self.__save_preview_dock, self.__on_disk_dock)
+        for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
 
     @property
@@ -438,6 +458,66 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # later tabs open as the current one; make the first (e.g. the main editor) current instead
             next(iter(docks.values())).setAsCurrentTab()
         return docks
+
+    def __add_inspection_docks(self, model: RehuDocumentModel) -> tuple[QtAds.CDockWidget, QtAds.CDockWidget]:
+        """Build the two read-only inspection docks (#111) -- the live **Save Preview** and the verbatim
+        **On Disk** file -- stacked as tabs beside the viewer docks but **hidden by default**.
+
+        Both are built once and kept live regardless of visibility, exactly like the viewer/editor docks:
+        their `SavePreviewView`/`OnDiskView` re-render off the model's own signals whether shown or not.
+        Each is stacked into the viewer area so revealing it lands among the viewer tabs, then hidden --
+        which, since a just-added dock opens as the current tab, would leave an arbitrary viewer tab
+        current, so the first viewer tab (the main viewer) is re-selected once both are placed, matching
+        :meth:`__add_docks`'s own choice.
+
+        :param model: the view-model both inspection views render from.
+        :returns: the ``(save_preview, on_disk)`` docks (both hidden), for the toolbar to add their
+            toggle actions.
+        """
+        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
+        save_preview = self.__add_hidden_inspection_dock(
+            SAVE_PREVIEW_DOCK_NAME,
+            SAVE_PREVIEW_DOCK_TITLE,
+            SAVE_PREVIEW_ICON_RESOURCE,
+            SavePreviewView(model, self),
+            viewer_area,
+        )
+        on_disk = self.__add_hidden_inspection_dock(
+            ON_DISK_DOCK_NAME, ON_DISK_DOCK_TITLE, ON_DISK_ICON_RESOURCE, OnDiskView(model, self), viewer_area
+        )
+        if self.__viewer_docks:
+            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
+        return save_preview, on_disk
+
+    def __add_hidden_inspection_dock(
+        self, name: str, title: str, icon: str, content: QWidget, viewer_area: QtAds.CDockAreaWidget | None
+    ) -> QtAds.CDockWidget:
+        """Build one inspection dock, theme its toggle from ``icon``, stack it into ``viewer_area``, and
+        start it hidden (#111).
+
+        :param name: the dock's object name.
+        :param title: the dock's tab title.
+        :param icon: the SVG resource its toggle action is themed from.
+        :param content: the view widget the dock hosts.
+        :param viewer_area: the viewer dock area to stack into; ``None`` opens a fresh right-side area
+            (only when there are no viewer docks at all).
+        :returns: the built dock, hidden.
+        """
+        dock = self.__make_dock(name, title, content)
+        if viewer_area is not None:
+            self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, viewer_area)
+        else:
+            self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
+        ActionIconThemeHandler(dock.toggleViewAction(), icon)
+        # hidden by default: a first-run layout shows every other dock but these. Guarded like a layout
+        # restore -- this programmatic hide isn't a user toggle, so __on_view_toggled must not stash the
+        # (zero, area-collapsed) sizes it would see and later re-apply when the dock is shown.
+        self.__restoring_layout = True
+        try:
+            dock.toggleView(False)
+        finally:
+            self.__restoring_layout = False
+        return dock
 
     def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:
         dock = QtAds.CDockWidget(self.__dock_manager, title)
