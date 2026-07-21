@@ -2080,19 +2080,20 @@ def test_available_types_unions_installed_mains_with_the_documents_own_block_key
     assert model.available_types() == ["tutorial", "reference_images", "collection", "audiopack"]
 
 
-def test_reverting_a_type_switch_reseeds_without_re_switching(mocker: MockerFixture) -> None:
-    """Revert re-seeds ``resource_type`` from disk without the reseed being mistaken for a switch -- the
-    reverted model is clean and fires no composition change ([[plugins#plugin-blocks]], #83).
+def test_reverting_a_type_switch_rebuilds_the_composition_without_re_switching(mocker: MockerFixture) -> None:
+    """Reverting a type switch restores the on-disk type and fires ``active_block_changed`` so the form
+    rebuilds -- without the reseed being mistaken for a fresh switch ([[plugins#plugin-blocks]], #83).
 
-    A reverted document begins a clean session, so a type this session switched to is forgotten and the
-    property returns to whatever the file says -- but that reseed runs under the seed guard, so
-    ``active_block_changed`` never fires and the model doesn't re-dirty.
+    A reverted document begins a clean session: the type switched to is forgotten and the property returns
+    to what the file says. Because that makes a *different* block active again, the composition must
+    re-resolve (else the switched-to block lingers as a stale inactive-block row) -- but the reseed runs
+    under the seed guard, so no fresh switch is claimed and the model doesn't re-dirty.
 
     **Test steps:**
 
     * load a tutorial document from disk and switch its type to ``reference_images`` (dirtying it)
     * record ``active_block_changed``, then revert
-    * verify the type reseeds back to tutorial, no composition change fired, and the model is clean
+    * verify the type reseeds back to tutorial, the composition change fired once, and the model is clean
     """
     path = Path("/fake/info.rehu")
     mocker.patch.object(
@@ -2102,6 +2103,34 @@ def test_reverting_a_type_switch_reseeds_without_re_switching(mocker: MockerFixt
     )
     model = RehuDocumentModel(RehuDocument.load(path))
     model.resource_type = "reference_images"
+    fired: list[None] = []
+    model.active_block_changed.connect(lambda: fired.append(None))
+
+    model.revert()
+
+    assert model.resource_type == "tutorial"
+    assert fired == [None]
+    assert model.dirty is False
+
+
+def test_a_plain_revert_does_not_fire_a_composition_change(mocker: MockerFixture) -> None:
+    """A revert that doesn't change the active type raises no ``active_block_changed`` -- the reactive
+    fallback rows restore themselves, so no rebuild is needed ([[plugins#plugin-blocks]], #83).
+
+    **Test steps:**
+
+    * load a tutorial document, edit a field (dirtying it) without switching type
+    * record ``active_block_changed``, then revert
+    * verify the type is unchanged, no composition change fired, and the model is clean
+    """
+    path = Path("/fake/info.rehu")
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION, "core": {"type": "Tutorial"}}),
+    )
+    model = RehuDocumentModel(RehuDocument.load(path))
+    model.title = "Edited"
     fired: list[None] = []
     model.active_block_changed.connect(lambda: fired.append(None))
 

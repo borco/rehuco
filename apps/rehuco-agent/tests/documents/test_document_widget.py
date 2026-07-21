@@ -1298,6 +1298,53 @@ def test_switching_type_then_reverting_does_not_fire_into_deleted_widgets(qtbot:
     assert type_combo(widget).value == "tutorial"
 
 
+def test_reverting_a_type_switch_drops_the_stale_inactive_block_row(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Reverting a type switch must not leave the original block showing as an inactive-block row now that
+    it is the active type again ([[plugins#plugin-blocks]], #83).
+
+    After switching away, the outgoing ``tutorial`` block shows as a flagged inactive-block row. Reverting
+    restores ``tutorial`` as the active type -- and because that fires ``active_block_changed``, the form
+    rebuilds, so the block renders only through its own active editors, not also as a stale inactive row.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document (with a real tutorial block) bound to a save path
+    * switch away, and confirm the tutorial block now shows as a flagged inactive-block row
+    * revert (re-reading the tutorial from disk) and let the rebuild settle
+    * verify the type is tutorial again and nothing is flagged as inactive/unknown
+    """
+    document = RehuDocument(
+        {"core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]}, "tutorial": {"rating": 4}},
+        Path("/fake/info.rehu"),
+    )
+    model = RehuDocumentModel(document)
+    widget = DocumentWidget(model)  # built before any read_text mock, so the markdown view loads normally
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)
+    assert flagged_tooltips(widget)  # the abandoned tutorial block shows as a flagged inactive row
+
+    # pylint: disable=duplicate-code
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {
+                "format_version": CURRENT_FORMAT_VERSION,
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4},
+            }
+        ),
+    )
+    # pylint: enable=duplicate-code
+    model.revert()
+    qtbot.wait(1)
+
+    assert type_combo(widget).value == "tutorial"
+    assert not flagged_tooltips(widget)
+
+
 def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(
     qtbot: QtBot, block_model: RehuDocumentModel
 ) -> None:
