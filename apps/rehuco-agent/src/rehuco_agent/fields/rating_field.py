@@ -19,9 +19,13 @@ NEGATIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{NEGATIVE_RATING_GLYPH.fa
 """Stylesheet for the viewer's negative stars (§17.4): outline font, warning color."""
 
 
-class RatingField(Field[int]):
+class RatingField(Field[int | None]):
     """A ``rating`` field ([[plugins#field-toolkit]], [[field-schema#field-types]]): a per-user integer that
-    **may be negative**.
+    **may be negative**. The model's ``rating`` itself may read ``None`` (unrated, absent on disk,
+    [[field-schema#deferred-items]]) -- unrelated core-layer behavior (#100), untouched here -- but this
+    field displays and edits it exactly like ``0``: a slider has no "no position" of its own, and ``0``
+    already renders as no stars either way, so there is no visible distinction worth a dedicated
+    affordance for. Moving the slider always writes a concrete rating.
 
     The viewer is a :class:`~borco_pyside.widgets.Rating`: ``|value|`` stars, filled (default color) for a
     positive rating, outline and red for a negative one -- a single shared Phosphor star glyph with a
@@ -56,7 +60,7 @@ class RatingField(Field[int]):
         self.__maximum = maximum
 
     @override
-    def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
+    def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
         rating = Rating(
             positive_style=POSITIVE_STYLESHEET,
             positive_text=POSITIVE_RATING_GLYPH.codepoint,
@@ -68,21 +72,30 @@ class RatingField(Field[int]):
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), rating)
 
     @override
-    def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
+    def make_editor(self, binding: FieldBinding[int | None]) -> FieldEditorWidgets:
         slider = QSlider(Qt.Orientation.Horizontal)
         slider.setRange(self.__minimum, self.__maximum)
-        slider.setValue(binding.value)
+        slider.setValue(self.__slider_value(binding.value))
         slider.valueChanged.connect(binding.set_value)
         binding.changed.connect(lambda value: self.__echo(slider, value))
         return FieldEditorWidgets(self.editor_tab, self.make_label(), slider)
 
-    @staticmethod
-    def __echo(slider: QSlider, value: int) -> None:
+    def __slider_value(self, value: int | None) -> int:
+        """The slider position for ``value`` -- ``value`` itself, or ``0`` for ``None`` (unrated
+        displays the same as a genuine zero: no stars either way).
+
+        :param value: the field's current value.
+        :returns: the slider position.
+        """
+        return value if value is not None else 0
+
+    def __echo(self, slider: QSlider, value: int | None) -> None:
         """Update the editor from a binding change without re-emitting ``valueChanged`` (echo guard).
 
         :param slider: the editor to update.
         :param value: the new value.
         """
-        if slider.value() != value:
+        slider_value = self.__slider_value(value)
+        if slider.value() != slider_value:
             with QSignalBlocker(slider):
-                slider.setValue(value)
+                slider.setValue(slider_value)

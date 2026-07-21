@@ -8,9 +8,10 @@ from PySide6.QtWidgets import QLabel
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 
 
-class IntField(Field[int]):
+class IntField(Field[int | None]):
     """A plain integer field ([[plugins#field-toolkit]], [[field-schema#field-types]]): a label viewer + an
-    ``UnboundedSpinBox`` editor, live-bound to the binding. Covers ``images_count`` and ``collection_index``.
+    ``UnboundedSpinBox`` editor, live-bound to the binding -- ``None`` (unset) renders/edits as empty,
+    distinct from a genuine ``0``. Covers ``images_count`` and ``collection_index``.
 
     No default range -- the schema calls ``int`` a *plain* integer ([[field-schema#field-types]]) with no
     stated ceiling, and ``UnboundedSpinBox`` (#40) has none of ``QSpinBox``'s int32 cap to box into
@@ -41,13 +42,22 @@ class IntField(Field[int]):
         self.__maximum = maximum
 
     @override
-    def make_viewer(self, binding: FieldBinding[int]) -> FieldViewerWidgets:
-        label = QLabel(str(binding.value))
-        binding.changed.connect(lambda value: label.setText(str(value)))
+    def make_viewer(self, binding: FieldBinding[int | None]) -> FieldViewerWidgets:
+        label = QLabel(self.__label_text(binding.value))
+        binding.changed.connect(lambda value: label.setText(self.__label_text(value)))
         return FieldViewerWidgets(self.viewer_tab, self.make_label(), label)
 
+    @staticmethod
+    def __label_text(value: int | None) -> str:
+        """The viewer label's text for ``value``: the plain number, or ``""`` when unset.
+
+        :param value: the field's current value.
+        :returns: the display text.
+        """
+        return str(value) if value is not None else ""
+
     @override
-    def make_editor(self, binding: FieldBinding[int]) -> FieldEditorWidgets:
+    def make_editor(self, binding: FieldBinding[int | None]) -> FieldEditorWidgets:
         spin_box = UnboundedSpinBox(value=binding.value, minimum=self.__minimum, maximum=self.__maximum)
         spin_box.value_changed.connect(binding.set_value)  # type: ignore[attr-defined]
         binding.changed.connect(spin_box.setValue)

@@ -1,6 +1,6 @@
 """Tests for line_edit_helpers: a QLineEdit kept in sync with a typed value via parse/format hooks."""
 
-from borco_pyside.widgets.line_edit_helpers import parsed_value_or_reset, resync_line_edit
+from borco_pyside.widgets.line_edit_helpers import resync_line_edit
 from PySide6.QtWidgets import QLineEdit
 from pytestqt.qtbot import QtBot
 
@@ -66,43 +66,6 @@ def test_resync_line_edit_does_not_re_emit_text_changed(qtbot: QtBot) -> None:
     resync_line_edit(line_edit, 7, int_parse, str)
 
     assert not received
-
-
-# endregion
-
-
-# region parsed_value_or_reset tests
-def test_parsed_value_or_reset_returns_reset_for_blank_text() -> None:
-    """Blank text resolves to ``reset``, not ``None`` -- an explicit reset, not "incomplete typing".
-
-    **Test steps:**
-
-    * call ``parsed_value_or_reset`` with whitespace-only text
-    * verify it returns ``reset``
-    """
-    assert parsed_value_or_reset("   ", 0, int_parse) == 0
-
-
-def test_parsed_value_or_reset_returns_the_parsed_value_for_valid_text() -> None:
-    """Non-blank, parseable text resolves to its parsed value.
-
-    **Test steps:**
-
-    * call ``parsed_value_or_reset`` with text that parses
-    * verify it returns the parsed value
-    """
-    assert parsed_value_or_reset("42", 0, int_parse) == 42
-
-
-def test_parsed_value_or_reset_returns_none_for_unparseable_text() -> None:
-    """Non-blank, unparseable text resolves to ``None`` -- leave the current value untouched.
-
-    **Test steps:**
-
-    * call ``parsed_value_or_reset`` with garbage text
-    * verify it returns ``None``
-    """
-    assert parsed_value_or_reset("not a number", 0, int_parse) is None
 
 
 # endregion

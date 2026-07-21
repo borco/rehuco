@@ -52,16 +52,18 @@ def label_color(rating: Rating) -> QColor:
 
 
 def test_rating_starts_empty_by_default(qtbot: QtBot) -> None:
-    """A freshly built ``Rating`` with no starting value shows nothing.
+    """A freshly built ``Rating`` with no starting value is unrated (``None``,
+    [[field-schema#deferred-items]]) and shows nothing.
 
     **Test steps:**
 
     * build a default ``Rating``
-    * verify its text is empty
+    * verify its value is ``None`` and its text is empty
     """
     rating = Rating()
     qtbot.addWidget(rating)
 
+    assert rating.value is None
     assert label_text(rating) == ""
 
 
@@ -111,6 +113,24 @@ def test_rating_shows_nothing_for_zero(qtbot: QtBot) -> None:
 
     rating.value = 2
     rating.value = 0
+
+    assert label_text(rating) == ""
+
+
+def test_rating_shows_nothing_for_none(qtbot: QtBot) -> None:
+    """``None`` (unrated, [[field-schema#deferred-items]]) shows nothing, the same as a genuine zero
+    -- even after showing stars before.
+
+    **Test steps:**
+
+    * build a ``Rating``, set a positive value, then set it back to ``None``
+    * verify the label is empty again
+    """
+    rating = Rating()
+    qtbot.addWidget(rating)
+
+    rating.value = 2
+    rating.value = None
 
     assert label_text(rating) == ""
 

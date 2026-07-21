@@ -19,11 +19,12 @@ def label_text(rating: Rating) -> str:
 
 
 def test_rating_field_viewer_is_a_rating_widget_tracking_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The viewer is a ``Rating`` widget, seeded from the model and live-updating.
+    """The viewer is a ``Rating`` widget, seeded from the model (unrated, ``None``,
+    [[field-schema#deferred-items]]) and live-updating.
 
     **Test steps:**
 
-    * build a ``rating`` viewer over a model seeded ``0``
+    * build a ``rating`` viewer over a model seeded ``None`` (unrated)
     * verify it starts empty
     * set the model to a positive rating and verify the star glyph count follows
     """
@@ -32,10 +33,29 @@ def test_rating_field_viewer_is_a_rating_widget_tracking_the_model(qtbot: QtBot,
     assert isinstance(viewer, Rating)
     qtbot.addWidget(viewer)
 
+    assert model.rating is None
     assert label_text(viewer) == ""
 
     model.rating = 3
     assert label_text(viewer) == POSITIVE_RATING_GLYPH.codepoint * 3
+
+
+def test_rating_field_viewer_renders_a_genuine_zero_the_same_as_unrated(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A genuine ``0`` rating renders the same as unrated (no stars either way) -- ``Rating``'s own
+    honest render of "zero stars", not a coerced empty state ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * seed the model with a genuine zero rating, then build the viewer
+    * verify it shows no stars, same as unrated
+    """
+    model.rating = 0
+    field = RatingField("rating")
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, Rating)
+    qtbot.addWidget(viewer)
+
+    assert label_text(viewer) == ""
 
 
 def test_rating_field_editor_writes_back_a_negative_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -129,3 +149,21 @@ def test_rating_field_editor_honors_an_explicit_range(qtbot: QtBot, model: RehuD
 
     assert editor.minimum() == -2
     assert editor.maximum() == 3
+
+
+def test_rating_field_editor_slider_seeds_at_zero_when_unrated(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A slider has no "no position" of its own, so it seeds at zero (in-range) while the model is
+    unrated (``None``, [[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build the editor over a model seeded ``None``
+    * verify the slider seeds at zero
+    """
+    field = RatingField("rating")
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, QSlider)
+    qtbot.addWidget(editor)
+
+    assert model.rating is None
+    assert editor.value() == 0

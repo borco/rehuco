@@ -5,6 +5,8 @@ from collections.abc import Callable
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QLineEdit
 
+from .dynamic_properties_helpers import toggle_dynamic_property
+
 
 def resync_line_edit[T](
     line_edit: QLineEdit, value: T, parse: Callable[[str], T | None], format_value: Callable[[T], str]
@@ -26,18 +28,29 @@ def resync_line_edit[T](
             line_edit.setText(format_value(value))
 
 
-def parsed_value_or_reset[T](text: str, reset: T, parse: Callable[[str], T | None]) -> T | None:
-    """Resolve a line edit's changed text into the value it should write through, if any.
+def write_through_or_none[T](
+    line_edit: QLineEdit, text: str, parse: Callable[[str], T | None], write: Callable[[T | None], None]
+) -> None:
+    """Resolve a line edit's changed ``text`` and write it through for a value type whose own domain
+    already includes ``None`` -- blank text is an explicit reset *to* ``None``, not "incomplete
+    typing", so it can't share :func:`~borco_pyside.widgets.line_edit_helpers`'s old
+    ``parsed_value_or_reset`` shape (retired, #101): that helper's own ``None`` return meant "leave
+    untouched", which collides with a caller whose *target* value is legitimately ``None``.
 
-    Blank text is treated as an explicit reset to ``reset``, not "incomplete typing" -- distinct
-    from genuinely unparseable non-empty text, which resolves to ``None`` so mid-keystroke typing
-    (e.g. ``"1h 3"``) is never clobbered.
+    Also toggles ``line_edit``'s ``warning`` dynamic property: set for non-blank, unparseable text,
+    clear otherwise.
 
+    :param line_edit: the line edit whose ``warning`` dynamic property is toggled.
     :param text: the line edit's current text.
-    :param reset: the value blank text should reset to.
-    :param parse: parses non-blank text into a value, or ``None`` if unparseable.
-    :returns: the value to write through, or ``None`` to leave the current value untouched.
+    :param parse: parses non-blank text into a value, or ``None`` if unparseable (mid-typing).
+    :param write: called with the value to write through -- ``None`` for blank text, else the parsed
+        value.
     """
     if not text.strip():
-        return reset
-    return parse(text)
+        toggle_dynamic_property(line_edit, "warning", False)
+        write(None)
+        return
+    parsed = parse(text)
+    toggle_dynamic_property(line_edit, "warning", parsed is None)
+    if parsed is not None:
+        write(parsed)

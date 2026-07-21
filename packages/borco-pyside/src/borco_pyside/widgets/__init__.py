@@ -6,7 +6,7 @@ from .flow_layout import FlowLayout
 from .horizontal_line import HorizontalLine
 from .layout_helpers import equal_width_row
 from .line_edit_clear_action import LineEditClearActionFilter
-from .line_edit_helpers import parsed_value_or_reset, resync_line_edit
+from .line_edit_helpers import resync_line_edit, write_through_or_none
 from .message_banner import (
     MessageBanner,
     MessageBannerRow,
@@ -32,7 +32,7 @@ __all__ = [
     "UnboundedSpinBox",
     "WrappingCheckBox",
     "equal_width_row",
-    "parsed_value_or_reset",
     "resync_line_edit",
     "toggle_dynamic_property",
+    "write_through_or_none",
 ]

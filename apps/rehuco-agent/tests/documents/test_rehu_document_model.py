@@ -384,6 +384,18 @@ def test_model_seeds_released_from_the_document(document: RehuDocument) -> None:
     assert fresh_model.dirty is False
 
 
+def test_model_seeds_released_none_when_absent(model: RehuDocumentModel) -> None:
+    """``released`` seeds ``None`` (not a coerced empty string) when the document has no value for it
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * read ``released`` off the shared fixture, which sets no ``released``
+    * verify it is ``None``
+    """
+    assert model.released is None
+
+
 def test_setting_released_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
     """Setting ``released`` writes through to the document (not source-scoped) and marks dirty.
 
@@ -396,6 +408,23 @@ def test_setting_released_writes_through_and_dirties(model: RehuDocumentModel, d
 
     assert document.released == "2025-03-08"
     assert model.dirty is True
+
+
+def test_setting_released_to_none_removes_it(model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``released`` to ``None`` removes the stored key rather than writing a JSON ``null``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * set ``model.released``, then set it back to ``None``
+    * verify the document reads it back as ``None`` and holds no ``released`` key
+    """
+    model.released = "2025-03-08"
+
+    model.released = None
+
+    assert document.released is None
+    assert "released" not in document.data["core"]
 
 
 def test_model_seeds_description_from_the_document(document: RehuDocument) -> None:
@@ -476,6 +505,19 @@ def test_model_seeds_size_fields_from_the_document(attr: str, document: RehuDocu
 
 
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_model_seeds_size_fields_none_when_absent(attr: str, model: RehuDocumentModel) -> None:
+    """``original_size``/``current_size`` seed ``None`` (not a coerced zero) when the document has no
+    value for them ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * read ``attr`` off the shared fixture, which sets neither
+    * verify it is ``None``
+    """
+    assert getattr(model, attr) is None
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
 def test_setting_a_size_field_writes_through_and_dirties(
     attr: str, model: RehuDocumentModel, document: RehuDocument
 ) -> None:
@@ -490,6 +532,24 @@ def test_setting_a_size_field_writes_through_and_dirties(
 
     assert getattr(document, attr) == 5368709120
     assert model.dirty is True
+
+
+@mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
+def test_setting_a_size_field_to_none_removes_it(attr: str, model: RehuDocumentModel, document: RehuDocument) -> None:
+    """Setting ``original_size``/``current_size`` to ``None`` removes the stored key rather than
+    writing a JSON ``null`` ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * set ``model.<attr>``, then set it back to ``None``
+    * verify the document reads it back as ``None`` and holds no key for it
+    """
+    setattr(model, attr, 5368709120)
+
+    setattr(model, attr, None)
+
+    assert getattr(document, attr) is None
+    assert attr not in document.data["core"]
 
 
 def test_model_seeds_empty_lists_from_a_document_with_none(model: RehuDocumentModel) -> None:
@@ -1150,14 +1210,14 @@ def test_model_seeds_type_field_defaults_when_block_is_absent(model: RehuDocumen
     **Test steps:**
 
     * construct a model over a document with no ``tutorial`` block
-    * verify ``complete`` defaults true, the other flags false, rating/images_count zero, level
-      empty, and it is clean
+    * verify ``complete`` defaults true, the other flags false, rating/images_count ``None``
+      (absent, not a coerced zero -- [[field-schema#deferred-items]]), level empty, and it is clean
     """
     assert model.complete is True
     assert model.online is False
     assert model.favorite is False
-    assert model.rating == 0
-    assert model.images_count == 0
+    assert model.rating is None
+    assert model.images_count is None
     assert model.level == []
     assert model.dirty is False
 
@@ -1180,19 +1240,19 @@ def test_model_seeds_type_field_values_from_the_document() -> None:
 
 
 def test_model_coerces_malformed_type_field_values_to_defaults() -> None:
-    """Malformed type-field values fall back to the field default rather than crashing
-    ([[data-model#write-integrity]]).
+    """Malformed type-field values fall back to ``None`` -- absent and malformed both display as
+    unset ([[field-schema#deferred-items]]) -- rather than crashing ([[data-model#write-integrity]]).
 
     **Test steps:**
 
     * construct a model over a document whose block holds a non-int rating and a null images_count
-    * verify both coerce to their defaults
+    * verify both coerce to ``None``
     """
     document = RehuDocument({"type": "ReferenceImages", "reference_images": {"rating": "junk", "images_count": None}})
     model = RehuDocumentModel(document)
 
-    assert model.rating == 0
-    assert model.images_count == 0
+    assert model.rating is None
+    assert model.images_count is None
 
 
 def test_setting_a_type_field_flag_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
@@ -1222,6 +1282,27 @@ def test_setting_rating_writes_through_to_the_type_fields(model: RehuDocumentMod
 
     assert document.active_user_field("rating") == -4
     assert document.active_field("rating") is None
+
+
+def test_setting_rating_to_none_removes_the_key_not_writes_null(
+    model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """Setting ``rating`` to ``None`` **removes** the key from the ``users`` map rather than writing a
+    JSON ``null`` -- the generic ``set_active_user_field`` this type-field write path uses has no
+    such rule of its own, unlike `RehuDocument`'s own typed scalar properties
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * set ``model.rating``, then set it back to ``None``
+    * verify the per-user submap no longer holds the ``rating`` key at all
+    """
+    model.rating = -4
+
+    model.rating = None
+
+    assert document.active_user_field("rating") is None
+    assert "rating" not in document.data["tutorial"]["users"][document.username]
 
 
 def test_model_seeds_per_user_fields_from_the_users_map(document: RehuDocument) -> None:
@@ -1286,6 +1367,20 @@ def test_per_user_state_files_under_the_documents_own_username() -> None:
     assert document.active_user_field("favorite") is True
 
 
+def test_model_seeds_duration_fields_none_when_block_is_absent(model: RehuDocumentModel) -> None:
+    """The ``*_duration`` fields seed ``None`` (not a coerced zero) when the document has no plugin
+    block for them ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * read the three duration fields off the shared fixture, which has no ``tutorial`` block
+    * verify all three are ``None``
+    """
+    assert model.original_duration is None
+    assert model.current_duration is None
+    assert model.advertised_duration is None
+
+
 def test_model_seeds_duration_fields_from_the_document() -> None:
     """The ``*_duration`` fields seed from the document's ``type``-keyed plugin block.
 
@@ -1320,6 +1415,27 @@ def test_setting_duration_fields_writes_through_to_the_type_fields(
     model.original_duration = 8100
 
     assert document.active_field("original_duration") == 8100
+
+
+def test_setting_a_duration_field_to_none_removes_the_key_not_writes_null(
+    model: RehuDocumentModel, document: RehuDocument
+) -> None:
+    """Setting ``original_duration`` to ``None`` **removes** the key from the active block rather than
+    writing a JSON ``null`` -- the generic ``set_active_field`` this (shared, not per-user) type-field
+    write path uses has no such rule of its own, unlike `RehuDocument`'s own typed scalar properties
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * set ``model.original_duration``, then set it back to ``None``
+    * verify the active block no longer holds the key at all
+    """
+    model.original_duration = 8100
+
+    model.original_duration = None
+
+    assert document.active_field("original_duration") is None
+    assert "original_duration" not in document.active_block
 
 
 def test_model_seeds_level_from_the_document() -> None:

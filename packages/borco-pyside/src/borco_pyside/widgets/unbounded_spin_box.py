@@ -2,7 +2,7 @@
 
 from typing import Final, override
 
-from PySide6.QtCore import QSignalBlocker, Signal
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QAbstractSpinBox, QWidget
 
@@ -20,28 +20,31 @@ class UnboundedSpinBox(QAbstractSpinBox):
 
     ``value_changed`` is ``Signal(object)`` and :attr:`value` forces ``value_type=object`` --
     *not* ``Signal(int)``/a native ``int`` Qt property, both of which marshal through C++ ``int``
-    and would silently truncate or raise on a value outside int32, defeating the entire point.
+    and would silently truncate or raise on a value outside int32, defeating the entire point. ``value``
+    may also be ``None`` -- an explicit empty state, distinct from any stored ``0``
+    ([[field-schema#deferred-items]]): a blank line edit writes ``None`` through, and ``None`` renders
+    as blank text rather than the string ``"None"``.
 
     :attr:`value`/``set_value`` (the plain ``SimpleProperty`` and its synthesized slot) write
     through unclamped -- use :meth:`setValue` instead, the ``QSpinBox.setValue`` counterpart, when
     ``minimum``/``maximum`` should be enforced (e.g. a field's echo guard reflecting a model value
     that may fall outside this editor's configured range).
 
-    :param value: the starting value; clamped to ``minimum``/``maximum`` if given.
+    :param value: the starting value; clamped to ``minimum``/``maximum`` if given, or ``None`` for the
+        empty state.
     :param minimum: the lowest value accepted; ``None`` for no lower bound.
     :param maximum: the highest value accepted; ``None`` for no upper bound.
     :param single_step: the amount `stepBy` (the up/down buttons, arrow keys, wheel) changes the value by.
     :param parent: optional Qt parent.
     """
 
-    value_changed = Signal(object)
-    value = SimpleProperty(0, value_type=object)
-    """The current value, an unbounded Python ``int``; ``set_value`` is the slot-usable setter
-    ([[plugins#field-toolkit]] bindings)."""
+    value = SimpleProperty[int | None](0, value_type=object)
+    """The current value, an unbounded Python ``int``, or ``None`` for the empty state; ``set_value``
+    is the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
 
     def __init__(
         self,
-        value: int = 0,
+        value: int | None = 0,
         minimum: int | None = None,
         maximum: int | None = None,
         single_step: int = 1,
@@ -67,29 +70,41 @@ class UnboundedSpinBox(QAbstractSpinBox):
         which always reads back an actual ``int``)."""
         return self.__maximum
 
-    def setValue(self, value: int) -> None:  # pylint: disable=invalid-name
+    def setValue(self, value: int | None) -> None:  # pylint: disable=invalid-name
         """Set :attr:`value`, boxed into ``minimum``/``maximum`` -- the ``QSpinBox.setValue``
         counterpart; a raw ``value =`` assignment or ``set_value`` slot call writes through unclamped.
+        ``None`` (the empty state) is never clamped -- there is nothing to box into range.
 
         Named to match ``QSpinBox``'s own method, not ``snake_case`` -- ``set_value`` is already taken,
         as the unclamped slot ``SimpleProperty`` itself synthesizes for :attr:`value`.
 
-        :param value: the value to set.
+        :param value: the value to set, or ``None`` for the empty state.
         """
-        self.value = self.__clamp(value)
+        self.value = value if value is None else self.__clamp(value)
 
     @override
     def stepBy(self, steps: int) -> None:
-        self.setValue(self.value + steps * self.__single_step)
+        self.setValue(self.__effective_value() + steps * self.__single_step)
 
     @override
     def stepEnabled(self) -> QAbstractSpinBox.StepEnabledFlag:
         flags = QAbstractSpinBox.StepEnabledFlag.StepNone
-        if self.__maximum is None or self.value < self.__maximum:
+        value = self.__effective_value()
+        if self.__maximum is None or value < self.__maximum:
             flags |= QAbstractSpinBox.StepEnabledFlag.StepUpEnabled
-        if self.__minimum is None or self.value > self.__minimum:
+        if self.__minimum is None or value > self.__minimum:
             flags |= QAbstractSpinBox.StepEnabledFlag.StepDownEnabled
         return flags
+
+    def __effective_value(self) -> int:
+        """:attr:`value`, or -- while it holds the empty state (``None``) -- the value stepping from
+        empty should be measured against: :attr:`minimum` if bounded below, ``0`` otherwise.
+
+        :returns: the value to step/compare from.
+        """
+        if self.value is not None:
+            return self.value
+        return self.__minimum if self.__minimum is not None else 0
 
     @override
     def validate(self, input: str, pos: int) -> tuple[QValidator.State, str, int]:  # pylint: disable=redefined-builtin
@@ -104,28 +119,40 @@ class UnboundedSpinBox(QAbstractSpinBox):
 
     @override
     def fixup(self, input: str) -> str:  # pylint: disable=redefined-builtin
+        stripped = input.strip()
+        if not stripped:
+            return ""
         try:
-            return str(self.__clamp(int(input.strip())))
+            return str(self.__clamp(int(stripped)))
         except ValueError:
-            return str(self.value)
+            return str(self.value) if self.value is not None else ""
 
     def __on_text_changed(self, text: str) -> None:
-        """Write a keystroke through to :attr:`value` once it parses as a whole number.
+        """Write a keystroke through to :attr:`value` once it parses as a whole number, or reset it to
+        the empty state (``None``) once the line edit is emptied.
+
+        A blank line edit is treated as an explicit reset, not "incomplete typing" -- distinct from
+        genuinely unparseable non-empty text (e.g. a bare ``-`` mid-typing), which is left unwritten so
+        mid-keystroke typing is never clobbered.
 
         :param text: the line edit's current text.
         """
+        stripped = text.strip()
+        if not stripped:
+            self.value = None
+            return
         try:
-            parsed = int(text.strip())
+            parsed = int(stripped)
         except ValueError:
             return
         self.setValue(parsed)
 
-    def __render(self, value: int) -> None:
+    def __render(self, value: int | None) -> None:
         """Re-sync the line edit to ``value`` (echo guard).
 
-        :param value: the new value.
+        :param value: the new value, or ``None`` for the empty state (rendered as blank text).
         """
-        text = str(value)
+        text = str(value) if value is not None else ""
         if self.lineEdit().text() != text:
             with QSignalBlocker(self.lineEdit()):
                 self.lineEdit().setText(text)

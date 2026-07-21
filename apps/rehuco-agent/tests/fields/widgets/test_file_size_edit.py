@@ -68,7 +68,8 @@ def test_parse(text: str, expected: int | None) -> None:
 @mark.parametrize(
     ("size", "expected"),
     [
-        param(0, "", id="zero-is-empty-not-0b"),
+        param(None, "", id="none-is-empty-unmeasured"),
+        param(0, "0B", id="zero-renders-honestly-not-empty"),
         param(1, "1B", id="one-byte"),
         param(300, "300B", id="sub-kilo"),
         param(1024, "1.0K", id="exactly-one-kilo"),
@@ -77,7 +78,7 @@ def test_parse(text: str, expected: int | None) -> None:
         param(2**50, "1.0P", id="one-peta"),
     ],
 )
-def test_format(size: int, expected: str) -> None:
+def test_format(size: int | None, expected: str) -> None:
     """``format`` renders whole bytes GNU ``ls -sh`` style (``humanize.naturalsize(size, gnu=True)``).
 
     **Test steps:**
@@ -92,18 +93,19 @@ def test_format(size: int, expected: str) -> None:
 
 
 # region widget tests
-def test_file_size_edit_starts_at_zero_by_default(qtbot: QtBot) -> None:
-    """A freshly built ``FileSizeEdit`` shows an empty line edit and a zero spin box.
+def test_file_size_edit_starts_unmeasured_by_default(qtbot: QtBot) -> None:
+    """A freshly built ``FileSizeEdit`` starts unmeasured (``None``): an empty line edit and a zero
+    spin box, the spin box's own empty-state stand-in ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
     * build a default ``FileSizeEdit``
-    * verify its value is zero and both internal widgets match
+    * verify its value is ``None`` and both internal widgets match
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
 
-    assert edit.value == 0
+    assert edit.value is None
     assert internal_line_edit(edit).text() == ""
     assert internal_spin_box(edit).value == 0
 
@@ -142,6 +144,27 @@ def test_file_size_edit_typing_a_valid_size_updates_value_and_spin_box(qtbot: Qt
     assert internal_spin_box(edit).value == 5368709120
 
 
+def test_file_size_edit_typing_a_valid_size_updates_the_spin_boxs_displayed_text(qtbot: QtBot) -> None:
+    """Typing a valid size updates the spin box's own *displayed* text, not just its ``value``
+    attribute -- distinct from the attribute, since ``UnboundedSpinBox`` syncs its internal line edit
+    by listening to its own ``value_changed``, which a naive blanket signal-blocker around the
+    programmatic sync would also silence (confirmed empirically: ``value`` updated but the displayed
+    text stayed stale).
+
+    **Test steps:**
+
+    * build the widget
+    * type a size into the internal line edit
+    * verify the spin box's own internal line edit shows the new number
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+
+    internal_line_edit(edit).setText("5.0G")
+
+    assert internal_spin_box(edit).lineEdit().text() == "5368709120"
+
+
 def test_file_size_edit_typing_a_value_beyond_int32_updates_value_exactly(qtbot: QtBot) -> None:
     """Typing a size far past the C++ int32 ceiling updates ``value`` exactly (the point of #40).
 
@@ -157,6 +180,25 @@ def test_file_size_edit_typing_a_value_beyond_int32_updates_value_exactly(qtbot:
     internal_line_edit(edit).setText("1P")
 
     assert edit.value == 2**50
+
+
+def test_file_size_edit_typing_a_bare_zero_writes_a_genuine_zero_not_none(qtbot: QtBot) -> None:
+    """Typing ``"0"`` writes a genuine ``0``, distinct from clearing the line edit (which writes
+    ``None``) -- both are non-blank-vs-blank on the same text-changed path
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * build the widget starting unmeasured
+    * type ``"0"`` into the line edit
+    * verify ``value`` is ``0``, not ``None``
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+
+    internal_line_edit(edit).setText("0")
+
+    assert edit.value == 0
 
 
 def test_file_size_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBot) -> None:
@@ -227,13 +269,10 @@ def test_file_size_edit_line_edit_warning_clears_once_text_becomes_valid(qtbot: 
     assert line_edit.property("warning") is False
 
 
-def test_file_size_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: QtBot) -> None:
-    """Emptying the line edit resets ``value`` and the spin box to zero, and the line edit itself
-    stays blank -- not snapped back to ``"0B"`` by the echo guard, which would have made clearing take
-    two clicks (clear -> "0B", clear again -> "") instead of one (confirmed empirically, #24: the
-    echo guard treats blank text as unparseable, so it only leaves the line edit alone once
-    :meth:`FileSizeEdit.format` itself renders ``0`` as ``""``, matching
-    :meth:`~rehuco_agent.fields.widgets.DurationEdit.format`'s own "0 renders blank" convention).
+def test_file_size_edit_clearing_the_line_edit_resets_value_to_none(qtbot: QtBot) -> None:
+    """Emptying the line edit resets ``value`` to ``None`` (unmeasured), with the spin box falling
+    back to its empty-state stand-in, zero, and the line edit itself staying blank
+    (:meth:`FileSizeEdit.format` renders ``None`` as ``""``, [[field-schema#deferred-items]]).
 
     A blank line edit is an explicit reset, not "incomplete typing" -- unlike genuinely unparseable
     non-empty text, which leaves ``value`` untouched (mirrors
@@ -243,7 +282,7 @@ def test_file_size_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: 
 
     * build the widget with a nonzero value
     * clear the internal line edit's text
-    * verify ``value`` and the spin box both reset to zero, and the line edit stays blank
+    * verify ``value`` is ``None``, the spin box shows zero, and the line edit stays blank
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
@@ -251,7 +290,7 @@ def test_file_size_edit_clearing_the_line_edit_resets_value_and_spin_box(qtbot: 
 
     internal_line_edit(edit).clear()
 
-    assert edit.value == 0
+    assert edit.value is None
     assert internal_spin_box(edit).value == 0
     assert internal_line_edit(edit).text() == ""
 

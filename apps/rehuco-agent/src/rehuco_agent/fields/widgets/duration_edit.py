@@ -5,8 +5,8 @@ from typing import Final, cast
 
 from borco_pyside.core import SimpleProperty
 from borco_pyside.theming import GlyphActionIconThemeHandler
-from borco_pyside.widgets import equal_width_row, parsed_value_or_reset, resync_line_edit, toggle_dynamic_property
-from PySide6.QtCore import QSignalBlocker, Signal
+from borco_pyside.widgets import equal_width_row, resync_line_edit, write_through_or_none
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLineEdit, QSpinBox, QWidget
 
@@ -27,6 +27,12 @@ class DurationEdit(QWidget):
     ([[field-schema#ms-leak-history]]'s ms-vs-seconds leak was caused by exactly that:
     reconstructing the stored value from its own coarse display). Editing either updates ``value``;
     the other then follows via :attr:`value_changed`.
+
+    ``value`` may also be ``None`` -- unmeasured, distinct from a genuine ``0`` seconds
+    ([[field-schema#deferred-items]]): emptying the line edit writes ``None`` through rather than
+    resetting to :attr:`MINIMUM`. The spin box has no such empty state of its own (a ``QSpinBox`` is
+    always some number) -- it shows :attr:`MINIMUM` while ``value`` is ``None``, with the line edit
+    left blank as the one place the empty state is actually visible.
 
     :param parent: optional Qt parent.
     """
@@ -65,10 +71,9 @@ class DurationEdit(QWidget):
     WARNING_STYLESHEET: Final = f'QLineEdit[warning="true"] {{ color: {WARNING_COLOR}; }}'
     """Paints the line edit's text in the warning color while it holds non-blank, unparseable text."""
 
-    value_changed = Signal(int)
-    value = SimpleProperty(0)
-    """The current duration in whole seconds; ``set_value`` is the slot-usable setter
-    ([[plugins#field-toolkit]] bindings)."""
+    value = SimpleProperty[int | None](None)
+    """The current duration in whole seconds, or ``None`` when unmeasured; ``set_value`` is the
+    slot-usable setter ([[plugins#field-toolkit]] bindings)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -95,8 +100,10 @@ class DurationEdit(QWidget):
 
         self.__line_edit.textChanged.connect(self.__on_text_changed)
         self.__spin_box.valueChanged.connect(self.set_value)  # type: ignore[attr-defined]
-        self.value_changed.connect(self.__render)
-        self.value_changed.connect(lambda value: clear_action.setVisible(value != self.MINIMUM))
+        self.value_changed.connect(self.__render)  # type: ignore[attr-defined]
+        self.value_changed.connect(  # type: ignore[attr-defined]
+            lambda value: clear_action.setVisible(value is not None)
+        )
 
     @classmethod
     def parse(cls, text: str) -> int | None:
@@ -141,12 +148,17 @@ class DurationEdit(QWidget):
         return total if matched_any else None
 
     @staticmethod
-    def format(seconds: int) -> str:
+    def format(seconds: int | None) -> str:
         """Render whole seconds as ``2h 15m`` per [[field-schema#duration-format]].
 
-        :param seconds: the duration in whole seconds.
-        :returns: the formatted string; ``""`` for ``0`` (not ``"0s"``).
+        :param seconds: the duration in whole seconds, or ``None`` when unmeasured.
+        :returns: the formatted string; ``""`` for ``None`` (unmeasured); ``"0s"`` -- honestly, not
+            blank -- for a genuine ``0``.
         """
+        if seconds is None:
+            return ""
+        if seconds == 0:
+            return "0s"
         hours, remainder = divmod(seconds, 3600)
         minutes, secs = divmod(remainder, 60)
         parts: list[str] = []
@@ -159,8 +171,8 @@ class DurationEdit(QWidget):
         return " ".join(parts)
 
     def __on_text_changed(self, text: str) -> None:
-        """Write a keystroke (or drop) through to :attr:`value`, or reset it to :attr:`MINIMUM` once
-        the line edit is emptied (e.g. by its clear action).
+        """Write a keystroke (or drop) through to :attr:`value`, or reset it to ``None`` (unmeasured)
+        once the line edit is emptied (e.g. by its clear action).
 
         A blank line edit is treated as an explicit reset, not "incomplete typing" -- distinct from
         genuinely unparseable non-empty text (``"1h 3"``), which is left unwritten as before, so
@@ -170,28 +182,29 @@ class DurationEdit(QWidget):
 
         :param text: the line edit's current text.
         """
-        value = parsed_value_or_reset(text, self.MINIMUM, self.parse)
-        toggle_dynamic_property(self.__line_edit, "warning", value is None)
-        if value is not None:
-            self.value = value
+        write_through_or_none(self.__line_edit, text, self.parse, lambda value: setattr(self, "value", value))
 
-    def __render(self, value: int) -> None:
+    def __render(self, value: int | None) -> None:
         """Re-sync the line edit and the spin box to ``value`` (echo guard for each).
 
-        :param value: the new value.
+        The spin box has no empty state of its own -- it shows :attr:`MINIMUM` while ``value`` is
+        ``None``, matching the line edit, which is blank.
+
+        :param value: the new value, or ``None`` when unmeasured.
         """
         resync_line_edit(self.__line_edit, value, self.parse, self.format)
-        if self.__spin_box.value() != value:
+        spin_box_value = value if value is not None else self.MINIMUM
+        if self.__spin_box.value() != spin_box_value:
             with QSignalBlocker(self.__spin_box):
-                self.__spin_box.setValue(value)
+                self.__spin_box.setValue(spin_box_value)
 
     def __clear_spin_box(self) -> None:
-        """Reset :attr:`value` to :attr:`MINIMUM` and restore focus to the spin box.
+        """Reset :attr:`value` to ``None`` (unmeasured) and restore focus to the spin box.
 
         Deliberately not the app-wide ``LineEditClearActionFilter``'s job (see its docstring): a
         spin box's internal line edit needs a *value* reset, not just an emptied display -- clearing
         only the text there leaves ``value()`` untouched, so ``interpretText()`` (e.g. a focus
         change) snaps the old number right back (confirmed empirically).
         """
-        self.value = self.MINIMUM
+        self.value = None
         self.__spin_box.setFocus()

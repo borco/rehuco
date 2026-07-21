@@ -3,7 +3,7 @@ RehuDocumentModel (#46).
 """
 
 from pytest import fixture, mark, param
-from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
+from rehuco_agent.documents.name_suggestion_model import NAME_SUGGESTION_PATTERNS, NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import RehuDocument
 
@@ -60,6 +60,22 @@ def test_suggestions_interpolate_the_record_fields() -> None:
         "Intro [2025]",
         "Jane, John - Intro",
     ]
+
+
+def test_suggestions_uses_an_empty_year_when_released_is_none(model: RehuDocumentModel) -> None:
+    """A ``None`` ``released`` (absent, [[field-schema#deferred-items]]) yields an empty year in the
+    ``[{year}]`` pattern rather than crashing on ``None[:4]``.
+
+    **Test steps:**
+
+    * build suggestions over the shared fixture, which sets no ``released``
+    * verify the year-bracket pattern interpolates an empty year
+    """
+    assert model.released is None
+
+    suggestions = NameSuggestionModel(model).suggestions()
+
+    assert suggestions[NAME_SUGGESTION_PATTERNS.index("{title} [{year}]")] == "Foo []"
 
 
 @mark.parametrize(

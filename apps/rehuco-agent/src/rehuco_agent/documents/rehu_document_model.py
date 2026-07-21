@@ -107,8 +107,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     url = SimpleProperty("")
     """The primary source's URL ([[field-schema#sources]])."""
 
-    released = SimpleProperty("")
-    """The shared, partial-precision ``released`` date ([[field-schema#field-mapping]])."""
+    released = SimpleProperty[str | None](None)
+    """The shared, partial-precision ``released`` date ([[field-schema#field-mapping]]), or ``None``
+    when absent ([[field-schema#deferred-items]])."""
 
     description = SimpleProperty("")
     """The resource's Markdown description; a top-level common-core string, edited in its own dock and
@@ -132,30 +133,37 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     favorite = SimpleProperty(False)
     """The per-user "favorite" flag ([[field-schema#boolean-flags]])."""
 
-    rating = SimpleProperty(0)
-    """The per-user rating ([[field-schema#per-user-shared]]); may be negative ([[field-schema#field-types]])."""
+    rating = SimpleProperty[int | None](None)
+    """The per-user rating ([[field-schema#per-user-shared]]); may be negative
+    ([[field-schema#field-types]]), or ``None`` for unrated ([[field-schema#deferred-items]])."""
 
-    images_count = SimpleProperty(0)
-    """The ReferenceImages image count ([[field-schema#field-types]])."""
+    images_count = SimpleProperty[int | None](None)
+    """The ReferenceImages image count ([[field-schema#field-types]]), or ``None`` when not yet
+    scanned ([[field-schema#deferred-items]])."""
 
     level = SimpleProperty[list[str]](default_factory=list)
     """The Tutorial-only multi-choice level tags ([[field-schema#field-types]]); beginner /
     intermediate / advanced / any, zero or more at once."""
 
-    original_duration = SimpleProperty(0)
-    """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]])."""
+    original_duration = SimpleProperty[int | None](None)
+    """Measured total duration, in seconds, of the complete download ([[field-schema#duration-size]]),
+    or ``None`` when unmeasured ([[field-schema#deferred-items]])."""
 
-    current_duration = SimpleProperty(0)
-    """Measured duration, in seconds, of the files still on disk ([[field-schema#duration-size]])."""
+    current_duration = SimpleProperty[int | None](None)
+    """Measured duration, in seconds, of the files still on disk ([[field-schema#duration-size]]), or
+    ``None`` when unmeasured ([[field-schema#deferred-items]])."""
 
-    advertised_duration = SimpleProperty(0)
-    """The coarse web-claimed duration, in seconds ([[field-schema#duration-size]])."""
+    advertised_duration = SimpleProperty[int | None](None)
+    """The coarse web-claimed duration, in seconds ([[field-schema#duration-size]]), or ``None`` when
+    absent ([[field-schema#deferred-items]])."""
 
-    original_size = SimpleProperty(0)
-    """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]])."""
+    original_size = SimpleProperty[int | None](None)
+    """Measured total size, in bytes, of the complete download ([[field-schema#duration-size]]), or
+    ``None`` when absent (e.g. a Collection, [[field-schema#deferred-items]])."""
 
-    current_size = SimpleProperty(0)
-    """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]])."""
+    current_size = SimpleProperty[int | None](None)
+    """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]), or ``None``
+    when absent ([[field-schema#deferred-items]])."""
 
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
@@ -517,31 +525,29 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.authors = self.__document.authors
             self.publisher = self.__document.publisher
             self.url = self.__document.url
-            # #100 made these three optional scalars read as ``None`` when absent, so absent is no longer 0/""
-            # ([[field-schema#deferred-items]]); the None-aware widgets/display are #101. Until then the model
-            # keeps coercing absent to each field's own declared default, so the view behaves exactly as
-            # before -- the same one-model split #98/#99 used for the per-user rating.
-            self.released = self.__default_if_none("released", self.__document.released)
+            self.released = self.__document.released
             self.description = self.__document.description
             self.hidden_images = self.__document.hidden_images
-            self.original_size = self.__default_if_none("original_size", self.__document.original_size)
-            self.current_size = self.__default_if_none("current_size", self.__document.current_size)
+            self.original_size = self.__document.original_size
+            self.current_size = self.__document.current_size
             self.advertised_tags = self.__document.advertised_tags
             self.extra_tags = self.__document.extra_tags
 
             # The type-field scalar fields read/write generically through the type-keyed plugin block,
             # each through its own accessor -- per-user names via the users map, the rest inline
-            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> default,
+            # ([[field-schema#resource-types]]); values are coerced defensively (malformed -> the
+            # field's own fallback -- its declared default for bool/str-list, ``None`` for the
+            # optional-scalar ints, matching core's own absent-vs-malformed treatment,
             # [[data-model#write-integrity]]).
-            # The fallback default comes from each field's own SimpleProperty declaration -- not a second,
-            # hand-duplicated literal here -- so there is exactly one place per field to change its default.
+            # The bool/str-list fallback comes from each field's own SimpleProperty declaration -- not a
+            # second, hand-duplicated literal here -- so there is exactly one place per field to change
+            # its default.
             for name in TYPE_FIELD_BOOL_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
                 setattr(self, name, bool(self.__read_field(name, default)))
             for name in TYPE_FIELD_INT_NAMES:
-                default = SimpleProperty.default_value(type(self), name)
-                value = self.__read_field(name, default)
-                setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else default)
+                value = self.__read_field(name, None)
+                setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else None)
             for name in TYPE_FIELD_STR_LIST_NAMES:
                 default = SimpleProperty.default_value(type(self), name)
                 value = self.__read_field(name, default)
@@ -564,24 +570,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if name in USER_FIELD_NAMES:
             return self.__document.active_user_field(name, default)
         return self.__document.active_field(name, default)
-
-    def __default_if_none[T](self, name: str, value: T | None) -> T:
-        """``value``, or field ``name``'s own :class:`SimpleProperty` default when the document read
-        ``None`` for it -- the seed bridge for the #100 optional scalars (``released`` / ``original_size`` /
-        ``current_size``) whose getters now return ``None`` when absent ([[field-schema#deferred-items]]).
-
-        The default comes from the property's declaration, not a hand-duplicated literal, so there stays one
-        place per field to change its default -- the same discipline the type-field loops in
-        :meth:`__seed_from_document` follow. Generic in the field's own type so the seeded value keeps that
-        type (``str`` / ``int``), not a widened one, which is what keeps every reader of these properties
-        (e.g. :class:`~rehuco_agent.documents.name_suggestion_model.NameSuggestionModel`) type-clean until
-        #101 makes the widgets None-aware and this bridge is retired.
-
-        :param name: the property to read the default from.
-        :param value: the document's value for it, possibly ``None``.
-        :returns: ``value`` unchanged, or the property's declared default when ``value`` is ``None``.
-        """
-        return value if value is not None else SimpleProperty.default_value(type(self), name)
 
     def __move(self, new_name: str) -> bool:
         """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
@@ -654,7 +642,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.url = value
         self.dirty = True
 
-    def __on_released_changed(self, value: str) -> None:
+    def __on_released_changed(self, value: str | None) -> None:
         """Write an edited released date through to the document and mark dirty.
 
         No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
@@ -690,7 +678,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.hidden_images = value
         self.dirty = True
 
-    def __on_original_size_changed(self, value: int) -> None:
+    def __on_original_size_changed(self, value: int | None) -> None:
         """Write an edited original_size through to the document and mark dirty.
 
         No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
@@ -702,7 +690,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.original_size = value
         self.dirty = True
 
-    def __on_current_size_changed(self, value: int) -> None:
+    def __on_current_size_changed(self, value: int | None) -> None:
         """Write an edited current_size through to the document and mark dirty.
 
         No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
@@ -743,16 +731,26 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         A per-user key (:data:`USER_FIELD_NAMES`) lands in the block's ``users`` map under this
         document's own username, the rest inline in the block ([[field-schema#per-user-shared]],
-        #99) -- the write half of :meth:`__read_field`'s split. No-op while the model is seeding
-        (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
+        #99) -- the write half of :meth:`__read_field`'s split. ``None`` (only ever reachable for the
+        optional-scalar members of :data:`TYPE_FIELD_INT_NAMES` -- the bool/str-list fields never hold
+        it) **removes** the key rather than writing a JSON ``null`` -- ``set_active_field``/
+        ``set_active_user_field`` are generic value writers with no such rule of their own, unlike
+        `RehuDocument`'s typed scalar properties ([[field-schema#deferred-items]]). No-op while the
+        model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 
         :param key: the type-field key that changed.
-        :param value: the new value.
+        :param value: the new value, or ``None`` to remove the key.
         """
         if self.__seeding:
             return
         if key in USER_FIELD_NAMES:
-            self.__document.set_active_user_field(key, value)
+            if value is None:
+                self.__document.remove_active_user_field(key)
+            else:
+                self.__document.set_active_user_field(key, value)
         else:
-            self.__document.set_active_field(key, value)
+            if value is None:
+                self.__document.remove_active_field(key)
+            else:
+                self.__document.set_active_field(key, value)
         self.dirty = True
