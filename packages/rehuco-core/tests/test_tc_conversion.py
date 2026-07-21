@@ -114,6 +114,26 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
     assert document.rating is None
 
 
+def test_convert_files_per_user_flags_under_the_unknown_user_by_default(mocker: MockerFixture) -> None:
+    """Converting without an explicit username files the imported per-user flags under the *unknown* user
+    (``unknown``) -- the flags were not set by this install's identity (#109).
+
+    See [[field-schema#per-user-shared]].
+
+    **Test steps:**
+
+    * convert a `.tc` with no username
+    * verify the saved block nests the per-user flags under ``unknown``, and the document adopts it
+    """
+    mocks = mock_environment(mocker)
+
+    document = convert_tc(TC_PATH, keep_backups=True)
+
+    saved = json.loads(mocks["write"].call_args[0][1])
+    assert set(saved["tutorial"]["users"]) == {"unknown"}
+    assert document.username == "unknown"
+
+
 def test_keep_backups_leaves_the_orig_siblings(mocker: MockerFixture) -> None:
     """``keep_backups=True`` performs the same conversion but never deletes the backups.
 

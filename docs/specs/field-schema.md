@@ -127,6 +127,7 @@ fixtures.
 
 - [x] [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
 - [x] [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
+- [x] [#109: feat: current + unknown identities — .tc imports file per-user state under "unknown", UI edits under the current user](https://github.com/borco/rehuco/issues/109)
 
 `rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **private**
 `learning_paths` are **per-user** state, not properties of the resource. v1 is single-user/local
@@ -148,8 +149,15 @@ the earlier live-inline-for-now deferral):
   is the only unambiguous version, and the single-user era is when the assignment is a fact rather than a guess. The
   **block `format_version` 1** defines this layout, and the v0→v1 block migration (moving inline per-user keys under
   the currently configured username) is written while that still holds.
-- **The identity is an app setting** — a username on a settings identity page (seeded from the OS login name, `admin`
-  as the fallback), read by the editor's per-user writes and by the `.tc` importer.
+- **The identity is an app setting — two usernames, by provenance** (#109): the **current** user, who *this
+  install's* own UI edits are filed under (seeded from the OS login name, `admin` as the fallback), and the
+  **unknown** user (default `unknown`), who **imported** per-user state is filed under — a favorite/rating
+  carried in from a `.tc` was *not* set by this identity here, so its real owner is unknown. The editor's
+  per-user writes go to the current user; the `.tc` importer files under the unknown one. Both are editable on
+  the settings identity page, and setting them to the same value (collapsing back to one identity) is
+  supported — no uniqueness constraint. A just-imported resource opened for editing carries its foreign
+  per-user data under `unknown` **verbatim**, preserved untouched on round-trip; reassigning or dropping it is
+  deferred (#106 / #107).
 - **Keyed by username, not a minted user-UUID — considered and rejected:** pre-swarm, files move between machines by
   manual copy, and per-machine UUIDs could never merge state the same human owns, while equal usernames merge by
   construction. The cost — renaming a user rewrites files — is a rare, catalog-cache-era task-queue job (mass

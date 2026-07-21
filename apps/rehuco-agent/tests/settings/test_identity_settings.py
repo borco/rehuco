@@ -1,4 +1,4 @@
-"""Tests for IdentitySettings: the persisted username per-user state is filed under (#99).
+"""Tests for IdentitySettings: the persisted current + unknown usernames per-user state is filed under (#109).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_main_window_settings.py`` for
 the same rationale) rather than a real one or ``tmp_path``.
@@ -77,8 +77,8 @@ def test_default_username_is_the_os_login_name(mocker: MockerFixture) -> None:
 
 
 def test_default_username_falls_back_to_admin_when_the_os_has_no_login_name(mocker: MockerFixture) -> None:
-    """When the platform can't produce a login name, the default falls back to core's
-    ``DEFAULT_USERNAME`` (``admin``) rather than raising.
+    """When the platform can't produce a login name, the current-user default falls back to core's
+    ``DEFAULT_CURRENT_USERNAME`` (``admin``) rather than raising.
 
     **Test steps:**
 
@@ -90,51 +90,86 @@ def test_default_username_falls_back_to_admin_when_the_os_has_no_login_name(mock
     assert default_username() == "admin"
 
 
-def test_save_then_load_round_trips_the_username(settings: FakeSettings) -> None:
-    """Saving and reloading reproduces the same username.
+def test_save_then_load_round_trips_both_usernames(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces both the current and unknown usernames.
 
     **Test steps:**
 
-    * set a username and save
+    * set both usernames and save
     * load into a fresh instance from the same settings stand-in
-    * verify the username came back unchanged
+    * verify both came back unchanged
     """
-    identity = IdentitySettings(username="alice")
+    identity = IdentitySettings(current_username="alice", unknown_username="strangers")
 
     identity.save(settings)  # type: ignore[arg-type]
 
     restored = IdentitySettings()
     restored.load(settings)  # type: ignore[arg-type]
 
-    assert restored.username == "alice"
+    assert restored.current_username == "alice"
+    assert restored.unknown_username == "strangers"
 
 
-def test_load_defaults_to_the_os_login_name_when_nothing_was_saved(
+def test_both_usernames_may_be_the_same_value(settings: FakeSettings) -> None:
+    """Collapsing both identities into one name is a supported configuration -- no uniqueness constraint (#109).
+
+    **Test steps:**
+
+    * set both usernames to the same value and round-trip through save/load
+    * verify both come back as that shared value
+    """
+    identity = IdentitySettings(current_username="solo", unknown_username="solo")
+
+    identity.save(settings)  # type: ignore[arg-type]
+
+    restored = IdentitySettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.current_username == "solo"
+    assert restored.unknown_username == "solo"
+
+
+def test_load_defaults_the_current_username_to_the_os_login_name_when_nothing_was_saved(
     settings: FakeSettings, mocker: MockerFixture
 ) -> None:
-    """Loading from settings that never had a username saved yields the OS login name.
+    """Loading from settings that never had a current username saved yields the OS login name.
 
     **Test steps:**
 
     * mock the OS login name and load from an empty settings stand-in
-    * verify the username is the OS login name
+    * verify the current username is the OS login name
     """
     mocker.patch("getpass.getuser", return_value="alice")
     identity = IdentitySettings()
 
     identity.load(settings)  # type: ignore[arg-type]
 
-    assert identity.username == "alice"
+    assert identity.current_username == "alice"
 
 
-def test_load_treats_a_blank_stored_username_as_unset(settings: FakeSettings, mocker: MockerFixture) -> None:
-    """A stored username that is blank (nothing but whitespace) falls back to the OS login name --
+def test_load_defaults_the_unknown_username_to_unknown_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had an unknown username saved yields core's ``unknown`` default (#109).
+
+    **Test steps:**
+
+    * load from an empty settings stand-in
+    * verify the unknown username is ``unknown``
+    """
+    identity = IdentitySettings()
+
+    identity.load(settings)  # type: ignore[arg-type]
+
+    assert identity.unknown_username == "unknown"
+
+
+def test_load_treats_a_blank_stored_current_username_as_unset(settings: FakeSettings, mocker: MockerFixture) -> None:
+    """A stored current username that is blank (nothing but whitespace) falls back to the OS login name --
     per-user state must always be filed under *some* name ([[field-schema#per-user-shared]]).
 
     **Test steps:**
 
-    * store a whitespace-only username, mock the OS login name, and load
-    * verify the username fell back to the OS login name
+    * store a whitespace-only current username, mock the OS login name, and load
+    * verify the current username fell back to the OS login name
     """
     settings.setValue("identity/username", "   ")
     mocker.patch("getpass.getuser", return_value="alice")
@@ -142,7 +177,23 @@ def test_load_treats_a_blank_stored_username_as_unset(settings: FakeSettings, mo
 
     identity.load(settings)  # type: ignore[arg-type]
 
-    assert identity.username == "alice"
+    assert identity.current_username == "alice"
+
+
+def test_load_treats_a_blank_stored_unknown_username_as_unset(settings: FakeSettings) -> None:
+    """A stored unknown username that is blank (nothing but whitespace) falls back to ``unknown`` (#109).
+
+    **Test steps:**
+
+    * store a whitespace-only unknown username and load
+    * verify the unknown username fell back to ``unknown``
+    """
+    settings.setValue("identity/unknown_username", "   ")
+    identity = IdentitySettings()
+
+    identity.load(settings)  # type: ignore[arg-type]
+
+    assert identity.unknown_username == "unknown"
 
 
 def test_shared_instance_is_the_same_object_across_calls(mocker: MockerFixture) -> None:
@@ -170,12 +221,13 @@ def test_shared_instance_loads_from_persistent_settings_on_first_call(mocker: Mo
 
     * pre-populate a fake settings store and mock ``persistent_settings`` to return it
     * call the accessor
-    * verify the returned instance reflects the pre-populated username
+    * verify the returned instance reflects the pre-populated usernames
     """
     fake = FakeSettings()
-    IdentitySettings(username="alice").save(fake)  # type: ignore[arg-type]
+    IdentitySettings(current_username="alice", unknown_username="strangers").save(fake)  # type: ignore[arg-type]
     mocker.patch.object(identity_settings, "persistent_settings", return_value=fake)
 
     instance = shared_identity_settings()
 
-    assert instance.username == "alice"
+    assert instance.current_username == "alice"
+    assert instance.unknown_username == "strangers"

@@ -20,9 +20,22 @@ This is the *current* spelling, read and written by the live accessors and the i
 relocates fields under this map inlines its own frozen ``"users"`` literal instead of importing this, so a
 future rename of the key never rewrites history."""
 
-DEFAULT_USERNAME: Final = "admin"
-"""The fallback identity when none is configured ([[field-schema#per-user-shared]]).
+DEFAULT_CURRENT_USERNAME: Final = "admin"
+"""The fallback **current** identity -- who *this install's* own edits are filed under.
 
-Core has no settings of its own, so a per-user write or a ``.tc`` import handed no username files its state
-under this name. The real identity -- seeded from the OS login on a settings page -- is the agent's to
-supply (a later slice); this is only what "who owns this" resolves to in its absence."""
+See [[field-schema#per-user-shared]].
+
+Core has no settings of its own, so a per-user write handed no username files its state under this name. The
+real current identity -- seeded from the OS login on a settings page -- is the agent's to supply (#109); this
+is only what "who is editing" resolves to in its absence. Contrast :data:`DEFAULT_UNKNOWN_USERNAME`, the
+identity **imported** per-user state is filed under."""
+
+DEFAULT_UNKNOWN_USERNAME: Final = "unknown"
+"""The fallback **unknown** identity -- who *imported* per-user state is filed under.
+
+See [[field-schema#per-user-shared]].
+
+A favorite/rating carried in from a ``.tc`` file was **not** set by this install's identity here; its real
+owner is unknown, so a ``.tc`` import handed no username files the imported flags under this name rather than
+claiming them for the current user (#109). Contrast :data:`DEFAULT_CURRENT_USERNAME`, the identity this
+install's *own* UI edits are filed under."""
