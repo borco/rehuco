@@ -17,19 +17,20 @@ reserved key, this one included. So this constant's job is purely descriptive; i
 grammar leaf) because it *is* a ``PluginSpec``, and the grammar leaf spells the core key without one to
 stay import-cycle-free."""
 
-TUTORIAL_PLUGIN: Final = PluginSpec(("tutorial", "Tutorial"))
+TUTORIAL_PLUGIN: Final = PluginSpec(("tutorial", "Tutorial"), color="#1E88E5")
 """The tutorial plugin ([[plugins#tutorial-plugin]]); ``Tutorial`` is tc4's capitalized spelling
-([[acquisition-tooling#tc-to-rehu]]), carried as an alias."""
+([[acquisition-tooling#tc-to-rehu]]), carried as an alias. Badge color: Blue 600."""
 
-REFERENCE_IMAGES_PLUGIN: Final = PluginSpec(("reference_images", "ReferenceImages", "refimages"))
+REFERENCE_IMAGES_PLUGIN: Final = PluginSpec(("reference_images", "ReferenceImages", "refimages"), color="#8E24AA")
 """The reference-images plugin ([[plugins#refimages-plugin]]); ``ReferenceImages`` is tc4's spelling and
-``refimages`` an earlier shorthand this document's own examples once used -- both aliases now."""
+``refimages`` an earlier shorthand this document's own examples once used -- both aliases now. Badge
+color: Purple 600."""
 
-COLLECTION_PLUGIN: Final = PluginSpec(("collection", "Collection"))
+COLLECTION_PLUGIN: Final = PluginSpec(("collection", "Collection"), color="#00897B")
 """The collection type ([[field-schema#resource-types]]). Declared for its identity alone: a Collection
 carries none of the resource fields, so its block is normally absent -- but its ``type`` still normalizes
 like any other, and a file that does carry a ``collection:`` block round-trips as a block rather than as
-a stray unknown key."""
+a stray unknown key. Badge color: Teal 600."""
 
 BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN)
 """The declarations this build ships. Deliberately **excludes** :data:`~rehuco_core.CORE_PLUGIN`: the core
@@ -107,6 +108,34 @@ class PluginRegistry:
         """
         spec = self.__index.get(name)
         return spec.key if spec is not None else name
+
+    def color(self, name: str) -> str | None:
+        """The badge **background** color a type declares ([[plugins#plugin-blocks]], #83).
+
+        The plugin's own declared :attr:`PluginSpec.color` when ``name`` names an installed plugin (a main
+        key or alias), else ``None`` -- an uninstalled type, like a plugin that declares no background,
+        leaves the badge to fall back to the theme's selection background
+        (:class:`~rehuco_agent.fields.widgets.type_badge.TypeBadge`). The same installed-independence
+        :meth:`main_key` keeps: an uninstalled type still resolves to a well-defined answer.
+
+        :param name: a main key or alias, as spelled on disk.
+        :returns: the plugin's declared background color, or ``None`` to use the theme's selection background.
+        """
+        spec = self.__index.get(name)
+        return spec.color if spec is not None else None
+
+    def text_color(self, name: str) -> str | None:
+        """The badge **text** color a type declares ([[plugins#plugin-blocks]], #83) -- the text sibling
+        of :meth:`color`.
+
+        The plugin's own declared :attr:`PluginSpec.text_color` when ``name`` names an installed plugin,
+        else ``None`` -- leaving the badge to fall back to the theme's selection text color.
+
+        :param name: a main key or alias, as spelled on disk.
+        :returns: the plugin's declared text color, or ``None`` to use the theme's selection text.
+        """
+        spec = self.__index.get(name)
+        return spec.text_color if spec is not None else None
 
 
 DEFAULT_PLUGIN_REGISTRY: Final = PluginRegistry(BUILTIN_PLUGINS)

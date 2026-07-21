@@ -1171,6 +1171,47 @@ def test_switching_type_rebuilds_the_docks_with_the_abandoned_block_flagged(
     assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 1}"] == PROVENANCE_ABANDONED_TYPE
 
 
+def test_a_rebuilt_unknown_field_row_stays_reactive_after_a_round_trip_switch(qtbot: QtBot) -> None:
+    """After a round-trip switch destroys the old unknown-field row and builds a new one, the new row is
+    still reactive -- clearing the old instance's `ConnectionList` does not sever the new one's
+    ([[plugins#fallback-editor]], #83).
+
+    Each `UnknownField` instance owns its own connection list, so the old row's ``clear_on_destroyed``
+    only disconnects the old connections; the freshly-built row keeps its own live ones.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document carrying an unrecognized ``mystery`` field
+    * switch away and back, then let the old rows be destroyed (old connections severed)
+    * verify the rebuilt ``mystery`` row is shown, then drop the field and verify it reacts by hiding --
+      proving the new connection is live
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"mystery": 1},
+            }
+        )
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)
+    model.resource_type = "tutorial"  # mystery is an active-block unknown again; a new row is built
+    qtbot.wait(1)  # destroy the old rows, firing their clear_on_destroyed
+
+    unknown_labels = [
+        label for label in widget.findChildren(QLabel) if label.property("unknown") and label.text() == "1"
+    ]
+    assert unknown_labels and not any(label.isHidden() for label in unknown_labels)
+
+    model.remove_unknown_field("mystery")
+
+    assert all(label.isHidden() for label in unknown_labels)
+
+
 def test_switching_type_updates_the_combo_selection(qtbot: QtBot, block_model: RehuDocumentModel) -> None:
     """After a switch, the rebuilt type combo shows the newly-selected type ([[plugins#plugin-blocks]], #83).
 
@@ -1204,6 +1245,57 @@ def test_switching_type_preserves_the_path_field_expand_state(qtbot: QtBot, bloc
     block_model.resource_type = "reference_images"
 
     assert location_editor(widget).expanded is True
+
+
+def test_switching_type_then_reverting_does_not_fire_into_deleted_widgets(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """After a switch rebuilds (and deletes) the field widgets, a later model emit (a **revert**) must
+    not fire into the deleted widgets ([[plugins#plugin-blocks]], #83).
+
+    The rebuild deletes the old badge/rating/unknown-field widgets. Their ``binding.changed`` slots are
+    bound methods (badge, rating) or tracked in a `ConnectionList` cleared on destruction (unknown), so
+    Qt/the list severs them when the widgets die -- where a lambda capturing the widget would dangle and
+    crash when revert reseeds ``resource_type``/``rating``/the unknown fields into it.
+
+    **Test steps:**
+
+    * build a widget over a tutorial document (with a rating and an unknown field) bound to a save path
+    * switch the type, then let the event loop actually delete the old widgets
+    * revert (re-reading the on-disk tutorial), and verify it reseeds back with no crash into a deleted widget
+    """
+    document = RehuDocument(
+        {
+            "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+            "tutorial": {"rating": 4, "mystery": 1},
+        },
+        Path("/fake/info.rehu"),
+    )
+    model = RehuDocumentModel(document)
+    # build the widget before any read_text mock, so the description view's first markdown load isn't
+    # served the mocked JSON; the mock is scoped to the revert's on-disk re-read alone
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    model.resource_type = "reference_images"
+    qtbot.wait(1)  # let deleteLater actually destroy the old widgets, so a stale slot would fire on delete
+
+    # revert re-reads the original tutorial from disk (a fixed payload, not the now-switched in-memory data)
+    # pylint: disable=duplicate-code
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps(
+            {
+                "format_version": CURRENT_FORMAT_VERSION,
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4, "mystery": 1},
+            }
+        ),
+    )
+    # pylint: enable=duplicate-code
+    model.revert()
+
+    assert model.resource_type == "tutorial"
+    assert type_combo(widget).value == "tutorial"
 
 
 def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(

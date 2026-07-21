@@ -10,8 +10,8 @@ from rehuco_agent.fields import (
     PROVENANCE_NEWER_VERSION,
     PROVENANCE_NOT_CURRENT_TYPE,
 )
-from rehuco_agent.fields.widgets import SingleChoiceComboBox
-from rehuco_core import RehuDocument
+from rehuco_agent.fields.widgets import SingleChoiceComboBox, TypeBadge
+from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
 
 
 # region fixtures
@@ -95,14 +95,18 @@ def test_the_forms_known_fields_are_not_flagged(qtbot: QtBot, model: RehuDocumen
     assert len(viewer_tooltips(qtbot, model)) == 3
 
 
-def test_the_type_selector_is_in_the_editor_but_not_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The type selector is editor-only ([[plugins#plugin-blocks]], #83) -- a combo on the main editor,
-    absent from the read-only viewer.
+def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The type is edited by a combo on the main editor and shown as a colored badge in the viewer
+    ([[plugins#plugin-blocks]], #83).
+
+    The combo (the control) is editor-only; the viewer presents the type read-only as a badge painted
+    with the plugin's declared color.
 
     **Test steps:**
 
     * build both surfaces
-    * verify the editor's main tab holds a type combo, and the viewer has none
+    * verify the editor holds the type combo (and the viewer does not)
+    * verify the viewer holds a type badge showing the tutorial type in its plugin color
     """
     form = build_document_form(model)
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
@@ -112,6 +116,12 @@ def test_the_type_selector_is_in_the_editor_but_not_the_viewer(qtbot: QtBot, mod
 
     assert editor.findChildren(SingleChoiceComboBox)
     assert not viewer.findChildren(SingleChoiceComboBox)
+
+    badge = viewer.findChild(TypeBadge)
+    assert badge is not None
+    assert badge.text() == "Tutorial"
+    tutorial_color = TUTORIAL_PLUGIN.color
+    assert tutorial_color is not None and tutorial_color in badge.styleSheet()
 
 
 def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot: QtBot) -> None:

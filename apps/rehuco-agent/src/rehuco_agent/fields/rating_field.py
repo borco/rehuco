@@ -5,12 +5,11 @@
 from typing import Final, override
 
 from borco_pyside.widgets import Rating
-from PySide6.QtCore import QSignalBlocker, Qt
-from PySide6.QtWidgets import QSlider
 
 from ..glyphs import NEGATIVE_RATING_GLYPH, POSITIVE_RATING_GLYPH
 from .colors import WARNING_COLOR
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .widgets import RatingSlider
 
 POSITIVE_STYLESHEET: Final = f'QLabel {{ font-family: "{POSITIVE_RATING_GLYPH.family}"; }}'
 """Stylesheet for the viewer's positive stars ([[plugins#field-toolkit]]): filled font, inherited color."""
@@ -73,29 +72,8 @@ class RatingField(Field[int | None]):
 
     @override
     def make_editor(self, binding: FieldBinding[int | None]) -> FieldEditorWidgets:
-        slider = QSlider(Qt.Orientation.Horizontal)
-        slider.setRange(self.__minimum, self.__maximum)
-        slider.setValue(self.__slider_value(binding.value))
-        slider.valueChanged.connect(binding.set_value)
-        binding.changed.connect(lambda value: self.__echo(slider, value))
+        slider = RatingSlider(self.__minimum, self.__maximum)
+        # pyright compares the class-level Signal against the protocol's SignalInstance and rejects the
+        # descriptor duality PySide resolves at access time; the wiring is sound (see bind_value_widget).
+        self.bind_value_widget(slider, binding)  # type: ignore[arg-type]
         return FieldEditorWidgets(self.editor_tab, self.make_label(), slider)
-
-    def __slider_value(self, value: int | None) -> int:
-        """The slider position for ``value`` -- ``value`` itself, or ``0`` for ``None`` (unrated
-        displays the same as a genuine zero: no stars either way).
-
-        :param value: the field's current value.
-        :returns: the slider position.
-        """
-        return value if value is not None else 0
-
-    def __echo(self, slider: QSlider, value: int | None) -> None:
-        """Update the editor from a binding change without re-emitting ``valueChanged`` (echo guard).
-
-        :param slider: the editor to update.
-        :param value: the new value.
-        """
-        slider_value = self.__slider_value(value)
-        if slider.value() != slider_value:
-            with QSignalBlocker(slider):
-                slider.setValue(slider_value)

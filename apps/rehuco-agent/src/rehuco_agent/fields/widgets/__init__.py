@@ -11,7 +11,9 @@ from .line_edit import LineEdit
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
 from .path_editor import PathEditor
+from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
+from .type_badge import TypeBadge
 
 __all__ = [
     "ChoiceCheckBoxes",
@@ -25,5 +27,7 @@ __all__ = [
     "MarkdownEdit",
     "MarkdownView",
     "PathEditor",
+    "RatingSlider",
     "SingleChoiceComboBox",
+    "TypeBadge",
 ]

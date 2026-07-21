@@ -126,6 +126,47 @@ def test_main_keys_is_empty_for_an_empty_registry() -> None:
     assert not PluginRegistry().main_keys
 
 
+def test_a_plugin_declares_optional_badge_colors_defaulting_to_none() -> None:
+    """A plugin may declare its own badge background and text colors, each defaulting to ``None`` --
+    "use the theme's selection color" ([[plugins#plugin-blocks]], #83).
+
+    The colors travel with the declaration, so a plugin from any source owns how its badge looks; an
+    undeclared color leaves the badge to the theme.
+
+    **Test steps:**
+
+    * verify a plugin declaring colors carries them
+    * verify a plugin declaring none reports ``None`` for both
+    """
+    spec = PluginSpec(("tutorial",), color="#1E88E5", text_color="#FFFFFF")
+    assert (spec.color, spec.text_color) == ("#1E88E5", "#FFFFFF")
+
+    bare = PluginSpec(("tutorial",))
+    assert (bare.color, bare.text_color) == (None, None)
+
+
+def test_registry_colors_resolve_a_plugins_colors_and_none_for_an_unclaimed_type() -> None:
+    """``color``/``text_color`` return the plugin's declared colors for an installed type (main key or
+    alias) and ``None`` for an uninstalled one ([[plugins#plugin-blocks]], #83).
+
+    The same installed-independence :meth:`main_key` keeps: a not-installed type still resolves to a
+    well-defined answer (here ``None`` -- fall back to the theme's selection color).
+
+    **Test steps:**
+
+    * build a registry over a plugin declaring a background but no text color, with an alias
+    * verify its main key and alias both resolve to the declared background and a ``None`` text
+    * verify an unclaimed type resolves to ``None`` for both
+    """
+    registry = PluginRegistry([PluginSpec(("reference_images", "ReferenceImages"), color="#8E24AA")])
+
+    assert registry.color("reference_images") == "#8E24AA"
+    assert registry.color("ReferenceImages") == "#8E24AA"
+    assert registry.text_color("reference_images") is None
+    assert registry.color("audiopack") is None
+    assert registry.text_color("audiopack") is None
+
+
 def test_two_plugins_may_not_claim_the_same_spelling() -> None:
     """A key collision between plugins is ambiguous, so the registry refuses to be built.
 
