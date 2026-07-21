@@ -1507,6 +1507,49 @@ def test_remove_active_field_is_a_noop_when_absent() -> None:
     assert blockless.remove_active_field("mystery") is False
 
 
+def test_remove_block_drops_a_whole_inactive_block() -> None:
+    """``remove_block`` deletes an inactive block wholesale and reports it was present
+    ([[plugins#fallback-editor]], A4.4/#84).
+
+    The block-level sibling of ``remove_active_field`` -- the explicit *drop* of a foreign block the file
+    was merely custodian of, leaving the active block and the rest of the document intact.
+
+    **Test steps:**
+
+    * a tutorial document also carrying a foreign ``reference_images`` block
+    * remove that block
+    * verify it returns ``True``, the block is gone, and the active ``tutorial`` block is untouched
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}, "reference_images": {"images_count": 12}})
+    assert doc.remove_block("reference_images") is True
+    assert "reference_images" not in doc.data
+    assert "tutorial" in doc.data
+
+
+def test_remove_block_refuses_the_active_block_and_is_a_noop_when_absent() -> None:
+    """``remove_block`` never drops the active block or a reserved key, and reports ``False`` for an
+    absent or non-object key ([[plugins#fallback-editor]], A4.4/#84).
+
+    A file always keeps the block its own ``type`` names, and ``core``/``format_version`` are not blocks,
+    so each is refused rather than deleted -- the backstop that keeps the drop affordance from ever
+    reaching into the active identity or the common core.
+
+    **Test steps:**
+
+    * the active ``tutorial`` block -> ``False``, still present
+    * the reserved ``core`` key -> ``False``, still present
+    * an absent key, and a stray non-object top-level key -> ``False``, unchanged
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}, "stray": "not a block"})
+    assert doc.remove_block("tutorial") is False
+    assert "tutorial" in doc.data
+    assert doc.remove_block("core") is False
+    assert "core" in doc.data
+    assert doc.remove_block("absent") is False
+    assert doc.remove_block("stray") is False
+    assert doc.data["stray"] == "not a block"
+
+
 def test_plugin_blocks_classifies_the_types_block_active_and_every_other_inactive() -> None:
     """The ``type`` names the one active block; every other block is inactive ([[plugins#plugin-blocks]]).
 

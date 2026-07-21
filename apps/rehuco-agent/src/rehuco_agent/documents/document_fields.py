@@ -10,10 +10,13 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
+from rehuco_core import PluginRegistry
+
 from ..fields import (
     PROVENANCE_ABANDONED_TYPE,
     PROVENANCE_NEWER_VERSION,
     PROVENANCE_NOT_CURRENT_TYPE,
+    PROVENANCE_PLUGIN_ABSENT,
     DescriptionField,
     Field,
     FieldRegistry,
@@ -219,16 +222,21 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
                 editor_tab=EDITOR_MAIN_TAB,
             )
         )
-    # each inactive block trails as a single flagged, read-only row naming the whole block. Its
-    # provenance is the safety-net distinction A4.3 makes visible ([[plugins#plugin-blocks]], #83): a
-    # block **claimed then abandoned** this session will be dropped on save (armed deletion), while a
-    # never-claimed **foreign** block is merely payload this file is custodian of, carried verbatim. No
-    # remove action either way: the carry-vs-drop editing UI is A4.4 ([[plugins#fallback-editor]])
+    # each inactive block trails as a single flagged row naming the whole block, carried verbatim by
+    # default with an explicit drop (A4.4/#84, [[plugins#fallback-editor]]). Its provenance is why it's
+    # inactive -- three cases the user resolves differently:
+    #   - **claimed then abandoned** this session: already dropped on save (armed deletion, #83). Its
+    #     message says how to keep it (switch back), and it gets *no* drop button -- it is on its way out
+    #     already, with the #86 discard-log audit trail, so a manual remove would only bypass that record.
+    #   - **foreign, plugin installed here**: not the current type; the fix is switch-the-type or drop.
+    #   - **foreign, plugin absent**: this build can't read it; the fix is install-the-plugin or drop.
+    # A foreign block's drop removes the whole block through the model, mirroring an unknown field's remove.
     for key, dropped in model.inactive_block_fates():
         fields.append(
             UnknownField(
                 key,
-                provenance=PROVENANCE_ABANDONED_TYPE if dropped else PROVENANCE_NOT_CURRENT_TYPE,
+                provenance=inactive_block_provenance(key, dropped, plugins),
+                on_remove=None if dropped else (lambda key=key: model.drop_inactive_block(key)),
                 is_present=lambda key=key: key in model.document.data,
                 current_value=lambda key=key: model.document.data.get(key),
                 viewer_tab=VIEWER_TAB,
@@ -236,3 +244,21 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
             )
         )
     return FieldsForm(fields)
+
+
+def inactive_block_provenance(key: str, dropped: bool, plugins: PluginRegistry) -> str:
+    """The provenance message flagging an inactive block, chosen by *why* it's inactive
+    ([[plugins#fallback-editor]], A4.4/#84).
+
+    Three cases the user resolves differently: a **claimed-then-abandoned** block is already slated to
+    drop on save (A4.3/#83); a never-claimed **foreign** block splits on whether this build has a plugin
+    for it -- installed means "switch the type or drop", absent means "install the plugin or drop".
+
+    :param key: the inactive block's key.
+    :param dropped: whether the block persistence invariant will drop it on save (claimed then abandoned).
+    :param plugins: the plugins installed here, to tell a not-current-type block from a plugin-absent one.
+    :returns: the matching ``PROVENANCE_*`` message.
+    """
+    if dropped:
+        return PROVENANCE_ABANDONED_TYPE
+    return PROVENANCE_NOT_CURRENT_TYPE if key in plugins else PROVENANCE_PLUGIN_ABSENT

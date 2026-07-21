@@ -1166,6 +1166,31 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             return True
         return False
 
+    def remove_block(self, key: str) -> bool:
+        """Drop a whole **inactive** plugin block from the document ([[plugins#fallback-editor]], A4.4/#84).
+
+        The block-level sibling of :meth:`remove_active_field`: where that drops one unrecognized key
+        *inside* the active block, this drops an entire inactive block the file was merely custodian of --
+        the explicit *drop* half of the fallback editor's carry-vs-drop choice, for a foreign block the
+        user does not want carried. The active block is never droppable this way (a file always keeps the
+        block its own ``type`` names), nor is a reserved key (``core``/``format_version`` are not blocks),
+        so either is refused rather than deleted.
+
+        A plain deletion of the top-level key, marking nothing on its own: the caller
+        (`RehuDocumentModel.drop_inactive_block`) is what dirties the model, and a :meth:`reload`/revert
+        restores the block from disk, exactly like a dropped unknown field.
+
+        :param key: the inactive block's top-level key to delete.
+        :returns: ``True`` if an inactive block by that key was present and removed, ``False`` if ``key``
+            names the active block, a reserved key, an absent key, or a non-object value (not a block).
+        """
+        if key == self.active_block_key or key in RESERVED_KEYS:
+            return False
+        if isinstance(self.__data.get(key), dict):
+            del self.__data[key]
+            return True
+        return False
+
     def __active_block_or_create(self) -> dict[str, Any]:
         """Return the mutable active block, installing a fresh one when absent or malformed.
 
