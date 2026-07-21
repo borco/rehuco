@@ -485,9 +485,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         which is why nothing here offers a way to edit or drop one --
         so for now they surface as read-only flagged rows.
 
-        :returns: the inactive block keys, in document order.
+        **Sorted** for a stable display order, the same discipline :meth:`unknown_field_names` applies to
+        the active block's unknown fields -- a presentation concern, independent of the document order the
+        core :meth:`~rehuco_core.RehuDocument.inactive_blocks` preserves for save (:meth:`save` imposes
+        its own canonical key order regardless, [[plugins#plugin-blocks]]).
+
+        :returns: the inactive block keys, sorted alphabetically.
         """
-        return [block.key for block in self.__document.inactive_blocks()]
+        return sorted(block.key for block in self.__document.inactive_blocks())
 
     def remove_unknown_field(self, name: str) -> None:
         """Drop an unknown active-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).

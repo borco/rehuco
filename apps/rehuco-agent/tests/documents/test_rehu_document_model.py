@@ -1577,15 +1577,16 @@ def test_inactive_block_keys_lists_every_block_the_type_does_not_name(document: 
 
     **Test steps:**
 
-    * add a ``reference_images`` and a ``daz3d`` block beside the tutorial document's own
-    * verify both come back, in document order, and the active block is not among them
+    * add a ``reference_images`` and then a ``daz3d`` block beside the tutorial document's own
+    * verify both come back **sorted alphabetically** (not in insertion order), and the active block is
+      not among them
     """
     document.data["reference_images"] = {"images_count": 12}
     document.data["daz3d"] = {"sku": "12345"}
     document.set_active_field("rating", 5)
     model = RehuDocumentModel(document)
 
-    assert model.inactive_block_keys() == ["reference_images", "daz3d"]
+    assert model.inactive_block_keys() == ["daz3d", "reference_images"]
 
 
 def test_bind_resolves_an_inactive_block_to_its_verbatim_contents(document: RehuDocument) -> None:

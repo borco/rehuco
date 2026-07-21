@@ -362,7 +362,8 @@ def test_serialize_renders_a_locked_document_that_save_would_refuse() -> None:
 def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
     """The file is laid out in one canonical order ([[field-schema#example-files]]).
 
-    ``format_version`` leads (it describes the file), then ``core``, then every other top-level key
+    ``format_version`` leads (it describes the file), then ``core``, then the **active** plugin block
+    (the one the ``type`` names, right after the core it belongs to), then every remaining top-level key
     alphabetically. Inside ``core``, :data:`CORE_LEADING_KEYS` lead -- what a reader opening a `.rehu`
     by hand looks for first, ending with ``sources``, which carries the title -- and the rest sort, so an
     unrecognized field is never *misplaced*, merely late.
@@ -370,7 +371,8 @@ def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
     **Test steps:**
 
     * save a document whose keys were inserted in a deliberately jumbled order
-    * verify the written top level and ``core`` both come out canonical
+    * verify the written top level (active ``tutorial`` block ahead of the alphabetized rest) and ``core``
+      both come out canonical
     """
     doc = RehuDocument(
         {
@@ -391,7 +393,7 @@ def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
 
     saved = saved_json(doc, mocker)
 
-    assert list(saved) == ["format_version", "core", "daz3d", "reference_images", "tutorial"]
+    assert list(saved) == ["format_version", "core", "tutorial", "daz3d", "reference_images"]
     assert list(saved["core"]) == ["type", "id", "created", "updated", "sources", "authors", "extra_tags"]
 
 
@@ -1663,6 +1665,247 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
     assert saved["core"]["type"] == "tutorial"
     assert saved["tutorial"] == {"format_version": 1, "users": {"admin": {"rating": 4}}}
     assert "Tutorial" not in saved
+
+
+# region Block persistence invariant (A4.2, [[plugins#plugin-blocks]])
+#
+# The single-active-type, claim-then-abandon rule that governs save: a block is written iff it is the
+# active type's block, or it is foreign payload never made active this session. A block made active this
+# session and then abandoned is *dropped*. The same key has opposite fates depending solely on "was it
+# ever active this session" -- the worked example's steps 1 and 4 encode exactly that contrast.
+
+
+def saved_blocks(doc: RehuDocument) -> dict[str, Any]:
+    """The plugin blocks a save would write, keyed by name, read straight off ``serialize()``.
+
+    ``serialize()`` is byte-for-byte what :meth:`RehuDocument.save` writes ([[plugins#plugin-blocks]]),
+    so it applies the persistence invariant without a mocked disk. ``core`` and ``format_version`` are
+    dropped, leaving just the plugin blocks whose presence or absence the invariant decides.
+
+    :param doc: the document to serialize.
+    :returns: the written plugin blocks, name -> fields.
+    """
+    written = json.loads(doc.serialize())
+    return {key: value for key, value in written.items() if key not in ("core", "format_version")}
+
+
+def test_the_opening_type_is_claimed_from_the_start() -> None:
+    """A block active from the document's first moment counts as claimed ([[plugins#plugin-blocks]]).
+
+    It has "been active this session" as much as one switched to later -- which is what arms the *former*
+    active type to drop once abandoned (the worked example's step 1).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document also carrying a foreign ``reference_images`` block
+    * verify only the opening type is claimed, the foreign block is not
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}, "reference_images": {"images_count": 12}})
+    assert doc.claimed_block_keys == frozenset({"tutorial"})
+
+
+def test_a_typeless_or_locked_document_claims_nothing() -> None:
+    """A document with no active type claims nothing -- there is no block to claim ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * a typeless document has an empty claim set
+    * an empty (locked-stub-shaped) document has an empty claim set
+    """
+    assert RehuDocument({}).claimed_block_keys == frozenset()
+    assert RehuDocument({"tutorial": {"rating": 4}}).claimed_block_keys == frozenset()
+
+
+def test_set_active_type_claims_the_new_type_and_normalizes_an_alias() -> None:
+    """Switching type claims the newly-active block, an alias claiming its main key ([[plugins#plugin-blocks]]).
+
+    Making a block active "claims" it; the requested spelling is normalized so ``type`` and its block key
+    stay one token and an alias claims exactly what its main spelling would.
+
+    **Test steps:**
+
+    * construct a tutorial-typed document
+    * switch to the ``ReferenceImages`` alias
+    * verify ``type`` and the claim both normalized to the ``reference_images`` main key
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}})
+    doc.set_active_type("ReferenceImages")
+    assert doc.type == "reference_images"
+    assert doc.active_block_key == "reference_images"
+    assert doc.claimed_block_keys == frozenset({"tutorial", "reference_images"})
+
+
+def test_set_active_type_to_empty_stores_the_type_but_claims_nothing() -> None:
+    """Clearing the active type stores it verbatim and claims nothing -- there is no block to claim
+    ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document (``tutorial`` claimed from the start)
+    * switch to an empty type
+    * verify the type cleared and no new claim was made -- only the earlier ``tutorial`` remains claimed
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"complete": True}})
+    doc.set_active_type("")
+    assert doc.type == ""
+    assert doc.claimed_block_keys == frozenset({"tutorial"})
+
+
+def test_a_never_claimed_foreign_block_is_carried_on_save() -> None:
+    """Foreign payload never made active is carried verbatim -- the file is its custodian
+    ([[plugins#plugin-blocks]]).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document carrying an untouched ``reference_images`` block
+    * verify, without any type switching, both the active and the foreign block are written
+    * verify the foreign block is classified inactive, unclaimed, and not dropped
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"complete": True}, "reference_images": {"images_count": 12}})
+    assert set(saved_blocks(doc)) == {"tutorial", "reference_images"}
+    assert saved_blocks(doc)["reference_images"] == {"images_count": 12}
+
+    foreign = next(block for block in doc.inactive_blocks() if block.key == "reference_images")
+    assert (foreign.active, foreign.claimed, foreign.dropped_on_save) == (False, False, False)
+
+
+def test_a_claimed_then_abandoned_block_is_dropped_on_save() -> None:
+    """A block made active this session and then abandoned is dropped on save ([[plugins#plugin-blocks]]).
+
+    By switching to it and away, the user asserted the file is no longer that type. This is the
+    wrong-but-plausible "save the current type" rule's opposite for the abandoned *former* type: it must
+    be actively dropped, not merely left unwritten by accident.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document (no plugin installed for it -- active anyway)
+    * switch to ``tutorial``, abandoning ``audiopack``
+    * verify ``audiopack`` is now claimed, inactive, and flagged to drop
+    * verify the save writes ``tutorial`` but not ``audiopack``
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+
+    abandoned = next(block for block in doc.inactive_blocks() if block.key == "audiopack")
+    assert (abandoned.active, abandoned.claimed, abandoned.dropped_on_save) == (False, True, True)
+    assert set(saved_blocks(doc)) == {"tutorial"}
+
+
+def test_switching_back_before_save_resurrects_a_hidden_block() -> None:
+    """A dropped block stays resurrectable in memory until close ([[plugins#plugin-blocks]]).
+
+    The drop is a save-*time* filter, not a mutation of ``data`` -- so switching the type back before
+    saving makes the block active, hence written, again, with its contents intact. Switching type back and
+    forth within a session is non-destructive until save.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document and switch away to ``tutorial`` (audiopack would drop)
+    * switch back to ``audiopack`` before any save
+    * verify the audiopack block is active again, its contents survived, and it is written on save
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    doc.set_active_type("audiopack")
+
+    assert doc.active_block_key == "audiopack"
+    assert doc.active_block == {"bitrate": 320}
+    assert saved_blocks(doc)["audiopack"] == {"bitrate": 320}
+
+
+def test_the_worked_example_carries_then_drops_the_same_key_by_claim_status() -> None:
+    """The four-step worked example, verified step by step ([[plugins#plugin-blocks]]).
+
+    Type starts at ``audiopack``; the file also holds an untouched ``reference_images`` block. The same
+    key (``reference_images``) has **opposite fates** in steps 1 and 4, decided solely by "was it ever
+    active this session": never-claimed carries, claimed-then-abandoned drops.
+
+    **Test steps:**
+
+    * step 1 -- switch to ``tutorial``: ``audiopack`` (former active, abandoned) drops; ``reference_images``
+      (never active) is carried; the save writes ``tutorial`` + ``reference_images``
+    * step 2 -- switch back to ``audiopack``: the in-memory ``audiopack`` revives, written again
+    * step 3 -- switch to ``reference_images``: it becomes active; the save writes **only** ``reference_images``
+    * step 4 -- switch away to ``audiopack``: ``reference_images`` is now claimed-and-abandoned and the save
+      **deletes** it -- the opposite of step 1 for the very same key
+    """
+    doc = RehuDocument(
+        {
+            "type": "audiopack",
+            "audiopack": {"bitrate": 320},
+            "reference_images": {"images_count": 12},
+        }
+    )
+
+    # step 1: switch to tutorial (create its block so the save has one to write)
+    doc.set_active_type("tutorial")
+    doc.set_active_field("complete", True)
+    assert set(saved_blocks(doc)) == {"tutorial", "reference_images"}, "audiopack dropped, reference_images carried"
+    assert saved_blocks(doc)["reference_images"] == {"images_count": 12}
+
+    # step 2: switch back to audiopack -- the hidden block revives
+    doc.set_active_type("audiopack")
+    assert doc.active_block == {"bitrate": 320}
+    assert set(saved_blocks(doc)) == {"audiopack", "reference_images"}, "tutorial now the abandoned one"
+
+    # step 3: switch to reference_images -- it becomes active, the sole survivor
+    doc.set_active_type("reference_images")
+    assert set(saved_blocks(doc)) == {"reference_images"}
+
+    # step 4: switch away -- reference_images is now claimed-and-abandoned, and is deleted
+    doc.set_active_type("audiopack")
+    assert "reference_images" not in saved_blocks(doc), "same key that step 1 carried is now dropped"
+    assert set(saved_blocks(doc)) == {"audiopack"}
+
+
+def test_reload_resets_session_claims_to_the_freshly_read_type(mocker: MockerFixture) -> None:
+    """Revert begins a clean session: the claim set re-seeds from the on-disk type ([[plugins#plugin-blocks]]).
+
+    Reverting discards this session's edits, type switches included, so a type switched to and abandoned
+    is forgotten -- the block is back to whatever the file says it is.
+
+    **Test steps:**
+
+    * load an audiopack-typed document and switch to ``tutorial`` (claiming both)
+    * reload (revert) from the unchanged file
+    * verify the claim set is back to just the on-disk ``audiopack``
+    """
+    doc = load_doc(mocker, {"type": "audiopack", "audiopack": {"bitrate": 320}})
+    doc.set_active_type("tutorial")
+    assert doc.claimed_block_keys == frozenset({"audiopack", "tutorial"})
+
+    doc.reload()
+    assert doc.active_block_key == "audiopack"
+    assert doc.claimed_block_keys == frozenset({"audiopack"})
+
+
+def test_claims_persist_across_a_save_so_a_dropped_block_stays_dropped(mocker: MockerFixture) -> None:
+    """A save does not reset the session -- its claims (and drops) carry on unchanged ([[plugins#plugin-blocks]]).
+
+    The deliberate answer to "what does save (or save-as) do to the claim set": nothing. A block dropped
+    on one save is not resurrected by the save itself; only switching its type back, or a reload, changes
+    its fate.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document, switch to ``tutorial`` (abandoning audiopack), and save
+    * verify that first save dropped ``audiopack``
+    * save again to a different path (save-as)
+    * verify the claim set is unchanged and audiopack is still dropped by the second save
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save(Path("/fake/first.rehu"))
+    assert "audiopack" not in json.loads(mock_write.call_args[0][1])
+
+    doc.save(Path("/fake/second.rehu"))
+    assert doc.claimed_block_keys == frozenset({"audiopack", "tutorial"})
+    assert "audiopack" not in json.loads(mock_write.call_args[0][1])
+
+
+# endregion
 
 
 def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
