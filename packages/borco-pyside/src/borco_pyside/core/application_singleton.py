@@ -1,5 +1,6 @@
 """Single-instance guard with argv forwarding, built on QLocalServer/QLocalSocket."""
 
+import enum
 import getpass
 import hashlib
 import json
@@ -18,6 +19,15 @@ CONNECT_TIMEOUT_MS: Final = 1000
 
 WRITE_TIMEOUT_MS: Final = 1000
 """Milliseconds to wait for a secondary instance to flush its argv payload and disconnect."""
+
+STALE_RECOVERY_ATTEMPTS: Final = 3
+"""Re-probes for a live primary after ``AddressInUseError`` before treating the socket as stale.
+
+Guards the launch-storm race: with no existing primary, two processes both fail the initial
+forward; one wins :meth:`~QLocalServer.listen`, the other gets ``AddressInUseError``. Re-probing
+lets the loser discover the freshly-live primary and forward to it, instead of unlinking that
+primary's *live* socket via :meth:`~QLocalServer.removeServer`.
+"""
 
 LENGTH_PREFIX: Final = ">I"
 """``struct`` format for the 4-byte big-endian unsigned integer that precedes each message body."""
@@ -38,6 +48,18 @@ class ApplicationSingleton(QObject):
     :param parent: optional Qt parent.
     :param strict: raise instead of running degraded if the primary role cannot be claimed.
     """
+
+    class Claim(enum.Enum):
+        """Outcome of attempting to claim the primary role on a server name."""
+
+        PRIMARY = enum.auto()
+        """This process is now the listening primary."""
+
+        FORWARDED = enum.auto()
+        """A live primary was found during stale-socket recovery; argv was forwarded and this process should exit."""
+
+        FAILED = enum.auto()
+        """The role could not be claimed (listen failed for a reason other than a recoverable stale socket)."""
 
     other_instance_run = Signal(list)
     """Emitted on the primary when a secondary instance forwards its argv and exits.
@@ -66,33 +88,41 @@ class ApplicationSingleton(QObject):
         self.__buffers: dict[QLocalSocket, bytearray] = {}
         """Per-connection accumulation buffers, keyed by socket, until a full framed message arrives."""
 
-    def setup(self, app_id: str) -> bool:
-        """Become the single primary for ``app_id``, or forward argv to the existing one.
+    def setup(self, app_id: str, args: list[str] | None = None) -> bool:
+        """Become the single primary for ``app_id``, or forward ``args`` to the existing one.
 
         Safe to call again at runtime to rebind to a different ``app_id`` (e.g. from a
         settings dialog); if the new binding fails, the previous one is restored.
 
         :param app_id: stable per-application identifier; combined with the current OS user
             to form the server name so different users never collide.
+        :param args: payload to forward if a primary already owns ``app_id``; defaults to this
+            process's ``sys.argv[1:]``. Emitted verbatim through :attr:`other_instance_run`.
         :returns: ``True`` if this process is the primary and should keep running; ``False``
-            if a primary already owns ``app_id`` (this process forwarded its argv and should exit).
+            if a primary already owns ``app_id`` (this process forwarded ``args`` and should exit).
         :raises RuntimeError: if ``strict`` and the primary role cannot be claimed.
         """
         name = self.__server_name_for(app_id)
-        if self.__forward_to_primary(name):
+        message = self.__encode([str(arg) for arg in (sys.argv[1:] if args is None else args)])
+        if self.__forward_to_primary(name, message):
             LOG.info("primary already running for %r; forwarded argv and exiting", app_id)
             return False
         previous_name = self.__server_name
-        if self.__listen(name):
+        outcome = self.__claim_role(name, message)
+        if outcome is self.Claim.PRIMARY:
             LOG.info("running as primary for %r", app_id)
             return True
+        if outcome is self.Claim.FORWARDED:
+            # a primary raced us to the name after our initial probe missed it; argv was forwarded
+            LOG.info("primary raced to %r during stale-socket recovery; forwarded argv and exiting", app_id)
+            return False
         # could not claim the role; restore the previous binding if this was a runtime rebind
         if previous_name is not None and previous_name != name:
-            self.__listen(previous_name)
-        message = f"could not claim single-instance role for {name!r}"
+            self.__claim_role(previous_name, message)
+        detail = f"could not claim single-instance role for {name!r}"
         if self.__strict:
-            raise RuntimeError(message)
-        LOG.warning("%s; running without single-instance protection", message)
+            raise RuntimeError(detail)
+        LOG.warning("%s; running without single-instance protection", detail)
         return True
 
     @property
@@ -112,42 +142,52 @@ class ApplicationSingleton(QObject):
             self.__server = None
             self.__server_name = None
 
-    def __listen(self, name: str) -> bool:
+    def __claim_role(self, name: str, message: bytes) -> ApplicationSingleton.Claim:
         """Start serving on ``name``, recovering from a stale socket left by a crash.
 
-        Must only be called after :meth:`__forward_to_primary` has confirmed no live server
-        is listening on ``name``; otherwise the stale-socket recovery would reap a running primary.
+        On ``AddressInUseError`` the name may be held by either a crashed primary's stale
+        socket or a primary that raced us to ``listen`` after our initial forward probe missed
+        it. To tell them apart, re-probe with a bounded forward (:data:`STALE_RECOVERY_ATTEMPTS`)
+        before unlinking anything: if a primary answers, ``message`` is forwarded to it and
+        :attr:`Claim.FORWARDED` is returned; only if none answers is the socket treated as stale
+        and reclaimed via :meth:`~QLocalServer.removeServer`.
 
         :param name: local-server name to listen on.
-        :returns: ``True`` if the server is now listening.
+        :param message: framed payload to forward if the re-probe finds a live primary.
+        :returns: which role was claimed (see :class:`Claim`).
         """
         self.shutdown()
         server = QLocalServer(self)
-        # a crashed primary can leave a socket file that blocks listen() although nothing runs;
-        # removeServer is safe here because __forward_to_primary already confirmed no live server answered
         if not server.listen(name) and server.serverError() == QAbstractSocket.SocketError.AddressInUseError:
+            server.deleteLater()
+            for _ in range(STALE_RECOVERY_ATTEMPTS):
+                if self.__forward_to_primary(name, message):
+                    return self.Claim.FORWARDED
+            # no primary answered across the bounded re-probes: the socket is stale, so reclaim it
             QLocalServer.removeServer(name)
+            server = QLocalServer(self)
             server.listen(name)
         if not server.isListening():
             LOG.warning("listen failed for %r: %s", name, server.errorString())
             server.deleteLater()
-            return False
+            return self.Claim.FAILED
         server.newConnection.connect(self.__on_new_connection)
         self.__server = server
         self.__server_name = name
-        return True
+        return self.Claim.PRIMARY
 
-    def __forward_to_primary(self, name: str) -> bool:
-        """Try to hand this process's argv to an already-running primary.
+    def __forward_to_primary(self, name: str, message: bytes) -> bool:
+        """Try to hand ``message`` to an already-running primary listening on ``name``.
 
         :param name: local-server name the primary would be listening on.
-        :returns: ``True`` if a primary answered and the argv was forwarded.
+        :param message: framed payload to write (see :meth:`__encode`).
+        :returns: ``True`` if a primary answered and the payload was forwarded.
         """
         socket = QLocalSocket()
         socket.connectToServer(name)
         if not socket.waitForConnected(CONNECT_TIMEOUT_MS):
             return False
-        socket.write(self.__encode(list(sys.argv[1:])))
+        socket.write(message)
         self.__flush(socket)
         socket.disconnectFromServer()
         if socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
