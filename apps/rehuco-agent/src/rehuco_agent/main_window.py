@@ -15,7 +15,7 @@ from .dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
-from .documents.rehu_document_model import INFO_REHU_FILENAME
+from .documents.rehu_document_model import path_label
 from .main_window_ui import Ui_MainWindow
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
@@ -260,8 +260,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Rebuilt fresh on every ``aboutToShow`` rather than kept in sync incrementally, mirroring
         :meth:`__populate_docks_menu` -- including reusing the same :class:`RehuDocumentMenuEntry`
-        title/path row, title derived the same ``info.rehu``-aware way as
-        :attr:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.label`.
+        title/path row, title derived via
+        :func:`~rehuco_agent.documents.rehu_document_model.path_label` (#117), the same rule
+        :attr:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.label` uses.
         """
         menu = self.__ui.open_recents_menu
         menu.clear()
@@ -271,7 +272,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             placeholder.setEnabled(False)
             return
         for path in paths:
-            title = f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+            title = path_label(path)
             action = QWidgetAction(menu)
             action.setDefaultWidget(RehuDocumentMenuEntry(title, path, menu))
             action.triggered.connect(lambda _checked=False, path=path: self.open_path(path))

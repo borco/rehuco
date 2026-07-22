@@ -14,7 +14,7 @@ from fields.field_testers import FieldTester as Field
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
-from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
 
 
@@ -1169,6 +1169,29 @@ def test_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/sculpting/sculpting.rehu")))
 
     assert model.label == "sculpting.rehu"
+
+
+def test_path_label_uses_the_parent_directory_name_for_info_rehu() -> None:
+    """`path_label` -- the shared rule `label` and the recents menu both use (#117) -- labels an
+    ``info.rehu`` path by its parent directory's name, trailing-slashed.
+
+    **Test steps:**
+
+    * call ``path_label`` on an ``info.rehu`` path
+    * verify it returns the parent directory's name plus a trailing slash
+    """
+    assert path_label(Path("/fake/sculpting/info.rehu")) == "sculpting/"
+
+
+def test_path_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
+    """`path_label` labels a non-``info.rehu`` path by its own bare filename.
+
+    **Test steps:**
+
+    * call ``path_label`` on a non-``info.rehu`` path
+    * verify it returns that file's bare name
+    """
+    assert path_label(Path("/fake/sculpting/sculpting.rehu")) == "sculpting.rehu"
 
 
 def test_bind_resolves_the_current_value_and_a_stable_changed_signal(model: RehuDocumentModel) -> None:
