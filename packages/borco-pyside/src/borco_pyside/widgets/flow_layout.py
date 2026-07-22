@@ -27,11 +27,6 @@ class FlowLayout(QLayout):
             self.setContentsMargins(QMargins(0, 0, 0, 0))
         self.__items: Final[list[QLayoutItem]] = []
 
-    def __del__(self) -> None:
-        item = self.takeAt(0)
-        while item is not None:
-            item = self.takeAt(0)
-
     @override
     def addItem(self, item: QLayoutItem) -> None:
         self.__items.append(item)
@@ -86,8 +81,10 @@ class FlowLayout(QLayout):
             without moving any item; when false, actually calls `setGeometry` on each item.
         :returns: the total height the layout occupies.
         """
-        x = rect.x()
-        y = rect.y()
+        margins = self.contentsMargins()
+        effective_rect = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        x = effective_rect.x()
+        y = effective_rect.y()
         line_height = 0
         spacing = self.spacing()
 
@@ -95,8 +92,8 @@ class FlowLayout(QLayout):
             space_x = spacing + self.__item_layout_spacing(item, Qt.Orientation.Horizontal)
             space_y = spacing + self.__item_layout_spacing(item, Qt.Orientation.Vertical)
             next_x = x + item.sizeHint().width() + space_x
-            if next_x - space_x > rect.right() and line_height > 0:
-                x = rect.x()
+            if next_x - space_x > effective_rect.right() and line_height > 0:
+                x = effective_rect.x()
                 y += line_height + space_y
                 next_x = x + item.sizeHint().width() + space_x
                 line_height = 0
@@ -107,7 +104,7 @@ class FlowLayout(QLayout):
             x = next_x
             line_height = max(line_height, item.sizeHint().height())
 
-        return y + line_height - rect.y()
+        return y + line_height - rect.y() + margins.bottom()
 
     @staticmethod
     def __item_layout_spacing(item: QLayoutItem, orientation: Qt.Orientation) -> int:
