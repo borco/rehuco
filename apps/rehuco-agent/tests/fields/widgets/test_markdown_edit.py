@@ -118,6 +118,7 @@ def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mo
     editor = MarkdownEdit()
     qtbot.addWidget(editor)
     set_representation_colour = mocker.spy(editor, "setRepresentationColour")
+    # pylint: disable=duplicate-code  # same drive-a-real-palette-change dance as the handler tests
     app = QApplication.instance()
     assert isinstance(app, QApplication)
 
@@ -126,6 +127,7 @@ def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mo
         palette = app.palette()
         palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("lime"))
         app.setPalette(palette)
+        # pylint: enable=duplicate-code
 
         set_representation_colour.assert_called()
     finally:
