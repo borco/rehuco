@@ -36,7 +36,9 @@ class QtAdsFocusTracker(QObject):
 
     Styles the current dock via the :data:`TRACKED_FOCUS_PROPERTY` dynamic property it sets (and
     re-polishes) on the current dock's tab and the dock itself as current-ness moves, matched by a
-    stylesheet applied to ``dock_manager`` at construction (:meth:`tracked_focus_dock_stylesheet`).
+    stylesheet *appended* to ``dock_manager``'s existing stylesheet at construction
+    (:meth:`tracked_focus_dock_stylesheet`) -- appended, not replacing, so QtAds' own default styling
+    (and any the consumer set) survives; its ``#tabCloseButton`` rule then merely overrides the default.
     This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
     Also renders every tab's close button as :data:`CLOSE_BUTTON_TEXT` text (not an icon) so the
     same stylesheet can recolour it to stay legible against the current tab's highlight.
@@ -51,6 +53,12 @@ class QtAdsFocusTracker(QObject):
     :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param title_bar: current dock's area title-bar accent colour (see
         :meth:`tracked_focus_dock_stylesheet`).
+    :param close_glyph: text drawn as each tab close button (see :data:`CLOSE_BUTTON_TEXT`); defaults
+        to the Phosphor ``x`` glyph, which needs :data:`CLOSE_BUTTON_FONT` loaded. A consumer without
+        that font should pass their own glyph (and matching :paramref:`close_font`) to avoid tofu.
+    :param close_font: font family the close button is drawn in (see :data:`CLOSE_BUTTON_FONT`); the
+        family in which :paramref:`close_glyph` resolves, and must be loaded before any tracked dock
+        is shown. Defaults to ``Phosphor-Bold``.
     :param parent: optional Qt parent; defaults to ``dock_manager`` itself.
     """
 
@@ -82,21 +90,27 @@ class QtAdsFocusTracker(QObject):
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
     current, whenever :attr:`current_dock` changes."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         dock_manager: QtAds.CDockManager,
         highlight: str = "palette(highlight)",
         label: str = "palette(highlighted-text)",
         title_bar: str = "palette(highlight)",
+        close_glyph: str = CLOSE_BUTTON_TEXT,
+        close_font: str = CLOSE_BUTTON_FONT,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
         self.__dock_manager: Final = dock_manager
+        self.__close_glyph: Final = close_glyph
+        self.__close_font: Final = close_font
         self.__current_dock: QtAds.CDockWidget | None = None
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
 
-        dock_manager.setStyleSheet(self.tracked_focus_dock_stylesheet(highlight, label, title_bar))
+        existing = dock_manager.styleSheet()
+        addition = self.tracked_focus_dock_stylesheet(highlight, label, title_bar)
+        dock_manager.setStyleSheet(f"{existing}\n{addition}" if existing else addition)
         dock_manager.dockWidgetAdded.connect(self.__on_dock_widget_added)
         dock_manager.dockWidgetRemoved.connect(self.__on_dock_widget_removed)
         dock_manager.stateRestored.connect(self.__on_state_restored)
@@ -411,9 +425,9 @@ ads--CDockWidget[{prop}="true"] {{
             return
         if button is not None:
             button.setIconSize(QSize(0, 0))
-            button.setText(self.CLOSE_BUTTON_TEXT)
+            button.setText(self.__close_glyph)
             font = button.font()
-            font.setFamily(self.CLOSE_BUTTON_FONT)
+            font.setFamily(self.__close_font)
             font.setPixelSize(self.CLOSE_BUTTON_GLYPH_SIZE)
             button.setFont(font)
             side = button.height()
