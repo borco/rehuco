@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
 from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
 from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
 from .document_widget import DocumentWidget
 from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
@@ -66,7 +67,7 @@ class DocumentsDock(QMainWindow):
         super().__init__(parent)
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
-        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
+        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
 
     def open_document(self, path: Path) -> DocumentWidget:

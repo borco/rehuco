@@ -6,6 +6,7 @@ import PySide6QtAds as QtAds
 from PySide6.QtCore import QObject, QSize, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
+from ..theming import Glyph
 from .qtads_widgets import tab_close_button, tab_label
 
 
@@ -40,7 +41,7 @@ class QtAdsFocusTracker(QObject):
     (:meth:`tracked_focus_dock_stylesheet`) -- appended, not replacing, so QtAds' own default styling
     (and any the consumer set) survives; its ``#tabCloseButton`` rule then merely overrides the default.
     This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
-    Also renders every tab's close button as :data:`CLOSE_BUTTON_TEXT` text (not an icon) so the
+    Also renders every tab's close button as :data:`DEFAULT_CLOSE_GLYPH`'s text (not an icon) so the
     same stylesheet can recolour it to stay legible against the current tab's highlight.
     Note the stylesheet's ``palette(...)`` colours are frozen to the theme active when it was
     applied; to follow a theme switch, rebuild it and re-apply on ``QApplication.paletteChanged``.
@@ -53,12 +54,13 @@ class QtAdsFocusTracker(QObject):
     :param label: current dock's tab label colour (see :meth:`tracked_focus_dock_stylesheet`).
     :param title_bar: current dock's area title-bar accent colour (see
         :meth:`tracked_focus_dock_stylesheet`).
-    :param close_glyph: text drawn as each tab close button (see :data:`CLOSE_BUTTON_TEXT`); defaults
-        to the Phosphor ``x`` glyph, which needs :data:`CLOSE_BUTTON_FONT` loaded. A consumer without
-        that font should pass their own glyph (and matching :paramref:`close_font`) to avoid tofu.
-    :param close_font: font family the close button is drawn in (see :data:`CLOSE_BUTTON_FONT`); the
-        family in which :paramref:`close_glyph` resolves, and must be loaded before any tracked dock
-        is shown. Defaults to ``Phosphor-Bold``.
+    :param close_glyph: the :class:`~borco_pyside.theming.Glyph` (codepoint + font family) drawn as
+        each tab close button. Defaults to :data:`DEFAULT_CLOSE_GLYPH` -- the plain Unicode ``✕`` in
+        the inherited UI font (empty family), so it needs no icon font loaded. A consumer with an icon
+        font (e.g. Phosphor) can pass a richer glyph, whose family must be loaded before any tracked
+        dock is shown.
+    :param close_glyph_size: pixel size the close-button glyph is rendered at. Defaults to
+        :data:`DEFAULT_CLOSE_GLYPH_SIZE`.
     :param parent: optional Qt parent; defaults to ``dock_manager`` itself.
     """
 
@@ -67,24 +69,22 @@ class QtAdsFocusTracker(QObject):
     and the dock itself (a ``CDockWidget``) -- and re-polishes -- for
     :meth:`tracked_focus_dock_stylesheet`'s selectors to match on."""
 
-    CLOSE_BUTTON_TEXT: Final = "\ue4f6"
-    """Glyph shown as each tab close button's text instead of its icon. Text (not an icon) so its
-    colour follows QSS ``color:`` -- normally the tab's own foreground, and :meth:`label`'s colour on
-    the current tab -- letting it stay legible against the current tab's highlighted background. A
-    QtAds close button's icon is a fixed ``url()`` SVG that ``color:`` cannot tint, and the style's
-    fallback icon only recolors under some styles (not the native Windows one); text works
-    everywhere. The default is the Phosphor ``x`` glyph, which only renders once the
-    :data:`CLOSE_BUTTON_FONT` font is loaded (via ``QFontDatabase.addApplicationFont``); without it
-    the button shows tofu."""
+    DEFAULT_CLOSE_GLYPH: Final = Glyph("✕")
+    """Default glyph shown as each tab close button's text instead of its icon: the plain Unicode
+    ``✕`` (U+2715 MULTIPLICATION X), in the inherited UI font (empty :attr:`~Glyph.family`) so it
+    needs no icon font loaded. Text (not an icon) so its colour follows QSS ``color:`` -- normally the
+    tab's own foreground, and :meth:`label`'s colour on the current tab -- letting it stay legible
+    against the current tab's highlighted background. A QtAds close button's icon is a fixed ``url()``
+    SVG that ``color:`` cannot tint, and the style's fallback icon only recolors under some styles
+    (not the native Windows one); text works everywhere. A consumer with an icon font can pass a
+    richer :class:`~borco_pyside.theming.Glyph` (e.g. Phosphor's ``x``), whose family must be loaded
+    (via ``QFontDatabase.addApplicationFont``) before any tracked dock is shown, or the button shows
+    tofu."""
 
-    CLOSE_BUTTON_FONT: Final = "Phosphor-Bold"
-    """Font family the close button is rendered in, so :data:`CLOSE_BUTTON_TEXT`'s glyph resolves.
-    The application must load this font (``QFontDatabase.addApplicationFont``) before any tracked
-    dock is shown; the family is em-centered, so no per-glyph padding tuning is needed."""
-
-    CLOSE_BUTTON_GLYPH_SIZE: Final = 12
-    """Pixel size the close button glyph is rendered at -- set in code (not QSS, which QtAds ignores
-    for this button's font), and re-applied on every restyle since QtAds rebuilds the button."""
+    DEFAULT_CLOSE_GLYPH_SIZE: Final = 12
+    """Default pixel size the close-button glyph is rendered at -- set in code (not QSS, which QtAds
+    ignores for this button's font), and re-applied on every restyle since QtAds rebuilds the
+    button."""
 
     current_dock_changed: Signal = Signal(object)
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
@@ -96,14 +96,14 @@ class QtAdsFocusTracker(QObject):
         highlight: str = "palette(highlight)",
         label: str = "palette(highlighted-text)",
         title_bar: str = "palette(highlight)",
-        close_glyph: str = CLOSE_BUTTON_TEXT,
-        close_font: str = CLOSE_BUTTON_FONT,
+        close_glyph: Glyph = DEFAULT_CLOSE_GLYPH,
+        close_glyph_size: int = DEFAULT_CLOSE_GLYPH_SIZE,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
         self.__dock_manager: Final = dock_manager
         self.__close_glyph: Final = close_glyph
-        self.__close_font: Final = close_font
+        self.__close_glyph_size: Final = close_glyph_size
         self.__current_dock: QtAds.CDockWidget | None = None
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
@@ -180,13 +180,13 @@ class QtAdsFocusTracker(QObject):
         ``palette(role)`` reference (theme-aware on each re-apply) or a literal ``#rrggbb``/``rgb(...)``.
 
         Also carries a plain ``#tabCloseButton`` rule zeroing every tab close button's icon size, so
-        the :data:`CLOSE_BUTTON_TEXT` text :meth:`__style_close_button` sets shows alone. Done in QSS
+        the close glyph :meth:`__style_close_button` sets as text shows alone. Done in QSS
         (not just Python) because QtAds re-polishes the button on every tab activation, which would
         otherwise re-apply its 16px icon size -- the rule re-applies 0 on each such repolish instead.
 
         :param highlight: fill/border colour of the current dock's tab. Default ``palette(highlight)``.
         :param label: text colour of the current dock's tab label *and* its close button (drawn as
-            :data:`CLOSE_BUTTON_TEXT`, not an icon, so this recolors it). Default
+            :data:`DEFAULT_CLOSE_GLYPH`'s text, not an icon, so this recolors it). Default
             ``palette(highlighted-text)`` -- the role guaranteed to contrast ``highlight`` in both
             light and dark themes.
         :param title_bar: colour of the accent line just below the title bar (drawn as the current
@@ -405,11 +405,12 @@ ads--CDockWidget[{prop}="true"] {{
         QTimer.singleShot(0, lambda: self.__style_close_button(dock))
 
     def __style_close_button(self, dock: QtAds.CDockWidget) -> None:
-        """Render ``dock``'s tab close button as :data:`CLOSE_BUTTON_TEXT` text rather than an icon.
+        """Render ``dock``'s tab close button as the close glyph's text rather than an icon.
 
-        Shows :data:`CLOSE_BUTTON_TEXT` as text and hides QtAds' own close icon by zeroing the
-        button's icon size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:``
-        recolours it, see :data:`CLOSE_BUTTON_TEXT`. Called (deferred) whenever the button is
+        Shows the close glyph as text and hides QtAds' own close icon by zeroing the button's icon
+        size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:`` recolours it,
+        see :data:`DEFAULT_CLOSE_GLYPH`. An empty glyph family keeps the button's inherited UI font
+        (right for a plain Unicode symbol). Called (deferred) whenever the button is
         (re)created: on ``dockWidgetAdded`` and after a layout restore rebuilds the tabs. A no-op if
         this tab shows no close button (no close-button config flag).
 
@@ -425,10 +426,11 @@ ads--CDockWidget[{prop}="true"] {{
             return
         if button is not None:
             button.setIconSize(QSize(0, 0))
-            button.setText(self.__close_glyph)
+            button.setText(self.__close_glyph.codepoint)
             font = button.font()
-            font.setFamily(self.__close_font)
-            font.setPixelSize(self.CLOSE_BUTTON_GLYPH_SIZE)
+            if self.__close_glyph.family:
+                font.setFamily(self.__close_glyph.family)
+            font.setPixelSize(self.__close_glyph_size)
             button.setFont(font)
             side = button.height()
             button.setFixedSize(side, side)
