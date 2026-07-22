@@ -1,7 +1,7 @@
 """Tests for FlowLayout: item bookkeeping, size hints, and row-wrapping geometry."""
 
 from borco_pyside.widgets import FlowLayout
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QMargins, Qt
 from PySide6.QtWidgets import QSizePolicy, QSpacerItem, QWidget
 from pytestqt.qtbot import QtBot
 
@@ -162,3 +162,58 @@ def test_flow_layout_tolerates_a_non_widget_item(qtbot: QtBot) -> None:
 
     assert layout.count() == 2
     assert layout.heightForWidth(200) > 0
+
+
+def test_flow_layout_positions_the_first_item_inset_by_the_left_and_top_margins(qtbot: QtBot) -> None:
+    """Non-zero contents margins push the first item's origin inward, not just inflate `minimumSize`.
+
+    **Test steps:**
+
+    * build a `FlowLayout` with no parent (so margins aren't zeroed) and set asymmetric margins
+    * add one widget and force the layout to run
+    * verify the widget's top-left sits at `(left, top)`, not at the raw rect origin
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout()
+    layout.setContentsMargins(QMargins(10, 5, 3, 7))
+    container.setLayout(layout)
+    widget = QWidget(container)
+    widget.setFixedSize(20, 20)
+    layout.addWidget(widget)
+
+    container.resize(200, 100)
+    container.show()
+    qtbot.waitExposed(container)
+
+    assert widget.geometry().topLeft().toTuple() == (10, 5)
+
+
+def test_flow_layout_wraps_against_the_margin_adjusted_right_edge(qtbot: QtBot) -> None:
+    """Row-wrapping accounts for the right margin instead of the raw rect width.
+
+    **Test steps:**
+
+    * build a `FlowLayout` with a right margin sized so a second fixed-width widget only overflows
+      once that margin is subtracted from the available width
+    * add two such widgets and force the layout to run
+    * verify the second widget wraps to a new row
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout()
+    layout.setContentsMargins(QMargins(0, 0, 30, 0))
+    container.setLayout(layout)
+    first, second = QWidget(container), QWidget(container)
+    for widget in (first, second):
+        widget.setFixedSize(80, 20)
+        policy = widget.sizePolicy()
+        policy.setControlType(QSizePolicy.ControlType.PushButton)
+        widget.setSizePolicy(policy)
+        layout.addWidget(widget)
+
+    container.resize(170, 200)
+    container.show()
+    qtbot.waitExposed(container)
+
+    assert first.geometry().y() < second.geometry().y()
