@@ -87,7 +87,10 @@ class FileAssociation:
             return False
         if aumid is not None and hkcu_registry.get_value(rf"{progid_key}\Application", "AppUserModelId") != aumid:
             return False
-        return hkcu_registry.get_value(rf"Software\Classes\.{extension}", "") == progid
+        ext_key = rf"Software\Classes\.{extension}"
+        if hkcu_registry.get_value(ext_key, "") != progid:
+            return False
+        return hkcu_registry.get_value(rf"{ext_key}\OpenWithProgids", progid) == ""
 
     @classmethod
     def unregister(cls, progid: str, extension: str) -> None:
