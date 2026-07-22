@@ -14,9 +14,8 @@ itself is written.
 
 [[[appendices.code-conventions#python]]]
 
-- **Imports:** absolute only (`from rehuco_agent.fields.field import Field`), never relative (`from .field
-  import Field`) — grep-able across the monorepo, and safe when code moves between files at different
-  package depths.
+- **Imports:** use relative imports in library code (`from .field import Field`) so package-internal moves stay local;
+  use absolute imports in tests and application entry files (`from rehuco_agent.fields.field import Field`).
 - **Module filenames:** match their main class (`rehu_document.py` → `RehuDocument`, `field_registry.py` →
   `FieldRegistry`), unless the file deliberately groups several related classes (`properties.py` →
   `TypedProperty`+`SimpleProperty`, `fields/field.py` → `Field`+`FieldBinding`+`FieldModel`).

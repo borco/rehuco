@@ -82,7 +82,8 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Plugin block model** — resolved ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]): plugin fields in separate
   keyed, independently-versioned blocks; exactly one live block per `type` (installed-ness doesn't promote inert
   blocks); save-persistence invariant (live type, or never-claimed foreign payload) with claim-then-abandon dropping on
-  save; generic fallback editor with carry/map/drop and provenance-aware flagging; discards logged.
+  save; generic fallback editor with carry/drop and provenance-aware flagging; recognized renames handled by
+  migrations; discards logged.
 - **Plugin spectrum (declarative ↔ code)** — resolved ([[plugins#core-vs-plugin]]): simple types are declarative
   field-lists over a shared field toolkit (no code, no trust surface); rich types are code plugins using the same
   toolkit plus custom widgets/actions. Unifies the code-plugin and TutCatalog5 `.rehuco`-declared-fields ideas.

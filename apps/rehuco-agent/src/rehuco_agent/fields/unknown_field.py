@@ -24,8 +24,7 @@ PROVENANCE_NEWER_VERSION: Final = (
 than what's installed ([[plugins#fallback-editor]]) -- deliberately source-agnostic, since in A2.8 a
 newer **common** top-level key and a newer **plugin-block** key are indistinguishable (there's no
 core-version model yet to tell them apart). The **block**-level plugin-absent provenance now lands
-(:data:`PROVENANCE_PLUGIN_ABSENT`, A4.4/#84); refining *this* field-level flag by source is the
-map-to-known-field slice's ([[plugins#fallback-editor]], A4.5/#85)."""
+(:data:`PROVENANCE_PLUGIN_ABSENT`, A4.4/#84)."""
 
 PROVENANCE_NOT_CURRENT_TYPE: Final = (
     "This block's plugin is installed here, but the block isn't the one this file's type names, so it "

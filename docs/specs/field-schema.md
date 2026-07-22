@@ -268,7 +268,8 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   can drive behavior beyond a display flag) and its control may sit in a different place in the
   UI.
 - **Scope.** `complete` and `online` are shared/objective; `viewed`, `todo`, `keep`, `favorite`
-  are **per-user** ([[field-schema#per-user-shared]]) — inline for now ([[field-schema#deferred-items]]).
+  are **per-user**, stored under the plugin block's `users` map
+  ([[field-schema#per-user-shared]]).
 - **Deferred: a `default_tags` toggle set.** Folding the fixed-vocabulary bools
   (`complete`/`online`/`viewed`/`todo`/`keep`) into one list rendered as UI toggles, with a
   vocabulary from `.rehuco` or defaults, was considered and **deferred** ([[field-schema#deferred-items]]): its payoff

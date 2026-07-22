@@ -77,7 +77,7 @@ the toolkit.
 
 [[[plugins#toolkit-surfaces]]]
 
-- [ ] [#20: feat: A2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
+- [x] [#20: feat: A2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
 
 The field toolkit named in [[plugins#core-vs-plugin]] is a shared, non-plugin library the agent owns; plugins (and
 declarative types) compose their viewer/editor from it. This section is its architecture and the
@@ -273,8 +273,9 @@ failing:
   *why* it's flagged — "not the current type" vs. "plugin not installed here" are different situations the user resolves
   differently. Default is carry-verbatim, with an explicit drop option.
 - **Unknown field inside a known active block** (e.g. the installed plugin is an older version than the file's block):
-  per-field UI to **map to a known field, drop, or carry verbatim** — most useful here because the plugin *is* present
-  and the user may know where a stray field belongs. Unmapped, undropped fields are carried untouched.
+  per-field UI to **drop or carry verbatim**. Renaming a recognized field belongs in the block's versioned migrations,
+  where it is deterministic; the fallback editor does not manually map unknown fields. Undropped fields are carried
+  untouched.
 - Flagged items **stand out in the viewer**, labeled by provenance (newer-version-of-installed-plugin vs. plugin-absent
   vs. not-the-current-type) so the user knows whether the fix is "upgrade the plugin," "install it," or "this is just
   inactive payload."

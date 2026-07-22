@@ -56,15 +56,15 @@ parsing code.
   "render and trim this site's page" (more robust).
 - Implemented as a **task-queue job** ([[architecture-design#components]]), like other heavy work.
 
-## §15.3 Migration: `.tc` → `.rehu` as format-version 0
+## §15.3 Import: `.tc` → `.rehu`
 
 [[[acquisition-tooling#tc-to-rehu]]]
 
 Opening an old `.tc` file offers migration actions: convert `.tc` (YAML) → `.rehu` (JSON), and normalize the non-uniform
 screenshot names into the uniform basename-derived `infoXX` scheme ([[data-model#resource-scoping]]). This is the
-**first concrete instance of the format-versioning mechanism ([[data-model#schema-version]])** rather than a one-off
-script: `.tc` is simply "format version 0," and migration is the upgrade-on-read/import rule applied to the oldest
-format. Checksum generate/verify ([[data-model#checksums]]) belongs alongside the migration actions in the same tooling.
+oldest supported **source format**, not `.rehu` format version 0: the converter emits the current `.rehu` layout with
+its version stamp. Version 0 specifically means an unstamped `.rehu` file ([[data-model#schema-version]]). Checksum
+generate/verify ([[data-model#checksums]]) belongs alongside the import actions in the same tooling.
 
 ## §15.4 Deferral
 
