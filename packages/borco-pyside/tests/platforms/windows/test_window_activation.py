@@ -173,3 +173,39 @@ def test_force_foreground_logs_win32_call_failures(
     assert any("AttachThreadInput" in message for message in messages)
     assert any("BringWindowToTop" in message for message in messages)
     assert any("SetForegroundWindow" in message for message in messages)
+
+
+@mark.windows
+def test_force_foreground_logs_detach_failure(
+    mocker: MockerFixture, qtbot: QtBot, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A failed detach is logged too -- distinct from the attach failure covered above, since
+    ``attached`` only becomes ``True`` (and the detach call happens at all) when the attach itself
+    succeeded.
+
+    **Test steps:**
+
+    * mock ``AttachThreadInput`` to succeed on attach but fail on detach
+    * call ``force_foreground``
+    * verify a warning was logged for the detach failure
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetForegroundWindow", create=True, return_value=FOREGROUND_HWND)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetWindowThreadProcessId", create=True, return_value=FOREGROUND_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.kernel32.GetCurrentThreadId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(
+        f"{WA}.ctypes.windll.user32.AttachThreadInput",
+        create=True,
+        side_effect=lambda a, b, attach: attach,
+    )
+    mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, return_value=True)
+
+    with caplog.at_level("WARNING", logger=WA):
+        window_activation.force_foreground(widget)
+
+    assert any("AttachThreadInput(detach)" in record.message for record in caplog.records)
