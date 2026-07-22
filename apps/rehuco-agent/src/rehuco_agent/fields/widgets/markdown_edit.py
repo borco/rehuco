@@ -7,6 +7,7 @@ import re
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
+from borco_pyside.theming import ApplicationPaletteChangeNotifier
 from PySide6.QtGui import QFontDatabase, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla, ScintillaEdit
@@ -108,13 +109,13 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
     def __setup_theme_reactivity(self) -> None:
         """Keep :data:`EOL_REPRESENTATION` coloured with the current theme's disabled/muted text
         colour, live -- not just at construction -- mirroring `ActionIconThemeHandler`'s own
-        ``QApplication.paletteChanged`` wiring (not ``QStyleHints.colorSchemeChanged``, which can
+        :class:`ApplicationPaletteChangeNotifier` wiring (not ``QStyleHints.colorSchemeChanged``, which can
         fire before the palette itself has actually updated).
         """
         app = QApplication.instance()
         if not isinstance(app, QApplication):
             raise RuntimeError("MarkdownEdit requires a running QApplication")
-        app.paletteChanged.connect(self.__apply_muted_color)
+        ApplicationPaletteChangeNotifier.for_application(app).palette_changed.connect(self.__apply_muted_color)
         self.__apply_muted_color()
 
     def __apply_muted_color(self, *_args: object) -> None:

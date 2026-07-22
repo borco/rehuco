@@ -44,7 +44,8 @@ class QtAdsFocusTracker(QObject):
     Also renders every tab's close button as :data:`DEFAULT_CLOSE_GLYPH`'s text (not an icon) so the
     same stylesheet can recolour it to stay legible against the current tab's highlight.
     Note the stylesheet's ``palette(...)`` colours are frozen to the theme active when it was
-    applied; to follow a theme switch, rebuild it and re-apply on ``QApplication.paletteChanged``.
+    applied; to follow a theme switch, rebuild it and re-apply on
+    :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier`'s ``palette_changed`` signal.
 
     A ``QObject``, parented to ``dock_manager`` by default -- ``QtAdsFocusTracker(dock_manager)``
     alone is enough, with nothing to hold onto: Qt destroys it along with ``dock_manager``.
