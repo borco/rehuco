@@ -12,6 +12,7 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager, Dockable
 from PySide6.QtWidgets import QLabel
 from pytest import fixture
 from pytestqt.qtbot import QtBot
+from shiboken6 import delete
 
 
 # region fixtures
@@ -253,3 +254,37 @@ def test_destroyed_dock_auto_unregisters_without_raising_on_later_bulk_calls(
     dialog_manager.save_all(settings)  # type: ignore[arg-type]
 
     assert settings.value("dockable_dialogs/dialog_b/visible") is not None
+
+
+def test_a_dead_dock_missed_by_the_destroyed_signal_is_skipped_and_dropped_by_bulk_calls(
+    manager: QtAds.CDockManager, settings: FakeSettings
+) -> None:
+    """A wrapper whose C++ dock died without the ``destroyed`` auto-unregister firing is skipped
+    (and dropped) by the bulk loops instead of raising ``RuntimeError``.
+
+    **Test steps:**
+
+    * build and register two dialogs
+    * sever one dock's ``destroyed`` delivery, then destroy its C++ object outright
+    * call save_all
+    * verify it doesn't raise, only the survivor's group was written, and the dead entry was
+      pruned (a later explicit ``unregister`` is a no-op, proving it's already gone)
+    """
+    dialog_manager = DockableDialogManager()
+
+    dialog_a = DockableDialog(manager, "dialog_a", "Dialog A", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_a.dock)
+    dialog_manager.register(dialog_a)
+
+    dialog_b = DockableDialog(manager, "dialog_b", "Dialog B", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_b.dock)
+    dialog_manager.register(dialog_b)
+
+    dialog_a.dock.destroyed.disconnect()  # sever the auto-unregister delivery
+    delete(dialog_a.dock)  # destroy the C++ dock now, leaving the Python wrapper dead
+
+    dialog_manager.save_all(settings)  # type: ignore[arg-type]
+
+    assert settings.value("dockable_dialogs/dialog_a/visible") is None
+    assert settings.value("dockable_dialogs/dialog_b/visible") is not None
+    dialog_manager.unregister(dialog_a)  # already pruned by save_all; must not raise
