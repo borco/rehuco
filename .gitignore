@@ -67,4 +67,4 @@ desktop.ini
 *.afdesign~lock~
 
 # Agent Continue Prompt
-continue_prompt.*
+continue_prompt*
