@@ -12,6 +12,7 @@ from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from ..fields import FieldsTab, StatefulWidget
+from ..glyphs import TAB_CLOSE_GLYPH
 from .document_fields import build_document_form
 from .rehu_document_model import RehuDocumentModel
 from .source_views import OnDiskView, SavePreviewView
@@ -129,7 +130,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         central_layout.addWidget(self.__dock_manager)
         self.setCentralWidget(central)
 
-        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager)
+        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
