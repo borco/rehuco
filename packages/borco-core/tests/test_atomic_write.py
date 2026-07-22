@@ -38,6 +38,7 @@ def patch_fs(
     mocker.patch("borco_core.atomic_write.os.chown", create=True)
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
+    mocker.patch("borco_core.atomic_write.sys.platform", "linux")
     if dest_exists:
         mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644, st_uid=1000, st_gid=1000))
     else:
@@ -84,7 +85,8 @@ def test_atomic_write_fsync_precedes_replace(mocker: MockerFixture) -> None:
 
     * patch filesystem calls, tracking call order via ``side_effect``
     * call ``atomic_write_bytes``
-    * verify fsync precedes replace in the recorded sequence
+    * verify the file's own fsync precedes replace in the recorded sequence (a second
+      fsync, of the parent directory, is expected to follow the replace)
     """
     mocker.patch("borco_core.atomic_write.tempfile.mkstemp", return_value=(FD, TEMP))
     mocker.patch("borco_core.atomic_write.os.fdopen", return_value=mocker.MagicMock())
@@ -94,13 +96,14 @@ def test_atomic_write_fsync_precedes_replace(mocker: MockerFixture) -> None:
     mocker.patch("borco_core.atomic_write.os.chown", create=True)
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
+    mocker.patch("borco_core.atomic_write.sys.platform", "linux")
 
     order: list[str] = []
     mocker.patch("borco_core.atomic_write.os.fsync", side_effect=lambda _: order.append("fsync"))
     mocker.patch("borco_core.atomic_write.os.replace", side_effect=lambda *_: order.append("replace"))
 
     atomic_write_bytes(TARGET, b"data")
-    assert order == ["fsync", "replace"]
+    assert order == ["fsync", "replace", "fsync"]
 
 
 def test_atomic_write_success_does_not_unlink_temp(mocker: MockerFixture) -> None:
@@ -147,6 +150,7 @@ def test_atomic_write_preserves_existing_destination_mode(mocker: MockerFixture)
     mocker.patch("borco_core.atomic_write.os.fsync")
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
+    mocker.patch("borco_core.atomic_write.sys.platform", "linux")
     mocker.patch.object(Path, "unlink")
     mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644, st_uid=1000, st_gid=1000))
     chmod = mocker.patch("borco_core.atomic_write.os.chmod")
@@ -201,3 +205,51 @@ def test_atomic_write_logs_warning_when_chown_fails(mocker: MockerFixture, caplo
 
     replace.assert_called_once_with(Path(TEMP), TARGET)
     assert "owner/group" in caplog.text
+
+
+def test_atomic_write_logs_warning_when_directory_fsync_fails(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A directory-fsync failure (e.g. unsupported on Windows) is logged but not fatal.
+
+    **Test steps:**
+
+    * patch filesystem calls, making ``os.open`` (used to get a directory fd) raise ``OSError``
+    * call ``atomic_write_bytes``
+    * verify the write still completes (``os.replace`` runs) and a warning is logged
+    * verify ``os.close`` and the directory's ``os.fsync`` were never reached (the file's own
+      ``fsync``, from the write itself, still ran exactly once)
+    """
+    handle, replace, _ = patch_fs(mocker)
+    fsync = mocker.patch("borco_core.atomic_write.os.fsync")
+    close = mocker.patch("borco_core.atomic_write.os.close")
+    mocker.patch("borco_core.atomic_write.os.open", side_effect=OSError("cannot open directory"))
+
+    with caplog.at_level("WARNING"):
+        atomic_write_bytes(TARGET, b"data")
+
+    replace.assert_called_once_with(Path(TEMP), TARGET)
+    close.assert_not_called()
+    fsync.assert_called_once_with(handle.fileno())
+    assert "fsync" in caplog.text
+
+
+def test_atomic_write_skips_directory_fsync_on_windows(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
+    """On Windows, the directory-fsync attempt is skipped entirely, without logging.
+
+    **Test steps:**
+
+    * patch filesystem calls with ``sys.platform`` forced to ``"win32"``
+    * call ``atomic_write_bytes``
+    * verify ``os.open`` was never called for the directory fd and nothing was logged
+    """
+    _, replace, _ = patch_fs(mocker)
+    mocker.patch("borco_core.atomic_write.sys.platform", "win32")
+    directory_open = mocker.patch("borco_core.atomic_write.os.open")
+
+    with caplog.at_level("WARNING"):
+        atomic_write_bytes(TARGET, b"data")
+
+    replace.assert_called_once_with(Path(TEMP), TARGET)
+    directory_open.assert_not_called()
+    assert caplog.text == ""

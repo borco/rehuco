@@ -9,6 +9,7 @@ semantics), so the same discipline holds on every target platform.
 import logging
 import os
 import stat
+import sys
 import tempfile
 from pathlib import Path
 from typing import Final
@@ -28,8 +29,9 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     defaults for a new file) so ``os.replace`` never narrows an existing file's
     permissions down to the temp file's owner-only mode; on POSIX its owner/group are
     restored the same way, best-effort (a failure there -- e.g. lacking the privilege
-    to ``chown`` to another user -- is logged and does not abort the write). On any
-    failure the temp file is removed and the original ``path`` is left untouched.
+    to ``chown`` to another user, or the destination directory not being fsync-able
+    at all on Windows -- is logged and does not abort the write). On any failure the
+    temp file is removed and the original ``path`` is left untouched.
 
     :param path: destination file path; overwritten atomically if it already exists.
     :param data: bytes to write.
@@ -48,6 +50,8 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
         except FileNotFoundError:
             dest_stat = None
         if dest_stat is None:
+            # os.umask has no "peek" mode -- setting it is the only way to read it, so
+            # restore the previous value immediately.
             umask = os.umask(0)
             os.umask(umask)
             mode = 0o666 & ~umask
@@ -55,17 +59,34 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
             mode = stat.S_IMODE(dest_stat.st_mode)
         os.chmod(tmp_path, mode)
         if dest_stat is not None and hasattr(os, "chown"):
+            # os.chown is POSIX-only (absent from the os module on Windows) and even
+            # there requires a privilege an unprivileged process may lack.
             try:
                 os.chown(tmp_path, dest_stat.st_uid, dest_stat.st_gid)  # pylint: disable=no-member
             except OSError:
                 LOG.warning("Could not restore owner/group on %s", path, exc_info=True)
         os.replace(tmp_path, path)
-        if os.name == "posix":
-            dir_fd = os.open(path.parent, os.O_RDONLY)
+        # The rename itself is atomic, but the directory entry recording it still needs
+        # its own fsync to survive a crash right after the replace. Opening a directory
+        # this way isn't supported on Windows, so it's skipped there entirely rather
+        # than attempted and warned about on every single save.
+        #
+        # Deliberately sys.platform, not os.name: pathlib checks os.name on every
+        # Path(...) call to pick WindowsPath/PosixPath, and PosixPath's __new__ has a
+        # hard "cannot instantiate on your system" guard baked in from os.name at
+        # interpreter start. Mocking os.name in a test makes pathlib crash on the very
+        # next path.parent access; sys.platform isn't consulted by pathlib at all, so
+        # it's the only one of the two that can be mocked here safely.
+        if sys.platform != "win32":
             try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
+                dir_fd = os.open(path.parent, os.O_RDONLY)
+            except OSError:
+                LOG.warning("Could not open directory %s to fsync it", path.parent, exc_info=True)
+            else:
+                try:
+                    os.fsync(dir_fd)
+                finally:
+                    os.close(dir_fd)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
