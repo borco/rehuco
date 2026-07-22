@@ -2,8 +2,9 @@
 
 Rows carry no dismiss affordance (state, not a one-shot notification) and rebuild wholesale on every
 ``set_rows`` call, so what these tests exercise is: a row renders its severity's marker and its
-message, a severity's style is overridable (icon or fallback glyph, accent color), an empty row list
-shows nothing, multiple rows stack, and long text wraps rather than widening the strip.
+message, a severity's style is overridable (icon or fallback glyph, accent color) both class-wide and
+per-instance, an empty row list shows nothing, multiple rows stack, and long text wraps rather than
+widening the strip.
 """
 
 from collections.abc import Iterator
@@ -105,6 +106,77 @@ def test_a_severitys_configured_icon_is_used_as_the_marker(qtbot: QtBot) -> None
     marker_label = next(label for label in banner.findChildren(QLabel) if label is not message_label)
     assert marker_label.text() == ""
     assert not marker_label.pixmap().isNull()
+
+
+# endregion
+
+
+# region per-instance styles
+def test_per_instance_styles_take_precedence_over_the_class_table(qtbot: QtBot) -> None:
+    """A style passed to the constructor wins over the class-wide ``SEVERITY_STYLES`` for the
+    severities it names.
+
+    **Test steps:**
+
+    * register a class-wide warning style with one accent color
+    * build a banner passing a per-instance warning style with a different accent color
+    * verify the row renders with the per-instance color, not the class-wide one
+    """
+    MessageBanner.SEVERITY_STYLES[MessageBannerSeverity.WARNING] = MessageBannerSeverityStyle(  # pylint: disable=unsupported-assignment-operation
+        margin_color="#c1a55e"
+    )
+    banner = MessageBanner(styles={MessageBannerSeverity.WARNING: MessageBannerSeverityStyle(margin_color="#1057ee")})
+    qtbot.addWidget(banner)
+
+    banner.set_rows([row()])
+
+    stylesheets = " ".join(label.styleSheet() for label in banner.findChildren(QLabel))
+    assert "#1057ee" in stylesheets
+    assert "#c1a55e" not in stylesheets
+
+
+def test_a_severity_absent_from_per_instance_styles_falls_back_to_the_class_table(qtbot: QtBot) -> None:
+    """A severity the per-instance ``styles`` does not name still resolves through the class-wide
+    ``SEVERITY_STYLES`` -- the per-instance table layers over, rather than replaces, the class one.
+
+    **Test steps:**
+
+    * register a class-wide warning style
+    * build a banner whose per-instance ``styles`` names only the info severity
+    * build a warning row and verify it renders with the class-wide warning color
+    """
+    MessageBanner.SEVERITY_STYLES[MessageBannerSeverity.WARNING] = MessageBannerSeverityStyle(  # pylint: disable=unsupported-assignment-operation
+        margin_color="#c1a55e"
+    )
+    banner = MessageBanner(styles={MessageBannerSeverity.INFO: MessageBannerSeverityStyle(margin_color="#1057ee")})
+    qtbot.addWidget(banner)
+
+    banner.set_rows([row()])
+
+    stylesheets = " ".join(label.styleSheet() for label in banner.findChildren(QLabel))
+    assert "#c1a55e" in stylesheets
+
+
+def test_two_banners_style_the_same_severity_differently(qtbot: QtBot) -> None:
+    """Two banners in one process, each with its own per-instance ``styles``, render the same severity
+    differently -- the isolation the class-wide table cannot provide.
+
+    **Test steps:**
+
+    * build two banners, each passing a different per-instance warning style
+    * seed each with a warning row
+    * verify each renders with its own accent color
+    """
+    first = MessageBanner(styles={MessageBannerSeverity.WARNING: MessageBannerSeverityStyle(margin_color="#1057ee")})
+    second = MessageBanner(styles={MessageBannerSeverity.WARNING: MessageBannerSeverityStyle(margin_color="#c1a55e")})
+    qtbot.addWidget(first)
+    qtbot.addWidget(second)
+
+    first.set_rows([row()])
+    second.set_rows([row()])
+
+    assert "#1057ee" in " ".join(label.styleSheet() for label in first.findChildren(QLabel))
+    assert "#c1a55e" in " ".join(label.styleSheet() for label in second.findChildren(QLabel))
 
 
 # endregion
