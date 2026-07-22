@@ -301,7 +301,7 @@ def test_rebind_failure_attempts_to_restore_previous_server(mocker: MockerFixtur
 
     assert result is True  # degraded: neither name could be claimed
     assert claim_mock.call_count == 2
-    restore_name = claim_mock.call_args_list[1].args[0]
+    restore_name = claim_mock.call_args_list[1][0][0]
     assert restore_name == previous_name
 
 
