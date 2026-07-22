@@ -7,7 +7,6 @@ default value is the correct, unprivileged approach and works as long as no ``Us
 """
 
 import logging
-import winreg
 from typing import Final
 
 from . import hkcu_registry
@@ -94,24 +93,24 @@ class FileAssociation:
 
     @classmethod
     def unregister(cls, progid: str, extension: str) -> None:
-        """Remove the HKCU ``progid`` key tree and, if it still points at it, the extension binding.
+        """Remove the HKCU ``progid`` key tree and only this progid's own extension bindings.
+
+        The extension key itself survives: deleting the whole ``Software\\Classes\\.<ext>`` tree
+        would also wipe *other* applications' ``OpenWithProgids`` entries and unrelated values a
+        different registrar may have added (``PerceivedType``, ``ShellNew``, ...), so only the
+        ``OpenWithProgids`` value :meth:`register` wrote and -- if it still points at ``progid`` --
+        the default-handler value are removed.
 
         :param progid: the ``ProgID`` to remove.
-        :param extension: file extension whose binding is cleared, if it still points at ``progid``.
+        :param extension: file extension whose bindings to ``progid`` are cleared.
         """
         hkcu_registry.delete_key_tree(rf"Software\Classes\{progid}")
 
         ext_key = rf"Software\Classes\.{extension}"
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, ext_key) as key:
-                value, _ = winreg.QueryValueEx(key, "")
-                if value == progid:
-                    # recursive delete, not a plain DeleteKey: the extension key now has an
-                    # OpenWithProgids subkey, and DeleteKey refuses to remove a key with children
-                    hkcu_registry.delete_key_tree(ext_key)
-                    LOG.info("removed extension binding for .%s", extension)
-        except OSError:
-            pass  # already gone or never existed
+        hkcu_registry.delete_value(rf"{ext_key}\OpenWithProgids", progid)
+        if hkcu_registry.get_value(ext_key, "") == progid:
+            hkcu_registry.delete_value(ext_key, "")
+            LOG.info("removed extension binding for .%s", extension)
 
         hkcu_registry.notify_shell()
         LOG.info("unregistered ProgID %r", progid)

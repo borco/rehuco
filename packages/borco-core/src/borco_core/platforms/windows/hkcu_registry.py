@@ -61,6 +61,26 @@ def delete_key_tree(path: str) -> None:
         LOG.warning("failed to delete HKCU\\%s", path, exc_info=True)
 
 
+def delete_value(key_path: str, name: str) -> None:
+    """Delete one value under HKCU, leaving the key itself and its other values/sub-keys intact.
+
+    A no-op (not an error) when the key or the value doesn't exist; any other failure is logged
+    rather than swallowed silently or re-raised, matching :func:`delete_key_tree`'s best-effort
+    unregistration-cleanup contract.
+
+    :param key_path: registry path relative to ``HKEY_CURRENT_USER``.
+    :param name: value name; empty string deletes the default value.
+    """
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, access=winreg.KEY_SET_VALUE) as key:
+            winreg.DeleteValue(key, name)
+            LOG.debug("deleted HKCU\\%s[%r]", key_path, name)
+    except FileNotFoundError:
+        pass  # key or value already gone
+    except OSError:
+        LOG.warning("failed to delete HKCU\\%s[%r]", key_path, name, exc_info=True)
+
+
 def notify_shell() -> None:
     """Tell Explorer that an association/shell-verb registration changed, refreshing it without a logoff."""
     ctypes.windll.shell32.SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, None, None)

@@ -93,6 +93,14 @@ class FakeRegistry:
             raise OSError(f"no such key: {path}")
         del self.values[path]
 
+    def delete_value(self, key: FakeKey, name: str) -> None:
+        """Fake for ``winreg.DeleteValue`` -- raises ``FileNotFoundError`` if ``name`` doesn't exist,
+        mirroring real ``winreg`` (an ``OSError`` subclass)."""
+        values = self.values.get(key.path, {})
+        if name not in values:
+            raise FileNotFoundError(f"no such value: {key.path}[{name!r}]")
+        del values[name]
+
     def enum_key(self, key: FakeKey, index: int) -> str:
         """Fake for ``winreg.EnumKey`` -- raises ``OSError`` once ``index`` runs out of children."""
         children = self.children_of(key.path)
@@ -119,6 +127,7 @@ def fake_registry(mocker: MockerFixture) -> FakeRegistry:
     mocker.patch(f"{HKCU}.winreg.SetValueEx", side_effect=registry.set_value_ex)
     mocker.patch(f"{HKCU}.winreg.QueryValueEx", side_effect=registry.query_value_ex)
     mocker.patch(f"{HKCU}.winreg.DeleteKey", side_effect=registry.delete_key)
+    mocker.patch(f"{HKCU}.winreg.DeleteValue", side_effect=registry.delete_value)
     mocker.patch(f"{HKCU}.winreg.EnumKey", side_effect=registry.enum_key)
     mocker.patch(f"{HKCU}.ctypes.windll.shell32.SHChangeNotify", side_effect=registry.notify_shell)
     return registry

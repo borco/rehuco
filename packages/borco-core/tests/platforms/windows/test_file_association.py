@@ -210,20 +210,24 @@ def test_is_registered_is_false_when_open_with_progids_is_missing(fake_registry:
 
 @mark.windows
 def test_unregister_removes_progid_and_extension_binding(fake_registry: FakeRegistry) -> None:
-    """``unregister`` deletes the whole ProgID key tree and the extension binding it owns.
+    """``unregister`` deletes the whole ProgID key tree and only this progid's extension bindings.
 
     **Test steps:**
 
     * register, then unregister
     * verify the ProgID key and all its sub-keys are gone
-    * verify the extension key is gone too, since it pointed at the ProgID
+    * verify the extension key survives, but its default value and this progid's
+      ``OpenWithProgids`` entry are gone
     """
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
     file_association.FileAssociation.unregister(PROGID, EXTENSION)
 
     progid_key = rf"Software\Classes\{PROGID}"
     assert not any(key.startswith(progid_key) for key in fake_registry.values)
-    assert rf"Software\Classes\.{EXTENSION}" not in fake_registry.values
+    ext_key = rf"Software\Classes\.{EXTENSION}"
+    assert ext_key in fake_registry.values
+    assert "" not in fake_registry.values[ext_key]
+    assert PROGID not in fake_registry.values[rf"{ext_key}\OpenWithProgids"]
 
 
 @mark.windows
@@ -244,6 +248,32 @@ def test_unregister_keeps_extension_binding_pointing_elsewhere(fake_registry: Fa
     file_association.FileAssociation.unregister(PROGID, EXTENSION)
 
     assert fake_registry.values[ext_key][""] == "SomeOtherApp.Document"
+
+
+@mark.windows
+def test_unregister_preserves_other_applications_data_on_the_extension_key(fake_registry: FakeRegistry) -> None:
+    """``unregister`` leaves other apps' ``OpenWithProgids`` entries and unrelated extension-key
+    values (``PerceivedType``, ...) intact -- it must never delete registry data it didn't write.
+
+    **Test steps:**
+
+    * register, then add another app's ``OpenWithProgids`` entry and a ``PerceivedType`` value to
+      the extension key (simulating another registrar's data)
+    * unregister
+    * verify our own ``OpenWithProgids`` entry and the default value are gone, while the other
+      app's entry and ``PerceivedType`` survive
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    ext_key = rf"Software\Classes\.{EXTENSION}"
+    fake_registry.values[rf"{ext_key}\OpenWithProgids"]["SomeOtherApp.Document"] = ""
+    fake_registry.values[ext_key]["PerceivedType"] = "document"
+
+    file_association.FileAssociation.unregister(PROGID, EXTENSION)
+
+    assert PROGID not in fake_registry.values[rf"{ext_key}\OpenWithProgids"]
+    assert "" not in fake_registry.values[ext_key]
+    assert fake_registry.values[rf"{ext_key}\OpenWithProgids"]["SomeOtherApp.Document"] == ""
+    assert fake_registry.values[ext_key]["PerceivedType"] == "document"
 
 
 @mark.windows
