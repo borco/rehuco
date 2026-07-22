@@ -16,11 +16,14 @@ def patch_fs(
     mocker: MockerFixture,
     *,
     replace_error: Exception | None = None,
+    dest_exists: bool = False,
 ) -> tuple:
     """Patch all filesystem calls inside ``atomic_write`` and return the three mocks tests assert on.
 
     :param mocker: pytest-mock fixture.
     :param replace_error: if given, ``os.replace`` raises this instead of succeeding.
+    :param dest_exists: if ``True``, ``Path.stat`` succeeds (existing destination);
+        otherwise it raises ``FileNotFoundError`` (new destination).
     :returns: a 3-tuple of
         ``(write_handle, replace, unlink)`` where ``write_handle`` is the mock object
         bound to ``handle`` inside the ``with os.fdopen(...) as handle:`` block,
@@ -31,6 +34,13 @@ def patch_fs(
     handle = mocker.MagicMock()
     mocker.patch("borco_core.atomic_write.os.fdopen", return_value=handle)
     mocker.patch("borco_core.atomic_write.os.fsync")
+    mocker.patch("borco_core.atomic_write.os.chmod")
+    mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
+    mocker.patch("borco_core.atomic_write.os.close")
+    if dest_exists:
+        mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644))
+    else:
+        mocker.patch.object(Path, "stat", side_effect=FileNotFoundError)
     replace = mocker.patch("borco_core.atomic_write.os.replace", side_effect=replace_error)
     unlink = mocker.patch.object(Path, "unlink")
     return handle.__enter__.return_value, replace, unlink
@@ -78,6 +88,10 @@ def test_atomic_write_fsync_precedes_replace(mocker: MockerFixture) -> None:
     mocker.patch("borco_core.atomic_write.tempfile.mkstemp", return_value=(FD, TEMP))
     mocker.patch("borco_core.atomic_write.os.fdopen", return_value=mocker.MagicMock())
     mocker.patch.object(Path, "unlink")
+    mocker.patch.object(Path, "stat", side_effect=FileNotFoundError)
+    mocker.patch("borco_core.atomic_write.os.chmod")
+    mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
+    mocker.patch("borco_core.atomic_write.os.close")
 
     order: list[str] = []
     mocker.patch("borco_core.atomic_write.os.fsync", side_effect=lambda _: order.append("fsync"))
@@ -115,3 +129,48 @@ def test_atomic_write_failure_unlinks_temp_and_propagates(mocker: MockerFixture)
     with pytest.raises(OSError, match="replace failed"):
         atomic_write_bytes(TARGET, b"replacement")
     unlink.assert_called_once_with(missing_ok=True)
+
+
+def test_atomic_write_preserves_existing_destination_mode(mocker: MockerFixture) -> None:
+    """The temp file's mode is set to the existing destination's mode before the replace.
+
+    **Test steps:**
+
+    * patch filesystem calls with an existing destination mode of 0o644
+    * call ``atomic_write_bytes``
+    * verify ``os.chmod`` was called with the temp path and 0o644 before ``os.replace``
+    """
+    mocker.patch("borco_core.atomic_write.tempfile.mkstemp", return_value=(FD, TEMP))
+    mocker.patch("borco_core.atomic_write.os.fdopen", return_value=mocker.MagicMock())
+    mocker.patch("borco_core.atomic_write.os.fsync")
+    mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
+    mocker.patch("borco_core.atomic_write.os.close")
+    mocker.patch.object(Path, "unlink")
+    mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644))
+    chmod = mocker.patch("borco_core.atomic_write.os.chmod")
+
+    order: list[str] = []
+    chmod.side_effect = lambda *_: order.append("chmod")
+    replace = mocker.patch("borco_core.atomic_write.os.replace", side_effect=lambda *_: order.append("replace"))
+
+    atomic_write_bytes(TARGET, b"data")
+    chmod.assert_called_once_with(Path(TEMP), 0o644)
+    replace.assert_called_once_with(Path(TEMP), TARGET)
+    assert order == ["chmod", "replace"]
+
+
+def test_atomic_write_applies_umask_mode_for_new_destination(mocker: MockerFixture) -> None:
+    """A new destination (no existing file) gets umask-respecting default permissions.
+
+    **Test steps:**
+
+    * patch filesystem calls with a missing destination and a known umask
+    * call ``atomic_write_bytes``
+    * verify ``os.chmod`` was called with ``0o666`` minus the umask
+    """
+    _, _, _ = patch_fs(mocker, dest_exists=False)
+    chmod = mocker.patch("borco_core.atomic_write.os.chmod")
+    mocker.patch("borco_core.atomic_write.os.umask", side_effect=[0o022, 0o022])
+
+    atomic_write_bytes(TARGET, b"data")
+    chmod.assert_called_once_with(Path(TEMP), 0o644)

@@ -7,6 +7,7 @@ semantics), so the same discipline holds on every target platform.
 """
 
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Final
@@ -19,8 +20,11 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     """Write ``data`` to ``path`` atomically via a temp sibling and ``os.replace``.
 
     The temp file is created in the destination's own directory so the final rename
-    stays on one filesystem (a cross-device rename is not atomic). On any failure the
-    temp file is removed and the original ``path`` is left untouched.
+    stays on one filesystem (a cross-device rename is not atomic). Before the replace,
+    the temp file's mode is set to match the existing destination (or umask-respecting
+    defaults for a new file) so ``os.replace`` never narrows an existing file's
+    permissions down to the temp file's owner-only mode. On any failure the temp file
+    is removed and the original ``path`` is left untouched.
 
     :param path: destination file path; overwritten atomically if it already exists.
     :param data: bytes to write.
@@ -34,7 +38,20 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        try:
+            mode = stat.S_IMODE(path.stat().st_mode)
+        except FileNotFoundError:
+            umask = os.umask(0)
+            os.umask(umask)
+            mode = 0o666 & ~umask
+        os.chmod(tmp_path, mode)
         os.replace(tmp_path, path)
+        if os.name == "posix":
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
