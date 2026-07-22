@@ -6,6 +6,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
+from .application_palette_change_notifier import ApplicationPaletteChangeNotifier
 from .glyph_icon import glyph_icon
 
 
@@ -13,13 +14,16 @@ class GlyphActionIconThemeHandler(QObject):
     """Keeps ``action``'s icon -- one font glyph, not an SVG -- colored from the current palette.
 
     The glyph/font/palette-role combination is fixed at construction; only the palette role's actual
-    color is re-read, on every ``QApplication.paletteChanged`` -- the point at which a theme switch's
-    new colors are genuinely available, matching :class:`~borco_pyside.theming.ActionIconThemeHandler`.
-    Unlike that SVG-based handler, this one always renders a single, non-checkable state: there is no
-    enabled/disabled or checked/unchecked split to bake in.
+    color is re-read, whenever the shared
+    :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier` reports a palette change -- the
+    point at which a theme switch's new colors are genuinely available, matching
+    :class:`~borco_pyside.theming.ActionIconThemeHandler`. Unlike that SVG-based handler, this one
+    always renders a single, non-checkable state: there is no enabled/disabled or checked/unchecked
+    split to bake in.
 
     A ``QObject``, parented to ``action`` by default -- ``GlyphActionIconThemeHandler(action, ...)``
-    alone is enough, with nothing to hold onto: Qt destroys it along with ``action``.
+    alone is enough, with nothing to hold onto: Qt destroys it along with ``action``, and severs its
+    connection to the notifier at the same time.
 
     :param action: the action to keep themed.
     :param glyph: the glyph character drawn as the icon.
@@ -45,11 +49,8 @@ class GlyphActionIconThemeHandler(QObject):
         app = QApplication.instance()
         if not isinstance(app, QApplication):
             raise RuntimeError("GlyphActionIconThemeHandler requires a running QApplication")
-        app.paletteChanged.connect(self.__on_palette_changed)
+        ApplicationPaletteChangeNotifier.for_application(app).palette_changed.connect(self.__apply_icon)
 
-        self.__apply_icon()
-
-    def __on_palette_changed(self, *_args: object) -> None:
         self.__apply_icon()
 
     def __apply_icon(self) -> None:

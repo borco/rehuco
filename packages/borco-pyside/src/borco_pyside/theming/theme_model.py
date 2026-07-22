@@ -24,7 +24,7 @@ class ThemeModel(QObject):
     :attr:`mode_changed` instead, both independent of one another and of Qt's own
     ``QStyleHints.colorSchemeChanged`` (left alone here for whatever else cares about the *resolved*
     appearance, e.g. :class:`~borco_pyside.theming.ActionIconThemeHandler`'s own repaint via
-    ``QApplication.paletteChanged``).
+    :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier`).
 
     ``mode`` is applied to ``QApplication.styleHints().setColorScheme()`` immediately on
     construction and again on every subsequent change. ``Unknown`` is itself what asks Qt to keep
