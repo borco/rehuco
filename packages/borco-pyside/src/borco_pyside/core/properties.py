@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Final, Literal, overload
+from weakref import WeakKeyDictionary
 
 from PySide6.QtCore import Property, QObject, Signal
 
@@ -72,7 +73,9 @@ class SimpleProperty[T]:
     naming convention (the ``notify="auto"`` default) or by passing any signal explicitly as
     ``notify=``. Then ``obj.<name>`` reads and writes the value, the bound signal fires with the new
     value on every change (assigning the current value is a no-op), and ``obj.set_<name>(value)`` is
-    a plain method usable as a slot.
+    a plain method usable as a slot. The ``set_<name>`` name is reserved: declaring your own
+    ``set_<name>`` method on the same class raises (it would otherwise be silently clobbered) -- give a
+    hand-written setter a different name, e.g. the Qt-style ``setValue`` ``UnboundedSpinBox`` uses.
 
     **Declaring `<name>_changed` is optional.** In ``"auto"`` mode, if the class already declares
     ``<name>_changed = Signal(...)``, that signal is used and, because it's a real class attribute,
@@ -129,13 +132,21 @@ class SimpleProperty[T]:
         mutable defaults (``default_factory=list``, or ``default_factory=lambda: [1, 2, 3]`` for a
         populated one). Called once per instance on first access, plus once at class-definition time
         to sample the value type. Mutually exclusive with ``value``.
-    :param notify: ``"auto"`` (default) uses the class's ``<name>_changed`` signal if declared, else
-        synthesizes one; pass a ``Signal`` to wire an explicit, possibly differently-named one (which
-        must itself be a class attribute). The signal's argument type is validated against the value
+    :param notify: ``"auto"`` (default) uses the ``<name>_changed`` signal if one is declared on the
+        owner **or any of its bases**, else synthesizes one; pass a ``Signal`` to wire an explicit,
+        possibly differently-named one (which must itself be a class attribute of the owner or a base --
+        ``notify=Base.some_signal`` is fine). The signal's argument type is validated against the value
         type either way.
     :param value_type: ``"auto"`` (default) takes the value type from ``value``; pass an explicit
         type to override it for the signal check and the Qt property type -- e.g. ``value_type=object``
         for an optional defaulted to a non-``None`` value, so it correctly requires ``Signal(object)``.
+    :param compare: change detection. ``"auto"`` (default) treats a write as a no-op when the new value
+        ``is`` the current one or ``== `` it -- correct and cheap for primitives, strings, and value
+        dataclasses. Pass a two-argument predicate returning ``True`` when the values are equal (so no
+        emit) for a value type whose ``__eq__`` is expensive or does **not** return a plain ``bool`` --
+        e.g. a numpy array, where ``current == value`` is itself an array and the default ``if`` on it
+        raises. Identity (``current is value``) short-circuits to a no-op before either path, so a
+        ``compare`` predicate only ever sees two distinct objects.
 
     .. code-block:: python
 
@@ -178,13 +189,16 @@ class SimpleProperty[T]:
     receives a QVariant-converted *copy*, not the emitted object (verified empirically, #35). They are
     therefore never acceptable notify signatures -- a list/dict-valued property must use ``Signal(object)``."""
 
-    __SIGNAL_NAMES: Final[dict[type, dict[str, str]]] = {}
-    """Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``__set_name__``."""
+    __SIGNAL_NAMES: Final[WeakKeyDictionary[type, dict[str, str]]] = WeakKeyDictionary()
+    """Per-class ``name`` -> notify-signal-attribute-name registry, populated by ``__set_name__``. Keyed
+    weakly so a declaring class stays collectable once nothing else references it (a plain dict would
+    pin every ``SimpleProperty`` owner for the process's lifetime)."""
 
-    __DEFAULTS: Final[dict[type, dict[str, Callable[[], Any]]]] = {}
+    __DEFAULTS: Final[WeakKeyDictionary[type, dict[str, Callable[[], Any]]]] = WeakKeyDictionary()
     """Per-class ``name`` -> zero-argument default supplier, populated by ``__set_name__`` and read by
     :meth:`default_value` -- a factory-mode entry is the factory itself (called fresh each time, so a
-    mutable default returns an independent copy); a plain-value entry is a lambda closed over that value."""
+    mutable default returns an independent copy); a plain-value entry is a lambda closed over that value.
+    Weakly keyed for the same reason as :attr:`__SIGNAL_NAMES`."""
 
     @overload
     def __init__(
@@ -193,6 +207,7 @@ class SimpleProperty[T]:
         *,
         notify: Signal | Literal["auto"] = "auto",
         value_type: type | Literal["auto"] = "auto",
+        compare: Callable[[T, T], bool] | Literal["auto"] = "auto",
     ) -> None: ...
     @overload
     def __init__(
@@ -201,6 +216,7 @@ class SimpleProperty[T]:
         default_factory: Callable[[], T],
         notify: Signal | Literal["auto"] = "auto",
         value_type: type | Literal["auto"] = "auto",
+        compare: Callable[[T, T], bool] | Literal["auto"] = "auto",
     ) -> None: ...
     def __init__(
         self,
@@ -209,6 +225,7 @@ class SimpleProperty[T]:
         default_factory: Callable[[], T] | None = None,
         notify: Signal | Literal["auto"] = "auto",
         value_type: type | Literal["auto"] = "auto",
+        compare: Callable[[T, T], bool] | Literal["auto"] = "auto",
     ) -> None:
         if default_factory is not None and not isinstance(value, self.__Unset):
             raise RuntimeError("SimpleProperty: pass either value or default_factory, not both.")
@@ -225,6 +242,7 @@ class SimpleProperty[T]:
         self.__factory: Final = default_factory
         self.__notify: Final = notify
         self.__declared_type: Final = value_type
+        self.__compare: Final = compare
         self.__private_name: str = ""
         self.__signal_name: str = ""
 
@@ -299,12 +317,26 @@ class SimpleProperty[T]:
 
         :param owner: the class declaring this property.
         :param name: the property's attribute name.
-        :raises RuntimeError: if ``owner`` is not a ``QObject`` subclass, if an explicit ``notify``
-            signal is not a class attribute of ``owner``, or if the signal's argument type is
-            incompatible with the value type.
+        :raises RuntimeError: if ``owner`` is not a ``QObject`` subclass, if ``owner``'s own body
+            already defines ``set_<name>`` (which the synthesized slot helper would silently clobber),
+            if an explicit ``notify`` signal is not a class attribute of ``owner``, or if the signal's
+            argument type is incompatible with the value type.
         """
         if not issubclass(owner, QObject):
             raise RuntimeError(f"SimpleProperty {owner.__qualname__}.{name} requires a QObject subclass.")
+
+        # __set_name__ runs after owner's whole class body is assembled, so a hand-written
+        # set_<name> is already in owner.__dict__ -- synthesizing over it would clobber it silently.
+        # Only owner's *own* dict is checked: an inherited set_<name> is the helper a base-class
+        # SimpleProperty of the same name synthesized (the re-declaration case), which must be
+        # replaced, not rejected.
+        setter_name = f"set_{name}"
+        if setter_name in owner.__dict__:
+            raise RuntimeError(
+                f"SimpleProperty {owner.__qualname__}.{name} would overwrite the {setter_name} method "
+                f"already defined on {owner.__qualname__}; rename that method (e.g. Qt-style "
+                f"{'set' + name.title().replace('_', '')}) or drop the SimpleProperty."
+            )
 
         self.__private_name = f"__{name}"
         value_type: type
@@ -339,24 +371,33 @@ class SimpleProperty[T]:
         :param owner: the class declaring this property.
         :param name: the property's attribute name.
         :returns: the ``Signal`` to notify and the attribute name it is declared under.
-        :raises RuntimeError: if an explicit ``notify`` signal is not a class attribute of ``owner``.
+        :raises RuntimeError: if an explicit ``notify`` signal is not a class attribute of ``owner``
+            or any of its bases.
         """
         if self.__notify == "auto":
             signal_name = f"{name}_changed"
-            signal = owner.__dict__.get(signal_name)
+            # getattr, not owner.__dict__.get: a <name>_changed declared on a base class is a valid
+            # notify signal (Signal.__get__ returns the descriptor itself on a class, so identity is
+            # preserved through the MRO) and must be reused, not shadowed by a fresh synthesized one.
+            signal = getattr(owner, signal_name, None)
             if not isinstance(signal, Signal):
-                # Not declared -- synthesize one, wired onto the class the same way __set_name__
-                # wires the property itself. Fully functional at runtime, but invisible to a type
-                # checker (see the class docstring): connecting to it needs # type: ignore.
+                # Not declared anywhere in the MRO -- synthesize one, wired onto the class the same
+                # way __set_name__ wires the property itself. Fully functional at runtime, but
+                # invisible to a type checker (see the class docstring): connecting needs # type: ignore.
                 signal = Signal(object)
                 setattr(owner, signal_name, signal)
         else:
             signal = self.__notify
-            signal_name = next((key for key, value in owner.__dict__.items() if value is signal), "")
+            # Scan the whole MRO, not just owner.__dict__: an explicit notify= may name an inherited
+            # signal (e.g. notify=Base.some_signal), which is equally valid.
+            signal_name = next(
+                (key for klass in owner.__mro__ for key, value in klass.__dict__.items() if value is signal),
+                "",
+            )
             if not signal_name:
                 raise RuntimeError(
                     f"SimpleProperty {owner.__qualname__}.{name}: the notify= signal must be declared as a "
-                    f"class attribute of {owner.__qualname__}."
+                    f"class attribute of {owner.__qualname__} or one of its bases."
                 )
         return signal, signal_name
 
@@ -401,12 +442,17 @@ class SimpleProperty[T]:
         """Return a single-argument ``Signal``'s declared argument signature (e.g. ``"(int)"``).
 
         Reads PySide6's ``Signal.signatures`` via ``getattr`` because the attribute exists at runtime
-        but is absent from the type stubs.
+        but is absent from the type stubs. A signal already bound as a class attribute reports its
+        signature with the attribute name baked in (``"title_changed(PyObject)"``) -- e.g. an inherited
+        ``<name>_changed`` resolved through the MRO -- whereas a freshly built one reports just
+        ``"(PyObject)"``; the leading name is stripped so both compare equal.
 
         :param signal: the signal to inspect.
-        :returns: its first (and, for these single-argument signals, only) signature string.
+        :returns: its first (and, for these single-argument signals, only) argument signature, from the
+            opening ``(`` onward (name prefix, if any, removed).
         """
-        return getattr(signal, "signatures")[0]
+        signature = getattr(signal, "signatures")[0]
+        return signature[signature.index("(") :]
 
     def __fget(self, obj: object) -> T:
         # factory mode has no class-level fallback: seed this instance's own default on first access
@@ -417,7 +463,18 @@ class SimpleProperty[T]:
     def __fset(self, obj: object, value: T) -> None:
         # read through __fget, not a bare getattr: a factory-mode set before any get must seed the
         # instance default first, both to compare against it and to avoid an AttributeError
-        if self.__fget(obj) == value:
+        current = self.__fget(obj)
+        # identity short-circuits every mode: assigning the current object is always a no-op, and it
+        # spares an expensive (or non-bool) __eq__ on self-assignment. Then, in "auto" mode, ==; with
+        # an explicit compare=, the caller's predicate -- the escape hatch for a value type whose
+        # __eq__ is costly or returns a non-bool (e.g. a numpy array, where `current == value` is an
+        # array and `if` on it raises).
+        if current is value:
+            return
+        if self.__compare == "auto":
+            if current == value:
+                return
+        elif self.__compare(current, value):
             return
         setattr(obj, self.__private_name, value)
         getattr(obj, self.__signal_name).emit(value)

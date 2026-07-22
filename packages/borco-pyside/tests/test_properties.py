@@ -1,5 +1,13 @@
 """Tests for the SimpleProperty/TypedProperty reactive-property descriptors."""
 
+# SimpleProperty is a small descriptor with a broad behavioral surface (change detection, notify
+# resolution incl. inheritance, the setter-collision guard, value-type checks, factory defaults, the
+# compare hatch); its suite is correspondingly long -- one cohesive module reads better than an
+# arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
+import gc
+import weakref
 from dataclasses import dataclass
 
 import pytest
@@ -233,6 +241,76 @@ def test_missing_change_signal_is_synthesized() -> None:
     assert received == [5]
 
 
+def test_inherited_declared_signal_is_reused_not_shadowed() -> None:
+    """A `<name>_changed` declared on a base class is reused when a subclass re-declares the property.
+
+    In `"auto"` mode, resolution walks the MRO, so an inherited declared signal is reused rather than
+    shadowed by a fresh synthesized `Signal(object)` on the subclass.
+
+    **Test steps:**
+
+    * declare a base with `count_changed = Signal(int)` and `count = SimpleProperty(0)`
+    * declare a subclass re-declaring `count = SimpleProperty(0)`
+    * verify the subclass did not get its own `count_changed` (the inherited one is reused) and that a
+      set on a subclass instance emits through it
+    """
+
+    class Base(QObject):
+        """A base declaring a typed change signal for its property."""
+
+        count_changed = Signal(int)
+        count = SimpleProperty(0)
+
+    class Sub(Base):
+        """A subclass re-declaring the inherited property."""
+
+        count = SimpleProperty(0)
+
+    assert "count_changed" not in Sub.__dict__
+    assert Sub.count_changed is Base.count_changed
+
+    obj = Sub()
+    received: list[int] = []
+    obj.count_changed.connect(received.append)
+
+    obj.count = 7
+
+    assert obj.count == 7
+    assert received == [7]
+
+
+def test_explicit_inherited_notify_signal_is_accepted() -> None:
+    """An explicit `notify=` may name a signal declared on a base class, resolved through the MRO.
+
+    **Test steps:**
+
+    * declare a base with a `renamed = Signal(object)` signal
+    * declare a subclass whose property wires `notify=Base.renamed`
+    * verify it resolves to `"renamed"` and a set emits through the inherited signal
+    """
+
+    class Base(QObject):
+        """A base declaring the signal a subclass property will notify through."""
+
+        renamed = Signal(object)
+
+    class Sub(Base):
+        """A subclass whose property notifies through the base's signal."""
+
+        nickname = SimpleProperty("", notify=Base.renamed)
+
+    assert SimpleProperty.notify_signal_name(Sub, "nickname") == "renamed"
+
+    obj = Sub()
+    received: list[str] = []
+    obj.renamed.connect(received.append)
+
+    obj.nickname = "Ada"
+
+    assert obj.nickname == "Ada"
+    assert received == ["Ada"]
+
+
 def test_explicit_notify_not_a_class_attribute_raises() -> None:
     """An explicit `notify=` signal that is not a class attribute of the owner raises.
 
@@ -249,6 +327,51 @@ def test_explicit_notify_not_a_class_attribute_raises() -> None:
             """A `QObject` whose property's notify signal is not one of its class attributes."""
 
             value = SimpleProperty(0, notify=stray)
+
+
+def test_hand_written_setter_collision_raises() -> None:
+    """A hand-written `set_<name>` on the same class as the property raises, not silently clobbered.
+
+    `__set_name__` runs after the class body is assembled, so a validating `set_<name>` written by
+    hand would be overwritten by the synthesized slot helper with no warning; the guard rejects it.
+
+    **Test steps:**
+
+    * declare a `QObject` with `value = SimpleProperty(0)` *and* a hand-written `def set_value`
+    * verify `RuntimeError` naming the collision is raised while the class is created
+    """
+    with pytest.raises(RuntimeError, match="set_value"):
+
+        class Clashing(QObject):  # pylint: disable=unused-variable
+            """A `QObject` whose hand-written setter collides with the synthesized `set_value`."""
+
+            value = SimpleProperty(0)
+
+            def set_value(self, value: int) -> None:
+                """A hand-written setter the descriptor would otherwise silently clobber."""
+                self.setProperty("value", value)
+
+
+def test_redeclaring_property_does_not_trip_the_setter_guard() -> None:
+    """Re-declaring an inherited property is fine: the base's synthesized `set_<name>` is replaced.
+
+    The collision guard checks only the owner's *own* body, so an inherited `set_<name>` (the helper
+    a base-class `SimpleProperty` of the same name synthesized) does not falsely trip it.
+
+    **Test steps:**
+
+    * declare a subclass of `ObjectSample` re-declaring the inherited `title` property
+    * verify the class builds without raising and `set_title` still writes the value
+    """
+
+    class Redeclared(ObjectSample):
+        """A subclass re-declaring the inherited `title` property."""
+
+        title = SimpleProperty("")
+
+    obj = Redeclared()
+    obj.set_title("Via Helper")  # type: ignore[attr-defined]  # set_<name> is synthesized
+    assert obj.title == "Via Helper"
 
 
 def test_declaring_on_non_qobject_raises() -> None:
@@ -986,6 +1109,145 @@ def test_list_typed_signal_raises() -> None:
 
             tags_changed = Signal(list)
             tags = SimpleProperty[list[str]](default_factory=list)
+
+
+# endregion
+
+
+# region SimpleProperty compare tests
+class ArrayLike:
+    """A value type whose `__eq__` returns a non-`bool` and whose truth value is ambiguous.
+
+    Mirrors a numpy array: `a == b` yields another `ArrayLike`, and coercing that to `bool` raises --
+    exactly the case default `==` change detection cannot handle, so it exercises the `compare=` hatch.
+    """
+
+    def __init__(self, *data: int) -> None:
+        self.data = list(data)
+
+    def __eq__(self, other: object) -> ArrayLike:  # type: ignore[override]
+        assert isinstance(other, ArrayLike)
+        return ArrayLike(*(a == b for a, b in zip(self.data, other.data, strict=True)))
+
+    def __bool__(self) -> bool:
+        raise ValueError("truth value of an ArrayLike is ambiguous")
+
+    def __hash__(self) -> int:
+        # hashable (so it is a valid plain `value=` default) despite the custom `__eq__`, which would
+        # otherwise set `__hash__` to None; identity hashing is all these tests need
+        return id(self)
+
+
+def test_default_compare_cannot_handle_a_non_bool_eq() -> None:
+    """Default `==` change detection raises for a value whose `__eq__` returns a non-`bool` (the defect).
+
+    Pins why the `compare=` hatch exists: with `compare="auto"`, assigning a fresh `ArrayLike` runs
+    `current == value`, an `ArrayLike`, and the `if` on it raises `ValueError`.
+
+    **Test steps:**
+
+    * declare an `ArrayLike`-valued property with default (`"auto"`) change detection
+    * assign a distinct `ArrayLike` and verify the write raises `ValueError`
+    """
+
+    class Model(QObject):
+        """An `ArrayLike`-valued property left on default change detection."""
+
+        arr_changed = Signal(object)
+        arr = SimpleProperty(ArrayLike(1, 2))
+
+    obj = Model()
+    with pytest.raises(ValueError, match="ambiguous"):
+        obj.arr = ArrayLike(3, 4)
+
+
+def test_compare_predicate_drives_change_detection() -> None:
+    """A `compare=` predicate replaces `==`: it decides equal (no emit) vs. changed (emit).
+
+    **Test steps:**
+
+    * declare an `ArrayLike`-valued property with `compare=` comparing the underlying data
+    * assign a distinct value and verify it emits once
+    * assign a value equal *by the predicate* and verify no further emit
+    """
+
+    class Model(QObject):
+        """An `ArrayLike`-valued property whose change detection uses a custom predicate."""
+
+        arr_changed = Signal(object)
+        arr = SimpleProperty(ArrayLike(1, 2), compare=lambda a, b: a.data == b.data)
+
+    obj = Model()
+    received: list[object] = []
+    obj.arr_changed.connect(received.append)
+
+    obj.arr = ArrayLike(3, 4)
+    assert len(received) == 1
+
+    obj.arr = ArrayLike(3, 4)  # equal by the predicate -> no emit
+    assert len(received) == 1
+
+
+def test_identity_short_circuits_before_any_compare() -> None:
+    """Assigning the current object is a no-op that never calls the `compare` predicate.
+
+    Guards the identity short-circuit: `obj.<name> = obj.<name>` must not emit and must not invoke
+    `compare` (whose `__eq__` on `ArrayLike` would raise), regardless of which comparator is active.
+
+    **Test steps:**
+
+    * declare an `ArrayLike`-valued property with a `compare` that raises if ever called
+    * assign the property back to its own current value
+    * verify no emit and that `compare` was not invoked
+    """
+
+    def exploding_compare(_a: object, _b: object) -> bool:
+        raise AssertionError("compare must not run on self-assignment")
+
+    class Model(QObject):
+        """An `ArrayLike`-valued property whose compare must never run on self-assignment."""
+
+        arr_changed = Signal(object)
+        arr = SimpleProperty(ArrayLike(1, 2), compare=exploding_compare)
+
+    obj = Model()
+    received: list[object] = []
+    obj.arr_changed.connect(received.append)
+
+    obj.arr = obj.arr
+
+    assert not received
+
+
+# endregion
+
+
+# region registry lifetime tests
+def test_declaring_class_is_collectable() -> None:
+    """A class declaring a `SimpleProperty` is garbage-collectable -- the registries key it weakly.
+
+    A plain-dict registry keyed by the owner class would strong-reference it, pinning every
+    `SimpleProperty` owner for the process's lifetime; the `WeakKeyDictionary` registries do not.
+
+    **Test steps:**
+
+    * build a throwaway `QObject` subclass with a `SimpleProperty`, holding only a weak reference
+    * drop the strong reference and force a collection
+    * verify the class was collected (the registries did not keep it alive)
+    """
+
+    def build_ephemeral() -> type[QObject]:
+        class Ephemeral(QObject):
+            """A throwaway owner whose only strong reference is about to be dropped."""
+
+            value = SimpleProperty(0)
+
+        return Ephemeral
+
+    ref = weakref.ref(build_ephemeral())
+    gc.collect()
+
+    assert ref() is None
 
 
 # endregion
