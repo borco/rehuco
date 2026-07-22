@@ -93,7 +93,7 @@ def test_place_floating_makes_the_dock_float(manager: QtAds.CDockManager) -> Non
 def test_place_floating_stays_hidden_until_the_manager_is_shown(qtbot: QtBot, manager: QtAds.CDockManager) -> None:
     """A freshly-floated dock follows ordinary Qt show semantics -- hidden until its top-level
     ancestor is actually shown -- unlike a later ``CDockManager.restoreState()`` recreating a
-    previously-floating dock, which shows its container immediately regardless (#47).
+    previously-floating dock, which shows its container immediately regardless.
 
     **Test steps:**
 

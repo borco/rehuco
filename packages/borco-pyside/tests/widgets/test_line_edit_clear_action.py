@@ -262,7 +262,7 @@ def test_a_field_specific_trailing_action_coexists_untouched(
 
     :class:`~borco_pyside.widgets.line_edit_clear_action.LineEditClearActionFilter`'s docstring notes
     that a newly-added trailing action renders nearest the text, pushing earlier ones outward
-    (confirmed empirically, #24) -- ``QLineEdit.actions()`` itself always lists actions in insertion
+    (confirmed empirically) -- ``QLineEdit.actions()`` itself always lists actions in insertion
     order regardless of that visual placement, so this test checks behavior, not screen position.
 
     **Test steps:**

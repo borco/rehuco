@@ -99,7 +99,7 @@ def test_companion_action_icon_has_no_checked_variant(
 ) -> None:
     """The ``companion`` action's icon keeps ``ButtonText`` for both the ``Off`` and ``On`` states,
     unlike the main action's own ``HighlightedText`` checked variant -- built for a plain menu row,
-    where that recolor would render near-invisible against the menu's own background (#64).
+    where that recolor would render near-invisible against the menu's own background.
 
     **Test steps:**
 
@@ -121,7 +121,7 @@ def test_companion_action_starts_matching_the_main_actions_checked_state(
     make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
 ) -> None:
     """The companion action's checked state is synced from the main action immediately at
-    construction, not just from then on (#64).
+    construction, not just from then on.
 
     **Test steps:**
 
@@ -143,7 +143,7 @@ def test_companion_action_checked_state_tracks_the_main_action(
 ) -> None:
     """The companion action's checkmark keeps tracking the main action's checked state after
     construction too -- e.g. when the main action's state changes some other way than through the
-    companion itself (#64).
+    companion itself.
 
     **Test steps:**
 
@@ -165,7 +165,7 @@ def test_triggering_the_companion_action_triggers_the_main_action(
     make_action: QAction, make_companion_action: QAction, mock_qfile: Callable[..., Any]
 ) -> None:
     """Triggering the companion action forwards to the main action, so clicking it in a menu
-    actually performs the real toggle (#64).
+    actually performs the real toggle.
 
     **Test steps:**
 
@@ -189,7 +189,7 @@ def test_resync_companion_checked_state_corrects_a_stale_companion(
     """``resync_companion_checked_state`` force-corrects the companion to match the main action's
     *current* checked state -- the fix for ``toggled``-based mirroring's known gap (some ways the
     main action's checked state changes, e.g. `QtAds`' ``DockableDialog.toggleView()``, don't emit
-    ``toggled`` at all, leaving the companion silently stale, confirmed empirically, #64).
+    ``toggled`` at all, leaving the companion silently stale, confirmed empirically).
 
     **Test steps:**
 
@@ -215,7 +215,7 @@ def test_resync_companion_checked_state_is_a_noop_without_a_companion(
     make_action: QAction, mock_qfile: Callable[..., Any]
 ) -> None:
     """Calling ``resync_companion_checked_state`` with no companion configured does nothing, and
-    doesn't raise (#64).
+    doesn't raise.
 
     **Test steps:**
 
@@ -230,7 +230,7 @@ def test_resync_companion_checked_state_is_a_noop_without_a_companion(
 
 
 def test_the_single_icon_carries_a_disabled_variant_too(make_action: QAction, mock_qfile: Callable[..., Any]) -> None:
-    """The built icon's ``Mode.Disabled`` variant is colored from the palette's own disabled group (#41).
+    """The built icon's ``Mode.Disabled`` variant is colored from the palette's own disabled group.
 
     A custom icon engine gets no automatic disabled-greying from Qt -- without this, a disabled
     action's icon would render identically to its enabled one (the actual bug this closes).
@@ -252,7 +252,7 @@ def test_the_single_icon_carries_a_disabled_variant_too(make_action: QAction, mo
 def test_the_single_icon_carries_a_disabled_checked_variant_too(
     make_action: QAction, mock_qfile: Callable[..., Any]
 ) -> None:
-    """The built icon's disabled+checked corner is colored from the ``Disabled`` group's ``HighlightedText`` (#41).
+    """The built icon's disabled+checked corner is colored from the ``Disabled`` group's ``HighlightedText``.
 
     Distinct from plain ``Mode.Disabled`` (``State.Off``) -- a disabled *checkable* action (e.g. one
     mirroring a model flag the user can't toggle directly) still needs to show checked-ness while

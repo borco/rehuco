@@ -149,7 +149,7 @@ def test_recolored_svg_icon_with_on_color_renders_a_distinct_checked_variant(qtb
 
 
 def test_recolored_svg_icon_with_disabled_color_renders_a_distinct_disabled_variant(qtbot: QtBot) -> None:
-    """Passing ``disabled_color`` gives ``Mode.Disabled`` its own color (#41).
+    """Passing ``disabled_color`` gives ``Mode.Disabled`` its own color.
 
     A custom icon engine gets no automatic disabled-greying from Qt (that fallback only applies to
     the default pixmap-based engine), so without this the disabled variant would render identically
@@ -193,7 +193,7 @@ def test_recolored_svg_icon_with_on_disabled_color_renders_a_distinct_disabled_c
 
     A disabled *toggle* that mirrors a model flag (e.g. a "dirty" indicator the user can't click) still
     needs to visually show checked-ness while disabled -- without this, it would look identical whether
-    checked or not (#41).
+    checked or not.
 
     **Test steps:**
 
@@ -282,7 +282,7 @@ def test_engine_clone_renders_the_same_recolored_content(qtbot: QtBot) -> None:
 
 
 def test_engine_clone_preserves_the_disabled_variant(qtbot: QtBot) -> None:
-    """Cloning an engine that carries a disabled variant preserves it (#41).
+    """Cloning an engine that carries a disabled variant preserves it.
 
     **Test steps:**
 
@@ -303,7 +303,7 @@ def test_engine_clone_preserves_the_disabled_variant(qtbot: QtBot) -> None:
 
 
 def test_engine_clone_preserves_the_on_disabled_variant(qtbot: QtBot) -> None:
-    """Cloning an engine that carries a disabled+checked variant preserves it (#41).
+    """Cloning an engine that carries a disabled+checked variant preserves it.
 
     **Test steps:**
 

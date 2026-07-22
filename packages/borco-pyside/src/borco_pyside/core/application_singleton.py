@@ -83,7 +83,7 @@ class ApplicationSingleton(QObject):
         """Listening server while this process is the primary; ``None`` otherwise."""
 
         self.__server_name: str | None = None
-        """Name this instance serves on; ``None`` when not the primary (e.g. ``"rehuco-agent-0beec7b5ea3f"``)."""
+        """Name this instance serves on; ``None`` when not the primary (e.g. ``"my-app-0beec7b5ea3f"``)."""
 
         self.__buffers: dict[QLocalSocket, bytearray] = {}
         """Per-connection accumulation buffers, keyed by socket, until a full framed message arrives."""
@@ -277,9 +277,9 @@ class ApplicationSingleton(QObject):
         producing the same name on every run for the same user while keeping names
         from different users distinct (e.g. user ``"foo"`` → fingerprint ``"0beec7b5ea3f"``).
 
-        :param app_id: stable application identifier (e.g. ``"rehuco-agent"``).
+        :param app_id: stable application identifier (e.g. ``"my-app"``).
         :returns: a server name unique to the current OS user, so users never collide
-            (e.g. ``"rehuco-agent-0beec7b5ea3f"`` for user ``"foo"``).
+            (e.g. ``"my-app-0beec7b5ea3f"`` for user ``"foo"``).
         """
         try:
             user = getpass.getuser()

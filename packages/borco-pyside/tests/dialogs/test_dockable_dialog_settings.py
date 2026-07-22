@@ -1,7 +1,6 @@
 """Tests for DockableDialogSettings: persisted visibility/restore-on-start state.
 
-Uses a hand-rolled in-memory stand-in for ``QSettings`` (mirrors rehuco-agent's
-``test_main_window_settings.py``) rather than a real one or ``tmp_path``.
+Uses a hand-rolled in-memory stand-in for ``QSettings`` rather than a real one or ``tmp_path``.
 """
 
 from typing import Any

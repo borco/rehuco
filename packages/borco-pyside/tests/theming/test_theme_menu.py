@@ -117,7 +117,7 @@ def test_triggering_an_action_unchecks_the_other_two(mock_qfile: Callable[..., A
 
 
 def test_reacts_to_a_mode_change_made_elsewhere(mock_qfile: Callable[..., Any]) -> None:
-    """A mode change driven by another control (e.g. the toolbar's cycling action, #57) is
+    """A mode change driven by another control (e.g. the toolbar's cycling action) is
     reflected on the checked action, without this menu's own actions ever being triggered.
 
     **Test steps:**
@@ -138,7 +138,7 @@ def test_reacts_to_a_mode_change_made_elsewhere(mock_qfile: Callable[..., Any]) 
 
 
 def test_wires_a_flat_themed_icon_handler_per_action(mock_qfile: Callable[..., Any], mocker: MockerFixture) -> None:
-    """Each action gets its own icon, kept themed via a ``flat`` ActionIconThemeHandler (#57) --
+    """Each action gets its own icon, kept themed via a ``flat`` ActionIconThemeHandler --
     ``flat`` since a plain checkmark, not a highlighted icon, communicates checked-ness in a menu.
 
     **Test steps:**
