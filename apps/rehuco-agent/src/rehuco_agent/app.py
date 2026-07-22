@@ -47,7 +47,7 @@ ICON_FONT_RESOURCES: Final = (
     ":/fonts/Phosphor-Fill.ttf",
 )
 """qrc paths to the custom icon fonts loaded at startup: bold (every action/toggle/close-button glyph
-in :mod:`rehuco_agent.glyphs`, plus :data:`~borco_pyside.qtads.QtAdsFocusTracker.CLOSE_BUTTON_FONT`)
+in :mod:`rehuco_agent.glyphs`, including the ``close_glyph`` passed to each ``QtAdsFocusTracker``)
 and fill (the rating field's filled stars). Thin, Light, and regular were each vendored for
 experimentation but never ended up with a sole consumer once bold covered every glyph, so they're
 pruned (#37). No
