@@ -173,6 +173,24 @@ def test_is_registered_ignores_the_application_key_when_no_aumid_is_expected(fak
 
 
 @mark.windows
+def test_is_registered_is_false_when_open_with_progids_is_missing(fake_registry: FakeRegistry) -> None:
+    """``is_registered`` reports ``False`` when the extension's ``OpenWithProgids`` doesn't list the
+    ProgID, even though the plain default-value binding still does.
+
+    **Test steps:**
+
+    * register, then remove the ProgID from the extension's ``OpenWithProgids``
+    * check ``is_registered`` with the same arguments
+    * verify ``False``
+    """
+    file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+    ext_key = rf"Software\Classes\.{EXTENSION}"
+    del fake_registry.values[f"{ext_key}\\OpenWithProgids"][PROGID]
+
+    assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
+
+
+@mark.windows
 def test_unregister_removes_progid_and_extension_binding(fake_registry: FakeRegistry) -> None:
     """``unregister`` deletes the whole ProgID key tree and the extension binding it owns.
 
