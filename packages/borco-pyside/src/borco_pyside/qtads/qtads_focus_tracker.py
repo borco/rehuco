@@ -314,12 +314,18 @@ ads--CDockWidget[{prop}="true"] {{
     def __track_area(self, area: QtAds.CDockAreaWidget) -> None:
         """Connect ``area.currentChanged`` and its tabs-menu to track tab switches, once per area.
 
+        Prunes ``area`` back out on its own ``destroyed`` signal, so a ``restoreState`` cycle that
+        discards and rebuilds every area (see the class docstring) doesn't leave the tracking set
+        growing across restores -- each rebuilt area is re-added under its own new identity, but the
+        old one no longer lingers once Qt tears it down.
+
         :param area: the dock area to track; a no-op if already tracked (e.g. a new dock joining
             an already-open area, which shares that area's existing connection).
         """
         if area not in self.__areas_tracking_current_tab:
             self.__areas_tracking_current_tab.add(area)
             area.currentChanged.connect(lambda index: self.__on_area_current_changed(area, index))
+            area.destroyed.connect(lambda: self.__areas_tracking_current_tab.discard(area))
             menu = area.titleBarButton(QtAds.TitleBarButtonTabsMenu).menu()
             menu.triggered.connect(lambda action: self.__on_area_current_changed(area, action.data()))
 
