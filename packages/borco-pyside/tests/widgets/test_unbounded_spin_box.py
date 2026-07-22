@@ -1,4 +1,4 @@
-"""Tests for UnboundedSpinBox: an unbounded-Python-int spin box editor (#40)."""
+"""Tests for UnboundedSpinBox: an unbounded-Python-int spin box editor."""
 
 from collections.abc import Callable
 

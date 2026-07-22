@@ -78,7 +78,7 @@ def test_clicking_cycles_system_light_dark_and_back_to_system(
 def test_reacts_to_a_mode_change_made_elsewhere(
     make_action: QAction, mock_qfile: Callable[..., Any], mocker: MockerFixture
 ) -> None:
-    """A mode change driven by another control (e.g. a `View` menu's theme entries, #57) is
+    """A mode change driven by another control (e.g. a `View` menu's theme entries) is
     reflected on the icon, without this manager's own action ever being triggered.
 
     **Test steps:**

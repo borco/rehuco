@@ -103,13 +103,13 @@ def test_second_launch_forwards_argv_and_exits(
     primary = make_singleton()
     assert primary.setup(app_id) is True
 
-    monkeypatch.setattr(sys, "argv", ["rehuco-agent", "tutorial.rehu", "--flag"])
+    monkeypatch.setattr(sys, "argv", ["my-app", "tutorial.txt", "--flag"])
     secondary = make_singleton()
 
     with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
         assert secondary.setup(app_id) is False
 
-    assert blocker.args == [["tutorial.rehu", "--flag"]]  # type: ignore[reportUnknownMemberType]
+    assert blocker.args == [["tutorial.txt", "--flag"]]  # type: ignore[reportUnknownMemberType]
 
 
 def test_no_args_launch_still_notifies_primary(
@@ -129,7 +129,7 @@ def test_no_args_launch_still_notifies_primary(
     primary = make_singleton()
     assert primary.setup(app_id) is True
 
-    monkeypatch.setattr(sys, "argv", ["rehuco-agent"])
+    monkeypatch.setattr(sys, "argv", ["my-app"])
     secondary = make_singleton()
 
     with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
@@ -185,7 +185,7 @@ def test_partial_frame_is_reassembled(qtbot: QtBot, make_singleton: Factory) -> 
     """
     primary = make_singleton()
     assert primary.setup(unique_app_id()) is True
-    framed = frame(["a.rehu"])
+    framed = frame(["a.txt"])
     socket = connect_raw(primary.server_name)
 
     with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
@@ -195,7 +195,7 @@ def test_partial_frame_is_reassembled(qtbot: QtBot, make_singleton: Factory) -> 
         socket.write(framed[3:])
         close_raw(socket)
 
-    assert blocker.args == [["a.rehu"]]  # type: ignore[reportUnknownMemberType]
+    assert blocker.args == [["a.txt"]]  # type: ignore[reportUnknownMemberType]
 
 
 def test_malformed_message_is_ignored(qtbot: QtBot, make_singleton: Factory, caplog: pytest.LogCaptureFixture) -> None:
@@ -459,13 +459,13 @@ def test_setup_forwards_explicit_args_over_argv(
     primary = make_singleton()
     assert primary.setup(app_id) is True
 
-    monkeypatch.setattr(sys, "argv", ["rehuco-agent", "from-argv.rehu"])
+    monkeypatch.setattr(sys, "argv", ["my-app", "from-argv.txt"])
     secondary = make_singleton()
 
     with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
-        assert secondary.setup(app_id, ["explicit.rehu", "--x"]) is False
+        assert secondary.setup(app_id, ["explicit.txt", "--x"]) is False
 
-    assert blocker.args == [["explicit.rehu", "--x"]]  # type: ignore[reportUnknownMemberType]
+    assert blocker.args == [["explicit.txt", "--x"]]  # type: ignore[reportUnknownMemberType]
 
 
 def test_forwarding_waits_for_disconnect_when_socket_lingers(mocker: MockerFixture, make_singleton: Factory) -> None:
@@ -516,7 +516,7 @@ def test_body_received_separately_from_prefix_is_reassembled(qtbot: QtBot, make_
     """
     primary = make_singleton()
     assert primary.setup(unique_app_id()) is True
-    framed = frame(["b.rehu"])
+    framed = frame(["b.txt"])
     socket = connect_raw(primary.server_name)
 
     with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
@@ -526,4 +526,4 @@ def test_body_received_separately_from_prefix_is_reassembled(qtbot: QtBot, make_
         socket.write(framed[LENGTH_PREFIX_SIZE:])  # body only
         close_raw(socket)
 
-    assert blocker.args == [["b.rehu"]]  # type: ignore[reportUnknownMemberType]
+    assert blocker.args == [["b.txt"]]  # type: ignore[reportUnknownMemberType]

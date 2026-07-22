@@ -919,7 +919,7 @@ def test_object_signal_carries_non_primitive_without_coercion() -> None:
 
 # region SimpleProperty default_factory tests
 def test_mutable_default_value_raises() -> None:
-    """A mutable (unhashable) initial value is rejected -- `default_factory` is the supported spelling (#35).
+    """A mutable (unhashable) initial value is rejected -- `default_factory` is the supported spelling.
 
     Without the rejection, the class-level seed would be one object silently shared by every
     instance (Python's mutable-default-argument trap; `dataclasses.field` rejects it the same way).
@@ -960,7 +960,7 @@ def test_neither_value_nor_default_factory_raises() -> None:
 
 
 def test_default_factory_seeds_each_instance_with_its_own_value() -> None:
-    """`default_factory=list` gives every instance its own (equal but distinct) empty list (#35).
+    """`default_factory=list` gives every instance its own (equal but distinct) empty list.
 
     **Test steps:**
 
@@ -983,7 +983,7 @@ def test_default_factory_seeds_each_instance_with_its_own_value() -> None:
 
 def test_default_factory_populated_default_is_not_shared() -> None:
     """A populated factory default (`lambda: [1, 2, 3]`) is rebuilt per instance -- mutating one
-    instance's value leaves the other untouched (#35).
+    instance's value leaves the other untouched.
 
     **Test steps:**
 
@@ -1091,7 +1091,7 @@ def test_mutate_and_emit_escape_hatch_preserves_identity() -> None:
 
 
 def test_list_typed_signal_raises() -> None:
-    """`Signal(list)` is rejected for a list value: its `QVariantList` conversion copies on emit (#35).
+    """`Signal(list)` is rejected for a list value: its `QVariantList` conversion copies on emit.
 
     Emitting a list through `Signal(list)` delivers a QVariant-converted *copy* to the slot
     (verified empirically), breaking the emit-what-the-getter-returns invariant -- so only
