@@ -91,7 +91,8 @@ def test_delete_key_tree_logs_but_does_not_raise_on_other_os_errors(
     * write a key so it exists
     * make the underlying ``DeleteKey`` raise ``PermissionError``
     * delete the key tree
-    * verify no exception propagates and a warning was logged
+    * verify no exception propagates, a warning was logged, and the key survived (the failure
+      really was a failure, not a silent success)
     """
     hkcu_registry.set_value(KEY_PATH, "name", "some-value")
     mocker.patch(f"{hkcu_registry.__name__}.winreg.DeleteKey", side_effect=PermissionError("access denied"))
@@ -99,6 +100,7 @@ def test_delete_key_tree_logs_but_does_not_raise_on_other_os_errors(
     hkcu_registry.delete_key_tree(KEY_PATH)  # must not raise
 
     assert "failed to delete" in caplog.text
+    assert KEY_PATH in fake_registry.values
 
 
 @mark.windows
