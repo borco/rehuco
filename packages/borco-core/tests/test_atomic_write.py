@@ -35,10 +35,11 @@ def patch_fs(
     mocker.patch("borco_core.atomic_write.os.fdopen", return_value=handle)
     mocker.patch("borco_core.atomic_write.os.fsync")
     mocker.patch("borco_core.atomic_write.os.chmod")
+    mocker.patch("borco_core.atomic_write.os.chown", create=True)
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
     if dest_exists:
-        mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644))
+        mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644, st_uid=1000, st_gid=1000))
     else:
         mocker.patch.object(Path, "stat", side_effect=FileNotFoundError)
     replace = mocker.patch("borco_core.atomic_write.os.replace", side_effect=replace_error)
@@ -90,6 +91,7 @@ def test_atomic_write_fsync_precedes_replace(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "unlink")
     mocker.patch.object(Path, "stat", side_effect=FileNotFoundError)
     mocker.patch("borco_core.atomic_write.os.chmod")
+    mocker.patch("borco_core.atomic_write.os.chown", create=True)
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
 
@@ -146,17 +148,20 @@ def test_atomic_write_preserves_existing_destination_mode(mocker: MockerFixture)
     mocker.patch("borco_core.atomic_write.os.open", return_value=FD)
     mocker.patch("borco_core.atomic_write.os.close")
     mocker.patch.object(Path, "unlink")
-    mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644))
+    mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mode=0o100644, st_uid=1000, st_gid=1000))
     chmod = mocker.patch("borco_core.atomic_write.os.chmod")
+    chown = mocker.patch("borco_core.atomic_write.os.chown", create=True)
 
     order: list[str] = []
     chmod.side_effect = lambda *_: order.append("chmod")
+    chown.side_effect = lambda *_: order.append("chown")
     replace = mocker.patch("borco_core.atomic_write.os.replace", side_effect=lambda *_: order.append("replace"))
 
     atomic_write_bytes(TARGET, b"data")
     chmod.assert_called_once_with(Path(TEMP), 0o644)
+    chown.assert_called_once_with(Path(TEMP), 1000, 1000)
     replace.assert_called_once_with(Path(TEMP), TARGET)
-    assert order == ["chmod", "replace"]
+    assert order == ["chmod", "chown", "replace"]
 
 
 def test_atomic_write_applies_umask_mode_for_new_destination(mocker: MockerFixture) -> None:
@@ -170,7 +175,29 @@ def test_atomic_write_applies_umask_mode_for_new_destination(mocker: MockerFixtu
     """
     _, _, _ = patch_fs(mocker, dest_exists=False)
     chmod = mocker.patch("borco_core.atomic_write.os.chmod")
+    chown = mocker.patch("borco_core.atomic_write.os.chown", create=True)
     mocker.patch("borco_core.atomic_write.os.umask", side_effect=[0o022, 0o022])
 
     atomic_write_bytes(TARGET, b"data")
     chmod.assert_called_once_with(Path(TEMP), 0o644)
+    chown.assert_not_called()
+
+
+def test_atomic_write_logs_warning_when_chown_fails(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
+    """A ``chown`` failure is logged as a warning but does not abort the write.
+
+    **Test steps:**
+
+    * patch filesystem calls with an existing destination
+    * make ``os.chown`` raise ``OSError`` (e.g. insufficient privilege)
+    * call ``atomic_write_bytes``
+    * verify the write still completes (``os.replace`` runs) and a warning is logged
+    """
+    _, replace, _ = patch_fs(mocker, dest_exists=True)
+    mocker.patch("borco_core.atomic_write.os.chown", side_effect=OSError("not permitted"), create=True)
+
+    with caplog.at_level("WARNING"):
+        atomic_write_bytes(TARGET, b"data")
+
+    replace.assert_called_once_with(Path(TEMP), TARGET)
+    assert "owner/group" in caplog.text

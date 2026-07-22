@@ -6,6 +6,7 @@ cross-platform atomic rename (POSIX ``rename``; Windows ``MoveFileEx``/``Replace
 semantics), so the same discipline holds on every target platform.
 """
 
+import logging
 import os
 import stat
 import tempfile
@@ -15,6 +16,8 @@ from typing import Final
 DEFAULT_ENCODING: Final = "utf-8"
 """Text encoding used by :func:`atomic_write_text` unless overridden."""
 
+LOG: Final = logging.getLogger(__name__)
+
 
 def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     """Write ``data`` to ``path`` atomically via a temp sibling and ``os.replace``.
@@ -23,8 +26,10 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
     stays on one filesystem (a cross-device rename is not atomic). Before the replace,
     the temp file's mode is set to match the existing destination (or umask-respecting
     defaults for a new file) so ``os.replace`` never narrows an existing file's
-    permissions down to the temp file's owner-only mode. On any failure the temp file
-    is removed and the original ``path`` is left untouched.
+    permissions down to the temp file's owner-only mode; on POSIX its owner/group are
+    restored the same way, best-effort (a failure there -- e.g. lacking the privilege
+    to ``chown`` to another user -- is logged and does not abort the write). On any
+    failure the temp file is removed and the original ``path`` is left untouched.
 
     :param path: destination file path; overwritten atomically if it already exists.
     :param data: bytes to write.
@@ -39,12 +44,21 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         try:
-            mode = stat.S_IMODE(path.stat().st_mode)
+            dest_stat = path.stat()
         except FileNotFoundError:
+            dest_stat = None
+        if dest_stat is None:
             umask = os.umask(0)
             os.umask(umask)
             mode = 0o666 & ~umask
+        else:
+            mode = stat.S_IMODE(dest_stat.st_mode)
         os.chmod(tmp_path, mode)
+        if dest_stat is not None and hasattr(os, "chown"):
+            try:
+                os.chown(tmp_path, dest_stat.st_uid, dest_stat.st_gid)  # pylint: disable=no-member
+            except OSError:
+                LOG.warning("Could not restore owner/group on %s", path, exc_info=True)
         os.replace(tmp_path, path)
         if os.name == "posix":
             dir_fd = os.open(path.parent, os.O_RDONLY)
