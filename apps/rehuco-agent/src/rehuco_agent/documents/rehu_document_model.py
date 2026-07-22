@@ -1,7 +1,8 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final
 
@@ -624,11 +625,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             (file_pending or self.__document.active_block_upgrade_pending) and not self.dirty and not self.locked
         )
 
+    @contextmanager
+    def __seeding_guard(self) -> Generator[None]:
+        """Hold :attr:`__seeding` for the duration of the block, so a document-driven reseed is never
+        mistaken for a user edit (#41). One guard shared by every seeding site below, instead of each
+        hand-rolling its own ``try``/``finally``."""
+        self.__seeding = True
+        try:
+            yield
+        finally:
+            self.__seeding = False
+
     def __seed_from_document(self) -> None:
         """Set every field from :attr:`document`'s current in-memory state (construction,
         :meth:`revert`, :meth:`convert`), guarded so it is never itself mistaken for a user edit."""
-        self.__seeding = True
-        try:
+        with self.__seeding_guard():
             self.path = self.__document.path
             self.location = self.__document.path.as_posix() if self.__document.path is not None else ""
             self.resource_type = self.__document.type
@@ -644,8 +655,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             self.advertised_tags = self.__document.advertised_tags
             self.extra_tags = self.__document.extra_tags
             self.__seed_active_block_fields()
-        finally:
-            self.__seeding = False
 
     def __seed_active_block_fields(self) -> None:
         """Set the type-field scalars from the **active** block's current state -- shared by the full
@@ -743,16 +752,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if main != value:
             # an alias normalized to its main key on write -- mirror it onto the property so the selector
             # reflects the stored spelling. Guarded, so this reconcile is not itself taken for a switch.
-            self.__seeding = True
-            try:
+            with self.__seeding_guard():
                 self.resource_type = main
-            finally:
-                self.__seeding = False
-        self.__seeding = True
-        try:
+        with self.__seeding_guard():
             self.__seed_active_block_fields()
-        finally:
-            self.__seeding = False
         self.dirty = True
         self.active_block_changed.emit()
         self.unknown_fields_changed.emit()
