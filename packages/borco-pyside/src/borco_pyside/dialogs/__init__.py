@@ -1,5 +1,5 @@
 """A modeless, dockable dialog framework: dialogs hosted as `CDockWidget`s with restore-on-start
-persistence (#47)."""
+persistence."""
 
 from .dockable_dialog import DockableDialog
 from .dockable_dialog_frame import DockableDialogFrame

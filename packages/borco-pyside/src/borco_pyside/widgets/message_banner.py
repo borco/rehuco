@@ -80,7 +80,7 @@ class MessageBanner(QWidget):
     """Fallback marker for a severity whose style carries no ``icon`` -- a plain Unicode symbol, so a
     severity that never bothered customizing its look still shows *something*, not a blank cell."""
 
-    __DEFAULT_STYLE: Final = MessageBannerSeverityStyle(margin_color="#F4511E")
+    __DEFAULT_STYLE: Final = MessageBannerSeverityStyle(margin_color="palette(highlight)")
     """The look any severity renders with until a consuming app registers its own entry for it in
     :attr:`SEVERITY_STYLES` -- so a row never hard-crashes just because its style isn't registered."""
 

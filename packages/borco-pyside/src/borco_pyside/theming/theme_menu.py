@@ -12,7 +12,7 @@ from .theme_model import ThemeModel
 class ThemeMenu(QObject):
     """Owns and wires three checkable actions -- e.g. for a ``View`` menu's theme entries -- to
     ``model``'s mode, independently of any other control doing the same (e.g.
-    :class:`~borco_pyside.theming.ThemeManager`'s toolbar action, #57): both read/write
+    :class:`~borco_pyside.theming.ThemeManager`'s toolbar action): both read/write
     ``model.mode`` -- never ``QApplication.styleHints().colorScheme()`` directly, which reports the
     *resolved* appearance and would conflate "explicitly Light" with "``Unknown``, currently
     resolving to Light" (see :class:`~borco_pyside.theming.ThemeModel`) -- and react to

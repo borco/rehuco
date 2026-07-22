@@ -33,9 +33,9 @@ def write_through_or_none[T](
 ) -> None:
     """Resolve a line edit's changed ``text`` and write it through for a value type whose own domain
     already includes ``None`` -- blank text is an explicit reset *to* ``None``, not "incomplete
-    typing", so it can't share :func:`~borco_pyside.widgets.line_edit_helpers`'s old
-    ``parsed_value_or_reset`` shape (retired, #101): that helper's own ``None`` return meant "leave
-    untouched", which collides with a caller whose *target* value is legitimately ``None``.
+    typing", so it can't share an older ``parsed_value_or_reset`` shape whose own ``None`` return
+    meant "leave untouched", which collides with a caller whose *target* value is legitimately
+    ``None``.
 
     Also toggles ``line_edit``'s ``warning`` dynamic property: set for non-blank, unparseable text,
     clear otherwise.

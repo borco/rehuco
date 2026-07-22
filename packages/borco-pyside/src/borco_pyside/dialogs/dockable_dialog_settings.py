@@ -1,4 +1,4 @@
-"""Persisted visibility/restore-on-start state for a `DockableDialog` (#47)."""
+"""Persisted visibility/restore-on-start state for a `DockableDialog`."""
 
 from dataclasses import dataclass
 from typing import Final, cast
@@ -13,10 +13,10 @@ RESTORE_ON_START_KEY: Final = "restore_on_start"
 class DockableDialogSettings:
     """Whether a dockable dialog was open, and whether to reopen it automatically on the next start.
 
-    One shared shape for every `DockableDialog` -- unlike `MainWindowSettings`/
-    `UnsavedChangesDialogSettings` (each a geometry blob), a dockable dialog's own geometry rides on
-    its `CDockManager`'s ``saveState()`` instead of needing its own (it's an ordinary dock, not a
-    standalone top-level window), so these two booleans are all that's dialog-specific.
+    One shared shape for every `DockableDialog` -- unlike a standalone top-level window's settings
+    (typically a geometry blob), a dockable dialog's own geometry rides on its `CDockManager`'s
+    ``saveState()`` instead of needing its own (it's an ordinary dock, not a standalone top-level
+    window), so these two booleans are all that's dialog-specific.
     """
 
     visible: bool = False

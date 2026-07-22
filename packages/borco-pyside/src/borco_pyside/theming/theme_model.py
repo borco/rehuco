@@ -14,7 +14,7 @@ class ThemeModel(QObject):
     the moment it's queried on a platform that can detect it -- it does **not** echo ``Unknown``
     back. Reading it as "the current mode" -- which an earlier version of this feature did -- cannot
     tell "explicitly ``Light``" apart from "``Unknown``, currently resolving to ``Light`` because the
-    OS happens to be in light mode" (#57): a toolbar cycling forward from that state would skip
+    OS happens to be in light mode": a toolbar cycling forward from that state would skip
     ``Unknown`` entirely, a ``View`` menu would check the wrong entry, and persisting "the current
     scheme" at shutdown would silently downgrade a genuine "follow system" choice to a pinned one.
 

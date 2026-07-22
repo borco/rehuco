@@ -19,7 +19,7 @@ class ActionIconThemeHandler(QObject):
     ``HighlightedText`` (enabled+on), the ``Disabled`` group's ``ButtonText`` (disabled+off), and the
     ``Disabled`` group's ``HighlightedText`` (disabled+on, so a disabled checkable action -- e.g. one
     mirroring a model flag it doesn't let the user toggle directly -- still shows its state, not just a
-    flat disabled look, #41) -- so **Qt** picks the right one from the action's own checked/enabled
+    flat disabled look) -- so **Qt** picks the right one from the action's own checked/enabled
     state; the handler never swaps icons on ``toggled``/``enabledChanged``. The whole icon is rebuilt
     whenever the shared :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier` reports a
     palette change -- the authoritative point at which the new theme's colours are available to read
@@ -37,15 +37,15 @@ class ActionIconThemeHandler(QObject):
         color distinctions rather than being preserved.
     :param parent: optional Qt parent; defaults to ``action`` itself.
     :param flat: ``action`` itself lives in a context with no ``Highlight``-colored backdrop behind
-        its icon the way a toolbar's checked button chrome has -- e.g. a menu row (#57's ``View``
-        theme entries), same reasoning as the ``companion`` parameter below. Skips the
+        its icon the way a toolbar's checked button chrome has -- e.g. a ``View`` menu's theme
+        entries, same reasoning as the ``companion`` parameter below. Skips the
         checked-state color variant on ``action``'s own icon (plain ``ButtonText``/disabled colors
         only, same as a companion's), relying on the row's native checkmark to communicate
         checked-ness instead.
     :param companion: an optional second action standing in for ``action`` in a context where the
         checked-state recolor would be unreadable -- e.g. a menu row, which paints no
         ``Highlight``-colored background behind its icon the way a toolbar's checked button chrome
-        does (#64). Kept themed alongside ``action``, from the same source SVG, but always in the
+        does. Kept themed alongside ``action``, from the same source SVG, but always in the
         plain ``ButtonText``/disabled colors with no separate checked variant -- the row's own native
         checkmark communicates checked-ness there instead. Also kept mirroring ``action``'s checked
         state (initially, and via ``toggled`` from then on) and forwards its own ``triggered`` to
@@ -55,7 +55,7 @@ class ActionIconThemeHandler(QObject):
         :meth:`__apply_icon` above works around for ``action``'s own icon: some ways ``action``'s
         checked state can change (e.g. a `QtAds` dock closed via its tab's ``[x]``, or
         ``DockableDialog.toggleView()``, as called by its ``restore_all``/
-        ``enforce_restore_on_start`` -- confirmed empirically, #64) update ``isChecked()`` without
+        ``enforce_restore_on_start`` -- confirmed empirically) update ``isChecked()`` without
         emitting ``toggled`` at all, silently leaving the companion stale. A companion placed in a
         menu (unlike a persistently-visible toolbar button) is never actually *seen* except right as
         its menu opens, though -- call :meth:`resync_companion_checked_state` from that menu's own

@@ -186,7 +186,7 @@ class SimpleProperty[T]:
 
     __COERCING_SIGNAL_SIGNATURES: Final = ("(QVariantList)", "(QVariantMap)")
     """Native container signatures (``Signal(list)`` / ``Signal(dict)``) that convert on emit: the slot
-    receives a QVariant-converted *copy*, not the emitted object (verified empirically, #35). They are
+    receives a QVariant-converted *copy*, not the emitted object (verified empirically). They are
     therefore never acceptable notify signatures -- a list/dict-valued property must use ``Signal(object)``."""
 
     __SIGNAL_NAMES: Final[WeakKeyDictionary[type, dict[str, str]]] = WeakKeyDictionary()
@@ -275,7 +275,7 @@ class SimpleProperty[T]:
         per-class registry :meth:`notify_signal_name` does, walking ``owner``'s MRO so an inherited
         property is included and a name a subclass re-declares appears once. For code that must act on
         *all* of a reactive model's declared fields -- e.g. binding a whole-object view to each field's
-        notify signal (#111) -- without a second, hand-maintained name list to keep in step.
+        notify signal -- without a second, hand-maintained name list to keep in step.
 
         :param owner: the class whose declared properties to list.
         :returns: the property names, most-derived class first and in declaration order within each;
@@ -425,7 +425,7 @@ class SimpleProperty[T]:
         native = self.__signal_signature(Signal(value_type))
         if native in self.__COERCING_SIGNAL_SIGNATURES:
             # a list/dict "native" signal converts on emit -- the slot receives a QVariant copy, not
-            # the object itself (verified empirically, #35) -- so it is itself a coercing value-type
+            # the object itself (verified empirically) -- so it is itself a coercing value-type
             # signal: fold it away so only Signal(object) passes
             native = self.__OBJECT_SIGNAL_SIGNATURE
         if signature not in (self.__OBJECT_SIGNAL_SIGNATURE, native):

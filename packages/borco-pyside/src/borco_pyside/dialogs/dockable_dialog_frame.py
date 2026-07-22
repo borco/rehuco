@@ -1,4 +1,4 @@
-"""Wraps arbitrary content with a "Restore on start" checkbox, for `DockableDialog` (#47)."""
+"""Wraps arbitrary content with a "Restore on start" checkbox, for `DockableDialog`."""
 
 from typing import Final
 
@@ -9,7 +9,7 @@ class DockableDialogFrame(QWidget):
     """``content`` plus a footer "Restore on start" checkbox, hosted inside a `DockableDialog`'s dock.
 
     Built directly in Python, not a `.ui` file -- a single static row wrapped around an arbitrary
-    child is the documented trivial-layout exception (`appendices.code-conventions`).
+    child is simple enough to not warrant a `.ui` file.
 
     :param content: the widget this dialog actually shows; reparented onto this frame's layout.
     :param parent: optional Qt parent.

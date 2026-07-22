@@ -70,7 +70,7 @@ def get_value(key_path: str, name: str) -> str | None:
     """Read a ``REG_SZ`` value under HKCU, or ``None`` if ``key_path`` or ``name`` doesn't exist.
 
     The read-back counterpart to :func:`set_value`, for verifying a registration is (still)
-    exactly what it should be -- e.g. a "Check registration" settings-page button (#47).
+    exactly what it should be -- e.g. a "Check registration" settings-page button.
 
     :param key_path: registry path relative to ``HKEY_CURRENT_USER``.
     :param name: value name; empty string reads the default value.
