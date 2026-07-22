@@ -2,6 +2,7 @@
 
 from typing import Final
 
+import pytest
 from borco_pyside.platforms.windows import window_activation
 from PySide6.QtWidgets import QWidget
 from pytest import mark
@@ -48,15 +49,23 @@ def test_force_foreground_attaches_borrows_input_and_detaches(mocker: MockerFixt
     mocker.patch(
         f"{WA}.ctypes.windll.user32.AttachThreadInput",
         create=True,
-        side_effect=lambda a, b, c: attach_calls.append((a, b, c)),
+        side_effect=lambda a, b, c: attach_calls.append((a, b, c)) or True,
     )
     mocker.patch(
         f"{WA}.ctypes.windll.user32.ShowWindow",
         create=True,
-        side_effect=lambda hwnd, cmd: show_window_calls.append((hwnd, cmd)),
+        side_effect=lambda hwnd, cmd: show_window_calls.append((hwnd, cmd)) or True,
     )
-    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, side_effect=bring_to_top_calls.append)
-    mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, side_effect=set_foreground_calls.append)
+    mocker.patch(
+        f"{WA}.ctypes.windll.user32.BringWindowToTop",
+        create=True,
+        side_effect=lambda hwnd: bring_to_top_calls.append(hwnd) or True,
+    )
+    mocker.patch(
+        f"{WA}.ctypes.windll.user32.SetForegroundWindow",
+        create=True,
+        side_effect=lambda hwnd: set_foreground_calls.append(hwnd) or True,
+    )
 
     window_activation.force_foreground(widget)
 
@@ -65,3 +74,102 @@ def test_force_foreground_attaches_borrows_input_and_detaches(mocker: MockerFixt
     assert show_window_calls == [(hwnd, 9)]
     assert bring_to_top_calls == [hwnd]
     assert set_foreground_calls == [hwnd]
+
+
+@mark.windows
+def test_force_foreground_skips_attach_when_already_foreground_thread(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """When the foreground window's thread is this process's own thread, ``AttachThreadInput``
+    is skipped entirely -- calling it with matching thread ids fails and would make the paired
+    detach below "succeed" against nothing.
+
+    **Test steps:**
+
+    * mock the foreground/current thread lookups to return the same id
+    * call ``force_foreground``
+    * verify ``AttachThreadInput`` was never called, while the raise/restore calls still happened
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    attach = mocker.patch(f"{WA}.ctypes.windll.user32.AttachThreadInput", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetForegroundWindow", create=True, return_value=FOREGROUND_HWND)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetWindowThreadProcessId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.kernel32.GetCurrentThreadId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+    set_foreground = mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, return_value=True)
+
+    window_activation.force_foreground(widget)
+
+    attach.assert_not_called()
+    set_foreground.assert_called_once_with(int(widget.winId()))
+
+
+@mark.windows
+def test_force_foreground_detaches_even_if_set_foreground_window_raises(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The detach happens even when a call between attach and detach blows up, so a ctypes-level
+    surprise never leaves the input queues attached.
+
+    **Test steps:**
+
+    * mock ``SetForegroundWindow`` to raise
+    * call ``force_foreground`` and expect the exception to propagate
+    * verify ``AttachThreadInput`` was still called a second time, to detach
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    attach_calls: list[bool] = []
+
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetForegroundWindow", create=True, return_value=FOREGROUND_HWND)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetWindowThreadProcessId", create=True, return_value=FOREGROUND_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.kernel32.GetCurrentThreadId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(
+        f"{WA}.ctypes.windll.user32.AttachThreadInput",
+        create=True,
+        side_effect=lambda a, b, c: attach_calls.append(c) or True,
+    )
+    mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, side_effect=OSError("boom"))
+
+    with pytest.raises(OSError, match="boom"):
+        window_activation.force_foreground(widget)
+
+    assert attach_calls == [True, False]
+
+
+@mark.windows
+def test_force_foreground_logs_win32_call_failures(
+    mocker: MockerFixture, qtbot: QtBot, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A ``0`` return from ``AttachThreadInput``, ``BringWindowToTop``, or ``SetForegroundWindow``
+    is a documented Win32 failure signal and gets logged, instead of being silently ignored.
+
+    **Test steps:**
+
+    * mock every failure-checked call to report failure (``0``/``False``)
+    * call ``force_foreground``
+    * verify a warning was logged for each of the three failure-checked calls
+    """
+    widget = QWidget()
+    qtbot.addWidget(widget)
+    widget.show()
+
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetForegroundWindow", create=True, return_value=FOREGROUND_HWND)
+    mocker.patch(f"{WA}.ctypes.windll.user32.GetWindowThreadProcessId", create=True, return_value=FOREGROUND_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.kernel32.GetCurrentThreadId", create=True, return_value=CURRENT_THREAD)
+    mocker.patch(f"{WA}.ctypes.windll.user32.AttachThreadInput", create=True, return_value=False)
+    mocker.patch(f"{WA}.ctypes.windll.user32.ShowWindow", create=True, return_value=True)
+    mocker.patch(f"{WA}.ctypes.windll.user32.BringWindowToTop", create=True, return_value=False)
+    mocker.patch(f"{WA}.ctypes.windll.user32.SetForegroundWindow", create=True, return_value=False)
+
+    with caplog.at_level("WARNING", logger=WA):
+        window_activation.force_foreground(widget)
+
+    messages = [record.message for record in caplog.records]
+    assert any("AttachThreadInput" in message for message in messages)
+    assert any("BringWindowToTop" in message for message in messages)
+    assert any("SetForegroundWindow" in message for message in messages)
