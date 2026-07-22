@@ -68,10 +68,11 @@ class FakeRegistry:
         return FakeKey(path)
 
     def open_key(self, _root: int, path: str, access: int = 0) -> FakeKey:
-        """Fake for ``winreg.OpenKey`` -- raises ``OSError`` if ``path`` doesn't exist."""
+        """Fake for ``winreg.OpenKey`` -- raises ``FileNotFoundError`` if ``path`` doesn't exist,
+        mirroring real ``winreg`` (an ``OSError`` subclass, not a bare ``OSError``)."""
         del access
         if path not in self.values:
-            raise OSError(f"no such key: {path}")
+            raise FileNotFoundError(f"no such key: {path}")
         return FakeKey(path)
 
     def set_value_ex(self, key: FakeKey, name: str, _reserved: int, _value_type: int, value: str) -> None:

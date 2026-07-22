@@ -1,4 +1,4 @@
-"""Tests for hkcu_registry's shared primitives: get_value and matches_verb."""
+"""Tests for hkcu_registry's shared primitives: delete_key_tree, get_value and matches_verb."""
 
 from typing import Final
 
@@ -8,6 +8,7 @@ from pytest import mark
 winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- skip the whole file there
 
 from borco_core.platforms.windows import hkcu_registry  # noqa: E402  # pylint: disable=wrong-import-position
+from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 
 from .conftest import FakeRegistry  # noqa: E402  # pylint: disable=wrong-import-position
 
@@ -60,6 +61,44 @@ def test_get_value_returns_none_for_a_missing_name(fake_registry: FakeRegistry) 
 
     assert hkcu_registry.get_value(KEY_PATH, "name") is None
     assert "name" not in fake_registry.values[KEY_PATH]
+
+
+@mark.windows
+def test_delete_key_tree_is_a_noop_when_the_key_never_existed(fake_registry: FakeRegistry) -> None:
+    """``delete_key_tree`` raises nothing when ``path`` doesn't exist at all.
+
+    **Test steps:**
+
+    * delete a key that was never created
+    * verify no exception propagates
+    """
+    hkcu_registry.delete_key_tree(KEY_PATH)
+
+    assert fake_registry.values == {}
+
+
+@mark.windows
+def test_delete_key_tree_logs_but_does_not_raise_on_other_os_errors(
+    fake_registry: FakeRegistry, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``delete_key_tree`` doesn't conflate "key doesn't exist" with a mid-tree failure like a
+    permission error: it logs a warning for anything other than ``FileNotFoundError`` (so a partial
+    deletion isn't a silent success) but still doesn't raise -- unregistration is best-effort cleanup
+    that must not crash its caller.
+
+    **Test steps:**
+
+    * write a key so it exists
+    * make the underlying ``DeleteKey`` raise ``PermissionError``
+    * delete the key tree
+    * verify no exception propagates and a warning was logged
+    """
+    hkcu_registry.set_value(KEY_PATH, "name", "some-value")
+    mocker.patch(f"{hkcu_registry.__name__}.winreg.DeleteKey", side_effect=PermissionError("access denied"))
+
+    hkcu_registry.delete_key_tree(KEY_PATH)  # must not raise
+
+    assert "failed to delete" in caplog.text
 
 
 @mark.windows

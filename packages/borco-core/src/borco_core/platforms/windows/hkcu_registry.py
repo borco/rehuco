@@ -38,7 +38,10 @@ def delete_key_tree(path: str) -> None:
     """Recursively delete ``path`` and all its sub-keys under ``HKEY_CURRENT_USER``.
 
     A no-op (not an error) when ``path`` doesn't exist -- ``unregister`` callers use this to clean
-    up state that may already be gone.
+    up state that may already be gone. Any other failure (e.g. permission denied partway through
+    the tree) is logged rather than swallowed silently, so a partial deletion leaves a trace instead
+    of being reported as success -- but it is not re-raised: unregistration is best-effort cleanup
+    and must not crash the caller.
 
     :param path: registry path relative to ``HKEY_CURRENT_USER``.
     """
@@ -52,8 +55,10 @@ def delete_key_tree(path: str) -> None:
                     break
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
             LOG.debug("deleted HKCU\\%s", path)
-    except OSError:
+    except FileNotFoundError:
         pass  # already gone
+    except OSError:
+        LOG.warning("failed to delete HKCU\\%s", path, exc_info=True)
 
 
 def notify_shell() -> None:
