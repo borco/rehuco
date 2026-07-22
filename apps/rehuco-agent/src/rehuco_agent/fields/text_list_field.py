@@ -2,12 +2,13 @@
 ([[plugins#field-toolkit]]).
 """
 
-from typing import Final, override
+from typing import override
 
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QLabel, QLineEdit
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .text_list_string import TextListString
 
 
 class TextListField(Field[list[str]]):
@@ -26,9 +27,6 @@ class TextListField(Field[list[str]]):
 
     TYPE = "text_list"
 
-    JOIN_SEPARATOR: Final = ", "
-    SPLIT_SEPARATOR: Final = ","
-
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         label = QLabel(self.__display(binding.value))
@@ -38,8 +36,8 @@ class TextListField(Field[list[str]]):
 
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
-        line_edit = QLineEdit(self.__join(binding.value))
-        line_edit.textChanged.connect(lambda text: binding.set_value(self.__split(text)))
+        line_edit = QLineEdit(TextListString.join(binding.value))
+        line_edit.textChanged.connect(lambda text: binding.set_value(TextListString.split(text)))
         self.bind_external(binding.changed, lambda value: self.__echo(line_edit, value))
         return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit)
 
@@ -49,23 +47,7 @@ class TextListField(Field[list[str]]):
         :param items: the list to render.
         :returns: the deduplicated, comma-joined text.
         """
-        return self.__join(list(dict.fromkeys(items)))
-
-    def __join(self, items: list[str]) -> str:
-        """Join a list into its comma-separated text form.
-
-        :param items: the list to join.
-        :returns: the joined text.
-        """
-        return self.JOIN_SEPARATOR.join(items)
-
-    def __split(self, text: str) -> list[str]:
-        """Split comma-separated text into a list, trimming whitespace and dropping empty entries.
-
-        :param text: the text to split.
-        :returns: the parsed list.
-        """
-        return [item.strip() for item in text.split(self.SPLIT_SEPARATOR) if item.strip()]
+        return TextListString.join(dict.fromkeys(items))
 
     def __echo(self, line_edit: QLineEdit, value: list[str]) -> None:
         """Update the editor from a binding change without re-emitting ``textChanged`` (echo guard).
@@ -73,6 +55,6 @@ class TextListField(Field[list[str]]):
         :param line_edit: the editor to update.
         :param value: the new value.
         """
-        if self.__split(line_edit.text()) != value:
+        if TextListString.split(line_edit.text()) != value:
             with QSignalBlocker(line_edit):
-                line_edit.setText(self.__join(value))
+                line_edit.setText(TextListString.join(value))

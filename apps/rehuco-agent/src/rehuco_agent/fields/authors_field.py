@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QMainWindow, QToolButton, QTool
 from rehuco_core import AuthorEntry, author_name, authors_comma_editable
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .text_list_string import TextListString
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -57,9 +58,6 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
 
     TYPE = "authors"
 
-    JOIN_SEPARATOR: Final = ", "
-    SPLIT_SEPARATOR: Final = ","
-
     @override
     def make_viewer(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldViewerWidgets:
         label = QLabel()
@@ -75,7 +73,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
     @override
     def make_editor(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldEditorWidgets:
         line_edit = QLineEdit()
-        line_edit.textChanged.connect(lambda text: binding.set_value(self.__split(text)))
+        line_edit.textChanged.connect(lambda text: binding.set_value(TextListString.split(text)))
         lock = self.__make_lock_indicator()
         self.__apply(line_edit, lock, binding.value)
         self.bind_external(binding.changed, lambda value: self.__apply(line_edit, lock, value))
@@ -99,7 +97,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
                 parts.append(f'{name_html} (<a href="{html.escape(url)}">url</a>)')
             else:
                 parts.append(name_html)
-        return self.JOIN_SEPARATOR.join(parts)
+        return TextListString.join(parts)
 
     @staticmethod
     def __is_http_url(value: str) -> bool:
@@ -190,11 +188,11 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
         if editable:
             # authors_comma_editable's own guarantee: every entry is a plain string here
             names = [entry for entry in value if isinstance(entry, str)]
-            if self.__split(line_edit.text()) != names:
+            if TextListString.split(line_edit.text()) != names:
                 with QSignalBlocker(line_edit):
-                    line_edit.setText(self.__join(names))
+                    line_edit.setText(TextListString.join(names))
         else:
-            text = self.__join_names(value)
+            text = TextListString.join(author_name(entry) for entry in value)
             if line_edit.text() != text:
                 with QSignalBlocker(line_edit):
                     line_edit.setText(text)
@@ -214,29 +212,5 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
         button.setDefaultAction(action)
         button.setVisible(False)
         return button
-
-    def __join(self, items: list[str]) -> str:
-        """Join plain-string entries into their comma-separated text form.
-
-        :param items: the entries to join.
-        :returns: the joined text.
-        """
-        return self.JOIN_SEPARATOR.join(items)
-
-    def __join_names(self, entries: Sequence[AuthorEntry]) -> str:
-        """Join every entry's display name, comma-separated, for the disabled editor's read-only text.
-
-        :param entries: the entries to render.
-        :returns: the joined names.
-        """
-        return self.JOIN_SEPARATOR.join(author_name(entry) for entry in entries)
-
-    def __split(self, text: str) -> list[str]:
-        """Split comma-separated text into a list, trimming whitespace and dropping empty entries.
-
-        :param text: the text to split.
-        :returns: the parsed list.
-        """
-        return [item.strip() for item in text.split(self.SPLIT_SEPARATOR) if item.strip()]
 
     # endregion
