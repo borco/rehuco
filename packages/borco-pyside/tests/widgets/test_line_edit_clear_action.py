@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from borco_pyside.widgets.line_edit_clear_action import LineEditClearActionFilter
 from PySide6.QtCore import QEvent, QSignalBlocker
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QLineEdit, QSpinBox, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QSpinBox, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -225,6 +225,30 @@ def test_a_spin_boxs_internal_line_edit_is_left_untouched(
     spin_box.show()
 
     internal_line_edit = spin_box.lineEdit()
+    assert internal_line_edit is not None
+    assert internal_line_edit.actions() == []
+
+
+def test_an_editable_combo_boxs_internal_line_edit_is_left_untouched(
+    installed_filter: LineEditClearActionFilter, qtbot: QtBot
+) -> None:
+    """The filter skips a ``QLineEdit`` owned by an editable ``QComboBox`` -- its text renders the
+    combo's current value, so a generic text-based clear would desync text from ``currentIndex()``
+    exactly as it would for a spin box (see the filter's own docstring).
+
+    **Test steps:**
+
+    * show an editable ``QComboBox`` (which shows its own internal line edit as part of showing)
+    * verify its internal line edit carries no clear action
+    """
+    del installed_filter
+    combo_box = QComboBox()
+    combo_box.setEditable(True)
+    qtbot.addWidget(combo_box)
+
+    combo_box.show()
+
+    internal_line_edit = combo_box.lineEdit()
     assert internal_line_edit is not None
     assert internal_line_edit.actions() == []
 
