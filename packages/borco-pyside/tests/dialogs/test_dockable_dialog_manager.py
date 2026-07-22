@@ -151,3 +151,105 @@ def test_enforce_restore_on_start_closes_every_unchecked_dialog(manager: QtAds.C
 
     assert dialog_a.dock.isClosed()
     assert not dialog_b.dock.isClosed()
+
+
+def test_register_is_idempotent_for_the_same_dialog(manager: QtAds.CDockManager, settings: FakeSettings) -> None:
+    """Registering the same dialog twice tracks it once, not twice.
+
+    **Test steps:**
+
+    * build a dialog, register it twice
+    * save all
+    * verify the dialog's settings were written exactly once (no duplicate-write side effect)
+    """
+    dialog_manager = DockableDialogManager()
+
+    dialog = DockableDialog(manager, "dialog_a", "Dialog A", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock)
+    dialog_manager.register(dialog)
+    dialog_manager.register(dialog)
+
+    write_count = 0
+    original_set_value = settings.setValue
+
+    def counting_set_value(key: str, value: Any) -> None:
+        nonlocal write_count
+        write_count += 1
+        original_set_value(key, value)
+
+    settings.setValue = counting_set_value  # type: ignore[method-assign]
+
+    dialog_manager.save_all(settings)  # type: ignore[arg-type]
+
+    assert write_count == 2  # visible + restore_on_start, once each
+
+
+def test_unregister_drops_a_previously_registered_dialog(manager: QtAds.CDockManager, settings: FakeSettings) -> None:
+    """An unregistered dialog is no longer touched by the bulk calls.
+
+    **Test steps:**
+
+    * build and register two dialogs
+    * unregister one
+    * save all
+    * verify only the still-registered dialog's group was written
+    """
+    dialog_manager = DockableDialogManager()
+
+    dialog_a = DockableDialog(manager, "dialog_a", "Dialog A", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_a.dock)
+    dialog_manager.register(dialog_a)
+
+    dialog_b = DockableDialog(manager, "dialog_b", "Dialog B", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_b.dock)
+    dialog_manager.register(dialog_b)
+
+    dialog_manager.unregister(dialog_a)
+
+    dialog_manager.save_all(settings)  # type: ignore[arg-type]
+
+    assert settings.value("dockable_dialogs/dialog_a/visible") is None
+    assert settings.value("dockable_dialogs/dialog_b/visible") is not None
+
+
+def test_unregister_is_a_no_op_for_an_unregistered_dialog(manager: QtAds.CDockManager) -> None:
+    """Unregistering a dialog that was never registered (or already removed) doesn't raise."""
+    dialog_manager = DockableDialogManager()
+
+    dialog = DockableDialog(manager, "dialog_a", "Dialog A", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog.dock)
+
+    dialog_manager.unregister(dialog)  # never registered
+    dialog_manager.register(dialog)
+    dialog_manager.unregister(dialog)
+    dialog_manager.unregister(dialog)  # already removed
+
+
+def test_destroyed_dock_auto_unregisters_without_raising_on_later_bulk_calls(
+    manager: QtAds.CDockManager, settings: FakeSettings, qtbot: QtBot
+) -> None:
+    """A dialog destroyed without an explicit ``unregister`` call doesn't leave a dead entry.
+
+    **Test steps:**
+
+    * build and register two dialogs
+    * delete one dialog's dock and let the event loop process the deletion
+    * call save_all
+    * verify it doesn't raise and the surviving dialog is still processed
+    """
+    dialog_manager = DockableDialogManager()
+
+    dialog_a = DockableDialog(manager, "dialog_a", "Dialog A", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_a.dock)
+    dialog_manager.register(dialog_a)
+
+    dialog_b = DockableDialog(manager, "dialog_b", "Dialog B", QLabel())
+    manager.addDockWidget(QtAds.CenterDockWidgetArea, dialog_b.dock)
+    dialog_manager.register(dialog_b)
+
+    dialog_a.dock.deleteLater()
+    qtbot.wait(0)
+
+    dialog_manager.save_all(settings)  # type: ignore[arg-type]
+
+    assert settings.value("dockable_dialogs/dialog_b/visible") is not None

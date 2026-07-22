@@ -21,10 +21,25 @@ class DockableDialogManager:
     def register(self, dialog: DockableDialog) -> None:
         """Track ``dialog`` for :meth:`save_all`/:meth:`restore_all`.
 
+        A no-op if ``dialog`` is already registered. Auto-unregisters when its dock is destroyed, so
+        a dialog torn down without an explicit :meth:`unregister` call can't leave a dead entry
+        behind for the bulk loops to trip over.
+
         :param dialog: the dialog to register; its :attr:`~DockableDialog.object_name` becomes its
             settings group.
         """
+        if dialog in self.__dialogs:
+            return
         self.__dialogs.append(dialog)
+        dialog.dock.destroyed.connect(lambda: self.unregister(dialog))
+
+    def unregister(self, dialog: DockableDialog) -> None:
+        """Stop tracking ``dialog``. A no-op if it isn't registered.
+
+        :param dialog: the dialog to drop from :meth:`save_all`/:meth:`restore_all`.
+        """
+        if dialog in self.__dialogs:
+            self.__dialogs.remove(dialog)
 
     def enforce_restore_on_start(self) -> None:
         """Close every registered dialog whose "Restore on start" is unchecked.
