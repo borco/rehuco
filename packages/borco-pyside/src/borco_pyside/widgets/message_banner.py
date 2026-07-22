@@ -2,7 +2,7 @@
 a modal dialog for state that persists exactly as long as its cause does.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar, Final, cast
@@ -68,6 +68,11 @@ class MessageBanner(QWidget):
     layout space, while empty.
 
     :param parent: optional Qt parent.
+    :param styles: per-instance severity styles, taking precedence over the class-wide
+        :attr:`SEVERITY_STYLES` for whichever severities it names. A severity absent from it falls
+        back to :attr:`SEVERITY_STYLES`, then to :attr:`__DEFAULT_STYLE` -- so two windows (or two
+        libraries) in one process can style their banners differently without fighting over the shared
+        class table, while the class table stays the default when this is ``None``.
     """
 
     __ICON_SIZE: Final = 20
@@ -80,14 +85,25 @@ class MessageBanner(QWidget):
     :attr:`SEVERITY_STYLES` -- so a row never hard-crashes just because its style isn't registered."""
 
     SEVERITY_STYLES: ClassVar[dict[MessageBannerSeverity, MessageBannerSeverityStyle]] = {}
-    """Each severity's look, keyed by :class:`MessageBannerSeverity`. Empty by default -- every
-    severity renders with :attr:`__DEFAULT_STYLE` until a consuming app registers its own entry (e.g.
-    with its own brand color and icon) for whichever severities it actually uses, before building any
-    `MessageBanner` that uses them. A severity missing from this table at render time falls back to
-    :attr:`__DEFAULT_STYLE` rather than crashing, so this being empty is never itself a problem."""
+    """The class-wide default for each severity's look, keyed by :class:`MessageBannerSeverity`. Empty
+    by default -- every severity renders with :attr:`__DEFAULT_STYLE` until a consuming app registers
+    its own entry (e.g. with its own brand color and icon) for whichever severities it actually uses,
+    before building any `MessageBanner` that uses them. A severity missing from this table at render
+    time falls back to :attr:`__DEFAULT_STYLE` rather than crashing, so this being empty is never
+    itself a problem.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    This is a shared, process-global table: convenient when one app styles every banner alike, but two
+    windows or libraries in one process cannot use it to style banners differently. For that, pass a
+    per-instance ``styles`` to the constructor instead -- it takes precedence over this table for
+    whichever severities it names, and this stays the fallback."""
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        styles: Mapping[MessageBannerSeverity, MessageBannerSeverityStyle] | None = None,
+    ) -> None:
         super().__init__(parent)
+        self.__styles: Final = styles
         self.__layout: Final = QVBoxLayout(self)
         self.__layout.setContentsMargins(0, 0, 0, 0)
         self.setVisible(False)
@@ -110,8 +126,19 @@ class MessageBanner(QWidget):
             self.__layout.addWidget(self.__build_row(row))
         self.setVisible(bool(rows))
 
-    @classmethod
-    def __build_row(cls, row: MessageBannerRow) -> QWidget:
+    def __resolve_style(self, severity: MessageBannerSeverity) -> MessageBannerSeverityStyle:
+        """Pick a severity's style: this instance's own ``styles`` first (for whichever severities it
+        names), then the class-wide :attr:`SEVERITY_STYLES`, then :attr:`__DEFAULT_STYLE` -- so a row
+        never hard-crashes just because its style isn't registered anywhere.
+
+        :param severity: the severity whose style to resolve.
+        :returns: the resolved style.
+        """
+        if self.__styles is not None and severity in self.__styles:
+            return self.__styles[severity]
+        return self.SEVERITY_STYLES.get(severity, self.__DEFAULT_STYLE)
+
+    def __build_row(self, row: MessageBannerRow) -> QWidget:
         """Build one row: an accent-bordered container holding the severity's marker and the
         word-wrapping message (the only child stretched -- the same discipline as
         :class:`~borco_pyside.widgets.WrappingCheckBox`, so a long message grows the row taller, never
@@ -120,7 +147,7 @@ class MessageBanner(QWidget):
         :param row: the notice to render.
         :returns: the built row widget, ready to add to the strip.
         """
-        style = cls.SEVERITY_STYLES.get(row.severity, cls.__DEFAULT_STYLE)
+        style = self.__resolve_style(row.severity)
         container = QWidget()
         # scoped by the severity attribute, not a bare `QWidget { ... }` rule -- Qt style sheets match
         # a type selector against every matching descendant too, which would paint the same border
@@ -134,9 +161,9 @@ class MessageBanner(QWidget):
 
         icon = QLabel(container)
         if style.icon is not None:
-            icon.setPixmap(style.icon.pixmap(cls.__ICON_SIZE, cls.__ICON_SIZE))
+            icon.setPixmap(style.icon.pixmap(self.__ICON_SIZE, self.__ICON_SIZE))
         else:
-            icon.setText(cls.__DEFAULT_GLYPH)
+            icon.setText(self.__DEFAULT_GLYPH)
             icon.setStyleSheet(f"color: {style.margin_color};")
         layout.addWidget(icon, 0)
 
