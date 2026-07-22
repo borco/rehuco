@@ -1,4 +1,5 @@
-"""Tests for hkcu_registry's shared primitives: delete_key_tree, get_value and matches_verb."""
+"""Tests for hkcu_registry's shared primitives: delete_key_tree, delete_value, get_value and
+matches_verb."""
 
 from typing import Final
 
@@ -61,6 +62,68 @@ def test_get_value_returns_none_for_a_missing_name(fake_registry: FakeRegistry) 
 
     assert hkcu_registry.get_value(KEY_PATH, "name") is None
     assert "name" not in fake_registry.values[KEY_PATH]
+
+
+@mark.windows
+def test_delete_value_removes_only_the_named_value(fake_registry: FakeRegistry) -> None:
+    """``delete_value`` removes exactly the named value, leaving the key and its siblings intact.
+
+    **Test steps:**
+
+    * write two values under the same key
+    * delete one of them
+    * verify only that one is gone and the key with its other value survives
+    """
+    hkcu_registry.set_value(KEY_PATH, "mine", "some-value")
+    hkcu_registry.set_value(KEY_PATH, "other", "other-value")
+
+    hkcu_registry.delete_value(KEY_PATH, "mine")
+
+    assert "mine" not in fake_registry.values[KEY_PATH]
+    assert fake_registry.values[KEY_PATH]["other"] == "other-value"
+
+
+@mark.windows
+def test_delete_value_is_a_noop_when_the_key_or_value_never_existed(fake_registry: FakeRegistry) -> None:
+    """``delete_value`` raises nothing when the key -- or just the value -- doesn't exist.
+
+    **Test steps:**
+
+    * delete a value under a key that was never created
+    * create the key with a different value, then delete a name that was never written
+    * verify no exception propagates either way and the existing value survives
+    """
+    hkcu_registry.delete_value(KEY_PATH, "name")  # key missing
+
+    hkcu_registry.set_value(KEY_PATH, "other", "some-value")
+    hkcu_registry.delete_value(KEY_PATH, "name")  # key exists, value missing
+
+    assert fake_registry.values[KEY_PATH]["other"] == "some-value"
+
+
+@mark.windows
+def test_delete_value_logs_but_does_not_raise_on_other_os_errors(
+    fake_registry: FakeRegistry, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """``delete_value`` doesn't conflate "value doesn't exist" with a real failure like a permission
+    error: it logs a warning for anything other than ``FileNotFoundError`` but still doesn't raise --
+    matching ``delete_key_tree``'s best-effort-cleanup contract.
+
+    **Test steps:**
+
+    * write a value so it exists
+    * make the underlying ``DeleteValue`` raise ``PermissionError``
+    * delete the value
+    * verify no exception propagates, a warning was logged, and the value survived (the failure
+      really was a failure, not a silent success)
+    """
+    hkcu_registry.set_value(KEY_PATH, "name", "some-value")
+    mocker.patch(f"{hkcu_registry.__name__}.winreg.DeleteValue", side_effect=PermissionError("access denied"))
+
+    hkcu_registry.delete_value(KEY_PATH, "name")  # must not raise
+
+    assert "failed to delete" in caplog.text
+    assert fake_registry.values[KEY_PATH]["name"] == "some-value"
 
 
 @mark.windows
