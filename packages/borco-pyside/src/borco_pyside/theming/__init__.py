@@ -1,6 +1,7 @@
 """Generic PySide6 theming helpers: theme switching, SVG recoloring, and themed action icons."""
 
 from .action_icon_theme_handler import ActionIconThemeHandler
+from .application_palette_change_notifier import ApplicationPaletteChangeNotifier
 from .glyph_action_icon_handler import GlyphActionIconThemeHandler
 from .glyph_icon import Glyph, glyph_icon
 from .svg_recolor import recolor_svg, recolored_svg_icon
@@ -11,6 +12,7 @@ from .utils import read_resource_bytes
 
 __all__ = [
     "ActionIconThemeHandler",
+    "ApplicationPaletteChangeNotifier",
     "Glyph",
     "GlyphActionIconThemeHandler",
     "ThemeManager",

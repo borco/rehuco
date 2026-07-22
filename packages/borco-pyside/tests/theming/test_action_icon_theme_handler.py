@@ -35,7 +35,7 @@ def test_read_file_raises_when_the_file_cannot_be_opened(make_action: QAction, m
 def test_construction_raises_without_a_running_qapplication(
     make_action: QAction, mock_qfile: Callable[..., Any], mocker: MockerFixture
 ) -> None:
-    """Construction requires a running QApplication, to have somewhere to connect paletteChanged.
+    """Construction requires a running QApplication, to have somewhere to install the event filter.
 
     **Test steps:**
 

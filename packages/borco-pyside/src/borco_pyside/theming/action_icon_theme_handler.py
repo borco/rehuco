@@ -4,6 +4,7 @@ from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction, QPalette
 from PySide6.QtWidgets import QApplication
 
+from .application_palette_change_notifier import ApplicationPaletteChangeNotifier
 from .svg_recolor import recolored_svg_icon
 from .utils import read_resource_bytes
 
@@ -20,13 +21,14 @@ class ActionIconThemeHandler(QObject):
     mirroring a model flag it doesn't let the user toggle directly -- still shows its state, not just a
     flat disabled look, #41) -- so **Qt** picks the right one from the action's own checked/enabled
     state; the handler never swaps icons on ``toggled``/``enabledChanged``. The whole icon is rebuilt
-    whenever ``QApplication.paletteChanged`` fires -- that signal (not
-    ``QStyleHints.colorSchemeChanged``, which can fire before the palette itself has actually been
-    updated) is the authoritative point at which the new theme's colours are available to read.
+    whenever the shared :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier` reports a
+    palette change -- the authoritative point at which the new theme's colours are available to read
+    (not ``QStyleHints.colorSchemeChanged``, which can fire before the palette itself has actually
+    been updated).
 
     A ``QObject``, parented to ``action`` by default -- ``ActionIconThemeHandler(action, icon)``
-    alone is enough, with nothing to hold onto: Qt destroys it along with ``action``, and its own
-    signal connections keep it alive as long as ``action`` does regardless.
+    alone is enough, with nothing to hold onto: Qt destroys it along with ``action``, and severs its
+    connection to the notifier at the same time.
 
     :param action: the checkable action to keep recolored.
     :param icon: path (Qt resource or filesystem) to the source SVG, drawn for the light theme's
@@ -79,7 +81,7 @@ class ActionIconThemeHandler(QObject):
         app = QApplication.instance()
         if not isinstance(app, QApplication):
             raise RuntimeError("ActionIconThemeHandler requires a running QApplication")
-        app.paletteChanged.connect(self.__on_palette_changed)
+        ApplicationPaletteChangeNotifier.for_application(app).palette_changed.connect(self.__apply_icon)
 
         if self.__companion_action is not None:
             self.__companion_action.triggered.connect(action.trigger)
@@ -109,12 +111,6 @@ class ActionIconThemeHandler(QObject):
             theme's unchecked (normal) state.
         """
         self.__svg = read_resource_bytes(icon)
-        self.__apply_icon()
-
-    def __on_palette_changed(self, *_args: object) -> None:
-        # the app's palette only reflects a theme switch once this fires -- rebuilding eagerly on
-        # colorSchemeChanged instead reads the still-stale pre-switch palette (confirmed: the save
-        # icon then never picked up the real colors).
         self.__apply_icon()
 
     def __apply_icon(self) -> None:

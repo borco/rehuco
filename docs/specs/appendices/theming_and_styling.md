@@ -14,10 +14,18 @@
 - **`glyph_icon`/`GlyphIconEngine`** (`glyph_icon.py`) — the same "render fresh, no fixed-resolution
   cache" approach for a single icon-font glyph (e.g. Phosphor) instead of an SVG; both share the
   `pixmap()` plumbing via `theming/utils.py`'s `painted_pixmap`.
+- **`ApplicationPaletteChangeNotifier`** — one shared, application-wide event filter (created once
+  per `QApplication` via `for_application`) that re-exposes `QEvent.Type.ApplicationPaletteChange`
+  as a plain `palette_changed` signal. Replaces `QApplication.paletteChanged` (deprecated since Qt
+  6.0). Qt fires that event several times for a single theme switch (four on Windows, all with the
+  identical new palette), so the notifier coalesces by `QPalette.cacheKey` and emits once per real
+  change — matching the old signal's once-per-switch, since each emit rebuilds every themed icon. A
+  single shared filter also lets any number of handlers listen without each installing its own
+  (which would make every event in the app `O(handlers)`).
 - **`ActionIconThemeHandler`** / **`GlyphActionIconThemeHandler`** — keep one `QAction`'s icon
   (SVG- or glyph-backed, respectively) rebuilt in the current palette's colors on every
-  `QApplication.paletteChanged`. `ActionIconThemeHandler`'s `flat` parameter skips the
-  checked-state color variant for an action living in a menu row, which paints no
+  `ApplicationPaletteChangeNotifier.palette_changed`. `ActionIconThemeHandler`'s `flat` parameter
+  skips the checked-state color variant for an action living in a menu row, which paints no
   `Highlight`-colored backdrop behind its icon the way a toolbar's checked button chrome does —
   the row's own native checkmark communicates checked-ness there instead.
 - **`ThemeModel`** — the single source of truth for the app's theme *mode*
