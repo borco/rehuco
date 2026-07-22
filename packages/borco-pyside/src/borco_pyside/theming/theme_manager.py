@@ -17,7 +17,7 @@ class ThemeManager(QObject):
 
     Reads and writes ``model.mode`` -- never ``QApplication.styleHints().colorScheme()`` directly,
     which reports the *resolved* appearance and would conflate "explicitly Light" with "``Unknown``,
-    currently resolving to Light" (see :class:`~borco_pyside.theming.ThemeModel`, #57) -- and reacts
+    currently resolving to Light" (see :class:`~borco_pyside.theming.ThemeModel`) -- and reacts
     to ``model.mode_changed``, so it starts, and stays, in step with whatever mode is already active
     (a persisted choice applied before this is constructed, or a change made elsewhere, e.g. a
     ``View`` menu wired the same way via :class:`~borco_pyside.theming.ThemeMenu`) without either

@@ -1,4 +1,4 @@
-"""Bulk save/restore for every registered `DockableDialog` (#47)."""
+"""Bulk save/restore for every registered `DockableDialog`."""
 
 from typing import Final
 

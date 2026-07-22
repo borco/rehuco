@@ -13,8 +13,8 @@ from .qtads_widgets import tab_close_button, tab_label
 class QtAdsFocusTracker(QObject):
     """Tracks which dock in one `CDockManager` counts as "current" (selected/focused).
 
-    Combines every signal actually needed to catch a tab switch, confirmed empirically (see
-    [[appendices.qt-ads]]) not to be covered by any single QtAds signal alone:
+    Combines every signal actually needed to catch a tab switch, confirmed empirically not to be
+    covered by any single QtAds signal alone:
 
     * ``CDockAreaWidget.currentChanged`` -- ordinary tab-bar switching within a shared area.
     * an area's own tabs-menu ``QMenu.triggered`` -- picking an already-current lone tab from the
@@ -31,9 +31,9 @@ class QtAdsFocusTracker(QObject):
 
     Deliberately avoids QtAds's own ``FocusHighlighting``/``setDockWidgetFocused()`` machinery --
     it stores the focused dock on a *shared* native ``QWindow`` property, so multiple nested
-    ``CDockManager``s sharing one real top-level window cross-contaminate each other's focus state
-    (see [[appendices.qt-ads#focus-highlighting]]). Each :class:`QtAdsFocusTracker` instance only
-    ever reads/writes its own bookkeeping, so nesting several (one per manager) is safe.
+    ``CDockManager``s sharing one real top-level window cross-contaminate each other's focus state.
+    Each :class:`QtAdsFocusTracker` instance only ever reads/writes its own bookkeeping, so nesting
+    several (one per manager) is safe.
 
     Styles the current dock via the :data:`TRACKED_FOCUS_PROPERTY` dynamic property it sets (and
     re-polishes) on the current dock's tab and the dock itself as current-ness moves, matched by a

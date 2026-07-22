@@ -15,15 +15,14 @@ class UnboundedSpinBox(QAbstractSpinBox):
     `setRange` is given, because it stores its value as a native C++ ``int``. This subclasses
     `QAbstractSpinBox` directly instead (which, unlike `QSpinBox`, has no value storage of its own)
     and keeps :attr:`value` as a plain Python ``int``, so it accepts any integer Python can
-    represent ([[field-schema#duration-size]]'s ``size`` field type is the motivating consumer -- a
-    multi-terabyte catalog overflows int32 by three to four orders of magnitude, #40).
+    represent (a multi-terabyte size value overflows int32 by three to four orders of magnitude,
+    which is the motivating case for this widget's existence).
 
     ``value_changed`` is ``Signal(object)`` and :attr:`value` forces ``value_type=object`` --
     *not* ``Signal(int)``/a native ``int`` Qt property, both of which marshal through C++ ``int``
     and would silently truncate or raise on a value outside int32, defeating the entire point. ``value``
-    may also be ``None`` -- an explicit empty state, distinct from any stored ``0``
-    ([[field-schema#deferred-items]]): a blank line edit writes ``None`` through, and ``None`` renders
-    as blank text rather than the string ``"None"``.
+    may also be ``None`` -- an explicit empty state, distinct from any stored ``0``: a blank line
+    edit writes ``None`` through, and ``None`` renders as blank text rather than the string ``"None"``.
 
     :attr:`value`/``set_value`` (the plain ``SimpleProperty`` and its synthesized slot) write
     through unclamped -- use :meth:`setValue` instead, the ``QSpinBox.setValue`` counterpart, when
@@ -40,7 +39,7 @@ class UnboundedSpinBox(QAbstractSpinBox):
 
     value = SimpleProperty[int | None](0, value_type=object)
     """The current value, an unbounded Python ``int``, or ``None`` for the empty state; ``set_value``
-    is the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
+    is the slot-usable setter (for binding to signals)."""
 
     def __init__(
         self,

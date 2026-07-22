@@ -26,9 +26,9 @@ class LineEditClearActionFilter(QObject):
     Visible only while its line edit holds text; triggering it clears the text and restores focus.
     Visibility is resynced both on ``textChanged`` (instant feedback for ordinary typing) and, as a
     fallback, on every ``QEvent.Paint`` (which also covers a programmatic ``setText`` made under a
-    ``QSignalBlocker`` -- the field toolkit's echo-guard pattern, used throughout, suppresses
-    ``textChanged`` entirely but still schedules a real repaint; without this fallback, reverting a
-    cleared field left the action stuck hidden even though the text came back, confirmed empirically).
+    ``QSignalBlocker`` -- a common echo-guard pattern that suppresses ``textChanged`` entirely but
+    still schedules a real repaint; without this fallback, reverting a cleared field left the action
+    stuck hidden even though the text came back, confirmed empirically).
     That per-repaint resync is delegated to a small per-widget filter installed on the equipped line
     edit alone (see :meth:`__ensure_clear_action`), so it runs only for line edits that actually
     carry a clear action -- never for the app's other widgets, nor for a skipped display line edit --
@@ -36,7 +36,7 @@ class LineEditClearActionFilter(QObject):
     bare event-type check.
 
     A newly-added trailing action always renders nearest the text among a line edit's trailing
-    actions, pushing any earlier ones further right (confirmed empirically, #24) -- so a field
+    actions, pushing any earlier ones further right (confirmed empirically) -- so a field
     wanting its own trailing action *outside* this one (e.g. a calendar popup) must add its action
     first, at construction, before the line edit is ever shown.
 

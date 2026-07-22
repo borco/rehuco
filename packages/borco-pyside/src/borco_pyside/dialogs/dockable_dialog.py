@@ -1,4 +1,4 @@
-"""A `CDockWidget`-hosted, restore-on-start-capable dialog panel (#47)."""
+"""A `CDockWidget`-hosted, restore-on-start-capable dialog panel."""
 
 from typing import Final
 
@@ -12,7 +12,7 @@ from .dockable_dialog_settings import DockableDialogSettings
 
 class DockableDialog:
     """Wraps ``content`` as a dock on ``dock_manager``, adding a "Restore on start" checkbox and
-    visibility persistence -- the reusable half of #47's modeless dockable dialog framework.
+    visibility persistence -- the reusable half of a modeless dockable dialog framework.
 
     Composition, not a `CDockWidget` subclass -- keeps QtAds's own class the single source of truth
     for dock behavior instead of fighting Shiboken's binding of it. Floating/re-docking is QtAds's
@@ -23,7 +23,7 @@ class DockableDialog:
 
     Closing hides rather than destroys (no ``DockWidgetDeleteOnClose``/``CustomCloseHandling``), so
     the single long-lived instance built at startup and its :attr:`toggle_action` checked state stay
-    in sync, matching every other toggleable dock in this app (`plugins#dock-shell`).
+    in sync, matching every other toggleable dock in a typical dock-shell app.
 
     The dock is constructed but not placed -- call :meth:`place_floating` (the framework's default:
     floating-first, not docking-first, so a fresh install with nothing in settings yet shows a

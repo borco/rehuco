@@ -12,9 +12,9 @@ class Rating(QWidget):
     """Displays an integer rating as ``|value|`` repeated characters, styled by sign.
 
     A positive value repeats ``positive_text``, styled with the ``positive_style`` stylesheet; a
-    negative value repeats ``negative_text`` with ``negative_style``; zero or ``None`` (unrated,
-    [[field-schema#deferred-items]]) shows nothing -- a zero-magnitude rating and an absent one render
-    identically, since "no stars" is the honest render of both. An empty style, or a style that leaves
+    negative value repeats ``negative_text`` with ``negative_style``; zero or ``None`` (unrated) shows
+    nothing -- a zero-magnitude rating and an absent one render identically, since "no stars" is the
+    honest render of both. An empty style, or a style that leaves
     a given property unset, leaves that aspect fully inherited (tracks the ambient font/palette,
     including a live theme change) rather than freezing a snapshot -- clearing a widget's stylesheet is
     how Qt itself un-sets a local override, so this needs no separate font/color bookkeeping the way
@@ -35,8 +35,8 @@ class Rating(QWidget):
     """
 
     value = SimpleProperty[int | None](None)
-    """The current rating, or ``None`` for unrated ([[field-schema#deferred-items]]); ``set_value`` is
-    the slot-usable setter ([[plugins#field-toolkit]] bindings)."""
+    """The current rating, or ``None`` for unrated; ``set_value`` is the slot-usable setter (for
+    binding to signals)."""
 
     @dataclass
     class __Style:  # pylint: disable=invalid-name

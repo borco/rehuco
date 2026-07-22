@@ -58,7 +58,7 @@ class GlyphIconEngine(QIconEngine):
     bakes in margin around its drawn shape (its viewBox is deliberately larger than the artwork), so
     :class:`~borco_pyside.theming.RecoloredSvgIconEngine` can render edge-to-edge; a font glyph has no
     such built-in canvas margin, so filling the *whole* rect at ``1.0`` reads as cramped -- confirmed
-    empirically against the actual `QLineEdit` trailing-action size (#24)."""
+    empirically against the actual `QLineEdit` trailing-action size."""
 
     def __init__(self, glyph: str, family: str, color: QColor) -> None:
         super().__init__()

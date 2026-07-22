@@ -28,8 +28,8 @@ def recolor_svg(svg: bytes, color: QColor) -> bytes:
     either of those is left completely untouched, permanently, regardless of ``color``. This makes
     the function correct only for a genuinely monochrome icon (every shape either unfilled,
     ``fill:none``, or a single shared color) whose source uses the ``fill:rgb(...)`` form -- e.g.
-    an Inkscape export, which is what this app's own icon assets are. Given a multi-color icon
-    (several shapes with *different* colors), every ``fill:rgb(...)`` shape collapses to the same
+    an Inkscape export. Given a multi-color icon (several shapes with *different* colors), every
+    ``fill:rgb(...)`` shape collapses to the same
     single ``color`` -- the original color distinctions between shapes are lost, not preserved.
 
     :param svg: the source SVG document, as raw bytes.
@@ -72,7 +72,7 @@ def recolored_svg_icon(
     fixed set of mode/state pixmaps and falls back to that generator for a mode it wasn't given.
     :class:`RecoloredSvgIconEngine` renders every request instead of storing pixmaps, so it is fully
     responsible for the disabled look itself -- without ``disabled_color``, a disabled action's icon
-    renders identically to its enabled one (confirmed empirically, #41).
+    renders identically to its enabled one (confirmed empirically).
 
     Pass ``on_disabled_color`` too for a checkable action that can *also* be disabled -- e.g. a toggle
     that mirrors a model flag (a "dirty" indicator, say) but isn't itself user-clickable. Without it,

@@ -7,7 +7,7 @@ def equal_width_row(parent: QWidget, *widgets: QWidget) -> QHBoxLayout:
     """Lay ``widgets`` out left to right, zero-margin, split evenly regardless of each widget's own
     ``sizeHint`` -- a stretch factor alone only governs space *above* each widget's own minimum, so a
     widget like ``QSpinBox`` (sized to fit its widest possible digit count) would otherwise starve its
-    neighbor of most of the row's width (confirmed empirically, #24).
+    neighbor of most of the row's width (confirmed empirically).
 
     :param parent: the widget to install this layout on.
     :param widgets: the widgets to lay out, evenly split.
