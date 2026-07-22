@@ -38,6 +38,8 @@ These are settled; listed so nothing is forgotten at `uv init`:
 
 ## Methodology: agile cadence, tracer-bullet spines
 
+[[[implementation-plan#methodology]]]
+
 **Agile** and **tracer bullets** are not alternatives — agile is the *cadence* (short iterations, something usable each
 cycle, adjust as you learn), tracer bullets are a *technical strategy* used within it (build a thin, real, kept
 end-to-end skeleton through every layer first, then thicken). This plan uses **agile iterations whose first slice of
