@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PySide6.QtGui import QFontDatabase, QPalette
+from PySide6.QtGui import QColor, QFontDatabase, QPalette
 from PySide6.QtWidgets import QApplication
 from pyside6_scintilla import Scintilla
 from pytest import mark, param, raises
@@ -112,22 +112,31 @@ def test_end_of_line_glyph_colour_follows_a_live_palette_change(qtbot: QtBot, mo
     **Test steps:**
 
     * construct a `MarkdownEdit`
-    * spy on the colour setter and emit ``QApplication.paletteChanged``
+    * spy on the colour setter and change the application palette for real
     * verify it ran again
     """
     editor = MarkdownEdit()
     qtbot.addWidget(editor)
     set_representation_colour = mocker.spy(editor, "setRepresentationColour")
+    # pylint: disable=duplicate-code  # same drive-a-real-palette-change dance as the handler tests
     app = QApplication.instance()
     assert isinstance(app, QApplication)
 
-    app.paletteChanged.emit(app.palette())
+    original_palette = app.palette()
+    try:
+        palette = app.palette()
+        palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor("lime"))
+        app.setPalette(palette)
+        # pylint: enable=duplicate-code
 
-    set_representation_colour.assert_called()
+        set_representation_colour.assert_called()
+    finally:
+        app.setPalette(original_palette)
 
 
 def test_construction_raises_without_a_running_qapplication(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Construction requires a running QApplication, to have somewhere to connect paletteChanged.
+    """Construction requires a running QApplication, to have somewhere to install the shared
+    palette-change notifier on.
 
     **Test steps:**
 
