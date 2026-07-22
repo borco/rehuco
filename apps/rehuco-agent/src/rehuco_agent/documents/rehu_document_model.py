@@ -55,6 +55,17 @@ key in the active block is an **unknown field** surfaced through the generic fal
 ([[plugins#fallback-editor]], A2.8/#28)."""
 
 
+def path_label(path: Path) -> str:
+    """The `info.rehu`-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
+    directory's name, trailing-slashed, for `info.rehu`; the bare filename otherwise. Shared by
+    :attr:`RehuDocumentModel.label` and the recents menu (#117), so the rule lives in exactly one place.
+
+    :param path: the file path to derive a label for.
+    :returns: the label.
+    """
+    return f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+
+
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
     ([[plugins#view-model]]).
@@ -312,7 +323,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         path = self.path
         if path is None:
             return ""
-        return f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+        return path_label(path)
 
     @property
     def current_name(self) -> str:
