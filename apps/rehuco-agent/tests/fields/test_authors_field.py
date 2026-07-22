@@ -4,7 +4,7 @@ scheme-dispatching link handlers (#95)."""
 import logging
 
 import pytest
-from PySide6.QtWidgets import QLabel, QLineEdit, QMainWindow, QStatusBar, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QToolButton
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -416,64 +416,31 @@ def test_authors_field_link_activated_ignores_an_unsupported_scheme(
     open_url.assert_not_called()
 
 
-def test_authors_field_link_hovered_shows_the_real_windows_status_message(
-    qtbot: QtBot, model: RehuDocumentModel
-) -> None:
-    """Hovering a link shows the href on the real, visible top-level window's status bar, without ever
-    creating one on the embedded ``DocumentWidget``-like ``QMainWindow`` in between (the trap
-    :class:`~rehuco_agent.documents.document_widget.DocumentWidget`'s own docstring warns about).
+def test_authors_field_link_hovered_emits_the_href_as_a_status_message(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Hovering a link emits the href as :attr:`~rehuco_agent.fields.field.StatusReporter.status_message`
+    for the owner to route to the real status bar; leaving the link (empty href) emits an empty clear --
+    the field never touches app chrome itself.
 
     **Test steps:**
 
-    * build a real top-level ``QMainWindow`` with a genuine status bar, and an embedded ``QMainWindow``
-      (no status bar) standing in for ``DocumentWidget``, and parent the viewer inside the embedded one
+    * build the viewer and record every ``status_message`` it emits
     * emit ``linkHovered`` with an href
-    * verify the outer status bar shows it and the embedded window never grew a status bar of its own
+    * verify ``status_message`` fired with that href
     * emit ``linkHovered`` with an empty href (cursor left the link)
-    * verify the message clears
-    """
-    outer = QMainWindow()
-    outer_status = QStatusBar()
-    outer.setStatusBar(outer_status)
-    qtbot.addWidget(outer)
-
-    embedded = QMainWindow(outer)
-    central = QWidget(embedded)
-    embedded.setCentralWidget(central)
-
-    field = AuthorsField("authors")
-    viewer = field.make_viewer(model.bind(field)).viewer
-    assert isinstance(viewer, QLabel)
-    viewer.setParent(central)
-
-    viewer.linkHovered.emit("https://example.com/alice")
-
-    assert outer_status.currentMessage() == "https://example.com/alice"
-    assert embedded.findChild(QStatusBar) is None
-
-    viewer.linkHovered.emit("")
-
-    assert outer_status.currentMessage() == ""
-
-
-def test_authors_field_link_hovered_is_a_no_op_with_no_main_window_ancestor(
-    qtbot: QtBot, model: RehuDocumentModel
-) -> None:
-    """Hovering a link on a viewer with no ``QMainWindow`` ancestor at all (e.g. under test, or not
-    yet parented into a dock) is a harmless no-op -- there is simply nowhere to show the message.
-
-    **Test steps:**
-
-    * build the viewer with no ``QMainWindow`` ancestor
-    * emit ``linkHovered`` with an href
-    * verify no exception is raised
+    * verify ``status_message`` fired with an empty string (the clear)
     """
     field = AuthorsField("authors")
     viewer = field.make_viewer(model.bind(field)).viewer
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(viewer)
 
+    messages: list[str] = []
+    field.status_message.connect(messages.append)
+
     viewer.linkHovered.emit("https://example.com/alice")
+    viewer.linkHovered.emit("")
+
+    assert messages == ["https://example.com/alice", ""]
 
 
 # endregion

@@ -7,7 +7,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
@@ -103,6 +103,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     :param parent: optional Qt parent.
     """
 
+    status_message: Signal = Signal(str)
+    """Re-emits a field's transient status message (the ``authors`` viewer's hovered-link URL, a
+    `StatusReporter`) so the owner above can route it -- an empty string clears the bar. This widget is
+    itself a `QMainWindow` embedded in a dock, so it can't safely drive a status bar of its own (the
+    ``.window()`` trap, see :meth:`~rehuco_agent.main_window.MainWindow` -- calling ``statusBar()`` here
+    would lazily create a stray bar that swallows the message); it bubbles up to ``DocumentsDock`` and on
+    to the genuine top-level window instead."""
+
     def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:  # pylint: disable=too-many-statements
         super().__init__(parent)
         self.__model: Final = model
@@ -131,6 +139,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # binding connections (Field.bind_external) are cleared when its widgets are destroyed, which
         # needs the field still alive at that moment (a form rebuild on a type switch/revert).
         self.__form = build_document_form(model)
+        # a field that reports a transient status message (the authors viewer's hovered-link URL, a
+        # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
+        # bubble them up through status_message, which DocumentsDock relays on to MainWindow's real bar.
+        self.__form.connect_status_messages(self.status_message)
         # sever the current form's long-lived-signal connections when this widget is destroyed, so no
         # field's lambda outlives it (the field itself is retained via self.__form, so it is still alive
         # to be cleared). Rebuilds clear the outgoing form themselves (__rebuild_field_docks). A lambda,
@@ -392,6 +404,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
         self.__form.clear_external()
         self.__form = build_document_form(self.__model)
+        # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
+        # their connection as they are collected (Qt severs a dead QObject sender's connections).
+        self.__form.connect_status_messages(self.status_message)
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model))
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         self.__set_editors_locked(self.__model.locked)

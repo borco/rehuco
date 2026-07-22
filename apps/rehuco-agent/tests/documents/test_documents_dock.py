@@ -240,6 +240,29 @@ def test_document_focus_changed_emits_none_when_the_last_dock_closes(mocker: Moc
     assert blocker.args == [None]
 
 
+def test_status_message_relays_from_a_document_widget(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document widget's transient status message is relayed up through the dock's own
+    ``status_message`` signal, for ``MainWindow`` to route to the real status bar -- mirroring the
+    ``DocumentWidget`` -> ``DocumentsDock`` hop ``document_focus_changed`` already makes.
+
+    **Test steps:**
+
+    * open a document and connect a spy to the dock's ``status_message``
+    * emit the widget's own ``status_message``
+    * verify the dock relayed it on
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+
+    relayed: list[str] = []
+    dock.status_message.connect(relayed.append)
+    widget.status_message.emit("https://example.com/alice")
+
+    assert relayed == ["https://example.com/alice"]
+
+
 def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Requesting to close a document's dock removes it from the dock map.
 

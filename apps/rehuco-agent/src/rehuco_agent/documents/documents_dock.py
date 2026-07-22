@@ -54,6 +54,14 @@ class DocumentsDock(QMainWindow):
     real one (an established pattern elsewhere in this test suite for isolating dock bookkeeping
     from real ``QtAds`` objects)."""
 
+    status_message: Signal = Signal(str)
+    """Relays a document field's transient status message (an ``authors`` viewer's hovered-link URL, a
+    `StatusReporter`) up from each :class:`DocumentWidget` -- an empty string clears the bar. Like the
+    widget below it, this dock is a `QMainWindow` embedded in a dock and can't safely own a status bar
+    (the ``.window()`` trap), so it bubbles the message on to the genuine top-level window, which routes
+    it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
+    ``MainWindow`` hop."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -312,6 +320,9 @@ class DocumentsDock(QMainWindow):
         else:
             model = RehuDocumentModel(self.__load_or_locked(path), self)
         widget = DocumentWidget(model, self)
+        # relay this document's field status messages (the authors viewer's hovered-link URL) up to
+        # MainWindow, which routes them to the real status bar (the genuine top-level window)
+        widget.status_message.connect(self.status_message)
 
         dock = QtAds.CDockWidget(self.__dock_manager, "")
         dock.setObjectName(self.__dock_object_name(model.path))

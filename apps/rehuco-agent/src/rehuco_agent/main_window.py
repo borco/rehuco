@@ -80,6 +80,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
+        self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()
@@ -139,6 +140,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
+
+    def __on_status_message(self, text: str) -> None:
+        """Show a document field's transient status message on this window's status bar, or clear it for
+        an empty ``text`` -- the landing point of the ``authors`` viewer's hovered-link URL, bubbled up
+        through ``DocumentWidget`` -> ``DocumentsDock`` (`StatusReporter`, [[plugins#field-toolkit]]).
+
+        This is the one place the message is actually shown, because this is the **genuine top-level
+        window** -- the only one safely wired to a real status bar. Neither the field nor the
+        ``DocumentWidget``/``DocumentsDock`` between it and here may drive a status bar of its own, and
+        the trap is subtle: ``QMainWindow`` keeps the ``Qt.WindowType.Window`` flag even when constructed
+        with a parent, so each embedded ``QMainWindow`` reads as its *own* top-level window to
+        ``QWidget.window()``. Walking up from the field with ``.window()`` therefore stops at the nearest
+        embedded ``DocumentWidget``, not here; and ``QMainWindow.statusBar()`` lazily creates a bar on
+        first call, so a stray ``statusBar()`` there would silently grow a status bar nobody can see and
+        swallow every future status tip meant for this real one. Routing the message up as a signal --
+        each owner re-emitting to the next -- sidesteps that walk entirely and lands it here, at the
+        window whose ``status_bar`` was wired up at construction (``main_window_ui.py``).
+
+        :param text: the message to show; an empty string clears it.
+        """
+        self.statusBar().showMessage(text)
 
     def __add_open_documents(self, menu: QMenu) -> None:
         """Rebuild ``menu`` with Close All / Close Missing Files and every currently open document,

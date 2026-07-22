@@ -140,6 +140,31 @@ def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: Docu
     assert '<a href="https://example.com">https://example.com</a>' in viewer_texts
 
 
+def test_a_field_status_message_bubbles_up_through_the_widget(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A field's transient status message (the ``authors`` viewer's hovered-link URL) is re-emitted by the
+    widget for the owner above to route -- the widget never drives a status bar of its own (the
+    ``.window()`` trap; it reads as its own top-level ``QMainWindow`` while embedded in a dock).
+
+    **Test steps:**
+
+    * seed one ``authors`` record with a URL, so its viewer renders a hoverable anchor
+    * build the widget and locate that anchor's ``QLabel``
+    * record the widget's ``status_message`` emissions and emit the label's ``linkHovered``
+    * verify the href surfaced on the widget's own signal
+    """
+    model.authors = [{"name": "Alice", "url": "https://example.com/alice"}]
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    label = next(child for child in widget.findChildren(QLabel) if 'href="https://example.com/alice"' in child.text())
+    messages: list[str] = []
+    widget.status_message.connect(messages.append)
+
+    label.linkHovered.emit("https://example.com/alice")
+
+    assert messages == ["https://example.com/alice"]
+
+
 def test_save_action_triggers_the_models_save(
     mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
 ) -> None:

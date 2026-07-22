@@ -16,6 +16,7 @@ from .field import (
     FieldsTab,
     FieldViewerWidgets,
     StatefulWidget,
+    StatusReporter,
     ValueWidget,
 )
 from .field_registry import FieldRegistry
@@ -44,6 +45,7 @@ __all__ = [
     "FieldViewerWidgets",
     "FieldEditorWidgets",
     "StatefulWidget",
+    "StatusReporter",
     "ValueWidget",
     "FieldRegistry",
     "FieldsForm",
