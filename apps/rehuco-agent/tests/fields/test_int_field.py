@@ -124,6 +124,29 @@ def test_int_field_editor_follows_an_external_model_change(qtbot: QtBot, model: 
     assert editor.value == 13
 
 
+def test_int_field_editor_does_not_write_a_clamped_echo_back_to_the_model(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A model change that falls outside the editor's range clamps the spin box's own display without
+    writing that clamped value back to the model (the widget-side echo guard, #115).
+
+    **Test steps:**
+
+    * build a bounded (``0``..``10``) editor
+    * set the model beyond the upper bound, as another surface would
+    * verify the spin box clamps its display, but the model keeps the real, unclamped value
+    """
+    field = IntField("images_count", minimum=0, maximum=10)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, UnboundedSpinBox)
+    qtbot.addWidget(editor)
+
+    model.images_count = 42
+
+    assert editor.value == 10
+    assert model.images_count == 42
+
+
 def test_int_field_editor_defaults_to_no_range(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """With no explicit ``minimum``/``maximum``, the editor has no bound in either direction.
 
