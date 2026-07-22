@@ -4,6 +4,7 @@ from collections.abc import Iterator
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads.qtads_focus_tracker import QtAdsFocusTracker
+from borco_pyside.qtads.qtads_widgets import tab_close_button
 from PySide6.QtCore import QByteArray
 from PySide6.QtWidgets import QWidget
 from pytest import fixture
@@ -596,6 +597,66 @@ def test_tracked_focus_dock_stylesheet_builds_qss_from_its_colours(manager: QtAd
     assert "#111" in qss
     assert "#222" in qss
     assert "#333" in qss
+
+
+def test_construction_appends_to_the_existing_stylesheet(manager: QtAds.CDockManager) -> None:
+    """The tracker appends its QSS to whatever the manager already carries, not replacing it.
+
+    Guards the replace-vs-append regression: ``CDockManager`` applies its own default stylesheet at
+    construction, and a consumer may set more -- both must survive the tracker's addition.
+
+    **Test steps:**
+
+    * set a sentinel stylesheet on the manager, then build a tracker over it
+    * verify the manager's stylesheet still carries the sentinel *and* the tracked-focus selector
+    """
+    manager.setStyleSheet("QWidget { /* sentinel */ }")
+
+    QtAdsFocusTracker(manager)
+
+    qss = manager.styleSheet()
+    assert "/* sentinel */" in qss
+    assert '[tracked_focus="true"]' in qss
+
+
+def test_close_button_uses_custom_glyph_and_font(manager: QtAds.CDockManager) -> None:
+    """A tracker built with a custom close glyph/font renders the close button with them.
+
+    **Test steps:**
+
+    * build a tracker with an explicit ``close_glyph``/``close_font``, add a dock
+    * style its close button directly (the deferred path, run eagerly)
+    * verify the button shows the custom glyph in the custom font
+    """
+    tracker = QtAdsFocusTracker(manager, close_glyph="Z", close_font="Courier New")
+    dock = add_dock(manager, "one")
+
+    tracker._QtAdsFocusTracker__style_close_button(dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    button = tab_close_button(dock)
+    assert button is not None
+    assert button.text() == "Z"
+    assert button.font().family() == "Courier New"
+
+
+def test_close_button_defaults_to_the_class_constants(manager: QtAds.CDockManager) -> None:
+    """With no glyph/font args, the close button uses the :data:`CLOSE_BUTTON_TEXT`/``_FONT`` defaults.
+
+    **Test steps:**
+
+    * build a tracker with no close-button args, add a dock
+    * style its close button directly
+    * verify the button shows the default glyph in the default font
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+
+    tracker._QtAdsFocusTracker__style_close_button(dock)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    button = tab_close_button(dock)
+    assert button is not None
+    assert button.text() == QtAdsFocusTracker.CLOSE_BUTTON_TEXT
+    assert button.font().family() == QtAdsFocusTracker.CLOSE_BUTTON_FONT
 
 
 def test_state_restore_resyncs_current_dock_to_the_restored_current_tab(manager: QtAds.CDockManager) -> None:
