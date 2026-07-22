@@ -115,6 +115,29 @@ def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
     assert settings_dock.isFloating()
 
 
+def test_a_documents_dock_status_message_shows_on_the_status_bar(qtbot: QtBot) -> None:
+    """A field's status message, relayed up by ``DocumentsDock``, lands on this window's real status
+    bar; an empty message clears it. This is the genuine top-level window -- the one place safely wired
+    to a status bar -- so routing lands here rather than at any embedded ``QMainWindow`` in between (the
+    ``.window()`` trap).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and reach its documents dock
+    * emit the dock's ``status_message`` with an href and verify the status bar shows it
+    * emit an empty message and verify the status bar clears
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    documents_dock.status_message.emit("https://example.com/alice")
+    assert window.statusBar().currentMessage() == "https://example.com/alice"
+
+    documents_dock.status_message.emit("")
+    assert window.statusBar().currentMessage() == ""
+
+
 def test_settings_dock_toggle_action_is_added_to_the_action_bar(qtbot: QtBot) -> None:
     """The settings dock's ``toggleViewAction`` is added to the new vertical action-bar toolbar.
 

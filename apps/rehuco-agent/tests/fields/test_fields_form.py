@@ -3,7 +3,7 @@
 from dataclasses import replace
 from typing import Final, override
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QObject, QSize, Signal
 from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
@@ -15,9 +15,10 @@ from PySide6.QtWidgets import (
 )
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from rehuco_agent.fields.field import FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets, StatusReporter
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN, FieldsForm
 
+from fields.field_testers import AuthorsFieldTester as AuthorsField
 from fields.field_testers import TextFieldTester as TextField
 
 
@@ -172,6 +173,14 @@ class HeaderPinnedLabellessField(HeaderPinnedField):
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
         return replace(super().make_editor(binding), label=None)
+
+
+class StatusSink(QObject):
+    """A minimal signal target standing in for the owner's re-emitting ``status_message`` signal
+    (:meth:`FieldsForm.connect_status_messages`'s ``sink``).
+    """
+
+    message: Signal = Signal(str)
 
 
 # endregion
@@ -649,3 +658,33 @@ def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: Q
     editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
     assert editor_cell is not None
     assert isinstance(editor_cell.findChild(HeaderPinnedEditor), HeaderPinnedEditor)
+
+
+def test_connect_status_messages_routes_reporting_fields_to_the_sink(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """``connect_status_messages`` wires each ``StatusReporter`` field's ``status_message`` into the
+    owner's sink and leaves plain, non-reporting fields untouched.
+
+    **Test steps:**
+
+    * build a form of a plain field and an ``authors`` field (a ``StatusReporter``)
+    * connect the form to a sink signal recording everything it relays
+    * emit the reporting field's ``status_message``
+    * verify it reached the sink, and that only the ``authors`` field is a ``StatusReporter``
+    """
+    plain = TextField("title")
+    authors = AuthorsField("authors")
+    form = FieldsForm([plain, authors])
+    # a bound viewer keeps the field's QObject alive under qtbot's teardown for the test's duration
+    viewer = authors.make_viewer(model.bind(authors)).viewer
+    assert viewer is not None
+    qtbot.addWidget(viewer)
+    sink = StatusSink()
+    relayed: list[str] = []
+    sink.message.connect(relayed.append)
+
+    form.connect_status_messages(sink.message)
+    authors.status_message.emit("https://example.com/alice")
+
+    assert relayed == ["https://example.com/alice"]
+    assert isinstance(authors, StatusReporter)
+    assert not isinstance(plain, StatusReporter)

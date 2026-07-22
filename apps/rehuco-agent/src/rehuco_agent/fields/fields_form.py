@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from typing import Any, Final
 
+from PySide6.QtCore import SignalInstance
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from .field import (
@@ -12,6 +13,7 @@ from .field import (
     FieldsTab,
     FieldViewerWidgets,
     HeaderPinned,
+    StatusReporter,
 )
 
 LABEL_COLUMN: Final = 0
@@ -53,6 +55,23 @@ class FieldsForm:
         """
         for field in self.__fields:
             field.clear_external()
+
+    def connect_status_messages(self, sink: SignalInstance) -> None:
+        """Route every status-reporting field's ``status_message`` into ``sink`` ([[plugins#field-toolkit]]).
+
+        A field that reports transient status-bar text (`StatusReporter` -- e.g. the ``authors`` viewer's
+        hovered-link URL) emits it as a signal rather than reaching for the status bar itself; the owner
+        (`DocumentWidget`) passes its own re-emitting signal here, and each such field is wired to it. The
+        owner calls this once per form it builds -- on construction and on every rebuild -- so a rebuilt
+        form's fresh fields report through the same ``sink``; the outgoing form's fields drop the
+        connection when they are collected (Qt severs a connection whose `QObject` sender dies), so no
+        explicit teardown is needed here, unlike the lambda connections :meth:`clear_external` severs.
+
+        :param sink: the owner's signal to forward each reporting field's ``status_message`` into.
+        """
+        for field in self.__fields:
+            if isinstance(field, StatusReporter):
+                field.status_message.connect(sink)
 
     def make_viewer(self, model: FieldModel) -> dict[FieldsTab, QWidget]:
         """Build the read-only viewer grids, one per tab, bound to the model.

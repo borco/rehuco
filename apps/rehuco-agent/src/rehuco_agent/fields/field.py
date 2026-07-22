@@ -178,6 +178,21 @@ class HeaderPinned(Protocol):  # pylint: disable=too-few-public-methods
         ...  # pylint: disable=unnecessary-ellipsis
 
 
+@runtime_checkable
+class StatusReporter(Protocol):  # pylint: disable=too-few-public-methods
+    """A field that reports a transient status-bar message ([[plugins#field-toolkit]]) -- e.g. the
+    ``authors`` viewer announcing a hovered link's URL (:class:`~rehuco_agent.fields.authors_field.AuthorsField`).
+
+    The field emits ``status_message`` and its **owner routes it** to the real status bar; a toolkit
+    field never reaches for app chrome it does not own. The owner (`DocumentWidget`) collects the fields
+    satisfying this protocol -- by protocol, not by field type -- and bubbles their messages up to the
+    genuine top-level window's status bar (:meth:`FieldsForm.connect_status_messages`).
+    """
+
+    status_message: SignalInstance
+    """Fires with the message text to show; an empty string clears it."""
+
+
 class Field[T]:
     """Base for a field: binds one logical value to the widgets that view and edit it
     ([[plugins#field-toolkit]]).
@@ -208,6 +223,10 @@ class Field[T]:
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
+        # cooperative super() call so a field that mixes in QObject for its own signals (the
+        # ``authors`` field's status_message, StatusReporter) gets QObject initialized; a no-op
+        # (object.__init__) for every plain, non-QObject field.
+        super().__init__()
         self.__name: Final = name
         self.__label: Final = label if label is not None else self.__make_label(name)
         self.__viewer_tab: Final = viewer_tab

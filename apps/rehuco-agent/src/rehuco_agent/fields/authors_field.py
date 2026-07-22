@@ -9,9 +9,9 @@ from typing import Final, override
 from urllib.parse import urlsplit
 
 from borco_pyside.theming import ActionIconThemeHandler
-from PySide6.QtCore import QSignalBlocker, Qt, QUrl
+from PySide6.QtCore import QObject, QSignalBlocker, Qt, QUrl, Signal
 from PySide6.QtGui import QAction, QCursor, QDesktopServices
-from PySide6.QtWidgets import QLabel, QLineEdit, QMainWindow, QToolButton, QToolTip, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QToolButton, QToolTip
 from rehuco_core import AuthorEntry, author_name, authors_comma_editable
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
@@ -40,7 +40,7 @@ alarming -- the guard prevents loss, it isn't a mere restriction (#97's deferred
 is that "coming soon")."""
 
 
-class AuthorsField(Field[Sequence[AuthorEntry]]):
+class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
     """An ``authors`` field ([[plugins#field-toolkit]], [[field-schema#authors]]): the viewer renders
     each entry as an HTML-escaped name, with a trailing ``(url)`` link for a strict http/https URL;
     the editor keeps :class:`~rehuco_agent.fields.text_list_field.TextListField`'s comma-separated
@@ -57,6 +57,14 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
     """
 
     TYPE = "authors"
+
+    status_message: Signal = Signal(str)
+    """Fires with a hovered link's URL for the **owner to route** to the real status bar (an empty
+    string on leave, to clear it) -- the `StatusReporter` contract ([[plugins#field-toolkit]]). The field
+    emits rather than driving the status bar itself: a toolkit field must not reach for app chrome it does
+    not own, which was exactly the smell here. The routing -- and the empirically-verified ``.window()``
+    trap it sidesteps -- now lives at the genuine top-level owner
+    (:class:`~rehuco_agent.main_window.MainWindow`), which is the one wired to a real status bar."""
 
     @override
     def make_viewer(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldViewerWidgets:
@@ -124,8 +132,12 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
             LOG.warning("ignoring an authors link with an unsupported scheme: %s", href)
 
     def __on_link_hovered(self, label: QLabel, href: str) -> None:
-        """Show ``href`` as a tooltip and a status-bar message while hovering; clear both once the
-        cursor leaves the link (``href`` empty).
+        """Show ``href`` as a tooltip while hovering and report it as a status message; clear both once
+        the cursor leaves the link (``href`` empty).
+
+        The status text is emitted as :attr:`status_message` for the **owner** to route to the real
+        status bar (`StatusReporter`), never driven from here -- the field toolkit does not reach for app
+        chrome it does not own.
 
         :param label: the viewer label the link belongs to.
         :param href: the hovered anchor's href, or empty on leave.
@@ -134,33 +146,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]]):
             QToolTip.showText(QCursor.pos(), href, label)
         else:
             QToolTip.hideText()
-        self.__show_status_message(label, href)
-
-    @staticmethod
-    def __show_status_message(widget: QWidget, text: str) -> None:
-        """Show ``text`` on the real, visible top-level window's status bar (or clear it, for an
-        empty ``text``) -- walking up to the widget with no further parent, **not**
-        :meth:`QWidget.window`.
-
-        ``QMainWindow`` defaults to the ``Qt.WindowType.Window`` flag even when constructed with a
-        parent, so ``DocumentWidget`` -- itself a ``QMainWindow``, embedded in a dock
-        ([[plugins#viewer-editor-both]]) -- reads as its own top-level window to ``.window()``,
-        stopping the walk there instead of at the real ``MainWindow`` above it. Calling ``.statusBar()``
-        is safe only on the genuine top-level (already wired to a real status bar at construction,
-        ``main_window_ui.py``): calling it on ``DocumentWidget`` instead is the trap its own docstring
-        warns about -- ``QMainWindow.statusBar()`` lazily creates one on first call, so a stray call
-        there would silently swallow every future status tip meant for the real bar above it.
-
-        :param widget: the widget the status message is hovering over.
-        :param text: the message to show; empty clears it.
-        """
-        ancestor = widget
-        parent = ancestor.parentWidget()
-        while parent is not None:
-            ancestor = parent
-            parent = ancestor.parentWidget()
-        if isinstance(ancestor, QMainWindow):
-            ancestor.statusBar().showMessage(text)
+        self.status_message.emit(href)
 
     # endregion
 
