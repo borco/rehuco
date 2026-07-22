@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Final
 
 import pytest
-from borco_pyside.core import ApplicationSingleton
+from borco_pyside.core import ApplicationSingleton, application_singleton
 from PySide6.QtCore import QCoreApplication, QDeadlineTimer
 from PySide6.QtNetwork import QAbstractSocket, QLocalSocket
 from pytest_mock import MockerFixture
@@ -285,8 +285,8 @@ def test_rebind_failure_attempts_to_restore_previous_server(mocker: MockerFixtur
 
     * bypass the forwarding attempt so there is no connection timeout
     * let the first ``setup`` succeed and record the server name
-    * patch ``__listen`` on the instance to always return ``False``
-    * call ``setup`` with a new app id and verify ``__listen`` was called twice: once
+    * patch ``__claim_role`` on the instance to always report ``Claim.FAILED``
+    * call ``setup`` with a new app id and verify ``__claim_role`` was called twice: once
       for the new name and once to attempt restoration of the previous name
     """
     mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
@@ -294,12 +294,14 @@ def test_rebind_failure_attempts_to_restore_previous_server(mocker: MockerFixtur
     assert singleton.setup("first-id") is True
     previous_name = singleton.server_name
 
-    listen_mock = mocker.patch.object(singleton, "_ApplicationSingleton__listen", return_value=False)
+    claim_mock = mocker.patch.object(
+        singleton, "_ApplicationSingleton__claim_role", return_value=ApplicationSingleton.Claim.FAILED
+    )
     result = singleton.setup("second-id")
 
     assert result is True  # degraded: neither name could be claimed
-    assert listen_mock.call_count == 2
-    (restore_name,), _ = listen_mock.call_args_list[1]
+    assert claim_mock.call_count == 2
+    restore_name = claim_mock.call_args_list[1].args[0]
     assert restore_name == previous_name
 
 
@@ -385,19 +387,21 @@ def test_listen_failure_raises_in_strict_mode(mocker: MockerFixture, make_single
         singleton.setup("any-id")
 
 
-def test_stale_socket_is_removed_and_listen_is_retried(mocker: MockerFixture, make_singleton: Factory) -> None:
-    """An ``AddressInUseError`` from a crashed primary triggers ``removeServer`` then a retry.
+def test_stale_socket_is_removed_after_reprobe_finds_no_primary(mocker: MockerFixture, make_singleton: Factory) -> None:
+    """An ``AddressInUseError`` with no primary answering the re-probe triggers ``removeServer`` then a retry.
 
     **Test steps:**
 
-    * bypass the forwarding attempt so there is no connection timeout
+    * make every forwarding probe miss (initial probe and every stale-recovery re-probe)
     * mock ``QLocalServer.listen`` to fail on the first call with ``AddressInUseError``
       and succeed on the second call
-    * call ``setup`` and verify ``removeServer`` was called exactly once and ``listen``
-      was called twice
+    * call ``setup`` and verify it becomes primary, ``removeServer`` was called exactly once,
+      ``listen`` was called twice, and the socket was re-probed the bounded number of times
     """
     singleton = make_singleton()
-    mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
+    forward_mock = mocker.patch.object(
+        ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False
+    )
     mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
     instance = mock_cls.return_value
     instance.listen.side_effect = [False, True]
@@ -407,6 +411,61 @@ def test_stale_socket_is_removed_and_listen_is_retried(mocker: MockerFixture, ma
     assert singleton.setup("any-id") is True
     assert instance.listen.call_count == 2
     mock_cls.removeServer.assert_called_once()
+    # one initial probe in setup(), then the bounded stale-recovery re-probes
+    assert forward_mock.call_count == 1 + application_singleton.STALE_RECOVERY_ATTEMPTS
+
+
+def test_address_in_use_reprobe_forwards_to_raced_primary(mocker: MockerFixture, make_singleton: Factory) -> None:
+    """A primary that races us to ``listen`` is found by the re-probe and never reaped.
+
+    Two processes start with no existing primary: both miss the initial forward, one wins
+    ``listen`` and the other gets ``AddressInUseError``. The loser must re-probe, discover the
+    freshly-live primary, and forward to it — rather than ``removeServer``-ing its live socket.
+
+    **Test steps:**
+
+    * make the initial forward miss (no primary yet) but the first stale-recovery re-probe hit
+      (the racer is now listening)
+    * mock ``QLocalServer.listen`` to fail with ``AddressInUseError``
+    * call ``setup`` and verify it reports secondary (returns ``False``) and that
+      ``removeServer`` was never called (the live primary was not reaped)
+    """
+    singleton = make_singleton()
+    # initial probe misses; the first re-probe finds the racer that just claimed the name
+    mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", side_effect=[False, True])
+    mock_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
+    instance = mock_cls.return_value
+    instance.listen.return_value = False
+    instance.serverError.return_value = QAbstractSocket.SocketError.AddressInUseError
+    instance.isListening.return_value = False
+
+    assert singleton.setup("any-id") is False  # forwarded to the raced primary; this process exits
+    mock_cls.removeServer.assert_not_called()
+
+
+def test_setup_forwards_explicit_args_over_argv(
+    qtbot: QtBot, monkeypatch: pytest.MonkeyPatch, make_singleton: Factory
+) -> None:
+    """An explicit ``args`` payload is forwarded verbatim, independent of ``sys.argv``.
+
+    **Test steps:**
+
+    * launch a primary app instance
+    * mock the command line so ``sys.argv`` carries a different, decoy file argument
+    * launch a second instance passing an explicit ``args`` list
+    * verify the primary receives the explicit args, not the argv decoy
+    """
+    app_id = unique_app_id()
+    primary = make_singleton()
+    assert primary.setup(app_id) is True
+
+    monkeypatch.setattr(sys, "argv", ["rehuco-agent", "from-argv.rehu"])
+    secondary = make_singleton()
+
+    with qtbot.waitSignal(primary.other_instance_run, timeout=2000) as blocker:
+        assert secondary.setup(app_id, ["explicit.rehu", "--x"]) is False
+
+    assert blocker.args == [["explicit.rehu", "--x"]]  # type: ignore[reportUnknownMemberType]
 
 
 def test_forwarding_waits_for_disconnect_when_socket_lingers(mocker: MockerFixture, make_singleton: Factory) -> None:
