@@ -59,6 +59,23 @@ class IntField(Field[int | None]):
     @override
     def make_editor(self, binding: FieldBinding[int | None]) -> FieldEditorWidgets:
         spin_box = UnboundedSpinBox(value=binding.value, minimum=self.__minimum, maximum=self.__maximum)
-        spin_box.value_changed.connect(binding.set_value)  # type: ignore[attr-defined]
-        binding.changed.connect(spin_box.setValue)
+        # a flag, not QSignalBlocker(spin_box): UnboundedSpinBox syncs its own displayed text by
+        # listening to its own value_changed, so blocking it here would also silence that internal
+        # resync (confirmed empirically by FileSizeEdit, which hit the same widget).
+        echoing = False
+
+        def on_spin_box_value_changed(value: int | None) -> None:
+            if not echoing:
+                binding.set_value(value)
+
+        def echo(value: int | None) -> None:
+            nonlocal echoing
+            echoing = True
+            try:
+                spin_box.setValue(value)
+            finally:
+                echoing = False
+
+        spin_box.value_changed.connect(on_spin_box_value_changed)  # type: ignore[attr-defined]
+        self.bind_external(binding.changed, echo)
         return FieldEditorWidgets(self.editor_tab, self.make_label(), spin_box)
