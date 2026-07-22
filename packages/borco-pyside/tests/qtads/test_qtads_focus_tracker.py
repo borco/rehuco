@@ -459,6 +459,33 @@ def test_state_restore_retracks_areas_so_tab_switches_still_work(manager: QtAds.
     assert tracker.current_dock is first
 
 
+def test_repeated_state_restore_does_not_grow_the_tracked_area_set(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """Repeated save/restore cycles don't leak dead ``CDockAreaWidget``s into the tracked-area set.
+
+    ``restoreState`` discards and rebuilds every affected area on each call; without pruning, the
+    tracker's tracked-area set would grow by one dead wrapper per cycle instead of settling on
+    however many areas are actually live. Areas torn down via ``deleteLater`` only actually die (and
+    fire ``destroyed``) once the event loop next runs, hence the ``qtbot.wait`` after each restore.
+
+    **Test steps:**
+
+    * add two tabbed docks (one area) and save the layout
+    * restore it repeatedly, letting the event loop run between restores
+    * verify the tracked-area set still holds exactly one (live) area
+    """
+    tracker = QtAdsFocusTracker(manager)
+    first = add_dock(manager, "one")
+    add_dock(manager, "two", QtAds.CenterDockWidgetArea, first.dockAreaWidget())
+    state = bytes(manager.saveState().data())
+
+    for _ in range(5):
+        assert manager.restoreState(QByteArray(state))
+        qtbot.wait(50)
+
+    tracked_areas = tracker._QtAdsFocusTracker__areas_tracking_current_tab  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert len(tracked_areas) == 1
+
+
 def test_state_restore_skips_a_tracked_dock_with_no_area(manager: QtAds.CDockManager, mocker: MockerFixture) -> None:
     """The re-track loop skips a tracked dock that currently has no containing area.
 
