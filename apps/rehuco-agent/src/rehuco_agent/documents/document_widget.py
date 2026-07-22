@@ -393,10 +393,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         A stateful widget's own UI state (e.g. the path editor's expand toggle) is captured before the
         swap and restored into its freshly-built counterpart afterwards -- keyed by object name, the same
-        contract :meth:`save_state` persists -- so a switch doesn't reset it. The rebuild preserves the
-        set of stateful widgets (the leading fields, the path editor among them, are on every type), so a
-        captured name always names one again after the swap. The editors are re-locked to match the model,
-        since a rebuilt grid starts enabled.
+        contract :meth:`save_state` persists -- so a switch doesn't reset it. Today the set of stateful
+        widgets is preserved (the leading fields, the path editor among them, are on every type), but a
+        captured name is looked up defensively rather than assumed present, so a future type-specific
+        stateful widget that disappears across a switch drops its state instead of crashing. The editors
+        are re-locked to match the model, since a rebuilt grid starts enabled.
         """
         saved_state = {name: widget.save_state() for name, widget in self.__stateful_widgets().items()}
         # sever the outgoing form's long-lived-signal connections *before* its widgets are swapped out and
@@ -412,7 +413,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__set_editors_locked(self.__model.locked)
         rebuilt = self.__stateful_widgets()
         for name, state in saved_state.items():
-            rebuilt[name].restore_state(state)
+            widget = rebuilt.get(name)
+            if widget is not None:
+                widget.restore_state(state)
 
     def __swap_dock_contents(self, docks: dict[FieldsTab, QtAds.CDockWidget], grids: dict[FieldsTab, QWidget]) -> None:
         """Replace each dock's content widget with the freshly-built grid for its tab, disposing the old.

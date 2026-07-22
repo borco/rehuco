@@ -31,7 +31,7 @@ from rehuco_agent.documents.document_widget import (
     DocumentWidget,
 )
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab
+from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
 from rehuco_agent.fields.widgets import PathEditor, SingleChoiceComboBox
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
@@ -1332,6 +1332,43 @@ def test_switching_type_preserves_the_path_field_expand_state(qtbot: QtBot, bloc
     location_editor(widget).expanded = True
 
     block_model.resource_type = "reference_images"
+
+    assert location_editor(widget).expanded is True
+
+
+def test_switching_type_tolerates_a_stateful_widget_that_disappears_across_the_switch(
+    qtbot: QtBot, block_model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A stateful widget captured before a type switch may not exist on the new type's grid -- a future
+    type-specific stateful widget must drop its state on switch, not crash with a ``KeyError`` (#119).
+
+    Today every stateful widget is type-independent, so this simulates the not-yet-existing case by
+    patching the private lookup to include a ghost entry only in the pre-switch snapshot.
+
+    **Test steps:**
+
+    * build a widget, then patch its stateful-widget lookup so the first call (pre-switch capture) adds a
+      widget absent from the second call (post-switch rebuild)
+    * switch the type
+    * verify no crash, and the surviving path editor still restores its own state
+    """
+    widget = DocumentWidget(block_model)
+    qtbot.addWidget(widget)
+    location_editor(widget).expanded = True
+
+    real_stateful_widgets = widget._DocumentWidget__stateful_widgets  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ghost = mocker.Mock(spec=StatefulWidget)
+    ghost.save_state.return_value = b"ghost"
+    calls: Final = []
+
+    def fake_stateful_widgets() -> dict[str, StatefulWidget]:
+        widgets = real_stateful_widgets()
+        calls.append(None)
+        return {**widgets, "ghost": ghost} if len(calls) == 1 else widgets
+
+    mocker.patch.object(widget, "_DocumentWidget__stateful_widgets", side_effect=fake_stateful_widgets)
+
+    block_model.resource_type = "reference_images"  # no KeyError despite "ghost" missing from the rebuilt grid
 
     assert location_editor(widget).expanded is True
 
