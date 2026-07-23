@@ -37,21 +37,21 @@ Key design properties:
 
 ## Roadmap
 
-The near-term build follows four milestones, each mapping to a personal use-case and adding exactly
-one new architectural spine. See the
-[implementation plan](docs/specs/implementation-plan.md) for detail.
+The build is organized into milestones, each mapping to a personal use-case and adding one new
+architectural spine. See the [implementation plan](docs/specs/implementation-plan.md) for detail.
 
-- **A — Local view/edit** *(current)* — open, view, and edit a local `.rehu` for tutorials and
-  reference images. One machine, no network, no login — a standalone, genuinely useful tool.
-- **B — Cached database** — scan folders, cache the scan into `.rehudb`, browse and search the
-  catalog on the desktop. Brings the app close to the original tutcatalog. Still local, no node.
-- **C — WatchingTutorials** — a single headless node serves the catalog to a browser on the LAN;
-  watch a tutorial from an iPad, progress remembered. Introduces the node and the web stack.
-- **D — Borrowing** — borrow a copy onto a laptop, watch it with no network, reconcile progress
-  and notes on return. Introduces two-party sync.
+| Milestone | What it does |
+| --- | --- |
+| **LocalEdit** *(current)* | Local viewing and editing of `.rehu` files — one machine, no network, no login. |
+| **CacheDB** | Scan folders, cache the scan results into a `.rehudb` database, and search the catalog. Brings the app close to the original tutcatalog. |
+| **WatchTutorial** | Watch tutorials locally, or from a browser/tablet via an embedded web server, with progress remembered. |
+| **Borrowing** | Borrow a copy onto a laptop, watch it offline, and reconcile progress and notes on return — two-party sync (home node ↔ laptop), the minimal reconcile topology. |
+| **Swarm** | The full multi-node swarm — peer discovery, pairing and trust, registry resolution, and N-way sync across many machines. |
+| **Daz3D** | Migrate from the daz3d-personal-database predecessor — import and browse `.dpdml` files, and install/uninstall Daz3D plugins/extensions. |
 
-The full multi-node swarm, acquisition tooling, and richer plugins are deliberately deferred past
-these four.
+Maintenance is tracked separately in **audit-run milestones** `X1`, `X2`, … — each collects the
+issues found during the N-th codebase audit. Acquisition tooling and richer reference-image plugins
+remain deferred beyond the milestones above.
 
 ## Monorepo layout
 
