@@ -42,6 +42,18 @@ from .plugins import (
     PluginRegistry,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_locks import (
+    OPTIONAL_INT_BLOCK_KEYS,
+    OPTIONAL_INT_CORE_KEYS,
+    OPTIONAL_INT_USER_KEYS,
+    OPTIONAL_STR_CORE_KEYS,
+    invalid_field_reasons,
+    is_author_record,
+    newer_block_format_reason,
+    optional_int,
+    optional_str,
+)
+from .rehu_serialization import ordered_for_file
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -52,16 +64,6 @@ PRIMARY_KEY: Final = "primary"
 # record carrying an author-page URL. The record form is canonical only when it has a URL to carry --
 # a bare name is stored as a plain string (:attr:`RehuDocument.authors` setter).
 type AuthorEntry = str | dict[str, Any]
-
-CORE_LEADING_KEYS: Final = ("type", "id", "created", "updated", "sources")
-"""The core block's keys that lead the file, in this order; everything else follows alphabetically
-(:meth:`RehuDocument.save`).
-
-What a reader looks for first when opening a `.rehu` by hand: what it is, which record it is, when it was
-made, and -- via ``sources`` -- what it is *called* ([[field-schema#sources]]). Everything after is
-alphabetical, which is why this list can stay short and needs no maintenance: a field missing from it
-merely sorts with the rest, it is never misplaced. Unlike a *recognition* list (a migration's frozen
-common-field set), being incomplete here costs nothing."""
 
 
 @dataclass(frozen=True)
@@ -105,14 +107,6 @@ class RehuFormatError(ValueError):
     misusing a reserved key ([[data-model#rehu-format]])."""
 
 
-INVALID_AUTHORS_MESSAGE: Final = (
-    "authors: contains an entry this build cannot read -- each must be a name string or a "
-    "{name, url} record ([[field-schema#authors]])"
-)
-"""The :attr:`~LockReasonKind.INVALID_FIELD` message for a present ``authors`` the getter cannot read
-cleanly -- a non-list, or a list with an entry it would skip ([[field-schema#authors]])."""
-
-
 class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance-attributes
     """In-memory view over one ``.rehu`` JSON document.
 
@@ -147,23 +141,6 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         (:attr:`~LockReasonKind.MISSING` / :attr:`~LockReasonKind.INVALID_FILE`); set only by
         :meth:`locked_stub_for_error`. Defaults to ``None``: a genuinely-parsed document.
     """
-
-    __OPTIONAL_INT_CORE_KEYS: Final = ("original_size", "current_size")
-    """Common-core optional integer scalars ([[field-schema#deferred-items]]): absent (or JSON ``null``)
-    reads as ``None``, a present non-int coerces to ``None`` for display **and** locks the document
-    (:attr:`~LockReasonKind.INVALID_FIELD`) -- absent is not ``0``."""
-
-    __OPTIONAL_INT_BLOCK_KEYS: Final = ("original_duration", "current_duration", "advertised_duration", "images_count")
-    """The active plugin block's shared optional integer scalars, same absent/malformed contract as
-    :data:`__OPTIONAL_INT_CORE_KEYS`."""
-
-    __OPTIONAL_INT_USER_KEYS: Final = ("rating",)
-    """The active block's **per-user** optional integer scalars ([[field-schema#per-user-shared]]); ``0`` is
-    a genuine rating (ratings may be negative), so *unrated* must read as ``None``, never ``0``."""
-
-    __OPTIONAL_STR_CORE_KEYS: Final = ("released",)
-    """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
-    non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
 
     def __init__(  # pylint: disable=too-many-arguments
         self,
@@ -474,10 +451,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def serialize(self) -> str:
         """Render this document as the exact pretty-printed JSON text :meth:`save` writes to disk.
 
-        The one place the file's *bytes* are produced -- ordered (:meth:`__ordered_for_file`),
-        ``indent=2``, ``ensure_ascii=False``, trailing newline -- so any read-only view of "what would
-        be written" (the agent's source dock, #111) shows byte-for-byte what a save would, without
-        reaching into the private ordering. One field can lag by design: a save that detects a changed
+        The one place the file's *bytes* are produced -- ordered
+        (:func:`~rehuco_core.rehu_serialization.ordered_for_file`), ``indent=2``, ``ensure_ascii=False``,
+        trailing newline -- so any read-only view of "what would be written" (the agent's source dock,
+        #111) shows byte-for-byte what a save would, without reaching into the ordering. One field can lag
+        by design: a save that detects a changed
         record stamps a fresh ``updated`` just before writing (#142), so a preview rendered ahead of
         that save shows the *stored* value, not the stamp the save will mint -- a future timestamp is
         exactly the one thing a preview cannot know. Unlike :meth:`save`, this never checks the lock
@@ -486,70 +464,24 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :returns: the document's canonical on-disk text, trailing newline included.
         """
-        return json.dumps(self.__ordered_for_file(), indent=2, ensure_ascii=False) + "\n"
-
-    def __ordered_for_file(self) -> dict[str, Any]:
-        """Lay the document out in canonical key order, for :meth:`save` to write.
-
-        The top-level order is ``format_version`` (it describes the file), then ``core``, then the
-        **active** plugin block, then every remaining top-level key alphabetically -- the inactive/unknown
-        blocks, plus any stray key carried verbatim, which sorts among them rather than needing a category
-        of its own. The active block leads the blocks (rather than sorting among them) because it is the
-        one this file's ``type`` names -- the block a reader opening the file by hand looks for first,
-        right after the common core it belongs to.
-
-        Inside ``core``, :data:`CORE_LEADING_KEYS` lead and the rest sort. The **active** block is
-        ordered the same way, led by its own ``format_version`` ([[plugins#plugin-blocks]]) -- and if it
-        carries a ``users`` map (#98, [[field-schema#per-user-shared]]), that map is ordered too:
-        usernames alphabetically, each user's own fields alphabetically (:meth:`__ordered_block` applies
-        this one level deeper, see there).
-
-        **The block persistence invariant is applied here** ([[plugins#plugin-blocks]]): a block is
-        written **iff** it is the active block, or it is inactive and its key was **never claimed** this
-        session (foreign payload the file is merely custodian of -- carried verbatim, never reordered,
-        since reordering would churn bytes to reorganize fields this document does not understand). A
-        block **claimed then abandoned** -- made active this session, then switched away from
-        (:attr:`claimed_block_keys`) -- is **dropped**: by claiming and leaving it the user asserted the
-        file is no longer that type. This is a *serialization*-time filter, not a mutation of
-        :attr:`data`, which is exactly what keeps a dropped block resurrectable in memory: switch its type
-        back before saving and it is active, hence written, again.
-
-        A retained active/foreign block that is malformed (not an object) is passed through as-is rather
-        than skipped -- it is still the file's content, and dropping it would be exactly the silent loss
-        the round-trip rule forbids ([[data-model#schema-version]]).
-
-        :returns: a fresh dict; ``__data`` is left alone, since its order is not meaningful.
-        """
-        # not a guarded read: `rehuco_core.migrations` stamps every payload it is handed, including an
-        # empty one, so a constructed document always carries a version
-        ordered: dict[str, Any] = {FORMAT_VERSION_KEY: self.__data[FORMAT_VERSION_KEY]}
-        if CORE_BLOCK_KEY in self.__data:
-            ordered[CORE_BLOCK_KEY] = self.__ordered_block(self.__data[CORE_BLOCK_KEY], CORE_LEADING_KEYS)
-        active_key = self.active_block_key
-        if active_key in self.__data:
-            # the active block leads the plugin blocks, right after the core it belongs to -- its own
-            # format_version first, then the rest of its keys ordered ([[plugins#plugin-blocks]])
-            ordered[active_key] = self.__ordered_block(self.__data[active_key], (FORMAT_VERSION_KEY,))
-        dropped = set(self.__dropped_block_keys())
-        for key in sorted(key for key in self.__data if key not in RESERVED_KEYS and key != active_key):
-            if key in dropped:
-                # claimed-then-abandoned: made active this session and left, so the user asserted the
-                # file is no longer this type -- dropped on save (:meth:`__dropped_block_keys`,
-                # [[plugins#plugin-blocks]]). One predicate for both the drop here and the discard
-                # :meth:`save` records (#86), so the logged fact can never diverge from what was dropped.
-                continue
-            ordered[key] = self.__data[key]
-        return ordered
+        return (
+            json.dumps(
+                ordered_for_file(self.__data, self.active_block_key, self.__dropped_block_keys()),
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
 
     def __dropped_block_keys(self) -> list[str]:
         """The block keys the persistence invariant **drops** on the next save ([[plugins#plugin-blocks]]).
 
         A block present in :attr:`data` that is inactive and **claimed** this session -- made active and
         then abandoned, so by claiming and leaving it the user asserted the file is no longer that type.
-        This is exactly the set :meth:`__ordered_for_file` filters out at serialization time *and* the set
-        :meth:`save` records to the activity log (#86); it is one predicate precisely so the recorded
-        discard can never name a block a save keeps, nor miss one it drops -- a wrong trigger here would be
-        a silent audit failure.
+        This is exactly the set :func:`~rehuco_core.rehu_serialization.ordered_for_file` filters out at
+        serialization time *and* the set :meth:`save` records to the activity log (#86); it is one
+        predicate precisely so the recorded discard can never name a block a save keeps, nor miss one it
+        drops -- a wrong trigger here would be a silent audit failure.
 
         The active block and every never-claimed foreign block are absent (both are written), and a
         claimed key with no block on :attr:`data` (a type switched to but never given a block) is absent
@@ -602,48 +534,6 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
                 continue
             LOG.info("%s block discarded on save from %s", key, target)
             self.__logged_discarded_keys.add(key)
-
-    @staticmethod
-    def __ordered_block(block: Any, leading: Sequence[str]) -> Any:
-        """Order one block's keys: ``leading`` first, in the given order, then the rest alphabetically.
-
-        A ``users`` map (#98, [[field-schema#per-user-shared]]), if present, is ordered one level
-        deeper too (:meth:`__ordered_users_map`) -- it is per-user storage *inside* the block, not a
-        block of its own, so it doesn't get a second top-level pass through this method, but it still
-        owes the same canonical-order guarantee every other key here gets.
-
-        :param block: the block's value; returned untouched when it is not an object
-            ([[data-model#write-integrity]]).
-        :param leading: the keys to place first; those absent from ``block`` are skipped.
-        :returns: the block with its keys ordered.
-        """
-        if not isinstance(block, dict):
-            return block
-        lead = [key for key in leading if key in block]
-        ordered = {key: block[key] for key in (*lead, *sorted(set(block) - set(lead)))}
-        if USERS_KEY in ordered:
-            ordered[USERS_KEY] = RehuDocument.__ordered_users_map(ordered[USERS_KEY])
-        return ordered
-
-    @staticmethod
-    def __ordered_users_map(users: Any) -> Any:
-        """Order a block's ``users`` map: usernames alphabetically, and each user's own fields
-        alphabetically ([[field-schema#per-user-shared]]) -- the same discipline
-        :meth:`__ordered_block` applies to a block's own keys, one level deeper.
-
-        :param users: the block's ``users`` value; returned untouched when it is not an object
-            ([[data-model#write-integrity]]).
-        :returns: the map with usernames and each user's fields ordered; a per-user value that isn't
-            an object is passed through as-is, the same tolerance :meth:`__ordered_block` gives a
-            malformed block.
-        """
-        if not isinstance(users, dict):
-            return users
-        ordered: dict[str, Any] = {}
-        for username in sorted(users):
-            fields = users[username]
-            ordered[username] = {key: fields[key] for key in sorted(fields)} if isinstance(fields, dict) else fields
-        return ordered
 
     def reload(self) -> None:
         """Re-read this document from its own path, replacing all in-memory data in place.
@@ -760,8 +650,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           above what its plugin understands ([[plugins#plugin-blocks]]); the same fail-safe as
           ``NEWER_FORMAT``, scoped to one block.
         - :attr:`~LockReasonKind.INVALID_FIELD` -- one per owned field that is **present but fails
-          coercion** (:meth:`__invalid_field_reasons`), so an edit can never save the coerced default over
-          the malformed-but-recoverable original.
+          coercion** (:func:`~rehuco_core.rehu_locks.invalid_field_reasons`), so an edit can never save the
+          coerced default over the malformed-but-recoverable original.
 
         Recomputed on every read from the current payload, so :meth:`reload` (hence revert) picks up a
         hand-fix without any cached-reason bookkeeping.
@@ -786,106 +676,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
                     f"({CURRENT_FORMAT_VERSION}).",
                 )
             )
-        reasons.extend(self.__newer_block_format_reasons())
-        reasons.extend(self.__invalid_field_reasons())
-        return reasons
-
-    def __newer_block_format_reasons(self) -> list[LockReason]:
-        """The :attr:`~LockReasonKind.NEWER_BLOCK_FORMAT` reason when the **active** block's own
-        ``format_version`` is newer than its plugin understands ([[plugins#plugin-blocks]], the
-        per-block refinement of :attr:`lock_reasons`'s ``NEWER_FORMAT`` check).
-
-        Only checked when a plugin is installed for the active key -- an uninstalled type's block has
-        no ``current_block_version`` to compare against, and is handled by the fallback-editor path
-        instead ([[plugins#fallback-editor]]). :meth:`__migrate_active_block` never restamps such a
-        block, so the version reported here is whatever the block actually carries.
-
-        :returns: a single-element list naming the block and its versions, or empty when it is at or
-            below what the plugin understands, or no plugin is installed for the active key.
-        """
-        if self.__plugins.resolve(self.active_block_key) is None:
-            return []
-        head = current_block_version(self.active_block_key)
-        block_version = self.__coerced_active_block_version() or 0
-        if block_version <= head:
-            return []
-        return [
-            LockReason(
-                LockReasonKind.NEWER_BLOCK_FORMAT,
-                f"The {self.active_block_key!r} block's format_version {block_version} is newer than "
-                f"the installed plugin understands ({head}).",
-            )
-        ]
-
-    def __invalid_field_reasons(self) -> list[LockReason]:
-        """The :attr:`~LockReasonKind.INVALID_FIELD` reasons for owned fields present-but-uncoercible
-        ([[data-model#write-integrity]]).
-
-        An owned field that is merely **absent** reads as a clean default and is fine to save. One that is
-        **present** but whose stored value the getter has to coerce lossily is not: writing the coerced
-        default back would quietly replace a malformed value the user may yet recover by hand. Each such
-        field contributes one reason naming the key.
-
-        ``authors`` ([[field-schema#authors]], the seam #92 set up) and the optional scalars
-        ([[field-schema#deferred-items]]) are checked: ``authors``'s getter skips an entry that is neither a
-        name string nor a ``{name, url}`` record, and a non-list value entirely; an optional scalar's getter
-        coerces a present-but-wrong-typed value to ``None`` (:meth:`__invalid_scalar_reasons`). Both are the
-        "present but the getter had to coerce" condition. A merely *absent* scalar -- or a JSON ``null``,
-        already normalized to absent at construction (:meth:`__normalize_optional_scalars`) -- is a clean
-        ``None`` and never locks. The ``format_version`` stamp deliberately never does (see
-        :attr:`lock_reasons`).
-
-        :returns: the invalid-field reasons, in a stable order.
-        """
-        reasons: list[LockReason] = []
-        core = self.core
-        if "authors" in core:
-            value = core["authors"]
-            clean = isinstance(value, list) and all(
-                isinstance(entry, str) or self.__is_author_record(entry) for entry in value
-            )
-            if not clean:
-                reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_AUTHORS_MESSAGE))
-        reasons.extend(self.__invalid_scalar_reasons())
-        return reasons
-
-    def __invalid_scalar_reasons(self) -> list[LockReason]:
-        """One :attr:`~LockReasonKind.INVALID_FIELD` per optional scalar that is **present but malformed**
-        ([[field-schema#deferred-items]], the #92 ``authors`` precedent extended to the scalars).
-
-        A scalar that is absent -- or a JSON ``null``, already stripped to absent at construction
-        (:meth:`__normalize_optional_scalars`) -- reads as a clean ``None`` and does not lock. One that is
-        *present* with a value the getter must coerce away (a string where a whole number belongs, a
-        non-string where the date belongs) does, so an edit can never save the coerced ``None`` over the
-        malformed-but-recoverable original ([[data-model#write-integrity]]).
-
-        :returns: the invalid-scalar reasons, core before shared-block before per-user, in key order.
-        """
-        reasons: list[LockReason] = []
-        int_sources = (
-            (self.core, self.__OPTIONAL_INT_CORE_KEYS),
-            (self.active_block, self.__OPTIONAL_INT_BLOCK_KEYS),
-            (self.__active_user_map(), self.__OPTIONAL_INT_USER_KEYS),
+        block_reason = newer_block_format_reason(
+            self.active_block_key, self.__coerced_active_block_version(), self.__plugins
         )
-        for block, keys in int_sources:
-            for key in keys:
-                value = block.get(key)
-                if value is not None and self.__optional_int(value) is None:
-                    reasons.append(
-                        LockReason(LockReasonKind.INVALID_FIELD, self.__invalid_scalar_message(key, "a whole number"))
-                    )
-        for key in self.__OPTIONAL_STR_CORE_KEYS:
-            value = self.core.get(key)
-            if value is not None and not isinstance(value, str):
-                reasons.append(
-                    LockReason(LockReasonKind.INVALID_FIELD, self.__invalid_scalar_message(key, "a date string"))
-                )
+        if block_reason is not None:
+            reasons.append(block_reason)
+        reasons.extend(invalid_field_reasons(self.core, self.active_block, self.__active_user_map()))
         return reasons
-
-    @staticmethod
-    def __invalid_scalar_message(key: str, expected: str) -> str:
-        """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present-but-malformed optional scalar."""
-        return f"{key}: present but not {expected} ([[field-schema#deferred-items]])."
 
     @property
     def core(self) -> dict[str, Any]:
@@ -1427,7 +1224,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """This document's per-user submap **as stored** ([[field-schema#per-user-shared]]), or an empty
         dict when the block, the ``users`` map, or this user is absent or malformed.
 
-        A read-only peek for validation (:meth:`__invalid_scalar_reasons`), distinct from
+        A read-only peek for validation (:func:`~rehuco_core.rehu_locks.invalid_scalar_reasons`), distinct from
         :meth:`__active_user_or_create`: it never installs a submap, so merely inspecting a document's
         per-user scalars cannot make it dirty."""
         users = self.active_block.get(USERS_KEY)
@@ -1550,14 +1347,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         core = self.__data.get(CORE_BLOCK_KEY)
         if isinstance(core, dict):
-            self.__drop_null_keys(core, (*self.__OPTIONAL_INT_CORE_KEYS, *self.__OPTIONAL_STR_CORE_KEYS))
+            self.__drop_null_keys(core, (*OPTIONAL_INT_CORE_KEYS, *OPTIONAL_STR_CORE_KEYS))
         block = self.__data.get(self.active_block_key)
         if isinstance(block, dict):
-            self.__drop_null_keys(block, self.__OPTIONAL_INT_BLOCK_KEYS)
+            self.__drop_null_keys(block, OPTIONAL_INT_BLOCK_KEYS)
             users = block.get(USERS_KEY)
             user = users.get(self.__username) if isinstance(users, dict) else None
             if isinstance(user, dict):
-                self.__drop_null_keys(user, self.__OPTIONAL_INT_USER_KEYS)
+                self.__drop_null_keys(user, OPTIONAL_INT_USER_KEYS)
 
     @staticmethod
     def __drop_null_keys(block: dict[str, Any], keys: Sequence[str]) -> None:
@@ -1586,16 +1383,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         authors = self.core.get("authors", [])
         if not isinstance(authors, list):
             return []
-        return [entry for entry in authors if isinstance(entry, str) or self.__is_author_record(entry)]
+        return [entry for entry in authors if isinstance(entry, str) or is_author_record(entry)]
 
     @authors.setter
     def authors(self, value: Sequence[AuthorEntry]) -> None:
         self.__core_or_create()["authors"] = [self.__canonical_author(entry) for entry in value]
-
-    @staticmethod
-    def __is_author_record(entry: Any) -> bool:
-        """Whether ``entry`` is a valid author record: a dict with a string ``name`` ([[field-schema#authors]])."""
-        return isinstance(entry, dict) and isinstance(entry.get("name"), str)
 
     @staticmethod
     def __canonical_author(entry: AuthorEntry) -> AuthorEntry:
@@ -1618,7 +1410,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """The partial-precision content release date ([[field-schema#field-mapping]]), as stored; ``None``
         when absent or JSON ``null`` -- absent is not ``""`` ([[field-schema#deferred-items]]). A present
         non-string is malformed -> ``None`` and locks the document (:attr:`~LockReasonKind.INVALID_FIELD`)."""
-        return self.__optional_str(self.core.get("released"))
+        return optional_str(self.core.get("released"))
 
     @released.setter
     def released(self, value: str | None) -> None:
@@ -1653,21 +1445,6 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     @staticmethod
-    def __optional_int(value: Any) -> int | None:
-        """One optional integer scalar's read value ([[field-schema#deferred-items]]): the stored ``int``
-        (``bool`` excluded, an ``int`` subclass), or ``None`` when the key is absent, JSON ``null``, or a
-        malformed non-int. Absent and malformed both display as ``None``; only *malformed* additionally
-        locks the document (:meth:`__invalid_scalar_reasons`)."""
-        return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-    @staticmethod
-    def __optional_str(value: Any) -> str | None:
-        """One optional string scalar's read value: the stored string, or ``None`` when the key is absent,
-        JSON ``null``, or a malformed non-string (which also locks). Unlike an integer field there is
-        nothing further to coerce -- a stored string is already its own value."""
-        return value if isinstance(value, str) else None
-
-    @staticmethod
     def __set_or_delete(block: dict[str, Any], key: str, value: Any) -> None:
         """Write ``value`` under ``key``, or **delete** the key when ``value`` is ``None`` -- the
         absent-on-disk ↔ ``None``-in-code mapping ([[field-schema#deferred-items]]): ``None`` is never
@@ -1692,7 +1469,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         not ``0`` ([[field-schema#deferred-items]]). A present non-int coerces to ``None`` for display and
         locks the document (:attr:`~LockReasonKind.INVALID_FIELD`), so an edit never saves the coerced
         ``None`` over a recoverable original ([[data-model#write-integrity]])."""
-        return self.__optional_int(self.core.get("original_size"))
+        return optional_int(self.core.get("original_size"))
 
     @original_size.setter
     def original_size(self, value: int | None) -> None:
@@ -1703,7 +1480,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]); ``None``
         when absent or JSON ``null`` -- absent is not ``0`` ([[field-schema#deferred-items]]). A present
         non-int coerces to ``None`` for display and locks ([[data-model#write-integrity]])."""
-        return self.__optional_int(self.core.get("current_size"))
+        return optional_int(self.core.get("current_size"))
 
     @current_size.setter
     def current_size(self, value: int | None) -> None:
@@ -1715,7 +1492,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         ([[field-schema#duration-size]]); a shared field on the active plugin block. ``None`` when absent
         or JSON ``null``; a present non-int coerces to ``None`` for display and locks
         ([[field-schema#deferred-items]])."""
-        return self.__optional_int(self.active_field("original_duration"))
+        return optional_int(self.active_field("original_duration"))
 
     @original_duration.setter
     def original_duration(self, value: int | None) -> None:
@@ -1726,7 +1503,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Integer seconds still on disk for this copy ([[field-schema#duration-size]]); a shared field on
         the active plugin block. ``None`` when absent or JSON ``null``; a present non-int coerces to ``None``
         and locks ([[field-schema#deferred-items]])."""
-        return self.__optional_int(self.active_field("current_duration"))
+        return optional_int(self.active_field("current_duration"))
 
     @current_duration.setter
     def current_duration(self, value: int | None) -> None:
@@ -1737,7 +1514,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """The coarse web-claimed running time in integer seconds ([[field-schema#duration-size]]); a shared
         field on the active plugin block. ``None`` when absent or JSON ``null``; a present non-int coerces to
         ``None`` and locks ([[field-schema#deferred-items]])."""
-        return self.__optional_int(self.active_field("advertised_duration"))
+        return optional_int(self.active_field("advertised_duration"))
 
     @advertised_duration.setter
     def advertised_duration(self, value: int | None) -> None:
@@ -1748,7 +1525,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """The reference-images count ([[field-schema#field-types]]); a shared field on the active plugin
         block, filled by scanning rather than fabricated on import ([[field-schema#deferred-items]]).
         ``None`` when absent or JSON ``null``; a present non-int coerces to ``None`` and locks."""
-        return self.__optional_int(self.active_field("images_count"))
+        return optional_int(self.active_field("images_count"))
 
     @images_count.setter
     def images_count(self, value: int | None) -> None:
@@ -1760,7 +1537,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         JSON ``null``). ``0`` is a genuine rating -- ratings may be negative -- so unrated must read as
         ``None``, never a coerced ``0`` ([[field-schema#deferred-items]]). A present non-int coerces to
         ``None`` for display and locks ([[data-model#write-integrity]])."""
-        return self.__optional_int(self.active_user_field("rating"))
+        return optional_int(self.active_user_field("rating"))
 
     @rating.setter
     def rating(self, value: int | None) -> None:
