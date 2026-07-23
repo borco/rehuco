@@ -1194,12 +1194,20 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def __active_block_or_create(self) -> dict[str, Any]:
         """Return the mutable active block, installing a fresh one when absent or malformed.
 
+        A fresh block is **stamped** with its plugin's current block ``format_version`` at creation --
+        whatever builds a payload stamps it ([[data-model#schema-version]]'s stamp-where-known rule), the
+        same stamp the ``.tc`` mapping writes on the blocks it builds. Left unstamped, the block would
+        read as v0 on the next load and be run through migrations that real v0 data earned but a
+        current-layout block did not (#134's data-loss chain). An *existing* block is returned as-is --
+        its stamp is the migration path's business (:meth:`__migrate_active_block`), never rewritten here.
+
         :returns: the block dict, attached by reference to ``data`` so mutating it in place is reflected
             on the next :meth:`save`.
         """
         block = self.__data.get(self.active_block_key)
         if not isinstance(block, dict):
             block = {}
+            block[FORMAT_VERSION_KEY] = current_block_version(self.active_block_key)
             self.__data[self.active_block_key] = block
         return block
 

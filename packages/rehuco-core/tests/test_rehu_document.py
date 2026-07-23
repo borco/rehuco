@@ -22,6 +22,7 @@ from rehuco_core import (
     RehuDocument,
     RehuFormatError,
     authors_comma_editable,
+    current_block_version,
 )
 
 # A Tutorial document exercising multi-source, a plugin block, and unknown keys ([[field-schema#example-files]]).
@@ -1449,17 +1450,20 @@ def test_set_active_field_updates_an_existing_block() -> None:
 
 
 def test_set_active_field_creates_the_block_when_absent() -> None:
-    """``set_active_field`` installs a fresh block keyed by ``type`` when none exists.
+    """``set_active_field`` installs a fresh block keyed by ``type`` when none exists, stamped with the
+    plugin's current block ``format_version`` at creation ([[data-model#schema-version]]'s
+    stamp-where-known rule, #134) -- unstamped, it would read as v0 on the next load and be run through
+    migrations current-layout data never earned.
 
     **Test steps:**
 
     * construct a Tutorial document with no plugin block
     * set a type-field value
-    * verify a ``tutorial`` block now holds it
+    * verify a ``tutorial`` block now holds it, stamped at the plugin's current block version
     """
     doc = RehuDocument({"type": "tutorial"})
     doc.set_active_field("complete", False)
-    assert doc.data["tutorial"] == {"complete": False}
+    assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": False}
 
 
 def test_set_active_field_replaces_a_malformed_block() -> None:
@@ -1470,11 +1474,38 @@ def test_set_active_field_replaces_a_malformed_block() -> None:
 
     * construct a Tutorial document whose ``tutorial`` block is a non-object
     * set a type-field value
-    * verify the malformed block was replaced by a fresh object holding it
+    * verify the malformed block was replaced by a fresh, current-stamped object holding it (#134)
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": "junk"})
     doc.set_active_field("rating", 3)
-    assert doc.data["tutorial"] == {"rating": 3}
+    assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "rating": 3}
+
+
+def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_intact(
+    mocker: MockerFixture,
+) -> None:
+    """A block created by a mid-session type switch + edit saves **stamped**, so reloading the file runs
+    no migration over it and its ``users`` map survives -- the #134 data-loss chain, closed end-to-end.
+
+    Unstamped, the saved block would resolve to v0 on the next load and the v0->v1 step would rebuild
+    ``users`` from the (empty) inline strays -- silently losing the record the save had just written.
+
+    **Test steps:**
+
+    * load a tutorial-typed document, switch its type to ``reference_images``, and file a per-user edit
+    * save, and verify the written block carries the plugin's current block ``format_version``
+    * load the written payload back and verify the per-user record is intact
+    """
+    doc = load_doc(mocker, {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}})
+    doc.set_active_type("reference_images")
+    doc.set_active_user_field("rating", 5)
+
+    saved = saved_json(doc, mocker)
+    assert saved["reference_images"]["format_version"] == current_block_version("reference_images")
+
+    reloaded = RehuDocument(saved)
+    assert reloaded.active_user_field("rating") == 5
+    assert reloaded.active_block["users"] == {"admin": {"rating": 5}}
 
 
 def test_remove_active_field_deletes_a_present_key() -> None:
