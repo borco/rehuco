@@ -16,6 +16,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
+    RESERVED_KEYS,
     TUTORIAL_PLUGIN,
     LockReasonKind,
     PluginRegistry,
@@ -1844,6 +1845,25 @@ def test_set_active_type_to_empty_stores_the_type_but_claims_nothing() -> None:
     assert doc.claimed_block_keys == frozenset({"tutorial"})
 
 
+def test_set_active_type_refuses_a_reserved_key() -> None:
+    """Switching to a reserved key is refused -- ``core`` and ``format_version`` are grammar, not
+    resource types, and storing one as the type would build, from a live session, the same
+    refused-on-reopen state construction refuses in a payload (#135).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document
+    * for each reserved key, verify the switch raises ``ValueError`` naming the key as reserved
+    * verify the type and the claim set are left untouched by the refused switches
+    """
+    doc = RehuDocument({"type": "tutorial", "tutorial": {"complete": True}})
+    for reserved in sorted(RESERVED_KEYS):
+        with pytest.raises(ValueError, match=f"{reserved!r} is a reserved key"):
+            doc.set_active_type(reserved)
+    assert doc.type == "tutorial"
+    assert doc.claimed_block_keys == frozenset({"tutorial"})
+
+
 def test_a_never_claimed_foreign_block_is_carried_on_save() -> None:
     """Foreign payload never made active is carried verbatim -- the file is its custodian
     ([[plugins#plugin-blocks]]).
@@ -2271,6 +2291,51 @@ def test_core_type_naming_core_is_refused() -> None:
     """
     with pytest.raises(RehuFormatError, match="'type' is 'core'"):
         RehuDocument({"format_version": 2, "core": {"type": "core"}})
+
+
+def test_flat_v1_type_naming_format_version_is_refused() -> None:
+    """The flat-v1 spelling of the reserved-type misuse (#135): a pre-migration top-level ``type``
+    naming ``format_version``. Let through, the v1->v2 step moves it into the fresh ``core`` block and
+    the first active-block write replaces the file's version stamp with a block -- saved, the file
+    reads as v0 and this same build refuses it on reopen.
+
+    **Test steps:**
+
+    * construct a document from the flat, unstamped payload ``{"type": "format_version"}``
+    * verify it raises :class:`RehuFormatError` naming the offending value
+    """
+    with pytest.raises(RehuFormatError, match="'type' is 'format_version'"):
+        RehuDocument({"type": "format_version"})
+
+
+def test_flat_v1_type_naming_core_is_refused() -> None:
+    """The other reserved spelling through the same flat-v1 door (#135): ``{"type": "core"}`` would
+    make the common core the *active block*, landing every plugin-field write inside ``core``.
+
+    **Test steps:**
+
+    * construct a document from the flat, unstamped payload ``{"type": "core"}``
+    * verify it raises :class:`RehuFormatError` naming the offending value
+    """
+    with pytest.raises(RehuFormatError, match="'type' is 'core'"):
+        RehuDocument({"type": "core"})
+
+
+def test_a_stray_top_level_type_beside_an_existing_core_is_carried_not_refused() -> None:
+    """A top-level ``type`` naming a reserved key *beside* an existing ``core`` block is not the
+    flat-v1 spelling -- the v1->v2 step declines to move it (a self-contradictory v2-without-a-stamp),
+    so it never becomes the document's type and is carried verbatim like any unknown key (#135,
+    [[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * construct a document whose payload has both a ``core`` block and a stray top-level ``type``
+    * verify construction succeeds and the type still reads off ``core``
+    * verify the stray key survives to the serialized file
+    """
+    doc = RehuDocument({"core": {"type": "tutorial"}, "type": "format_version"})
+    assert doc.type == "tutorial"
+    assert json.loads(doc.serialize())["type"] == "format_version"
 
 
 def test_the_combined_reserved_key_misuse_is_refused() -> None:
