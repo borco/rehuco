@@ -14,7 +14,7 @@ PyInstaller and *why*).
 
 This appendix starts from the macOS half of the file-association spike
 (#13, macOS; the Windows half closed in #1) and is meant to **evolve** as production Briefcase
-config lands in `apps/rehuco-agent/` and as Windows and Linux packaging are wired up. Where a
+config lands in `packages/rehuco-agent/` and as Windows and Linux packaging are wired up. Where a
 detail is still spike-proven rather than production-shipped, it says so.
 
 ## 1. Status
@@ -30,7 +30,7 @@ detail is still spike-proven rather than production-shipped, it says so.
   and its hurdles live in [[appendices.windows-dev-launcher#overview]] (the C launcher). Briefcase is the confirmed
   end-user packager
   there too.
-- **Production Briefcase config in `apps/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
+- **Production Briefcase config in `packages/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
   wider-distribution polish, deferred past the personal critical path ([[packaging-deployment#app-identity]], plan:
   deferred).
   `uv tool install` covers the author's own machines until then.

@@ -1233,7 +1233,7 @@ wheels = [
 
 [[package]]
 name = "rehuco-agent"
-source = { editable = "apps/rehuco-agent" }
+source = { editable = "packages/rehuco-agent" }
 dependencies = [
     { name = "borco-core" },
     { name = "borco-pyside" },
@@ -1287,7 +1287,7 @@ requires-dist = [
 
 [[package]]
 name = "rehuco-node"
-source = { editable = "apps/rehuco-node" }
+source = { editable = "packages/rehuco-node" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },

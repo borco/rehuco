@@ -67,9 +67,6 @@ libraries version independently. See the
 
 ```text
 rehuco/
-├── apps/
-│   ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
-│   └── rehuco-node/          # headless REST service (FastAPI + uvicorn)
 ├── docs/
 │   └── specs/
 │       ├── architecture-design.md
@@ -77,7 +74,9 @@ rehuco/
 └── packages/
     ├── borco-core/           # generic non-GUI utilities — temporary guest, moving out
     ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
-    └── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
+    ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
+    ├── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
+    └── rehuco-node/          # headless REST service (FastAPI + uvicorn)
 ```
 
 `rehuco-agent` is the PySide6 desktop GUI; it is a node client for swarm operations.

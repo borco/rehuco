@@ -92,7 +92,7 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
     token (slug segments are never all-digit) — see "Symbolic cross-references" in
     [`docs/specs/README.md`](../README.md).
   - A plain relative link from a doc into a repo file outside `docs/` (e.g. a `.py` source file
-    under `apps/`/`packages/`) resolves natively on GitHub, but 404s on the built mkdocs site,
+    under `packages/`) resolves natively on GitHub, but 404s on the built mkdocs site,
     since only `docs/` is ever published. Write such links as plain relative paths regardless —
     `tools/mkdocs_relative_link_hook.py` rewrites, at build time only, any link whose target falls
       outside `docs_dir` to an absolute `{repo_url}/blob/{branch}/...` link; GitHub needs no change.

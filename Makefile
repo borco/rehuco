@@ -1,7 +1,7 @@
 .PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-serve publish setup-git uis qrcs icons \
 	agent-build agent-build-clean agent-register agent-unregister
 
-SEARCH_DIRS := apps packages spikes
+SEARCH_DIRS := packages spikes
 # pyside6-uic --python-paths uses the OS-native path separator (os.pathsep): ';' on Windows,
 # ':' elsewhere. Hardcoding ';' made uic see one nonexistent path on macOS/Linux, so it could
 # not resolve a .ui's .qrc to its package and fell back to a bare `import <name>_rc`.
@@ -10,7 +10,7 @@ PATHSEP := ;
 else
 PATHSEP := :
 endif
-PYTHON_PATHS := $(shell find apps packages -maxdepth 3 -name src -type d | tr '\n' '$(PATHSEP)' | sed 's/$(PATHSEP)$$//')
+PYTHON_PATHS := $(shell find packages -maxdepth 3 -name src -type d | tr '\n' '$(PATHSEP)' | sed 's/$(PATHSEP)$$//')
 UI_FILES   := $(patsubst %.ui,%_ui.py,$(shell find $(SEARCH_DIRS) -name '*.ui'  -print 2>/dev/null))
 QRC_FILES  := $(patsubst %.qrc,%_rc.py,$(shell find $(SEARCH_DIRS) -name '*.qrc' -print 2>/dev/null))
 # Brand icons live in a single top-level design/icons/ (issue #29): the Affinity Designer master
@@ -68,13 +68,13 @@ format:
 	uv run ruff check --fix .
 
 bandit:
-	uv run bandit -c pyproject.toml -r packages/ apps/
+	uv run bandit -c pyproject.toml -r packages/
 
 pyright:
-	uv run pyright packages/ apps/ tools/
+	uv run pyright packages/ tools/
 
 pylint:
-	uv run pylint packages/ apps/ tools/
+	uv run pylint packages/ tools/
 
 check-slugs:
 	uv run python tools/check_slug_refs.py
@@ -88,16 +88,16 @@ publish:
 	uv build --all-packages --out-dir .dist
 	uv publish --check-url https://pypi.org/simple/ .dist/*
 
-# Windows-only, dev-only (apps/rehuco-agent/launcher): a local double-click/registration
+# Windows-only, dev-only (packages/rehuco-agent/launcher): a local double-click/registration
 # target with correct app identity, running the live editable install. Requires VS2022 and
-# `cmake` on PATH (`scoop install cmake` if missing -- see apps/rehuco-agent/launcher/README.md).
+# `cmake` on PATH (`scoop install cmake` if missing -- see packages/rehuco-agent/launcher/README.md).
 # Never touched by qa/tests/publish or a real Briefcase build. Build output goes in .build/,
 # mirroring the source path, alongside this repo's other generated-artifact dot-dirs (.dist/ etc).
-AGENT_LAUNCHER_BUILD := .build/apps/rehuco-agent/launcher
+AGENT_LAUNCHER_BUILD := .build/packages/rehuco-agent/launcher
 AGENT_DEV_EXE := $(AGENT_LAUNCHER_BUILD)/Release/rehuco-agent-dev.exe
 
-AGENT_LAUNCHER_SRC := apps/rehuco-agent/launcher/launcher.c apps/rehuco-agent/launcher/CMakeLists.txt \
-	apps/rehuco-agent/launcher/config.h.in apps/rehuco-agent/launcher/launcher.rc.in
+AGENT_LAUNCHER_SRC := packages/rehuco-agent/launcher/launcher.c packages/rehuco-agent/launcher/CMakeLists.txt \
+	packages/rehuco-agent/launcher/config.h.in packages/rehuco-agent/launcher/launcher.rc.in
 
 # $(AGENT_DEV_EXE) (not agent-build itself) is the real target, so make only re-invokes cmake
 # when a source/icon actually changed -- cmake's own incremental build already no-ops
@@ -110,7 +110,7 @@ AGENT_LAUNCHER_SRC := apps/rehuco-agent/launcher/launcher.c apps/rehuco-agent/la
 agent-build: $(AGENT_DEV_EXE)
 
 $(AGENT_DEV_EXE): $(AGENT_LAUNCHER_SRC) $(ICON_FILES)
-	cmake -S apps/rehuco-agent/launcher -B $(AGENT_LAUNCHER_BUILD) -G "Visual Studio 17 2022" -A x64
+	cmake -S packages/rehuco-agent/launcher -B $(AGENT_LAUNCHER_BUILD) -G "Visual Studio 17 2022" -A x64
 	cmake --build $(AGENT_LAUNCHER_BUILD) --config Release
 
 agent-build-clean:

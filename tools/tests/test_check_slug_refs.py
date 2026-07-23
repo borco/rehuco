@@ -125,10 +125,10 @@ def test_expected_doc_key_none_outside_specs() -> None:
 
     **Test steps:**
 
-    * build a path under `apps/rehuco-agent/src/rehuco_agent/app.py`
+    * build a path under `packages/rehuco-agent/src/rehuco_agent/app.py`
     * verify the expected doc-key is ``None``
     """
-    path = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "src" / "rehuco_agent" / "app.py"
+    path = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "src" / "rehuco_agent" / "app.py"
 
     assert check_slug_refs.expected_doc_key(path) is None
 
@@ -163,19 +163,19 @@ def test_iter_repo_files_parses_git_ls_files_output(mocker: MockerFixture) -> No
 
 
 def test_iter_source_files_includes_markdown_and_python_files(mocker: MockerFixture) -> None:
-    """Every tracked `.md` under `docs/` and `.py` under `apps/`/`packages/` is included.
+    """Every tracked `.md` under `docs/` and `.py` under `packages/` is included.
 
     **Test steps:**
 
-    * fake `iter_repo_files()` to return one file each for `docs/`, `apps/`, and `packages/`
+    * fake `iter_repo_files()` to return one `.md` under `docs/` and two `.py` under `packages/`
     * verify all three come back from `iter_source_files()`
     """
     docs_md = check_slug_refs.REPO_ROOT / "docs" / "specs" / "plugins.md"
-    apps_py = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "app.py"
+    agent_py = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "app.py"
     packages_py = check_slug_refs.REPO_ROOT / "packages" / "rehuco-core" / "core.py"
-    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[docs_md, apps_py, packages_py])
+    mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[docs_md, agent_py, packages_py])
 
-    assert check_slug_refs.iter_source_files() == [docs_md, apps_py, packages_py]
+    assert check_slug_refs.iter_source_files() == [docs_md, agent_py, packages_py]
 
 
 def test_iter_source_files_excludes_generated_ui_and_rc_files(mocker: MockerFixture) -> None:
@@ -183,12 +183,12 @@ def test_iter_source_files_excludes_generated_ui_and_rc_files(mocker: MockerFixt
 
     **Test steps:**
 
-    * fake `iter_repo_files()` under `apps/` to return a real `.py`, a `_ui.py`, and a `_rc.py`
+    * fake `iter_repo_files()` under `packages/` to return a real `.py`, a `_ui.py`, and a `_rc.py`
     * verify only the real `.py` file survives
     """
-    real_py = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "app.py"
-    generated_ui = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "main_window_ui.py"
-    generated_rc = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "resources_rc.py"
+    real_py = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "app.py"
+    generated_ui = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "main_window_ui.py"
+    generated_rc = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "resources_rc.py"
     mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[real_py, generated_ui, generated_rc])
 
     assert check_slug_refs.iter_source_files() == [real_py]
@@ -216,7 +216,7 @@ def test_iter_source_files_includes_readme_anywhere(mocker: MockerFixture) -> No
     * fake `iter_repo_files()` to return a `README.md` nested several directories deep
     * verify it comes back from `iter_source_files()`
     """
-    nested_readme = check_slug_refs.REPO_ROOT / "apps" / "rehuco-agent" / "launcher" / "README.md"
+    nested_readme = check_slug_refs.REPO_ROOT / "packages" / "rehuco-agent" / "launcher" / "README.md"
     mocker.patch.object(check_slug_refs, "iter_repo_files", return_value=[nested_readme])
 
     assert check_slug_refs.iter_source_files() == [nested_readme]

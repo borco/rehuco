@@ -30,7 +30,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://borco.github.io/rehuco/"
-Repository = "https://github.com/borco/rehuco/tree/master/apps/rehuco-node"
+Repository = "https://github.com/borco/rehuco/tree/master/packages/rehuco-node"
 Issues = "https://github.com/borco/rehuco/issues"
 
 [build-system]

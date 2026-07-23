@@ -255,7 +255,7 @@ it takes an ordinary `clicked` signal connection with none of that section's ico
 shown once an area's tabs overflow/elide — lists every tab in that area, built straight from each tab's
 `text()`/`icon()`/`toolTip()`. Since `DocumentsDock.__update_dock_title` bakes the dirty/locked marker
 into `CDockWidget.windowTitle()`
-([documents_dock.py:29](../../../apps/rehuco-agent/src/rehuco_agent/documents/documents_dock.py#L29)),
+([documents_dock.py:29](../../../packages/rehuco-agent/src/rehuco_agent/documents/documents_dock.py#L29)),
 that marker shows up in this menu too, with no separate state to key a color off. Three questions:
 can the menu's contents be changed (e.g. two-line entries instead of a tooltip)? Can the whole menu be
 replaced with a custom widget? Can it be disabled for one `CDockManager` only (the outer documents

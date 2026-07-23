@@ -40,14 +40,14 @@ and how each was solved.
 ## Usage
 
 ```sh
-make agent-build       # configure + build -> .build/apps/rehuco-agent/launcher/Release/rehuco-agent-dev.exe
+make agent-build       # configure + build -> .build/packages/rehuco-agent/launcher/Release/rehuco-agent-dev.exe
 make agent-register     # build, then --register (writes the .rehu HKCU association)
 make agent-unregister   # --unregister
 ```
 
 After `agent-register`, double-clicking a `.rehu` file routes through
-`.build/apps/rehuco-agent/launcher/Release/rehuco-agent-dev.exe`. Source changes under
-`apps/rehuco-agent/src` take effect on the next launch -- no rebuild needed unless
+`.build/packages/rehuco-agent/launcher/Release/rehuco-agent-dev.exe`. Source changes under
+`packages/rehuco-agent/src` take effect on the next launch -- no rebuild needed unless
 `launcher.c`/`CMakeLists.txt` themselves change. `make agent-build` is safe to run repeatedly:
 it depends on the real output exe file (not a phony label), so it no-ops instantly once nothing
 changed.

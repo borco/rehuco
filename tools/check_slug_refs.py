@@ -12,8 +12,8 @@ that don't belong to any single subsection. Checks:
 - every reference resolves to exactly one declaration;
 - a declaration's `doc` component matches the spec file it's actually declared in.
 
-Scans `docs/**/*.md`, the root `CLAUDE.md`, every `README.md`, and every `.py` file under `apps/`
-and `packages/` (skipping the gitignored, generated `*_ui.py` / `*_rc.py` files, which are never
+Scans `docs/**/*.md`, the root `CLAUDE.md`, every `README.md`, and every `.py` file under
+`packages/` (skipping the gitignored, generated `*_ui.py` / `*_rc.py` files, which are never
 hand-edited and never carry these tokens). The file list comes from git (tracked files plus
 untracked-but-not-gitignored ones), so gitignored/generated content (`.venv`, `__pycache__`, build
 output) is never considered, while a brand-new file not yet `git add`-ed still is.
@@ -103,7 +103,7 @@ def iter_source_files() -> list[Path]:
     """Return every file this checker should scan for `[[doc#slug]]` tokens.
 
     :returns: markdown files under `docs/`, the root `CLAUDE.md`, every `README.md`, plus `.py`
-        files under `apps/`/`packages/` (excluding generated `*_ui.py`/`*_rc.py`).
+        files under `packages/` (excluding generated `*_ui.py`/`*_rc.py`).
     """
     files: list[Path] = []
     for path in iter_repo_files():
@@ -112,9 +112,7 @@ def iter_source_files() -> list[Path]:
             rel.parts[0] == "docs" or path.name in ("CLAUDE.md", "README.md")
         )
         is_scanned_python = (
-            path.suffix == ".py"
-            and rel.parts[0] in ("apps", "packages")
-            and not path.name.endswith(("_ui.py", "_rc.py"))
+            path.suffix == ".py" and rel.parts[0] == "packages" and not path.name.endswith(("_ui.py", "_rc.py"))
         )
         if is_scanned_markdown or is_scanned_python:
             files.append(path)

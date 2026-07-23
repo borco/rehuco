@@ -86,7 +86,7 @@ heading, bare `[[doc]]` for the whole document.
 - **Self-resolving.** The doc name is in the token itself (`plugins` in `[[plugins#field-toolkit]]`),
   so no document-map lookup is needed to find which file it's in.
 - **`tools/check_slug_refs.py`** (wired into `make qa` as `check-slugs`) walks every token in
-  `docs/**/*.md`, the root `CLAUDE.md`, every tracked `README.md`, and `.py` under `apps/`/`packages/`,
+  `docs/**/*.md`, the root `CLAUDE.md`, every tracked `README.md`, and `.py` under `packages/`,
   failing on a duplicate declaration, a reference with no declaration, or a declaration whose `doc`
   doesn't match the file it's in.
 

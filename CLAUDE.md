@@ -31,11 +31,11 @@ per-slice labels in `implementation-plan.md`; keep the two in step.
 ## Monorepo layout
 
 ```text
-apps/rehuco-agent/        # PySide6 desktop GUI
-apps/rehuco-node/         # headless REST node (FastAPI)
-packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
 packages/borco-core/      # generic non-GUI utilities — temporary guest, moving out ([[packaging-deployment#three-packages]])
 packages/borco-pyside/    # generic PySide widgets/utilities — temporary guest, moving out ([[packaging-deployment#three-packages]])
+packages/rehuco-agent/    # PySide6 desktop GUI
+packages/rehuco-core/     # shared library: models, .rehu I/O, sync primitives
+packages/rehuco-node/     # headless REST node (FastAPI)
 ```
 
 Root `pyproject.toml` is a **virtual workspace** — no `[project]` table, only `[tool.uv.workspace]`.

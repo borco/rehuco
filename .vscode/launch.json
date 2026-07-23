@@ -15,14 +15,14 @@
             "name": "rehuco-agent",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/apps/rehuco-agent/src/rehuco_agent/__main__.py",
+            "program": "${workspaceFolder}/packages/rehuco-agent/src/rehuco_agent/__main__.py",
             "console": "integratedTerminal",
         },
         {
             "name": "windows | rehuco-agent-dev-launcher",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/.build/apps/rehuco-agent/launcher/Release/rehuco-agent-dev.exe",
+            "program": "${workspaceFolder}/.build/packages/rehuco-agent/launcher/Release/rehuco-agent-dev.exe",
             "cwd": "${workspaceFolder}",
             "console": "internalConsole"
         },

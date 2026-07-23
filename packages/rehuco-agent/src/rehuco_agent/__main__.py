@@ -28,7 +28,7 @@ def main() -> int:
 
     Both flags register/unregister *this running exe* (``sys.argv[0]``), not a hardcoded
     guess -- so the same code path works whether invoked as the real packaged
-    ``rehuco-agent.exe`` console-script entry point or as ``apps/rehuco-agent/launcher``'s
+    ``rehuco-agent.exe`` console-script entry point or as ``packages/rehuco-agent/launcher``'s
     dev-only trampoline exe (which forwards argv here in-process, see launcher.c). Both also
     refuse to run if ``sys.argv[0]`` isn't a real ``.exe`` -- invoking via
     ``python -m rehuco_agent`` makes argv[0] the ``__main__.py`` source path, and while
@@ -76,7 +76,7 @@ def main() -> int:
                 print(
                     f"cannot register/unregister from {exe_path} -- not an .exe; run via the "
                     "rehuco-agent console script or the dev launcher "
-                    "(apps/rehuco-agent/launcher), not `python -m rehuco_agent`",
+                    "(packages/rehuco-agent/launcher), not `python -m rehuco_agent`",
                     file=sys.stderr,
                 )
                 return 1

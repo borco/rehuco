@@ -24,7 +24,7 @@ where it does execute.
 `make qa` runs, in order: `ruff format` + `ruff check --fix`, then `pytest` with coverage
 (`make cov`), `bandit`, `pyright`, `pylint`. The test stack is `pytest` plus `pytest-mock`,
 `pytest-qt`, `pytest-cov`, `pytest-benchmark`, `pytest-freezer`, and `pytest-explicit`. Tests live
-beside their packages under `packages/*/tests` and `apps/*/tests` (`testpaths` in `pyproject.toml`);
+beside their packages under `packages/*/tests` (`testpaths` in `pyproject.toml`);
 `--strict-markers` is on, so every marker must be declared.
 
 ## 2. Qt tests must run headless

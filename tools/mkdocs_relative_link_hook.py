@@ -1,5 +1,5 @@
 """mkdocs hook: rewrite relative links whose target falls outside `docs_dir` (e.g. a link from a
-spec into `apps/`, `packages/`, or `spikes/`) to an absolute `{repo_url}/blob-or-tree/{branch}/...`
+spec into `packages/` or `spikes/`) to an absolute `{repo_url}/blob-or-tree/{branch}/...`
 link, at build time only (see `docs/specs/appendices/code-conventions.md`'s Markdown section).
 
 GitHub uses `/blob/` for a file and `/tree/` for a directory -- `/blob/` on a directory happens to

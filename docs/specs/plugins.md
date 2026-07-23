@@ -105,7 +105,7 @@ that show and edit it:
 - **`FieldsForm`** — composes an ordered list of fields into a form (a `QFormLayout` of label + widget
   rows), asking each field for viewers or for editors depending on which surface it builds.
 
-The toolkit lives in the **agent** (`apps/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
+The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
 **Where each type's ordered field list is authored is not yet decided** — see the open question
 ([[appendices.open-questions#still-open]]). For A2.0 the tracer's field list is a hardcoded Python constant.
 

@@ -7,9 +7,9 @@
 [[[appendices.windows-dev-launcher#overview]]]
 
 Engineering notes for the
-[`apps/rehuco-agent/launcher/`](https://github.com/borco/rehuco/tree/master/apps/rehuco-agent/launcher)
+[`packages/rehuco-agent/launcher/`](https://github.com/borco/rehuco/tree/master/packages/rehuco-agent/launcher)
 dev launcher (see its
-[`README.md`](https://github.com/borco/rehuco/blob/master/apps/rehuco-agent/launcher/README.md)
+[`README.md`](https://github.com/borco/rehuco/blob/master/packages/rehuco-agent/launcher/README.md)
 for what it *is* and how to use it) — every hurdle that took real time to work through while
 building and hardening it past the `win-file-assoc-identity` spike (issue #1, closed; macOS
 split to #13), so rebuilding a launcher like this (for this project or a future one) goes
