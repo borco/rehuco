@@ -85,6 +85,21 @@ def legacy_widget(qtbot: QtBot, legacy_model: RehuDocumentModel) -> DocumentWidg
 
 
 @fixture
+def new_model() -> RehuDocumentModel:
+    """A not-yet-saved view-model: a brand-new document bound to a path that doesn't exist on disk yet
+    (the directory-open-with-no-`info.rehu` flow, #147)."""
+    return RehuDocumentModel.create_new(TARGET_PATH)
+
+
+@fixture
+def new_widget(qtbot: QtBot, new_model: RehuDocumentModel) -> DocumentWidget:
+    """A constructed :class:`DocumentWidget` over the not-yet-saved model, registered for teardown."""
+    widget = DocumentWidget(new_model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+@fixture
 def older_model(mocker: MockerFixture) -> RehuDocumentModel:
     """A view-model wrapping a document loaded from an older-format file -- clean, hence upgradable (#89)."""
     mocker.patch.object(
@@ -298,6 +313,42 @@ def test_save_enables_and_disables_with_dirty_while_revert_stays_enabled(
     model.dirty = False
     assert widget.save_action.isEnabled() is False
     assert widget.revert_action.isEnabled() is True
+
+
+def test_not_yet_saved_document_starts_with_revert_disabled(new_widget: DocumentWidget) -> None:
+    """A not-yet-saved document (a brand-new one bound to a not-yet-written path) starts with Revert
+    **disabled** -- there is nothing on disk to revert to, and reverting it would replace the editable
+    document with an empty locked ``MISSING`` stub, discarding the edits (#147).
+
+    Save stays enabled: a path-bound new document is dirty, so it is savable even though it is not
+    revertable.
+
+    **Test steps:**
+
+    * build a widget over a ``create_new(path)`` model
+    * verify Revert reports disabled while Save reports enabled
+    """
+    assert new_widget.revert_action.isEnabled() is False
+    assert new_widget.save_action.isEnabled() is True
+
+
+def test_saving_a_not_yet_saved_document_enables_revert(
+    mocker: MockerFixture, new_widget: DocumentWidget, new_model: RehuDocumentModel
+) -> None:
+    """The first save creates the file on disk, so Revert becomes meaningful and re-enables (#147).
+
+    **Test steps:**
+
+    * build a widget over a not-yet-saved model, patching the document's atomic save
+    * call ``model.save()``
+    * verify Revert is now enabled (and behaves as today from here on)
+    """
+    mocker.patch.object(new_model.document, "save")
+    assert new_widget.revert_action.isEnabled() is False
+
+    new_model.save()
+
+    assert new_widget.revert_action.isEnabled() is True
 
 
 def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:

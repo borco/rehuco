@@ -76,9 +76,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     Also carries the save action (the platform save shortcut, e.g. ``Ctrl+S``), since #7's per-file
     save button/shortcut ([[data-model#write-integrity]]) has no other home in the dock shell, and a
     revert action that re-reads the document from disk (#41). Save is enabled only while the model is
-    :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert stays enabled
-    unconditionally: it is also how a clean document picks up a change made outside this app, not
-    just how a dirty one discards in-memory edits. The editor docks' content is disabled outright
+    :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert is enabled once the
+    document is :attr:`~RehuDocumentModel.saved_on_disk` -- it is also how a clean document picks up a
+    change made outside this app, not just how a dirty one discards in-memory edits -- but stays
+    **disabled until the document has been saved** (#147): there is nothing on disk to revert to, and
+    reverting the not-yet-written path would replace the editable document with a locked ``MISSING``
+    stub, discarding the edits. The editor docks' content is disabled outright
     while the model is :attr:`~RehuDocumentModel.locked` ([[data-model#schema-version]]) -- a file-wide
     or active-block ``format_version`` newer than this build understands ([[plugins#plugin-blocks]], #81),
     so editing isn't safe.
@@ -177,6 +180,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__revert_action: Final = QAction("&Revert", self)
         ActionIconThemeHandler(self.__revert_action, REVERT_ICON_RESOURCE)
         self.__revert_action.triggered.connect(model.revert)
+        # disabled until the document has been saved to disk: there is nothing on disk to revert to, and
+        # reverting a not-yet-written path would replace the editable document with a locked MISSING stub,
+        # silently discarding the edits (#147). The first save sets saved_on_disk and re-enables it.
+        self.__revert_action.setEnabled(model.saved_on_disk)
+        model.saved_on_disk_changed.connect(self.__on_saved_on_disk_changed)  # type: ignore[attr-defined]
         self.addAction(self.__revert_action)
 
         self.__convert_keep_backups_action: Final = QAction("Convert, &Keep Backups", self)
@@ -231,7 +239,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
     @property
     def revert_action(self) -> QAction:
-        """Discards in-memory edits and reloads the document from disk (#41)."""
+        """Discards in-memory edits and reloads the document from disk (#41). Disabled until the document
+        is :attr:`~RehuDocumentModel.saved_on_disk` (#147) -- there is nothing on disk to revert to
+        yet."""
         return self.__revert_action
 
     @property
@@ -351,12 +361,28 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def __on_dirty_changed(self, dirty: bool) -> None:
         """Enable save only while the model holds unsaved edits -- there is nothing to save otherwise.
 
-        Revert stays enabled regardless: it re-reads the document from disk (#41), which is useful
-        even on a clean model, to pick up a change made outside this app.
+        Revert isn't gated on dirty: it re-reads the document from disk (#41), which is useful even on a
+        clean model, to pick up a change made outside this app. Its own gate is
+        :attr:`~RehuDocumentModel.saved_on_disk` (:meth:`__on_saved_on_disk_changed`), not dirtiness.
 
         :param dirty: the model's new dirty state.
         """
         self.__save_action.setEnabled(dirty)
+
+    def __on_saved_on_disk_changed(self, saved_on_disk: bool) -> None:
+        """Enable Revert only once the document has been saved to disk at least once (#147).
+
+        A not-yet-saved document (a brand-new one bound to a path that doesn't exist on disk yet) has no
+        on-disk state to revert to. Reverting it would re-read the missing path and replace the editable
+        in-memory document with an empty **locked** ``MISSING`` stub, silently discarding the user's
+        edits with no way back -- so Revert stays disabled until the first save creates the file, from
+        which point it re-reads from disk as usual. This only ever fires once (``False`` -> ``True`` on
+        that first save); a loaded document starts :attr:`~RehuDocumentModel.saved_on_disk` and so
+        Revert-enabled.
+
+        :param saved_on_disk: the model's new saved-on-disk state.
+        """
+        self.__revert_action.setEnabled(saved_on_disk)
 
     def __on_lock_reasons_changed(self) -> None:
         """Disable/re-enable the editor docks and rebuild the inline notice strip as the model's lock

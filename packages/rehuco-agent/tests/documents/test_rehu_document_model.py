@@ -1571,6 +1571,50 @@ def test_create_new_with_a_path_is_dirty_and_bound() -> None:
     assert not model.lock_reasons
 
 
+def test_create_new_starts_not_saved_on_disk() -> None:
+    """``create_new`` starts **not** :attr:`~RehuDocumentModel.saved_on_disk` -- with or without a path,
+    the document has never been persisted, so there is nothing on disk to revert to (#147).
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_new`` with a path and without one
+    * verify both report ``saved_on_disk`` False
+    """
+    assert RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu")).saved_on_disk is False
+    assert RehuDocumentModel.create_new().saved_on_disk is False
+
+
+def test_a_loaded_document_is_saved_on_disk(document: RehuDocument) -> None:
+    """A document wrapped straight from a `RehuDocument` (a load, not ``create_new``) is
+    ``saved_on_disk`` -- it stands for a file on disk, so its revert is the fix-retry loop (#147).
+
+    **Test steps:**
+
+    * wrap an existing ``RehuDocument`` in a model
+    * verify it reports ``saved_on_disk`` True
+    """
+    assert RehuDocumentModel(document).saved_on_disk is True
+
+
+def test_saving_marks_saved_on_disk(mocker: MockerFixture) -> None:
+    """The first :meth:`~RehuDocumentModel.save` marks the model ``saved_on_disk`` -- the file now
+    exists on disk, so Revert has something to revert to (#147).
+
+    **Test steps:**
+
+    * build a not-yet-saved model bound to a path, patching the document's atomic save
+    * call ``model.save()``
+    * verify ``saved_on_disk`` flips to True
+    """
+    model = RehuDocumentModel.create_new(Path("/fake/sculpting/info.rehu"))
+    mocker.patch.object(model.document, "save")
+    assert model.saved_on_disk is False
+
+    model.save()
+
+    assert model.saved_on_disk is True
+
+
 def test_create_new_files_per_user_state_under_the_given_username() -> None:
     """``create_new`` hands its ``username`` to the fresh document, so the new document's per-user
     writes are filed under the configured identity ([[field-schema#per-user-shared]], #99).

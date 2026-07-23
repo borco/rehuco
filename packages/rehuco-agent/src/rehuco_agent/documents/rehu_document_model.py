@@ -211,6 +211,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     dirty = SimpleProperty(False)
     """True when the model holds edits not yet saved to disk."""
 
+    saved_on_disk = SimpleProperty(True)
+    """Whether this document has ever been persisted to its path -- i.e. whether there is a file on disk
+    to revert to. ``True`` for a **loaded** document (it stands for a file on disk -- even one that later
+    goes missing out-of-band, whose revert is the fix-retry loop, [[data-model#write-integrity]]);
+    ``False`` for a brand-new document (:meth:`create_new`) bound to a path that does not exist on disk
+    yet. ``DocumentWidget`` keeps its Revert action **disabled** while this is ``False`` (#147): reverting
+    a not-yet-written path would re-read a file that isn't there, replacing the editable in-memory
+    document with an empty **locked** ``MISSING`` stub and silently discarding the edits. Set ``True``
+    only forward, by the first :meth:`save`; a revert never touches it, since a not-yet-saved document
+    can't be reverted at all."""
+
     lock_reasons = SimpleProperty[list[LockReason]](default_factory=list)
     """Every named cause this document is read-only ([[data-model#write-integrity]]), mirrored from
     :attr:`document`'s own :attr:`~RehuDocument.lock_reasons`; empty when it is freely editable. Carries
@@ -294,9 +305,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
             **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
         :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
-            ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]).
+            ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]). Starts **not**
+            :attr:`saved_on_disk` -- it has never been persisted to its path, so Revert is disabled until
+            the first :meth:`save` (#147).
         """
         model = cls(RehuDocument.new(path, username=username), parent)
+        model.saved_on_disk = False
         if path is not None:
             model.dirty = True
         return model
@@ -355,6 +369,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         self.__document.save()
         self.dirty = False
+        # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
+        # DocumentWidget re-enables Revert (#147). Set once and never unset -- a later out-of-band
+        # deletion still leaves this a document that *was* saved, whose revert is the fix-retry loop.
+        self.saved_on_disk = True
         # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
         # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
         self.__recompute_upgradable()
