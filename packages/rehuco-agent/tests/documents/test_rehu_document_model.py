@@ -1559,6 +1559,23 @@ def test_create_new_files_per_user_state_under_the_given_username() -> None:
     assert model.document.username == "alice"
 
 
+def test_create_new_mints_a_fresh_id() -> None:
+    """``create_new`` gives the fresh document its own ``id`` ([[data-model#stable-identity]]) --
+    minted at creation, not only at `.tc` import.
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_new`` twice
+    * verify each document carries a non-empty ``id``, and the two differ
+    """
+    first = RehuDocumentModel.create_new()
+    second = RehuDocumentModel.create_new()
+
+    assert first.document.id != ""
+    assert second.document.id != ""
+    assert first.document.id != second.document.id
+
+
 def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: RehuDocument) -> None:
     """``unknown_field_names`` returns the live block's unrecognized keys, sorted, excluding known ones.
 

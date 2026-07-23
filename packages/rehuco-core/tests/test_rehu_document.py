@@ -9,6 +9,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 import pytest
 from pytest import mark, param
@@ -2685,6 +2686,69 @@ def test_open_or_locked_returns_a_genuinely_loaded_document_on_success(mocker: M
     assert doc.load_failed is False
     assert not doc.lock_reasons
     assert doc.title == "Intro to Sculpting"
+
+
+def test_new_mints_a_fresh_id() -> None:
+    """``RehuDocument.new`` carries its own ``id``, minted at construction ([[data-model#stable-identity]]).
+
+    **Test steps:**
+
+    * call ``RehuDocument.new``
+    * verify ``id`` round-trips through ``uuid.UUID`` unchanged -- the converter's canonical
+      ``str(uuid4())`` spelling (:func:`~rehuco_core.tc_conversion.convert_tc`), not merely non-empty
+    """
+    doc = RehuDocument.new()
+
+    # two checks in one: ``UUID()`` raises on a string that is no UUID at all, and -- since it also
+    # *accepts* non-canonical spellings (uppercase, braces, hyphenless) while ``str()`` always emits
+    # the canonical lowercase-hyphenated form -- the equality only holds when the stored string was
+    # already spelled canonically, i.e. exactly what ``str(uuid4())`` produces.
+    assert doc.id == str(UUID(doc.id))
+
+
+def test_new_mints_a_different_id_each_call() -> None:
+    """Two ``new`` documents never share an ``id`` -- each call mints its own.
+
+    **Test steps:**
+
+    * call ``RehuDocument.new`` twice
+    * verify the two ``id`` values differ
+    """
+    assert RehuDocument.new().id != RehuDocument.new().id
+
+
+def test_new_binds_the_given_path_and_username() -> None:
+    """``new`` threads ``path`` and ``username`` through like every other constructor.
+
+    **Test steps:**
+
+    * call ``RehuDocument.new`` with a path and a username
+    * verify both landed on the document
+    """
+    doc = RehuDocument.new(FAKE_PATH, username="alice")
+
+    assert doc.path == FAKE_PATH
+    assert doc.username == "alice"
+
+
+def test_new_id_survives_a_save_load_round_trip(mocker: MockerFixture) -> None:
+    """The minted ``id`` is written on save and read back unchanged on load.
+
+    **Test steps:**
+
+    * build a fresh document via ``new`` and save it, capturing the written JSON
+    * load that JSON back
+    * verify the reloaded document's ``id`` matches the original
+    """
+    doc = RehuDocument.new(FAKE_PATH)
+    minted_id = doc.id
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    mocker.patch.object(Path, "read_text", return_value=write.call_args[0][1])
+    reloaded = RehuDocument.load(FAKE_PATH)
+    assert reloaded.id == minted_id
 
 
 def test_save_refuses_while_load_failed(mocker: MockerFixture) -> None:
