@@ -1482,6 +1482,39 @@ def test_set_active_field_replaces_a_malformed_block() -> None:
     assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "rating": 3}
 
 
+def test_set_active_field_refuses_a_typeless_document() -> None:
+    """``set_active_field`` refuses to write on a typeless document rather than creating a ``""``-keyed
+    top-level block (#136) -- the agent never offers plugin fields without a type, so an empty
+    :attr:`~RehuDocument.type` here is caller misuse, not a recoverable state.
+
+    **Test steps:**
+
+    * construct a typeless document
+    * set a field
+    * verify a ``ValueError`` is raised and no ``""`` key was created
+    """
+    doc = RehuDocument({})
+    with pytest.raises(ValueError, match="typeless"):
+        doc.set_active_field("complete", True)
+    assert "" not in doc.data
+
+
+def test_set_active_user_field_refuses_a_typeless_document() -> None:
+    """``set_active_user_field`` gives the same refusal as :meth:`test_set_active_field_refuses_a_typeless_document`,
+    routed through the same guard (#136).
+
+    **Test steps:**
+
+    * construct a typeless document
+    * set a per-user field
+    * verify a ``ValueError`` is raised and no ``""`` key was created
+    """
+    doc = RehuDocument({})
+    with pytest.raises(ValueError, match="typeless"):
+        doc.set_active_user_field("rating", 5)
+    assert "" not in doc.data
+
+
 def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_intact(
     mocker: MockerFixture,
 ) -> None:
