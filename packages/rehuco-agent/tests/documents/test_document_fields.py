@@ -93,7 +93,7 @@ def test_the_form_flags_each_inactive_block_by_whether_its_plugin_is_installed(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
     """Every inactive block gets a flagged row whose provenance names *why* it's inactive, split by
-    whether its plugin is installed here ([[plugins#plugin-blocks]], [[plugins#fallback-editor]], A4.4/#84).
+    whether its plugin is installed here ([[plugins#plugin-blocks]], [[plugins#fallback-editor]], #84).
 
     Both are inactive purely because the file's ``type`` names neither -- but the user's remedy differs:
     ``reference_images`` has a plugin here, so the fix is "switch the type to it" (not-current-type);
@@ -113,7 +113,7 @@ def test_the_form_flags_each_inactive_block_by_whether_its_plugin_is_installed(
 
 def test_a_foreign_block_can_be_dropped_from_the_editor(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """A foreign inactive block's editor row carries a drop action that removes the whole block
-    ([[plugins#fallback-editor]], A4.4/#84).
+    ([[plugins#fallback-editor]], #84).
 
     The explicit *drop* half of carry-vs-drop: clicking it deletes the block through the model, marks the
     document dirty, and hides the row -- the block-level counterpart of an unknown field's remove.
@@ -139,7 +139,7 @@ def test_a_foreign_block_can_be_dropped_from_the_editor(qtbot: QtBot, model: Reh
 
 def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
     """A claimed-then-abandoned block gets no drop button -- it is already slated to drop on save
-    ([[plugins#fallback-editor]], A4.4/#84).
+    ([[plugins#fallback-editor]], #84).
 
     Offering a manual drop there would only bypass the #86 discard-log audit trail the save already
     records. A never-claimed foreign block on the same surface *does* get one, proving the button's

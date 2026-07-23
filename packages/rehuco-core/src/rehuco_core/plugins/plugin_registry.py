@@ -37,8 +37,8 @@ BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_P
 block is protected by :data:`~rehuco_core.RESERVED_KEYS` unconditionally, not by occupying a registry slot
 -- registering it would fail the very check that protects it.
 
-Also deliberately **not** every key the specs name: ``daz3d`` ([[plugins#daz3d-plugin]]) is parked past
-milestone D and has no declaration here, so a ``daz3d:`` block exercises the not-installed path for real
+Also deliberately **not** every key the specs name: ``daz3d`` ([[plugins#daz3d-plugin]]) is future work
+and has no declaration here, so a ``daz3d:`` block exercises the not-installed path for real
 rather than hypothetically."""
 
 

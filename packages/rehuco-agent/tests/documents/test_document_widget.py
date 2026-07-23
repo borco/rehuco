@@ -257,7 +257,7 @@ def test_save_enables_and_disables_with_dirty_while_revert_stays_enabled(
 
 
 def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:
-    """A model locked at construction (A3, [[data-model#schema-version]]) starts with its editor
+    """A model locked at construction ([[data-model#schema-version]]) starts with its editor
     controls disabled, so a newer-format-version file can't be edited unsafely.
 
     **Test steps:**

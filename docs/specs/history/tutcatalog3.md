@@ -27,14 +27,14 @@ mapping is the same:
 
 | Capability | Tutcatalog 3 | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (A3) |
-| View / edit | Partial (incomplete rewrite) | A1 / A2 |
-| Catalog browser | Partial | B4 over `.rehudb` (B3) |
-| Duration via ffprobe | Yes | field A2; auto-measure **TBD** |
-| Scraping (cygwin/BeautifulSoup) | Yes | deferred past D (acquisition tooling) |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
+| View / edit | Partial (incomplete rewrite) | LocalEdit1 / LocalEdit2 |
+| Catalog browser | Partial | CacheDB4 over `.rehudb` (CacheDB3) |
+| Duration via ffprobe | Yes | field LocalEdit2; auto-measure **TBD** |
+| Scraping (cygwin/BeautifulSoup) | Yes | deferred (acquisition tooling) |
 | Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
 
 ## Can rehuco work for its `info.tc`?
 
 **Yes** — the `info.tc` is byte-for-byte the same family as TutCatalog's, so the same
-[field-schema](../field-schema.md) `.tc`→`.rehu` adapter (A3) applies with no extra work.
+[field-schema](../field-schema.md) `.tc`→`.rehu` adapter (LocalEdit3) applies with no extra work.

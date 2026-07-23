@@ -107,7 +107,7 @@ def test_registry_resolves_the_multi_choice_and_path_field_types() -> None:
 
 
 def test_registry_raises_on_an_unknown_type() -> None:
-    """An unregistered type raises (the unknown-field fallback is deferred to A2.8/#28).
+    """An unregistered type raises (the unknown-field fallback is deferred to #28).
 
     **Test steps:**
 

@@ -25,9 +25,11 @@ Read before any non-trivial task:
 
 ### Milestones
 
-`Pre-work` (monorepo setup, integration spikes, de-risking), then four near-term milestones — **A** (local
-view/edit), **B** (cached database), **C** (WatchingTutorials), **D** (Borrowing) — each sliced `A1`, `A2`, ….
-GH milestone names track the per-slice labels in `implementation-plan.md`; keep the two in step.
+`Pre-work` (monorepo setup, integration spikes, de-risking), then the feature milestones — **LocalEdit** (local
+view/edit), **CacheDB** (cached database), **WatchTutorial** (watch a tutorial), **Borrowing** (offline borrow),
+**Swarm** (full multi-node), **Daz3D** (daz3d-personal-database migration) — each sliced `LocalEdit1`,
+`LocalEdit2`, …. Audit runs are `X1`, `X2`, …. GH milestone names track the per-slice labels in
+`implementation-plan.md`; keep the two in step.
 
 ## Monorepo layout
 

@@ -202,7 +202,7 @@ class Field[T]:
     resolved by the model -- a field never holds document state itself, and never sees the model or
     view-model that produced its binding. Viewer and editor are deliberately separate widgets, not one
     widget in two modes ([[plugins#core-vs-plugin]]'s editor/viewer split). Each field maps to **one**
-    editor; the multi-*surface* split (different fields in different docks, A2.6/#26) lives in the
+    editor; the multi-*surface* split (different fields in different docks, #26) lives in the
     assembler, not here. A field declares which :class:`FieldsTab` its viewer and editor belong to.
 
     :param name: the field's identifier on its model (also the default label source).

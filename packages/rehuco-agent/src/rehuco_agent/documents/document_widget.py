@@ -72,17 +72,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     its pre-hide size, unlike ``closeRequested`` (never emitted by a toggle-hide; that signal is
     for the ``CustomCloseHandling`` close-button flow `DocumentsDock` uses instead) -- and
     re-applied on ``viewToggled(True)``, since QtAds does not otherwise restore a closed dock's size.
-    Also carries the save action (the platform save shortcut, e.g. ``Ctrl+S``), since A1's per-file
+    Also carries the save action (the platform save shortcut, e.g. ``Ctrl+S``), since #7's per-file
     save button/shortcut ([[data-model#write-integrity]]) has no other home in the dock shell, and a
     revert action that re-reads the document from disk (#41). Save is enabled only while the model is
     :attr:`~RehuDocumentModel.dirty` -- there is nothing to save otherwise. Revert stays enabled
     unconditionally: it is also how a clean document picks up a change made outside this app, not
     just how a dirty one discards in-memory edits. The editor docks' content is disabled outright
-    while the model is :attr:`~RehuDocumentModel.locked` (A3, [[data-model#schema-version]]) -- a file-wide
+    while the model is :attr:`~RehuDocumentModel.locked` ([[data-model#schema-version]]) -- a file-wide
     or active-block ``format_version`` newer than this build understands ([[plugins#plugin-blocks]], #81),
     so editing isn't safe.
 
-    While viewing a legacy ``.tc`` (:attr:`~RehuDocument.legacy_tc`, A3.1,
+    While viewing a legacy ``.tc`` (:attr:`~RehuDocument.legacy_tc`,
     [[acquisition-tooling#tc-to-rehu]]), Save and Revert are hidden -- there is nothing to save, and
     Revert would try to re-parse the ``.tc`` path as JSON and raise -- and two convert actions take
     their place instead, each running :meth:`~RehuDocumentModel.convert`'s safe-replace sequence. On
@@ -382,7 +382,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
     def __rebuild_field_docks(self) -> None:
         """Re-resolve the document's field composition into the existing viewer/editor docks after a
-        type switch (:attr:`~RehuDocumentModel.active_block_changed`, A4.3/#83).
+        type switch (:attr:`~RehuDocumentModel.active_block_changed`, #83).
 
         A type switch makes a different block active ([[plugins#plugin-blocks]]): the outgoing block's
         editors must go away, the incoming block's fields render, and the set of unknown-field and

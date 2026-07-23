@@ -8,7 +8,7 @@ from typing import Final
 from PySide6.QtCore import QSettings
 
 MAXIMUM_RECENT_FILES: Final = 10
-"""Cap on remembered recent paths. Configurable later in settings (A7); a constant for now."""
+"""Cap on remembered recent paths. Configurable later in settings; a constant for now."""
 
 GROUP: Final = "recent_files"
 PATHS_KEY: Final = "paths"

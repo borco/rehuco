@@ -24,17 +24,17 @@ rehuco formalizes as `.rehu` + `.rehudb`.
 
 | Capability | TutCatalogPy | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (A3) |
-| SQLite cache of the catalog | Yes | `.rehudb`, built by the node (B3) |
-| Incremental scan | Basic | B3 (version-aware incremental scan) |
-| Catalog browser (sortable/filterable) | Yes | B4 |
-| Separate viewer app | Yes | Single agent; viewer surfaces A1/A5 |
+| `info.tc` sidecar | Yes (YAML) | `.rehu` (JSON); `.tc` adapter (LocalEdit3) |
+| SQLite cache of the catalog | Yes | `.rehudb`, built by the node (CacheDB3) |
+| Incremental scan | Basic | CacheDB3 (version-aware incremental scan) |
+| Catalog browser (sortable/filterable) | Yes | CacheDB4 |
+| Separate viewer app | Yes | Single agent; viewer surfaces LocalEdit1/LocalEdit5 |
 | App state persistence | `.ini` (QSettings) | `.rehuco` (per-machine) + app settings |
-| Duration via ffprobe | Yes | field A2; auto-measure **TBD** |
-| Scraping | Yes | deferred past D |
+| Duration via ffprobe | Yes | field LocalEdit2; auto-measure **TBD** |
+| Scraping | Yes | deferred (acquisition tooling) |
 
 ## Can rehuco work for its data?
 
 **Yes.** The `info.tc` maps through the same [field-schema](../field-schema.md) `.tc`→`.rehu` adapter
-(A3). The SQLite cache needs **no import** — like rehuco's `.rehudb` it is declared rebuildable from
+(LocalEdit3). The SQLite cache needs **no import** — like rehuco's `.rehudb` it is declared rebuildable from
 the sidecars, so only the `.tc` files carry unique data.

@@ -372,7 +372,7 @@ def test_authors_field_link_activated_opens_an_http_url(
 def test_authors_field_link_activated_logs_a_no_op_for_a_filter_link(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A ``filter://`` href is a logged no-op, never opened -- the dispatch seam for Milestone B
+    """A ``filter://`` href is a logged no-op, never opened -- the dispatch seam for the future catalog browser
     ([[plugins#filter-urls]]).
 
     **Test steps:**

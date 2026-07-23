@@ -1,4 +1,4 @@
-"""Per-file session state: which `.rehu` files were open, LRU-capped on save ([[implementation-plan]] A2.1/#21)."""
+"""Per-file session state: which `.rehu` files were open, LRU-capped on save (#21)."""
 
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from typing import Final, cast
 from PySide6.QtCore import QByteArray, QSettings
 
 MAXIMUM_REMEMBERED_FILES: Final = 10
-"""LRU cap on remembered closed files. Configurable later in settings (A7); a constant for now."""
+"""LRU cap on remembered closed files. Configurable later in settings; a constant for now."""
 
 GROUP: Final = "documents"
 FOCUSED_PATH_KEY: Final = "focused_path"

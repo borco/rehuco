@@ -1,5 +1,5 @@
 """MainWindow's own geometry and outer dock layout, persisted across restarts
-([[implementation-plan]] A2.1/#21, #47)."""
+(#21, #47)."""
 
 from dataclasses import dataclass, field
 from typing import Final, cast

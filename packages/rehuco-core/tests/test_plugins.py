@@ -183,7 +183,7 @@ def test_two_plugins_may_not_claim_the_same_spelling() -> None:
 def test_the_default_registry_ships_the_builtin_plugins() -> None:
     """The default registry is this build's shipped set ([[plugins#core-vs-plugin]]).
 
-    ``core`` is deliberately absent too, alongside ``daz3d`` -- it is parked past milestone D, so it
+    ``core`` is deliberately absent too, alongside ``daz3d`` -- it is future work, so it
     exercises the not-installed path for real, while ``core`` is never registered at all
     (:data:`~rehuco_core.plugins.RESERVED_KEYS` protects it unconditionally instead).
 

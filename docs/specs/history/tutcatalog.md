@@ -28,21 +28,21 @@ Duration measured with ffprobe, integrity via SFV checksums, metadata seeded by 
 
 | Capability | TutCatalog | rehuco |
 | --- | --- | --- |
-| `info.tc` sidecar per tutorial | Yes (YAML) | `.rehu` (JSON); reads `.tc` via adapter (A3 migration) |
-| View / edit fields | Yes (infoviewer) | A1 (generic), A2 (typed toolkit) |
-| Markdown description | Yes | A1 view |
-| Catalog browser (folders → table) | Yes | B4 (browsers), over the `.rehudb` cache (B3) |
-| Duration via ffprobe | Yes | duration is a stored field (A2); auto-measuring it from the media isn't tied to a milestone slice — **TBD** |
-| SFV checksums | Yes (cfv) | A7 (algorithm-tagged) |
-| Metadata scraping | Yes (external script) | deferred past D (acquisition tooling) |
+| `info.tc` sidecar per tutorial | Yes (YAML) | `.rehu` (JSON); reads `.tc` via adapter (LocalEdit3 migration) |
+| View / edit fields | Yes (infoviewer) | LocalEdit1 (generic), LocalEdit2 (typed toolkit) |
+| Markdown description | Yes | LocalEdit1 view |
+| Catalog browser (folders → table) | Yes | CacheDB4 (browsers), over the `.rehudb` cache (CacheDB3) |
+| Duration via ffprobe | Yes | duration is a stored field (LocalEdit2); auto-measuring it from the media isn't tied to a milestone slice — **TBD** |
+| SFV checksums | Yes (cfv) | LocalEdit7 (algorithm-tagged) |
+| Metadata scraping | Yes (external script) | deferred (acquisition tooling) |
 | Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
-| Web / tablet, borrow, multi-node | No | Milestones C / D / deferred-swarm |
+| Web / tablet, borrow, multi-node | No | WatchTutorial / Borrowing / Swarm |
 
 ## Can rehuco work for its `info.tc`?
 
 **Yes — this is precisely what rehuco's schema targets.** rehuco's [field schema](../field-schema.md)
 is explicitly "`.tc`-compatible," derived from the same field vocabulary (ground-truthed on tc4, its
 lineal successor). A `.tc`→`.rehu` adapter reads the YAML into rehuco's model (view-only at first,
-full migration in slice A3); rehuco writes JSON `.rehu`, never `.tc`. Field renames apply on import
+full migration in slice LocalEdit3); rehuco writes JSON `.rehu`, never `.tc`. Field renames apply on import
 (`tags`→`advertised_tags`, `extraTags`→`extra_tags`) and the scalar `title`/`publisher`/`url` fold
 into a `sources` record — all handled by the adapter.

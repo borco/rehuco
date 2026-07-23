@@ -440,7 +440,7 @@ Field order, in the three groups the layout separates:
 - [x] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
 
 - **Common/plugin boundary** — the [[field-schema#field-mapping]] tiers (common core / resource fields / per-type) are a
-  first cut; finalize when the field toolkit (A2) and plugin blocks ([[plugins#overview]]) land. The generic
+  first cut; finalize when the field toolkit (LocalEdit2) and plugin blocks ([[plugins#overview]]) land. The generic
   editor does not depend on it.
 - **Collection *type* — deferred** ([[field-schema#resource-types]]) — which fields a `type: Collection` record
   shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
@@ -449,7 +449,7 @@ Field order, in the three groups the layout separates:
   only the type's own field set still waits for a real collection.
 - **Author entity plugin — deferred to the catalog-cache era** — aliases and per-store URLs as a metadata-only
   grouping-entity type ([[plugins#grouping-entities]], [[daz3d-personal-database#authors-urls]]), arriving with
-  Milestone B's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
+  CacheDB's `.rehudb` (its browser/aggregation UI is what needs the cache); documents reference authors by
   credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
   when it lands.
 - **Optional scalars read as `None` — done (#100 core, #101 display)** — absent is not `0`: the measured/claimed
