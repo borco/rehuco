@@ -489,9 +489,9 @@ def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
 
     ``format_version`` leads (it describes the file), then ``core``, then the **active** plugin block
     (the one the ``type`` names, right after the core it belongs to), then every remaining top-level key
-    alphabetically. Inside ``core``, :data:`CORE_LEADING_KEYS` lead -- what a reader opening a `.rehu`
-    by hand looks for first, ending with ``sources``, which carries the title -- and the rest sort, so an
-    unrecognized field is never *misplaced*, merely late.
+    alphabetically. Inside ``core``, :data:`~rehuco_core.rehu_serialization.CORE_LEADING_KEYS` lead --
+    what a reader opening a `.rehu` by hand looks for first, ending with ``sources``, which carries the
+    title -- and the rest sort, so an unrecognized field is never *misplaced*, merely late.
 
     **Test steps:**
 
@@ -586,7 +586,8 @@ def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: M
 
     Both blocks are pinned at the current block ``format_version`` -- otherwise construction's
     v0->v1 migration would itself overwrite ``users`` (a v0 block never legitimately has one) before
-    save ever sees it, testing the migration's own tolerance instead of :meth:`__ordered_users_map`'s.
+    save ever sees it, testing the migration's own tolerance instead of
+    :func:`~rehuco_core.rehu_serialization.ordered_users_map`'s.
 
     **Test steps:**
 
