@@ -1333,12 +1333,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         A block whose main key is **already taken** keeps its alias spelling rather than clobbering the
         occupant (or another alias racing it for the same key). It is then simply a different key, so it
         classifies inactive and is carried verbatim -- foreign payload, which is what it looks like.
+
+        ``core["type"]`` normalizes with its block or not at all: rewriting the type while its block's
+        rename was refused would silently re-point the active type at the occupant and orphan the block
+        it was paired with, so a refused rename keeps the alias spelling on both sides (#137).
         """
-        core = self.__data.get(CORE_BLOCK_KEY)
-        if isinstance(core, dict):
-            resource_type = core.get("type")
-            if isinstance(resource_type, str) and resource_type:
-                core["type"] = self.__plugins.main_key(resource_type)
         taken = set(self.__data)
         renames: dict[str, str] = {}
         for key, value in self.__data.items():
@@ -1352,6 +1351,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
                 continue
             renames[key] = main_key
             taken.add(main_key)
+        self.__normalize_type(renames)
         if not renames:
             return
         # rebuild rather than pop/insert, so a renamed block keeps its position instead of jumping to
@@ -1359,6 +1359,32 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         normalized = {renames.get(key, key): value for key, value in self.__data.items()}
         self.__data.clear()
         self.__data.update(normalized)
+
+    def __normalize_type(self, renames: dict[str, str]) -> None:
+        """Rewrite an alias-spelled ``core["type"]`` to its plugin's main key -- but only when that
+        leaves the type paired with the same block (:meth:`__normalize`, [[plugins#plugin-blocks]]).
+
+        The type and its block key are one token, so they normalize together: when the alias-keyed
+        block is in ``renames`` the pair moves as one, and when no block sits under the alias spelling
+        there is nothing to unpair. Only the refused-rename case -- an alias-keyed block whose main key
+        another block already owns -- keeps the alias, because rewriting the type alone would re-point
+        it at the occupant and orphan its own block (#137).
+
+        :param renames: the alias -> main-key block renames :meth:`__normalize` is about to apply.
+        """
+        core = self.__data.get(CORE_BLOCK_KEY)
+        if not isinstance(core, dict):
+            return
+        resource_type = core.get("type")
+        if not isinstance(resource_type, str) or not resource_type:
+            return
+        main_key = self.__plugins.main_key(resource_type)
+        if main_key == resource_type:
+            return
+        if resource_type in renames or not isinstance(self.__data.get(resource_type), dict):
+            core["type"] = main_key
+            return
+        LOG.warning("Not normalizing type %r to %r: its block kept the alias key", resource_type, main_key)
 
     def __migrate_active_block(self) -> None:
         """Bring the **active** block up to its plugin's ``current_block_version``, in place, at
