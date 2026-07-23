@@ -2145,6 +2145,68 @@ def test_a_save_that_drops_a_claimed_block_records_the_discard(
     assert str(Path("/fake/info.rehu")) in records[0].getMessage()
 
 
+def test_a_second_save_does_not_re_record_a_previously_logged_discard(
+    caplog: pytest.LogCaptureFixture, mocker: MockerFixture
+) -> None:
+    """A dropped block stays dropped but is logged only once, not on every subsequent save (#139).
+
+    The block persistence invariant keeps a claimed-then-abandoned block in :attr:`data` (resurrectable
+    until the type is switched back), so :meth:`__dropped_block_keys` still names it on a second save --
+    without per-key tracking that would re-log one discard event once per save.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document, switch to ``tutorial`` (abandoning audiopack), and save twice
+    * verify both saves still drop ``audiopack`` from the written file
+    * verify exactly one discard was logged in total, from the first save
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        doc.save(Path("/fake/info.rehu"))
+        doc.save(Path("/fake/info.rehu"))
+
+    assert "audiopack" not in json.loads(mock_write.call_args_list[-1][0][1])
+    assert len(discard_records(caplog)) == 1
+
+
+def test_a_block_resurrected_and_abandoned_again_gets_a_fresh_discard_record(
+    caplog: pytest.LogCaptureFixture, mocker: MockerFixture
+) -> None:
+    """Re-abandoning a resurrected block is a new discard event, owed its own record (#139, #86).
+
+    The once-per-event guard must not become never-again: a save that *writes* the block back
+    (resurrected by switching its type back) clears the logged mark, so abandoning it a second time
+    drops it from disk again -- a genuinely new discard, logged again.
+
+    **Test steps:**
+
+    * construct an audiopack-typed document, switch to ``tutorial``, and save (audiopack's first discard)
+    * switch back to ``audiopack`` and save (audiopack written again -- resurrected; ``tutorial``, now
+      itself claimed-then-abandoned, is dropped and logged once, per the ordinary rule)
+    * switch to ``tutorial`` once more and save (audiopack's second discard)
+    * verify audiopack got two discard records -- one per event -- and tutorial exactly one
+    """
+    doc = RehuDocument({"type": "audiopack", "audiopack": {"bitrate": 320}, "tutorial": {"complete": True}})
+    doc.set_active_type("tutorial")
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    with caplog.at_level(logging.INFO, logger="rehuco_core.rehu_document"):
+        doc.save(Path("/fake/info.rehu"))
+        doc.set_active_type("audiopack")
+        doc.save(Path("/fake/info.rehu"))
+        doc.set_active_type("tutorial")
+        doc.save(Path("/fake/info.rehu"))
+
+    assert "audiopack" in json.loads(mock_write.call_args_list[1][0][1])
+    assert "audiopack" not in json.loads(mock_write.call_args_list[2][0][1])
+    messages = [record.getMessage() for record in discard_records(caplog)]
+    assert sum("audiopack" in message for message in messages) == 2
+    assert sum("tutorial" in message for message in messages) == 1
+
+
 def test_the_discard_log_records_every_dropped_block(caplog: pytest.LogCaptureFixture, mocker: MockerFixture) -> None:
     """Each block a single save drops gets its own discard record (#86, [[plugins#plugin-blocks]]).
 
