@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from .constants import IMAGE_EXTENSIONS
 
@@ -171,8 +171,13 @@ class TcScreenshotScanner:  # pylint: disable=too-few-public-methods
         """Read ``filename``'s pixel dimensions (a lazy, header-only read for these formats).
 
         :param filename: the candidate filename, resolved against :attr:`directory`.
-        :returns: ``width * height``.
+        :returns: ``width * height``, or ``0`` when the file can't be read as an image -- this runs during
+            `.tc` conversion's plan phase, before any disk mutation, so a corrupt candidate should just lose
+            the ranking contest rather than abort the conversion.
         """
-        with Image.open(self.__directory / filename) as image:
-            width, height = image.size
+        try:
+            with Image.open(self.__directory / filename) as image:
+                width, height = image.size
+        except UnidentifiedImageError, OSError:
+            return 0
         return width * height
