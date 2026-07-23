@@ -46,7 +46,7 @@ against the `actions/runner-images` Windows2022 readme ahead of time, since Choc
 was a real design choice, not just a gap to fill in reactively). Two alternatives to installing
 `make` there were rejected:
 
-- **Bootstrap Scoop** (the package manager `apps/rehuco-agent/launcher/README.md` recommends for a
+- **Bootstrap Scoop** (the package manager `packages/rehuco-agent/launcher/README.md` recommends for a
   developer's own machine) — it isn't present on the runner and would need its own
   install-and-trust step before it could install anything, unlike Chocolatey which is ready to use.
 - **Hand-duplicate the `uic`/`rcc`/`magick` invocations in the workflow YAML** — this would
@@ -107,7 +107,7 @@ mechanism. No CI-config change was needed for it beyond the library installs alr
 
 The job sets `defaults.run.shell: bash`. On `windows-latest` this resolves to the
 Git-for-Windows-backed bash that GitHub Actions already provides there, which bundles the GNU
-coreutils (`find`, `sed`, `tr`) the Makefile's `$(shell find apps packages -maxdepth 3 -name src
+coreutils (`find`, `sed`, `tr`) the Makefile's `$(shell find packages -maxdepth 3 -name src
 -type d ...)` codegen calls need. Without it, `make`'s recipe lines and `$(shell ...)` calls would
 run under whatever shell each OS defaults to (`pwsh` on Windows), which doesn't have those
 utilities — so every step is written once, not branched per OS.

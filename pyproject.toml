@@ -1,7 +1,6 @@
 [tool.uv.workspace]
 members = [
     "packages/*",
-    "apps/*",
 ]
 
 [dependency-groups]
@@ -70,7 +69,7 @@ ignored-modules = ["winreg"]
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
 pythonpath = ["."]
-testpaths = ["packages", "apps", "tools"]
+testpaths = ["packages", "tools"]
 markers = [
     "slow: marks tests that are slow to run",
     "disk: marks tests that perform real disk I/O (no mocks)",

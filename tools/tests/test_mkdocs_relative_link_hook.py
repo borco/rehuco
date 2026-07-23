@@ -86,12 +86,12 @@ def test_link_outside_docs_dir_is_rewritten_to_blob_url() -> None:
 
     **Test steps:**
 
-    * render a link from a nested spec page to a source file under `apps/`
-    * verify the href becomes `{repo_url}/blob/{branch}/apps/...`
+    * render a link from a nested spec page to a source file under `packages/`
+    * verify the href becomes `{repo_url}/blob/{branch}/packages/...`
     """
-    html = render("[toolkit](../../../apps/rehuco-agent/toolkit.py)", page_dir="specs/appendices")
+    html = render("[toolkit](../../../packages/rehuco-agent/toolkit.py)", page_dir="specs/appendices")
 
-    assert f'<a href="{REPO_URL}/blob/{BRANCH}/apps/rehuco-agent/toolkit.py">' in html
+    assert f'<a href="{REPO_URL}/blob/{BRANCH}/packages/rehuco-agent/toolkit.py">' in html
 
 
 def test_link_to_directory_outside_docs_dir_is_rewritten_to_tree_url(mocker: MockerFixture) -> None:
@@ -101,14 +101,14 @@ def test_link_to_directory_outside_docs_dir_is_rewritten_to_tree_url(mocker: Moc
     **Test steps:**
 
     * mock the on-disk check so the resolved target reports as a directory
-    * render a link from a nested spec page to a directory under `apps/`
-    * verify the href becomes `{repo_url}/tree/{branch}/apps/...`
+    * render a link from a nested spec page to a directory under `packages/`
+    * verify the href becomes `{repo_url}/tree/{branch}/packages/...`
     """
     mocker.patch.object(os.path, "isdir", return_value=True)
 
-    html = render("[agent app](../../../apps/rehuco-agent)", page_dir="specs/appendices")
+    html = render("[agent app](../../../packages/rehuco-agent)", page_dir="specs/appendices")
 
-    assert f'<a href="{REPO_URL}/tree/{BRANCH}/apps/rehuco-agent">' in html
+    assert f'<a href="{REPO_URL}/tree/{BRANCH}/packages/rehuco-agent">' in html
 
 
 def test_fragment_is_preserved_on_rewritten_link() -> None:
@@ -119,9 +119,9 @@ def test_fragment_is_preserved_on_rewritten_link() -> None:
     * render an outside-`docs_dir` link carrying a line-anchor fragment
     * verify the fragment is appended to the rewritten blob URL
     """
-    html = render("[toolkit](../../../apps/rehuco-agent/toolkit.py#L42)", page_dir="specs/appendices")
+    html = render("[toolkit](../../../packages/rehuco-agent/toolkit.py#L42)", page_dir="specs/appendices")
 
-    assert f'<a href="{REPO_URL}/blob/{BRANCH}/apps/rehuco-agent/toolkit.py#L42">' in html
+    assert f'<a href="{REPO_URL}/blob/{BRANCH}/packages/rehuco-agent/toolkit.py#L42">' in html
 
 
 def test_absolute_external_link_is_left_untouched() -> None:
@@ -173,7 +173,7 @@ def test_link_inside_fenced_code_block_is_never_reached() -> None:
     * render a fenced code block containing markdown link syntax pointing outside `docs_dir`
     * verify no `<a href` element appears in the output
     """
-    html = render("```\n[toolkit](../../apps/rehuco-agent/toolkit.py)\n```", page_dir="specs/appendices")
+    html = render("```\n[toolkit](../../packages/rehuco-agent/toolkit.py)\n```", page_dir="specs/appendices")
 
     assert "<a href" not in html
 

@@ -93,7 +93,7 @@ dock, so it has no close/done path of its own to save from the way `UnsavedChang
 typed into the filter box, for no gain.
 
 **Testing note:** because construction alone touches persistent storage, the autouse
-`isolate_settings_dialog_settings` fixture in `apps/rehuco-agent/tests/conftest.py` patches the
+`isolate_settings_dialog_settings` fixture in `packages/rehuco-agent/tests/conftest.py` patches the
 dialog's `persistent_settings()` — otherwise any test building one (directly, or via `MainWindow`)
 would read and overwrite the developer's real settings file, and leak toggle state into later tests.
 
@@ -204,5 +204,5 @@ OS, so there is no other part of the app that needs to be told a save happened.
 **Testing note:** the `lru_cache`d singleton persists across test functions within one process, and
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the
 autouse `isolate_shared_markdown_rendering_settings` fixture in
-`apps/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
+`packages/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
 around every test. A new page with its own shared reactive settings object needs the equivalent.

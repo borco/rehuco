@@ -1,7 +1,7 @@
 # Diagrams
 
 Exploratory diagrams of how rehuco-agent actually works today, read straight off the code
-(`apps/rehuco-agent/src/rehuco_agent/`).
+(`packages/rehuco-agent/src/rehuco_agent/`).
 
 | Diagram | UML kind | What it shows |
 | --- | --- | --- |
