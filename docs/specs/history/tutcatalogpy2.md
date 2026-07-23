@@ -32,7 +32,7 @@ implemented. Carried a dedicated **scrapper** tool for seeding metadata from pub
 | Edit fields | TODO (never landed) | A1 atomic save; A2 typed toolkit |
 | SQLite cache + search | Yes | `.rehudb` (B3), browsers (B4) |
 | `.tc` file-type association | Yes (Linux MIME) | A1 + file-association pre-work spike (macOS `QFileOpenEvent`, Windows ProgID/AUMID) |
-| Scraping | Yes (scrapper tool) | deferred past C |
+| Scraping | Yes (scrapper tool) | deferred past D |
 | Duration via ffprobe | Yes | field A2; auto-measure **TBD** |
 
 ## Can rehuco work for its `info.tc`?

@@ -37,8 +37,8 @@ than *port*.
 | QtAds docking + QML surface | Yes | Adopted — QtAds document-dock shell landed with A2.0; first QML dock still ahead ([QtAds appendix](../appendices/qt-ads.md)) |
 | `ApplicationSingleton` / file-association helpers | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside`; file-association proven by the pre-work spike |
 | Standalone packaging | PyInstaller (+ post-commit build) | native installers deferred; **Briefcase** evaluated in pre-work; `uv tool install` meanwhile |
-| Node / web / tablet | No | Milestone B |
-| Borrow offline, multi-node sync | No | Milestone C / deferred swarm |
+| Node / web / tablet | No | Milestone C |
+| Borrow offline, multi-node sync | No | Milestone D / deferred swarm |
 
 ## Can rehuco work for its `.tc`?
 

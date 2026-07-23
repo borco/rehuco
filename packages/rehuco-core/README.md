@@ -10,8 +10,8 @@
 
 ## Status
 
-**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) and the
-[project board](https://github.com/users/borco/projects/5) for what's planned and in progress.
+**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's
+planned and in progress.
 
 ## What it is
 
@@ -37,10 +37,6 @@ It provides:
 ```bash
 pip install rehuco-core
 ```
-
-## Versioning
-
-`rehuco-core`, `rehuco-agent`, and `rehuco-node` share a single version number and are released together.
 
 ## License
 

@@ -28,7 +28,7 @@ app. It never grew into a full catalog/editor before being set aside.
 | Viewer | Yes | A1 / A5 |
 | `.tc` association + double-click open | Yes (Linux MIME) | A1 + file-association pre-work spike |
 | Standalone packaging | PyInstaller | native installers deferred; **Briefcase** evaluated in pre-work spike |
-| Scraping | Yes (scrapper) | deferred past C |
+| Scraping | Yes (scrapper) | deferred past D |
 | SQLite cache / browser | Basic | `.rehudb` (B3) / browsers (B4) |
 
 ## Can rehuco work for its `info.tc`?

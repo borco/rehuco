@@ -31,7 +31,7 @@ rehuco formalizes as `.rehu` + `.rehudb`.
 | Separate viewer app | Yes | Single agent; viewer surfaces A1/A5 |
 | App state persistence | `.ini` (QSettings) | `.rehuco` (per-machine) + app settings |
 | Duration via ffprobe | Yes | field A2; auto-measure **TBD** |
-| Scraping | Yes | deferred past C |
+| Scraping | Yes | deferred past D |
 
 ## Can rehuco work for its data?
 

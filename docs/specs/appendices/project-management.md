@@ -6,10 +6,10 @@
 
 [[[appendices.project-management#overview]]]
 
-How work is labeled on the [issue tracker](https://github.com/borco/rehuco/issues) and board.
+How work is labeled on the [issue tracker](https://github.com/borco/rehuco/issues).
 Two orthogonal label families annotate every implementation issue: a **model label** (which agent
 model executes it, and in what mode) and a **size label** (how long it is expected to take that
-agent). Both exist so the board can be triaged at a glance — pick by capability first, then by
+agent). Both exist so the issue list can be triaged at a glance — pick by capability first, then by
 available time — and so estimates stay comparable across issues.
 
 Each issue's body carries the matching prose sections: a `## Model` section naming the model/mode,

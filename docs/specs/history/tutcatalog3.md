@@ -31,7 +31,7 @@ mapping is the same:
 | View / edit | Partial (incomplete rewrite) | A1 / A2 |
 | Catalog browser | Partial | B4 over `.rehudb` (B3) |
 | Duration via ffprobe | Yes | field A2; auto-measure **TBD** |
-| Scraping (cygwin/BeautifulSoup) | Yes | deferred past C (acquisition tooling) |
+| Scraping (cygwin/BeautifulSoup) | Yes | deferred past D (acquisition tooling) |
 | Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
 
 ## Can rehuco work for its `info.tc`?

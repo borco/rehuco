@@ -36,7 +36,7 @@ usable end-to-end catalog, its energy spent on the toolkit rather than a working
 | YAML **and** TOML sidecars | Yes | rehuco standardizes on JSON `.rehu`; reads legacy `.tc` (YAML) via adapter (A3) |
 | Reached usable end-to-end | **No** (the cautionary case) | Tracer-bullet-first methodology exists to avoid exactly this |
 | SQLite cache / browser | Not really | `.rehudb` (B3) / browsers (B4) |
-| Scraping, web, borrow, multi-node | No | deferred past C / Milestones B, C |
+| Scraping, web, borrow, multi-node | No | deferred past D / Milestones C, D |
 | `ApplicationSingleton` etc. | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside` |
 
 ## Can rehuco work for its `.tc`?

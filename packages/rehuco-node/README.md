@@ -10,8 +10,8 @@
 
 ## Status
 
-**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) and the
-[project board](https://github.com/users/borco/projects/5) for what's planned and in progress.
+**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's
+planned and in progress.
 
 ## What it is
 
@@ -43,10 +43,6 @@ Or on a NAS or server using [uv](https://docs.astral.sh/uv/):
 ```bash
 uv tool install rehuco-node
 ```
-
-## Versioning
-
-`rehuco-node`, `rehuco-core`, and `rehuco-agent` share a single version number and are released together.
 
 ## License
 

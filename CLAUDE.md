@@ -14,7 +14,7 @@ Read before any non-trivial task:
 
 ## Repository
 
-- GitHub: <https://github.com/borco/rehuco> (public) · board: <https://github.com/users/borco/projects/5>
+- GitHub: <https://github.com/borco/rehuco>
 - PyPI names reserved (0.0.0 stubs, 2026-06-29): `rehuco-core`, `rehuco-node`, `rehuco-agent`.
 
 ### Labels
@@ -25,8 +25,9 @@ Read before any non-trivial task:
 
 ### Milestones
 
-`Pre-work` (monorepo setup, integration spikes, de-risking), then `A1`, `A2`, … — GH milestone names track the
-per-slice labels in `implementation-plan.md`; keep the two in step.
+`Pre-work` (monorepo setup, integration spikes, de-risking), then four near-term milestones — **A** (local
+view/edit), **B** (cached database), **C** (WatchingTutorials), **D** (Borrowing) — each sliced `A1`, `A2`, ….
+GH milestone names track the per-slice labels in `implementation-plan.md`; keep the two in step.
 
 ## Monorepo layout
 
@@ -81,4 +82,4 @@ serve-after-resync, cross-filesystem safe move.
 Agile cadence + tracer-bullet first slices + occasional spikes. **Tracer bullet** — minimal but real,
 production-grade, kept; proves the layers connect end-to-end. **Spike** — throwaway; answers one sharp
 question; keep the lesson, delete the code. The current phase and next slice are deliberately not recorded
-here (they'd go stale) — read them off the GH milestones/board (`gh issue list`) before picking up work.
+here (they'd go stale) — read them off the GH milestones (`gh issue list`) before picking up work.

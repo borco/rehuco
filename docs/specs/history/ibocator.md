@@ -33,8 +33,8 @@ Different problem, so most rows are N/A rather than "planned later":
 | Data model | One monolithic XML catalog | One `.rehu` sidecar per resource + rebuildable `.rehudb` cache |
 | Rich per-item metadata | No | Yes — typed field schema (A2) |
 | Search a cache when media is offline | Yes (its whole point) | Partial, differently framed — mounts may be offline ([mounts & storage](../mounts-and-storage.md)); the cache is rebuildable, not a hand-made index |
-| Web scraping / metadata enrichment | No | Deferred past C (acquisition tooling) |
-| Distribution / multi-node | No | Swarm, deferred past C |
+| Web scraping / metadata enrichment | No | Deferred past D (acquisition tooling) |
+| Distribution / multi-node | No | Swarm, deferred past D |
 
 ## Can rehuco work for its data?
 

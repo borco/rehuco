@@ -37,46 +37,34 @@ Key design properties:
 
 ## Roadmap
 
-The near-term build follows three milestones, each mapping to a personal use-case and adding exactly
+The near-term build follows four milestones, each mapping to a personal use-case and adding exactly
 one new architectural spine. See the
 [implementation plan](docs/specs/implementation-plan.md) for detail.
 
 - **A — Local view/edit** *(current)* — open, view, and edit a local `.rehu` for tutorials and
   reference images. One machine, no network, no login — a standalone, genuinely useful tool.
-- **B — Watch from a tablet** — a single headless node serves the catalog to a browser on the LAN;
+- **B — Cached database** — scan folders, cache the scan into `.rehudb`, browse and search the
+  catalog on the desktop. Brings the app close to the original tutcatalog. Still local, no node.
+- **C — WatchingTutorials** — a single headless node serves the catalog to a browser on the LAN;
   watch a tutorial from an iPad, progress remembered. Introduces the node and the web stack.
-- **C — Borrow offline** — borrow a copy onto a laptop, watch it with no network, reconcile
-  progress and notes on return. Introduces two-party sync.
+- **D — Borrowing** — borrow a copy onto a laptop, watch it with no network, reconcile progress
+  and notes on return. Introduces two-party sync.
 
 The full multi-node swarm, acquisition tooling, and richer plugins are deliberately deferred past
-these three.
-
-## Versioning
-
-Milestone completion drives the version of the apps and the shared core; the generic `borco-*`
-libraries version independently. See the
-[implementation plan](docs/specs/implementation-plan.md) for the full policy.
-
-- **`rehuco-agent`, `rehuco-node`, `rehuco-core`** — MAJOR = milestones completed: **A → `1.0`**,
-  **B → `2.0`**, **C → `3.0`**; MINOR = a shipped slice within the current milestone; PATCH = fixes.
-  Released in lockstep.
-- **`borco-core`, `borco-pyside`** — ordinary, independent SemVer (they are generic and will move
-  to their own repository); `0.y` while young, `1.0` on the move-out.
+these four.
 
 ## Monorepo layout
 
 ```text
-rehuco/
-├── docs/
-│   └── specs/
-│       ├── architecture-design.md
-│       └── implementation-plan.md
-└── packages/
-    ├── borco-core/           # generic non-GUI utilities — temporary guest, moving out
-    ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
-    ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
-    ├── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
-    └── rehuco-node/          # headless REST service (FastAPI + uvicorn)
+rehuco/                       # uv virtual-workspace root (no [project] table)
+├── packages/
+│   ├── borco-core/           # generic non-GUI utilities — temporary guest, moving out
+│   ├── borco-pyside/         # generic PySide widgets/utilities — temporary guest, moving out
+│   ├── rehuco-core/          # shared models, .rehu I/O, field types, sync primitives
+│   ├── rehuco-agent/         # PySide6 desktop GUI — tray, viewer/editor, catalog/admin UI
+│   └── rehuco-node/          # headless REST service (FastAPI + uvicorn)
+├── docs/specs/               # design specs (see the document map)
+└── tools/                    # repo tooling (mkdocs hooks, slug checker)
 ```
 
 `rehuco-agent` is the PySide6 desktop GUI; it is a node client for swarm operations.
@@ -93,10 +81,6 @@ on the NAS would be a nice bonus if it ever proves workable, but nothing depends
 | `.rehuco` | Per-machine config: folder roots, mounts, ownership flags, plugin list. |
 | `.rehudb` | SQLite catalog cache. Derived; rebuildable. |
 | `.rehusw` | Swarm state: membership, users + salted hashes, access rules. Durable. |
-
-## Project board
-
-Issues and milestones are tracked at <https://github.com/users/borco/projects/5>.
 
 ## History
 

@@ -34,9 +34,9 @@ Duration measured with ffprobe, integrity via SFV checksums, metadata seeded by 
 | Catalog browser (folders → table) | Yes | B4 (browsers), over the `.rehudb` cache (B3) |
 | Duration via ffprobe | Yes | duration is a stored field (A2); auto-measuring it from the media isn't tied to a milestone slice — **TBD** |
 | SFV checksums | Yes (cfv) | A7 (algorithm-tagged) |
-| Metadata scraping | Yes (external script) | deferred past C (acquisition tooling) |
+| Metadata scraping | Yes (external script) | deferred past D (acquisition tooling) |
 | Per-machine config | `.tutcatalogrc` (YAML) | `.rehuco` |
-| Web / tablet, borrow, multi-node | No | Milestones B / C / deferred-swarm |
+| Web / tablet, borrow, multi-node | No | Milestones C / D / deferred-swarm |
 
 ## Can rehuco work for its `info.tc`?
 
