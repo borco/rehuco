@@ -16,6 +16,7 @@ from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
 from .document_widget import DocumentWidget
 from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
+from .save_or_prompt_retry import save_or_prompt_retry
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -186,8 +187,13 @@ class DocumentsDock(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
+        # A checked document whose save fails (an offline mount, [[mounts-and-storage#offline-mounts]])
+        # raises a retry/cancel dialog (#146); cancelling it aborts the batch close before any dock is
+        # removed, so no document -- saved, unsaved, or unchecked-and-about-to-be-discarded -- is closed
+        # out from under a failed save. Every dirty dock stays open for the user to resolve.
         for model in dialog.selected_models():
-            model.save()
+            if not save_or_prompt_retry(self, model):
+                return
         for dock in list(self.__document_docks):
             self.__remove_dock(dock)
 
@@ -480,8 +486,10 @@ class DocumentsDock(QMainWindow):
         for a `QDialog.done()`-style single hook.
 
         :param model: the dirty document model about to be closed.
-        :returns: ``True`` if the close should proceed (Save or Discard was chosen), ``False`` if
-            it was cancelled.
+        :returns: ``True`` if the close should proceed (Discard was chosen, or Save was chosen and
+            succeeded), ``False`` if it was cancelled -- either at this prompt, or at the retry/cancel
+            dialog a failed save raises (#146), so a document whose save fails is never closed out from
+            under its unsaved edits.
         """
         buttons = QMessageBox.StandardButton
         name = model.path.name if model.path else "Untitled"
@@ -495,5 +503,5 @@ class DocumentsDock(QMainWindow):
         if answer == buttons.Cancel:
             return False
         if answer == buttons.Save:
-            model.save()
+            return save_or_prompt_retry(self, model)
         return True

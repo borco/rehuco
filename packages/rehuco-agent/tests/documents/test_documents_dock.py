@@ -363,6 +363,36 @@ def test_closing_a_dirty_dock_cancel_leaves_it_open(mocker: MockerFixture, qtbot
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_closing_a_dirty_dock_whose_save_fails_leaves_it_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Answering Save at the close prompt, but then hitting a failing save (an offline mount, #146),
+    surfaces a critical dialog and -- on Cancel -- leaves the dock open rather than closing it out from
+    under its unsaved edits.
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Save, ``save`` to raise ``OSError``, and the critical
+      dialog to answer Cancel
+    * request the dock's close
+    * verify the critical dialog was shown and the dock is still present
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    cdock = dock_for(dock, widget)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Save)
+    mocker.patch.object(widget.model, "save", side_effect=OSError("offline mount"))
+    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+
+    cdock.requestCloseDockWidget()
+
+    critical.assert_called_once()
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_closing_a_clean_dock_does_not_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Closing a clean (non-dirty) dock closes it immediately, with no confirmation prompt.
 
@@ -481,6 +511,41 @@ def test_close_all_saves_checked_documents_then_closes_every_open_document(mocke
     save_first.assert_called_once_with()
     save_third.assert_not_called()
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_all_keeps_every_document_open_when_a_selected_save_fails(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``close_all`` whose selected save fails (an offline mount, #146) surfaces a critical dialog
+    and -- on Cancel -- aborts the batch close before any dock is removed, so no document is closed out
+    from under a failed save.
+
+    **Test steps:**
+
+    * open two dirty documents
+    * mock the batch dialog to accept and select both, the first's ``save`` to raise ``OSError``, and
+      the critical dialog to answer Cancel
+    * call ``close_all``
+    * verify the critical dialog was shown and both documents are still open
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first = dock.open_document(FAKE_PATH)
+    second = dock.open_document(OTHER_PATH)
+    assert first is not None and second is not None
+    first.model.title = "Changed"
+    second.model.title = "Changed"
+    mocker.patch.object(first.model, "save", side_effect=OSError("offline mount"))
+    mocker.patch.object(second.model, "save")
+    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = [first.model, second.model]
+    mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+
+    dock.close_all()
+
+    critical.assert_called_once()
+    assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def test_close_missing_closes_only_missing_docks(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -370,13 +370,24 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         move) is deferred (#25) -- so :attr:`location` never actually
         changes through this path yet.
 
+        A save that fails (``OSError``, e.g. an offline mount) aborts the rename with a logged error
+        and ``False`` -- the same log-and-fail channel :meth:`__move` itself reports through, and all
+        this view-model can do: a retry/cancel dialog
+        (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`, #146) needs a
+        widget to parent to, which a `QObject` doesn't have. The document simply stays dirty; nothing
+        was moved. Real failure UX for this path belongs to #25's rename-on-disk.
+
         :param new_name: the destination file/folder name (already sanitized by the caller, e.g. a
             clicked `PathField` suggestion).
         :returns: whether the rename succeeded.
         """
         LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
         if self.dirty:
-            self.save()
+            try:
+                self.save()
+            except OSError:
+                LOG.exception("Rename aborted: saving %r before the move failed", self.current_name)
+                return False
         return self.__move(new_name)
 
     def revert(self) -> None:

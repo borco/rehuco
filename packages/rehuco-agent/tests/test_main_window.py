@@ -12,7 +12,7 @@ from typing import Any
 from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QLabel, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -686,6 +686,30 @@ def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, 
     clean.save.assert_not_called()
 
 
+def test_save_all_shows_a_critical_dialog_when_a_save_fails(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``Save all`` whose per-document save raises ``OSError`` (an offline mount, #146) surfaces a
+    critical dialog rather than aborting the sweep with a traceback.
+
+    **Test steps:**
+
+    * stand in one dirty open document whose ``save`` raises ``OSError``
+    * mock the critical dialog to answer Cancel, and the unsaved-changes dialog for teardown
+    * trigger ``save_all_action``
+    * verify the critical dialog was shown
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dirty = mocker.MagicMock(dirty=True, label="doc.rehu")
+    dirty.save.side_effect = OSError("offline mount")
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
+    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+
+    window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    critical.assert_called_once()
+
+
 def test_quit_action_closes_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``File > Quit`` closes the window, letting the existing close guard take over (#64).
 
@@ -1043,6 +1067,79 @@ def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFi
 
     assert not event.isAccepted()
     dirty_model.save.assert_not_called()
+
+
+def test_close_event_still_persists_when_a_failing_save_is_retried(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A selected save that fails once then succeeds on Retry (a transient offline mount, #146) does
+    **not** skip the window-state/session persistence -- the worst-case bug this fix closes.
+
+    **Test steps:**
+
+    * stand in one selected dirty model whose ``save`` raises ``OSError`` once then succeeds
+    * mock the unsaved-changes dialog to accept and select it, and the critical dialog to answer Retry
+    * mock ``MainWindowSettings.save`` to detect that persistence still ran
+    * dispatch a close event
+    * verify the save was retried, the close was accepted, and persistence ran
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    model = mocker.MagicMock(dirty=True, label="doc.rehu")
+
+    # raise only on the first attempt, then succeed -- and tolerate any further calls (qtbot's
+    # teardown-close re-runs the same guard), unlike a fixed-length list that would exhaust
+    attempts = {"count": 0}
+
+    def flaky_save() -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise OSError("offline mount")
+
+    model.save.side_effect = flaky_save
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = [model]
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert model.save.call_count == 2
+    assert event.isAccepted()
+    save.assert_called_once()
+
+
+def test_close_event_is_aborted_when_a_failing_save_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Cancelling the retry/cancel dialog a failing save raises aborts the close: the window stays
+    open, its edits and session intact, and persistence does not run (#146).
+
+    **Test steps:**
+
+    * stand in one selected dirty model whose ``save`` raises ``OSError``
+    * mock the unsaved-changes dialog to accept and select it, and the critical dialog to answer Cancel
+    * mock ``MainWindowSettings.save`` to detect whether persistence ran
+    * dispatch a close event
+    * verify the close was ignored and persistence never ran
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    model = mocker.MagicMock(dirty=True, label="doc.rehu")
+    model.save.side_effect = OSError("offline mount")
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = [model]
+    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    save.assert_not_called()
 
 
 def test_restore_session_reopens_open_documents_and_restores_their_state(mocker: MockerFixture, qtbot: QtBot) -> None:
