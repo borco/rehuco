@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
+from uuid import uuid4
 
 from borco_core import atomic_write_text
 
@@ -358,6 +359,34 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         kind = LockReasonKind.MISSING if isinstance(error, FileNotFoundError) else LockReasonKind.INVALID_FILE
         return cls({}, Path(path), plugins=plugins, username=username, load_failure=LockReason(kind, str(error)))
+
+    @classmethod
+    def new(
+        cls,
+        path: Path | str | None = None,
+        *,
+        plugins: PluginRegistry = DEFAULT_PLUGIN_REGISTRY,
+        username: str = DEFAULT_CURRENT_USERNAME,
+    ) -> RehuDocument:
+        """Start a brand-new, empty, unlocked document with a freshly minted ``id``
+        ([[data-model#stable-identity]]).
+
+        The single seam that mints an identity outside `.tc` import (:func:`~rehuco_core.tc_conversion.convert_tc`
+        mints its own, in the same format): every other constructor here (:meth:`load`,
+        :meth:`locked_stub_for_error`) stands for a payload that already exists, or failed to load, so
+        minting there would fabricate an identity for something that is not actually new. A caller starting
+        a document from nothing -- :meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.create_new`
+        included -- gets one for free by coming through here instead of constructing ``RehuDocument`` directly.
+
+        :param path: destination this document will eventually save to; see :class:`RehuDocument`. Defaults
+            to ``None`` -- no destination decided yet.
+        :param plugins: the plugins installed here; see :class:`RehuDocument`.
+        :param username: the active identity; see :class:`RehuDocument`.
+        :returns: a fresh document, typeless and pathless unless ``path`` is given, already carrying its
+            own ``id``.
+        """
+        data: dict[str, Any] = {CORE_BLOCK_KEY: {"id": str(uuid4())}}
+        return cls(data, Path(path) if path is not None else None, plugins=plugins, username=username)
 
     def save(self, path: Path | str | None = None) -> None:
         """Atomically write the document back to disk as pretty-printed JSON, in canonical key order.
@@ -1014,7 +1043,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def id(self) -> str:
-        """The resource UUID ([[data-model#stable-identity]]); empty string if absent (e.g. a not-yet-imported file)."""
+        """The resource UUID ([[data-model#stable-identity]]); minted by :meth:`new` or `.tc` import
+        (:func:`~rehuco_core.tc_conversion.convert_tc`) -- empty string only for a document neither
+        constructor built, e.g. a load-failure stub (:meth:`locked_stub_for_error`)."""
         return str(self.core.get("id", ""))
 
     @property

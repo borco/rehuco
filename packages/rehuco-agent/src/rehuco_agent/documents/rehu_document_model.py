@@ -293,9 +293,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param username: the identity the new document's per-user writes are filed under
             ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
             **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
-        :returns: the new model, wrapping a fresh in-memory `RehuDocument`.
+        :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
+            ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]).
         """
-        model = cls(RehuDocument({}, Path(path) if path is not None else None, username=username), parent)
+        model = cls(RehuDocument.new(path, username=username), parent)
         if path is not None:
             model.dirty = True
         return model

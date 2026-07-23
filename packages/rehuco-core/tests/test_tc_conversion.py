@@ -4,6 +4,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
+from uuid import UUID
 
 import pytest
 from pytest_mock import MockerFixture
@@ -75,7 +76,11 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
     saved = json.loads(mocks["write"].call_args[0][1])
     assert saved["core"]["sources"][0]["title"] == "Some Title"
     assert saved["core"]["description"] == "![](info00.jpg)"
-    assert saved["core"]["id"]
+    # two checks in one: ``UUID()`` raises on a string that is no UUID at all, and -- since it also
+    # *accepts* non-canonical spellings (uppercase, braces, hyphenless) while ``str()`` always emits
+    # the canonical lowercase-hyphenated form -- the equality only holds when the minted string was
+    # already spelled canonically, i.e. exactly what ``str(uuid4())`` produces.
+    assert saved["core"]["id"] == str(UUID(saved["core"]["id"]))
     assert saved["core"]["created"] == SEEDED_TIMESTAMP
     assert saved["core"]["updated"] == SEEDED_TIMESTAMP
 
