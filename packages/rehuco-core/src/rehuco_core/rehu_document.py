@@ -204,6 +204,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         mutating it -- :meth:`set_active_type` adds and :meth:`reload` clears the same object, so it is
         always this session's live claim set."""
         self.__seed_initial_claim()
+        self.__logged_discarded_keys: Final[set[str]] = set()
+        """Block keys :meth:`__log_discarded_blocks` has already recorded this session (#139).
+        :meth:`__dropped_block_keys` names every currently-dropped block on *every* save, not just the
+        save that first dropped it, so logging would otherwise repeat one discard event once per
+        subsequent save. Grown by :meth:`__log_discarded_blocks`; a key's mark is dropped there the
+        moment a save *writes* the block again (resurrected by switching back to its type), so a later
+        re-abandonment is a fresh discard event with a fresh record. Reset by :meth:`reload` alongside
+        :attr:`__claimed_keys` -- a reverted document begins a clean session, discard log included."""
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]); run twice, once
@@ -508,14 +516,31 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         a failed write dropped nothing on disk, so logging in either case would cry a discard that never
         happened -- exactly the wrong trigger :meth:`__dropped_block_keys` exists to avoid.
 
+        **Logged once per discard event, not once per save** (#139): :meth:`__dropped_block_keys` still
+        names a claimed-then-abandoned block on every save after the one that dropped it -- the block
+        stays in :attr:`data` by design -- so this method records only the keys not already in
+        :attr:`__logged_discarded_keys`, then adds them there. A key's mark lasts exactly as long as the
+        block stays dropped: a save that writes the block again (resurrected by switching back to its
+        type) clears it, so a later re-abandonment is a *new* discard event and gets its own record.
+        The set is also reset alongside :attr:`__claimed_keys` on :meth:`reload`, so a block reclaimed
+        and abandoned again after a revert is logged again too.
+
         The sink is the process logging stack for now; the in-app log dock and the activity log proper
         ([[sync#overview]]) re-point it at the real sink when they exist -- this method is what gets
         re-pointed (#86).
 
         :param target: the file just written -- the document the block was dropped from.
         """
-        for key in self.__dropped_block_keys():
+        dropped = self.__dropped_block_keys()
+        # forget marks for blocks no longer dropped: this save just *wrote* them (resurrected by
+        # switching back to their type), so a future abandonment is a fresh discard event, owed a
+        # fresh record
+        self.__logged_discarded_keys.intersection_update(dropped)
+        for key in dropped:
+            if key in self.__logged_discarded_keys:
+                continue
             LOG.info("%s block discarded on save from %s", key, target)
+            self.__logged_discarded_keys.add(key)
 
     @staticmethod
     def __ordered_block(block: Any, leading: Sequence[str]) -> Any:
@@ -595,6 +620,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__data.update(fresh.data)
         self.__claimed_keys.clear()
         self.__seed_initial_claim()
+        self.__logged_discarded_keys.clear()
         # adopt what the freshly-read file says its version is: a reload is how an out-of-band change is
         # picked up, and that change may have been another build rewriting the file at a different version
         self.__on_disk_format_version = fresh.on_disk_format_version
