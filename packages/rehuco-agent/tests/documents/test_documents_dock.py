@@ -16,7 +16,8 @@ from PySide6.QtWidgets import QDialog, QMessageBox
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents import documents_dock
-from rehuco_agent.documents.documents_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER, DocumentsDock
+from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
+from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
 
@@ -280,6 +281,62 @@ def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     cdock = dock_for(dock, widget)
 
     cdock.requestCloseDockWidget()
+
+    assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_a_dock_destroys_its_model(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a document destroys its view-model, ending the session-long per-document leak (#148).
+
+    The model is parented to the long-lived dock area, not to its (closing) `DocumentWidget`, so
+    without the explicit ``deleteLater`` it would survive every close for the whole session, dragging
+    its data and `NameSuggestionModel` children along. The dock stays alive throughout this test, so
+    the model's ``destroyed`` firing is proof the close itself freed it.
+
+    **Test steps:**
+
+    * open the fake path and grab its model
+    * request the dock's close, waiting for the model's ``destroyed`` signal
+    * (the wait times out and fails if the model outlives the close)
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    model = widget.model
+    cdock = dock_for(dock, widget)
+
+    with qtbot.waitSignal(model.destroyed, timeout=1000):
+        cdock.requestCloseDockWidget()
+
+
+def test_a_signal_on_a_closed_documents_model_does_not_touch_the_area(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A signal on a closed document's former model never routes back into the area (#148).
+
+    Title upkeep is the ``DocumentDock``'s own concern -- its slots are bound methods that re-read the
+    dock's own model, not lambdas in the area indexing a ``dict[dock, widget]`` the close just emptied.
+    So a model signal arriving after the close (before the deferred teardown reclaims the model) updates
+    at most the closing dock's own title, and can never ``KeyError`` the area's bookkeeping the way an
+    area-owned lambda over a popped dock would.
+
+    **Test steps:**
+
+    * open the fake path and grab its model (still alive: teardown is deferred past the close)
+    * close the dock
+    * fire the model's ``dirty_changed`` -- an area-owned stale lambda would raise ``KeyError`` here
+    * verify nothing raised and the area's dock map stayed empty
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    model = widget.model
+    cdock = dock_for(dock, widget)
+
+    cdock.requestCloseDockWidget()
+    model.dirty_changed.emit(True)  # type: ignore[attr-defined]
 
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
