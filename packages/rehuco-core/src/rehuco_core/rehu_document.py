@@ -1161,6 +1161,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :param key: the key to write inside the block.
         :param value: the value to store.
+        :raises ValueError: if the document's :attr:`type` is unset -- there is no block to write into.
         """
         self.__active_block_or_create()[key] = value
 
@@ -1216,9 +1217,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         current-layout block did not (#134's data-loss chain). An *existing* block is returned as-is --
         its stamp is the migration path's business (:meth:`__migrate_active_block`), never rewritten here.
 
+        Refused outright on a **typeless** document: with no active key, the only place to write would be
+        the ``""``-keyed top level, which is not a block any plugin or reader would ever resolve (#136).
+        The agent never offers plugin fields without a type, so this is a caller-misuse guard, not a
+        recoverable state.
+
         :returns: the block dict, attached by reference to ``data`` so mutating it in place is reflected
             on the next :meth:`save`.
+        :raises ValueError: if the document's :attr:`type` is unset.
         """
+        if not self.active_block_key:
+            raise ValueError("Cannot write a plugin field on a typeless document.")
         block = self.__data.get(self.active_block_key)
         if not isinstance(block, dict):
             block = {}
@@ -1257,6 +1266,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         :param key: the per-user key to write inside this user's sub-map.
         :param value: the value to store.
+        :raises ValueError: if the document's :attr:`type` is unset -- there is no block to write into.
         """
         self.__active_user_or_create()[key] = value
 
