@@ -1743,6 +1743,54 @@ def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() 
     assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
 
 
+def test_alias_type_keeps_its_block_when_the_main_key_is_taken() -> None:
+    """``core["type"]`` normalizes with its block or not at all ([[plugins#plugin-blocks]]).
+
+    When an alias-keyed block's rename is refused because another block owns the main key, the type
+    keeps the alias spelling too -- rewriting it alone would silently re-point the active type at the
+    occupant and orphan the block it was paired with (#137).
+
+    **Test steps:**
+
+    * construct a document typed with the ``refimages`` alias, whose main key ``reference_images`` is
+      already occupied by another block
+    * verify the type kept the alias spelling and still names the alias-keyed block
+    * verify the occupant kept its key, is inactive, and kept its contents
+    """
+    doc = RehuDocument(
+        {
+            "core": {"type": "refimages"},
+            "reference_images": {"images_count": 12},
+            "refimages": {"images_count": 99},
+        }
+    )
+    assert doc.core["type"] == "refimages"
+    assert doc.active_block_key == "refimages"
+    assert doc.active_block["images_count"] == 99
+    assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [
+        ("reference_images", {"images_count": 12})
+    ]
+
+
+def test_alias_type_normalizes_when_no_block_sits_under_the_alias_spelling() -> None:
+    """An alias type with no alias-keyed block has nothing to unpair, so it still normalizes
+    ([[plugins#plugin-blocks]]).
+
+    The refused-rename guard (#137) bites only when a block actually sits under the alias spelling;
+    a block already stored under the main key is the type's own block once the spelling normalizes.
+
+    **Test steps:**
+
+    * construct a document typed with the ``refimages`` alias whose block is stored under the
+      ``reference_images`` main key
+    * verify the type normalized and names the main-keyed block
+    """
+    doc = RehuDocument({"core": {"type": "refimages"}, "reference_images": {"images_count": 12}})
+    assert doc.core["type"] == "reference_images"
+    assert doc.active_block_key == "reference_images"
+    assert doc.active_block["images_count"] == 12
+
+
 def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: MockerFixture) -> None:
     """Save carries everything -- the active block plus every inactive block ([[plugins#plugin-blocks]]).
 
