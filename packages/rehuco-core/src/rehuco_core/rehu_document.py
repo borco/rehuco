@@ -391,17 +391,19 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         different orders.
 
         :param path: destination; defaults to the path the document was loaded from.
-        :raises ValueError: if no path is given and the document has no loaded path.
-        :raises RehuFormatError: if a save-blocking lock is in force
-            (:data:`SAVE_BLOCKING_LOCK_KINDS`) -- an ``INVALID_FIELD`` document (whose coerced defaults
-            would overwrite the malformed-but-recoverable original) or an ``INVALID_FILE`` / ``MISSING``
-            stub (whose empty payload would clobber the broken/absent file). Editing is disabled while a
-            document is locked, so a save reaches here only by a path that bypassed that guard; refusing
-            is the backstop the write-integrity rule requires ([[data-model#write-integrity]]).
+        :raises ValueError: if no path is given and the document has no loaded path, or if a
+            save-blocking lock is in force (:data:`SAVE_BLOCKING_LOCK_KINDS`) -- an ``INVALID_FIELD``
+            document (whose coerced defaults would overwrite the malformed-but-recoverable original) or
+            an ``INVALID_FILE`` / ``MISSING`` stub (whose empty payload would clobber the broken/absent
+            file). Editing is disabled while a document is locked, so a save reaches here only by a path
+            that bypassed that guard; refusing is the backstop the write-integrity rule requires
+            ([[data-model#write-integrity]]). Not a :class:`RehuFormatError`: a lock is not a malformed
+            payload, and this way callers can tell "the file is bad" apart from "you may not save right
+            now".
         """
         blocking = next((reason for reason in self.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None)
         if blocking is not None:
-            raise RehuFormatError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}.")
+            raise ValueError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}.")
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")

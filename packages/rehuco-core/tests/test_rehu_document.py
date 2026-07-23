@@ -354,7 +354,7 @@ def test_serialize_renders_a_locked_document_that_save_would_refuse() -> None:
     * verify ``save`` refuses it, but ``serialize`` still renders its (migrated, stamped) content
     """
     doc = RehuDocument.locked_stub_for_error(FAKE_PATH, FileNotFoundError("missing"))
-    with pytest.raises(RehuFormatError):
+    with pytest.raises(ValueError, match="Refusing to save"):
         doc.save()
 
     text = doc.serialize()
@@ -1047,7 +1047,7 @@ def test_optional_int_scalar_malformed_refuses_to_save(attr: str, location: str,
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc = scalar_doc(location, attr, "junk", FAKE_PATH)
 
-    with pytest.raises(RehuFormatError, match="Refusing to save"):
+    with pytest.raises(ValueError, match="Refusing to save"):
         doc.save()
     write.assert_not_called()
 
@@ -2701,7 +2701,7 @@ def test_save_refuses_while_load_failed(mocker: MockerFixture) -> None:
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc = RehuDocument.open_or_locked(FAKE_PATH)
 
-    with pytest.raises(RehuFormatError, match="Refusing to save"):
+    with pytest.raises(ValueError, match="Refusing to save"):
         doc.save()
     write.assert_not_called()
 
@@ -2719,7 +2719,7 @@ def test_save_refuses_while_a_field_is_invalid(mocker: MockerFixture) -> None:
     write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     doc = RehuDocument({"core": {"authors": 42}}, FAKE_PATH)
 
-    with pytest.raises(RehuFormatError, match="Refusing to save"):
+    with pytest.raises(ValueError, match="Refusing to save"):
         doc.save()
     write.assert_not_called()
 
