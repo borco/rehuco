@@ -577,6 +577,36 @@ def test_v0_to_v1_gives_every_block_a_users_map_even_with_nothing_to_move() -> N
     assert block == {"complete": True, "online": False, "format_version": 1, "users": {"admin": {}}}
 
 
+def test_v0_to_v1_declines_a_block_that_already_has_a_users_map() -> None:
+    """A v0-resolving block that already carries ``users`` is self-contradictory -- the step declines
+    rather than replacing the map with just the inline strays (#134's data-loss chain; the block-scoped
+    mirror of the file-level v2 step declining a ``core``-carrying payload).
+
+    The audit's exact scenario: a block created mid-session and saved unstamped by an older build, whose
+    legitimately-saved ``users`` map the next load would silently clobber. Both halves are asserted:
+    every filed per-user record survives, under every username present, and the inline stray stays
+    inline -- an unrecognized field carried verbatim, never merged over data that was already filed.
+
+    **Test steps:**
+
+    * migrate an unstamped tutorial block carrying a populated ``users`` map plus an inline stray ``rating``
+    * verify every filed per-user record survived untouched, for both usernames
+    * verify the stray ``rating`` stayed inline and the block is stamped v1
+    """
+    block: dict[str, Any] = {
+        "complete": True,
+        "rating": 2,
+        "users": {"admin": {"rating": 5, "viewed": True}, "alice": {"rating": 3}},
+    }
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"] == {"admin": {"rating": 5, "viewed": True}, "alice": {"rating": 3}}
+    assert block["rating"] == 2
+    assert block["complete"] is True
+    assert block["format_version"] == 1
+
+
 def test_migrating_a_v0_block_twice_is_idempotent() -> None:
     """Re-running the migration is a no-op: the second pass finds a v1 block, runs no step, and rewrites
     the same stamp ([[field-schema#per-user-shared]], the block-scoped mirror of the file-wide
