@@ -15,6 +15,7 @@ ever emit the current layout -- the version is something it already knows rather
 importer must decide, and writing it down has no side effect and is idempotent.
 """
 
+import math
 from pathlib import Path
 from typing import Any, Final
 
@@ -313,9 +314,9 @@ class TcDocument:
         """Parse ``data[key]``: a plain int, or tc4's legacy human-readable string fallback
         (``Tutorial::fileSizeFromYaml``).
 
-        :returns: the size in bytes when the ``.tc`` carried the key (an explicit value imports, even ``0``),
-            or ``None`` when it was absent, so the caller omits it rather than fabricating a ``0``
-            ([[field-schema#deferred-items]]).
+        :returns: the size in bytes when the ``.tc`` carried the key and it parsed (an explicit value
+            imports, even ``0``), or ``None`` when it was absent or unparseable, so the caller omits it
+            rather than fabricating a ``0`` ([[field-schema#deferred-items]]).
         """
         if key not in self.__data:
             return None
@@ -324,21 +325,26 @@ class TcDocument:
             return value
         return self.__parse_legacy_size_string(value) if isinstance(value, str) else None
 
-    def __parse_legacy_size_string(self, value: str) -> int:
+    def __parse_legacy_size_string(self, value: str) -> int | None:
         """Parse a tc4 legacy size string like ``"1.5 GB"``, base-1000 (``Tutorial::parsedFileSize``).
 
         :param value: the human-readable size string.
-        :returns: the size in bytes, or ``0`` when the magnitude or suffix isn't recognized.
+        :returns: the size in bytes, or ``None`` when the magnitude or suffix isn't recognized (including a
+            ``nan``/``inf``/overflowing magnitude, which ``float`` accepts but no real file size carries) --
+            absent, same policy as :meth:`__optional_int_field`, not a fabricated ``0``.
         """
         parts = value.split()
         if not parts:
-            return 0
+            return None
         try:
             magnitude = float(parts[0])
         except ValueError:
-            return 0
+            return None
         suffix = parts[1] if len(parts) > 1 else "B"
-        return int(magnitude * self.__SIZE_SUFFIXES.get(suffix, 0))
+        if suffix not in self.__SIZE_SUFFIXES:
+            return None
+        size = magnitude * self.__SIZE_SUFFIXES[suffix]
+        return int(size) if math.isfinite(size) else None
 
     def __parsed_duration(self, key: str) -> int | None:
         """Parse ``data[key]``: a plain int, or tc4's legacy human-readable string fallback

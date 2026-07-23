@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Final
 
+from PIL import UnidentifiedImageError
 from pytest_mock import MockerFixture
 from rehuco_core import ScreenshotRename, scan_tc_screenshots
 
@@ -234,6 +235,34 @@ def test_non_image_extensions_are_ignored(mocker: MockerFixture) -> None:
     renames = scan_tc_screenshots(DIRECTORY, STEM)
 
     assert renames == [ScreenshotRename("info00.jpg", "sample-00.jpg", ("sample-00.jpg",))]
+
+
+def test_corrupt_candidate_loses_the_pixel_ranking(mocker: MockerFixture) -> None:
+    """A candidate whose bytes ``PIL`` can't decode ranks last, rather than aborting the conversion --
+    this runs during `.tc` conversion's plan phase, before any disk mutation, so an unreadable image is
+    strictly safer treated as area ``0`` than left to raise.
+
+    **Test steps:**
+
+    * mock the directory to hold a readable ``cover.jpg`` and a same-index ``sample-00.png`` whose
+      ``Image.open`` raises ``UnidentifiedImageError``
+    * scan
+    * verify the readable file wins despite its modest pixel size
+    """
+    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
+
+    def open_side_effect(path: Path) -> object:
+        if Path(path).name == "sample-00.png":
+            raise UnidentifiedImageError
+        image = mocker.MagicMock()
+        image.__enter__.return_value.size = (100, 100)
+        return image
+
+    mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=open_side_effect)
+
+    renames = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert renames == [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png"))]
 
 
 def test_missing_directory_returns_an_empty_list(mocker: MockerFixture) -> None:

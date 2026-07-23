@@ -300,16 +300,21 @@ def test_legacy_size_and_duration_string_fallback() -> None:
 
 
 def test_legacy_size_string_edge_cases() -> None:
-    """A blank, non-numeric, or unrecognized-suffix size string falls back to ``0``.
+    """A blank, non-numeric, or unrecognized-suffix size string is absent, not ``0``.
 
     **Test steps:**
 
-    * map ``.tc`` dicts with an empty string, a non-numeric magnitude, and an unrecognized suffix
-    * verify each parses to ``0`` (``Tutorial::parsedFileSize``'s own fallback-to-zero behavior)
+    * map ``.tc`` dicts with an empty string, a non-numeric magnitude, an unrecognized suffix, and the
+      magnitudes ``float`` accepts but no real file size carries (``nan``, ``inf``, one overflowing to it)
+    * verify each is omitted from ``core`` rather than fabricated as ``0`` -- or crashing on ``int()``
+      ([[field-schema#deferred-items]]), the same absent-not-zero policy as :meth:`__optional_int_field`
     """
-    assert tc_to_rehu_data({"original_size": ""})["core"]["original_size"] == 0
-    assert tc_to_rehu_data({"original_size": "not-a-number GB"})["core"]["original_size"] == 0
-    assert tc_to_rehu_data({"original_size": "5 XB"})["core"]["original_size"] == 0
+    assert "original_size" not in tc_to_rehu_data({"original_size": ""})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": "not-a-number GB"})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": "5 XB"})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": "nan GB"})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": "inf GB"})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": "1e400 KB"})["core"]
 
 
 def test_legacy_duration_string_edge_cases() -> None:
