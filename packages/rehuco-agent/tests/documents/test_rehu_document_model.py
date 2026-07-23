@@ -60,7 +60,7 @@ def test_model_seeds_fields_from_document_without_dirtying(model: RehuDocumentMo
 
 def test_model_is_locked_when_the_document_format_version_is_newer_than_supported() -> None:
     """A document whose ``format_version`` exceeds ``CURRENT_FORMAT_VERSION`` locks the
-    model at construction (A3, [[data-model#schema-version]]'s fail-safe-on-a-newer-file rule).
+    model at construction ([[data-model#schema-version]]'s fail-safe-on-a-newer-file rule).
 
     **Test steps:**
 
@@ -201,7 +201,7 @@ def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentMod
     """Setting ``location`` (as the viewer binding does) never touches the document or dirties the model.
 
     ``location`` mirrors the file path for the viewer; it isn't a document field. Rename-on-disk is
-    the separate :meth:`rename_location` path, deferred to A5 (#25).
+    the separate :meth:`rename_location` path, deferred (#25).
 
     **Test steps:**
 
@@ -217,7 +217,7 @@ def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentMod
 def test_rename_location_always_fails_and_logs_an_error(
     caplog: pytest.LogCaptureFixture, model: RehuDocumentModel
 ) -> None:
-    """``rename_location`` always fails for now (the real move is deferred to A5), logging an error.
+    """``rename_location`` always fails for now (the real move is deferred, #25), logging an error.
 
     **Test steps:**
 
@@ -288,7 +288,7 @@ def test_rename_location_does_not_save_when_clean(mocker: MockerFixture, model: 
 def test_rename_location_returns_whether_the_move_succeeded(mocker: MockerFixture, model: RehuDocumentModel) -> None:
     """``rename_location`` returns the (deferred) move's result -- ``True`` when it would succeed.
 
-    The move itself always fails today (#25/A5) and owns committing :attr:`location`; this drives the
+    The move itself always fails today (#25) and owns committing :attr:`location`; this drives the
     success branch by patching the private move to report success.
 
     **Test steps:**
@@ -1637,7 +1637,7 @@ def test_an_inactive_blocks_binding_refuses_to_write(caplog: pytest.LogCaptureFi
     """An inactive block is carried, never edited -- its setter refuses rather than writing
     ([[plugins#plugin-blocks]]).
 
-    Whatever affordance it eventually gets is A4.4's, and the drop-on-abandon rule behind it is A4.2's
+    Whatever affordance it eventually gets is #84's, and the drop-on-abandon rule behind it is #82's
     ([[plugins#fallback-editor]]).
 
     **Test steps:**
@@ -1697,7 +1697,7 @@ def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) 
 
 def test_drop_inactive_block_removes_the_block_emits_and_dirties(document: RehuDocument) -> None:
     """``drop_inactive_block`` deletes a whole foreign block, emits ``unknown_fields_changed``, and marks
-    the model dirty ([[plugins#fallback-editor]], A4.4/#84).
+    the model dirty ([[plugins#fallback-editor]], #84).
 
     The block-level sibling of :meth:`remove_unknown_field` -- the explicit *drop* of a carried foreign
     block, on the same signal the reactive fallback rows re-read to hide themselves.
@@ -1721,7 +1721,7 @@ def test_drop_inactive_block_removes_the_block_emits_and_dirties(document: RehuD
 
 def test_drop_inactive_block_is_a_noop_for_the_active_block(document: RehuDocument) -> None:
     """``drop_inactive_block`` refuses the active block, staying clean and silent ([[plugins#fallback-editor]],
-    A4.4/#84).
+    #84).
 
     The core's :meth:`~rehuco_core.RehuDocument.remove_block` never drops the active block, so this
     reports nothing and leaves the model exactly as it was -- a stale button click is harmless.
@@ -2004,7 +2004,7 @@ def test_remove_unknown_field_is_a_noop_when_absent(document: RehuDocument) -> N
 # endregion
 
 
-# region Type switching (A4.3, [[plugins#plugin-blocks]])
+# region Type switching (#83, [[plugins#plugin-blocks]])
 def test_resource_type_seeds_from_the_documents_type_without_dirtying(document: RehuDocument) -> None:
     """The model seeds ``resource_type`` from the document's (normalized) type, clean
     ([[plugins#plugin-blocks]], #83).
@@ -2218,7 +2218,7 @@ def test_revert_always_rebuilds_the_composition(mocker: MockerFixture) -> None:
 
 def test_reverting_a_type_round_trip_restores_a_foreign_blocks_carry_or_drop(mocker: MockerFixture) -> None:
     """A revert restores a block's carry-vs-drop shape, so a block switched *to* and back this session
-    regains its drop button ([[plugins#fallback-editor]], A4.4/#84).
+    regains its drop button ([[plugins#fallback-editor]], #84).
 
     A revert resets the session's claim set to the reloaded type, so a **claimed-then-abandoned** block
     (switched to, then away from) becomes **never-claimed foreign** again -- carried, with a drop button --

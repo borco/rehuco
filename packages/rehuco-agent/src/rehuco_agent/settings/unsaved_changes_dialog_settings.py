@@ -1,4 +1,4 @@
-"""The UnsavedChangesDialog's own geometry, persisted across restarts ([[implementation-plan]] A2.1/#38)."""
+"""The UnsavedChangesDialog's own geometry, persisted across restarts (#38)."""
 
 from dataclasses import dataclass, field
 from typing import Final, cast

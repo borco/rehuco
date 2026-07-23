@@ -23,7 +23,7 @@ DIRTY_DOCK_MARKER: Final = "⬤ "
 """Marker prepended to the title of dirty document tabs."""
 
 LOCKED_DOCK_MARKER: Final = "⚿ "
-"""Marker prepended to the title of locked document tabs (A3, [[data-model#schema-version]]); takes
+"""Marker prepended to the title of locked document tabs ([[data-model#schema-version]]); takes
 precedence over :data:`DIRTY_DOCK_MARKER` -- a locked document's editors are disabled, so it can never
 actually be dirty too. A plain Unicode symbol (Miscellaneous Symbols, not an emoji-presentation
 codepoint), same as :data:`DIRTY_DOCK_MARKER` -- renders in the tab's own text color with no font
@@ -73,8 +73,8 @@ class DocumentsDock(QMainWindow):
     def open_document(self, path: Path) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.
 
-        :param path: absolute filesystem path to a ``.rehu`` file, or a legacy ``.tc`` file (A3.1,
-            [[acquisition-tooling#tc-to-rehu]], opened locked and read-only) -- ``MainWindow.open_file``
+        :param path: absolute filesystem path to a ``.rehu`` file, or a legacy ``.tc`` file
+            ([[acquisition-tooling#tc-to-rehu]], opened locked and read-only) -- ``MainWindow.open_file``
             resolves it.
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
@@ -85,7 +85,7 @@ class DocumentsDock(QMainWindow):
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
 
         Opens ``folder/info.rehu`` exactly like :meth:`open_document` if it already exists; falls
-        back to a legacy ``folder/info.tc`` if it doesn't (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]).
+        back to a legacy ``folder/info.tc`` if it doesn't ([[acquisition-tooling#tc-to-rehu]]).
         If neither exists, starts a new document already bound to the ``.rehu`` path and dirty
         (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves, so
         discarding it (closing without saving) never creates the file.
@@ -101,7 +101,7 @@ class DocumentsDock(QMainWindow):
 
         Opens ``archive_path`` with its suffix replaced by ``.rehu`` (e.g. ``foo.zip`` ->
         ``foo.rehu``) exactly like :meth:`open_document` if that companion already exists; falls
-        back to a legacy ``foo.tc`` if it doesn't (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]).
+        back to a legacy ``foo.tc`` if it doesn't ([[acquisition-tooling#tc-to-rehu]]).
         If neither exists, starts a new document already bound to the ``.rehu`` path and dirty
         (:meth:`RehuDocumentModel.create_new`) -- nothing is written to disk until the user saves.
 
@@ -116,8 +116,8 @@ class DocumentsDock(QMainWindow):
         start a new document bound to ``info_path``.
 
         Shared by :meth:`open_folder` and :meth:`open_archive`, which differ only in how they
-        derive ``info_path`` from the path the user actually clicked. The ``.tc`` fallback is A3.1
-        Phase 2 ([[acquisition-tooling#tc-to-rehu]]) -- it makes Phase 1's locked, read-only ``.tc``
+        derive ``info_path`` from the path the user actually clicked. The ``.tc`` fallback
+        ([[acquisition-tooling#tc-to-rehu]]) makes the locked, read-only ``.tc``
         view reachable through normal folder/archive open, not just direct loading.
 
         :param info_path: the resource's own ``.rehu`` path (an ``info.rehu`` under a folder, or a
@@ -307,8 +307,8 @@ class DocumentsDock(QMainWindow):
         file. Hand-fixing it and reverting retries in place (:meth:`RehuDocumentModel.revert`).
 
         :param path: absolute filesystem path to the ``.rehu`` file to load, or to create if ``new``;
-            a ``.tc`` suffix loads through :func:`rehuco_core.load_tc` instead (A3.1 Phase 2,
-            [[acquisition-tooling#tc-to-rehu]]), producing a locked, read-only document.
+            a ``.tc`` suffix loads through :func:`rehuco_core.load_tc` instead
+            ([[acquisition-tooling#tc-to-rehu]]), producing a locked, read-only document.
         :param new: when true, skip loading and start an empty, already-dirty document bound to
             ``path`` instead (:meth:`RehuDocumentModel.create_new`) -- used by :meth:`open_folder`
             when the directory has no `info.rehu` yet; nothing is written to disk until the user saves.
@@ -388,7 +388,7 @@ class DocumentsDock(QMainWindow):
         """Set ``dock``'s tab title/tooltip from its document's label, marking it locked or dirty.
 
         The tab title is the document's :attr:`~RehuDocumentModel.label`, with
-        :data:`LOCKED_DOCK_MARKER` prepended while locked (A3, [[data-model#schema-version]]) or
+        :data:`LOCKED_DOCK_MARKER` prepended while locked ([[data-model#schema-version]]) or
         :data:`DIRTY_DOCK_MARKER` while unsaved -- locked takes precedence, since a locked document's
         disabled editors mean it can never be dirty too. The tooltip always shows the full path.
 

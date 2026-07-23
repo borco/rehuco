@@ -158,7 +158,7 @@ def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot)
 def test_dock_title_gains_a_lock_marker_that_takes_precedence_over_dirty(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A locked document's dock tab gets the lock marker instead of the dirty one, even if -- not
     reachable through the UI, since a locked document's editors are disabled, but resolved explicitly
-    rather than assumed away -- it were somehow dirty too (A3, [[data-model#schema-version]]).
+    rather than assumed away -- it were somehow dirty too ([[data-model#schema-version]]).
 
     **Test steps:**
 
@@ -715,7 +715,7 @@ def test_focus_document_makes_the_given_widgets_dock_current(mocker: MockerFixtu
 def test_focus_document_works_for_a_document_with_no_path(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Focusing a document's widget works even with no path yet, unlike
     :meth:`DocumentsDock.open_document`, which needs a path to look a dock up by (a genuinely
-    path-less "New Document" dock, pending A5, could otherwise never be focused this way).
+    path-less "New Document" dock, pending #25, could otherwise never be focused this way).
 
     **Test steps:**
 
@@ -1093,7 +1093,7 @@ def test_open_folder_falls_back_to_a_tc_companion_when_info_rehu_is_missing(
     mocker: MockerFixture, qtbot: QtBot
 ) -> None:
     """Opening a folder with no ``info.rehu`` but a legacy ``info.tc`` opens the ``.tc`` instead
-    (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]), locked and read-only.
+    ([[acquisition-tooling#tc-to-rehu]]), locked and read-only.
 
     **Test steps:**
 
@@ -1118,7 +1118,7 @@ def test_open_folder_falls_back_to_a_tc_companion_when_info_rehu_is_missing(
 
 def test_open_archive_falls_back_to_a_tc_companion_when_rehu_is_missing(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening an archive with no ``.rehu`` companion but a legacy ``.tc`` one opens the ``.tc``
-    instead (A3.1 Phase 2, [[acquisition-tooling#tc-to-rehu]]), locked and read-only.
+    instead ([[acquisition-tooling#tc-to-rehu]]), locked and read-only.
 
     **Test steps:**
 
@@ -1140,7 +1140,7 @@ def test_open_archive_falls_back_to_a_tc_companion_when_rehu_is_missing(mocker: 
 
 
 def test_open_document_with_a_tc_path_loads_it_as_legacy(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Opening a ``.tc`` path directly (a registered double-click or shell verb, A3.1 Phase 2,
+    """Opening a ``.tc`` path directly (a registered double-click or shell verb,
     [[acquisition-tooling#tc-to-rehu]]) routes through ``load_tc``, not ``RehuDocument.load``.
 
     **Test steps:**

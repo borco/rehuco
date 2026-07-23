@@ -23,8 +23,8 @@ PROGID: Final = "Rehuco.Document"
 
 EXTENSIONS: Final = ("rehu", "tc")
 """File extensions (each without the leading dot) registered to :data:`PROGID` -- ``.tc`` gets the
-same handler as ``.rehu`` so a legacy file opens straight into its locked view (A3.1,
-[[acquisition-tooling#tc-to-rehu]])."""
+same handler as ``.rehu`` so a legacy file opens straight into its locked view
+([[acquisition-tooling#tc-to-rehu]])."""
 
 AUMID: Final = "borco.rehuco.agent"
 """Application User Model ID the running process declares via ``SetCurrentProcessExplicitAppUserModelID``."""

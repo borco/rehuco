@@ -128,7 +128,7 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     assert saved["core"]["some_future_core_key"] == "kept verbatim"
     assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
-    assert saved["core"]["updated"] == TUTORIAL["core"]["updated"]  # A0 does not auto-touch timestamps
+    assert saved["core"]["updated"] == TUTORIAL["core"]["updated"]  # saving does not auto-touch timestamps yet
 
 
 def test_a_constructed_document_always_reports_the_version_it_actually_is() -> None:
@@ -1509,7 +1509,7 @@ def test_remove_active_field_is_a_noop_when_absent() -> None:
 
 def test_remove_block_drops_a_whole_inactive_block() -> None:
     """``remove_block`` deletes an inactive block wholesale and reports it was present
-    ([[plugins#fallback-editor]], A4.4/#84).
+    ([[plugins#fallback-editor]], #84).
 
     The block-level sibling of ``remove_active_field`` -- the explicit *drop* of a foreign block the file
     was merely custodian of, leaving the active block and the rest of the document intact.
@@ -1528,7 +1528,7 @@ def test_remove_block_drops_a_whole_inactive_block() -> None:
 
 def test_remove_block_refuses_the_active_block_and_is_a_noop_when_absent() -> None:
     """``remove_block`` never drops the active block or a reserved key, and reports ``False`` for an
-    absent or non-object key ([[plugins#fallback-editor]], A4.4/#84).
+    absent or non-object key ([[plugins#fallback-editor]], #84).
 
     A file always keeps the block its own ``type`` names, and ``core``/``format_version`` are not blocks,
     so each is refused rather than deleted -- the backstop that keeps the drop affordance from ever
@@ -1682,7 +1682,7 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
     """Save carries everything -- the active block plus every inactive block ([[plugins#plugin-blocks]]).
 
     The carry-only half of the persistence invariant: nothing is lost. Claim-tracking and the
-    drop-on-abandon rule are A4.2, so with no type switching every block simply survives.
+    drop-on-abandon rule are #82's, so with no type switching every block simply survives.
 
     **Test steps:**
 
@@ -1729,7 +1729,7 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
     assert "Tutorial" not in saved
 
 
-# region Block persistence invariant (A4.2, [[plugins#plugin-blocks]])
+# region Block persistence invariant (#82, [[plugins#plugin-blocks]])
 #
 # The single-active-type, claim-then-abandon rule that governs save: a block is written iff it is the
 # active type's block, or it is foreign payload never made active this session. A block made active this
@@ -1967,7 +1967,7 @@ def test_claims_persist_across_a_save_so_a_dropped_block_stays_dropped(mocker: M
     assert "audiopack" not in json.loads(mock_write.call_args[0][1])
 
 
-# The discard log (A4.6, #86): a save that drops a claimed-then-abandoned block records the *fact* of the
+# The discard log (#86): a save that drops a claimed-then-abandoned block records the *fact* of the
 # drop -- block key and the document it left -- to the activity log ([[sync#overview]]), so it stays
 # traceable even though the values are gone by design. The trigger must fire *exactly* when the invariant
 # drops a claimed block: never for a carried never-claimed block, never on a read-only preview, and never on
@@ -1975,7 +1975,7 @@ def test_claims_persist_across_a_save_so_a_dropped_block_stays_dropped(mocker: M
 
 
 def discard_records(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
-    """The discard-log records captured so far -- the entries A4.6 emits per dropped block (#86).
+    """The discard-log records captured so far -- the entries emitted per dropped block (#86).
 
     :param caplog: the log-capture fixture.
     :returns: the records whose message is a block discard, in emission order.

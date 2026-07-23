@@ -1,4 +1,4 @@
-"""Tests for TypeField: the type combo editor, the colored viewer badge, and their live binding (A4.3/#83)."""
+"""Tests for TypeField: the type combo editor, the colored viewer badge, and their live binding (#83)."""
 
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel

@@ -21,7 +21,7 @@ LOG: Final = logging.getLogger(__name__)
 
 FILTER_SCHEME: Final = "filter"
 """The click-to-filter internal scheme ([[plugins#filter-urls]]) -- a logged no-op here until a
-browser exists to filter against (Milestone B); no author-name anchor emits it yet, but the
+browser exists to filter against; no author-name anchor emits it yet, but the
 dispatch handler already recognizes it so it is never mistaken for an external link and sent to
 :class:`~PySide6.QtGui.QDesktopServices`."""
 
@@ -52,7 +52,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
 
     The viewer's link never auto-follows (``setOpenExternalLinks(False)``): one
     :meth:`__on_link_activated` handler dispatches on the href's scheme instead, so a future
-    ``filter://`` anchor (:data:`FILTER_SCHEME`, Milestone B) can never reach
+    ``filter://`` anchor (:data:`FILTER_SCHEME`) can never reach
     :class:`~PySide6.QtGui.QDesktopServices` by accident, and no other scheme is ever followed.
     """
 
@@ -125,7 +125,7 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
         """
         scheme = QUrl(href).scheme().lower()
         if scheme == FILTER_SCHEME:
-            LOG.info("click-to-filter link is not wired yet (Milestone B): %s", href)
+            LOG.info("click-to-filter link is not wired yet: %s", href)
         elif scheme in HTTP_SCHEMES:
             QDesktopServices.openUrl(QUrl(href))
         else:

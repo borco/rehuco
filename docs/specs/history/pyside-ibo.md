@@ -69,15 +69,15 @@ and its utilities are reimplemented under rehuco's own conventions in `borco-cor
 | --- | --- |
 | `ApplicationSingleton` (`other_instance_run = Signal(list)`, `setup(port, secret) -> bool`) | Reimplemented in `borco_pyside/core/application_singleton.py` — pure PySide6 (QLocalServer/QLocalSocket), no third-party singleton dep |
 | `SimpleProperty` / `ObjectProperty` | `borco_pyside/core/properties.py` — `SimpleProperty` keeps the name; `TypedProperty` replaces `ObjectProperty` |
-| Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (A1 depends on it) |
-| **In-app logging stack** (bridge + log widget) | **Not carried yet** — `borco_pyside/logging/` is console-only. **Scheduled: A7**, ahead of the task queue/dock — see below |
+| Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (LocalEdit1 depends on it) |
+| **In-app logging stack** (bridge + log widget) | **Not carried yet** — `borco_pyside/logging/` is console-only. **Scheduled: LocalEdit7**, ahead of the task queue/dock — see below |
 | `widgets/flow_layout`, `line_edit` | `borco_pyside/widgets/` (`flow_layout`, `line_edit_helpers`, `line_edit_clear_action`, …) — a wider set than either snapshot |
 | `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is planned on **pyside6-scintilla** |
-| `image_browser/` (1st only) | Not carried: the image strip/lightbox is tutorial-plugin work (**A5**), and the image grid is a planned QML surface |
-| Atomic write — *no pyside-ibo equivalent* | `borco_core/atomic_write.py` — new (A1's atomic save) |
+| `image_browser/` (1st only) | Not carried: the image strip/lightbox is tutorial-plugin work (**LocalEdit5**), and the image grid is a planned QML surface |
+| Atomic write — *no pyside-ibo equivalent* | `borco_core/atomic_write.py` — new (LocalEdit1's atomic save) |
 | Theming, QtAds helpers, dockable dialogs — *no pyside-ibo equivalent* | `borco_pyside/theming`, `qtads`, `dialogs` — new in rehuco |
 
-### The in-app log surface (scheduled: A7)
+### The in-app log surface (scheduled: LocalEdit7)
 
 [[[pyside-ibo#log-stack]]]
 
@@ -97,7 +97,7 @@ shipped an entire in-app log viewer:
 - **`LogWidget`** / **`LogWindow`** (the 1st snapshot used a `log_widget_mixin` instead) — the
   dockable/standalone surface the user actually reads.
 
-**Status in rehuco: none of this exists yet — now scheduled as the first item of A7**
+**Status in rehuco: none of this exists yet — now scheduled as the first item of LocalEdit7**
 ([[implementation-plan]]), ahead of the task queue/dock and the checksums that ride on it, on the
 reasoning that the log dock is the simplest real dock and is what makes those two observable when
 they misbehave. It lands on the QtAds shell already in place. The piece worth reusing is the

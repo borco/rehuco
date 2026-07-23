@@ -292,8 +292,8 @@ Two design facts shape the choice:
 launcher with an embedded interpreter and the app's source, and declares icon, identity, file association, and installer
 from `pyproject.toml`, so the OS-specific registration is generated rather than hand-maintained. The deciding reasons
 are **reduced fragility and declarative app identity**, not build speed. MSIX is a possible later upgrade for the
-strongest Windows identity. This is wider-distribution polish — not needed for A0 or the author's own machines — and the
-file-association and single-instance mechanics it rests on were de-risked by a dedicated spike before A0 relied on
+strongest Windows identity. This is wider-distribution polish — not needed for LocalEdit1 or the author's own machines — and the
+file-association and single-instance mechanics it rests on were de-risked by a dedicated spike before LocalEdit1 relied on
 "double-click opens" (macOS #13, Windows #1). **The how-to and hurdles of actually using Briefcase — config,
 build/iterate loop, the macOS UTI/`QFileOpenEvent` recipe, and per-OS gotchas — live in
 [[appendices.briefcase-packaging#overview]].**

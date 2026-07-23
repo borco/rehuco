@@ -1,5 +1,5 @@
 """The special `type` field: a combo editor and a colored viewer badge for the document's resource type
-([[plugins#plugin-blocks]], A4.3/#83).
+([[plugins#plugin-blocks]], #83).
 """
 
 from collections.abc import Callable, Sequence
@@ -18,7 +18,7 @@ accidental *un*-set."""
 
 
 class TypeField(Field[str]):
-    """The special ``type`` field ([[plugins#plugin-blocks]], A4.3/#83): the key of the one **active**
+    """The special ``type`` field ([[plugins#plugin-blocks]], #83): the key of the one **active**
     plugin block, edited as a combo and shown in the viewer as a colored badge.
 
     Carried from TutCatalog5's ``info_type`` prior art: it is the field the user **selects the current

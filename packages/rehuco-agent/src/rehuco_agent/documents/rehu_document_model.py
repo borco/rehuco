@@ -53,7 +53,7 @@ yet, not a scalar of these groups."""
 KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES)
 """Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
 key in the active block is an **unknown field** surfaced through the generic fallback
-([[plugins#fallback-editor]], A2.8/#28)."""
+([[plugins#fallback-editor]], #28)."""
 
 
 def path_label(path: Path) -> str:
@@ -77,9 +77,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     and emits the field's ``<name>_changed`` signal -- which is what makes live "both" work: an edit
     in the editor updates the model, whose signal the viewer is bound to. ``sources`` is exposed as
     the list it is; the
-    multi-source record-list editor is a later slice (A2.6/#26) that plugs into this seam. ``authors``
+    multi-source record-list editor is a later slice (#26) that plugs into this seam. ``authors``
     / ``advertised_tags`` / ``extra_tags`` are common-core top-level lists, not source-scoped, so they
-    write straight through to the document instead of through the primary source (A2.3/#23).
+    write straight through to the document instead of through the primary source (#23).
     :meth:`revert` is the write-through's mirror image: it re-reads the document from disk and
     reseeds every field, guarded so reseeding is never itself treated as an edit (#41).
 
@@ -89,13 +89,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     unknown_fields_changed = Signal()
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
-    :meth:`remove_unknown_field` ([[plugins#fallback-editor]], A2.8/#28)."""
+    :meth:`remove_unknown_field` ([[plugins#fallback-editor]], #28)."""
 
     active_block_changed = Signal()
     """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
     editors go away, the incoming block's fields render, and the set of unknown-field and inactive-block
-    rows (with their provenance and carry-vs-drop wiring) is rebuilt ([[plugins#plugin-blocks]], A4.3/#83,
-    A4.4/#84). Two seams raise it -- a type switch (:meth:`__on_resource_type_changed`) and every
+    rows (with their provenance and carry-vs-drop wiring) is rebuilt ([[plugins#plugin-blocks]], #83,
+    #84). Two seams raise it -- a type switch (:meth:`__on_resource_type_changed`) and every
     :meth:`revert` (a reload can change the active type, its unknown fields, and the inactive-block fates
     at once, so revert rebuilds unconditionally rather than deciding which moved). Distinct from
     :attr:`unknown_fields_changed` (a single fallback field dropped) because that stays within a
@@ -104,7 +104,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
-    it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, A5),
+    it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, #25),
     so a consumer that needs to react to the document's identity changing (e.g. `DocumentsDock`
     resyncing a dock's persisted identity) can bind to `path_changed` instead of polling it."""
 
@@ -112,11 +112,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
     folder/location links). The viewer binds to it (rendered as a native-path link); it is not edited
     directly -- :meth:`rename_location` is the only thing that changes it, and only once the deferred
-    move-on-disk (A5) actually succeeds."""
+    move-on-disk (#25) actually succeeds."""
 
     resource_type = SimpleProperty("")
     """The document's resource type ([[field-schema#resource-types]]) -- the key of its **active**
-    plugin block ([[plugins#plugin-blocks]]). Editing it is a **type switch** (A4.3/#83): the write-through
+    plugin block ([[plugins#plugin-blocks]]). Editing it is a **type switch** (#83): the write-through
     (:meth:`__on_resource_type_changed`) claims the newly-active block, re-seeds the type-field scalars
     from it, marks dirty, and fires :attr:`active_block_changed`. Switching away and back within a
     session is non-destructive -- the outgoing block stays resurrectable in memory until save (the block
@@ -366,7 +366,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         actually being moved are never stale), and the move itself is delegated to :meth:`__move`.
         :meth:`__move` owns performing the rename and reseeding :attr:`location` on success; it always
         fails for now -- the real rename-on-disk (folder-rename-from-suggestions, checksum-gated safe
-        move) is deferred to A5 ([[implementation-plan]]) -- so :attr:`location` never actually
+        move) is deferred (#25) -- so :attr:`location` never actually
         changes through this path yet.
 
         :param new_name: the destination file/folder name (already sanitized by the caller, e.g. a
@@ -386,11 +386,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         too. :meth:`__seed_from_document` guards itself against the reseed looking like an edit --
         no write-back to the document, and :attr:`dirty` ends up ``False`` regardless of what it was.
 
-        **A revert always rebuilds the form** ([[plugins#plugin-blocks]], A4.3/#83): it fires
+        **A revert always rebuilds the form** ([[plugins#plugin-blocks]], #83): it fires
         :attr:`active_block_changed` unconditionally, so the whole composition re-resolves from the
         reloaded document -- a revert is defined to leave the model exactly as a fresh open would. A reload
         can change the active type, the active block's unknown fields, and the inactive-block fates
-        (claimed-then-abandoned blocks revert to carried foreign, regaining their drop button, A4.4/#84)
+        (claimed-then-abandoned blocks revert to carried foreign, regaining their drop button, #84)
         all at once, and only a full rebuild re-wires a row's provenance and carry-vs-drop button -- the
         reactive rows can only show/hide and re-read a value, never re-wire. Rather than enumerate which
         structural axis moved (a check that has to stay exhaustive as axes are added), the coarse,
@@ -398,7 +398,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         ``unknown_fields_changed`` is emitted too, for consumers that don't rebuild on
         :attr:`active_block_changed` -- the source-preview docks re-serialize off it (#111), and it also
-        covers restored unknown active-block fields ([[plugins#fallback-editor]], A2.8/#28).
+        covers restored unknown active-block fields ([[plugins#fallback-editor]], #28).
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
@@ -412,7 +412,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
-        (A3.1 Phase 4, [[acquisition-tooling#tc-to-rehu]]).
+        ([[acquisition-tooling#tc-to-rehu]]).
 
         Delegates the file-system work to :func:`rehuco_core.convert_tc`, then adopts its result as
         this model's document -- reseeding every field and recomputing :attr:`locked` (which drops to
@@ -480,7 +480,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Resolve ``name`` as a whole inactive plugin block, when it is one ([[plugins#plugin-blocks]]).
 
         The binding is read-only by design: the fallback editor's only affordance on an inactive block is
-        **carry or drop**, never edit-in-place ([[plugins#fallback-editor]], A4.4/#84) -- its *values* are
+        **carry or drop**, never edit-in-place ([[plugins#fallback-editor]], #84) -- its *values* are
         foreign payload this file is merely custodian of. The drop half goes through
         :meth:`drop_inactive_block` (a whole-block remove), not this setter, so the setter refuses rather
         than writing a value into a block this document doesn't own.
@@ -499,7 +499,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         )
 
     def unknown_field_names(self) -> list[str]:
-        """The active plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], A2.8/#28).
+        """The active plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], #28).
 
         Every key in the active block ([[plugins#plugin-blocks]]) that isn't a known field
         (:data:`KNOWN_TYPE_FIELD_NAMES`) -- e.g. a field written by a newer plugin version than the one
@@ -525,7 +525,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         Every block the document's ``type`` doesn't name -- inactive **whether or not** its plugin is
         installed here, since only the type decides what is active. Each is carried verbatim on save
-        unless explicitly dropped (:meth:`drop_inactive_block`, A4.4/#84) -- its *values* are never edited
+        unless explicitly dropped (:meth:`drop_inactive_block`, #84) -- its *values* are never edited
         in place; the fallback surfaces it as a flagged, provenance-labeled row with a carry-or-drop
         choice ([[plugins#fallback-editor]]). This list is just the keys; the fates driving the flagging
         are :meth:`inactive_block_fates`.
@@ -541,7 +541,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def inactive_block_fates(self) -> list[tuple[str, bool]]:
         """Each inactive block's key paired with **whether saving will drop it** ([[plugins#plugin-blocks]],
-        A4.3/#83).
+        #83).
 
         The block persistence invariant (#82) gives the same inactive block opposite fates depending on
         whether it was ever active this session: a **claimed-then-abandoned** block (switched *to* and
@@ -559,7 +559,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return sorted((block.key, block.dropped_on_save) for block in self.__document.inactive_blocks())
 
     def available_types(self) -> list[str]:
-        """The resource types offerable in the type selector ([[plugins#plugin-blocks]], A4.3/#83).
+        """The resource types offerable in the type selector ([[plugins#plugin-blocks]], #83).
 
         The union of every installed plugin's main key
         (:attr:`~rehuco_core.plugins.PluginRegistry.main_keys`) and every block key this document already
@@ -583,7 +583,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return installed + extra
 
     def remove_unknown_field(self, name: str) -> None:
-        """Drop an unknown active-block field, marking the model dirty ([[plugins#fallback-editor]], A2.8/#28).
+        """Drop an unknown active-block field, marking the model dirty ([[plugins#fallback-editor]], #28).
 
         No-op if ``name`` isn't present, so a double remove (e.g. a stale button click) is harmless.
 
@@ -595,7 +595,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     def drop_inactive_block(self, name: str) -> None:
         """Drop a whole inactive plugin block the user chooses not to carry ([[plugins#fallback-editor]],
-        A4.4/#84).
+        #84).
 
         The block-level sibling of :meth:`remove_unknown_field`: the *drop* half of the fallback editor's
         carry-vs-drop choice on a foreign inactive block. Delegates the deletion to
@@ -661,7 +661,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :meth:`__seed_from_document` reseed and the narrower one a type switch needs.
 
         A type switch (:meth:`__on_resource_type_changed`) re-reads *only* these block-scoped scalars
-        from the newly-active block ([[plugins#plugin-blocks]], A4.3/#83), leaving the common-core
+        from the newly-active block ([[plugins#plugin-blocks]], #83), leaving the common-core
         fields (title/publisher/...) untouched, so it calls this alone rather than the whole reseed.
         Callers set the :attr:`__seeding` guard themselves; this never writes back to the document, so a
         reseed is never mistaken for an edit.
@@ -705,8 +705,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
 
         Always fails, for now -- the real rename-on-disk (folder-rename-from-suggestions, plus the
-        checksum-gated safe move a cross-filesystem destination needs) is deferred to A5
-        ([[implementation-plan]]); this stub exists so :meth:`rename_location` has somewhere to call
+        checksum-gated safe move a cross-filesystem destination needs) is deferred (#25); this stub
+        exists so :meth:`rename_location` has somewhere to call
         that already fails the way missing permissions or a name collision would, rather than
         silently pretending to succeed. When implemented, it will perform the move and reseed
         :attr:`location`/:attr:`current_name` from the new path.
@@ -715,14 +715,14 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :returns: always ``False``.
         """
         LOG.error(
-            "Rename not implemented yet (rename-on-disk is deferred to A5, #25): %r -> %r",
+            "Rename not implemented yet (rename-on-disk is deferred, #25): %r -> %r",
             self.current_name,
             new_name,
         )
         return False
 
     def __on_resource_type_changed(self, value: str) -> None:
-        """Switch the document's active type ([[plugins#plugin-blocks]], A4.3/#83): claim the newly-active
+        """Switch the document's active type ([[plugins#plugin-blocks]], #83): claim the newly-active
         block, re-resolve the form, and mark dirty.
 
         This is the agent-side seam that **arms** the block persistence invariant (#82). The order matters:

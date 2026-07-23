@@ -33,16 +33,16 @@ buttons), verify checksums, and seed metadata via per-site scrapers. It also han
 
 | Capability | TutCatalog4 | rehuco |
 | --- | --- | --- |
-| `info.tc` view / edit | Yes | A1 (generic), A2 (typed toolkit) |
-| Markdown description editor | Yes (Scintilla) | A1 view; editor via pyside6-scintilla (planned) |
-| Tutorial rich viewer (images) | Yes | A5 (lightbox, folder-rename suggestions) |
-| ReferenceImages type (`.cbz`, samples) | Yes | A6 (basic type + fields + viewer); redaction/search/slideshow deferred past C |
-| Collections (folder-of-folders) | Yes (recursive scan) | `Collection` type is acknowledged but its **field set is deferred**; grouping several files into one resource needs the multi-file manifest, **not yet specified — TBD**. Folder scanning itself is B3 |
-| Duration/size "Compute" | Yes (mediainfo) | fields modeled (A2); measured-by-scan is in the data model but no slice schedules the media-probe step — **TBD** |
-| Checksums | Yes (`.sfv`) | A7 (algorithm-tagged) |
-| SQLite cache + browser | Yes | `.rehudb` (B3), browsers (B4) |
-| Per-site scrapers | Yes (6 sites) | deferred past C; the geckodriver+BeautifulSoup approach is explicitly the cautionary predecessor, with an LLM URL-extraction successor |
-| Windows `.tc` association | Yes (registry) | A1 + file-association pre-work spike (ProgID/AUMID) |
+| `info.tc` view / edit | Yes | LocalEdit1 (generic), LocalEdit2 (typed toolkit) |
+| Markdown description editor | Yes (Scintilla) | LocalEdit1 view; editor via pyside6-scintilla (planned) |
+| Tutorial rich viewer (images) | Yes | LocalEdit5 (lightbox, folder-rename suggestions) |
+| ReferenceImages type (`.cbz`, samples) | Yes | LocalEdit6 (basic type + fields + viewer); redaction/search/slideshow deferred (reference-image richness) |
+| Collections (folder-of-folders) | Yes (recursive scan) | `Collection` type is acknowledged but its **field set is deferred**; grouping several files into one resource needs the multi-file manifest, **not yet specified — TBD**. Folder scanning itself is CacheDB3 |
+| Duration/size "Compute" | Yes (mediainfo) | fields modeled (LocalEdit2); measured-by-scan is in the data model but no slice schedules the media-probe step — **TBD** |
+| Checksums | Yes (`.sfv`) | LocalEdit7 (algorithm-tagged) |
+| SQLite cache + browser | Yes | `.rehudb` (CacheDB3), browsers (CacheDB4) |
+| Per-site scrapers | Yes (6 sites) | deferred (acquisition tooling); the geckodriver+BeautifulSoup approach is explicitly the cautionary predecessor, with an LLM URL-extraction successor |
+| Windows `.tc` association | Yes (registry) | LocalEdit1 + file-association pre-work spike (ProgID/AUMID) |
 
 ## Can rehuco work for its `info.tc`?
 

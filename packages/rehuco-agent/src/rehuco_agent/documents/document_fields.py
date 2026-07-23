@@ -32,7 +32,7 @@ from .rehu_document_model import RehuDocumentModel
 
 TYPE_FIELD_NAME: Final = "resource_type"
 """The special, editor-only `type` field's model name -- the document's resource type, i.e. the key of
-its active plugin block ([[plugins#plugin-blocks]], A4.3/#83)."""
+its active plugin block ([[plugins#plugin-blocks]], #83)."""
 
 LOCATION_FIELD_NAME: Final = "location"
 """The special `path` field's model name -- the resource's file location ([[field-schema#field-mapping]])."""
@@ -133,7 +133,7 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
     runtime callbacks the registry can't build generically), then the declarative record fields in
     :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then one generic `UnknownField` fallback per
     unrecognized key in the active block, and finally one per **inactive block**
-    ([[plugins#fallback-editor]], A2.8/#28, A4.0/#80). All of it is driven from ``model`` alone, so
+    ([[plugins#fallback-editor]], #28, #80). All of it is driven from ``model`` alone, so
     `DocumentWidget` only hosts the resulting docks.
 
     :param model: the reactive view-model the fields bind to and read their runtime state from.
@@ -146,13 +146,13 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
     # the current type is ensured present in the offered list even when it names no installed plugin and
     # carries no block (a bare, unresolved type), so the combo always shows the document's actual type
     # rather than silently snapping to another; ``available_types`` already covers every resurrectable
-    # block key ([[plugins#plugin-blocks]], A4.3/#83)
+    # block key ([[plugins#plugin-blocks]], #83)
     type_choices = model.available_types()
     if model.resource_type not in type_choices:
         type_choices = [model.resource_type, *type_choices]
     # the viewer badge is painted with the colors the resource's plugin declares for itself, resolved
     # through the registry -- so a plugin from any source owns how its badge looks; an undeclared color
-    # (or a not-installed type) falls back to the theme's selection color ([[plugins#plugin-blocks]], A4.3/#83)
+    # (or a not-installed type) falls back to the theme's selection color ([[plugins#plugin-blocks]], #83)
     plugins = model.document.plugins
     type_field = TypeField(
         TYPE_FIELD_NAME,
@@ -179,8 +179,8 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
-    # model.image_scanner is a legacy .tc's TcScanner or a real .rehu's RehuScanner (A3.1,
-    # [[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'
+    # model.image_scanner is a legacy .tc's TcScanner or a real .rehu's RehuScanner
+    # ([[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'
     # widgets forward image_scanner_changed into their own scanner to pick that up live
     images_field = ImagesField(
         IMAGES_FIELD_NAME,
@@ -197,7 +197,7 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )
     # the type selector leads the Main Editor -- it is the most fundamental choice, and re-selecting it
-    # re-resolves the whole form (A4.3/#83). It is editor-only, so it adds no viewer row and location's
+    # re-resolves the whole form (#83). It is editor-only, so it adds no viewer row and location's
     # viewer still leads the viewer surface. Location follows so its editor sits right under the type;
     # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
     fields: list[Field[Any]] = [type_field, location_field, images_field]
@@ -223,7 +223,7 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
             )
         )
     # each inactive block trails as a single flagged row naming the whole block, carried verbatim by
-    # default with an explicit drop (A4.4/#84, [[plugins#fallback-editor]]). Its provenance is why it's
+    # default with an explicit drop (#84, [[plugins#fallback-editor]]). Its provenance is why it's
     # inactive -- three cases the user resolves differently:
     #   - **claimed then abandoned** this session: already dropped on save (armed deletion, #83). Its
     #     message says how to keep it (switch back), and it gets *no* drop button -- it is on its way out
@@ -248,10 +248,10 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
 
 def inactive_block_provenance(key: str, dropped: bool, plugins: PluginRegistry) -> str:
     """The provenance message flagging an inactive block, chosen by *why* it's inactive
-    ([[plugins#fallback-editor]], A4.4/#84).
+    ([[plugins#fallback-editor]], #84).
 
     Three cases the user resolves differently: a **claimed-then-abandoned** block is already slated to
-    drop on save (A4.3/#83); a never-claimed **foreign** block splits on whether this build has a plugin
+    drop on save (#83); a never-claimed **foreign** block splits on whether this build has a plugin
     for it -- installed means "switch the type or drop", absent means "install the plugin or drop".
 
     :param key: the inactive block's key.

@@ -13,31 +13,21 @@ See the [design specs](specs/README.md) for architecture and implementation deta
 
 ## Roadmap
 
-The near-term build follows three milestones, each mapping to a personal use-case and adding exactly
-one new architectural spine. See the
-[implementation plan](specs/implementation-plan.md) for detail.
+The build is organized into milestones, each mapping to a personal use-case and adding one new
+architectural spine. See the [implementation plan](specs/implementation-plan.md) for detail.
 
-- **A — Local view/edit** *(current)* — open, view, and edit a local `.rehu` for tutorials and
-  reference images. One machine, no network, no login — a standalone, genuinely useful tool.
-- **B — Watch from a tablet** — a single headless node serves the catalog to a browser on the LAN;
-  watch a tutorial from an iPad, progress remembered. Introduces the node and the web stack.
-- **C — Borrow offline** — borrow a copy onto a laptop, watch it with no network, reconcile
-  progress and notes on return. Introduces two-party sync.
+| Milestone | What it does |
+| --- | --- |
+| **LocalEdit** *(current)* | Local viewing and editing of `.rehu` files — one machine, no network, no login. |
+| **CacheDB** | Scan folders, cache the scan results into a `.rehudb` database, and search the catalog. Brings the app close to the original tutcatalog. |
+| **WatchTutorial** | Watch tutorials locally, or from a browser/tablet via an embedded web server, with progress remembered. |
+| **Borrowing** | Borrow a copy onto a laptop, watch it offline, and reconcile progress and notes on return — two-party sync (home node ↔ laptop), the minimal reconcile topology. |
+| **Swarm** | The full multi-node swarm — peer discovery, pairing and trust, registry resolution, and N-way sync across many machines. |
+| **Daz3D** | Migrate from the daz3d-personal-database predecessor — import and browse `.dpdml` files, and install/uninstall Daz3D plugins/extensions. |
 
-The full multi-node swarm, acquisition tooling, and richer plugins are deliberately deferred past
-these three.
-
-## Versioning
-
-Milestone completion drives the version of the apps and the shared core; the generic `borco-*`
-libraries version independently. See the
-[implementation plan](specs/implementation-plan.md) for the full policy.
-
-- **`rehuco-agent`, `rehuco-node`, `rehuco-core`** — MAJOR = milestones completed: **A → `1.0`**,
-  **B → `2.0`**, **C → `3.0`**; MINOR = a shipped slice within the current milestone; PATCH = fixes.
-  Released in lockstep.
-- **`borco-core`, `borco-pyside`** — ordinary, independent SemVer (they are generic and will move
-  to their own repository); `0.y` while young, `1.0` on the move-out.
+Maintenance is tracked separately in **audit-run milestones** `X1`, `X2`, … — each collects the
+issues found during the N-th codebase audit. Acquisition tooling and richer reference-image plugins
+remain deferred beyond the milestones above.
 
 ## rehuco packages
 

@@ -114,7 +114,7 @@ database needs importing — both are declared caches, rebuildable from files.
 
 [[[daz3d-personal-database#import-needs]]]
 
-Daz3D support is deliberately parked past milestone C ([[implementation-plan]] scope), so this is a
+Daz3D support is parked at its own later **Daz3D** milestone ([[implementation-plan]] scope), so this is a
 recorded shopping list, not near-term work:
 
 1. **The Daz3D plugin** ([[plugins#daz3d-plugin]]) — a `daz3d:` plugin block to receive the type-specific

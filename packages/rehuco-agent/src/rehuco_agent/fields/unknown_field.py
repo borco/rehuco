@@ -21,11 +21,11 @@ PROVENANCE_NEWER_VERSION: Final = (
     "its plugins. It is kept as-is; upgrade to edit it."
 )
 """Provenance for a field the software here doesn't recognize because it comes from a **newer version**
-than what's installed ([[plugins#fallback-editor]]) -- deliberately source-agnostic, since in A2.8 a
+than what's installed ([[plugins#fallback-editor]]) -- deliberately source-agnostic, since in #28 a
 newer **common** top-level key and a newer **plugin-block** key are indistinguishable (there's no
 core-version model yet to tell them apart). The **block**-level plugin-absent provenance now lands
-(:data:`PROVENANCE_PLUGIN_ABSENT`, A4.4/#84); refining *this* field-level flag by source is the
-map-to-known-field slice's ([[plugins#fallback-editor]], A4.5/#85)."""
+(:data:`PROVENANCE_PLUGIN_ABSENT`, #84); refining *this* field-level flag by source is the
+map-to-known-field slice's ([[plugins#fallback-editor]], #85)."""
 
 PROVENANCE_NOT_CURRENT_TYPE: Final = (
     "This block's plugin is installed here, but the block isn't the one this file's type names, so it "
@@ -34,7 +34,7 @@ PROVENANCE_NOT_CURRENT_TYPE: Final = (
 """Provenance for an **inactive** plugin block whose plugin **is** installed here ([[plugins#plugin-blocks]])
 -- one this file's ``type`` doesn't name, even though this build could render it if it were active. The
 fix the user has is *"switch to it or drop it"*, not *"install a plugin"*, which is exactly why it is
-told apart from :data:`PROVENANCE_PLUGIN_ABSENT` ([[plugins#fallback-editor]]'s third bullet, A4.4/#84):
+told apart from :data:`PROVENANCE_PLUGIN_ABSENT` ([[plugins#fallback-editor]]'s third bullet, #84):
 the two are different situations the user resolves differently. Distinct from
 :data:`PROVENANCE_NEWER_VERSION` too -- that flags a newer-version field wanting an upgrade, where an
 inactive block is simply payload this file is custodian of."""
@@ -46,8 +46,8 @@ PROVENANCE_PLUGIN_ABSENT: Final = (
 """Provenance for an **inactive** plugin block whose plugin is **not installed** here
 ([[plugins#plugin-blocks]]) -- the file carries the block, but no build here knows its shape, so the fix
 is *"install the plugin"* rather than *"switch the type"* (:data:`PROVENANCE_NOT_CURRENT_TYPE`). The
-split the spec's third provenance calls for ([[plugins#fallback-editor]], A4.4/#84), determinable now
-that A4.0 gives the agent the installed-plugin registry to check the block's key against.
+split the spec's third provenance calls for ([[plugins#fallback-editor]], #84), determinable now
+that #80 gives the agent the installed-plugin registry to check the block's key against.
 
 Worded to stay true of the one case this can't tell apart: an object-valued top-level key added to the
 **common core** by a newer build is structurally identical to an uninstalled plugin's block, and both
@@ -59,7 +59,7 @@ PROVENANCE_ABANDONED_TYPE: Final = (
     "You switched away from this type this session, so saving will delete this block. Switch back to "
     "this type before saving to keep it."
 )
-"""Provenance for a **claimed-then-abandoned** inactive block ([[plugins#plugin-blocks]], A4.3/#83) --
+"""Provenance for a **claimed-then-abandoned** inactive block ([[plugins#plugin-blocks]], #83) --
 one made active this session and then switched away from, so the block persistence invariant (#82)
 **drops it on save**. Distinct from :data:`PROVENANCE_NOT_CURRENT_TYPE` (a never-claimed foreign block,
 carried verbatim) because the two are exactly the safety-net contrast the spec asks the editor to make

@@ -31,19 +31,19 @@ than *port*.
 
 | Capability | Resource Hub | rehuco |
 | --- | --- | --- |
-| `.tc` reader (YAML) | Yes | reused as the design/read reference for the `.tc`→`.rehu` adapter (A3) |
-| SQLite cache + scan | Yes (QtSql) | `.rehudb` built by the node (B3) |
-| Browsers (docked tables) | Yes | B4 |
-| QtAds docking + QML surface | Yes | Adopted — QtAds document-dock shell landed with A2.0; first QML dock still ahead ([QtAds appendix](../appendices/qt-ads.md)) |
+| `.tc` reader (YAML) | Yes | reused as the design/read reference for the `.tc`→`.rehu` adapter (LocalEdit3) |
+| SQLite cache + scan | Yes (QtSql) | `.rehudb` built by the node (CacheDB3) |
+| Browsers (docked tables) | Yes | CacheDB4 |
+| QtAds docking + QML surface | Yes | Adopted — QtAds document-dock shell landed with LocalEdit2.0; first QML dock still ahead ([QtAds appendix](../appendices/qt-ads.md)) |
 | `ApplicationSingleton` / file-association helpers | via pyside-ibo | reimplemented in `borco-core`/`borco-pyside`; file-association proven by the pre-work spike |
 | Standalone packaging | PyInstaller (+ post-commit build) | native installers deferred; **Briefcase** evaluated in pre-work; `uv tool install` meanwhile |
-| Node / web / tablet | No | Milestone B |
-| Borrow offline, multi-node sync | No | Milestone C / deferred swarm |
+| Node / web / tablet | No | WatchTutorial |
+| Borrow offline, multi-node sync | No | Borrowing / Swarm |
 
 ## Can rehuco work for its `.tc`?
 
 **Yes**, and rehuco already builds on it: `tc_reader.py` is the concrete reference behind rehuco's
-[field-schema](../field-schema.md) and the read-half of the A3 migration. The YAML `.tc` maps through
+[field-schema](../field-schema.md) and the read-half of the LocalEdit3 migration. The YAML `.tc` maps through
 the same `.tc`→`.rehu` adapter; the SQLite cache is rebuildable and carries no unique data. Resource
 Hub is less "a catalog to migrate from" than "the running start rehuco was rebuilt from" — a fresh
 git history, old repo kept read-only, its design absorbed rather than its code carried verbatim.

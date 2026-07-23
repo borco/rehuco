@@ -70,6 +70,6 @@ class FieldRegistry:
         :param kwargs: extra constructor arguments a specific type needs (e.g.
             :class:`~rehuco_agent.fields.multiple_choice_field.MultipleChoiceField`'s ``choices``).
         :returns: a new field instance.
-        :raises KeyError: if ``type_`` is not registered (the unknown-field fallback is A2.8/#28).
+        :raises KeyError: if ``type_`` is not registered (the unknown-field fallback is #28).
         """
         return self.__types[type_](name, label, viewer_tab=viewer_tab, editor_tab=editor_tab, **kwargs)

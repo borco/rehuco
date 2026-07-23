@@ -499,7 +499,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         a failed write dropped nothing on disk, so logging in either case would cry a discard that never
         happened -- exactly the wrong trigger :meth:`__dropped_block_keys` exists to avoid.
 
-        The sink is the process logging stack for now; the in-app log dock (A7) and the activity log proper
+        The sink is the process logging stack for now; the in-app log dock and the activity log proper
         ([[sync#overview]]) re-point it at the real sink when they exist -- this method is what gets
         re-pointed (#86).
 
@@ -1038,7 +1038,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         alias claims the same key its main spelling would. An empty type is stored verbatim and claims
         nothing -- there is no block to claim.
 
-        The type-switching UI that drives this is A4.3 ([[plugins#plugin-blocks]]); this is the model seam
+        The type-switching UI that drives this is #83's ([[plugins#plugin-blocks]]); this is the model seam
         it edits, exercised directly here.
 
         :param resource_type: the resource type to switch to (a main key or any alias spelling).
@@ -1130,7 +1130,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def active_field(self, key: str, default: Any = None) -> Any:
         """Read a value from the active plugin block ([[plugins#plugin-blocks]]).
 
-        Generic value access only -- **not** the block save invariant (A4.2, [[plugins#plugin-blocks]]).
+        Generic value access only -- **not** the block save invariant (#82, [[plugins#plugin-blocks]]).
 
         :param key: the key to read inside the block.
         :param default: value to return when the block or key is absent.
@@ -1142,7 +1142,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Write a value into the active plugin block ([[plugins#plugin-blocks]]), creating the block if it
         is absent or malformed.
 
-        Generic value access only -- **not** the block save invariant (A4.2, [[plugins#plugin-blocks]]).
+        Generic value access only -- **not** the block save invariant (#82, [[plugins#plugin-blocks]]).
 
         :param key: the key to write inside the block.
         :param value: the value to store.
@@ -1152,9 +1152,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def remove_active_field(self, key: str) -> bool:
         """Delete a key from the active plugin block ([[plugins#plugin-blocks]]).
 
-        Generic value access only -- **not** the block save invariant (A4.2, [[plugins#plugin-blocks]]).
+        Generic value access only -- **not** the block save invariant (#82, [[plugins#plugin-blocks]]).
         Used to drop an unrecognized field the user explicitly discards via the fallback editor's remove
-        action ([[plugins#fallback-editor]], A2.8/#28); an unremoved unknown field is otherwise carried
+        action ([[plugins#fallback-editor]], #28); an unremoved unknown field is otherwise carried
         verbatim on round-trip.
 
         :param key: the key to delete inside the block.
@@ -1167,7 +1167,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return False
 
     def remove_block(self, key: str) -> bool:
-        """Drop a whole **inactive** plugin block from the document ([[plugins#fallback-editor]], A4.4/#84).
+        """Drop a whole **inactive** plugin block from the document ([[plugins#fallback-editor]], #84).
 
         The block-level sibling of :meth:`remove_active_field`: where that drops one unrecognized key
         *inside* the active block, this drops an entire inactive block the file was merely custodian of --

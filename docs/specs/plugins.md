@@ -77,7 +77,7 @@ the toolkit.
 
 [[[plugins#toolkit-surfaces]]]
 
-- [ ] [#20: feat: A2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
+- [ ] [#20: feat: LocalEdit2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
 
 The field toolkit named in [[plugins#core-vs-plugin]] is a shared, non-plugin library the agent owns; plugins (and
 declarative types) compose their viewer/editor from it. This section is its architecture and the
@@ -97,17 +97,17 @@ that show and edit it:
   `FieldEditorWidgets`: the tab, a name `label`, an optional editor-only `misc` control, and the
   viewer/editor widget), any slot of which may be `None`. Viewer and editor are deliberately separate
   objects, not one widget in two modes ([[plugins#core-vs-plugin]]'s editor/viewer split). Each field maps
-  to **one** editor; the multi-*surface* split (different fields in different docks, A2.6/#26) is the
+  to **one** editor; the multi-*surface* split (different fields in different docks, LocalEdit2.6/#26) is the
   assembler's job — see `FieldsForm` — not a per-field list.
 - **`FieldRegistry`** — maps a field `type` string to its `Field` subclass, so a type's field list
   resolves declaratively ([[plugins#core-vs-plugin]]: a declarative type is a field list over the toolkit). An
-  unregistered type falls back to the unknown-field surface (A2.8/#28).
+  unregistered type falls back to the unknown-field surface (LocalEdit2.8/#28).
 - **`FieldsForm`** — composes an ordered list of fields into a form (a `QFormLayout` of label + widget
   rows), asking each field for viewers or for editors depending on which surface it builds.
 
 The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
 **Where each type's ordered field list is authored is not yet decided** — see the open question
-([[appendices.open-questions#still-open]]). For A2.0 the tracer's field list is a hardcoded Python constant.
+([[appendices.open-questions#still-open]]). For LocalEdit2.0 the tracer's field list is a hardcoded Python constant.
 
 **Content fields vs. the location control — two different categories.** Almost every field is a piece of
 **content**: a value stored *inside* the `.rehu` payload, bound bidirectionally to its editor. These
@@ -115,14 +115,14 @@ follow a **value-widget contract** — a `value` property, a `value_changed` sig
 slot (as `DurationEdit` / `FileSizeEdit` / `DateEdit` already do) — and a scalar-or-list value fits it
 directly (a multi-choice field is just `value: list[str]` + `value_changed`). Consolidating the
 remaining content fields onto this contract (e.g. `text`'s inline `QLineEdit` becoming a value widget
-that owns the echo guard) is A2.8/#28. The **`path` field is not
+that owns the echo guard) is LocalEdit2.8/#28. The **`path` field is not
 content**: it controls the resource's **identity** — the `.rehu`'s file name and possibly its parent
 directory — not anything written into the payload. It rides the same `FieldsForm` purely for layout
 convenience (label + middle control column + row alignment), which is why its owner constructs it out-of-band as a
 *leading field* rather than from the type's field list. Its interface is therefore **not** a value: it is
 a **command out** (a chosen name — `suggestion_clicked(str)`) plus **display-only inputs** (the
 suggestions to show and the current name); its `location` display is a read-only projection of the path
-that only changes when a rename actually succeeds (deferred to A5). So the value-widget contract is the
+that only changes when a rename actually succeeds (deferred to LocalEdit5). So the value-widget contract is the
 default for content fields, and the `path` field is not an exception to it but a different kind of
 object outside its scope. The suggestions it displays are still derived from content fields
 (`title` / `publisher` / …), so the naming domain logic belongs in a dedicated suggestion source, not in
@@ -146,8 +146,8 @@ URL:       [url edit]
 ```
 
 The list/nested widgets and their group/subtype config land in a deferred slice (#97; the scope
-outlived A2.3/#23 and A2.6/#26);
-A2.0 ships only the leaf text field. A composite field still returns **one** editor widget from
+outlived LocalEdit2.3/#23 and LocalEdit2.6/#26);
+LocalEdit2.0 ships only the leaf text field. A composite field still returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
 
@@ -164,7 +164,7 @@ other. Keeping the reactive layer in the agent preserves the core's non-GUI puri
 
 Common-core `title` / `publisher` / `url` are attributes of a **source record** ([[field-schema#sources]]), and
 `sources` is a list; the view-model exposes that list explicitly and, for now, edits the **primary**
-entry. The multi-source record-list *editor* is a deferred slice (#97; outlived A2.3/#23, A2.6/#26) — the view-model
+entry. The multi-source record-list *editor* is a deferred slice (#97; outlived LocalEdit2.3/#23, LocalEdit2.6/#26) — the view-model
 is the seam it plugs into.
 
 ### §13.2.3 Viewer / editor / both surfaces
@@ -187,14 +187,14 @@ The agent hosts open resources in a **document-dock shell**: a `MainWindow` whos
 QtAds dock-in-dock, with **one dock per open `.rehu`**. Opening a file adds its dock to the currently
 focused document's area (tabbed) and focuses it; opening a file that is **already open focuses the
 existing dock** rather than opening a second. Each document dock is itself a nested dock area holding
-that resource's viewer/editor surfaces ([[plugins#viewer-editor-both]]). This replaces the A1 per-file window (#7) and
+that resource's viewer/editor surfaces ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
 is the
 same shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
 [[activity-open-document]] for this flow traced end-to-end.
 
 The open-and-forward and single-instance semantics this shell realizes are owned by [[nodes#local-vs-swarm]] (local-file
 mode) and [[nodes#single-instance]] (single-instance / file association); session persistence and the close guard are a
-later slice (A2.1/#21). A nested surface toggle must carry the [[packaging-deployment#qml-regression]] closed-dock-size
+later slice (LocalEdit2.1/#21). A nested surface toggle must carry the [[packaging-deployment#qml-regression]] closed-dock-size
 workaround
 (stash `splitterSizes` on `closeRequested`, reapply on `viewToggled(True)`).
 
@@ -322,7 +322,7 @@ filter://publishers?name=Example%20Publisher
 - **Initial field set:** `authors`, `tags`, `publishers` — the three values [[plugins#browsers]] linkifies.
   `advertised_tags` and `extra_tags` share the single `tags` domain: clicking a tag filters on the tag regardless of
   which list it came from; the two-list split is an editing-side concept, not a filtering one.
-- **Dormant until Milestone B.** The viewer renders external `http(s)` links from day one (an author entry's URL,
+- **Dormant until CacheDB.** The viewer renders external `http(s)` links from day one (an author entry's URL,
   [[field-schema#authors]]) but adds `filter://` anchors only once a browser exists to filter; until then the internal
   dispatch branch is a logged no-op seam. Link handling never enables the label's own external-link opening: one
   handler dispatches on scheme — `filter://` internally, validated `http(s)` to the system browser — so a `filter://`
