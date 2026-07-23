@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
-from borco_pyside.qtads import QtAdsFocusTracker, tab_label
+from borco_pyside.qtads import QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
 from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
@@ -14,24 +14,12 @@ from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
 from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
+from .document_dock import DocumentDock
 from .document_widget import DocumentWidget
 from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 
 LOG: Final = logging.getLogger(__name__)
-
-DIRTY_DOCK_MARKER: Final = "⬤ "
-"""Marker prepended to the title of dirty document tabs."""
-
-LOCKED_DOCK_MARKER: Final = "⚿ "
-"""Marker prepended to the title of locked document tabs ([[data-model#schema-version]]); takes
-precedence over :data:`DIRTY_DOCK_MARKER` -- a locked document's editors are disabled, so it can never
-actually be dirty too. A plain Unicode symbol (Miscellaneous Symbols, not an emoji-presentation
-codepoint), same as :data:`DIRTY_DOCK_MARKER` -- renders in the tab's own text color with no font
-wiring, unlike a Phosphor glyph, which would need the tab label's font swapped mid-string (unverified
-whether ``CElidingLabel``'s own eliding logic tolerates that) and can't be a ``CDockWidget.setIcon()``
-icon either, since that single shared property also backs the tabs-menu entry, which has no notion of
-"is this the current tab" for a state-dependent color to key off (confirmed the hard way)."""
 
 
 class DocumentsDock(QMainWindow):
@@ -239,9 +227,9 @@ class DocumentsDock(QMainWindow):
 
         :returns: the raw ``CDockManager.saveState()`` bytes, suitable for :meth:`restore_state`
             (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.docks_state`).
-            Matches saved docks up by :meth:`__dock_object_name`, so only meaningful once every
-            document that was part of it has been reopened (their docks recreated with the same
-            identifiers) again.
+            Matches saved docks up by each dock's ``objectName()`` (a `DocumentDock`'s own
+            path-derived identity), so only meaningful once every document that was part of it has been
+            reopened (their docks recreated with the same identifiers) again.
         """
         return bytes(self.__dock_manager.saveState().data())
 
@@ -323,36 +311,19 @@ class DocumentsDock(QMainWindow):
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
-            model = RehuDocumentModel.create_new(path, self, username=shared_identity_settings().current_username)
+            model = RehuDocumentModel.create_new(path, username=shared_identity_settings().current_username)
         else:
-            model = RehuDocumentModel(self.__load_or_locked(path), self)
-        widget = DocumentWidget(model, self)
+            model = RehuDocumentModel(self.__load_or_locked(path))
+        # the model is created parentless and handed to the dock, which adopts it -- so the whole
+        # document is freed when the dock closes rather than leaking for the session (#148). The dock
+        # also owns its own title/identity upkeep; the area only wires the two seams that cross back to
+        # it: the field status-message relay and the close request.
+        dock = DocumentDock(self.__dock_manager, model)
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)
-        widget.status_message.connect(self.status_message)
-
-        dock = QtAds.CDockWidget(self.__dock_manager, "")
-        dock.setObjectName(self.__dock_object_name(model.path))
-        dock_features = QtAds.CDockWidget.DockWidgetFeature
-        dock.setFeatures(
-            dock_features.CustomCloseHandling
-            | dock_features.DockWidgetClosable
-            | dock_features.DockWidgetDeleteOnClose
-            | dock_features.DockWidgetFocusable
-            | dock_features.DockWidgetForceCloseWithArea
-            | dock_features.DockWidgetMovable
-        )
-        dock.setWidget(widget)
+        dock.document_widget.status_message.connect(self.status_message)
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
-        self.__document_docks[dock] = widget  # pylint: disable=unsupported-assignment-operation
-
-        tab_label(dock).doubleClicked.connect(self.__on_tab_label_double_clicked)
-        model.dirty_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
-        model.lock_reasons_changed.connect(lambda _: self.__update_dock_title(dock))  # type: ignore[attr-defined]
-        model.path_changed.connect(  # type: ignore[attr-defined]
-            lambda path: dock.setObjectName(self.__dock_object_name(path))
-        )
-        self.__update_dock_title(dock)
+        self.__document_docks[dock] = dock.document_widget  # pylint: disable=unsupported-assignment-operation
 
         # tab the new document into the current dock's area (a fresh area when nothing is current
         # yet, e.g. the very first document); the tracker adopts it as current from there
@@ -361,55 +332,6 @@ class DocumentsDock(QMainWindow):
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, dock_area)
 
         return dock
-
-    @staticmethod
-    def __dock_object_name(path: Path | None) -> str:
-        """A stable identifier for a document's dock, used only for :meth:`restore_state` to match
-        a saved layout entry back up to the dock recreated for the same document on the next launch
-        (``CDockManager`` matches docks up by ``objectName()``).
-
-        Just the path itself, not the resource's UUID ([[data-model#stable-identity]]) -- a
-        ``.tc``-backed document has no UUID until a live :meth:`~RehuDocumentModel.convert` mints
-        one partway through an already-open dock's lifetime. Renaming an already-registered dock's
-        ``objectName()`` is itself safe and propagates correctly (confirmed empirically:
-        ``CDockManager.saveState()`` reads ``objectName()`` fresh, not from a stale add-time cache),
-        so :meth:`__make_new_dock` resyncs it on every :attr:`~RehuDocumentModel.path_changed`
-        instead of needing this identifier to be transition-immune by construction.
-
-        :param path: the document's current path.
-        :returns: the path as a string, or a placeholder if it has no path yet (every real call
-            site here already has a concrete path in hand).
-        """
-        return str(path) if path is not None else "untitled"
-
-    def __on_tab_label_double_clicked(self) -> None:
-        """Handle a double-click on a document's tab label."""
-        # TODO: implement tab label double-clicked functionality -- convert a preview-mode tab
-        # into a normal one, once tab preview mode (VSCode-explorer-style: opened-from-explorer
-        # tabs start in preview and get replaced by the next preview open, until double-click or
-        # an edit promotes them) exists.
-        LOG.info("Tab label double-clicked; not implemented yet")
-
-    def __update_dock_title(self, dock: QtAds.CDockWidget) -> None:
-        """Set ``dock``'s tab title/tooltip from its document's label, marking it locked or dirty.
-
-        The tab title is the document's :attr:`~RehuDocumentModel.label`, with
-        :data:`LOCKED_DOCK_MARKER` prepended while locked ([[data-model#schema-version]]) or
-        :data:`DIRTY_DOCK_MARKER` while unsaved -- locked takes precedence, since a locked document's
-        disabled editors mean it can never be dirty too. The tooltip always shows the full path.
-
-        :param dock: the dock whose title to refresh.
-        """
-        widget = self.__document_docks[dock]
-        name = widget.model.label
-        if widget.model.locked:
-            title = f"{LOCKED_DOCK_MARKER}{name}"
-        elif widget.model.dirty:
-            title = f"{DIRTY_DOCK_MARKER}{name}"
-        else:
-            title = name
-        dock.setWindowTitle(title)
-        dock.setTabToolTip(str(widget.model.path) if widget.model.path else "")
 
     def __find_dock_by_path(self, path: Path) -> QtAds.CDockWidget | None:
         """Return the dock whose document has ``path``, or ``None`` if no such dock is open.
@@ -473,6 +395,10 @@ class DocumentsDock(QMainWindow):
             one).
         """
         self.__dock_manager.removeDockWidget(dock)
+        # deleting the dock frees the whole document with it: the `DocumentDock` owns its model (parented
+        # to it) and widget, so their children -- the NameSuggestionModel, the field bindings' data --
+        # go too, ending the session-long per-document leak (#148). The model -> dock title connections
+        # are the dock's own bound methods, so Qt severs them here as well -- nothing to disconnect by hand.
         dock.deleteLater()
         self.__document_docks.pop(dock, None)
 
