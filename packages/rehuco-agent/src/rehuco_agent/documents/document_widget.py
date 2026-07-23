@@ -15,6 +15,7 @@ from ..fields import FieldsTab, StatefulWidget
 from ..glyphs import TAB_CLOSE_GLYPH
 from .document_fields import build_document_form
 from .rehu_document_model import RehuDocumentModel
+from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
@@ -170,7 +171,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # means the shortcut only fires whichever document actually has focus.
         self.__save_action.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         ActionIconThemeHandler(self.__save_action, SAVE_ICON_RESOURCE)
-        self.__save_action.triggered.connect(model.save)
+        self.__save_action.triggered.connect(self.__on_save_triggered)
         self.addAction(self.__save_action)
 
         self.__revert_action: Final = QAction("&Revert", self)
@@ -193,8 +194,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__upgrade_action: Final = QAction("&Upgrade", self)
         ActionIconThemeHandler(self.__upgrade_action, UPGRADE_ICON_RESOURCE)
         # save() upgrades a stale-on-disk document as a side effect of writing it -- there is no
-        # separate migrate call (RehuDocumentModel.upgradable's own docstring)
-        self.__upgrade_action.triggered.connect(model.save)
+        # separate migrate call (RehuDocumentModel.upgradable's own docstring), so the upgrade shares
+        # the Save action's own failing-save guard (#146)
+        self.__upgrade_action.triggered.connect(self.__on_save_triggered)
         self.addAction(self.__upgrade_action)
 
         self.__save_action.setEnabled(model.dirty)
@@ -490,6 +492,18 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__convert_keep_backups_action.setVisible(legacy_tc)
         self.__convert_discard_originals_action.setVisible(legacy_tc)
         self.__upgrade_action.setVisible(upgradable)
+
+    def __on_save_triggered(self) -> None:
+        """Save this document, surfacing an I/O failure as a retry/cancel dialog (#146).
+
+        Backs both the Save action and the Upgrade action -- an upgrade *is* a save
+        (:attr:`~RehuDocumentModel.upgradable`), so both need the same failing-save guard
+        (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`), the same way
+        :meth:`__on_convert_triggered` already guards the convert actions. Nothing here depends on
+        whether the save succeeded: the model's own signals already drive every follow-on (dirty
+        clears, the upgrade offer drops), and a cancelled retry simply leaves the document as it was.
+        """
+        save_or_prompt_retry(self, self.__model)
 
     def __on_convert_triggered(self, *, keep_backups: bool) -> None:
         """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``.

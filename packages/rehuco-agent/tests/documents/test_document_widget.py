@@ -188,6 +188,50 @@ def test_save_action_triggers_the_models_save(
     save.assert_called_once_with()
 
 
+def test_save_action_shows_a_critical_dialog_when_the_save_fails(
+    mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """A save that raises ``OSError`` (an offline mount, #146) surfaces a critical dialog instead of
+    propagating a traceback.
+
+    **Test steps:**
+
+    * mock ``model.save`` to raise ``OSError`` and the critical dialog to answer Cancel
+    * dirty the model so the save action can fire
+    * trigger the save action
+    * verify the critical dialog was shown
+    """
+    mocker.patch.object(model, "save", side_effect=OSError("offline mount"))
+    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+    model.title = "New Title"
+
+    widget.save_action.trigger()
+
+    critical.assert_called_once()
+
+
+def test_save_action_retries_the_save_when_the_failure_dialog_is_retried(
+    mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """Answering Retry to the failing-save dialog re-attempts the save -- the transient-offline-mount
+    remedy (#146).
+
+    **Test steps:**
+
+    * mock ``model.save`` to raise ``OSError`` once then succeed, and the critical dialog to answer Retry
+    * dirty the model so the save action can fire
+    * trigger the save action
+    * verify ``save`` was attempted twice
+    """
+    save = mocker.patch.object(model, "save", side_effect=[OSError("offline mount"), None])
+    mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
+    model.title = "New Title"
+
+    widget.save_action.trigger()
+
+    assert save.call_count == 2
+
+
 def test_save_action_is_scoped_to_this_widgets_own_subtree(widget: DocumentWidget) -> None:
     """The save action's shortcut is scoped per-widget, not to the shared top-level window (#41).
 
@@ -1005,6 +1049,26 @@ def test_clicking_the_upgrade_action_saves_the_document(
     older_widget.upgrade_action.trigger()
 
     save.assert_called_once_with()
+
+
+def test_upgrade_action_shows_a_critical_dialog_when_the_save_fails(
+    mocker: MockerFixture, older_widget: DocumentWidget, older_model: RehuDocumentModel
+) -> None:
+    """An upgrade is a save (#89), so a failing upgrade surfaces the same critical dialog a failing
+    Save does (#146), not a traceback.
+
+    **Test steps:**
+
+    * mock ``model.save`` to raise ``OSError`` and the critical dialog to answer Cancel
+    * trigger the upgrade action
+    * verify the critical dialog was shown
+    """
+    mocker.patch.object(older_model, "save", side_effect=OSError("offline mount"))
+    critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
+
+    older_widget.upgrade_action.trigger()
+
+    critical.assert_called_once()
 
 
 def test_the_upgrade_offer_clears_once_the_document_is_saved(

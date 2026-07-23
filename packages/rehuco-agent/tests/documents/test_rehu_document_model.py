@@ -268,6 +268,32 @@ def test_rename_location_saves_first_when_dirty(mocker: MockerFixture, model: Re
     save.assert_called_once()
 
 
+def test_rename_location_aborts_with_a_logged_error_when_the_save_fails(
+    mocker: MockerFixture, model: RehuDocumentModel, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A pre-move save that raises ``OSError`` (an offline mount, #146) aborts the rename: an error is
+    logged, ``False`` is returned, and the move is never attempted -- the same log-and-fail channel the
+    (deferred, #25) move itself reports through, since this view-model has no widget to parent a
+    retry/cancel dialog to.
+
+    **Test steps:**
+
+    * dirty the model, patch ``save`` to raise ``OSError``, and patch the private move to detect a call
+    * call ``rename_location``
+    * verify it returned ``False``, logged an error, and never attempted the move
+    """
+    model.title = "New Title"
+    mocker.patch.object(model, "save", side_effect=OSError("offline mount"))
+    move = mocker.patch.object(model, "_RehuDocumentModel__move", return_value=True)
+
+    with caplog.at_level(logging.INFO):
+        result = model.rename_location("new_name")
+
+    assert result is False
+    assert logging.ERROR in [record.levelno for record in caplog.records]
+    move.assert_not_called()
+
+
 def test_rename_location_does_not_save_when_clean(mocker: MockerFixture, model: RehuDocumentModel) -> None:
     """A clean model is not saved before attempting the move -- there is nothing to save.
 

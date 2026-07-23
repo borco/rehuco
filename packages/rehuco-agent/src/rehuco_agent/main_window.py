@@ -16,6 +16,7 @@ from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
+from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .main_window_ui import Ui_MainWindow
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
@@ -250,10 +251,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __on_save_all(self) -> None:
         """Save every currently dirty open document (``File`` > ``Save all``, reusing #41's
-        per-document ``RehuDocumentModel.save``, #64)."""
+        per-document ``RehuDocumentModel.save``, #64).
+
+        Each save is guarded (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`,
+        #146): an I/O failure raises a retry/cancel dialog rather than aborting the whole sweep with a
+        traceback. Cancelling one stops the sweep -- the user chose not to keep saving -- leaving the
+        remaining dirty documents untouched.
+        """
         for model in self.__documents_dock.open_document_models():
-            if model.dirty:
-                model.save()
+            if model.dirty and not save_or_prompt_retry(self, model):
+                return
 
     def __populate_recents_menu(self) -> None:
         """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).
@@ -341,6 +348,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Cancelling the prompt aborts the app close; nothing closes. Unchecked dirty documents are
         left unsaved -- their edits are discarded along with the close.
 
+        A checked document whose save fails (an offline mount, [[mounts-and-storage#offline-mounts]])
+        raises a retry/cancel dialog (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`,
+        #146) rather than a traceback: cancelling it aborts the whole close, so the window stays open
+        with its edits and the session intact. Crucially, this keeps the failure from escaping mid-loop
+        and skipping the persistence steps below (window state, session, recents, theme) while the
+        window closes anyway -- once every selected save has landed, they always run.
+
         :param event: the close event to accept or ignore.
         """
         dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
@@ -350,7 +364,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                 event.ignore()
                 return
             for model in dialog.selected_models():
-                model.save()
+                if not save_or_prompt_retry(self, model):
+                    event.ignore()
+                    return
 
         # must run before __save_window_state captures the outer CDockManager's saveState(), or a
         # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on
