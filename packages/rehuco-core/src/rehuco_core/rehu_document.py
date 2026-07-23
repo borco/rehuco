@@ -192,6 +192,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         ([[data-model#write-integrity]])."""
         self.__check_reserved_keys(data)
         migrate_rehu_data(data)
+        self.__check_reserved_keys(data)
         self.__normalize()
         self.__migrate_active_block()
         self.__normalize_optional_scalars()
@@ -205,17 +206,25 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__seed_initial_claim()
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
-        """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]), before anything
-        else touches it.
+        """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]); run twice, once
+        before migration and once just after it, one pass per misuse it refuses.
 
-        Must run **before** :func:`~rehuco_core.migrations.migrate_rehu_data`: an unstamped
+        The stamp misuse must be caught **before** :func:`~rehuco_core.migrations.migrate_rehu_data`: an unstamped
         ``format_version`` reads as v1, and the v1->v2 step restamps it, overwriting the very evidence
-        of misuse this checks for. Unlike an unrecognized plugin block ([[plugins#fallback-editor]]),
+        of misuse this checks for. The reserved-*type* misuse is the opposite (#135): migration is what
+        settles which value *is* the type -- the v1->v2 step moves a flat payload's top-level ``type``
+        into the fresh ``core`` block -- so only the **after** pass sees the flat-v1 spelling
+        (``{"type": "format_version"}``); let through, the first active-block write would clobber the
+        file's version stamp, saving a file this same build refuses on reopen. A stray top-level
+        ``type`` beside an existing ``core`` (which that step declines to move) is refused by neither
+        pass: it never becomes the type, just an unknown key carried verbatim
+        ([[data-model#schema-version]]). Unlike an unrecognized plugin block ([[plugins#fallback-editor]]),
         there is no coherent reading to fall back to here -- the payload contradicts the format's own
         grammar, so construction itself refuses rather than producing a document that is quietly
         incoherent.
 
-        :param data: the payload as handed to ``__init__``, not yet migrated or normalized.
+        :param data: the payload as handed to ``__init__``, not yet migrated (first pass), or freshly
+            migrated, not yet normalized (second pass).
         :raises RehuFormatError: if ``format_version`` holds an object (a plugin's data, mistaken for
             the version stamp), or ``core.type`` names a reserved key (which is not a resource type).
         """
@@ -1036,14 +1045,20 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         (:meth:`~rehuco_core.plugins.PluginRegistry.main_key`), the same rewrite construction applies to a
         type read from disk (:meth:`__normalize`), so ``type`` and its block key stay one token and an
         alias claims the same key its main spelling would. An empty type is stored verbatim and claims
-        nothing -- there is no block to claim.
+        nothing -- there is no block to claim. A **reserved key** is refused outright: ``core`` and
+        ``format_version`` are grammar, not resource types ([[data-model#rehu-format]]), and storing one
+        as the type would build, from a live session, the same refused-on-reopen state construction
+        refuses in a payload (#135, :meth:`__check_reserved_keys`).
 
         The type-switching UI that drives this is #83's ([[plugins#plugin-blocks]]); this is the model seam
         it edits, exercised directly here.
 
         :param resource_type: the resource type to switch to (a main key or any alias spelling).
+        :raises ValueError: if ``resource_type`` names a reserved key, which is not a resource type.
         """
         main_key = self.__plugins.main_key(resource_type)
+        if main_key in RESERVED_KEYS:
+            raise ValueError(f"{main_key!r} is a reserved key rather than a resource type.")
         self.__core_or_create()["type"] = main_key
         if main_key:
             self.__claimed_keys.add(main_key)
