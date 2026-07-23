@@ -286,7 +286,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             plugins=plugins,
             username=username,
             on_disk_format_version=cls.__coerced_version(data),
-            on_disk_active_block_format_version=cls.__raw_active_block_version(data),
+            on_disk_active_block_format_version=cls.__raw_active_block_version(data, plugins),
         )
 
     @classmethod
@@ -901,28 +901,71 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         return stamp if stamp is not None else 0
 
     @staticmethod
-    def __raw_active_block_version(data: dict[str, Any]) -> int | None:
+    def __raw_active_block_version(data: dict[str, Any], plugins: PluginRegistry) -> int | None:
         """The active block's own stamp, read straight off ``data`` as parsed -- the same moment
         :meth:`load` reads the file-wide stamp, before construction migrates anything
         ([[plugins#plugin-blocks]]).
 
         Resolves the active key from the raw payload's own shape (``core.type`` if present, else a
         top-level ``type`` for a not-yet-migrated v1 file) rather than through :attr:`active_block_key`,
-        which only exists once a document -- and its normalization -- does.
+        which only exists once a document -- and its normalization -- does. The block itself resolves
+        **alias-aware** (:meth:`__raw_active_block`, #138): a type and a block spelling the same plugin
+        differently -- exactly the legacy files most likely to need the #89 Upgrade affordance -- still
+        find each other, where an exact-key read would report no block and silently hide the pending
+        upgrade.
 
         :param data: the parsed JSON object, not yet touched by ``__init__``.
+        :param plugins: the registry the document is about to be constructed with, for alias resolution.
         :returns: the raw block's stamp (``0`` if absent or malformed), or ``None`` when there is no
-            active block at all yet -- the type is unset, or names no top-level object.
+            active block at all yet -- the type is unset, or names no top-level object under any spelling.
         """
         core = data.get(CORE_BLOCK_KEY)
         resource_type = core.get("type") if isinstance(core, dict) else data.get("type")
         if not isinstance(resource_type, str) or not resource_type:
             return None
-        block = data.get(resource_type)
+        block = RehuDocument.__raw_active_block(data, resource_type, plugins)
         if not isinstance(block, dict):
             return None
         stamp = stamped_version(block)
         return stamp if stamp is not None else 0
+
+    @staticmethod
+    def __raw_active_block(data: dict[str, Any], resource_type: str, plugins: PluginRegistry) -> Any:
+        """Resolve the raw payload's active block **alias-aware**, mirroring the pairing
+        :meth:`__normalize` is about to establish (#138).
+
+        The type and its block may spell the same plugin differently on disk (``core.type:
+        "Tutorial"`` over a ``tutorial:`` block), so an exact-key read misses the block. Resolution
+        follows what normalization actually pairs the type with, in order:
+
+        - the block keyed **exactly** as the type is spelled -- whether the pair then renames to the
+          main key or a refused rename keeps the alias on both sides, they move together (#137);
+        - else the block under the type's **main key**, the spelling the type will normalize to. A
+          non-block value squatting on the main key resolves here too (to no stamp): it refuses any
+          alias-mate's rename in :meth:`__normalize` just the same;
+        - else the **first alias-mate in document order** -- with two mate blocks, that is the one
+          :meth:`__normalize` renames to the main key (the later mate's rename is refused, and it is
+          carried inactive under its alias), hence the one the type ends up naming.
+
+        :param data: the parsed JSON object, not yet touched by ``__init__``.
+        :param resource_type: the raw payload's type, as spelled on disk; non-empty.
+        :param plugins: the registry the document is about to be constructed with.
+        :returns: the block value the normalized type will name -- possibly a non-dict for a
+            malformed block, which the caller reads as no stamp -- or ``None`` when nothing matches.
+        """
+        if isinstance(data.get(resource_type), dict):
+            return data[resource_type]
+        main_key = plugins.main_key(resource_type)
+        if main_key in data:
+            return data[main_key]
+        return next(
+            (
+                value
+                for key, value in data.items()
+                if key not in RESERVED_KEYS and isinstance(value, dict) and plugins.main_key(key) == main_key
+            ),
+            None,
+        )
 
     @property
     def type(self) -> str:

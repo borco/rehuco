@@ -2860,6 +2860,82 @@ def test_saving_an_upgraded_block_clears_the_pending_flag(mocker: MockerFixture)
     assert doc.active_block_upgrade_pending is False
 
 
+def test_an_alias_spelled_type_or_block_still_reports_a_pending_upgrade(mocker: MockerFixture) -> None:
+    """A type and its block spelling the same plugin differently still find each other in the on-disk
+    figure (#138): the raw read resolves the block alias-aware, mirroring the pairing normalization
+    establishes, so the legacy files most likely to need the #89 Upgrade affordance are not the ones it
+    silently skips.
+
+    **Test steps:**
+
+    * load a document whose ``type`` uses the alias spelling over a main-keyed, unstamped block --
+      the on-disk figure reads the block's v0 and the upgrade reports pending
+    * load the mirror image, main-key type over an alias-keyed block -- same
+    * load an alias-keyed block already stamped at its plugin's version -- found, and not pending
+    """
+    alias_type = load_doc(mocker, {"type": "Tutorial", "tutorial": {"rating": 4}})
+    assert alias_type.on_disk_active_block_format_version == 0
+    assert alias_type.active_block_upgrade_pending is True
+
+    alias_block = load_doc(mocker, {"type": "tutorial", "Tutorial": {"rating": 4}})
+    assert alias_block.on_disk_active_block_format_version == 0
+    assert alias_block.active_block_upgrade_pending is True
+
+    current = load_doc(mocker, {"type": "Tutorial", "tutorial": {"format_version": 1}})
+    assert current.on_disk_active_block_format_version == 1
+    assert current.active_block_upgrade_pending is False
+
+
+def test_with_two_alias_mate_blocks_the_first_in_document_order_wins(mocker: MockerFixture) -> None:
+    """Two blocks spelling the same plugin by different aliases resolve to a decided winner (#138): the
+    **first in document order** is the one :meth:`~rehuco_core.RehuDocument.__normalize` renames to the
+    main key and the type ends up naming -- the later mate's rename is refused and it is carried
+    inactive under its alias -- so that is the block the on-disk figure reports.
+
+    **Test steps:**
+
+    * load a document typed by the main key, carrying two alias-mate blocks with distinct stamps
+    * verify the first mate became the active main-keyed block and the second kept its alias, carried
+    * verify the on-disk figure is the first mate's stamp
+    """
+    doc = load_doc(
+        mocker,
+        {
+            "type": "reference_images",
+            "ReferenceImages": {"format_version": 3},
+            "refimages": {"format_version": 7},
+        },
+    )
+    assert doc.active_block_key == "reference_images"
+    assert doc.active_block == {"format_version": 3}
+    assert doc.data["refimages"] == {"format_version": 7}
+    assert doc.on_disk_active_block_format_version == 3
+
+
+def test_a_block_spelled_exactly_as_the_type_beats_an_alias_mate(mocker: MockerFixture) -> None:
+    """A block keyed **exactly** as the type is spelled wins over any alias-mate, regardless of document
+    order (#138): normalization keeps that pair together -- the mate's rename onto the occupied main key
+    is refused -- so the on-disk figure reports the exactly-spelled block's stamp.
+
+    **Test steps:**
+
+    * load a document whose type's exact spelling keys a block, with an alias-mate block listed first
+    * verify the exactly-spelled block is the active one and the mate is carried under its alias
+    * verify the on-disk figure is the exactly-spelled block's stamp
+    """
+    doc = load_doc(
+        mocker,
+        {
+            "type": "reference_images",
+            "refimages": {"format_version": 7},
+            "reference_images": {"format_version": 3},
+        },
+    )
+    assert doc.active_block == {"format_version": 3}
+    assert doc.data["refimages"] == {"format_version": 7}
+    assert doc.on_disk_active_block_format_version == 3
+
+
 # endregion
 
 
