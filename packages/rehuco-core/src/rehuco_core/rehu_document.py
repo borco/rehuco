@@ -20,6 +20,7 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
@@ -213,6 +214,14 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         moment a save *writes* the block again (resurrected by switching back to its type), so a later
         re-abandonment is a fresh discard event with a fresh record. Reset by :meth:`reload` alongside
         :attr:`__claimed_keys` -- a reverted document begins a clean session, discard log included."""
+        self.__saved_serialization = self.serialize()
+        """The canonical text (:meth:`serialize`) of this document as of construction, the last
+        successful :meth:`save`, or :meth:`reload` -- the baseline :meth:`save` compares against to
+        decide whether a save actually *changes* the record and so must refresh ``updated``
+        ([[field-schema#record-timestamps]], #142). Captured after migration and normalization, which is
+        what keeps a pure layout upgrade (load old file, save) reading as *unchanged*: the baseline
+        already carries the migrated layout. Not ``Final``: every successful save and every reload
+        rebinds it."""
 
     def __check_reserved_keys(self, data: dict[str, Any]) -> None:
         """Refuse a payload that misuses a reserved key ([[data-model#rehu-format]]); run twice, once
@@ -411,6 +420,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           (:meth:`__log_discarded_blocks`, #86) once the write succeeds, so the *fact* of a claimed
           block's discard stays traceable even though its values are gone ([[sync#overview]]).
 
+        - **``updated`` refreshes on a changed save** ([[field-schema#record-timestamps]], #142): when
+          the canonical text differs from the load/last-save baseline (:attr:`__saved_serialization`),
+          the record was actually edited, and ``updated`` is stamped with the save's own UTC time before
+          writing. A save that rewrites an *unchanged* record -- the #89 Upgrade restamp (the baseline
+          already carries the migrated layout), a save-as copy -- leaves it alone: writing is not
+          editing, and "record last edited" must not decay into "record last written".
+
         **Key order is imposed here, and only here** (:meth:`__ordered_for_file`). It cannot be
         maintained in ``__data`` -- every setter appends -- and it does not need to be: JSON objects are
         unordered, so order is purely how the file reads to a human, which makes it a property of the
@@ -436,7 +452,18 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")
-        atomic_write_text(target, self.serialize())
+        text = self.serialize()
+        if text != self.__saved_serialization:
+            # the record's content changed since load/last save, so this save is an *edit* landing on
+            # disk: stamp `updated` with the save's own time ([[field-schema#record-timestamps]], #142).
+            # An unchanged save -- an upgrade restamp or a save-as copy -- skips this branch: writing is
+            # not editing. Stamped before the write (the file must carry the new value), so a *failed*
+            # write leaves the in-memory value ahead of disk -- harmless: the baseline only advances
+            # below on success, so a retried save restamps fresh, and a revert restores the disk value.
+            self.updated = self.__utc_now_timestamp()
+            text = self.serialize()
+        atomic_write_text(target, text)
+        self.__saved_serialization = text
         self.__path = target
         self.__log_discarded_blocks(target)
         # a file now exists, at whatever version was just written -- assigned only after the write, so a
@@ -450,9 +477,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         The one place the file's *bytes* are produced -- ordered (:meth:`__ordered_for_file`),
         ``indent=2``, ``ensure_ascii=False``, trailing newline -- so any read-only view of "what would
         be written" (the agent's source dock, #111) shows byte-for-byte what a save would, without
-        reaching into the private ordering. Unlike :meth:`save`, this never checks the lock state and
-        never touches disk: a locked or legacy ``.tc``-backed document still has a live in-memory
-        payload worth showing, even though saving it is refused.
+        reaching into the private ordering. One field can lag by design: a save that detects a changed
+        record stamps a fresh ``updated`` just before writing (#142), so a preview rendered ahead of
+        that save shows the *stored* value, not the stamp the save will mint -- a future timestamp is
+        exactly the one thing a preview cannot know. Unlike :meth:`save`, this never checks the lock
+        state and never touches disk: a locked or legacy ``.tc``-backed document still has a live
+        in-memory payload worth showing, even though saving it is refused.
 
         :returns: the document's canonical on-disk text, trailing newline included.
         """
@@ -660,6 +690,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # refreshed MISSING/INVALID_FILE reason when it still cannot be read. Read off the fresh document's
         # public surface -- a stub's lock_reasons is exactly its single load-failure reason (lock_reasons)
         self.__load_failure = fresh.lock_reasons[0] if fresh.load_failed else None
+        # the freshly-read file is, by definition, unchanged: rebase the `updated` bump's baseline on it
+        # (#142), so a save right after a revert reads as the no-op it is
+        self.__saved_serialization = self.serialize()
 
     @property
     def data(self) -> dict[str, Any]:
@@ -1602,12 +1635,22 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def updated(self) -> str:
-        """When this record was last edited ([[field-schema#record-timestamps]]), as stored; empty if absent."""
+        """When this record was last edited ([[field-schema#record-timestamps]]), as stored; empty if
+        absent. Refreshed by :meth:`save` when the save actually changes the record (#142); the setter
+        stays public for seeding paths that know better (`.tc` import writes the file's own mtime)."""
         return str(self.core.get("updated", ""))
 
     @updated.setter
     def updated(self, value: str) -> None:
         self.__core_or_create()["updated"] = value
+
+    @staticmethod
+    def __utc_now_timestamp() -> str:
+        """The current moment as the second-precision UTC ISO-8601 string the record timestamps store
+        ([[field-schema#record-timestamps]]), e.g. ``"2026-07-23T09:30:00Z"`` -- the same spelling
+        `.tc` import seeds ``created``/``updated`` with (:class:`~rehuco_core.tc_conversion.TcConverter`),
+        so a stamped and a seeded value are indistinguishable in format."""
+        return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
     @staticmethod
     def __optional_int(value: Any) -> int | None:
