@@ -247,9 +247,16 @@ worth it.
 
 `created` and `updated` are **new** full datetime values (not the partial-precision `released`, which
 is the *content's* publication date): when the `.rehu` record was first written and last
-edited. tc4 stored neither; on import they seed from the file's timestamps. They are shared
-record state (an edit that syncs updates `updated`), and relate to the `resource_version` /
-timestamp markers used for staleness detection and sync ([[data-model#scan-and-staleness]]).
+edited. tc4 stored neither; on import they seed from the file's timestamps. Both are stored as
+second-precision UTC ISO-8601 (`2026-01-15T09:30:00Z` — the example files' format).
+
+`updated` refreshes when a **save actually changes the record**: `save()` compares the canonical
+serialization against the load/last-save baseline and stamps the save's own UTC time only when they
+differ. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
+leaves it alone: writing is not editing, and "record last edited" must not decay into "record last
+written". They are shared record state (a synced edit carries its refreshed `updated` with it), and
+relate to the `resource_version` / timestamp markers used for staleness detection and sync
+([[data-model#scan-and-staleness]]).
 
 Once the `versions` list lands in the schema ([[sync#overview]] — v1 carries no versions yet), both become
 **derivable**: `created` = the creation entry's date (index 0, which compaction never touches,

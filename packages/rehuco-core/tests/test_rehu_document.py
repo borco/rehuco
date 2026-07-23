@@ -12,6 +12,7 @@ from typing import Any, Final
 from uuid import UUID
 
 import pytest
+from freezegun.api import FrozenDateTimeFactory
 from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_core import (
@@ -131,7 +132,7 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     assert saved["core"]["some_future_core_key"] == "kept verbatim"
     assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
-    assert saved["core"]["updated"] == TUTORIAL["core"]["updated"]  # saving does not auto-touch timestamps yet
+    assert saved["core"]["updated"] != TUTORIAL["core"]["updated"]  # a changed save refreshes updated (#142)
 
 
 def test_a_constructed_document_always_reports_the_version_it_actually_is() -> None:
@@ -363,6 +364,126 @@ def test_serialize_renders_a_locked_document_that_save_would_refuse() -> None:
     assert text.endswith("\n")
 
 
+def test_a_changed_save_stamps_updated_with_the_save_time(
+    mocker: MockerFixture, freezer: FrozenDateTimeFactory
+) -> None:
+    """A save whose content differs from the load baseline is an edit landing on disk, so it refreshes
+    ``updated`` to the save's own UTC time, in the seeded second-precision ``Z`` format, in its
+    canonical leading ``core`` position ([[field-schema#record-timestamps]], #142).
+
+    **Test steps:**
+
+    * freeze time and load the Tutorial fixture
+    * edit the title and save with the write mocked out
+    * verify the written ``updated`` is the frozen now, the in-memory accessor agrees, and the key
+      still sits in its canonical leading position
+    """
+    freezer.move_to("2026-07-23T10:15:30Z")
+    doc = load_doc(mocker, TUTORIAL)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.title = "Renamed Title"
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["updated"] == "2026-07-23T10:15:30Z"
+    assert doc.updated == "2026-07-23T10:15:30Z"
+    assert list(saved["core"])[:5] == ["type", "id", "created", "updated", "sources"]
+
+
+def test_an_unchanged_save_leaves_updated_alone(mocker: MockerFixture) -> None:
+    """A save that rewrites an unchanged record -- straight after load, or as a save-as copy to a new
+    path -- does not touch ``updated``: writing is not editing (#142).
+
+    **Test steps:**
+
+    * load the Tutorial fixture and save immediately, then save-as to a second path, writes mocked out
+    * verify both written files still carry the fixture's own ``updated``
+    """
+    doc = load_doc(mocker, TUTORIAL)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+    doc.save(Path("/fake/copy.rehu"))
+
+    for call in mock_write.call_args_list:
+        assert json.loads(call[0][1])["core"]["updated"] == TUTORIAL["core"]["updated"]
+
+
+def test_an_upgrade_save_of_an_unedited_older_file_leaves_updated_alone(mocker: MockerFixture) -> None:
+    """Loading an older-layout file migrates it in memory and saving writes the new layout -- the #89
+    Upgrade path -- but no field was edited, so ``updated`` keeps the file's own value (#142): the
+    baseline is captured *after* migration, which is exactly what keeps a pure layout upgrade reading
+    as unchanged.
+
+    **Test steps:**
+
+    * load a flat v1 payload carrying its own ``updated``
+    * save with the write mocked out
+    * verify the written file is upgraded to the current version yet ``updated`` is untouched
+    """
+    v1 = {
+        "format_version": 1,
+        "type": "tutorial",
+        "created": "2026-01-15T09:30:00Z",
+        "updated": "2026-06-20T14:12:00Z",
+        "sources": [{"title": "T", "primary": True}],
+    }
+    doc = load_doc(mocker, v1)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["format_version"] == CURRENT_FORMAT_VERSION
+    assert saved["core"]["updated"] == "2026-06-20T14:12:00Z"
+
+
+def test_a_second_unchanged_save_does_not_restamp_updated(
+    mocker: MockerFixture, freezer: FrozenDateTimeFactory
+) -> None:
+    """The baseline advances on every successful save, so only the save that carries new content stamps
+    ``updated`` -- an immediately following save writes the very same bytes (#142).
+
+    **Test steps:**
+
+    * freeze time, load the Tutorial fixture, edit the title, and save -- stamped with the frozen now
+    * move time forward and save again with no further edits
+    * verify the second write still carries the first save's stamp
+    """
+    freezer.move_to("2026-07-23T10:15:30Z")
+    doc = load_doc(mocker, TUTORIAL)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc.title = "Renamed Title"
+    doc.save()
+
+    freezer.move_to("2026-07-23T11:00:00Z")
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["updated"] == "2026-07-23T10:15:30Z"
+
+
+def test_reload_rebases_the_updated_baseline(mocker: MockerFixture) -> None:
+    """A revert re-reads the file, and the freshly-read content becomes the new unchanged baseline, so
+    a save right after a revert is the no-op it looks like (#142).
+
+    **Test steps:**
+
+    * load the Tutorial fixture, edit the title without saving, then reload -- the edit is discarded
+    * save with the write mocked out
+    * verify the written ``updated`` still carries the file's own value
+    """
+    doc = load_doc(mocker, TUTORIAL)
+    doc.title = "Never saved"
+    doc.reload()
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    assert json.loads(mock_write.call_args[0][1])["core"]["updated"] == TUTORIAL["core"]["updated"]
+
+
 def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
     """The file is laid out in one canonical order ([[field-schema#example-files]]).
 
@@ -527,22 +648,25 @@ def test_writing_a_common_field_replaces_a_malformed_core_block(mocker: MockerFi
 
 
 def test_two_documents_with_the_same_fields_save_identically_however_they_were_built(
-    mocker: MockerFixture,
+    mocker: MockerFixture, freezer: FrozenDateTimeFactory
 ) -> None:
     """Key order follows from the schema, not from a document's history.
 
     The reason to impose order at the write rather than let insertion order stand: a converted ``.tc``
     appends ``id``/``created`` after building its core, while a migrated v1 file inherits whatever order
-    that file happened to have. Same fields, same file.
+    that file happened to have. Same fields, same file. Time is frozen and *both* documents are edited
+    after construction, so both saves stamp the same ``updated`` (#142) -- byte-identity holds between
+    documents with the same edit history, not across edited-vs-untouched ones.
 
     **Test steps:**
 
-    * build the same resource twice -- once from a v1 payload, once field-by-field in a different order
+    * freeze time, then build the same resource twice -- once from a v1 payload, once field-by-field
+      in a different order, each with a post-construction edit
     * verify both save to byte-identical JSON
     """
-    from_v1 = RehuDocument(
-        {"format_version": 1, "id": "abc", "extra_tags": ["x"], "type": "tutorial", "authors": ["A"]}
-    )
+    freezer.move_to("2026-07-23T10:15:30Z")
+    from_v1 = RehuDocument({"format_version": 1, "id": "abc", "extra_tags": ["x"], "type": "tutorial"})
+    from_v1.authors = ["A"]
 
     built = RehuDocument({"core": {"type": "tutorial"}})
     built.authors = ["A"]
