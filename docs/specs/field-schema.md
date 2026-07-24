@@ -52,6 +52,7 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | — | *(none in tc4)* | `created` | datetime | common | scalar | **new** — record created; seed from file timestamp on import |
 | — | *(none in tc4)* | `updated` | datetime | common | scalar | **new** — record last edited; seed from file mtime on import |
 | `description` | *(bottom pane)* | `description` | Markdown | common | scalar | keep — embeds sibling `infoXX` images |
+| — | *(new)* | `hidden_images` | text list | common | multi | **new** — screenshot basenames curated *out* of the lightbox ([[data-model#image-meanings]], #27); absent/empty = all shown |
 | `tags` | Tags | `advertised_tags` | text list | common | multi | keep, rename — web-scraped |
 | `extraTags` | Exta Tags *(sic)* | `extra_tags` | text list | common | multi | keep, rename to snake_case — personal edits |
 | `original_size` | Original size | `original_size` | size (bytes) | common | scalar | keep — see [[field-schema#duration-size]]; empty for Collection |
@@ -92,7 +93,8 @@ disk scan (which in rehuco feed `current_duration` / `current_size` — see [[fi
 only:
 
 - **Common core (all types)** — `sources` (title/publisher/url), `authors`, `released`,
-  `description`, `advertised_tags`, `extra_tags`, `created`, `updated`, and the measured
+  `description`, `hidden_images` ([[data-model#image-meanings]]), `advertised_tags`, `extra_tags`, `created`,
+  `updated`, and the measured
   `original_size` / `current_size` pair ([[field-schema#duration-size]]) — the sizes are core-scanner output, wanted by
   every file-backed type; a Collection leaves them empty (it may later fill them from member
   stats — see the Collection bullet below).
@@ -519,16 +521,19 @@ parser/schema validation fixtures.
 - **Per-user** fields (`rating`, the per-user boolean flags, private `learning_paths`) nest under the plugin block's
   `users` map, keyed by the configured username ([[field-schema#per-user-shared]]); the shared fields stay inline
   beside it.
+- The keys appear in **canonical save order** ([[field-schema#canonical-order]]): `core` then the active block lead,
+  each led by its own leading keys and otherwise alphabetical; a `None`/absent field is omitted rather than written as
+  `null`. Each fixture below was regenerated through a real `save()`, not hand-written.
 - Values are illustrative; each example stresses the edge case named in its heading.
 
-### Tutorial — multi-source, multi-collection, split duration, year-month date
+### Tutorial — multi-source, multi-collection, split duration, hidden screenshots, year-month date
 
 ```json
 {
   "format_version": 2,
   "core": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
     "type": "tutorial",
+    "id": "550e8400-e29b-41d4-a716-446655440000",
     "created": "2026-01-15T09:30:00Z",
     "updated": "2026-06-20T14:12:00Z",
     "sources": [
@@ -538,34 +543,64 @@ parser/schema validation fixtures.
         "url": "https://example.com/intro-sculpting",
         "primary": true
       },
-      { "title": "Sculpting, Extended Cut", "publisher": "Second Platform", "url": "https://second.example/sculpting" }
+      {
+        "title": "Sculpting, Extended Cut",
+        "publisher": "Second Platform",
+        "url": "https://second.example/sculpting"
+      }
     ],
-    "authors": ["First Author", "Second Author"],
-    "released": "2025-03",
+    "advertised_tags": [
+      "sculpting",
+      "3d",
+      "modeling"
+    ],
+    "authors": [
+      "First Author",
+      "Second Author"
+    ],
+    "current_size": 1073741824,
     "description": "# Intro to Sculpting\n\nCovers the basics; see `info01.jpg` for reference.",
-    "advertised_tags": ["sculpting", "3d", "modeling"],
-    "extra_tags": ["rework"],
+    "extra_tags": [
+      "rework"
+    ],
+    "hidden_images": [
+      "info03.jpg",
+      "info07.jpg"
+    ],
     "original_size": 5368709120,
-    "current_size": 1073741824
+    "released": "2025-03"
   },
   "tutorial": {
     "format_version": 1,
-    "collections": [
-      { "title": "Sculpting Series", "index": 1, "url": "https://example.com/series" },
-      { "title": "Bundle 2025", "index": 10 }
-    ],
-    "original_duration": 71220,
-    "current_duration": 18000,
     "advertised_duration": 72000,
-    "level": ["intermediate"],
+    "collections": [
+      {
+        "title": "Sculpting Series",
+        "index": 1,
+        "url": "https://example.com/series"
+      },
+      {
+        "title": "Bundle 2025",
+        "index": 10
+      }
+    ],
     "complete": true,
+    "current_duration": 18000,
+    "level": [
+      "intermediate"
+    ],
     "online": true,
+    "original_duration": 71220,
     "users": {
       "admin": {
         "favorite": true,
         "keep": false,
         "learning_paths": [
-          { "title": "My Sculpting Path", "index": 2, "visibility": "private" }
+          {
+            "title": "My Sculpting Path",
+            "index": 2,
+            "visibility": "private"
+          }
         ],
         "rating": 4,
         "todo": false,
@@ -582,8 +617,8 @@ parser/schema validation fixtures.
 {
   "format_version": 2,
   "core": {
-    "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
     "type": "reference_images",
+    "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
     "created": "2026-02-01T11:00:00Z",
     "updated": "2026-02-01T11:00:00Z",
     "sources": [
@@ -594,13 +629,18 @@ parser/schema validation fixtures.
         "primary": true
       }
     ],
-    "authors": ["Third Author"],
-    "released": "2024-11-08",
+    "advertised_tags": [
+      "reference",
+      "anatomy"
+    ],
+    "authors": [
+      "Third Author"
+    ],
+    "current_size": 2147483648,
     "description": "Anatomy reference images.",
-    "advertised_tags": ["reference", "anatomy"],
     "extra_tags": [],
     "original_size": 2147483648,
-    "current_size": 2147483648
+    "released": "2024-11-08"
   },
   "reference_images": {
     "format_version": 1,
@@ -627,8 +667,8 @@ Field set provisional ([[field-schema#resource-types]]).
 {
   "format_version": 2,
   "core": {
-    "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
     "type": "collection",
+    "id": "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
     "created": "2026-01-10T08:00:00Z",
     "updated": "2026-01-10T08:00:00Z",
     "sources": [
@@ -639,11 +679,54 @@ Field set provisional ([[field-schema#resource-types]]).
         "primary": true
       }
     ],
-    "authors": ["First Author"],
-    "released": "2025",
+    "advertised_tags": [
+      "sculpting",
+      "series"
+    ],
+    "authors": [
+      "First Author"
+    ],
     "description": "The full sculpting series.",
-    "advertised_tags": ["sculpting", "series"],
-    "extra_tags": []
+    "extra_tags": [],
+    "released": "2025"
   }
 }
 ```
+
+## §17.8 Canonical serialization order
+
+[[[field-schema#canonical-order]]]
+
+A `.rehu` is JSON and JSON objects are unordered, so key order is a property of the **write**, not of the document:
+`RehuDocument.__data` carries its keys in whatever order construction and the setters left them, and one canonical
+top-to-bottom layout is imposed only at the single boundary that produces a file. Two documents with identical content
+therefore serialize to identical bytes regardless of how their keys were built up in memory — a converted `.tc` and a
+migrated v1 file included. The §17.7 fixtures are shown in exactly this order; each was regenerated through a real
+`save()`. The contract (source of truth `rehuco_core.rehu_serialization` —
+`ordered_for_file` / `ordered_block` / `ordered_users_map` — and `RehuDocument.save`):
+
+- **Top level:** `format_version` (it describes the file), then `core`, then the **active** plugin block (the one this
+  file's `type` names — the block a reader opening the file by hand looks for first, right after the core it belongs to),
+  then every remaining top-level key **alphabetically** — inactive/unknown blocks and any stray key carried verbatim
+  ([[plugins#plugin-blocks]]), sorted together rather than each getting a category.
+- **Inside `core`:** a short list of **leading keys** — `type`, `id`, `created`, `updated`, `sources`, in that order
+  (what a reader looks for first: what it is, which record, when it was made, and — via `sources` — what it is *called*)
+  — then every other core key **alphabetically**. The list is deliberately short and needs no maintenance: a core field
+  missing from it merely sorts with the rest, never misplaced.
+- **Inside the active block:** its own `format_version` leads ([[plugins#plugin-blocks]]), then every other block key
+  **alphabetically**. If the block carries a `users` map ([[field-schema#per-user-shared]]) it is ordered one level
+  deeper: **usernames alphabetically, and each user's own fields alphabetically**.
+- **Inactive/foreign blocks are carried through, never reordered** — a block this build does not own keeps its bytes
+  ([[data-model#write-integrity]]); reordering would churn the file to reorganize fields the document cannot interpret.
+  Only the active block and `core` are laid out; a retained block that is malformed (not an object) is passed through
+  as-is rather than dropped.
+- **Formatting:** `indent=2`, `ensure_ascii=False` (non-ASCII is written literally as UTF-8, not `\uXXXX`-escaped), and
+  a **trailing newline**.
+- **`null` is accepted on read, never written** ([[field-schema#deferred-items]]): JSON `null` reads as `None`/absent,
+  but setting a field to `None` **omits the key** rather than writing `null` — so a value that normalizes to `None` on
+  load (an absent optional scalar, an emptied `hidden_images`) is simply gone from the next save, and no `.rehu` this
+  build writes ever contains `null`.
+
+Which blocks are written at all — the block persistence invariant, an inactive block dropped only once its type was
+claimed then abandoned this session — is decided by `RehuDocument` and passed in, so this layer stays a pure function of
+the payload ([[plugins#plugin-blocks]]).
