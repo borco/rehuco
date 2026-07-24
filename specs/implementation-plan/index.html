@@ -1,0 +1,2927 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/implementation-plan/">
+      
+      
+        <link rel="prev" href="../history/pyside-ibo/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Implementation Plan - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#rehuco-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_17" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_17" id="__nav_2_17_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-create-the-monorepo-one-time-cheap-nowcostly-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you create the monorepo (one-time, cheap-now/costly-later)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#methodology-agile-cadence-tracer-bullet-spines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology: agile cadence, tracer-bullet spines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Methodology: agile cadence, tracer-bullet spines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spikes-vs-tracer-bullets-a-related-but-different-distinction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spikes vs. tracer bullets (a related but different distinction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model strategy (Claude Code): opusplan backbone, manual escalation for the hard cores
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-work-do-beforearound-the-first-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-work (do before/around the first slice)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-shape-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone shape at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#localedit-local-viewedit-no-node-no-swarm-no-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit — Local view/edit (no node, no swarm, no login)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LocalEdit — Local view/edit (no node, no swarm, no login)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#localedit1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#localedit2localedit8-thicken-the-spine-iterations-each-shippable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit2–LocalEdit8 — Thicken the spine (iterations, each shippable)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cachedb-cached-database-scan-cache-search-still-local-no-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB — Cached database (scan, cache, search; still local, no node)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CacheDB — Cached database (scan, cache, search; still local, no node)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cachedb1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cachedb2cachedb4-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB2–CacheDB4 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#watchtutorial-watch-a-tutorial-from-a-tabletlocal-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial — Watch a tutorial from a tablet/local browser
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WatchTutorial — Watch a tutorial from a tablet/local browser">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#watchtutorial1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#watchtutorial2watchtutorial6-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial2–WatchTutorial6 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#borrowing-borrow-a-local-copy-for-offline-viewing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing — Borrow a local copy for offline viewing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Borrowing — Borrow a local copy for offline viewing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#borrowing1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#borrowing2borrowing5-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing2–Borrowing5 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-deferred-past-these-four" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately deferred past these four
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing-gates-decide-before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing gates (decide-before-you-start)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest caveats
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#before-you-create-the-monorepo-one-time-cheap-nowcostly-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Before you create the monorepo (one-time, cheap-now/costly-later)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#methodology-agile-cadence-tracer-bullet-spines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Methodology: agile cadence, tracer-bullet spines
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Methodology: agile cadence, tracer-bullet spines">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#spikes-vs-tracer-bullets-a-related-but-different-distinction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Spikes vs. tracer bullets (a related but different distinction)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model strategy (Claude Code): opusplan backbone, manual escalation for the hard cores
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pre-work-do-beforearound-the-first-slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-work (do before/around the first slice)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#milestone-shape-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Milestone shape at a glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#localedit-local-viewedit-no-node-no-swarm-no-login" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit — Local view/edit (no node, no swarm, no login)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LocalEdit — Local view/edit (no node, no swarm, no login)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#localedit1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#localedit2localedit8-thicken-the-spine-iterations-each-shippable" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LocalEdit2–LocalEdit8 — Thicken the spine (iterations, each shippable)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cachedb-cached-database-scan-cache-search-still-local-no-node" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB — Cached database (scan, cache, search; still local, no node)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CacheDB — Cached database (scan, cache, search; still local, no node)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#cachedb1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cachedb2cachedb4-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CacheDB2–CacheDB4 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#watchtutorial-watch-a-tutorial-from-a-tabletlocal-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial — Watch a tutorial from a tablet/local browser
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WatchTutorial — Watch a tutorial from a tablet/local browser">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#watchtutorial1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#watchtutorial2watchtutorial6-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WatchTutorial2–WatchTutorial6 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#borrowing-borrow-a-local-copy-for-offline-viewing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing — Borrow a local copy for offline viewing
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Borrowing — Borrow a local copy for offline viewing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#borrowing1-tracer-bullet-the-spine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing1 — Tracer bullet (the spine)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#borrowing2borrowing5-thicken" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Borrowing2–Borrowing5 — Thicken
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-is-deliberately-deferred-past-these-four" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What is deliberately deferred past these four
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sequencing-gates-decide-before-you-start" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequencing gates (decide-before-you-start)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#honest-caveats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Honest caveats
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="rehuco-implementation-plan">rehuco — Implementation Plan</h1>
+<p><span class="slug-ref">[[[implementation-plan]]]</span></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Tracer-Bullet First Slices</strong></p>
+<p>Each milestone opens with a <strong>tracer bullet</strong> — the thinnest real, kept, production-grade path through every
+layer, proving they connect end-to-end. Later iterations thicken one part at a time without breaking the
+working spine. This counters the failure mode of building layers deeply in isolation before anything works
+as a whole. LocalEdit1, CacheDB1, WatchTutorial1, and Borrowing1 are the tracer bullets; everything else thickens them.</p>
+<p><em>Concept from <a href="https://en.wikipedia.org/wiki/The_Pragmatic_Programmer">The Pragmatic Programmer</a>
+(Thomas &amp; Hunt); further discussion at <a href="https://wiki.c2.com/?TracerBullets">wiki.c2.com</a>.</em></p>
+</div>
+<p>Companion to <code>architecture-design.md</code>. This plan covers the <strong>near-term build</strong> scoped to the stated personal
+priorities:</p>
+<ol>
+<li>View/edit local <code>.rehu</code> for basic tutorials and reference images.</li>
+<li>Scan folders into a cached catalog and search it — close to the original tutcatalog.</li>
+<li>Watch a tutorial from a tablet/local browser.</li>
+<li>(later) Borrow a local copy for offline viewing on leave.</li>
+</ol>
+<h2 id="before-you-create-the-monorepo-one-time-cheap-nowcostly-later">Before you create the monorepo (one-time, cheap-now/costly-later)</h2>
+<p>These are settled; listed so nothing is forgotten at <code>uv init</code>:</p>
+<ul>
+<li><strong>Name: <code>rehuco</code></strong> (decided). It propagates into package names (<code>rehuco-core</code>, <code>rehuco-node</code>, <code>rehuco-agent</code>), PyPI
+  namespace, import paths, file extensions (<code>.rehu</code>/<code>.rehuco</code>/<code>.rehudb</code>/<code>.rehusw</code>), config dirs, and the swarm-ID scheme
+  — which is exactly why it's chosen before init.</li>
+<li><strong>Reserve PyPI names</strong> via throwaway <code>0.0.0</code> stub repos (the same move used for <code>pyside6-scintilla</code>/<code>-lexilla</code>): claim
+  <code>rehuco</code>, <code>rehuco-core</code>, <code>rehuco-node</code>, <code>rehuco-agent</code> before anyone squats them.</li>
+<li><strong>Root <code>pyproject.toml</code> is a <em>virtual</em> workspace</strong> — no <code>[project]</code> table, only <code>[tool.uv.workspace]</code>
+  (<span class="slug-ref">[[packaging-deployment#three-packages]]</span>). Decided.</li>
+<li><strong><code>rehuco-node</code> <code>requires-python</code> floor</strong> — set at creation; no constraint from the TS-230 since the node runs on
+  capable hardware (<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>).</li>
+<li><strong>Fresh git history</strong> — start clean, old repos kept read-only as archive (<span class="slug-ref">[[packaging-deployment#migrating-repos]]</span>).
+  Decided.</li>
+</ul>
+<h2 id="methodology-agile-cadence-tracer-bullet-spines">Methodology: agile cadence, tracer-bullet spines</h2>
+<p><span class="slug-ref">[[[implementation-plan#methodology]]]</span></p>
+<p><strong>Agile</strong> and <strong>tracer bullets</strong> are not alternatives — agile is the <em>cadence</em> (short iterations, something usable each
+cycle, adjust as you learn), tracer bullets are a <em>technical strategy</em> used within it (build a thin, real, kept
+end-to-end skeleton through every layer first, then thicken). This plan uses <strong>agile iterations whose first slice of
+each milestone is a tracer bullet.</strong></p>
+<p>Why tracer bullets specifically fit here:</p>
+<ul>
+<li>The risk is <strong>integration, not features</strong> — the architecture doc shows the features are understood; what's unproven is
+  that the layers <em>connect</em> (agent↔node client split, the field/block model rendering end-to-end). <strong>UI approach: both
+  QML and QtWidgets</strong>, each where it's strongest — QWidgets (with pyqtads docking) for dense sortable/filterable tables
+  and trees (the browsers, <span class="slug-ref">[[plugins#browsers]]</span>) and the app shell; QML for the image grid and animated lightbox. This
+  needs the pyqtads-hosts-QML integration to hold (the spike below). Note: the "NVIDIA overlay" prompt seen on app start
+  is the GeForce/NVIDIA App <strong>in-game overlay</strong> reacting to the GPU context — a per-machine NVIDIA-software setting to
+  toggle off, <em>not</em> an app concern and not a rendering problem; it imposes no architectural constraint.</li>
+<li>It <strong>counters the prior failure mode</strong> — earlier versions built layers deeply (a full field/type system in
+  TutCatalog5) without reaching a usable end-to-end whole. A tracer bullet keeps a usable-if-minimal thing alive from
+  iteration one.</li>
+<li>Tracer bullets are <strong>kept production code</strong>, not throwaway prototypes — exactly the discipline wanted after three
+  discarded attempts.</li>
+</ul>
+<p><strong>Rule for every milestone:</strong> the first iteration is the thinnest end-to-end path that <em>works and is kept</em>. Later
+iterations thicken one part without breaking the working spine.</p>
+<p><strong>The plan is a guide, not a contract — life beats any planning.</strong> Slices grow, split, and gain ad-hoc features as
+implementation teaches (LocalEdit2 already did; see its sub-slices on the GH milestone). Introducing a feature ad-hoc when
+it's needed is expected, not a deviation: the GH milestones/issues are the live record of what a milestone actually
+contains, and this plan catches up after the fact.</p>
+<h3 id="spikes-vs-tracer-bullets-a-related-but-different-distinction">Spikes vs. tracer bullets (a related but different distinction)</h3>
+<p>A third term, <strong>spike</strong> (from XP), is often confused with a tracer bullet. They're distinguished by <strong>what you keep</strong>,
+which follows from <strong>what question each answers</strong>:</p>
+<ul>
+<li><strong>Spike</strong> — answers <em>"I don't know how/whether X works — let me find out."</em> Time-boxed, quick-and-dirty, <strong>throwaway
+  by intent.</strong> Its product is <em>knowledge</em>; the code is deleted afterward (keep the lesson, not the toy).</li>
+<li><strong>Tracer bullet</strong> — answers <em>"do my layers connect end-to-end?"</em> Minimal but <strong>real, production-grade, and kept.</strong> Its
+  product is a <em>working skeleton</em> you build on.</li>
+<li><strong>Prototype</strong> — like a spike (throwaway), but broader/UX-exploratory rather than one sharp technical question.</li>
+</ul>
+<p><strong>The trap:</strong> letting a spike quietly become load-bearing — building on quick-and-dirty exploration code written
+<em>before</em> you understood the problem. Decide up front which you're writing and honor it. Quick test: <em>"if this works, do
+I keep the code or just the lesson?"</em> Keep the code → tracer bullet (write it properly). Keep the lesson → spike (write
+it fast and <strong>delete it</strong>).</p>
+<p><strong>They sequence:</strong> for a layer with genuine unknowns → <strong>spike</strong> (learn, discard) → <strong>tracer bullet</strong> (build the thin
+real spine, now informed) → <strong>thicken</strong> (iterations). Skip the spike where there are no real unknowns.</p>
+<p>In this plan, <strong>LocalEdit1/CacheDB1/WatchTutorial1/Borrowing1 are tracer bullets</strong> (kept spines). The items flagged <em>(spike)</em> below are throwaway — keep the
+lesson, delete the code.</p>
+<h3 id="model-strategy-claude-code-opusplan-backbone-manual-escalation-for-the-hard-cores">Model strategy (Claude Code): <code>opusplan</code> backbone, manual escalation for the hard cores</h3>
+<p><span class="slug-ref">[[[implementation-plan#model-strategy]]]</span></p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Use <code>opusplan</code> as the default</strong> (set <code>/model opusplan</code> at the start of each session). It ties model choice to mode:
+<strong>Opus in plan mode</strong> (architecture, edge cases, tradeoffs), then <strong>automatically switches to Sonnet in execution
+mode</strong> for code generation. For ~90% of rehuco — field widgets, UI wiring, REST endpoints, web templates, migration
+tooling — this gives Opus-quality planning and Sonnet-speed execution with no micromanagement, and it's <em>better</em> than
+hand-switching for routine work.</p>
+<p><strong>Its one blind spot matters for this app:</strong> <code>opusplan</code> switches on <em>mode</em>, not on <em>how hard the code is</em>. It assumes
+"execution = mechanical." But rehuco has a few cores where the <em>implementation itself</em> is reasoning-dense and a subtle
+error silently corrupts data. For those, <strong>manually switch to Opus (<code>/model opus</code>) even while implementing</strong> — context
+carries over, so you can drop back to <code>opusplan</code>/Sonnet after. These cores are marked with <code>&gt; [!NOTE]</code> blocks in
+<code>architecture-design.md</code>; they are:</p>
+<ul>
+<li><strong>Sync engine</strong> — version vector + activity log, conflict/merge, tombstones (<span class="slug-ref">[[sync#overview]]</span>).</li>
+<li><strong>Plugin block save invariant</strong> — the active/inactive/claim-then-abandon rule (<span class="slug-ref">[[plugins#plugin-blocks]]</span>).</li>
+<li><strong>Registry resolution &amp; serve-after-resync</strong> — preferred-authority/chatter, version-marker comparison
+(<span class="slug-ref">[[discovery-trust-access#registry-home]]</span>, <span class="slug-ref">[[discovery-trust-access#serve-after-resync]]</span>).</li>
+<li><strong>Cross-filesystem safe move</strong> — checksum-gated, data-loss-sensitive (<span class="slug-ref">[[mounts-and-storage#safe-move-rename]]</span>).</li>
+</ul>
+<p>Don't micro-manage beyond that — constant hand-switching for ordinary work wastes effort; the point of <code>opusplan</code> is
+to handle the common case so attention goes only to these few exceptions. Feeding the relevant <code>§</code> section into
+context makes even Sonnet reliable on the routine parts and Opus more reliable on the hard ones. (Model names/aliases
+shift over time and by plan/provider — verify the current <code>/model</code> list in Claude Code; the <em>strategy</em> is stable
+regardless of version numbers.)</p>
+</div>
+<hr />
+<h2 id="pre-work-do-beforearound-the-first-slice">Pre-work (do before/around the first slice)</h2>
+<p>These unblock or de-risk everything after; small but high-leverage.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Kind</th>
+<th>Why now</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stand up the monorepo (uv workspaces)</td>
+<td>setup (kept)</td>
+<td>The dev environment for everything; fixes the venv-confusion immediately (<span class="slug-ref">[[packaging-deployment#overview]]</span>)</td>
+<td>Root virtual workspace + <code>packages/rehuco-core</code>, <code>packages/rehuco-agent</code>; add <code>rehuco-node</code> later when the WatchTutorial milestone starts</td>
+</tr>
+<tr>
+<td>Decide the <strong>tutorial</strong> and <strong>reference-image</strong> field lists</td>
+<td>decision</td>
+<td>Specific-field rendering is the one thing blocked on schema (<span class="slug-ref">[[appendices.open-questions#still-open]]</span>)</td>
+<td>The generic editor does <em>not</em> need this; only the rich per-type view does. Decide enough to start, refine later</td>
+</tr>
+<tr>
+<td>Decide access-rule grammar</td>
+<td>decision</td>
+<td>Not needed for LocalEdit–WatchTutorial (single user, local or trusted-LAN)</td>
+<td>Can defer to the Borrowing milestone or past it; noted so it's not forgotten</td>
+</tr>
+<tr>
+<td><strong>pyqtads + QML integration (regression check)</strong></td>
+<td><strong>spike</strong></td>
+<td>Confirms the "both QML and QtWidgets" approach still holds on current Qt/PySide6/pyqtads versions</td>
+<td>QML-in-pyqtads already worked previously; this re-verifies it on current versions, focused on the parts the app will depend on: a QQuickWidget dock that <strong>detaches to a floating window and re-docks</strong> without glitches (the classic QML cross-window trouble spot), a <strong>QWidgets dock and QML dock coexisting</strong> in one layout, and <strong>layout save/restore</strong> with a QML dock present — including <strong>whether closed/hidden docks restore their size</strong> (a known soft spot across all Qt docking; likely needs stashing dock size on close keyed by object name and restoring on show, rather than relying solely on the layout blob). Keep a tiny reference snippet of the working wiring; discard the rest. If a QML dock's detach glitches, the response is to <strong>keep QML surfaces in non-detachable docks or reduce the QML footprint</strong> — <em>not</em> switch to KDDockWidgets, which is foreclosed by its GPL license (architecture <span class="slug-ref">[[packaging-deployment#licensing-policy]]</span>). pyqtads stays (LGPL, prebuilt PySide6 bindings). <strong>Result:</strong> approach holds on PySide6 6.11.1 + pyside6-qtads 5.0.0; one caveat — a closed dock's size needs a <code>splitterSizes</code> stash/reapply workaround — carried forward — it landed with the LocalEdit2.0 document-dock shell (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/20" title="GitHub Issue: borco/rehuco #20">#20</a>). Recorded in <span class="slug-ref">[[packaging-deployment#qml-regression]]</span></td>
+</tr>
+<tr>
+<td><strong>QNAP/glibc dependency canary</strong></td>
+<td><strong>spike</strong></td>
+<td>De-risks WatchTutorial's node deps early</td>
+<td>Build a glibc-2.23 container; confirm FastAPI/uvicorn/zeroconf/pydantic-core/cryptography wheels load. Keep the lesson (a pinned compatible-versions list); the container/script is throwaway</td>
+</tr>
+<tr>
+<td><strong>File association + app identity</strong></td>
+<td><strong>spike</strong></td>
+<td>De-risks LocalEdit1's "double-click → opens" before LocalEdit1 depends on it (<span class="slug-ref">[[packaging-deployment#app-identity]]</span>)</td>
+<td>macOS: a minimal <code>.app</code> (built via Briefcase) that's the default opener for <code>.rehu</code> and delivers the path as a <strong><code>QFileOpenEvent</code></strong> into a single running PySide6 instance (<span class="slug-ref">[[nodes#single-instance]]</span>) — macOS does <em>not</em> pass it as <code>argv</code>. Windows: an HKCU <strong>ProgID</strong> for default double-click + an explicit <strong>AUMID</strong> (<code>SetCurrentProcessExplicitAppUserModelID</code>) so a pinned taskbar button shows the app's icon and lights up as running (the gap <code>resource-hub</code> only papered over with a PyInstaller exe), with <code>DefaultIcon</code> from a shipped <code>.ico</code>. Second double-click routes to the existing instance, not a new process. Keep the bundle/ProgID recipe + AUMID line; discard the toy GUI. Confirms Briefcase as the end-user packager as a side effect</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="milestone-shape-at-a-glance">Milestone shape at a glance</h2>
+<p>The four detailed near-term milestones map onto the personal priorities above, each introducing exactly <strong>one new
+architectural spine</strong> — isolating integration risk (the architecture's thesis is that the risk is <em>integration, not
+features</em>). LocalEdit and CacheDB stay on a single machine (LocalEdit edits one file; CacheDB adds the cached catalog);
+WatchTutorial and Borrowing then <strong>climb the distribution ladder one rung at a time</strong> — WatchTutorial a single serving
+node, Borrowing a second party. <strong>Swarm</strong> and <strong>Daz3D</strong> are further milestones, detailed later.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>LocalEdit</strong></th>
+<th><strong>CacheDB</strong></th>
+<th><strong>WatchTutorial</strong></th>
+<th><strong>Borrowing</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Use-case</strong></td>
+<td>View/edit a local <code>.rehu</code></td>
+<td>Scan, cache, and search the catalog</td>
+<td>Watch a tutorial from a browser</td>
+<td>Borrow a copy, watch offline</td>
+</tr>
+<tr>
+<td><strong>Topology</strong></td>
+<td>1 machine, no network</td>
+<td>1 machine, no network</td>
+<td>1 node + thin browser clients (LAN)</td>
+<td>2 parties (home node ↔ laptop)</td>
+</tr>
+<tr>
+<td><strong>New spine</strong></td>
+<td>Field/block/plugin rendering + local file I/O</td>
+<td>SQLite cache (<code>.rehudb</code>) + incremental scan (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>) + browsers</td>
+<td>The node + agent-as-node-client refactor (<span class="slug-ref">[[nodes#two-roles]]</span>) + web stack</td>
+<td>Version-vector + activity-log sync (<span class="slug-ref">[[sync#overview]]</span>), two-party</td>
+</tr>
+<tr>
+<td><strong>Deliberately absent</strong></td>
+<td>No node, swarm, or login</td>
+<td>No node, network, or login</td>
+<td>No swarm, pairing, multi-node sync, or auth-propagation</td>
+<td>No general swarm — just two-party reconcile</td>
+</tr>
+<tr>
+<td><strong>New skill / risk</strong></td>
+<td>Rendering the data model end-to-end</td>
+<td>Scan/cache correctness + table/search UI</td>
+<td>Web stack (FastAPI/HTMX/Pico), video serving</td>
+<td>Conflict/merge machinery</td>
+</tr>
+</tbody>
+</table>
+<p>Three principles hold across the split:</p>
+<ul>
+<li><strong>Monotonically increasing distribution complexity.</strong> LocalEdit and CacheDB are standalone (no network) — CacheDB adds
+  the cached catalog on the same single machine; WatchTutorial adds a single node serving thin clients; Borrowing adds
+  two-party sync — the first real reconcile, but the minimal topology. The full <strong>N-node swarm</strong> (discovery, pairing,
+  registry, safe-move — <span class="slug-ref">[[discovery-trust-access]]</span>, <span class="slug-ref">[[mounts-and-storage#fingerprint-map]]</span>–<span class="slug-ref">[[mounts-and-storage#safe-move-rename]]</span>)
+  is the later <strong>Swarm</strong> milestone.</li>
+<li><strong>One new integration risk per milestone.</strong> Each isolates a single unproven spine so nothing tackles two at once;
+  within each, the first slice (LocalEdit1/CacheDB1/WatchTutorial1/Borrowing1) is a kept <strong>tracer bullet</strong> and the rest thicken it.</li>
+<li><strong>Each is independently useful and shippable.</strong> LocalEdit is a standalone editor even if the rest never ship; CacheDB
+  makes it a real searchable catalog; WatchTutorial adds tablet watching; Borrowing adds offline borrow. Value lands at
+  every milestone boundary.</li>
+</ul>
+<p>Heavier work beyond these four — acquisition/LLM tooling (<span class="slug-ref">[[acquisition-tooling#overview]]</span>), reference-image richness,
+3D objects, multi-user auth, native installers — is deferred (see
+<a href="#what-is-deliberately-deferred-past-these-four">What is deliberately deferred</a>); the full swarm and Daz3D are further
+milestones (<strong>Swarm</strong>, <strong>Daz3D</strong>), not part of the near-term four.</p>
+<hr />
+<h2 id="localedit-local-viewedit-no-node-no-swarm-no-login">LocalEdit — Local view/edit (no node, no swarm, no login)</h2>
+<p><strong>Goal:</strong> a standalone, usable tool that opens, displays, and edits a local <code>.rehu</code> for tutorials and reference images.
+This is the agent's local-file mode (<span class="slug-ref">[[nodes#local-vs-swarm]]</span>), and a genuinely useful product on its own.</p>
+<h3 id="localedit1-tracer-bullet-the-spine">LocalEdit1 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>Double-click a <code>.rehu</code> in File Explorer → single-instance agent opens → reads the file off disk → renders common
+fields + Markdown + a basic image strip → edit one field → atomic-save back.</p>
+</blockquote>
+<p>Deliberately minimal: one resource shown via the <strong>generic field editor</strong> (not yet a rich plugin), no field toolkit
+depth, no block lifecycle, no cache. It only has to prove the spine: <strong>file-association → single-instance forward → read
+→ render → edit → atomic-write.</strong> Keep this code.</p>
+<p>Touches, thinly: <span class="slug-ref">[[nodes#single-instance]]</span> (single-instance/association), <span class="slug-ref">[[data-model#write-integrity]]</span> (atomic write),
+<span class="slug-ref">[[nodes#local-vs-swarm]]</span> (local-file mode), <span class="slug-ref">[[plugins#fallback-editor]]</span> (generic editor), <span class="slug-ref">[[plugins#tutorial-plugin]]</span>
+(Markdown + image strip).</p>
+<h3 id="localedit2localedit8-thicken-the-spine-iterations-each-shippable">LocalEdit2–LocalEdit8 — Thicken the spine (iterations, each shippable)</h3>
+<ul>
+<li><strong>LocalEdit2 — Field toolkit.</strong> Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path,
+  image-count) with editor/viewer variants — the shared toolkit plugins compose from (<span class="slug-ref">[[plugins#core-vs-plugin]]</span>); the
+  toolkit and viewer/editor/both surfaces are designed in <span class="slug-ref">[[plugins#toolkit-surfaces]]</span>. (TutCatalog5 has prior art here
+  to draw on as a <em>design</em> reference.) In practice LocalEdit2 is wider than the field widgets alone: it opened with its own
+  mini-tracer — LocalEdit2.0/<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/20" title="GitHub Issue: borco/rehuco #20">#20</a>, the document-dock shell + reactive view-model + text-field spine (<span class="slug-ref">[[plugins#dock-shell]]</span>,
+  <span class="slug-ref">[[plugins#view-model]]</span>) — and is broken into sub-slices LocalEdit2.0–LocalEdit2.8, tracked as issues on the GH <code>LocalEdit2</code> milestone
+  (session/close-guard persistence, the per-type field widgets, multi-source and image-selection editors,
+  unknown-field fallback).</li>
+<li><strong>LocalEdit3 — <code>.rehu</code> format + versioning.</strong> JSON read/write, per-file format-version field, preserve-unknown-fields rule
+  (<span class="slug-ref">[[data-model#schema-version]]</span>). Bring <code>.tc</code>→<code>.rehu</code> migration in as the oldest <em>source</em> format
+  (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>) — opening a <code>.tc</code> offers migration + screenshot-name normalization. (It is not
+  "format v0": a <code>.tc</code> is a different file format, not an old <code>.rehu</code>, and the mapping emits the current <code>.rehu</code> layout
+  stamp included — v0 means an unstamped <code>.rehu</code>, <span class="slug-ref">[[data-model#schema-version]]</span>.)</li>
+<li><strong>LocalEdit4 — Plugin block model.</strong> Keyed per-plugin blocks, single-active-type rule, the save-persistence invariant (active
+  type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inactive/unknown blocks with
+  carry-or-drop (<span class="slug-ref">[[plugins#plugin-blocks]]</span>/<span class="slug-ref">[[plugins#fallback-editor]]</span>). This is the genuinely new core logic.</li>
+<li><strong>LocalEdit5 — Tutorial plugin (rich).</strong> Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next,
+  hideable strip, ESC), folder-rename-from-suggestions (<span class="slug-ref">[[plugins#tutorial-plugin]]</span>).</li>
+<li><strong>LocalEdit6 — Reference-images plugin (basic).</strong> Type + fields + viewer; defer redaction/slideshow/search to later (they're
+  <span class="slug-ref">[[plugins#refimages-plugin]]</span> richness, not needed for "view/edit").</li>
+<li><strong>LocalEdit7 — Log dock, task queue, checksums.</strong> Three items, in dependency order — each is the one before it
+  made useful:</li>
+<li><strong>In-app log viewer</strong> — a log dock fed by a caching <code>logging.Handler</code> bridge (records logged before
+     the GUI exists are replayed, not lost) plus a level-filterable log widget. rehuco has only colorized
+     console logging today, while every recent predecessor shipped this; prior art, including the
+     cache-then-replay design, is in <span class="slug-ref">[[pyside-ibo#log-stack]]</span>. <strong>First</strong> — it is the simplest real dock,
+     and it is what makes the two items below observable when they misbehave.</li>
+<li><strong>Task queue / dock</strong> (<span class="slug-ref">[[architecture-design#components]]</span>) — the visible, app-wide queue of slow
+     operations (checksum, sync, scans, copies, node-notify, safe moves) with pause/resume/cancel/reorder,
+     multi-select serializing work rather than running it all at once. Specified as a component since the
+     architecture doc but never scheduled; LocalEdit7 is where it lands, because checksums are its first real
+     client and every later milestone (CacheDB scans, Borrowing sync/copies) assumes it exists.</li>
+<li><strong>Checksums</strong> — generate/verify with algorithm-tagging, as task-queue jobs (<span class="slug-ref">[[data-model#checksums]]</span>)
+     — pairs naturally with migration.</li>
+<li><strong>LocalEdit8 — Tray + polish.</strong> Close-to-tray/explicit-quit (<span class="slug-ref">[[nodes#single-instance]]</span>), preferences.</li>
+</ul>
+<p><strong>Exit criteria:</strong> open any tutorial or ref-image <code>.rehu</code> (or migrate a <code>.tc</code>), view it richly, edit and atomic-save,
+generate/verify checksums. Standalone, no infrastructure.</p>
+<p><strong>Rough size:</strong> ~3–5 focused dev-weeks (front-loaded refactoring against prior-version design knowledge, not
+greenfield).</p>
+<hr />
+<h2 id="cachedb-cached-database-scan-cache-search-still-local-no-node">CacheDB — Cached database (scan, cache, search; still local, no node)</h2>
+<p><strong>Goal:</strong> point the agent at your folders, have it scan the <code>.rehu</code> files into a <code>.rehudb</code> cache, and browse/search the
+catalog on the desktop. This brings the app close to the original tutcatalog: a real, searchable library view over
+everything on disk. Still <strong>one machine, no network, no node, no login</strong> — the cache is built and read by the agent
+itself.</p>
+<blockquote>
+<p>Note: the cache is a rebuildable derivative of the <code>.rehu</code> files, never a source of truth
+(<span class="slug-ref">[[data-model#local-file-trio]]</span>). WatchTutorial later moves cache ownership to the node; here the agent owns it.</p>
+</blockquote>
+<h3 id="cachedb1-tracer-bullet-the-spine">CacheDB1 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>Point the agent at one folder → it scans the <code>.rehu</code> files into <code>.rehudb</code> → a table lists them → type a query → the
+table filters live.</p>
+</blockquote>
+<p>Minimal: one scan pass (no incremental yet), the common columns only, a single text filter. Proves the spine: <strong>scan →
+cache → list → search.</strong> Keep this code.</p>
+<p>Touches, thinly: <span class="slug-ref">[[data-model#scan-and-staleness]]</span> (scan), <span class="slug-ref">[[data-model#local-file-trio]]</span> (<code>.rehudb</code> as derived cache),
+<span class="slug-ref">[[plugins#browsers]]</span> (table view).</p>
+<h3 id="cachedb2cachedb4-thicken">CacheDB2–CacheDB4 — Thicken</h3>
+<ul>
+<li><strong>CacheDB2 — Incremental, version-aware scan.</strong> Rescan only what changed (mtime/size/format-version), prune vanished
+  entries, keep <code>.rehudb</code> current across edits (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>). Scans run as task-queue jobs (LocalEdit7).</li>
+<li><strong>CacheDB3 — Generic + tutorial browsers.</strong> Table view with common columns + tutorial columns (duration, progress); click
+  opens the viewer; click-to-filter on tag/author/publisher (<span class="slug-ref">[[plugins#browsers]]</span>).</li>
+<li><strong>CacheDB4 — Search.</strong> Query the cache by text and by field (type, author, publisher, tags, rating), with combinable
+  filters, fast enough over a large library to feel live.</li>
+</ul>
+<p><strong>Exit criteria:</strong> point the agent at your real folders, get a searchable catalog on the desktop, and click through to
+view or edit any resource. Standalone, no node.</p>
+<p><strong>Rough size:</strong> ~2–3 focused dev-weeks (the cache/scan is the new correctness-sensitive part; the browsers reuse the
+field toolkit from LocalEdit).</p>
+<hr />
+<h2 id="watchtutorial-watch-a-tutorial-from-a-tabletlocal-browser">WatchTutorial — Watch a tutorial from a tablet/local browser</h2>
+<p><strong>Goal:</strong> from the iPad (thin browser client, <span class="slug-ref">[[borrowing#vacation-topology]]</span>), browse the tutorials a node serves and
+watch one, with progress recorded. Single node, on the LAN — <strong>no swarm, no pairing, no multi-node sync, no
+auth-propagation</strong> (single-node base case, <span class="slug-ref">[[multiplicity#single-node-base]]</span>).</p>
+<blockquote>
+<p>Note: this introduces the <strong>node</strong> and the <strong>agent-as-node-client</strong> refactor (<span class="slug-ref">[[nodes#two-roles]]</span>) — the first
+architecturally new spine beyond the single-machine milestones. Cache ownership moves from the agent (CacheDB) to
+the node here.</p>
+</blockquote>
+<h3 id="watchtutorial1-tracer-bullet-the-spine">WatchTutorial1 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>A single headless node serves an HTTP page listing one configured tutorial → tap it → browser plays the video →
+progress is recorded server-side and survives a reload.</p>
+</blockquote>
+<p>Minimal: one node, one hard-configured folder, no auth, plain video serving. Proves the spine: <strong>node serves → browser
+lists → browser plays → progress persists.</strong></p>
+<p>Touches, thinly: <span class="slug-ref">[[nodes#overview]]</span> (REST node), <span class="slug-ref">[[multiplicity#single-node-base]]</span> (single-node), web stack
+(FastAPI/HTMX/Pico — new skill), <span class="slug-ref">[[plugins#tutorial-plugin]]</span> web/follow, progress write
+(<span class="slug-ref">[[sync#overview]]</span>/<span class="slug-ref">[[mounts-and-storage#node-handoff]]</span> minimal).</p>
+<h3 id="watchtutorial2watchtutorial6-thicken">WatchTutorial2–WatchTutorial6 — Thicken</h3>
+<ul>
+<li><strong>WatchTutorial2 — Agent-as-node-client refactor.</strong> Move the agent's catalog reads to go through the node (<span class="slug-ref">[[nodes#two-roles]]</span>);
+  the node now owns and serves the <code>.rehudb</code> built in CacheDB. The local-file viewer (LocalEdit) stays node-free;
+  only catalog operations route through the node. (<code>rehuco-node</code> package created now.)</li>
+<li><strong>WatchTutorial3 — Generic + tutorial web browsers.</strong> The CacheDB table view, mirrored in the browser for the tablet
+  (<span class="slug-ref">[[plugins#browsers]]</span>).</li>
+<li><strong>WatchTutorial4 — Web follow mode.</strong> Sequential playback, progress/duration tracking, notes, bookmarks in the browser
+  (<span class="slug-ref">[[plugins#tutorial-plugin]]</span> web).</li>
+<li><strong>WatchTutorial5 — Progress sync frequency + handoff basics.</strong> Frequent progress writes so a reload/resume is current
+  (<span class="slug-ref">[[mounts-and-storage#node-handoff]]</span>) — even single-node benefits.</li>
+<li><strong>WatchTutorial6 — Minimal auth (optional this milestone).</strong> Even single-user, a login gate for the web UI
+  (<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>) if you want the tablet to require it; can defer if it's just you on a trusted
+  LAN.</li>
+</ul>
+<p><strong>Exit criteria:</strong> open the web UI on the iPad over the LAN, see your tutorials, watch one, progress is remembered
+across sessions and devices.</p>
+<p><strong>Rough size:</strong> ~4–6 focused dev-weeks, much of it the web-stack learning curve (new to you) rather than architecture.
+The node runs on a capable box (Mac mini or always-on Linux node); the TS-230 is accessed via its existing SMB share
+(<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>).</p>
+<hr />
+<h2 id="borrowing-borrow-a-local-copy-for-offline-viewing">Borrowing — Borrow a local copy for offline viewing</h2>
+<p><strong>Goal:</strong> before leaving, borrow a tutorial onto a laptop; watch it offline (the laptop runs its own node,
+<span class="slug-ref">[[borrowing#vacation-topology]]</span>); sync progress/notes back on return. This is a <strong>two-party</strong> sync (home node ↔ laptop),
+far simpler than general swarm sync.</p>
+<h3 id="borrowing1-tracer-bullet-the-spine">Borrowing1 — Tracer bullet (the spine)</h3>
+<blockquote>
+<p>Mark a tutorial "borrow" → its files + <code>.rehu</code> copy onto the laptop, borrow recorded in the user meta block
+(<span class="slug-ref">[[borrowing#recording-borrows]]</span>) → laptop node serves it offline → on return, progress/notes reconcile back.</p>
+</blockquote>
+<p>Touches, thinly: <span class="slug-ref">[[borrowing#another-instance-role]]</span> (borrow as instance role),
+<span class="slug-ref">[[instances-and-dedup#instance-registry]]</span> (instance tracking),
+<span class="slug-ref">[[sync#overview]]</span>/<span class="slug-ref">[[offline-editing#overview]]</span> (two-party reconcile), <span class="slug-ref">[[borrowing#recording-borrows]]</span> (borrow-in-meta).</p>
+<h3 id="borrowing2borrowing5-thicken">Borrowing2–Borrowing5 — Thicken</h3>
+<ul>
+<li><strong>Borrowing2 — Instance registry (minimal).</strong> Track where a UUID's copies live + roles; enough for borrow/return
+  (<span class="slug-ref">[[instances-and-dedup#instance-registry]]</span>).</li>
+<li><strong>Borrowing3 — Version-vector + activity-log sync.</strong> The real reconcile machinery (<span class="slug-ref">[[sync#overview]]</span>), scoped to two parties
+  first.</li>
+<li><strong>Borrowing4 — Return/reconcile UI.</strong> Merge progress/notes; handle the borrow-vs-changed cases
+  (<span class="slug-ref">[[borrowing#borrow-vs-delete]]</span>) if they arise.</li>
+<li><strong>Borrowing5 — Scheduled archival.</strong> Borrow→archive-on-return, full or selective (<span class="slug-ref">[[borrowing#scheduled-archival]]</span>).</li>
+</ul>
+<p><strong>Exit criteria:</strong> borrow → go offline → watch + take notes → return → changes reconciled.</p>
+<p><strong>Rough size:</strong> ~3–5 focused dev-weeks in the minimal (laptop + one home node) topology.</p>
+<hr />
+<h2 id="what-is-deliberately-deferred-past-these-four">What is deliberately deferred past these four</h2>
+<p>Everything that isn't on the personal critical path, per the architecture doc's own scoping. (The full multi-node
+<strong>Swarm</strong> and <strong>Daz3D</strong> support are themselves later milestones, not part of the near-term four — see the roadmap.)</p>
+<ul>
+<li><strong>Acquisition tooling</strong> (LLM URL extraction, image-drag, HTML→Markdown) — <span class="slug-ref">[[acquisition-tooling#overview]]</span>. Explicitly
+  deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap
+  enough to slip into LocalEdit if convenient.)</li>
+<li><strong>Reference-image richness</strong> (redaction, tag/semantic search, sketch slideshow, drawing critique) —
+  <span class="slug-ref">[[plugins#refimages-plugin]]</span>.</li>
+<li><strong>3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.</strong></li>
+<li><strong>Native end-user installers + auto-update</strong> — Briefcase-built installers with declarative file association / icon /
+  AUMID, MSIX later, and self-update against a public release oracle
+  (<span class="slug-ref">[[packaging-deployment#app-identity]]</span>/<span class="slug-ref">[[packaging-deployment#auto-update]]</span>). <code>uv tool install</code> covers the author's
+  own machines until then; the file-association <em>mechanics</em> are proven earlier by the Pre-work spike, but
+  packaging-for-distribution and update delivery (incl. code-signing/notarization) wait.</li>
+</ul>
+<h2 id="sequencing-gates-decide-before-you-start">Sequencing gates (decide-before-you-start)</h2>
+<ul>
+<li><strong>Before LocalEdit2:</strong> enough of the tutorial + ref-image field lists to render them (the generic editor needs nothing).</li>
+<li><strong>Before the dock manager + mixed QML/QWidgets UI is adopted:</strong> the pyqtads + QML integration <em>spike</em>
+  (pre-work, issue <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/4" title="GitHub Issue: borco/rehuco #4">#4</a>) — confirms a QML dock detaches/re-docks and coexists with QWidgets docks on current
+  versions. Done; the dock-manager half is already adopted — the QtAds document-dock shell landed with
+  the LocalEdit2.0 tracer (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/20" title="GitHub Issue: borco/rehuco #20">#20</a>, <span class="slug-ref">[[plugins#dock-shell]]</span>) — while the first QML dock is still ahead.</li>
+<li><strong>Before LocalEdit1 relies on "double-click → opens":</strong> the file-association + app-identity <em>spike</em> (pre-work) — macOS
+  <code>.app</code>/<code>QFileOpenEvent</code> and Windows ProgID/AUMID, so default-double-click open and taskbar pin/running actually work;
+  also settles Briefcase as the end-user packager.</li>
+<li><strong>Before WatchTutorial (serving NAS content):</strong> no glibc gate — the node runs on capable hardware with the TS-230 mounted via SMB
+  (<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>). The glibc canary findings (<span class="slug-ref">[[packaging-deployment#glibc-canary]]</span>) are kept as
+  a reference if direct QNAP deployment is ever reconsidered.</li>
+<li><strong>Before WatchTutorial web work:</strong> a short FastAPI/HTMX/Pico <strong>spike</strong>, since it's a new stack — answer "can I build the
+  follow-mode page the way I need?", keep the lesson, discard the toy.</li>
+<li><strong>Before WatchTutorial1 promises "browser plays the video":</strong> an iPad-playback <strong>spike</strong> — serve a representative sample of the
+  real catalog to the actual tablet: container/codec coverage (Safari plays H.264/HEVC in MP4/MOV; MKV — common in
+  tutorial catalogs — does not play natively), the self-signed-HTTPS trust story
+  (<span class="slug-ref">[[appendices.open-questions#still-open]]</span>), and HTTP Range seeking. The outcome decides whether WatchTutorial grows a
+  remux/transcode task-queue job.</li>
+<li><strong>Before Borrowing:</strong> nothing new architecturally — it reuses <span class="slug-ref">[[sync#overview]]</span>'s reconcile, scoped to two parties.</li>
+</ul>
+<h2 id="honest-caveats">Honest caveats</h2>
+<ul>
+<li>Estimates are <em>focused dev-weeks</em> (uninterrupted equivalent), not calendar time, and assume the design holds under
+  implementation — building always surfaces changes (as the design conversation itself repeatedly showed). Treat them as
+  ordering and relative-size guidance, not promises.</li>
+<li>The prior versions de-risk <strong>design</strong> (you know what you want, you've tried approaches) more than they supply
+  <strong>droppable code</strong> — especially since only the oldest (TutCatalog4, C++/Qt5) reached "usable," and the Python ones are
+  ideas/scaffolding to redesign.</li>
+<li>Personal-priority path to a genuinely useful <strong>standalone</strong> tool: <strong>LocalEdit + CacheDB</strong> (local edit, then a searchable
+  cached catalog — ~5–8 focused dev-weeks), with a <em>standalone-usable</em> result already at the end of LocalEdit. Tablet
+  watching (WatchTutorial) and offline borrow (Borrowing) build on top.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../history/pyside-ibo/" class="md-footer__link md-footer__link--prev" aria-label="Previous: pyside-ibo (shared library)">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                pyside-ibo (shared library)
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

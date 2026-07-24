@@ -1,0 +1,2663 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/qt-ads/">
+      
+      
+        <link rel="prev" href="../post-mortem/">
+      
+      
+        <link rel="next" href="../testing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>QtAds - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#qtads-hurdles-and-solutions" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              QtAds
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_17" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_17" id="__nav_2_17_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-focushighlighting-and-nested-cdockmanagers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. FocusHighlighting and nested CDockManagers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. FocusHighlighting and nested CDockManagers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-root-cause-a-shared-qwindow-property-plus-global-signals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Root cause: a shared QWindow property plus global signals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-compounding-gotcha-silent-no-op-without-the-flag-deferred-signal-stacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Compounding gotcha: silent no-op without the flag, deferred signal stacking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-fix-track-focus-via-cdockareawidgetcurrentchanged-instead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Fix: track focus via CDockAreaWidget.currentChanged instead
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-confirm-a-binding-exists-before-trusting-a-stub-or-the-c-header-alone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Confirm a binding exists before trusting a stub or the C++ header alone
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-full-signal-set-a-current-dock-tracker-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The full signal set a "current dock" tracker needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-restorestate-doesnt-restore-which-split-area-was-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. restoreState doesn't restore which split area was current
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-recoloring-a-tab-close-button-the-icon-is-stylesheet-governed-not-code-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Recoloring a tab close button: the icon is stylesheet-governed, not code-set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-a-fully-custom-tab-widget-crashes-when-routed-through-cdockcomponentsfactory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. A fully custom tab widget crashes when routed through CDockComponentsFactory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. A fully custom tab widget crashes when routed through CDockComponentsFactory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-extension-point-is-bound-and-works-for-the-title-bartab-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The extension point is bound, and works for the title bar/tab bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-but-a-python-subclassed-cdockwidgettab-segfaults-on-insertion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 But a Python-subclassed CDockWidgetTab segfaults on insertion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-working-alternative-extend-the-default-tabs-own-layout-post-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Working alternative: extend the default tab's own layout post-construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-customizing-or-disabling-the-per-area-tabs-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Customizing or disabling the per-area tabs menu
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Customizing or disabling the per-area tabs menu">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-contents-are-rebuildable-no-subclassing-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Contents are rebuildable — no subclassing needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-the-buttonmenu-itself-has-no-factory-hook-its-hardcoded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 The button/menu itself has no factory hook — it's hardcoded
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-disabling-it-for-one-manager-only-needs-reactive-re-hiding-not-just-a-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Disabling it for one manager only needs reactive re-hiding, not just a flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-focushighlighting-and-nested-cdockmanagers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. FocusHighlighting and nested CDockManagers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. FocusHighlighting and nested CDockManagers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#11-root-cause-a-shared-qwindow-property-plus-global-signals" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.1 Root cause: a shared QWindow property plus global signals
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#12-compounding-gotcha-silent-no-op-without-the-flag-deferred-signal-stacking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.2 Compounding gotcha: silent no-op without the flag, deferred signal stacking
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#13-fix-track-focus-via-cdockareawidgetcurrentchanged-instead" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.3 Fix: track focus via CDockAreaWidget.currentChanged instead
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#14-confirm-a-binding-exists-before-trusting-a-stub-or-the-c-header-alone" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1.4 Confirm a binding exists before trusting a stub or the C++ header alone
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-full-signal-set-a-current-dock-tracker-needs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The full signal set a "current dock" tracker needs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-restorestate-doesnt-restore-which-split-area-was-current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. restoreState doesn't restore which split area was current
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-recoloring-a-tab-close-button-the-icon-is-stylesheet-governed-not-code-set" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Recoloring a tab close button: the icon is stylesheet-governed, not code-set
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-a-fully-custom-tab-widget-crashes-when-routed-through-cdockcomponentsfactory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. A fully custom tab widget crashes when routed through CDockComponentsFactory
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. A fully custom tab widget crashes when routed through CDockComponentsFactory">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-the-extension-point-is-bound-and-works-for-the-title-bartab-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.1 The extension point is bound, and works for the title bar/tab bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-but-a-python-subclassed-cdockwidgettab-segfaults-on-insertion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.2 But a Python-subclassed CDockWidgetTab segfaults on insertion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-working-alternative-extend-the-default-tabs-own-layout-post-construction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.3 Working alternative: extend the default tab's own layout post-construction
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-customizing-or-disabling-the-per-area-tabs-menu" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Customizing or disabling the per-area tabs menu
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Customizing or disabling the per-area tabs menu">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#61-contents-are-rebuildable-no-subclassing-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.1 Contents are rebuildable — no subclassing needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#62-the-buttonmenu-itself-has-no-factory-hook-its-hardcoded" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.2 The button/menu itself has no factory hook — it's hardcoded
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#63-disabling-it-for-one-manager-only-needs-reactive-re-hiding-not-just-a-flag" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6.3 Disabling it for one manager only needs reactive re-hiding, not just a flag
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="qtads-hurdles-and-solutions">QtAds — Hurdles and Solutions</h1>
+<p><span class="slug-ref">[[[appendices.qt-ads]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#overview]]]</span></p>
+<p>Engineering notes on <code>pyside6-qtads</code> behavior that took real time to work through, so a future
+encounter with the same corner of QtAds doesn't have to re-derive it from scratch.</p>
+<h2 id="1-focushighlighting-and-nested-cdockmanagers">1. <code>FocusHighlighting</code> and nested <code>CDockManager</code>s</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#focus-highlighting]]]</span></p>
+<p><strong>Symptom:</strong> with <code>CDockManager.eConfigFlag.FocusHighlighting</code> on, focusing one dock also
+highlights an unrelated dock in a <em>different</em> <code>CDockManager</code> — reproduced in rehuco-agent's
+dock-in-dock-in-dock shell, which has three separate <code>CDockManager</code> instances sharing one native
+top-level window (<code>MainWindow</code>'s own, <code>DocumentsDock</code>'s, and each per-document <code>DocumentWidget</code>'s
+own — <span class="slug-ref">[[plugins#toolkit-surfaces]]</span>, <span class="slug-ref">[[plugins#viewer-editor-both]]</span>): focusing a document tab in
+the outer <code>DocumentsDock</code> also lit up that document's own inner viewer/editor split, and vice
+versa. Confirmed via live logging on <code>focusedDockWidgetChanged</code>, not just visually. Not fixable at
+the application level without abandoning the "documents tabbed together in one window" UX (making
+each <code>DocumentWidget</code> a genuine separate top-level window, e.g. <code>Qt.Window</code> or an MDI subwindow,
+would isolate it — a much bigger change than warranted for a cosmetic feature); the fix is to
+avoid <code>FocusHighlighting</code> entirely — see <span class="slug-ref">[[appendices.qt-ads#current-changed-alternative]]</span>.</p>
+<h3 id="11-root-cause-a-shared-qwindow-property-plus-global-signals">1.1 Root cause: a shared <code>QWindow</code> property plus global signals</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#cross-manager-contamination]]]</span></p>
+<p><code>CDockFocusController::updateDockWidgetFocus()</code> stores the newly-focused dock on the <em>shared
+native <code>QWindow</code></em>:</p>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Window</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Window</span><span class="o">-&gt;</span><span class="n">setProperty</span><span class="p">(</span><span class="n">FocusedDockWidgetProperty</span><span class="p">,</span><span class="w"> </span><span class="n">QVariant</span><span class="o">::</span><span class="n">fromValue</span><span class="p">(</span><span class="n">QPointer</span><span class="o">&lt;</span><span class="n">CDockWidget</span><span class="o">&gt;</span><span class="p">(</span><span class="n">DockWidget</span><span class="p">)));</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Every <code>CDockFocusController</code> instance — one gets constructed per <code>CDockManager</code>, so three in this
+app with one document open, one more per additionally-open document — connects to the same
+<em>global</em> Qt signals in its constructor:</p>
+<div class="highlight"><pre><span></span><code><span class="n">connect</span><span class="p">(</span><span class="n">QApplication</span><span class="o">::</span><span class="n">instance</span><span class="p">(),</span><span class="w"> </span><span class="n">SIGNAL</span><span class="p">(</span><span class="n">focusChanged</span><span class="p">(</span><span class="n">QWidget</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">QWidget</span><span class="o">*</span><span class="p">)),</span>
+<span class="w">        </span><span class="k">this</span><span class="p">,</span><span class="w"> </span><span class="n">SLOT</span><span class="p">(</span><span class="n">onApplicationFocusChanged</span><span class="p">(</span><span class="n">QWidget</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">QWidget</span><span class="o">*</span><span class="p">)));</span>
+<span class="n">connect</span><span class="p">(</span><span class="n">QApplication</span><span class="o">::</span><span class="n">instance</span><span class="p">(),</span><span class="w"> </span><span class="n">SIGNAL</span><span class="p">(</span><span class="n">focusWindowChanged</span><span class="p">(</span><span class="n">QWindow</span><span class="o">*</span><span class="p">)),</span>
+<span class="w">        </span><span class="k">this</span><span class="p">,</span><span class="w"> </span><span class="n">SLOT</span><span class="p">(</span><span class="n">onFocusWindowChanged</span><span class="p">(</span><span class="n">QWindow</span><span class="o">*</span><span class="p">)));</span>
+</code></pre></div>
+<p>So focusing <em>any</em> dock, in <em>any</em> manager, writes it into the shared window property, and <em>every</em>
+other manager's own controller reads that same shared value and calls <code>updateDockWidgetFocus()</code>
+on it too — using its own independent bookkeeping, regardless of whether that dock is even one of
+its own. A <code>QMainWindow</code> subclass embedded as a child widget (e.g. <code>DocumentWidget</code>, itself a
+<code>QMainWindow</code>, but placed via <code>dock.setWidget(...)</code> rather than shown as a genuine top-level
+window) does not get its own <code>QWindow</code>: <code>QWidget.window()</code> always resolves to the nearest <em>true</em>
+top-level ancestor, and in a dock-in-dock-in-dock shell there is exactly one such ancestor for the
+whole app. Giving each nested manager a "separate" <code>CDockFocusController</code> would change nothing —
+they'd all still share the one real window's property, since scoping follows the OS-level window,
+not the <code>CDockManager</code>/<code>QMainWindow</code> instance asking.</p>
+<h3 id="12-compounding-gotcha-silent-no-op-without-the-flag-deferred-signal-stacking">1.2 Compounding gotcha: silent no-op without the flag, deferred signal stacking</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#requires-focushighlighting]]]</span></p>
+<p><code>setDockWidgetFocused()</code>/<code>focusedDockWidgetChanged</code> are silent no-ops without the flag at all (the
+whole <code>CDockFocusController</code> only gets constructed when it's set, and only if set <em>before</em> the
+first <code>CDockManager</code> in the process is built). Even with the flag on, <code>setDockWidgetFocused()</code>
+does not synchronously emit <code>focusedDockWidgetChanged</code> for a dock that isn't visible yet (e.g.
+during session restore, before <code>MainWindow.show()</code>) — <code>updateDockWidgetFocus()</code> defers the signal
+until the dock's own <code>visibilityChanged(true)</code> fires. Calling it repeatedly on several invisible
+docks in a row (once per reopened document, say) stacks up multiple deferred completions that all
+fire in a burst, in whatever order Qt happens to deliver them, once the window is finally shown —
+not necessarily the order they were queued in. Style updates themselves are <em>not</em> deferred (they
+run synchronously, unconditionally, before the visibility check), so this specifically corrupts
+signal-driven bookkeeping (e.g. "which dock is current"), not paint state — a red herring that
+cost real time before <span class="slug-ref">[[appendices.qt-ads#cross-manager-contamination]]</span>'s shared-window-property
+cause was found.</p>
+<h3 id="13-fix-track-focus-via-cdockareawidgetcurrentchanged-instead">1.3 Fix: track focus via <code>CDockAreaWidget.currentChanged</code> instead</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#current-changed-alternative]]]</span></p>
+<p>Don't use <code>FocusHighlighting</code> at all when nested <code>CDockManager</code>s share a window. Track whichever
+tab/dock matters using a signal that isn't gated by it instead: <code>CDockAreaWidget::currentChanged(int
+index)</code> is a plain tab-bar signal — ordinary Qt tab-widget behavior, not routed through the
+shared-window mechanism <span class="slug-ref">[[appendices.qt-ads#cross-manager-contamination]]</span> describes. Fires whenever
+the <em>current</em> (selected) tab within one
+specific area changes, regardless of real Qt keyboard focus. Connect it once per distinct
+<code>CDockAreaWidget</code> (<code>CDockManager.addDockWidget(...)</code> returns the area a dock ended up in —
+multiple docks tabbed into the same area share one connection, so guard against connecting
+twice), then resolve the tab index back to a dock via <code>area.dockWidget(index)</code>. This is what
+<code>DocumentsDock</code> uses to track which document is "current" for the window title and
+session-focus-save, with no cross-manager coupling at all.</p>
+<h3 id="14-confirm-a-binding-exists-before-trusting-a-stub-or-the-c-header-alone">1.4 Confirm a binding exists before trusting a stub or the C++ header alone</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#verify-bindings-live]]]</span></p>
+<p><code>pyside6-qtads</code> ships no official typings (see <span class="slug-ref">[[appendices.code-conventions]]</span>'s notes on this
+repo's own local stub, <code>typings/PySide6QtAds/__init__.pyi</code>) — a method visible in the upstream
+C++ header is not guaranteed to be exposed to Python, and the local stub can also simply be
+missing an entry that <em>is</em> bound. Before adding a new stub entry (or relying on one already
+there), check the live binding directly:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">PySide6QtAds</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">QtAds</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;currentChanged&quot;</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">QtAds</span><span class="o">.</span><span class="n">CDockAreaWidget</span><span class="p">))</span>
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;dockWidget&quot;</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">QtAds</span><span class="o">.</span><span class="n">CDockAreaWidget</span><span class="p">))</span>
+</code></pre></div>
+<p>This caught <code>CDockAreaWidget.dockWidget</code>/<code>.currentIndex</code>/<code>.currentChanged</code> all being genuinely
+bound (confirmed against the upstream
+<a href="https://github.com/githubuser0xFFFF/Qt-Advanced-Docking-System">Qt-Advanced-Docking-System</a>'s
+<code>DockAreaWidget.h</code> <code>Q_SIGNALS:</code>/public method declarations too) despite not yet being in the
+stub — safe to add, once both checks agree. More generally: the upstream C++ source itself — not
+just the Python bindings or this repo's own typings stub — is often the only way to actually find
+a root cause once a QtAds behavior stops matching what the Python-side API surface alone suggests
+it should do; clone the repo locally and read the relevant <code>.cpp</code>/<code>.h</code> directly
+(<span class="slug-ref">[[appendices.qt-ads#cross-manager-contamination]]</span> came from doing exactly that).</p>
+<h2 id="2-the-full-signal-set-a-current-dock-tracker-needs">2. The full signal set a "current dock" tracker needs</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#current-dock-signals]]]</span></p>
+<p><code>CDockAreaWidget.currentChanged</code> (<span class="slug-ref">[[appendices.qt-ads#current-changed-alternative]]</span>) is necessary
+but <strong>not sufficient</strong> — it only fires
+when a <em>tab index within one area</em> changes, and several ways of making a dock "current" don't do
+that. <code>QtAdsFocusTracker</code> (<code>borco_pyside.qtads</code>) is the reusable home for the whole set, each part
+added only after confirming empirically that the others miss its case:</p>
+<ul>
+<li><strong><code>CDockAreaWidget.currentChanged</code></strong> — ordinary tab-bar switching within a shared (tabbed) area.</li>
+<li><strong>the area's tabs-menu <code>QMenu.triggered</code></strong> — picking an area's <em>already-current</em> lone tab from
+  its dropdown never changes <code>currentChanged</code>'s index, so it fires nothing.</li>
+<li><strong>the dock's own tab-label <code>clicked</code></strong> (<code>tab_label(dock)</code> → the <code>CElidingLabel</code> named
+  <code>dockWidgetTabLabel</code>) — a dock alone in its area is always index 0, so clicking its tab never
+  changes <code>currentChanged</code> either.</li>
+<li><strong><code>QApplication.focusChanged</code></strong> — real keyboard focus moving into a <em>different, already-visible
+  split area</em> changes no area's current-tab index at all. Walk up <code>parentWidget()</code> from the newly
+  focused widget to find the enclosing tracked <code>CDockWidget</code>.</li>
+<li><strong><code>CDockWidget.viewToggled</code></strong> — a dock hidden/shown by its <code>toggleViewAction</code> fires <em>none</em> of the
+  above. Show → make it current. Hiding the <em>current</em> dock: Qt moves keyboard focus to a neighbor
+  <strong>synchronously, before <code>viewToggled</code> fires</strong> (verified: <code>focusWidget()</code> already points at the
+  sibling inside the <code>viewToggled(False)</code> slot), so <code>focusChanged</code> has already re-selected that
+  real neighbor and the toggle handler is reached only when nothing tracked took focus — clear
+  then, rather than fabricate a current dock no focus points at. Guard the whole handler with
+  <code>CDockManager.isRestoringState()</code>: <code>restoreState</code> fires <code>viewToggled</code> for every reconstructed
+  dock, which would fight the explicit re-selection in <span class="slug-ref">[[appendices.qt-ads#restore-current-split]]</span>.</li>
+</ul>
+<p>Deliberately <strong>not</strong> the tab <em>title</em>: current-ness is shown by a dynamic <code>tracked_focus</code> QSS
+property + highlight styling on the tab (a <code>FocusHighlighting</code>-free equivalent of QtAds' own
+<code>focused</code> property), so callers own their titles outright and there is no marker-vs-dirty-suffix
+conflict from two writers touching one <code>windowTitle</code>.</p>
+<h2 id="3-restorestate-doesnt-restore-which-split-area-was-current">3. <code>restoreState</code> doesn't restore which <em>split</em> area was current</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#restore-current-split]]]</span></p>
+<p><code>CDockManager.saveState</code>/<code>restoreState</code> records only the current <em>tab within each area</em>, never
+which of several <em>split</em> areas held focus. So docks tabbed together restore their current tab
+fine, but a viewer/editor split into two areas always comes back current on whichever dock was
+adopted first (the viewer), losing the real selection. Persist it yourself: save the current
+dock's <code>objectName()</code> alongside the manager state, and after <code>restoreState</code> (which re-registers
+every dock by name) re-select it with <code>CDockManager.findDockWidget(name)</code> +
+<code>set_current_dock</code> — this is <code>QtAdsFocusTracker.save_state</code>/<code>restore_state</code>. Note <code>restoreState</code>
+rebuilds every affected <code>CDockAreaWidget</code> from scratch, orphaning <code>currentChanged</code> connections
+made before it — re-track areas on <code>stateRestored</code> — and fires <code>viewToggled</code>/<code>currentChanged</code> for
+the reconstructed docks <em>during</em> the call, hence the <code>isRestoringState()</code> guard in
+<span class="slug-ref">[[appendices.qt-ads#current-dock-signals]]</span>.</p>
+<h2 id="4-recoloring-a-tab-close-button-the-icon-is-stylesheet-governed-not-code-set">4. Recoloring a tab close button: the icon is stylesheet-governed, not code-set</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#tab-close-button]]]</span></p>
+<p><strong>Symptom:</strong> the <code>[x]</code> close-button icon goes invisible against a themed/highlighted tab, and
+<code>color:</code> in QSS can't tint it. Root cause (found by reading QtAds' <code>DockWidgetTab.cpp</code> and its
+bundled <code>default.css</code>): the close button's icon comes from the default stylesheet's
+<code>#tabCloseButton { qproperty-icon: url(:/ads/images/close-button.svg); qproperty-iconSize: 16px; }</code>
+rule, which <strong>wins over both</strong> the C++ <code>internal::setButtonIcon</code> <em>and</em>
+<code>CDockManager.iconProvider().registerCustomIcon(TabCloseIcon, …)</code> at polish time — so neither
+code path can change the icon in the installed build, and a <code>url()</code> SVG icon ignores QSS <code>color:</code>
+regardless. What <em>does</em> follow the palette is <strong>text</strong>: render the close mark as the button's
+<strong>text</strong> (a glyph — ideally from a bundled icon font, e.g. Phosphor, loaded via
+<code>QFontDatabase.addApplicationFont</code>, since a system-font glyph's metrics vary per platform), color
+it with <code>color: palette(...)</code>, and hide the real icon with <code>qproperty-iconSize: 0px</code>. Two timing
+traps: (1) do the icon-size zeroing in <strong>QSS</strong>, because QtAds re-polishes the button on every tab
+activation and would re-apply the 16px size otherwise; (2) set the glyph's font/size and a square
+<code>setFixedSize</code> in <strong>Python on a deferred (<code>QTimer.singleShot(0)</code>) tick</strong>, because QtAds re-sets the
+button <em>after</em> emitting <code>dockWidgetAdded</code> (and after a restore) for the tab it then makes active,
+overwriting an eager restyle. <code>TabCloseButtonIsToolButton</code> aside, the button is a <code>QPushButton</code>
+named <code>tabCloseButton</code>, reachable via <code>dock.tabWidget().findChild(QAbstractButton, "tabCloseButton")</code>.</p>
+<h2 id="5-a-fully-custom-tab-widget-crashes-when-routed-through-cdockcomponentsfactory">5. A fully custom tab widget crashes when routed through <code>CDockComponentsFactory</code></h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#custom-tab-widget]]]</span></p>
+<p><strong>Question (spike <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/60" title="GitHub Issue: borco/rehuco #60">#60</a>):</strong> can QtAds's tab widget be replaced wholesale with a custom widget, rather
+than styling/appending to the bundled one (as in <span class="slug-ref">[[appendices.qt-ads#tab-close-button]]</span>)? <strong>Finding:</strong>
+partially — the sanctioned extension point exists and is bound, but returning a Python-subclassed tab
+through it crashes; a different, code-only path covers the actual need instead.</p>
+<h3 id="51-the-extension-point-is-bound-and-works-for-the-title-bartab-bar">5.1 The extension point is bound, and works for the title bar/tab bar</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#components-factory-bound]]]</span></p>
+<p>QtAds's own extension point for this is <code>CDockComponentsFactory</code> (<code>DockComponentsFactory.h</code>): a global
+factory whose <code>create...</code> virtuals (<code>createDockWidgetTab</code>, <code>createDockAreaTitleBar</code>,
+<code>createDockAreaTabBar</code>, <code>createDockWidgetSideTab</code>) build every dock/tab/title-bar widget instance,
+replaceable wholesale via <code>CDockComponentsFactory.setFactory(...)</code>. <code>pyside6-qtads</code>'s <code>bindings.xml</code>
+does bind it (<code>object-type</code>, all four virtuals), with inject-code on <code>setFactory</code> specifically to keep
+a Python override callable afterwards — confirmed live too (<code>setFactory</code>/<code>createDockWidgetTab</code> both
+present in <code>dir(QtAds.CDockComponentsFactory)</code>, per <span class="slug-ref">[[appendices.qt-ads#verify-bindings-live]]</span>'s rule of
+never trusting the header alone). Overriding <code>createDockAreaTitleBar</code>/<code>createDockAreaTabBar</code> alone, each
+returning a plain (non-subclassed) base-class instance from Python, works end-to-end through
+<code>addDockWidget</code> with no crash.</p>
+<h3 id="52-but-a-python-subclassed-cdockwidgettab-segfaults-on-insertion">5.2 But a Python-subclassed <code>CDockWidgetTab</code> segfaults on insertion</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#custom-tab-segfault]]]</span></p>
+<p><strong>Symptom:</strong> overriding <code>createDockWidgetTab</code> to return a <em>Python subclass</em> of <code>CDockWidgetTab</code> — even
+an empty one whose <code>__init__</code> does nothing but call <code>super().__init__()</code> — builds the tab object fine
+(the override runs and returns successfully during <code>CDockWidget()</code> construction itself, before any dock
+area exists), then <strong>segfaults</strong> later inside <code>addDockWidget</code>/<code>addDockWidgetTabToArea</code>, the moment
+QtAds' C++ side tries to insert that tab into its area's tab bar. Isolated to a 5-line repro; not
+present when <code>createDockWidgetTab</code> is left at its default, or overridden to return a vanilla
+(non-subclassed) <code>CDockWidgetTab</code>. Root cause not chased past this point (out of scope for a spike):
+<code>bindings.xml</code> marks <code>CDockAreaTabBar::insertTab(int, ads::CDockWidgetTab*)</code>'s tab argument <code>parent
+action="add"</code> — ordinary Qt-parent reparenting for a C++-constructed pointer, but likely mishandled by
+shiboken's shell/ownership machinery when the pointer instead originates from a Python virtual-function
+return. Not an application-level mistake to work around: a fully custom Python-defined tab class routed
+through the sanctioned factory hook is not viable in the current binding.</p>
+<h3 id="53-working-alternative-extend-the-default-tabs-own-layout-post-construction">5.3 Working alternative: extend the default tab's own layout post-construction</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#tab-layout-insert]]]</span></p>
+<p>Skip the factory/subclass path entirely. After <code>addDockWidget()</code>/<code>addDockWidgetTabToArea()</code>,
+<code>dock.tabWidget()</code> still returns the ordinary C++-built <code>CDockWidgetTab</code>; inserting an extra widget
+straight into its own <code>layout()</code> works with no crash and needs no <code>CDockComponentsFactory</code> registration
+at all. The default layout is, left to right: <code>dockWidgetTabLabel</code> (title, stretch 1) → spacing →
+<code>tabCloseButton</code> → trailing spacing (<code>DockWidgetTabPrivate::createLayout()</code>) — confirmed by walking
+<code>layout().itemAt(i)</code> after construction. <code>layout().insertWidget(1, widget)</code> lands a new widget between
+the title and the close button; <code>insertWidget(0, widget)</code> lands it ahead of the title. Being a real
+child <code>QWidget</code> rather than a stylesheet-driven icon (contrast <span class="slug-ref">[[appendices.qt-ads#tab-close-button]]</span>),
+it takes an ordinary <code>clicked</code> signal connection with none of that section's icon-recoloring workarounds.</p>
+<h2 id="6-customizing-or-disabling-the-per-area-tabs-menu">6. Customizing or disabling the per-area tabs menu</h2>
+<p><span class="slug-ref">[[[appendices.qt-ads#tabs-menu]]]</span></p>
+<p><strong>Question (spike <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/60" title="GitHub Issue: borco/rehuco #60">#60</a> follow-up):</strong> the "tabs menu" — the dropdown behind <code>TitleBarButtonTabsMenu</code>,
+shown once an area's tabs overflow/elide — lists every tab in that area, built straight from each tab's
+<code>text()</code>/<code>icon()</code>/<code>toolTip()</code>. Since <code>DocumentsDock.__update_dock_title</code> bakes the dirty/locked marker
+into <code>CDockWidget.windowTitle()</code>
+(<a href="https://github.com/borco/rehuco/blob/master/packages/rehuco-agent/src/rehuco_agent/documents/documents_dock.py#L29">documents_dock.py:29</a>),
+that marker shows up in this menu too, with no separate state to key a color off. Three questions:
+can the menu's contents be changed (e.g. two-line entries instead of a tooltip)? Can the whole menu be
+replaced with a custom widget? Can it be disabled for one <code>CDockManager</code> only (the outer documents
+dock) while staying on for others (the per-document editor/viewer splits, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/61" title="GitHub Issue: borco/rehuco #61">#61</a>'s actual replacement)?</p>
+<h3 id="61-contents-are-rebuildable-no-subclassing-needed">6.1 Contents are rebuildable — no subclassing needed</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#tabs-menu-rebuild]]]</span></p>
+<p><code>CDockAreaTitleBar::onTabsMenuAboutToShow()</code> is a <strong>private</strong>, non-virtual slot — there's no override
+hook for it (contrast <code>buildContextMenu</code>, which is <code>virtual</code> and <code>public</code>). But the button and its menu
+are both reachable through public API: <code>titleBar.button(QtAds.TitleBarButtonTabsMenu).menu()</code>. QtAds
+connects its own rebuild to that menu's <code>aboutToShow</code> in the title bar's constructor, which runs before
+application code can reach the button at all — so any later <code>menu.aboutToShow.connect(...)</code> from Python
+fires <em>after</em> QtAds' own rebuild on every open, letting a handler <code>menu.clear()</code> and repopulate freely
+without racing it. Confirmed: replacing each plain <code>QAction</code> with a <code>QWidgetAction</code> wrapping a small
+<code>QWidget</code> (bold name label over a full-path label) renders correctly — real two-line entries, no
+tooltip-on-hover needed. Click-to-switch still works for free: QtAds' own <code>onTabsMenuActionTriggered</code>
+just reads <code>action-&gt;data().toInt()</code> as the tab index, so a replacement action only needs <code>setData(i)</code> to
+keep that behavior.</p>
+<h3 id="62-the-buttonmenu-itself-has-no-factory-hook-its-hardcoded">6.2 The button/menu itself has no factory hook — it's hardcoded</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#tabs-menu-no-factory]]]</span></p>
+<p>Unlike the tab widget (<span class="slug-ref">[[appendices.qt-ads#components-factory-bound]]</span>), <code>TabsMenuButton</code> is built
+directly in <code>DockAreaTitleBarPrivate::createLayout()</code>, not routed through <code>CDockComponentsFactory</code> at
+all. There is nothing to subclass or replace wholesale here, safely or otherwise — augmenting the
+existing menu's contents (§6.1) is the only lever, matching the same "extend after construction" shape
+as <span class="slug-ref">[[appendices.qt-ads#tab-layout-insert]]</span>.</p>
+<h3 id="63-disabling-it-for-one-manager-only-needs-reactive-re-hiding-not-just-a-flag">6.3 Disabling it for one manager only needs reactive re-hiding, not just a flag</h3>
+<p><span class="slug-ref">[[[appendices.qt-ads#tabs-menu-per-manager]]]</span></p>
+<p><code>DockAreaHasTabsMenuButton</code> (<code>eConfigFlag</code>) is a <code>CDockManager</code> <strong>static</strong> — shared process-wide across
+every manager, same category as <span class="slug-ref">[[appendices.qt-ads#requires-focushighlighting]]</span>. Turning it off is
+all-or-nothing; it cannot single out one manager (e.g. the outer documents dock, per <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/61" title="GitHub Issue: borco/rehuco #61">#61</a>) while leaving
+others (per-document editor/viewer splits) on.</p>
+<p>A genuinely per-manager alternative exists: <code>CDockManager.dockAreaCreated(area)</code> fires only for areas
+created under that specific manager instance — confirmed an outer manager's connection never fired for
+an untouched inner manager's area. But naively hiding the button synchronously from that signal doesn't
+stick: <code>DockContainerWidgetPrivate::onVisibleDockAreaCountChanged()</code> unconditionally forces the tabs-menu
+button back to visible whenever a container's visible-area-count transitions to/from exactly 1 (the
+sole/"top-level" area case), on <strong>both</strong> add and remove, regardless of any flag -- confirmed empirically
+(a hide made during <code>dockAreaCreated</code> reverted itself for the first/sole area, and later removing a
+second/split area reverted the first area's hide too). Fix: defer the hide with
+<code>QTimer.singleShot(0, ...)</code> — the same "let QtAds' own synchronous bookkeeping finish first" shape as
+<span class="slug-ref">[[appendices.qt-ads#tab-close-button]]</span>'s icon-restyle timing trap — and re-apply it from <strong>both</strong>
+<code>dockAreaCreated</code> (new areas) and <code>dockWidgetRemoved</code> (re-hide every remaining area, since removal can
+also flip the count through 1). With both hooked and deferred, an outer manager's button stayed hidden
+through add, split, and remove, while an untouched inner manager kept the global default.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../post-mortem/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Post-Mortem">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Post-Mortem
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../testing/" class="md-footer__link md-footer__link--next" aria-label="Next: Testing">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Testing
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

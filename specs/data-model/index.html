@@ -1,0 +1,2614 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/data-model/">
+      
+      
+        <link rel="prev" href="../architecture-design/">
+      
+      
+        <link rel="next" href="../nodes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Data Model - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#4-data-model" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#41-rehu-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.1 .rehu format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#42-stable-identity-independent-of-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.2 Stable identity, independent of location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#43-single-file-not-split-metadatastate-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.3 Single file, not split metadata/state files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#44-resource-scoping-directory-scoped-vs-file-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.4 Resource scoping: directory-scoped vs. file-scoped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#45-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.5 Checksums
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#46-two-distinct-meanings-of-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.6 Two distinct meanings of "image"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#47-scanning-strategy-and-staleness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.7 Scanning strategy and staleness detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#48-per-node-local-file-trio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.8 Per-node local file trio
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#49-write-integrity-atomic-writes-single-writer-per-managed-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9 Write integrity: atomic writes + single-writer-per-managed-file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#410-schema-format-versioning-of-rehu-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.10 Schema format versioning of .rehu itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_17" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_17" id="__nav_2_17_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#41-rehu-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.1 .rehu format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#42-stable-identity-independent-of-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.2 Stable identity, independent of location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#43-single-file-not-split-metadatastate-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.3 Single file, not split metadata/state files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#44-resource-scoping-directory-scoped-vs-file-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.4 Resource scoping: directory-scoped vs. file-scoped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#45-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.5 Checksums
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#46-two-distinct-meanings-of-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.6 Two distinct meanings of "image"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#47-scanning-strategy-and-staleness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.7 Scanning strategy and staleness detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#48-per-node-local-file-trio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.8 Per-node local file trio
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#49-write-integrity-atomic-writes-single-writer-per-managed-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9 Write integrity: atomic writes + single-writer-per-managed-file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#410-schema-format-versioning-of-rehu-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.10 Schema format versioning of .rehu itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="4-data-model">§4. Data Model</h1>
+<p><span class="slug-ref">[[[data-model]]]</span></p>
+<h2 id="41-rehu-format">§4.1 <code>.rehu</code> format</h2>
+<p><span class="slug-ref">[[[data-model#rehu-format]]]</span></p>
+<p>JSON, replacing the YAML <code>.tc</code>. The full schema is being designed separately (<span class="slug-ref">[[field-schema#overview]]</span>, the concrete
+v1 field list derived from the <code>.tc</code> format) and isn't detailed here, but its scope is settled:</p>
+<p><strong>A <code>.rehu</code> is <code>format_version</code> plus a map of keyed blocks</strong> — nothing else lives at the top level:</p>
+<ul>
+<li><strong>The <code>core</code> block</strong>, holding the common fields available to every resource type regardless of plugin. The concrete v1
+  list is <span class="slug-ref">[[field-schema#resource-types]]</span>: <code>type</code>, <code>id</code>, <code>sources</code> (title/publisher/url per platform), <code>authors</code>,
+  <code>released</code> (partial-precision date), <code>description</code> (Markdown, can embed local images), the tag lists, the measured
+  <code>original_size</code>/<code>current_size</code> pair (<span class="slug-ref">[[field-schema#duration-size]]</span> — empty for a type with no files of its own, e.g.
+  Collection), and the <code>created</code>/<code>updated</code> record timestamps.</li>
+<li><strong>One block per plugin</strong>, holding that resource type's own fields (<span class="slug-ref">[[plugins#plugin-blocks]]</span>), e.g.:</li>
+<li><em>Tutorial</em>: <code>duration</code> (general), <code>progress</code> (per user)</li>
+<li><em>Daz3D</em>: <code>installed</code> (per user, per box)</li>
+<li><em>Reference images</em>: <code>count</code> (general), <code>tag</code> (general and per-image), <code>mosaic</code> (per-image redaction regions)</li>
+</ul>
+<p><strong>Why the common fields are nested rather than top-level</strong> (they were, through format v1): a block has to be
+<em>recognizable</em>, and while the common fields sat beside the blocks the only way to tell them apart was a <strong>list of every
+common field name</strong> — which had to be maintained in lockstep forever, and still could not classify a common field added
+by a <em>newer</em> build, since an unknown object-valued key is indistinguishable from an uninstalled plugin's block. Nesting
+the core replaces that whole list with a single reserved name: <strong>every top-level key except <code>format_version</code> and <code>core</code>
+is a plugin block.</strong> <code>core</code> is declared exactly like a plugin (<span class="slug-ref">[[plugins#core-vs-plugin]]</span>), which is also what reserves
+the name — no plugin may claim it. Unlike a real plugin's block it is never active or inactive
+(<span class="slug-ref">[[plugins#plugin-blocks]]</span>): no document is ever <code>type: "core"</code>.</p>
+<p><code>format_version</code> stays at the top level because it describes the file's own layout rather than holding fields; a v1 file
+is migrated in memory on load and re-stamped the first time it is saved (<span class="slug-ref">[[data-model#schema-version]]</span>).</p>
+<p>See <span class="slug-ref">[[plugins#overview]]</span> for how plugins own their field sets without the core app needing to understand their shape.</p>
+<p>A few field-level decisions carried over from the old <code>.tc</code> format, worth keeping in mind when the schema is finalized:</p>
+<ul>
+<li><code>date</code> must support partial precision — year only, year+month, or full date — with sensible comparison/sorting across
+  mixed precision.</li>
+<li>Fields like publisher/title and learning-path membership must support <strong>multiple values</strong>, not a single scalar — the
+  same tutorial can be sold on more than one platform under slightly different names, and can belong to more than one
+  learning path.</li>
+<li>A field like the old <code>online</code> flag means "is the original source still available," not "is this an online-only
+  resource" — worth being careful that the new schema's naming doesn't repeat that ambiguity.</li>
+<li>A field like the old <code>complete</code> flag means "are all expected files present," unrelated to viewing/watching status.</li>
+<li>Old single-purpose boolean flags (e.g. <code>keep</code>) may eventually fold into general-purpose tags, but that consolidation
+  is <strong>deferred</strong> — v1 keeps them as individual booleans, imported 1:1 (<span class="slug-ref">[[field-schema#boolean-flags]]</span>).</li>
+<li>Some fields (publisher, title, author, date) are also used to generate candidate folder-name suggestions, which the
+  user picks from to rename a resource's directory — a convenience feature carried forward from the old app. With
+  multi-valued fields, this needs a notion of a "primary" value per field to build the suggestion from, with others as
+  alternates.</li>
+</ul>
+<h2 id="42-stable-identity-independent-of-location">§4.2 Stable identity, independent of location</h2>
+<p><span class="slug-ref">[[[data-model#stable-identity]]]</span></p>
+<p>Because resources can move between folders, disks, and nodes, <strong>path cannot be the identifier</strong>. Every <code>.rehu</code> carries a
+UUID minted once at creation time. This UUID identifies the <strong>resource's lineage</strong> — see
+<span class="slug-ref">[[instances-and-dedup#uuid-is-lineage]]</span> for why this is a
+many-to-one relationship (one UUID, potentially many physical instances) rather than "one UUID, one legitimate copy."</p>
+<h2 id="43-single-file-not-split-metadatastate-files">§4.3 Single file, not split metadata/state files</h2>
+<p><span class="slug-ref">[[[data-model#single-file]]]</span></p>
+<p>Considered splitting <code>.rehu</code> into separate metadata vs. per-user-state files to simplify conflict resolution, but
+rejected this: it breaks the "one self-sufficient file" property that makes the design work in the first place. Instead,
+conflict resolution is scoped to the relevant sub-block <em>within</em> the one file (<span class="slug-ref">[[sync#overview]]</span>).</p>
+<h2 id="44-resource-scoping-directory-scoped-vs-file-scoped">§4.4 Resource scoping: directory-scoped vs. file-scoped</h2>
+<p><span class="slug-ref">[[[data-model#resource-scoping]]]</span></p>
+<p>Two patterns for what a <code>.rehu</code> describes:</p>
+<ul>
+<li><strong>Directory-scoped</strong>: <code>info.rehu</code>, alongside <code>infoXX.jpg/png/gif/webp</code> images and an <code>info.sfv</code>/<code>.md5</code>/<code>.sha256</code> checksum
+  manifest. Covers tutorials (flat or nested) and folder-based resources generally. The checksum manifest covers
+  everything in the directory <strong>except</strong> <code>info.rehu</code> and the <code>infoXX.*</code> images, so description/images stay freely
+  editable without invalidating integrity checks.</li>
+<li><strong>File-scoped</strong>: <code>foo.rehu</code> + <code>foo00.jpg</code>, <code>foo01.jpg</code>, ... + <code>foo.sfv</code>/<code>foo.md5</code>, describing a single file like
+  <code>foo.zip</code>. This needs to extend to <strong>multiple files</strong> treated as one logical resource (e.g. <code>foo.zip</code> + <code>bar.zip</code>
+  together) — naming convention alone can't express that, so the <code>.rehu</code> must carry an explicit manifest block listing
+  which file(s) it describes.</li>
+<li><strong>Coexistence</strong>: a directory may end up containing both a directory-scoped <code>info.rehu</code> and one or more file-scoped
+  <code>*.rehu</code> entries (normally this shouldn't happen — it's meant to be one or the other). Rather than forbid this
+  outright, the app caches and displays all such entries and flags the situation with a warning, leaving resolution to
+  the user.</li>
+</ul>
+<h2 id="45-checksums">§4.5 Checksums</h2>
+<p><span class="slug-ref">[[[data-model#checksums]]]</span></p>
+<ul>
+<li>Algorithm in use today: CRC32 (SFV). Subject to change pending benchmarking (CPU-accelerated CRC32 vs. alternatives
+  like xxHash or hardware-accelerated SHA). The checksum manifest format should record <strong>which algorithm was used</strong> per
+  entry, so a future algorithm switch doesn't invalidate or require migrating existing checksums, and different
+  resources can use different algorithms if needed.</li>
+<li>Checksums cover only <strong>immutable original content</strong> — the actual tutorial/resource files — never <code>.rehu</code> or the
+  <code>infoXX.*</code> images, which are designed to be freely editable.</li>
+<li>The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue
+  (<span class="slug-ref">[[architecture-design#components]]</span>), and multi-selecting many resources serializes the work rather than running it
+  all at once.</li>
+<li><strong>Execution location is a dispatch decision, not fixed.</strong> A checksum job can run: (a) on the node that owns the files
+  (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
+  directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,
+  or when no node is reachable at all — e.g. an offline checkout on a USB stick), or (c) via a locally mounted path that
+  happens to also be served by a node — see <span class="slug-ref">[[mounts-and-storage#nodes-serve-mounted]]</span>. The general rule: <strong>prefer
+  whichever route gives local-disk-speed access to the actual bytes</strong>; fall back to delegating to the owning node
+  otherwise.</li>
+</ul>
+<h2 id="46-two-distinct-meanings-of-image">§4.6 Two distinct meanings of "image"</h2>
+<p><span class="slug-ref">[[[data-model#image-meanings]]]</span></p>
+<p>The design uses "image" for two unrelated things; conflating them caused real ambiguity, so they're separated
+explicitly:</p>
+<ul>
+<li><strong>Screenshots (<code>infoXX.jpg</code>/<code>.png</code>/<code>.gif</code>/<code>.webp</code> — the basename-matched, two-digit-numbered siblings of the <code>.rehu</code>,
+  <span class="slug-ref"><span class="slug-ref">[[data-model#resource-scoping]]</span></span>)</strong> — app-managed presentation metadata that accompanies a <code>.rehu</code>. Editable, <strong>not</strong>
+  checksummed, part of the editable record (subject to the online-only-editing rule for resource metadata in v1,
+  <span class="slug-ref">[[sync#overview]]</span>/<span class="slug-ref">[[offline-editing#overview]]</span>). These are what "images" refers to in the viewer's image strip and in
+  description embeds.</li>
+<li><strong>Content images inside a reference-image zip</strong> — part of the <strong>monolithic, immutable, checksummed resource</strong>, exactly
+  like a tutorial's video files. The app never edits these. Refreshing such a zip is a deliberate, manual, out-of-band
+  action that also requires manually refreshing its checksum; it is not done through this app.</li>
+</ul>
+<p>The reference-images plugin's per-image tags and redaction overlays (<span class="slug-ref">[[plugins#refimages-plugin]]</span>) describe <em>content
+images inside the zip</em> but are stored as <strong>app-managed mutable metadata alongside <code>.rehu</code>/screenshots</strong>, keyed to images
+inside the zip by index/filename — they never modify the immutable zip. Consequence worth handling: if a zip is manually
+refreshed (new content, new checksum), per-image overlays may now point at the wrong images. The app should detect the
+checksum change and warn that per-image overlays may be stale, rather than silently rendering redactions over the wrong
+images.</p>
+<h2 id="47-scanning-strategy-and-staleness-detection">§4.7 Scanning strategy and staleness detection</h2>
+<p><span class="slug-ref">[[[data-model#scan-and-staleness]]]</span></p>
+<p>Scanning is load-bearing (<span class="slug-ref">[[architecture-design#why-distributed]]</span>, <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>) but the
+<em>strategy</em> was previously undefined. Two principles:</p>
+<ul>
+<li><strong>Incremental, version-aware reconciliation is the normal mode; full rescan is a recovery tool.</strong> A node/app should
+  detect what actually changed (e.g. by file mtime/size, or by comparing a cheap <code>resource_version</code>/timestamp marker)
+  and re-read only those <code>.rehu</code> files, rather than re-parsing the whole catalog on the hot path. The original
+  startup-slowness problem was a full-scan problem; the SQLite cache plus incremental scanning — not raw per-file parse
+  speed — is the real lever. (JSON-over-YAML is still chosen for tooling, validation, and benchmarked parse speed, but
+  parse speed of a single file is not the primary startup-time factor once the cache exists.)</li>
+<li><strong>Retained copies record the version they were copied at.</strong> Any locally retained copy of another source's metadata
+  (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>) stores the source's <code>resource_version</code>/timestamp at copy time, so staleness
+  is a cheap version comparison when the source is reachable again — not a full re-read. This bounds "am I looking at
+  stale data?" to a fast check, removing the historical motive for nervous full rebuilds.</li>
+<li><strong>Verify-on-access closes the out-of-band gap lazily.</strong> The cache records, per resource, the <code>.rehu</code> file's own stat
+  signature (mtime/size) and a content hash captured at last read — distinct from the <span class="slug-ref">[[data-model#checksums]]</span> content
+  checksums, which deliberately exclude <code>.rehu</code>. Opening, browsing to, or serving a resource re-checks the stat
+  signature against the cache (hashing only to confirm a suspected change, off the hot path); a mismatch means the file
+  changed out-of-band (<span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>), and it is reintegrated on the spot — re-read,
+  version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an
+  out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.</li>
+</ul>
+<p><strong>Type-directed descent (design note; replaces tc4's stop-at-first-sidecar).</strong> Whether the scanner descends past a
+directory-scoped document is a property its <strong>type declares</strong> (in the plugin's non-GUI core layer,
+<span class="slug-ref">[[plugins#core-vs-plugin]]</span>): a <em>tutorial</em> is a <strong>scan boundary</strong> — its nested folders are its own content
+(<span class="slug-ref">[[data-model#resource-scoping]]</span>) — while a <em>collection</em> is not, which is what lets a containment-shaped collection's
+<code>info.rehu</code> sit in the parent directory whose subdirectories are its members (<span class="slug-ref">[[plugins#grouping-entities]]</span>).
+File-scoped documents never terminate descent — they describe named files, not the directory. Two caveats travel with
+the rule: a mis-typed boundary document hides its subtree (an optimization's failure mode — verify-on-access and
+explicit notifications still reach nested files, and the scanner may cheaply flag "boundary document with <code>.rehu</code>
+files beneath it", in the coexistence-warning spirit of <span class="slug-ref">[[data-model#resource-scoping]]</span>); and tc4's two-phase
+collect-then-parse scan existed only to give its progress bar a denominator — with parse-on-find, progress is
+reported against the previous scan's totals (an estimate that is right when little changed, the common case under
+incremental scanning), and a first-ever scan shows a running count instead of a percentage.</p>
+<h2 id="48-per-node-local-file-trio">§4.8 Per-node local file trio</h2>
+<p><span class="slug-ref">[[[data-model#local-file-trio]]]</span></p>
+<p>Each node keeps three files of the same basename, sitting together, with sharply different roles and lifecycles:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Holds</th>
+<th>Category</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.rehuco</code></td>
+<td>Per-machine config: folder roots, mounts, primary/remote ownership flags (<span class="slug-ref">[[mounts-and-storage#folder-add]]</span>), plugin list (<span class="slug-ref">[[plugins#overview]]</span>), retention opt-ins (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>), auth-trusted flag</td>
+<td>Local, legitimately <em>different</em> per box</td>
+<td>Authored locally; never propagated</td>
+</tr>
+<tr>
+<td><code>.rehudb</code></td>
+<td>The SQLite catalog cache</td>
+<td>Derived cache</td>
+<td>Rebuildable within the <span class="slug-ref">[[architecture-design#why-distributed]]</span> boundary; disposable/regenerable</td>
+</tr>
+<tr>
+<td><code>.rehusw</code></td>
+<td>Swarm info: membership, users + salted hashes, access rules</td>
+<td>Swarm-identical, <em>propagated</em></td>
+<td><strong>Durable, not disposable</strong> — updated by resync, never regenerated from scratch</td>
+</tr>
+</tbody>
+</table>
+<p><code>.rehusw</code> is the concrete on-disk home of the propagated registry that <span class="slug-ref">[[discovery-trust-access#membership-model]]</span>–6.9
+refer to abstractly. Crucially it is <strong>not</strong> treated like <code>.rehudb</code>: a cache rebuild must not wipe it, because a node
+that is offline (and may rebuild its cache) must still remember the last-known users/access rules so it isn't blind
+until it can resync (<span class="slug-ref">[[discovery-trust-access#serve-after-resync]]</span>). It is persisted state that gets <em>updated</em>, not
+regenerated. Because it carries the user list with salted password hashes (<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>), a node
+creates it owner-readable only (0600-equivalent).</p>
+<h2 id="49-write-integrity-atomic-writes-single-writer-per-managed-file">§4.9 Write integrity: atomic writes + single-writer-per-managed-file</h2>
+<p><span class="slug-ref">[[[data-model#write-integrity]]]</span></p>
+<ul>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/93">#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty</a></li>
+<li>[x] <a href="https://github.com/borco/rehuco/issues/94">#94: feat: MessageBanner — inline document notices replace modal error boxes</a></li>
+</ul>
+<p>A <code>.rehu</code> is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata
+writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent
+this — and which applies depends on whether the file is <strong>managed</strong> (a node owns its storage,
+<span class="slug-ref">[[mounts-and-storage#folder-add]]</span>) or <strong>unmanaged</strong> (a loose file no node watches — a fresh export being adjusted, a
+single file received from someone; note that local-file mode <span class="slug-ref">[[nodes#local-vs-swarm]]</span> can open both kinds):</p>
+<ul>
+<li><strong>Atomic write is universal — every <code>.rehu</code> write, by anyone, is temp-then-rename.</strong> Write to a temp file in the same
+  directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows <code>ReplaceFile</code>/<code>MoveFileEx</code>).
+  A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new
+  file — never a torn one. This prevents <em>torn</em> files.</li>
+<li><strong>Managed files: the owning node is the sole writer — whenever a route to it exists.</strong> An edit to a managed <code>.rehu</code>
+  that can reach the owning node — from the agent (a node client, <span class="slug-ref">[[nodes#two-roles]]</span>), from sync reconciliation, or
+  from the node itself — goes <em>through that node</em>, which serializes all writes to the file. (Consequently the
+  <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span> "agent edits through a mount, then notifies the node to re-read" path is <strong>retired
+  as the normal editing flow</strong> — the agent asks the node to make the change rather than writing the file the node also
+  writes.) When no route exists (local-file mode with no session or no reachable node, <span class="slug-ref">[[nodes#local-vs-swarm]]</span>), the
+  agent may still write the file directly: that is a tolerated <strong>out-of-band change</strong>, detected and reintegrated via
+  <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span> (notification, verify-on-access, or scan) rather than prevented. Atomic writes
+  bound the residual race to lose-one-never-corrupt, and reintegration is ordered by the <strong>version vector</strong>
+  (<span class="slug-ref">[[sync#overview]]</span>), not a scalar counter: if the file's embedded vector still matches the node's last-read state, the
+  out-of-band edit is a clean fast-forward (the node integrates it and bumps its own component); if the node advanced
+  meanwhile, the two vectors are <em>incomparable</em> — detected as genuinely concurrent and sent through <span class="slug-ref">[[sync#overview]]</span>'s
+  merge rules / verdict queue instead of silently colliding.</li>
+<li><strong>Unmanaged files: the agent writes directly, atomically.</strong> No node exists to route through (local-file mode,
+  <span class="slug-ref">[[nodes#local-vs-swarm]]</span>), so the agent writes the file itself using the same temp-then-rename discipline. The
+  single-instance design (<span class="slug-ref">[[nodes#single-instance]]</span>) already prevents two agent windows from contending; atomic write
+  makes even a pathological double-write lose-one-rather-than-corrupt.</li>
+</ul>
+<p><strong>Import is the explicit unmanaged → managed hand-off.</strong> A received export (unmanaged, stripped of swarm bookkeeping per
+<span class="slug-ref">[[discovery-trust-access#cross-swarm-sharing]]</span>) is edited freely in local-file mode (agent writes directly). <strong>Import</strong>
+is the discrete act of a node taking ownership — assigning the file to a primary root and minting fresh swarm
+bookkeeping (new version vector, instance entry, <span class="slug-ref">[[instances-and-dedup#instance-registry]]</span>). Before import, no node
+knows the file exists (agent is sole writer); after import, exactly one node owns it (node is sole writer). There is no
+window where both believe they own the write, because import is a deliberate, atomic transition. At import the node
+treats the file as untrusted outside input — validate it, upgrade its format if older (<span class="slug-ref">[[data-model#schema-version]]</span>),
+mint new bookkeeping — rather than assuming it is well-formed just because it has a <code>.rehu</code> extension. The same
+defensive posture applies to <em>reading</em> any <code>.rehu</code> (a double-clicked file is untrusted input too,
+<span class="slug-ref">[[nodes#local-vs-swarm]]</span>): parsing is to enforce sanity caps — total file size, <code>versions</code>-list length, entry sizes,
+JSON nesting depth — so a file exceeding them opens read-only with a warning (or is refused at import) instead of
+exhausting memory or wedging the app. These caps are <strong>not yet implemented</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/88" title="GitHub Issue: borco/rehuco #88">#88</a>): today the reader reads the whole
+file into memory before <code>json</code> parses it.</p>
+<p><strong>A malformed value gets one of three responses, and which one is not a matter of severity.</strong> It follows from two
+questions: <em>is this field ours to interpret</em>, and <em>does the file still have a coherent reading</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Response</th>
+<th>When</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Carry verbatim</strong></td>
+<td>The content isn't ours. We don't understand it, so we have no standing to change or drop it.</td>
+<td>An inactive plugin block; an unknown key inside the active block; a stray top-level scalar (<span class="slug-ref">[[plugins#plugin-blocks]]</span>, <span class="slug-ref">[[plugins#fallback-editor]]</span>).</td>
+</tr>
+<tr>
+<td><strong>Coerce to the default</strong></td>
+<td>Ours, malformed, but what it <em>means</em> is not in doubt.</td>
+<td><code>format_version: "v1"</code> → <code>0</code> (unversioned); a <code>core</code> that isn't an object → an empty core; <code>sources: ["junk"]</code> → the non-object entry is skipped. A getter must never crash on a value's <em>type</em>.</td>
+</tr>
+<tr>
+<td><strong>Refuse, with a reason</strong></td>
+<td>The file contradicts the format's own grammar, so there is nothing to fall back <em>to</em>.</td>
+<td><code>format_version</code> holding an object — it is the file's version, not a plugin block; a <code>type</code> naming a reserved key — <code>core</code> and <code>format_version</code> are not resource types.</td>
+</tr>
+</tbody>
+</table>
+<p>The middle row is the older rule and the wide one: nearly every malformed value has an obvious reading, and reading it
+is better than refusing a file over one bad field. The last row is narrow on purpose — reserved for the cases where
+<em>guessing would be a lie</em>, because the key's meaning in the format is what has been violated. Refusing must name the
+offending key and why, since the user's next move (fix the file, or stop trusting its source) depends on knowing which.</p>
+<p>Carrying and coercing are not in tension: they apply to different content. The first is about payload this file is
+merely custodian of; the second about fields this build owns and can rebuild.</p>
+<p><strong>A coerced reading is safe to display, not to silently save over.</strong> Coercion governs <em>reading</em>: it keeps a getter from
+crashing and a viewer honest about what the file most plausibly means. But when a field this build owns is <strong>present
+and fails coercion</strong> — as opposed to merely absent, which reads as a clean default — letting an edit session write the
+coerced default back would quietly replace the malformed-but-possibly-recoverable original. So such a document loads
+<strong>locked</strong>: the same read-only lock a newer-than-understood file gets (<span class="slug-ref">[[data-model#schema-version]]</span>), with the
+offending key(s) named in a persistent, non-modal notice in the viewer (never a dismiss-and-it's-gone dialog — the
+lock is state, and its explanation must outlive a click). The remedy is the one refusal would have forced anyway — fix
+the file in a text editor, then revert/reopen to drop the lock — without making the file unopenable in exactly the
+tool best suited to inspecting it. The <code>format_version</code> stamp is the one deliberate exception: repairing a missing or
+malformed stamp is a specified deduction (<span class="slug-ref">[[data-model#schema-version]]</span>'s repair rule), not a default masking data, so
+it never locks on its own.</p>
+<p>The same presentation extends to the <em>refuse</em> row and beyond it — <strong>every open attempt yields a document view, never a
+modal error box.</strong> A file that is refused (the grammar row above), one that cannot be parsed at all (or trips the
+read-time sanity caps), and one that is simply <em>gone</em> (deleted between sessions) each open as an <strong>empty, locked</strong>
+view — never dirty, never savable — whose notice names the failure (for a parse error, including the parser's own
+line/column). Fixing the file by hand and reverting retries in place, refreshing the notice with any new failure, so
+there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
+vanished files must never sweep away a dock whose file the user is mid-repair.</p>
+<h2 id="410-schema-format-versioning-of-rehu-itself">§4.10 Schema format versioning of <code>.rehu</code> itself</h2>
+<p><span class="slug-ref">[[[data-model#schema-version]]]</span></p>
+<p>The <code>.rehu</code> schema will gain fields over time (it is still being designed). Because the offline-media design
+(<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>, <span class="slug-ref">[[instances-and-dedup#uuid-is-lineage]]</span>) guarantees old files <em>will</em>
+resurface years later — off a USB stick, a
+sealed DVD, a received export — every <code>.rehu</code> must carry its own <strong>format-version field</strong>. Rules:</p>
+<ul>
+<li><strong>A newer agent/node reads an older file and upgrades it</strong> to the current format on write (the upgrade is itself an
+  atomic write, <span class="slug-ref">[[data-model#write-integrity]]</span>, and for managed files happens through the owning node).</li>
+<li><strong>An older agent/node encountering a newer file must fail safe, not lossy.</strong> It must not silently drop fields it
+  doesn't understand and write the file back — that would quietly delete data. It should refuse to write (read-only
+  view), or preserve unknown fields verbatim on round-trip. The cheap robust default: <strong>preserve unknown fields
+  untouched</strong> so a round-trip through an older version never loses data.</li>
+<li><strong>Import is a natural upgrade point</strong> (<span class="slug-ref">[[data-model#write-integrity]]</span>): a received older-format file is upgraded as
+  the node takes ownership.</li>
+<li>This replaces the historical "rebuild the whole DB on every schema change" habit (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>),
+  which only existed because the old app lacked both DB migrations <em>and</em> file-format versioning. With a format-version
+  field plus DB migrations, schema evolution no longer requires a destructive full rescan.</li>
+<li><strong>Plugin fields are versioned per-block, not under the file-wide version</strong> (<span class="slug-ref">[[plugins#plugin-blocks]]</span>): each plugin's
+  keyed block carries its own independent format version, so a plugin's schema can evolve without bumping the
+  common-field version or any other plugin's. The same upgrade/preserve-unknown rules apply at block granularity.</li>
+<li><strong>Upgrades happen in memory, on load; the <em>file</em> changes only on save.</strong> Opening an old file never rewrites it — the
+  upgraded layout reaches disk together with the new version stamp, on the first save, as one atomic write. This also
+  keeps the readers simple: only the <em>current</em> layout is understood past the load boundary.</li>
+<li><strong>An upgrade sets the version stamp too — layout and stamp move together, never separately.</strong> A payload whose layout
+  and stamp disagree is wrong, not merely un-finalized, and stays wrong for anything that serializes it without going
+  through the save path (a node reply, an export). So the load-time upgrade leaves the in-memory document <em>wholly</em>
+  consistent, and saving is then a plain dump rather than the place the stamp gets fixed up. The same step repairs a
+  stamp that was missing or malformed, which is what makes "the version this document reports" trustworthy everywhere
+  else — notably for the read-only lock on a newer-than-understood file. <strong>Repairing never lowers</strong>: a newer file keeps
+  its own version.</li>
+<li><strong>Migrations dispatch on the version, resolved once at the load boundary.</strong> Each step declares the version it upgrades
+  <em>from</em>, so a future migration whose change leaves no detectable shape marker (renaming a field <em>inside</em> <code>core</code>, say)
+  dispatches exactly like one that does.</li>
+<li><strong>Resolving the version is not the same as reading the stamp.</strong> The stamp is authoritative whenever it is present and
+  sane. A <strong>missing or malformed</strong> one is v0 — malformed is not trusted, matching the defensive coercion every other
+  field gets, since a <code>.rehu</code> is untrusted input (<span class="slug-ref">[[data-model#write-integrity]]</span>) — and v0 is the <em>only</em> case where the
+  payload's shape is consulted, because v0 names no layout to dispatch on. Everything a version stamp is used for
+  therefore depends on the stamp being <strong>written where it is known</strong>: whatever builds a payload stamps it, rather than
+  leaving a later reader to infer what the writer already knew.</li>
+</ul>
+<p><strong>A foreign format is never a migration.</strong> Two things look alike from a distance — "old shape becomes new
+shape" — and must not be merged:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>Migration</strong></th>
+<th><strong>Importer</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Input</td>
+<td>a <code>.rehu</code> payload</td>
+<td>a <em>different file format</em> — <code>.tc</code> (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>), <code>.dpdml</code> (<span class="slug-ref">[[daz3d-personal-database#import-needs]]</span>)</td>
+</tr>
+<tr>
+<td>Effects</td>
+<td>the in-memory payload, nothing else</td>
+<td>writes files, renames siblings, deletes originals</td>
+</tr>
+<tr>
+<td>Identity</td>
+<td>never mints any</td>
+<td>mints the UUID and record timestamps (<span class="slug-ref">[[data-model#stable-identity]]</span>)</td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td><strong>automatic</strong>, on every load</td>
+<td><strong>deliberate</strong> — a user action, confirmed</td>
+</tr>
+</tbody>
+</table>
+<p>The trigger follows from the rest: a migration may run unasked precisely <em>because</em> it is in-memory,
+idempotent and lossless. An importer is none of those, so it must never fire merely because a file was
+opened — a <code>.tc</code> opens <strong>read-only</strong> and offers conversion instead. The line between them is the same one
+that decides what an adapter may fill in: the <strong>encoding</strong>'s version is knowable and free to stamp, while
+the <em>resource</em>'s identity and timestamps are an import's to mint, once
+(<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>).</p>
+<p>Consequently a <code>.tc</code> is <em>not</em> "format v0" — it never carried a <code>.rehu</code> version to upgrade from, and the
+adapter that reads one emits the <strong>current</strong> layout, stamp included.</p>
+<p><strong>File-wide versions so far:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Layout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td><strong>No stamp at all</strong> — a gap, not a layout. Nothing rehuco writes lands here (saving stamps, and the <code>.tc</code> mapping stamps what it builds, <span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>), so an unstamped file came from outside rehuco or from before stamping existed. Its layout is <em>inferred</em>: the v1 flat shape, unless it already carries a <code>core</code> block.</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>Common fields at the top level, beside the plugin blocks.</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Common fields nested in the reserved <code>core</code> block (<span class="slug-ref">[[data-model#rehu-format]]</span>), so a plugin block is recognizable without a list of common field names.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../architecture-design/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../nodes/" class="md-footer__link md-footer__link--next" aria-label="Next: Node Communication">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Node Communication
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

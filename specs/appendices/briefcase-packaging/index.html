@@ -1,0 +1,2473 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/briefcase-packaging/">
+      
+      
+        <link rel="prev" href="../../diagrams/sequence-open-document/">
+      
+      
+        <link rel="next" href="../code-conventions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Briefcase Packaging - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#briefcase-packaging-native-app-builds-file-association-and-app-identity" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Briefcase Packaging
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_17" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_17" id="__nav_2_17_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_17_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_17">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-briefcase-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Briefcase config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-app-side-wiring-it-relies-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The app-side wiring it relies on
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-build-and-iterate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Build and iterate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-hurdles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Hurdles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Hurdles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#min_os_version-must-be-the-pyside6-wheels-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        min_os_version must be ≥ the PySide6 wheel's floor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#std-nslog-version-tracks-the-template-not-an-old-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        std-nslog version tracks the template, not an old pin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#briefcases-license-selection-keys-are-strict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Briefcase's license selection keys are strict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-verification-recipe-terminal-driven-no-gui-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Verification recipe (terminal-driven, no GUI session)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-what-the-13-spike-confirmed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. What the #13 spike confirmed
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-briefcase-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Briefcase config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-app-side-wiring-it-relies-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The app-side wiring it relies on
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-build-and-iterate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Build and iterate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-hurdles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Hurdles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Hurdles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#min_os_version-must-be-the-pyside6-wheels-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        min_os_version must be ≥ the PySide6 wheel's floor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#std-nslog-version-tracks-the-template-not-an-old-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        std-nslog version tracks the template, not an old pin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#briefcases-license-selection-keys-are-strict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Briefcase's license selection keys are strict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-verification-recipe-terminal-driven-no-gui-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Verification recipe (terminal-driven, no GUI session)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-what-the-13-spike-confirmed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. What the #13 spike confirmed
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="briefcase-packaging-native-app-builds-file-association-and-app-identity">Briefcase Packaging — Native App Builds, File Association, and App Identity</h1>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#overview]]]</span></p>
+<p>How rehuco uses <a href="https://briefcase.readthedocs.io/">Briefcase</a> to build <code>rehuco-agent</code> into a
+native, double-clickable application with OS-registered file association and app identity — the
+<em>how-to and the hurdles</em>, complementing <span class="slug-ref">[[packaging-deployment#app-identity]]</span> (which records the <em>decision</em> to use
+Briefcase over
+PyInstaller and <em>why</em>).</p>
+<p>This appendix starts from the macOS half of the file-association spike
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a>, macOS; the Windows half closed in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/1" title="GitHub Issue: borco/rehuco #1">#1</a>) and is meant to <strong>evolve</strong> as production Briefcase
+config lands in <code>packages/rehuco-agent/</code> and as Windows and Linux packaging are wired up. Where a
+detail is still spike-proven rather than production-shipped, it says so.</p>
+<h2 id="1-status">1. Status</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#status]]]</span></p>
+<ul>
+<li><strong>macOS file association + <code>QFileOpenEvent</code> delivery + single-instance routing</strong> — proven end to
+  end on current versions by the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike (<span class="slug-ref">[[appendices.briefcase-packaging#verification]]</span>). The <code>rehuco-agent</code> app
+  code it depends on
+  (<code>Application.event()</code>'s <code>QFileOpenEvent</code> branch, <code>ApplicationSingleton</code>) already exists and
+  needs no macOS-specific changes.</li>
+<li><strong>Windows ProgID / AUMID default-handler + taskbar identity</strong> — proven by <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/1" title="GitHub Issue: borco/rehuco #1">#1</a>; the dev-time story
+  and its hurdles live in <span class="slug-ref">[[appendices.windows-dev-launcher#overview]]</span> (the C launcher). Briefcase is the confirmed
+  end-user packager
+  there too.</li>
+<li><strong>Production Briefcase config in <code>packages/rehuco-agent/pyproject.toml</code></strong> — <strong>not yet landed.</strong> It is
+  wider-distribution polish, deferred past the personal critical path (<span class="slug-ref">[[packaging-deployment#app-identity]]</span>, plan:
+  deferred).
+  <code>uv tool install</code> covers the author's own machines until then.</li>
+<li><strong>Linux packaging, code-signing / notarization, auto-update</strong> — not yet done (<span class="slug-ref">[[packaging-deployment#auto-update]]</span>,
+  <span class="slug-ref">[[appendices.open-questions#still-open]]</span>).</li>
+</ul>
+<h2 id="2-the-briefcase-config">2. The Briefcase config</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#briefcase-config]]]</span></p>
+<p>Briefcase reads everything from <code>pyproject.toml</code>; no per-OS manifest is hand-maintained. The
+config below is what the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike used and verified; the production version in <code>rehuco-agent</code>
+will differ only in names (<code>spike</code> → <code>rehuco-agent</code>, <code>.rehuspike</code> → <code>.rehu</code>, throwaway bundle ID →
+production bundle ID).</p>
+<div class="highlight"><pre><span></span><code><span class="k">[tool.briefcase.app.spike.document_type.rehuspike]</span>
+<span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Rehuco Spike File&quot;</span>
+<span class="n">extension</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;rehuspike&quot;</span>
+<span class="n">icon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;rehuco-spike&quot;</span>
+<span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://github.com/borco/rehuco&quot;</span>
+<span class="n">mime_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;application/x-rehuco-spike&quot;</span>
+
+<span class="k">[tool.briefcase.app.spike.macOS]</span>
+<span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;std-nslog~=2.0.0&quot;</span><span class="p">]</span>
+<span class="c1"># PySide6&#39;s macOS wheel is macosx_13_0_universal2; Briefcase&#39;s 11.0 default is too low (see &quot;Hurdles&quot; below).</span>
+<span class="n">min_os_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;13.0&quot;</span>
+</code></pre></div>
+<p>From the <code>document_type</code> table Briefcase generates <strong>both</strong> halves of a macOS document-type
+declaration, with no hand-edited <code>Info.plist</code>:</p>
+<ul>
+<li><code>CFBundleDocumentTypes</code> — so Finder / LaunchServices treat the extension as a document type
+  owned by this app, with the right icon.</li>
+<li><code>UTExportedTypeDeclarations</code> — so <code>mdls</code>, Spotlight, and any UTI-aware API resolve the extension
+  to a concrete Uniform Type Identifier (<code>com.&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;</code>).</li>
+</ul>
+<p>Local (not-yet-on-PyPI) workspace dependencies go into <code>requires</code> as <strong>relative paths</strong>, since
+Briefcase builds the bundle by pip-installing into it and cannot see the uv workspace:</p>
+<div class="highlight"><pre><span></span><code><span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;PySide6&gt;=6.9&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../../packages/borco-core&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../../packages/borco-pyside&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h2 id="3-the-app-side-wiring-it-relies-on">3. The app-side wiring it relies on</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#app-side-wiring]]]</span></p>
+<p>Briefcase only produces the bundle and its registration; the app must still handle the two macOS
+delivery mechanics. Both already exist in <code>rehuco-agent</code> and needed no change for macOS.</p>
+<p>macOS does <strong>not</strong> pass a double-clicked path as <code>argv</code> — it arrives as a Cocoa-originated
+<code>QFileOpenEvent</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtCore</span><span class="w"> </span><span class="kn">import</span> <span class="n">QEvent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtGui</span><span class="w"> </span><span class="kn">import</span> <span class="n">QFileOpenEvent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtWidgets</span><span class="w"> </span><span class="kn">import</span> <span class="n">QApplication</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Application</span><span class="p">(</span><span class="n">QApplication</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">QEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">QFileOpenEvent</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">open_path</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">file</span><span class="p">())</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">event</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+</code></pre></div>
+<p><code>main()</code> still also reads <code>sys.argv[1:]</code>, for parity with Windows' <code>argv</code>-based forwarding (<span class="slug-ref">[[nodes#single-instance]]</span>)
+and for <code>python -m ... &lt;path&gt;</code> during development.</p>
+<p>Single-instance routing uses the same <code>QLocalServer</code>/<code>QLocalSocket</code> mechanism as every platform
+(<span class="slug-ref">[[nodes#single-instance]]</span>) — no macOS-specific code. See <span class="slug-ref">[[appendices.briefcase-packaging#verification]]</span> for <em>when</em>
+this path actually fires on macOS (it is a
+fallback there, not the primary route).</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">borco_pyside.core.application_singleton</span><span class="w"> </span><span class="kn">import</span> <span class="n">ApplicationSingleton</span>
+
+<span class="n">app</span> <span class="o">=</span> <span class="n">Application</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span>
+<span class="n">singleton</span> <span class="o">=</span> <span class="n">ApplicationSingleton</span><span class="p">()</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">singleton</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">APP_ID</span><span class="p">):</span>   <span class="c1"># False -&gt; forwarded argv to the existing primary; exit</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">singleton</span><span class="o">.</span><span class="n">other_instance_run</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">open_forwarded</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="4-build-and-iterate">4. Build and iterate</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#build-and-iterate]]]</span></p>
+<p><strong>Icon first.</strong> Briefcase's <code>icon = "rehuco-spike"</code> config points at a basename; on macOS it needs
+a matching <code>.icns</code> next to <code>pyproject.toml</code>. macOS builds one from the <code>.svg</code> master with the
+platform tools (no third-party dependency). This is <strong>not yet a Makefile target</strong> — the Windows
+<code>.ico</code> rule already lives in the Makefile (<code>%.ico: %.svg</code> via <code>magick</code>); the <code>.icns</code> equivalent
+below should be wired in the same way when production packaging lands (<span class="slug-ref">[[packaging-deployment#app-identity]]</span>), rather
+than run by
+hand:</p>
+<div class="highlight"><pre><span></span><code>magick<span class="w"> </span>-background<span class="w"> </span>none<span class="w"> </span>logo.svg<span class="w"> </span>-resize<span class="w"> </span>1024x1024<span class="w"> </span>rehuco-spike-1024.png
+mkdir<span class="w"> </span>icon.iconset
+<span class="k">for</span><span class="w"> </span>size<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">16</span><span class="w"> </span><span class="m">32</span><span class="w"> </span><span class="m">64</span><span class="w"> </span><span class="m">128</span><span class="w"> </span><span class="m">256</span><span class="w"> </span><span class="m">512</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span>sips<span class="w"> </span>-z<span class="w"> </span><span class="nv">$size</span><span class="w"> </span><span class="nv">$size</span><span class="w"> </span>rehuco-spike-1024.png<span class="w"> </span>--out<span class="w"> </span><span class="s2">&quot;icon.iconset/icon_</span><span class="si">${</span><span class="nv">size</span><span class="si">}</span><span class="s2">x</span><span class="si">${</span><span class="nv">size</span><span class="si">}</span><span class="s2">.png&quot;</span>
+<span class="w">  </span><span class="nv">double</span><span class="o">=</span><span class="k">$((</span><span class="nv">size</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="m">2</span><span class="k">))</span>
+<span class="w">  </span>sips<span class="w"> </span>-z<span class="w"> </span><span class="nv">$double</span><span class="w"> </span><span class="nv">$double</span><span class="w"> </span>rehuco-spike-1024.png<span class="w"> </span>--out<span class="w"> </span><span class="s2">&quot;icon.iconset/icon_</span><span class="si">${</span><span class="nv">size</span><span class="si">}</span><span class="s2">x</span><span class="si">${</span><span class="nv">size</span><span class="si">}</span><span class="s2">@2x.png&quot;</span>
+<span class="k">done</span>
+iconutil<span class="w"> </span>-c<span class="w"> </span>icns<span class="w"> </span>icon.iconset<span class="w"> </span>-o<span class="w"> </span>rehuco-spike.icns
+rm<span class="w"> </span>-rf<span class="w"> </span>icon.iconset<span class="w"> </span>rehuco-spike-1024.png
+</code></pre></div>
+<p><strong>Then build:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="c1"># One-time: build the .app (downloads Python + PySide6 into the bundle; a few minutes).</span>
+briefcase<span class="w"> </span>build<span class="w"> </span>macOS
+<span class="c1"># Output: build/&lt;app&gt;/macos/app/&lt;Formal Name&gt;.app</span>
+
+<span class="c1"># Iterate on app code (fast; re-syncs src/ into the existing bundle, seconds):</span>
+briefcase<span class="w"> </span>update<span class="w"> </span>macOS
+</code></pre></div>
+<p>The spike ran this against a throwaway local venv (<code>uv venv</code>, then <code>uv pip install</code> of PySide6,
+the two <code>borco-*</code> editable packages, the app itself, and <code>briefcase</code>). In production this becomes
+a Makefile target against the workspace venv.</p>
+<h2 id="5-hurdles">5. Hurdles</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#hurdles]]]</span></p>
+<p>Recorded in the order they bite when building a Briefcase macOS bundle for a PySide6 app.</p>
+<h3 id="min_os_version-must-be-the-pyside6-wheels-floor"><code>min_os_version</code> must be ≥ the PySide6 wheel's floor</h3>
+<p><strong>Symptom:</strong> <code>briefcase build macOS</code> fails during dependency install with
+<code>No matching distribution found for PySide6&gt;=6.9</code> / <code>Could not find a version that satisfies the
+requirement PySide6</code>, even though PySide6 installs fine into a normal venv.</p>
+<p><strong>Cause:</strong> PySide6's macOS wheel is tagged <code>macosx_13_0_universal2</code>. Briefcase pins the bundle's
+minimum macOS to its own default (<code>11.0</code>) and asks pip for a wheel compatible with <em>that</em> floor —
+no <code>13.0</code>-tagged wheel qualifies, so pip reports "no matching distribution."</p>
+<p><strong>Fix:</strong> set <code>min_os_version = "13.0"</code> under <code>[tool.briefcase.app.&lt;name&gt;.macOS]</code>. Carry this into
+<code>rehuco-agent</code>'s production config; revisit only if PySide6 lowers its wheel floor.</p>
+<h3 id="std-nslog-version-tracks-the-template-not-an-old-pin"><code>std-nslog</code> version tracks the template, not an old pin</h3>
+<p><code>[tool.briefcase.app.&lt;name&gt;.macOS].requires</code> needs <code>std-nslog</code> (Briefcase's macOS stdout/stderr →
+unified-log shim). The current Briefcase template (<code>v0.4.3</code>) pins <code>std-nslog~=2.0.0</code>; an earlier
+Windows-spike commit referenced <code>&gt;=1.0.3</code>. Use the version the active template expects, or the
+build resolver complains.</p>
+<h3 id="briefcases-license-selection-keys-are-strict">Briefcase's <code>license</code> selection keys are strict</h3>
+<p><code>briefcase new</code> (and config validation) expect an SPDX-style key like <code>MIT</code>, not a prose string
+like <code>"MIT license"</code> — the latter fails validation with an "invalid override value" error. Minor,
+but wastes a scaffolding round-trip if hit.</p>
+<h2 id="6-verification-recipe-terminal-driven-no-gui-session">6. Verification recipe (terminal-driven, no GUI session)</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#verification]]]</span></p>
+<p><code>open</code> and <code>lsregister</code> drive the <em>exact same</em> LaunchServices path Finder uses for a double-click,
+so the whole flow is verifiable over SSH with no screen attached — how the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike was checked.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Register the built .app with LaunchServices (Finder does this automatically on first copy/launch):</span>
+<span class="nv">LSREG</span><span class="o">=</span>/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;build/&lt;app&gt;/macos/app/&lt;Formal Name&gt;.app&quot;</span>
+
+<span class="c1"># Confirm the UTI is claimed and our .app is the Owner:</span>
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-dump<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A6<span class="w"> </span><span class="s2">&quot;com.&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;&quot;</span>
+
+<span class="c1"># Confirm a fresh file resolves to our UTI:</span>
+<span class="nb">echo</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>&gt;<span class="w"> </span>/tmp/test.&lt;ext&gt;
+mdls<span class="w"> </span>-name<span class="w"> </span>kMDItemContentType<span class="w"> </span>/tmp/test.&lt;ext&gt;<span class="w">   </span><span class="c1"># -&gt; com.&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;</span>
+
+<span class="c1"># Open it exactly like a Finder double-click would (extension alone, no -a):</span>
+open<span class="w"> </span>/tmp/test.&lt;ext&gt;
+
+<span class="c1"># Watch QFileOpenEvent delivery and single-instance routing live:</span>
+log<span class="w"> </span>stream<span class="w"> </span>--style<span class="w"> </span>compact<span class="w"> </span>--predicate<span class="w"> </span><span class="s1">&#39;process == &quot;&lt;Formal Name&gt;&quot;&#39;</span>
+
+<span class="c1"># Clean up the throwaway registration when done:</span>
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-u<span class="w"> </span><span class="s2">&quot;build/&lt;app&gt;/macos/app/&lt;Formal Name&gt;.app&quot;</span>
+</code></pre></div>
+<h2 id="7-what-the-13-spike-confirmed">7. What the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike confirmed</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#spike-confirmed]]]</span></p>
+<p>Tested on Python 3.14.6, PySide6 6.11.1, Briefcase 0.4.3, macOS 26.5.1 (2026-07-02). All three of
+the spike's acceptance criteria passed:</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.app</code> registered as default opener for the extension (UTI + <code>CFBundleDocumentTypes</code>)</td>
+<td>Briefcase <code>document_type</code> config</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Double-click delivers the path via <code>QFileOpenEvent</code>, not <code>argv</code></td>
+<td><code>Application.event()</code> override (already in <code>rehuco_agent/app.py</code>)</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Second double-click routes to the existing instance</td>
+<td>macOS app-uniquing (primary) + <code>ApplicationSingleton</code>/<code>QLocalServer</code> (fallback)</td>
+<td>✓</td>
+</tr>
+</tbody>
+</table>
+<p>Two behaviours are worth keeping in mind for the production wiring:</p>
+<ul>
+<li><strong>macOS's own app-uniquing — not <code>ApplicationSingleton</code> — routes a second Finder double-click.</strong>
+  LaunchServices sees the bundle is already running and delivers the second file as another
+  <code>QFileOpenEvent</code> to the same process, without launching a competitor. This <em>confirms</em> the <span class="slug-ref">[[packaging-deployment#app-identity]]</span>
+  note that "a bundled <code>.app</code> is already kept single-instance by the OS, so the local-server
+  forwarding mainly earns its keep on Windows/Linux." <code>ApplicationSingleton</code>'s <code>QLocalServer</code>
+  fallback still works when exercised directly (invoking the bundle executable, bypassing
+  LaunchServices) — which is exactly the path that matters on Linux and for non-LaunchServices
+  launches.</li>
+<li><strong>A benign teardown warning on the forwarding path.</strong> When the <code>QLocalServer</code> fallback <em>does</em>
+  fire, the exiting secondary logs two <code>QAbstractSocket::waitForBytesWritten() is not allowed in
+  UnconnectedState</code> warnings before <code>primary already running ... forwarded argv and exiting</code>. The
+  forward still succeeds (the primary receives the path), so this is a harmless race in
+  <code>ApplicationSingleton</code>'s write-then-disconnect teardown, not a functional bug — noted for
+  whoever next touches that (kept, tested) class.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../diagrams/sequence-open-document/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Sequence: Open a Path">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Sequence: Open a Path
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../code-conventions/" class="md-footer__link md-footer__link--next" aria-label="Next: Code Conventions">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Code Conventions
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
