@@ -2562,6 +2562,23 @@ def test_core_type_naming_core_is_refused() -> None:
         RehuDocument({"format_version": 2, "core": {"type": "core"}})
 
 
+@mark.parametrize("unhashable_type", [["tutorial"], {"kind": "tutorial"}], ids=["list", "dict"])
+def test_an_unhashable_core_type_does_not_crash_the_reserved_key_guard(unhashable_type: object) -> None:
+    """The reserved-key guard tests ``core.type`` for membership in a ``frozenset``, which hashes it
+    (#163): an unhashable value -- a list- or dict-valued ``type`` in a hand-mangled ``.rehu`` -- must
+    not raise ``TypeError`` past the guard, which would escape :meth:`open_or_locked`'s no-raise
+    contract and crash the open path this seam exists to keep quiet ([[data-model#write-integrity]]).
+    An unhashable value is not a reserved key, so it passes the guard; the non-string ``type`` policy
+    itself is #164's concern, not this one.
+
+    **Test steps:**
+
+    * construct a document whose ``core.type`` is an unhashable list or dict
+    * verify construction succeeds rather than raising
+    """
+    RehuDocument({"format_version": 2, "core": {"type": unhashable_type}})
+
+
 def test_flat_v1_type_naming_format_version_is_refused() -> None:
     """The flat-v1 spelling of the reserved-type misuse (#135): a pre-migration top-level ``type``
     naming ``format_version``. Let through, the v1->v2 step moves it into the fresh ``core`` block and
