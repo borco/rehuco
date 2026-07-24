@@ -13,7 +13,8 @@ v1 field list derived from the `.tc` format) and isn't detailed here, but its sc
 
 - **The `core` block**, holding the common fields available to every resource type regardless of plugin. The concrete v1
   list is [[field-schema#resource-types]]: `type`, `id`, `sources` (title/publisher/url per platform), `authors`,
-  `released` (partial-precision date), `description` (Markdown, can embed local images), the tag lists, the measured
+  `released` (partial-precision date), `description` (Markdown, can embed local images), `hidden_images` (screenshot
+  basenames curated out of the lightbox, [[data-model#image-meanings]]), the tag lists, the measured
   `original_size`/`current_size` pair ([[field-schema#duration-size]] — empty for a type with no files of its own, e.g.
   Collection), and the `created`/`updated` record timestamps.
 - **One block per plugin**, holding that resource type's own fields ([[plugins#plugin-blocks]]), e.g.:
