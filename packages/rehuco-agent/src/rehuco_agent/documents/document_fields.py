@@ -125,7 +125,11 @@ directly in :func:`build_document_form` alongside ``location``/images, not liste
 constant for now."""
 
 
-def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None = None) -> FieldsForm:
+def build_document_form(
+    model: RehuDocumentModel,
+    name_suggestions: NameSuggestionModel,
+    registry: FieldRegistry | None = None,
+) -> FieldsForm:
     """Build the document's complete :class:`FieldsForm` for ``model``.
 
     The whole field composition lives here, in one place: the model-aware **leading** fields (the
@@ -137,6 +141,13 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
     `DocumentWidget` only hosts the resulting docks.
 
     :param model: the reactive view-model the fields bind to and read their runtime state from.
+    :param name_suggestions: the rename-suggestion `NameSuggestionModel` the ``location`` field pulls
+        candidate names from -- the caller's, not built here. It carries permanent notify-signal
+        subscriptions on ``model``, so it must outlive individual form builds: a caller that rebuilds
+        the form (a type switch/revert, `DocumentWidget`) owns **one** and passes it to every build, so
+        it is reused rather than a fresh one leaking per rebuild (#149). Required, not optional-with-a-
+        default: minting one here would put that ownership back inside a per-build call, the exact seam
+        #149 closed. The owner parents it to ``model`` so it is freed with the whole document (#148).
     :param registry: the field registry to resolve the record types with; a default one when omitted.
     :returns: a form composing location + images + description, then the record fields, then the
         unknown fallbacks, then the inactive blocks.
@@ -169,7 +180,6 @@ def build_document_form(model: RehuDocumentModel, registry: FieldRegistry | None
         # click time, so a test that swaps it after construction is still seen
         model.rename_location(name)
 
-    name_suggestions = NameSuggestionModel(model, parent=model)
     location_field = PathField(
         LOCATION_FIELD_NAME,
         suggestions=name_suggestions.suggestions,
