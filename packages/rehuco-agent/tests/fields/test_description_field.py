@@ -80,6 +80,30 @@ def test_description_viewer_follows_live_rendering_settings_changes(
     set_markdown.assert_called_once()
 
 
+def test_viewer_without_rendering_settings_renders_with_defaults_and_ignores_changes(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """With ``rendering_settings=None`` the viewer renders on `MarkdownView`'s own defaults and is not
+    wired to follow the shared settings (#26, #47) -- the bare, settings-agnostic path.
+
+    **Test steps:**
+
+    * build the viewer with ``rendering_settings=None``
+    * verify it's a ``MarkdownView`` rendering the description on the default engine
+    * change the shared settings' engine and verify the viewer does *not* follow it (no wiring)
+    """
+    model.description = "# Title\n\nbody"
+    field = DescriptionField("description", rendering_settings=None)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, MarkdownView)
+    qtbot.addWidget(viewer)
+
+    assert "Title" in viewer.toPlainText()
+
+    shared_markdown_rendering_settings().engine = "mistletoe"
+    assert viewer._MarkdownView__engine == "markdown"  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
 def test_viewer_forwards_image_scanner_changed_to_the_markdown_view(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """A scanner swap forwarded through ``image_scanner_changed`` reaches the viewer's own scanner.
 

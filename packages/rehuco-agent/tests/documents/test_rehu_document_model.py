@@ -13,9 +13,27 @@ import pytest
 from fields.field_testers import FieldTester as Field
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_agent.documents.image_scanner import RehuScanner, TcScanner
+from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
-from rehuco_core import CURRENT_FORMAT_VERSION, LockReasonKind, RehuDocument
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    LockReasonKind,
+    RehuDocument,
+    scan_rehu_screenshot_files,
+    scan_tc_screenshot_files,
+)
+
+
+def lister_of(scanner: RehuDocumentImageScanner) -> object:
+    """The screenshot lister a `RehuDocumentImageScanner` delegates :meth:`~RehuDocumentImageScanner.files` to.
+
+    Reads the scanner's name-mangled private, so the model's wiring can be asserted without exposing
+    the lister as public API.
+
+    :param scanner: the scanner to inspect.
+    :returns: the lister callable it was built with.
+    """
+    return scanner._RehuDocumentImageScanner__lister  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 # region fixtures
@@ -511,7 +529,7 @@ def test_setting_hidden_images_writes_through_and_dirties(model: RehuDocumentMod
     assert model.dirty is True
 
 
-# image_files() moved to RehuScanner (rehuco_agent.documents.image_scanner) -- see test_image_scanner.py
+# image_files() listing moved to rehuco_core.scan_rehu_screenshot_files -- see rehuco-core's test_rehu_screenshots.py
 
 
 @mark.parametrize("attr", [param("original_size", id="original_size"), param("current_size", id="current_size")])
@@ -1055,39 +1073,41 @@ def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFix
     assert model.locked is True
 
 
-def test_image_scanner_is_a_tc_scanner_for_a_legacy_document() -> None:
-    """A model over a legacy ``.tc``-backed document constructs with a ``TcScanner``.
+def test_image_scanner_lists_tc_screenshots_for_a_legacy_document() -> None:
+    """A model over a legacy ``.tc``-backed document scans with the tc screenshot lister.
 
     **Test steps:**
 
     * construct a model over a document with ``legacy_tc=True``
-    * verify ``image_scanner`` is a ``TcScanner``
+    * verify ``image_scanner`` is a ``RehuDocumentImageScanner`` over ``scan_tc_screenshot_files``
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
-    assert isinstance(model.image_scanner, TcScanner)
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    assert lister_of(model.image_scanner) is scan_tc_screenshot_files
 
 
-def test_image_scanner_is_a_rehu_scanner_for_a_normal_document(model: RehuDocumentModel) -> None:
-    """A model over a normal (non-legacy) document constructs with a ``RehuScanner``.
+def test_image_scanner_lists_rehu_screenshots_for_a_normal_document(model: RehuDocumentModel) -> None:
+    """A model over a normal (non-legacy) document scans with the rehu screenshot lister.
 
     **Test steps:**
 
     * read ``image_scanner`` off the shared (non-legacy) fixture
-    * verify it is a ``RehuScanner``
+    * verify it is a ``RehuDocumentImageScanner`` over ``scan_rehu_screenshot_files``
     """
-    assert isinstance(model.image_scanner, RehuScanner)
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
 
 
 def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
-    """``convert()`` reassigns ``image_scanner`` to a **new** ``RehuScanner`` instance, never derived
-    from whatever scanner was already there.
+    """``convert()`` reassigns ``image_scanner`` to a **new** ``RehuDocumentImageScanner`` over the rehu lister,
+    never derived from whatever scanner was already there.
 
     **Test steps:**
 
     * build a model over a legacy ``.tc``-backed document and record its original scanner
     * mock ``convert_tc`` to return a fresh, unlocked document
     * call ``model.convert()``
-    * verify ``image_scanner`` is now a different ``RehuScanner`` instance
+    * verify ``image_scanner`` is now a different ``RehuDocumentImageScanner`` over ``scan_rehu_screenshot_files``
     """
     tc_document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True)
     model = RehuDocumentModel(tc_document)
@@ -1099,7 +1119,8 @@ def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
 
     model.convert(keep_backups=True)
 
-    assert isinstance(model.image_scanner, RehuScanner)
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
     assert model.image_scanner is not original_scanner
 
 

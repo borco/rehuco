@@ -12,7 +12,7 @@ from PySide6.QtGui import QFontDatabase, QKeySequence, QPalette, QShortcut
 from PySide6.QtWidgets import QApplication, QWidget
 from pyside6_scintilla import Scintilla, ScintillaEdit
 
-from ...documents.image_scanner import ImageScanner
+from ..image_scanner import ImageScanner
 
 LINE_NUMBER_MARGIN: Final = 0
 """Margin index used for the line-number margin."""

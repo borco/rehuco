@@ -1,9 +1,8 @@
 """Legacy screenshot recognition for `.tc` conversion ([[acquisition-tooling#tc-to-rehu]]).
 
 Scans a resource's directory for tc4-era screenshot naming schemes and assigns each recognized file a
-fresh ``<stem>NN`` name, matching the reader convention
-``rehuco_agent.documents.rehu_document_model.RehuDocumentModel.image_files()`` already expects. Stays
-core-side and GUI-free: callers resolve ``stem`` however they need to (e.g. from
+fresh ``<stem>NN`` name, matching the reader convention `rehuco_core.rehu_screenshots.scan_rehu_screenshot_files`
+already expects. Stays core-side and GUI-free: callers resolve ``stem`` however they need to (e.g. from
 ``RehuDocumentModel.current_name``) and pass it in as a plain string.
 """
 
@@ -43,6 +42,22 @@ def scan_tc_screenshots(directory: Path, stem: str) -> list[ScreenshotRename]:
     :returns: one :class:`ScreenshotRename` per recognized slot, sorted by slot index.
     """
     return TcScreenshotScanner(directory, stem).scan()
+
+
+def scan_tc_screenshot_files(directory: Path, stem: str) -> list[Path]:
+    """List each recognized legacy slot's current (pre-conversion) winner file.
+
+    The reader counterpart of :func:`scan_tc_screenshots`: where that returns the full rename *plan*
+    (consumed by conversion), this returns just each slot winner's current path -- what the lightbox
+    shows for a ``.tc`` resource before it is converted. Shares the ``(directory, stem)`` signature of
+    `rehuco_core.rehu_screenshots.scan_rehu_screenshot_files` so either can serve as a screenshot lister,
+    though ``stem`` only feeds the (here-discarded) rename plan and does not affect the returned paths.
+
+    :param directory: the resource's directory to scan.
+    :param stem: the new filename base, passed through to the underlying scan.
+    :returns: each slot winner's absolute path, sorted by slot index.
+    """
+    return [directory / rename.source_filename for rename in scan_tc_screenshots(directory, stem)]
 
 
 class TcScreenshotScanner:  # pylint: disable=too-few-public-methods

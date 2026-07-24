@@ -30,10 +30,11 @@ from .rehu_document import (
     authors_comma_editable,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_screenshots import scan_rehu_screenshot_files
 from .tc_conversion import TcConverter, convert_tc
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
-from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshots
+from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshot_files, scan_tc_screenshots
 
 __version__ = "0.0.1"
 
@@ -74,6 +75,8 @@ __all__ = [
     "migrate_block_data",
     "migrate_rehu_data",
     "rewrite_description_images",
+    "scan_rehu_screenshot_files",
+    "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "tc_to_rehu_data",
 ]

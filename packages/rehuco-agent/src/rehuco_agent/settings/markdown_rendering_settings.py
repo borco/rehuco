@@ -6,6 +6,7 @@ from typing import Final, cast
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import QObject, QSettings, Signal
 
+from ..fields.widgets.markdown_view import DEFAULT_ENGINE
 from .persistent_settings import persistent_settings
 
 GROUP: Final = "markdown_rendering"
@@ -14,15 +15,10 @@ MARKDOWN_CSS_KEY: Final = "markdown_css"
 MISTLETOE_CSS_KEY: Final = "mistletoe_css"
 MAX_IMAGE_WIDTH_KEY: Final = "max_image_width"
 
-DEFAULT_ENGINE: Final = "markdown"
-"""Mirrors ``rehuco_agent.fields.widgets.markdown_view.DEFAULT_ENGINE`` -- not imported from there
-directly, since anything under ``rehuco_agent.fields`` transitively loads ``description_field``,
-which imports this module (a cyclic import, confirmed empirically)."""
-
 DEFAULT_MAX_IMAGE_WIDTH: Final = 350
 """Default cap, in pixels, an embedded image is scaled to when no persisted value exists yet (a
-fresh install with no ``.ini``) -- read by ``rehuco_agent.documents.image_scanner.ImageScanner``,
-via :attr:`MarkdownRenderingSettings.max_image_width`, on every image resolution."""
+fresh install with no ``.ini``) -- read by the document's `RehuDocumentImageScanner`, via
+:attr:`MarkdownRenderingSettings.max_image_width`, on every image resolution."""
 
 
 class MarkdownRenderingSettings(QObject):
@@ -30,8 +26,8 @@ class MarkdownRenderingSettings(QObject):
     image-width cap (#26's constants, made configurable by #47's settings dialog).
 
     A reactive ``QObject`` (``SimpleProperty`` fields), not the plain dataclass every other
-    settings section in this app uses -- every open document's ``MarkdownView`` connects to these
-    properties' own ``_changed`` signals, so a Save on the settings page re-renders already-open
+    settings section in this app uses -- every open document's description viewer follows the aggregate
+    :attr:`description_rendering_changed`, so a Save on the settings page re-renders already-open
     viewers immediately, not just newly-opened ones. :func:`shared_markdown_rendering_settings` is
     the single, process-wide instance every consumer reads/writes; constructing a fresh one per
     reader would defeat the live-update wiring entirely, since each would get its own disconnected
@@ -40,25 +36,48 @@ class MarkdownRenderingSettings(QObject):
     :param parent: optional Qt parent.
     """
 
-    engine_changed = Signal(str)
     engine = SimpleProperty(DEFAULT_ENGINE)
     """Which renderer to use -- a key of ``rehuco_agent.fields.widgets.markdown_view.RENDERERS``."""
 
-    markdown_css_changed = Signal(str)
     markdown_css = SimpleProperty("")
     """Stylesheet applied when :attr:`engine` is ``"markdown"``."""
 
-    mistletoe_css_changed = Signal(str)
     mistletoe_css = SimpleProperty("")
     """Stylesheet applied when :attr:`engine` is ``"mistletoe"``."""
 
-    max_image_width_changed = Signal(int)
     max_image_width = SimpleProperty(DEFAULT_MAX_IMAGE_WIDTH)
     """The width, in pixels, a rendered image is capped to."""
 
-    def css_for_current_engine(self) -> str:
+    description_rendering_changed = Signal()
+    """Fires whenever a value affecting how a description renders changes -- the :attr:`engine`, the
+    active engine's stylesheet (:attr:`css`), or the image-width cap. The single, engine-agnostic
+    signal a description viewer follows, so it never subscribes to (or enumerates) the per-engine
+    stylesheet signals; an edit to the *inactive* engine's stylesheet stays silent, since the
+    effective render is unchanged."""
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        # relay every render-affecting change into the one aggregate signal a viewer follows: the
+        # engine and image-width cap pass straight through; a stylesheet edit only while its engine is
+        # the active one (an inactive-engine edit changes nothing visible)
+        self.engine_changed.connect(self.description_rendering_changed)  # type: ignore[attr-defined]
+        self.max_image_width_changed.connect(self.description_rendering_changed)  # type: ignore[attr-defined]
+        self.markdown_css_changed.connect(lambda *_: self.__on_css_changed("markdown"))  # type: ignore[attr-defined]
+        self.mistletoe_css_changed.connect(lambda *_: self.__on_css_changed("mistletoe"))  # type: ignore[attr-defined]
+
+    @property
+    def css(self) -> str:
         """The stylesheet for whichever :attr:`engine` is currently selected."""
         return self.markdown_css if self.engine == "markdown" else self.mistletoe_css
+
+    def __on_css_changed(self, engine: str) -> None:
+        """Emit :attr:`description_rendering_changed` for ``engine``'s stylesheet edit, but only while
+        it is the active engine.
+
+        :param engine: the engine whose ``*_css`` just changed.
+        """
+        if self.engine == engine:
+            self.description_rendering_changed.emit()
 
     def load(self, settings: QSettings) -> None:
         """Replace the current values with what's in persistent storage.
