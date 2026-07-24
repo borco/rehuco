@@ -228,8 +228,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
                 f"{FORMAT_VERSION_KEY!r} holds an object, but it is the file's version number, not a plugin block."
             )
         core = data.get(CORE_BLOCK_KEY)
-        if isinstance(core, dict) and core.get("type") in RESERVED_KEYS:
-            raise RehuFormatError(f"'type' is {core['type']!r}, which is a reserved key rather than a resource type.")
+        if isinstance(core, dict):
+            resource_type = core.get("type")
+            if isinstance(resource_type, str) and resource_type in RESERVED_KEYS:
+                raise RehuFormatError(
+                    f"'type' is {resource_type!r}, which is a reserved key rather than a resource type."
+                )
 
     @classmethod
     def load(
