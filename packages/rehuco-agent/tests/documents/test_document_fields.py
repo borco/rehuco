@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QGridLayout, QLabel, QToolButton, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
+from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -42,7 +43,7 @@ def viewer_tooltips(qtbot: QtBot, model: RehuDocumentModel) -> dict[str, str]:
     :param model: the model to build the form over.
     :returns: a ``{label text: tooltip}`` mapping of every unknown-flagged label on the viewer tab.
     """
-    grids = build_document_form(model).make_viewer(model)
+    grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
     qtbot.addWidget(grids[VIEWER_TAB])
     return {
         label.text(): label.toolTip() for label in grids[VIEWER_TAB].findChildren(QLabel) if label.property("unknown")
@@ -124,7 +125,7 @@ def test_a_foreign_block_can_be_dropped_from_the_editor(qtbot: QtBot, model: Reh
     * click that block's drop button
     * verify the block is gone from the document, the model is dirty, and the row is hidden
     """
-    editor = build_document_form(model).make_editor(model)[EDITOR_MAIN_TAB]
+    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
     value = next(label for label in editor.findChildren(QLabel) if label.text() == "{'images_count': 12}")
     drop = drop_button_for(editor, "{'images_count': 12}")
@@ -161,7 +162,7 @@ def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
         )
     )
     model.resource_type = "collection"
-    editor = build_document_form(model).make_editor(model)[EDITOR_MAIN_TAB]
+    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
 
     assert drop_button_for(editor, "{'users': {'admin': {'rating': 4}}, 'format_version': 1}") is None
@@ -209,7 +210,7 @@ def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBo
     * verify the editor holds the type combo (and the viewer does not)
     * verify the viewer holds a type badge showing the tutorial type in its plugin color
     """
-    form = build_document_form(model)
+    form = build_document_form(model, NameSuggestionModel(model))
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
     viewer = form.make_viewer(model)[VIEWER_TAB]
     qtbot.addWidget(editor)

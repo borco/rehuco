@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 from ..fields import FieldsTab, StatefulWidget
 from ..glyphs import TAB_CLOSE_GLYPH
 from .document_fields import build_document_form
+from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
@@ -138,12 +139,17 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 
+        # the rename-suggestion compute model is built once and reused across every form rebuild, not
+        # rebuilt with the form: its four notify-signal subscriptions on the model are permanent, so a
+        # fresh one per type switch/revert would leak a set that never disconnects (#149). Parented to
+        # model, so it is freed with the whole document when the dock closes (#148).
+        self.__name_suggestions: Final = NameSuggestionModel(model, parent=model)
         # the whole field composition (location + images + record fields + unknown fallbacks) is
         # authored in document_fields; this widget only hosts the resulting docks. The form is retained
         # (not discarded after building) so its fields outlive the widgets they built -- a field's
         # binding connections (Field.bind_external) are cleared when its widgets are destroyed, which
         # needs the field still alive at that moment (a form rebuild on a type switch/revert).
-        self.__form = build_document_form(model)
+        self.__form = build_document_form(model, name_suggestions=self.__name_suggestions)
         # a field that reports a transient status message (the authors viewer's hovered-link URL, a
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
         # bubble them up through status_message, which DocumentsDock relays on to MainWindow's real bar.
@@ -433,7 +439,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # destroyed -- deterministically, while its fields are still alive -- so no stale lambda fires into
         # a deleted widget later (a subsequent revert/switch). Then replace the retained form.
         self.__form.clear_external()
-        self.__form = build_document_form(self.__model)
+        self.__form = build_document_form(self.__model, name_suggestions=self.__name_suggestions)
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)

@@ -30,6 +30,7 @@ from rehuco_agent.documents.document_widget import (
     SAVE_PREVIEW_ICON_RESOURCE,
     DocumentWidget,
 )
+from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
 from rehuco_agent.fields.widgets import PathEditor, SingleChoiceComboBox
@@ -1314,6 +1315,47 @@ def test_field_signals_after_a_switch_do_not_fire_into_deleted_widgets(qtbot: Qt
     model.extra_tags = ["a", "b"]
 
     assert model.complete is True  # got here without a RuntimeError from a deleted widget
+
+
+def test_repeated_type_switches_leave_exactly_one_live_suggestion_model(qtbot: QtBot) -> None:
+    """Each form rebuild reuses the widget's one `NameSuggestionModel` rather than minting a fresh one,
+    so repeated type switches don't accumulate suggestion models whose notify subscriptions never
+    disconnect (#149).
+
+    A leaked model stays parented to the (session-long) model and keeps its four source-field
+    subscriptions, so a single ``title`` edit would fan out to N+1 suggestion models after N switches.
+    The widget builds one and threads it through every rebuild instead.
+
+    **Test steps:**
+
+    * build a widget, then switch its type several times (forcing a rebuild each time)
+    * verify exactly one `NameSuggestionModel` is parented to the model
+    * change a source field and verify the fan-out reaches exactly that one model, not one per rebuild
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
+                "tutorial": {"rating": 4},
+            }
+        )
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    for resource_type in ("reference_images", "tutorial", "reference_images"):
+        model.resource_type = resource_type
+        qtbot.wait(1)  # let the old widgets (and any leaked suggestion model) actually be destroyed
+
+    suggestion_models = model.findChildren(NameSuggestionModel)
+    assert len(suggestion_models) == 1
+
+    fired: list[bool] = []
+    for suggestion_model in suggestion_models:
+        suggestion_model.changed.connect(lambda: fired.append(True))
+    model.title = "Renamed"
+
+    assert fired == [True]  # exactly one live model reacted, not one per rebuild
 
 
 def type_combo(widget: DocumentWidget) -> SingleChoiceComboBox:
