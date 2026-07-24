@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QWidget
 
-from ...documents.image_scanner import ImageScanner
+from ..image_scanner import ImageScanner
 
 
 class ImageStrip(QScrollArea):

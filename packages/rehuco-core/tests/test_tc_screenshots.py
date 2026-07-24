@@ -5,7 +5,7 @@ from typing import Final
 
 from PIL import UnidentifiedImageError
 from pytest_mock import MockerFixture
-from rehuco_core import ScreenshotRename, scan_tc_screenshots
+from rehuco_core import ScreenshotRename, scan_tc_screenshot_files, scan_tc_screenshots
 
 DIRECTORY: Final = Path("/fake/tutorial")
 STEM: Final = "info"
@@ -277,3 +277,50 @@ def test_missing_directory_returns_an_empty_list(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "iterdir", side_effect=OSError)
 
     assert not scan_tc_screenshots(DIRECTORY, STEM)
+
+
+# region scan_tc_screenshot_files (the reader view: current winner paths)
+def test_screenshot_files_returns_each_slot_winners_path(mocker: MockerFixture) -> None:
+    """The reader lists each recognized slot's current (pre-conversion) winner as an absolute path.
+
+    **Test steps:**
+
+    * mock the directory to hold a ``sample-00``/``sample-01`` series (no ties)
+    * list the screenshot files
+    * verify each winner resolves against :data:`DIRECTORY`, in slot order
+    """
+    mock_directory(mocker, ["sample-00.jpg", "sample-01.jpg"])
+
+    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-00.jpg", DIRECTORY / "sample-01.jpg"]
+
+
+def test_screenshot_files_returns_the_winner_on_a_tie(mocker: MockerFixture) -> None:
+    """On a slot tie only the winner's path is listed, not the losing variant.
+
+    **Test steps:**
+
+    * mock a small ``cover.jpg`` and a large ``sample-00.png`` on the same slot
+    * list the screenshot files
+    * verify only the larger winner's path comes back
+    """
+    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
+    mock_image_sizes(mocker, {"cover.jpg": (100, 100), "sample-00.png": (1920, 1080)})
+
+    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-00.png"]
+
+
+def test_screenshot_files_is_empty_for_a_missing_directory(mocker: MockerFixture) -> None:
+    """A missing/unreadable directory lists no screenshot files, rather than crashing.
+
+    **Test steps:**
+
+    * mock ``Path.iterdir`` to raise ``OSError``
+    * list the screenshot files
+    * verify the result is empty
+    """
+    mocker.patch.object(Path, "iterdir", side_effect=OSError)
+
+    assert not scan_tc_screenshot_files(DIRECTORY, STEM)
+
+
+# endregion

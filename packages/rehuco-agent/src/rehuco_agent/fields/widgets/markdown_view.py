@@ -20,7 +20,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QWidget
 
-from ...documents.image_scanner import ImageScanner
+from ..image_scanner import ImageScanner
 
 DEFAULT_ENGINE: Final = "markdown"
 """The renderer used when nothing overrides it -- the engine this app always used before #47 made

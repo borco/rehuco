@@ -17,10 +17,12 @@ from rehuco_core import (
     LockReason,
     RehuDocument,
     convert_tc,
+    scan_rehu_screenshot_files,
+    scan_tc_screenshot_files,
 )
 
 from ..fields.field import Field, FieldBinding
-from .image_scanner import ImageScanner, RehuScanner, TcScanner
+from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -225,7 +227,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     hidden_images = SimpleProperty[list[str]](default_factory=list)
     """The screenshot filenames curated *out* of the lightbox ([[data-model#image-meanings]], #27); a
-    top-level common-core list. The lightbox shows every ``ImageScanner.files()`` sibling by default, so
+    top-level common-core list. The lightbox shows every ``RehuDocumentImageScanner.files()`` sibling by default, so
     only the hidden exceptions are stored -- the editor's checkboxes are the inverse (checked = visible)."""
 
     dirty = SimpleProperty(False)
@@ -266,12 +268,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     banner row both key off this flag directly, the same shape every other lock reason already uses
     (a toolbar remedy, plus a message-only banner row explaining it)."""
 
-    image_scanner = SimpleProperty[ImageScanner | None](None)
-    """The current screenshot-resolution strategy -- `TcScanner` while :attr:`~RehuDocument.legacy_tc`,
-    `RehuScanner` once converted or genuinely `.rehu`-native. `ImageStrip`/`ImageSelector`/`MarkdownView`
-    each hold their own copy and bind to `image_scanner_changed` to pick up a `.tc` -> `.rehu`
-    conversion's switch in naming convention without rebuilding the field composition
-    ([[acquisition-tooling#tc-to-rehu]])."""
+    image_scanner = SimpleProperty[RehuDocumentImageScanner | None](None)
+    """The current screenshot-resolution scanner -- a `RehuDocumentImageScanner` over `scan_tc_screenshot_files`
+    while :attr:`~RehuDocument.legacy_tc`, over `scan_rehu_screenshot_files` once converted or genuinely
+    `.rehu`-native. `ImageStrip`/`ImageSelector`/`MarkdownView` each hold their own copy and bind to
+    `image_scanner_changed` to pick up a `.tc` -> `.rehu` conversion's switch in naming convention
+    without rebuilding the field composition ([[acquisition-tooling#tc-to-rehu]])."""
 
     def __init__(self, document: RehuDocument, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -284,7 +286,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
-        self.image_scanner = TcScanner(self) if self.__document.legacy_tc else RehuScanner(self)
+        self.image_scanner = (
+            RehuDocumentImageScanner(self, scan_tc_screenshot_files)
+            if self.__document.legacy_tc
+            else RehuDocumentImageScanner(self, scan_rehu_screenshot_files)
+        )
         self.__recompute_upgradable()
 
         # a live edit toggles dirty, and a lock can appear/clear outside revert/convert too (tests
@@ -483,7 +489,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__seed_from_document()
         self.dirty = False
         self.lock_reasons = list(self.__document.lock_reasons)
-        self.image_scanner = RehuScanner(self)
+        self.image_scanner = RehuDocumentImageScanner(self, scan_rehu_screenshot_files)
         self.unknown_fields_changed.emit()
         self.__recompute_upgradable()
 

@@ -8,15 +8,13 @@ Pure wiring only: `ImageStrip`/`ImageSelector` each hold their own `image_scanne
 re-fetch and rebuild themselves, so this field never touches a screenshot path list directly.
 """
 
-from typing import TYPE_CHECKING, Final, override
+from typing import Final, override
 
 from PySide6.QtCore import SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
+from .image_scanner import ImageScanner
 from .widgets import ImageSelector, ImageStrip
-
-if TYPE_CHECKING:
-    from ..documents.image_scanner import ImageScanner
 
 IMAGE_STRIP_HEIGHT: Final = 150
 """The lightbox strip viewer's fixed pixel height (#27). A constant for now; a future preferences slice

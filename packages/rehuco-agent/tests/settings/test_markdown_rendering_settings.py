@@ -114,35 +114,75 @@ def test_load_defaults_when_nothing_was_saved(settings: FakeSettings) -> None:
     assert loaded.max_image_width == 350
 
 
-def test_css_for_current_engine_returns_markdown_css_when_selected() -> None:
-    """``css_for_current_engine`` returns ``markdown_css`` while ``engine`` is ``"markdown"``.
+def test_css_returns_markdown_css_when_selected() -> None:
+    """``css`` returns ``markdown_css`` while ``engine`` is ``"markdown"``.
 
     **Test steps:**
 
     * set distinct CSS for both engines, with ``engine`` left at its default (``"markdown"``)
-    * verify ``css_for_current_engine`` returns the markdown one
+    * verify ``css`` returns the markdown one
     """
     rendering_settings = MarkdownRenderingSettings()
     rendering_settings.markdown_css = "markdown-css"
     rendering_settings.mistletoe_css = "mistletoe-css"
 
-    assert rendering_settings.css_for_current_engine() == "markdown-css"
+    assert rendering_settings.css == "markdown-css"
 
 
-def test_css_for_current_engine_returns_mistletoe_css_when_selected() -> None:
-    """``css_for_current_engine`` returns ``mistletoe_css`` once ``engine`` is ``"mistletoe"``.
+def test_css_returns_mistletoe_css_when_selected() -> None:
+    """``css`` returns ``mistletoe_css`` once ``engine`` is ``"mistletoe"``.
 
     **Test steps:**
 
     * set distinct CSS for both engines and switch ``engine`` to ``"mistletoe"``
-    * verify ``css_for_current_engine`` returns the mistletoe one
+    * verify ``css`` returns the mistletoe one
     """
     rendering_settings = MarkdownRenderingSettings()
     rendering_settings.markdown_css = "markdown-css"
     rendering_settings.mistletoe_css = "mistletoe-css"
     rendering_settings.engine = "mistletoe"
 
-    assert rendering_settings.css_for_current_engine() == "mistletoe-css"
+    assert rendering_settings.css == "mistletoe-css"
+
+
+def test_description_rendering_changed_fires_on_engine_active_css_and_width(mocker: MockerFixture) -> None:
+    """``description_rendering_changed`` fires on an engine switch, an active-engine stylesheet edit,
+    and an image-width-cap change -- the three render-affecting changes.
+
+    **Test steps:**
+
+    * connect a spy to ``description_rendering_changed`` on a fresh (``"markdown"``-engine) instance
+    * switch the engine, edit the now-active engine's stylesheet, and change the width cap
+    * verify the spy fired once per change
+    """
+    rendering_settings = MarkdownRenderingSettings()
+    spy = mocker.Mock()
+    rendering_settings.description_rendering_changed.connect(spy)
+
+    rendering_settings.engine = "mistletoe"
+    rendering_settings.mistletoe_css = "mistletoe-css"
+    rendering_settings.max_image_width = 500
+
+    assert spy.call_count == 3
+
+
+def test_description_rendering_changed_stays_silent_for_the_inactive_engines_css(mocker: MockerFixture) -> None:
+    """Editing the *inactive* engine's stylesheet leaves ``description_rendering_changed`` silent --
+    the effective render is unchanged.
+
+    **Test steps:**
+
+    * connect a spy on a fresh instance (``engine`` at its ``"markdown"`` default)
+    * edit ``mistletoe_css`` (the inactive engine's stylesheet)
+    * verify the spy never fired
+    """
+    rendering_settings = MarkdownRenderingSettings()
+    spy = mocker.Mock()
+    rendering_settings.description_rendering_changed.connect(spy)
+
+    rendering_settings.mistletoe_css = "mistletoe-css"
+
+    spy.assert_not_called()
 
 
 def test_shared_instance_is_the_same_object_across_calls(mocker: MockerFixture) -> None:

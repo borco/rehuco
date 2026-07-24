@@ -27,6 +27,7 @@ from ..fields import (
     TypeField,
     UnknownField,
 )
+from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 
@@ -189,7 +190,7 @@ def build_document_form(
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
-    # model.image_scanner is a legacy .tc's TcScanner or a real .rehu's RehuScanner
+    # model.image_scanner is a RehuDocumentImageScanner over the legacy-.tc or the .rehu screenshot lister
     # ([[acquisition-tooling#tc-to-rehu]]); a successful conversion reassigns it, and both fields'
     # widgets forward image_scanner_changed into their own scanner to pick that up live
     images_field = ImagesField(
@@ -203,6 +204,9 @@ def build_document_form(
         "description",
         image_scanner=model.image_scanner,
         image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
+        # the shared settings satisfy the DescriptionRenderingSettings protocol at runtime; only the
+        # SimpleProperty/Signal descriptor duality trips static protocol matching (see bind_value_widget)
+        rendering_settings=shared_markdown_rendering_settings(),  # type: ignore[arg-type]
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )

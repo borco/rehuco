@@ -18,7 +18,7 @@ from PySide6.QtCore import QModelIndex, Qt, Signal
 from PySide6.QtGui import QPixmap, QResizeEvent, QShowEvent, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QGridLayout, QHeaderView, QLabel, QSizePolicy, QSplitter, QTreeView, QWidget
 
-from ...documents.image_scanner import ImageScanner
+from ..image_scanner import ImageScanner
 
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The item-data role storing each list entry's screenshot :class:`~pathlib.Path`."""
@@ -202,8 +202,8 @@ class ImageSelector(QSplitter):
         """The ``W x H`` pixel dimensions and humanized file size for ``path``, read from disk.
 
         Dimensions come from :class:`PIL.Image.Image.size`, a lazy header-only read for these formats
-        -- the same convention already used for :meth:`TcScanner`'s slot-winner scoring
-        (``rehuco_core.tc_screenshots.__pixel_area``) -- far cheaper than the full-decode
+        -- the same convention already used by ``rehuco_core``'s legacy-screenshot slot-winner scoring
+        (``rehuco_core.tc_screenshots``) -- far cheaper than the full-decode
         :class:`QPixmap` load the preview pane uses for the single selected image, and worthwhile here
         since every row needs it. Either value blanks out (rather than raising) when the file is
         missing or unreadable, e.g. an offline mount ([[mounts-and-storage#offline-mounts]]).
