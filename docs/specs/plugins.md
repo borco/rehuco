@@ -74,6 +74,37 @@ from plugin code is purely a rendering detail. This also answers a trust questio
 trust/distribution surface.** "Add a simple new resource type" is a config task; code is needed only for behavior beyond
 the toolkit.
 
+### A plugin declares its own badge colors
+
+[[[plugins#badge-colors]]]
+
+Identity carries **presentation** too: a plugin may declare a **badge background** and **badge text** color, each a
+plain hex string (`#1E88E5`) rather than a Qt object, so they stay in the non-GUI core layer and travel with the
+declaration from wherever the plugin comes from — built-in today, an external package later (#83). The agent's type badge
+paints a resource's type chip with them; a **node ignores them entirely**. Keeping the colors on the declaration rather
+than deriving them in the agent is the same "a plugin owns how it presents" rule the two-layer split rests on: the agent
+renders, the core declares.
+
+Either color is **optional, and an undeclared one resolves against the live theme, not a hardcoded default** — an absent
+background falls back to the palette's selection background (Qt's `Highlight` role), an absent text to the selection text
+(`HighlightedText`), re-resolved on every palette change so a badge stays legible when the OS flips light/dark. A plugin
+that declares nothing still gets a sensible, theme-consistent badge; declaring only a background (the common case) lets
+the theme own the text color. A type whose plugin **isn't installed here** has no declaration to consult, so its badge
+takes exactly that theme fallback — the not-installed path ([[plugins#plugin-blocks]]) reuses the same `None`-resolution
+rather than inventing a placeholder color.
+
+The built-in declarations (background only; all three take the theme's selection text):
+
+| plugin | badge background |
+| --- | --- |
+| `tutorial` | `#1E88E5` (Blue 600) |
+| `reference_images` | `#8E24AA` (Purple 600) |
+| `collection` | `#00897B` (Teal 600) |
+
+`daz3d` ([[plugins#daz3d-plugin]]) has no declaration at all — it is future work — so a `daz3d:` block exercises the
+not-installed fallback for real rather than hypothetically. These per-type category colors are independent of the app's
+brand palette: a badge names *which resource type* this is, not the product.
+
 ## §13.2 Field toolkit and the viewer / editor / both surfaces
 
 [[[plugins#toolkit-surfaces]]]
