@@ -36,9 +36,9 @@ tc4 actually stored.
 [[[field-schema#field-mapping]]]
 
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
-([[data-model#rehu-format]], [[plugins#overview]]) and says **where the field lives on disk**: `common` at the top
-level, everything
-else under the type's plugin block ([[field-schema#resource-types]]). The boundary can be refined post-v1 since the
+([[data-model#rehu-format]], [[plugins#overview]]) and says **where the field lives on disk**: `common` in the reserved
+`core` block, everything else under the type's plugin block ([[field-schema#resource-types]]). The boundary can be
+refined post-v1 since the
 generic editor ([[plugins#fallback-editor]]) does not depend on it.
 
 | `.tc` key | tc4 label | rehuco field | type | group | shape | disposition |
@@ -148,7 +148,8 @@ the earlier live-inline-for-now deferral):
   *guess* whose flags these were, per file, on whichever machine touched it first. Recording the owner at write time
   is the only unambiguous version, and the single-user era is when the assignment is a fact rather than a guess. The
   **block `format_version` 1** defines this layout, and the v0→v1 block migration (moving inline per-user keys under
-  the currently configured username) is written while that still holds.
+  the currently configured username) is written while that still holds — and **declines when the block already carries
+  a `users` map** (#134), so a v1 block re-run through it is never clobbered.
 - **The identity is an app setting — two usernames, by provenance** (#109): the **current** user, who *this
   install's* own UI edits are filed under (seeded from the OS login name, `admin` as the fallback), and the
   **unknown** user (default `unknown`), who **imported** per-user state is filed under — a favorite/rating
@@ -157,7 +158,8 @@ the earlier live-inline-for-now deferral):
   the settings identity page, and setting them to the same value (collapsing back to one identity) is
   supported — no uniqueness constraint. A just-imported resource opened for editing carries its foreign
   per-user data under `unknown` **verbatim**, preserved untouched on round-trip; reassigning or dropping it is
-  deferred (#106 / #107).
+  deferred to the username mass-rename job (#108; the earlier per-identity reassign/clear primitives #106 / #107 were
+  closed not-planned).
 - **Keyed by username, not a minted user-UUID — considered and rejected:** pre-swarm, files move between machines by
   manual copy, and per-machine UUIDs could never merge state the same human owns, while equal usernames merge by
   construction. The cost — renaming a user rewrites files — is a rare, catalog-cache-era task-queue job (mass
@@ -275,7 +277,8 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   can drive behavior beyond a display flag) and its control may sit in a different place in the
   UI.
 - **Scope.** `complete` and `online` are shared/objective; `viewed`, `todo`, `keep`, `favorite`
-  are **per-user** ([[field-schema#per-user-shared]]) — inline for now ([[field-schema#deferred-items]]).
+  are **per-user** ([[field-schema#per-user-shared]]) — stored under the block's `users` map, keyed by username
+  (block layout v1, [[field-schema#per-user-shared]]).
 - **Deferred: a `default_tags` toggle set.** Folding the fixed-vocabulary bools
   (`complete`/`online`/`viewed`/`todo`/`keep`) into one list rendered as UI toggles, with a
   vocabulary from `.rehuco` or defaults, was considered and **deferred** ([[field-schema#deferred-items]]): its payoff
@@ -483,13 +486,14 @@ Field order, in the three groups the layout separates:
 - **`images_count` on import** — left **empty** for a reference-images `.tc` (the old `duration`
   is not assumed to be a count); fill later by scanning the sibling `infoXX.*` set or the
   content zip.
-- **`created` / `updated` seeding** — confirm which file timestamp seeds `created` on import
-  (ctime is unreliable cross-platform; mtime is the safer floor).
+- **`created` / `updated` seeding — resolved** — both seed from the `.tc` file's **mtime** on import (ctime is
+  unreliable cross-platform, and tc4 tracked no separate creation history) ([[field-schema#record-timestamps]]).
 - **Description image resolution** — confirm sibling-relative path handling matches [[data-model#image-meanings]]'s
   screenshot model.
 - **UUID ([[data-model#stable-identity]]) and per-block format version ([[data-model#schema-version]],
-  [[plugins#plugin-blocks]])** — minted/added when writing
-  `.rehu`; not present in legacy `.tc`, so they are an import concern, not a view concern.
+  [[plugins#plugin-blocks]])** — the UUID is minted **at creation** (`RehuDocument.new`, #141), not only at import,
+  and each block's `format_version` is **stamped where the block is built** (#134); neither is present in a legacy
+  `.tc`, so an import mints them like any other new document.
 - **Partial-date comparison semantics** — `released` stores ISO-prefix strings (`2025`,
   `2025-03`, `2025-03-08`); lexicographic sorting already orders them sensibly, but what a
   comparison or *filter* means for a partial value (treat it as the interval it covers?) is

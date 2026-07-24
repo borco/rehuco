@@ -60,7 +60,8 @@ ruff formatting/linting; pylint, mypy, and black are disabled there.
 Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`, `check-slugs`,
 `qa` (format + check-slugs + cov + bandit + pyright + pylint), `docs-serve`, `publish`, `uis`/`qrcs`/`icons`
 (regenerate the gitignored `*_ui.py`/`*_rc.py` and brand-icon exports — run `make uis` after a fresh
-checkout/sync), and the Windows-only dev-launcher targets `agent-build`/`agent-register`/`agent-unregister`.
+checkout/sync), `setup-git`, and the Windows-only dev-launcher targets
+`agent-build`/`agent-build-clean`/`agent-register`/`agent-unregister`.
 
 ## Model strategy
 

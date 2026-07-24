@@ -41,7 +41,8 @@ non-GUI, the same rule the field toolkit follows in reverse ([[plugins#field-too
   Daz3D install action, [[plugins#daz3d-plugin]]).
 
 **Identity is declared, not derived.** A plugin declares an ordered **key list**: the first entry is its **main key**,
-the rest are **aliases** accepted on read and rewritten to the main key on write — a rename/migration path for free.
+the rest are **aliases** accepted on read and rewritten to the main key on write *when that key is unoccupied* — a
+rename/migration path for free (an alias block whose main key is already taken is left under its own spelling, #137).
 Deriving a key from a type name instead (e.g. snake-casing `ReferenceImages` → `reference_images`) cannot express a key
 like `daz3d`, which is the snake_case of no type name at all; TutCatalog5 reached the same conclusion and declared key
 lists in config (`base_item.py`'s `KEY`, `defaults.toml`'s `[types]`).
@@ -77,7 +78,7 @@ the toolkit.
 
 [[[plugins#toolkit-surfaces]]]
 
-- [ ] [#20: feat: LocalEdit2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
+- [x] [#20: feat: LocalEdit2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
 
 The field toolkit named in [[plugins#core-vs-plugin]] is a shared, non-plugin library the agent owns; plugins (and
 declarative types) compose their viewer/editor from it. This section is its architecture and the
@@ -102,8 +103,9 @@ that show and edit it:
 - **`FieldRegistry`** — maps a field `type` string to its `Field` subclass, so a type's field list
   resolves declaratively ([[plugins#core-vs-plugin]]: a declarative type is a field list over the toolkit). An
   unregistered type falls back to the unknown-field surface (LocalEdit2.8/#28).
-- **`FieldsForm`** — composes an ordered list of fields into a form (a `QFormLayout` of label + widget
-  rows), asking each field for viewers or for editors depending on which surface it builds.
+- **`FieldsForm`** — composes an ordered list of fields into per-tab **3-column grids** (a `QGridLayout` laid out
+  label | misc | content, with header-pinning), asking each field for viewers or for editors depending on which
+  surface it builds.
 
 The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
 **Where each type's ordered field list is authored is not yet decided** — see the open question
@@ -113,9 +115,9 @@ The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuc
 **content**: a value stored *inside* the `.rehu` payload, bound bidirectionally to its editor. These
 follow a **value-widget contract** — a `value` property, a `value_changed` signal, and a `set_value`
 slot (as `DurationEdit` / `FileSizeEdit` / `DateEdit` already do) — and a scalar-or-list value fits it
-directly (a multi-choice field is just `value: list[str]` + `value_changed`). Consolidating the
+directly (a multi-choice field is just `value: list[str]` + `value_changed`). Consolidation of the
 remaining content fields onto this contract (e.g. `text`'s inline `QLineEdit` becoming a value widget
-that owns the echo guard) is LocalEdit2.8/#28. The **`path` field is not
+that owns the echo guard) shipped in LocalEdit2.8/#28. The **`path` field is not
 content**: it controls the resource's **identity** — the `.rehu`'s file name and possibly its parent
 directory — not anything written into the payload. It rides the same `FieldsForm` purely for layout
 convenience (label + middle control column + row alignment), which is why its owner constructs it out-of-band as a
@@ -196,7 +198,8 @@ The open-and-forward and single-instance semantics this shell realizes are owned
 mode) and [[nodes#single-instance]] (single-instance / file association); session persistence and the close guard are a
 later slice (LocalEdit2.1/#21). A nested surface toggle must carry the [[packaging-deployment#qml-regression]] closed-dock-size
 workaround
-(stash `splitterSizes` on `closeRequested`, reapply on `viewToggled(True)`).
+(stash `splitterSizes` on `viewToggled(False)` — `closeRequested` never fires on a toggle-hide — reapply on
+`viewToggled(True)`).
 
 ## §13.3 Plugin blocks: keyed, versioned, single-active-type
 
@@ -212,7 +215,9 @@ Plugin fields are stored in **separate, uniquely-keyed blocks** (e.g. `tutorial:
 per plugin, each carrying **its own independent format version** (the per-plugin refinement of
 [[data-model#schema-version]] — a plugin can evolve its block's schema without touching the common-field version or any
 other plugin's). A plugin reads/writes only its own block and never needs to know the shape of another's. Each block's
-key is its plugin's declared main key ([[plugins#core-vs-plugin]]); an alias spelling normalizes to it on write.
+key is its plugin's declared main key ([[plugins#core-vs-plugin]]); an alias spelling normalizes to it on write **only
+when the main key is unoccupied** — if a block already holds the main spelling, the alias block stays foreign under its
+own key and its `type` normalizes only together with its block (#137).
 
 **Exactly one type, exactly one active block.** A `.rehu` declares a single `type`, whose value **is** the key of the
 one block that is **active** (authoritative, editable by its plugin) — they are the same token, which is what lets a
@@ -259,8 +264,9 @@ it.
 **Safety net:** because making a block active arms its deletion-on-abandon (a user might switch to a type merely to
 preview it), a save that drops a previously-foreign claimed block records the discard in the activity log
 ([[sync#overview]]) — "reference_images block discarded on date X" — so the *fact* of the drop is traceable even though the
-values are gone, consistent with the document's "never silently lose reasoning" principle. Optionally the editor may
-visually distinguish "former-identity, will drop on save" from "foreign, will carry" blocks.
+values are gone, consistent with the document's "never silently lose reasoning" principle. The editor **visually
+distinguishes** "former-identity, will drop on save" from "foreign, will carry" blocks (one of the four provenance
+flags it labels, [[plugins#fallback-editor]]).
 
 ## §13.4 Generic fallback editor for inactive / unknown blocks
 
@@ -273,11 +279,12 @@ failing:
   *why* it's flagged — "not the current type" vs. "plugin not installed here" are different situations the user resolves
   differently. Default is carry-verbatim, with an explicit drop option.
 - **Unknown field inside a known active block** (e.g. the installed plugin is an older version than the file's block):
-  per-field UI to **map to a known field, drop, or carry verbatim** — most useful here because the plugin *is* present
-  and the user may know where a stray field belongs. Unmapped, undropped fields are carried untouched.
+  per-field UI to **drop or carry verbatim** (carry is the default). A stray field that is really a *renamed* known one
+  is repaired by a migration-chain step, not an in-editor remap (#85's interactive "map to a known field" was closed
+  not-planned — renames go in migrations). Undropped fields are carried untouched.
 - Flagged items **stand out in the viewer**, labeled by provenance (newer-version-of-installed-plugin vs. plugin-absent
-  vs. not-the-current-type) so the user knows whether the fix is "upgrade the plugin," "install it," or "this is just
-  inactive payload."
+  vs. not-the-current-type vs. claimed-then-abandoned-this-session) so the user knows whether the fix is "upgrade the
+  plugin," "install it," "this is just inactive payload," or "switch back to this type before saving to keep it."
 
 ## §13.5 Resource browsers (per-type, with shelf/table modes)
 
@@ -390,8 +397,8 @@ not just schema/viewer/editor/web.
 
 Three types share one template — **a grouping entity is a metadata-only resource**: `1 entity == 1 .rehu` with its own
 `type`, no content files (the measured sizes are simply omitted), synced, retained, and rebuilt like any resource, with
-its browser/editor contributed by its plugin ([[plugins#browsers]]). All three arrive with the catalog cache (Milestone
-B's `.rehudb` — their browsers are what needs it), and none changes the v1 on-disk membership fields
+its browser/editor contributed by its plugin ([[plugins#browsers]]). All three arrive with the catalog cache (CacheDB's
+`.rehudb` — their browsers are what needs it), and none changes the v1 on-disk membership fields
 ([[field-schema#sources]]), which are already the reference mechanism this design builds on.
 
 | | referenced by | natural home | own wrinkle |
