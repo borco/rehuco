@@ -126,8 +126,10 @@ class TcConverter:  # pylint: disable=too-few-public-methods
 
         :param target: the destination ``.rehu`` path.
         :param renames: this conversion's screenshot scan.
-        :returns: ``tc_path``, every recognized legacy image (winners and losers alike), and
-            ``target`` itself when overwriting an existing ``.rehu``.
+        :returns: ``tc_path``, every recognized legacy image (winners and losers alike), ``target``
+            itself when overwriting an existing ``.rehu``, and any pre-existing file already sitting
+            at a ``<stem>NN`` install destination -- invisible to the legacy scan, yet about to be
+            overwritten by :meth:`__install_images`, so it too must be backed up first.
         """
         directory = self.__tc_path.parent
         originals = [self.__tc_path]
@@ -135,6 +137,9 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             originals.append(target)
         for rename in renames:
             originals.extend(directory / name for name in rename.recognized_filenames)
+            destination = directory / rename.new_name
+            if destination.exists():
+                originals.append(destination)
         return list(dict.fromkeys(originals))
 
     def __check_no_stale_backups(self, originals: Sequence[Path]) -> None:

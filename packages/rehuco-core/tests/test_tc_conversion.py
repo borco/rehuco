@@ -264,6 +264,55 @@ def test_failure_during_backup_restores_what_already_moved(mocker: MockerFixture
     mocks["write"].assert_not_called()
 
 
+def test_preexisting_install_destination_is_backed_up_before_it_is_overwritten(mocker: MockerFixture) -> None:
+    """A file already sitting at a ``<stem>NN`` install destination -- invisible to the legacy scan, so
+    absent from the recognized set -- is backed up to its own ``.orig`` sibling before the winning
+    screenshot's bytes overwrite it, honouring the module's never-overwrite contract.
+
+    **Test steps:**
+
+    * mock a pre-existing ``info00.jpg`` sitting exactly where slot 0's winner installs
+    * convert
+    * verify that file was renamed to its ``.orig`` sibling, yet the winners are still copied forward
+    """
+    mocks = mock_environment(mocker, existing=frozenset({DIRECTORY / "info00.jpg"}))
+
+    convert_tc(TC_PATH, keep_backups=True)
+
+    renamed = {call.args[0] for call in mocks["rename"].call_args_list}
+    assert DIRECTORY / "info00.jpg" in renamed
+    assert mocks["copy"].call_args_list == [
+        mocker.call(backup_path(DIRECTORY / "cover.jpg"), DIRECTORY / "info00.jpg"),
+        mocker.call(backup_path(DIRECTORY / "sample-01.jpg"), DIRECTORY / "info01.jpg"),
+    ]
+
+
+def test_failure_after_overwriting_a_preexisting_destination_restores_it(mocker: MockerFixture) -> None:
+    """When installing fails after a pre-existing destination has already been overwritten, rollback
+    removes the freshly written file *and* renames that file's ``.orig`` backup back -- so the user's
+    original bytes survive rather than being unlinked outright (the data-loss finding, #173).
+
+    **Test steps:**
+
+    * mock a pre-existing ``info00.jpg`` at slot 0's destination, and fail the second image copy
+    * convert
+    * verify the exception propagates, the freshly written ``info00.jpg`` was unlinked, and the
+      pre-existing file was restored via a reverse rename of its backup
+    """
+    mocks = mock_environment(
+        mocker, existing=frozenset({DIRECTORY / "info00.jpg"}), copy_side_effect=[None, OSError("disk full")]
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        convert_tc(TC_PATH, keep_backups=False)
+
+    unlinked = {call.args[0] for call in mocks["unlink"].call_args_list}
+    assert unlinked == {TARGET_PATH, DIRECTORY / "info00.jpg"}
+    assert (
+        mocker.call(backup_path(DIRECTORY / "info00.jpg"), DIRECTORY / "info00.jpg") in mocks["rename"].call_args_list
+    )
+
+
 def test_losing_variants_are_backed_up_but_never_copied_forward(mocker: MockerFixture) -> None:
     """A slot's losing filename (a smaller/duplicate variant of the winner) is backed up like the
     winner, but never appears as a copy source or destination -- only the winner's bytes survive.
