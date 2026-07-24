@@ -55,6 +55,26 @@ KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT
 key in the active block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], #28)."""
 
+COMMON_FIELD_NAMES: Final = (
+    "title",
+    "authors",
+    "publisher",
+    "url",
+    "released",
+    "description",
+    "hidden_images",
+    "original_size",
+    "current_size",
+    "advertised_tags",
+    "extra_tags",
+)
+"""The common-core, non-type-scoped fields that write straight through to the document's own attribute
+of the same name on edit ([[field-schema#field-mapping]]), wired generically in a loop (:meth:`__init__`)
+to :meth:`__on_common_field_changed` -- the same shape :data:`TYPE_FIELD_BOOL_NAMES` et al. use for
+:meth:`__on_type_field_changed`. Excludes `resource_type`: a type switch
+(:meth:`__on_resource_type_changed`) claims a plugin block and reseeds the whole active block, not a
+plain write-through."""
+
 
 def path_label(path: Path) -> str:
     """The `info.rehu`-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
@@ -274,17 +294,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons_changed.connect(lambda _reasons: self.__recompute_upgradable())  # type: ignore[attr-defined]
 
         self.resource_type_changed.connect(self.__on_resource_type_changed)  # type: ignore[attr-defined]
-        self.title_changed.connect(self.__on_title_changed)  # type: ignore[attr-defined]
-        self.authors_changed.connect(self.__on_authors_changed)  # type: ignore[attr-defined]
-        self.publisher_changed.connect(self.__on_publisher_changed)  # type: ignore[attr-defined]
-        self.url_changed.connect(self.__on_url_changed)  # type: ignore[attr-defined]
-        self.released_changed.connect(self.__on_released_changed)  # type: ignore[attr-defined]
-        self.description_changed.connect(self.__on_description_changed)  # type: ignore[attr-defined]
-        self.hidden_images_changed.connect(self.__on_hidden_images_changed)  # type: ignore[attr-defined]
-        self.original_size_changed.connect(self.__on_original_size_changed)  # type: ignore[attr-defined]
-        self.current_size_changed.connect(self.__on_current_size_changed)  # type: ignore[attr-defined]
-        self.advertised_tags_changed.connect(self.__on_advertised_tags_changed)  # type: ignore[attr-defined]
-        self.extra_tags_changed.connect(self.__on_extra_tags_changed)  # type: ignore[attr-defined]
+        for name in COMMON_FIELD_NAMES:
+            signal_name = SimpleProperty.notify_signal_name(type(self), name)
+            getattr(self, signal_name).connect(lambda value, key=name: self.__on_common_field_changed(key, value))
         for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
@@ -790,139 +802,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.active_block_changed.emit()
         self.unknown_fields_changed.emit()
 
-    def __on_title_changed(self, value: str) -> None:
-        """Write an edited title through to the document's primary source and mark dirty.
+    def __on_common_field_changed(self, key: str, value: Any) -> None:
+        """Write an edited common-core field through to the document's own attribute of the same
+        name, and mark dirty.
 
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
+        One handler for every :data:`COMMON_FIELD_NAMES` member: each just forwards ``value`` to
+        `document`, so any field-specific behavior (e.g. `title`/`publisher`/`url` landing on the
+        primary source, [[field-schema#sources]]; `authors` normalizing to canonical minimal form,
+        [[field-schema#authors]]) stays owned by the document's own setter, not duplicated here.
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the
+        comment there.
 
-        :param value: the new title.
+        :param key: the common field name that changed.
+        :param value: the new value.
         """
         if self.__seeding:
             return
-        self.__document.title = value
-        self.dirty = True
-
-    def __on_authors_changed(self, value: Sequence[AuthorEntry]) -> None:
-        """Write an edited authors list through to the document and mark dirty.
-
-        The document's setter normalizes each entry to canonical minimal form
-        ([[field-schema#authors]]); a record entry passes through untouched, so editing one entry
-        never shreds another's type. No-op while the model is seeding (construction, :meth:`revert`,
-        or :meth:`convert`) -- see the comment there.
-
-        :param value: the new authors list.
-        """
-        if self.__seeding:
-            return
-        self.__document.authors = value
-        self.dirty = True
-
-    def __on_publisher_changed(self, value: str) -> None:
-        """Write an edited publisher through to the document's primary source and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new publisher.
-        """
-        if self.__seeding:
-            return
-        self.__document.publisher = value
-        self.dirty = True
-
-    def __on_url_changed(self, value: str) -> None:
-        """Write an edited url through to the document's primary source and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new url.
-        """
-        if self.__seeding:
-            return
-        self.__document.url = value
-        self.dirty = True
-
-    def __on_released_changed(self, value: str | None) -> None:
-        """Write an edited released date through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new released date.
-        """
-        if self.__seeding:
-            return
-        self.__document.released = value
-        self.dirty = True
-
-    def __on_description_changed(self, value: str) -> None:
-        """Write an edited description through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new description.
-        """
-        if self.__seeding:
-            return
-        self.__document.description = value
-        self.dirty = True
-
-    def __on_hidden_images_changed(self, value: list[str]) -> None:
-        """Write an edited hidden-images list through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new hidden-images list.
-        """
-        if self.__seeding:
-            return
-        self.__document.hidden_images = value
-        self.dirty = True
-
-    def __on_original_size_changed(self, value: int | None) -> None:
-        """Write an edited original_size through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new original_size.
-        """
-        if self.__seeding:
-            return
-        self.__document.original_size = value
-        self.dirty = True
-
-    def __on_current_size_changed(self, value: int | None) -> None:
-        """Write an edited current_size through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new current_size.
-        """
-        if self.__seeding:
-            return
-        self.__document.current_size = value
-        self.dirty = True
-
-    def __on_advertised_tags_changed(self, value: list[str]) -> None:
-        """Write an edited advertised_tags list through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new advertised_tags list.
-        """
-        if self.__seeding:
-            return
-        self.__document.advertised_tags = value
-        self.dirty = True
-
-    def __on_extra_tags_changed(self, value: list[str]) -> None:
-        """Write an edited extra_tags list through to the document and mark dirty.
-
-        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
-
-        :param value: the new extra_tags list.
-        """
-        if self.__seeding:
-            return
-        self.__document.extra_tags = value
+        setattr(self.__document, key, value)
         self.dirty = True
 
     def __on_type_field_changed(self, key: str, value: Any) -> None:
