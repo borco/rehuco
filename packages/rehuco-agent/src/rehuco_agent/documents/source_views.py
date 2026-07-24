@@ -13,11 +13,11 @@ The two differ exactly when the in-memory model and the file diverge: an unsaved
 just-loaded older-format file the model has upgraded in memory but not yet written back.
 """
 
-from typing import Final
+from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QFontDatabase, QShowEvent
 from PySide6.QtWidgets import QLabel, QScrollArea, QWidget
 
 from .rehu_document_model import RehuDocumentModel
@@ -73,12 +73,12 @@ class MonospaceTextView(QScrollArea):
 class SavePreviewView(MonospaceTextView):
     """The live "what a Save would write" preview: the model's current serialization (#111).
 
-    Renders :meth:`~rehuco_core.RehuDocument.serialize` -- byte-for-byte what a save would write --
-    and stays live even while hidden, re-rendering on every one of the model's field/dirty/lock notify
-    signals so it always reflects the current in-memory state, unsaved edits included (the same "both
-    stay live regardless of visibility" contract the viewer/editor docks have). This is the model view,
-    so it shows the in-memory format upgrade a just-loaded older file has already had, which is why it
-    can differ from :class:`OnDiskView`.
+    Renders :meth:`~rehuco_core.RehuDocument.serialize` -- byte-for-byte what a save would write -- and
+    always reflects the current in-memory state once shown, unsaved edits included. While hidden (e.g. a
+    QtAds tab in the background) a change only flags the preview stale rather than re-serializing on the
+    spot, so a large document doesn't re-render on every keystroke it can't be seen for; the deferred
+    render catches up in :meth:`showEvent`. This is the model view, so it shows the in-memory format
+    upgrade a just-loaded older file has already had, which is why it can differ from :class:`OnDiskView`.
 
     :param model: the reactive view-model whose document is serialized.
     :param parent: optional Qt parent.
@@ -90,22 +90,41 @@ class SavePreviewView(MonospaceTextView):
     def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:
         super().__init__(self.LABEL_NAME, parent)
         self.__model: Final = model
+        self.__stale = False
         # enumerate the model's declared properties rather than hand-listing them, so a field added
         # later stays reflected here with no second list to keep in step; unknown_fields_changed
         # (a dropped fallback field) is a plain Signal, not a property, so it's wired separately
         model_type = type(model)
         for name in SimpleProperty.property_names(model_type):
-            getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__render)
-        model.unknown_fields_changed.connect(self.__render)
+            getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__on_model_changed)
+        model.unknown_fields_changed.connect(self.__on_model_changed)
         self.__render()
 
-    def __render(self, *_args: object) -> None:
-        """Re-serialize the document and show it.
+    def __on_model_changed(self, *_args: object) -> None:
+        """Re-render if currently visible, else defer the render to the next :meth:`showEvent`.
 
         :param _args: whatever value the triggering notify signal carried; unused -- the text is always
             re-read whole from the document.
         """
+        if self.isVisible():
+            self.__render()
+        else:
+            self.__stale = True
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Catch up a render deferred while hidden, e.g. a QtAds tab switched back into view.
+
+        :param event: the Qt show event, forwarded to the base class.
+        """
+        super().showEvent(event)
+        if self.__stale:
+            self.__render()
+
+    def __render(self) -> None:
+        """Re-serialize the document and show it."""
         self.set_text(self.__model.document.serialize())
+        self.__stale = False
 
 
 class OnDiskView(MonospaceTextView):
