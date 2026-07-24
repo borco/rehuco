@@ -592,9 +592,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """Build the two read-only inspection docks (#111) -- the live **Save Preview** and the verbatim
         **On Disk** file -- stacked as tabs beside the viewer docks but **hidden by default**.
 
-        Both are built once and kept live regardless of visibility, exactly like the viewer/editor docks:
-        their `SavePreviewView`/`OnDiskView` re-render off the model's own signals whether shown or not.
-        Each is stacked into the viewer area so revealing it lands among the viewer tabs, then hidden --
+        Both are built once and reused for the model's lifetime rather than rebuilt per reveal, but
+        neither tracks the model on the per-keystroke path while hidden: `SavePreviewView` defers its
+        re-serialization until next shown, and `OnDiskView` only re-reads at file-touching seams
+        regardless of visibility. Each is stacked into the viewer area so revealing it lands among the
+        viewer tabs, then hidden --
         which, since a just-added dock opens as the current tab, would leave an arbitrary viewer tab
         current, so the first viewer tab (the main viewer) is re-selected once both are placed, matching
         :meth:`__add_docks`'s own choice.

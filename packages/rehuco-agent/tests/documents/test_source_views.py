@@ -1,8 +1,9 @@
 """Tests for the read-only inspection views (#111).
 
 Covers what's specific to :class:`SavePreviewView` (the live model serialization) and
-:class:`OnDiskView` (the verbatim on-disk file): that each renders the right text, stays live across
-the model's change signals, and uses the fixed system font so columns line up.
+:class:`OnDiskView` (the verbatim on-disk file): that each renders the right text, re-renders on its
+own triggers (model signals while shown for the Save Preview -- deferred to the next show while
+hidden, #152; file-touching seams for On Disk), and uses the fixed system font so columns line up.
 """
 
 from pathlib import Path
@@ -45,9 +46,11 @@ def model() -> RehuDocumentModel:
 
 @fixture
 def save_preview(qtbot: QtBot, model: RehuDocumentModel) -> SavePreviewView:
-    """A constructed :class:`SavePreviewView` over the sample model, registered for teardown."""
+    """A constructed, shown :class:`SavePreviewView` over the sample model, registered for teardown."""
     view = SavePreviewView(model)
     qtbot.addWidget(view)
+    view.show()
+    qtbot.waitExposed(view)
     return view
 
 
@@ -101,7 +104,7 @@ def test_save_preview_rerenders_after_dropping_an_unknown_field(qtbot: QtBot) ->
 
     **Test steps:**
 
-    * build a model whose active block carries an unrecognized key, over a Save Preview
+    * build a model whose active block carries an unrecognized key, over a shown Save Preview
     * drop that unknown field and verify the label no longer mentions it
     """
     model = RehuDocumentModel(
@@ -109,6 +112,8 @@ def test_save_preview_rerenders_after_dropping_an_unknown_field(qtbot: QtBot) ->
     )
     view = SavePreviewView(model)
     qtbot.addWidget(view)
+    view.show()
+    qtbot.waitExposed(view)
     assert "mystery" in label(view, SavePreviewView.LABEL_NAME).text()
 
     model.remove_unknown_field("mystery")
@@ -116,6 +121,70 @@ def test_save_preview_rerenders_after_dropping_an_unknown_field(qtbot: QtBot) ->
     text = label(view, SavePreviewView.LABEL_NAME).text()
     assert "mystery" not in text
     assert text == model.document.serialize()
+
+
+def test_save_preview_does_not_rerender_while_hidden(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """A field edit while the preview is hidden defers the re-serialization -- a large document
+    shouldn't pay to re-render on every keystroke it can't be seen for (#152).
+
+    **Test steps:**
+
+    * build a Save Preview over the sample model, left hidden
+    * spy on the document's ``serialize`` and edit a field
+    * verify ``serialize`` was not called
+    """
+    view = SavePreviewView(model)
+    qtbot.addWidget(view)
+    serialize = mocker.spy(model.document, "serialize")
+
+    model.title = "Edited While Hidden"
+
+    serialize.assert_not_called()
+
+
+def test_save_preview_catches_up_when_shown_after_a_hidden_edit(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Showing the preview renders the current state, catching up on edits that accumulated while it
+    was hidden (#152).
+
+    **Test steps:**
+
+    * build a Save Preview over the sample model, left hidden, and edit a field
+    * show the view
+    * verify the label now reflects the edited state
+    """
+    view = SavePreviewView(model)
+    qtbot.addWidget(view)
+
+    model.title = "Edited While Hidden"
+    view.show()
+    qtbot.waitExposed(view)
+
+    text = label(view, SavePreviewView.LABEL_NAME).text()
+    assert text == model.document.serialize()
+    assert "Edited While Hidden" in text
+
+
+def test_save_preview_does_not_rerender_on_show_without_a_hidden_edit(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Showing the preview with nothing changed since its last render doesn't re-serialize (#152).
+
+    **Test steps:**
+
+    * build a Save Preview over the sample model (rendered once at construction), left hidden
+    * spy on the document's ``serialize`` and show the view
+    * verify ``serialize`` was not called again
+    """
+    view = SavePreviewView(model)
+    qtbot.addWidget(view)
+    serialize = mocker.spy(model.document, "serialize")
+
+    view.show()
+    qtbot.waitExposed(view)
+
+    serialize.assert_not_called()
 
 
 def test_save_preview_renders_a_locked_document(qtbot: QtBot) -> None:
