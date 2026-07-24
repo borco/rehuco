@@ -208,7 +208,7 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   stamp included — v0 means an unstamped `.rehu`, [[data-model#schema-version]].)
 - **LocalEdit4 — Plugin block model.** Keyed per-plugin blocks, single-active-type rule, the save-persistence invariant (active
   type or never-claimed foreign payload; claim-then-abandon drops on save), generic fallback for inactive/unknown blocks with
-  carry/map/drop ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]). This is the genuinely new core logic.
+  carry-or-drop ([[plugins#plugin-blocks]]/[[plugins#fallback-editor]]). This is the genuinely new core logic.
 - **LocalEdit5 — Tutorial plugin (rich).** Real tutorial viewer/editor: full image lightbox (click-to-maximize, prev/next,
   hideable strip, ESC), folder-rename-from-suggestions ([[plugins#tutorial-plugin]]).
 - **LocalEdit6 — Reference-images plugin (basic).** Type + fields + viewer; defer redaction/slideshow/search to later (they're

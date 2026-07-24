@@ -233,9 +233,10 @@ window where both believe they own the write, because import is a deliberate, at
 treats the file as untrusted outside input — validate it, upgrade its format if older ([[data-model#schema-version]]),
 mint new bookkeeping — rather than assuming it is well-formed just because it has a `.rehu` extension. The same
 defensive posture applies to *reading* any `.rehu` (a double-clicked file is untrusted input too,
-[[nodes#local-vs-swarm]]): parsing enforces sanity caps — total file size, `versions`-list length, entry sizes, JSON
-nesting depth — and a file exceeding them opens read-only with a warning (or is refused at import) instead of exhausting
-memory or wedging the app.
+[[nodes#local-vs-swarm]]): parsing is to enforce sanity caps — total file size, `versions`-list length, entry sizes,
+JSON nesting depth — so a file exceeding them opens read-only with a warning (or is refused at import) instead of
+exhausting memory or wedging the app. These caps are **not yet implemented** (#88): today the reader reads the whole
+file into memory before `json` parses it.
 
 **A malformed value gets one of three responses, and which one is not a matter of severity.** It follows from two
 questions: *is this field ours to interpret*, and *does the file still have a coherent reading*.

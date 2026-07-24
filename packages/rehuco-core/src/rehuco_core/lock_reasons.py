@@ -8,7 +8,7 @@ inline notice (#94) renders it. It depends on nothing in `rehuco_core.rehu_docum
 separate also keeps that (already large) module to the document proper.
 
 Field-specific message *text* deliberately does **not** live here -- it belongs next to the field check
-that emits it (e.g. ``rehuco_core.rehu_document``'s authors validation), so this module never accretes
+that emits it (e.g. ``rehuco_core.rehu_locks``'s :data:`~rehuco_core.rehu_locks.INVALID_AUTHORS_MESSAGE`), so this module never accretes
 per-field knowledge.
 """
 

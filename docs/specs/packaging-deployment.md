@@ -42,7 +42,7 @@ rehuco/                   # monorepo root
     borco-core/           # generic, non-rehuco utilities (no GUI dep) — temporary guest, moving out
     borco-pyside/         # generic, non-rehuco PySide widgets/utilities — temporary guest, moving out
     rehuco-agent/         # desktop GUI: depends on rehuco-core + PySide6/scintilla/ads
-    rehuco-core/          # shared library: field toolkit, .rehu model, plugin base — PUBLISHABLE
+    rehuco-core/          # shared library: .rehu model, plugin identity, migrations — PUBLISHABLE
     rehuco-node/          # headless service: depends on rehuco-core + FastAPI/uvicorn/zeroconf
   pyproject.toml          # virtual workspace root: [tool.uv.workspace] only, no [project]
   uv.lock                 # single lockfile
