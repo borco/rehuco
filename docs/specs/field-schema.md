@@ -426,6 +426,14 @@ The distinct value types the viewer must handle:
 | int | plain integer; `collection_index`, `images_count` |
 | record list | list of small records; `sources`, `collections`, `learning_paths` ([[field-schema#sources]]) |
 
+**Line endings in `description` are normalized on read, stored verbatim on write.** The `description` getter returns
+LF-only text regardless of the writing platform's convention — CRLF, a bare CR, or already-LF all read as `\n` — so
+editing reads identically no matter which OS wrote the file. Like every other read-time coercion
+([[data-model#write-integrity]]), it does **not** mutate the backing data: an untouched description keeps its on-disk
+line endings until the setter runs, and the setter stores the incoming value as-is. This is a *value* normalization on
+one Markdown field, distinct from the key-order and `null`-omission normalization the serializer imposes on the whole
+file ([[field-schema#canonical-order]]).
+
 ## §17.5 tc4 viewer layout (reference for the v1 view)
 
 [[[field-schema#tc4-viewer-layout]]]
@@ -730,3 +738,38 @@ migrated v1 file included. The §17.7 fixtures are shown in exactly this order; 
 Which blocks are written at all — the block persistence invariant, an inactive block dropped only once its type was
 claimed then abandoned this session — is decided by `RehuDocument` and passed in, so this layer stays a pure function of
 the payload ([[plugins#plugin-blocks]]).
+
+## §17.9 Source-inspection docks
+
+[[[field-schema#source-inspection-docks]]]
+
+- [x] [#111: feat: source viewer dock — read-only raw `.rehu` JSON, hidden by default](https://github.com/borco/rehuco/issues/111)
+
+Two read-only inspection docks let a developer (or a curious user) see the serialization boundary directly. Both are
+hidden by default, live in the document's own dock shell ([[plugins#dock-shell]]) alongside the viewer/editor surfaces,
+and render monospaced, mouse-selectable text.
+
+- **Save Preview** — the document's **live re-serialization**: byte-for-byte what a `save()` would write *now*,
+  reflecting unsaved edits and the in-memory format upgrade a just-loaded older file received before any write
+  ([[data-model#schema-version]]). It is produced by the **`serialize()` seam** — `RehuDocument.serialize()`, the one
+  place a `.rehu`'s bytes are made, applying exactly the canonical order and formatting of [[field-schema#canonical-order]]
+  — which `save()` itself also calls (`save()` *is* `serialize()` plus an atomic write), so the preview can never drift
+  from what a save produces. The seam deliberately **never checks the lock state and never touches disk**, so even a
+  locked or legacy-`.tc` document still previews what its save *would* emit. One field lags by design: a save stamps a
+  fresh `updated` just before writing ([[field-schema#record-timestamps]]), so the preview shows the *stored* value, not
+  the yet-to-be-minted stamp.
+- **On Disk** — the **verbatim file bytes**, read straight off the document's path, unparsed. For a legacy `.tc`-backed
+  document the path is the `.tc` itself, so this shows the original source; a never-saved draft shows a placeholder
+  instead of a file.
+
+The two **diverge exactly** on the states worth seeing: an unsaved edit (Save Preview moves, On Disk does not), and a
+just-loaded older file the model upgraded in memory but has not written back — which is how the On Disk view surfaced the
+v1 → v2 / per-user-map migration during development, a concrete read on [[data-model#write-integrity]]'s
+upgrade-on-first-save boundary.
+
+Their **refresh disciplines differ deliberately**, and that difference is the substance of the #152 fix. Save Preview
+mirrors the live in-memory document, reacting to every field change — but **only while visible**: a change while hidden
+merely flags the preview stale, and the deferred re-serialization runs on show, so a large document is never
+re-serialized on every keystroke behind a hidden dock. On Disk watches only the **file-touching seams** — `dirty`,
+`path`, and `lock_reasons` (a save clears `dirty`; revert / convert / a new path recompute the others) — and never value
+edits, keeping a large on-disk file off the per-keystroke path entirely.

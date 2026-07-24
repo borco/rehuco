@@ -276,6 +276,45 @@ line/column). Fixing the file by hand and reverting retries in place, refreshing
 there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
 vanished files must never sweep away a dock whose file the user is mid-repair.
 
+**A failing save gets the same treatment from the other side — a surface, not a traceback.** Reading is not the only
+place file I/O can fail: a save writes bytes, and the write itself can fail transiently — most importantly onto an
+**offline SMB mount** ([[mounts-and-storage#offline-mounts]]), an explicitly supported scenario. Rather than letting the
+`OSError` escape as a stderr traceback (worst of all at app close, where it would abort the shutdown, #146), every save
+call site funnels through **one seam** that offers a **Retry / Cancel** loop naming the failure — the Save and Upgrade
+actions, Save All, the per-tab and batch close guards, and the whole-app close all share it, so the failure is surfaced
+(and the choice to abort whatever the save was gating) in exactly one place. Only `OSError` is caught: a save-blocking
+lock raises instead of doing I/O, but editing is disabled while a document is locked, so a lock never reaches a save
+site — only the file I/O can actually fail. Cancelling means nothing was written and the caller aborts what the save was
+gating (a close is called off, the dock stays open).
+
+### §4.9.1 The lock-reason vocabulary
+
+[[[data-model#lock-vocabulary]]]
+
+A document opens read-only for a **named cause**, never a bare "locked" bool — so a viewer can say *why* and act per
+kind, and so `save()` can refuse exactly the kinds that would clobber recoverable data. Each cause pairs a **kind** with
+a human-readable **message** naming the specifics (the offending key, the parser's line/column) for the persistent
+non-modal notice (#94). The vocabulary is what several layers speak — the core produces it, the agent's view-model
+mirrors it, the inline notice renders it — so it lives apart from the document itself. The six kinds:
+
+| kind | what it means | remedy |
+| --- | --- | --- |
+| `legacy_tc` | a legacy `.tc` mapped to the current layout, with no `.rehu` on disk yet ([[acquisition-tooling#tc-to-rehu]]) | convert, not a text edit |
+| `newer_format` | the file's `format_version` is newer than this build understands ([[data-model#schema-version]]'s fail-safe rule) | upgrade this build; fields are carried verbatim, never downgraded |
+| `newer_block_format` | the **active** plugin block's own `format_version` is newer than the installed plugin ([[plugins#plugin-blocks]], the per-block refinement of the fail-safe rule) | upgrade the plugin; the block is carried verbatim, never restamped |
+| `invalid_field` | an owned field is **present but fails coercion** — reading coerces it for display, but a save must not write the coerced default over the malformed original | fix the named key in a text editor, then revert/reopen |
+| `invalid_file` | the file exists but cannot be parsed at all (`RehuFormatError`, or a non-missing `OSError`); opens as an **empty** view bound to the path | fix the file by hand (the message carries the parser's own line/column) |
+| `missing` | the file is gone (`FileNotFoundError`) — deleted between sessions, an unmounted share; same empty locked view as `invalid_file` | restore or remount the file, or close the dock |
+
+**Which kinds block save is a split, not a severity ranking.** Three — `invalid_field`, `invalid_file`, `missing` — make
+`save()` itself **refuse** (a frozen set the save path consults), because writing would overwrite a
+malformed-but-recoverable field or an absent/broken file with coerced defaults or an empty document. The other three —
+`legacy_tc`, `newer_format`, `newer_block_format` — **do not** touch `save()`: a `.tc` saves *through conversion*, and a
+newer file or block is *carried verbatim, never downgraded* ([[data-model#schema-version]]). They are gated at the UI
+(the edit affordances are disabled) rather than by refusing the write, keeping the two mechanisms — what `save()` refuses
+vs. what the editor greys out — from being conflated. `missing` is kept distinct from `invalid_file` precisely so a bulk
+"close vanished files" sweep never closes a dock whose file the user is mid-repair on.
+
 ## §4.10 Schema format versioning of `.rehu` itself
 
 [[[data-model#schema-version]]]
@@ -318,6 +357,16 @@ sealed DVD, a received export — every `.rehu` must carry its own **format-vers
   payload's shape is consulted, because v0 names no layout to dispatch on. Everything a version stamp is used for
   therefore depends on the stamp being **written where it is known**: whatever builds a payload stamps it, rather than
   leaving a later reader to infer what the writer already knew.
+
+**The agent surfaces the load-time upgrade as an explicit action.** Because the upgraded layout reaches disk only on the
+first save, a file that is opened, read, and closed untouched stays at its old version on disk indefinitely. The agent
+offers an **Upgrade** action (#89) to force that write on demand — but it is **not a separate migrate call**: it is
+literally a **save**, since `save()` already writes the in-memory-upgraded layout ([[data-model#write-integrity]]), so it
+shares the Save action's failing-save guard. It is offered **only when the on-disk file is stale** — its file-wide *or*
+active-block `format_version` is older than this build — **and** the document is clean and unlocked (a dirty document
+upgrades on its next ordinary save anyway; a locked one cannot be written at all, which is also why a legacy `.tc` — always
+locked — is never "upgradable" and is handled by conversion instead, [[acquisition-tooling#tc-to-rehu]]). The action thus
+makes visible, and available without a dummy edit, what would otherwise happen silently on the next save.
 
 **A foreign format is never a migration.** Two things look alike from a distance — "old shape becomes new
 shape" — and must not be merged:
