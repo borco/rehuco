@@ -770,6 +770,13 @@ upgrade-on-first-save boundary.
 Their **refresh disciplines differ deliberately**, and that difference is the substance of the #152 fix. Save Preview
 mirrors the live in-memory document, reacting to every field change — but **only while visible**: a change while hidden
 merely flags the preview stale, and the deferred re-serialization runs on show, so a large document is never
-re-serialized on every keystroke behind a hidden dock. On Disk watches only the **file-touching seams** — `dirty`,
-`path`, and `lock_reasons` (a save clears `dirty`; revert / convert / a new path recompute the others) — and never value
+re-serialized on every keystroke behind a hidden dock. On Disk watches only the **file-touching seams** — and never value
 edits, keeping a large on-disk file off the per-keystroke path entirely.
+
+Which signals *are* those seams is the substance of the #174 fix. Watching the properties that a file-touching operation
+happens to move — `dirty`, `path`, `lock_reasons` — is not the same as watching the operation: a property notifies only
+on an **actual change**, so reverting a *clean, unlocked* document moves none of them (`dirty` was already false, `path`
+and `lock_reasons` reseed to equal values) and the dock kept showing pre-revert bytes — on exactly the out-of-band-edit
+workflow Revert exists for. The seam therefore has its own **unconditional** signal, `reloaded`, raised by every
+`revert()` and every successful `convert()`; the property subscriptions stay, covering the seams that are *only* a
+property move (a save clearing `dirty`, a new save path).
