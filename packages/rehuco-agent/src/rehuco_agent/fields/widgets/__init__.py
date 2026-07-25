@@ -5,6 +5,7 @@ from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .expand_toggle_button import ExpandToggleButton
 from .file_size_edit import FileSizeEdit
+from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
 from .image_strip import ImageStrip
 from .line_edit import LineEdit
@@ -21,8 +22,10 @@ __all__ = [
     "DurationEdit",
     "ExpandToggleButton",
     "FileSizeEdit",
+    "ImageLightbox",
     "ImageSelector",
     "ImageStrip",
+    "ImageViewerMode",
     "LineEdit",
     "MarkdownEdit",
     "MarkdownView",

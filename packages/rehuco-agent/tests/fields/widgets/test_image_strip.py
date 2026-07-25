@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QWidget
 from pytest_mock import MockerFixture
@@ -32,6 +33,20 @@ def strip_layout(strip: ImageStrip) -> QHBoxLayout:
     layout = content.layout()
     assert isinstance(layout, QHBoxLayout)
     return layout
+
+
+def thumbnail_at(strip: ImageStrip, index: int) -> QWidget:
+    """The thumbnail widget at ``index`` in the strip's row.
+
+    :param strip: the strip under test.
+    :param index: the thumbnail's position in the row.
+    :returns: that thumbnail widget.
+    """
+    item = strip_layout(strip).itemAt(index)
+    assert item is not None
+    widget = item.widget()
+    assert widget is not None
+    return widget
 
 
 def test_strip_is_fixed_to_its_height(qtbot: QtBot) -> None:
@@ -157,6 +172,73 @@ def test_no_scanner_shows_nothing(qtbot: QtBot) -> None:
     strip.set_hidden([])
 
     assert strip_layout(strip).count() == 0
+
+
+def test_clicking_a_thumbnail_reports_its_screenshot(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Left-clicking a thumbnail emits ``image_activated`` with that thumbnail's own path (#160).
+
+    **Test steps:**
+
+    * paint two thumbnails and click the second
+    * verify the strip reported the second path, not the first
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = ImageStrip()
+    qtbot.addWidget(strip)
+    strip.set_images(PATHS)
+    activated: list[Path] = []
+    strip.image_activated.connect(activated.append)
+
+    thumbnail = thumbnail_at(strip, 1)
+    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+
+    assert activated == [PATHS[1]]
+
+
+def test_a_rebuilt_thumbnail_still_reports_its_screenshot(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Thumbnails painted by a later rebuild are wired up too, not just the first set.
+
+    Regression: the thumbnails are rebuilt from scratch on every curation edit and scanner swap, so a
+    click affordance wired only at construction would go dead after the first one.
+
+    **Test steps:**
+
+    * paint two thumbnails, then re-paint with only the second
+    * click the surviving thumbnail and verify it still reports its path
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = ImageStrip()
+    qtbot.addWidget(strip)
+    strip.set_images(PATHS)
+    strip.set_images(PATHS[1:])
+    activated: list[Path] = []
+    strip.image_activated.connect(activated.append)
+
+    thumbnail = thumbnail_at(strip, 0)
+    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+
+    assert activated == [PATHS[1]]
+
+
+def test_a_right_click_activates_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only a left-click opens a screenshot; other buttons are left alone.
+
+    **Test steps:**
+
+    * paint one thumbnail and right-click it
+    * verify nothing was reported
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = ImageStrip()
+    qtbot.addWidget(strip)
+    strip.set_images(PATHS[:1])
+    activated: list[Path] = []
+    strip.image_activated.connect(activated.append)
+
+    thumbnail = thumbnail_at(strip, 0)
+    qtbot.mouseClick(thumbnail, Qt.MouseButton.RightButton)
+
+    assert not activated
 
 
 def test_clearing_the_strip_skips_non_widget_layout_items(qtbot: QtBot) -> None:

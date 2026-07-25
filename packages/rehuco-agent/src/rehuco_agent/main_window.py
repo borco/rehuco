@@ -25,6 +25,7 @@ from .settings.recent_files_settings import RecentFilesSettings
 from .settings.theme_settings import ThemeSettings
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.identity_page import IdentityPage
+from .settings.ui.images_page import ImagesPage
 from .settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__settings_dialog.add_page(IdentityPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
+        self.__settings_dialog.add_page(ImagesPage(), group="Viewers")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage

@@ -1,5 +1,6 @@
 """Per-document viewer/editor docks over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
+from pathlib import Path
 from typing import Any, Final
 
 import cbor2
@@ -12,7 +13,9 @@ from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
 from ..fields import FieldsTab, StatefulWidget
+from ..fields.widgets import ImageLightbox
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..settings.image_viewer_settings import shared_image_viewer_settings
 from .document_fields import build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -121,6 +124,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         super().__init__(parent)
         self.__model: Final = model
 
+        self.__image_viewer: ImageLightbox | None = None
+        """This document's maximized image viewer while one is open (#160), so becoming the current
+        document can hand it the keyboard -- see :meth:`take_focus`."""
+
         self.__banner: Final = MessageBanner(self)
         # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself
         # as its parent's central widget when that parent is a QMainWindow (confirmed empirically),
@@ -154,6 +161,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # StatusReporter) emits it rather than reaching for the status bar itself; collect those and
         # bubble them up through status_message, which DocumentsDock relays on to MainWindow's real bar.
         self.__form.connect_status_messages(self.status_message)
+        # a clicked screenshot opens maximized here, not in the field that reported it: only this layer
+        # knows the document the viewer belongs to, and it is the one that reads the user's surface
+        # preference (#160)
+        self.__form.connect_image_activations(self.__on_image_activated)
         # sever the current form's long-lived-signal connections when this widget is destroyed, so no
         # field's lambda outlives it (the field itself is retained via self.__form, so it is still alive
         # to be cleared). Rebuilds clear the outgoing form themselves (__rebuild_field_docks). A lambda,
@@ -268,6 +279,20 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if dock is None:
             raise KeyError(tab)
         return dock.toggleViewAction()
+
+    def take_focus(self) -> None:
+        """Hand the keyboard to this document's open image viewer, if one is up (#160).
+
+        Called by the owner (`DocumentsDock`) when this document becomes the current one. Clicking a
+        document's tab makes it current **without** moving Qt's keyboard focus anywhere near it, which
+        would otherwise strand an open viewer: it covers this document, but ESC would still be
+        delivered to whatever holds focus elsewhere in the window.
+
+        Deliberately a no-op when no viewer is open, rather than focusing something arbitrary inside
+        the document -- where focus sits in an ordinary document is not this slice's business to change.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
 
     def save_state(self) -> bytes:
         """Serialize this document's dock layout (visible docks, splitter sizes) and each persisting
@@ -443,6 +468,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
+        self.__form.connect_image_activations(self.__on_image_activated)
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model))
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         self.__set_editors_locked(self.__model.locked)
@@ -536,6 +562,37 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         clears, the upgrade offer drops), and a cancelled retry simply leaves the document as it was.
         """
         save_or_prompt_retry(self, self.__model)
+
+    def __on_image_activated(self, path: Path) -> None:
+        """Open ``path`` maximized, on whichever surface the user's settings ask for (#160).
+
+        The viewer is parented to this widget in every mode, so a document closed underneath it takes
+        it down too -- there is no way to be left with a screenshot of a document that no longer
+        exists. It deletes itself on dismiss, so nothing is retained here between openings; a second
+        click while one is up -- reachable in full-screen mode, whose separate window leaves the strip
+        exposed -- simply opens a newer viewer, and the tracked reference follows the newest.
+
+        :param path: the screenshot the user clicked in the strip.
+        """
+        viewer = ImageLightbox(path, shared_image_viewer_settings().mode, self)
+        self.__image_viewer = viewer
+        # cleared on both paths: dismissal (which hides it before Qt gets round to deleting it) and
+        # destruction by any other route, so take_focus can never reach a viewer that is on its way out
+        viewer.closed.connect(lambda: self.__on_image_viewer_gone(viewer))
+        viewer.destroyed.connect(lambda: self.__on_image_viewer_gone(viewer))
+        viewer.reveal()
+
+    def __on_image_viewer_gone(self, viewer: ImageLightbox) -> None:
+        """Forget ``viewer`` once dismissed or destroyed -- unless a newer one already replaced it (#160).
+
+        Identity-guarded rather than clearing blindly: in full-screen mode the strip stays reachable
+        behind the viewer's separate window, so a second screenshot can open while the first is still
+        being torn down, and the first's late ``destroyed`` must not null the reference to the second.
+
+        :param viewer: the viewer reporting itself gone.
+        """
+        if self.__image_viewer is viewer:
+            self.__image_viewer = None
 
     def __on_convert_triggered(self, *, keep_backups: bool) -> None:
         """Convert this document, confirming first if it would overwrite an already-converted ``.rehu``.

@@ -136,7 +136,12 @@ that show and edit it:
   unregistered type falls back to the unknown-field surface (LocalEdit2.8/#28).
 - **`FieldsForm`** — composes an ordered list of fields into per-tab **3-column grids** (a `QGridLayout` laid out
   label | misc | content, with header-pinning), asking each field for viewers or for editors depending on which
-  surface it builds.
+  surface it builds. It also **routes the fields' outward-facing signals to the owner**, matched by structural
+  protocol rather than by field type: `StatusReporter` (the `authors` viewer's hovered-link URL) and
+  `ImageActivator` (the `images` strip reporting a clicked screenshot). This is the toolkit's standing rule —
+  **a field decides *that* something happened, never *what* the app does about it**: it does not reach for a status
+  bar, a window, or a settings value it doesn't own. The owner (`DocumentWidget`) collects such fields on every form
+  it builds, rebuilds included, and acts.
 
 The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
 **Where each type's ordered field list is authored is not yet decided** — see the open question
@@ -370,9 +375,18 @@ filter://publishers?name=Example%20Publisher
 
 [[[plugins#tutorial-plugin]]]
 
+- [ ] [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
+- [ ] [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
+
+The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
+
 - **Viewer** (triggered by double-clicking `.rehu` in File Explorer): read-only field display; rendered Markdown
   description; horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
-  close.
+  close. **Where** a clicked screenshot maximizes is a user preference ("Viewers > Images",
+  [[appendices.settings-pages#category-groups]]), not a fixed choice: an overlay over the open document's own client
+  area (the default — the surrounding dock chrome, menus, and toolbars stay visible), an overlay over the whole main
+  window's client area, or a frameless full-screen window. The strip itself only reports *which* screenshot was
+  activated; the document surface owning it decides what opens ([[plugins#field-toolkit]]'s owner-routes-it shape).
 - **Editor**: field editing including the Markdown description; folder rename from the predefined-candidates list
   ([[data-model#rehu-format]]).
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress

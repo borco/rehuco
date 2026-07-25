@@ -7,14 +7,47 @@ future preferences slice makes that height configurable ([[appendices.open-quest
 """
 
 from pathlib import Path
-from typing import Final
+from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QMouseEvent, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QScrollArea, QWidget
 
 from ..image_scanner import ImageScanner
+
+
+class ThumbnailLabel(QLabel):
+    """One clickable thumbnail in the strip: a plain pixmap label that reports its own screenshot.
+
+    Carries the path it was built for, so the strip never has to map a clicked widget back to a
+    position in a list it may since have rebuilt.
+
+    :param path: the screenshot this thumbnail stands for, re-emitted on click.
+    :param parent: optional Qt parent.
+    """
+
+    clicked = Signal(Path)
+    """Fires with :attr:`path` when the thumbnail is left-clicked."""
+
+    def __init__(self, path: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.__path: Final = path
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    @override
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """Emit :attr:`clicked` when a left-button press *and* release both land on this thumbnail.
+
+        Release, not press: Qt grabs the mouse on press, so a release still inside the widget is the
+        standard "this was a click, not a drag away" test -- pressing here and letting go elsewhere
+        must not open anything.
+
+        :param event: the Qt mouse-release event, forwarded to the base class.
+        """
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit(self.__path)
 
 
 class ImageStrip(QScrollArea):
@@ -31,6 +64,10 @@ class ImageStrip(QScrollArea):
     :param parent: optional Qt parent.
     :param height: the strip's fixed pixel height, and the height each thumbnail is scaled to.
     """
+
+    image_activated = Signal(Path)
+    """Fires with the screenshot a user clicked. The strip stays a dumb presenter: it reports *which*
+    image was activated and nothing more -- what opens is the owner's decision (#160)."""
 
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
@@ -84,6 +121,7 @@ class ImageStrip(QScrollArea):
             pixmap = QPixmap(str(path))
             if pixmap.isNull():
                 continue
-            label = QLabel()
+            label = ThumbnailLabel(path)
+            label.clicked.connect(self.image_activated)
             label.setPixmap(pixmap.scaledToHeight(thumbnail_height, Qt.TransformationMode.SmoothTransformation))
             self.__row.addWidget(label)

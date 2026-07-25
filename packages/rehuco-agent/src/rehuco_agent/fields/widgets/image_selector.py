@@ -31,6 +31,9 @@ SIZE_COLUMN: Final = 2
 class PreviewLabel(QLabel):
     """A label that keeps a source pixmap scaled to fit itself, aspect-ratio preserved.
 
+    Shared with the maximized viewer (`ImageLightbox`, #160), which needs exactly this discipline at a
+    much larger size; it lives here because this is where it was first proven.
+
     Rescaling lives in the label's own :meth:`resizeEvent` rather than the surrounding widget's, so the
     first paint is correct no matter when the layout hands the label its real size -- there is no reliance
     on an outer resize firing after the pixmap is set. Its size policy ignores the pixmap so the pixmap

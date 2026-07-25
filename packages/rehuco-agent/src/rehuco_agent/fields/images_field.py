@@ -8,9 +8,10 @@ Pure wiring only: `ImageStrip`/`ImageSelector` each hold their own `image_scanne
 re-fetch and rebuild themselves, so this field never touches a screenshot path list directly.
 """
 
+from pathlib import Path
 from typing import Final, override
 
-from PySide6.QtCore import SignalInstance
+from PySide6.QtCore import QObject, Signal, SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .image_scanner import ImageScanner
@@ -21,7 +22,7 @@ IMAGE_STRIP_HEIGHT: Final = 150
 makes it configurable in the settings ([[appendices.open-questions#still-open]])."""
 
 
-class ImagesField(Field[list[str]]):
+class ImagesField(Field[list[str]], QObject):
     """The special ``images`` field ([[plugins#field-toolkit]], [[data-model#image-meanings]], #27): the
     resource's curated lightbox set.
 
@@ -46,6 +47,11 @@ class ImagesField(Field[list[str]]):
 
     TYPE = "images"
 
+    image_activated: Signal = Signal(Path)
+    """Fires with the screenshot a user clicked in the strip, for the **owner to open** (the
+    `ImageActivator` contract, #160). Forwarded straight from the strip: this field decides nothing
+    about the maximized surface, which is the owner's call and the user's setting."""
+
     def __init__(  # pylint: disable=too-many-arguments
         self,
         name: str,
@@ -65,6 +71,7 @@ class ImagesField(Field[list[str]]):
         strip = ImageStrip(height=IMAGE_STRIP_HEIGHT)
         strip.image_scanner = self.__image_scanner
         strip.set_hidden(binding.value)
+        strip.image_activated.connect(self.image_activated)
         binding.changed.connect(strip.set_hidden)
         if self.__image_scanner_changed is not None:
             self.__image_scanner_changed.connect(strip.set_image_scanner)  # type: ignore[attr-defined]

@@ -1,6 +1,7 @@
 """Composes an ordered field list into per-tab viewer or editor 3-column grids ([[plugins#field-toolkit]])."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any, Final
 
 from PySide6.QtCore import SignalInstance
@@ -13,6 +14,7 @@ from .field import (
     FieldsTab,
     FieldViewerWidgets,
     HeaderPinned,
+    ImageActivator,
     StatusReporter,
 )
 
@@ -72,6 +74,21 @@ class FieldsForm:
         for field in self.__fields:
             if isinstance(field, StatusReporter):
                 field.status_message.connect(sink)
+
+    def connect_image_activations(self, slot: Callable[[Path], None]) -> None:
+        """Route every image-activating field's ``image_activated`` into ``slot`` ([[plugins#field-toolkit]]).
+
+        The `ImageActivator` counterpart of :meth:`connect_status_messages`, and wired the same way:
+        the owner calls this once per form it builds, and the outgoing form's fields drop the
+        connection when they are collected (Qt severs a connection whose `QObject` sender dies).
+        Unlike the status sink, this takes a plain callable rather than a relaying signal -- the owner
+        acts on the activation itself (it opens the viewer) instead of passing it further up.
+
+        :param slot: the owner's handler, called with the activated image's path.
+        """
+        for field in self.__fields:
+            if isinstance(field, ImageActivator):
+                field.image_activated.connect(slot)
 
     def make_viewer(self, model: FieldModel) -> dict[FieldsTab, QWidget]:
         """Build the read-only viewer grids, one per tab, bound to the model.
