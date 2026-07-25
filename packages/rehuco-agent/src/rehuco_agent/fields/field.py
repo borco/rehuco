@@ -207,6 +207,12 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     image_activated: SignalInstance
     """Fires with the activated image's :class:`~pathlib.Path`."""
 
+    curated_images_changed: SignalInstance
+    """Fires with the field's whole current image set, in display order, whenever it is rebuilt --
+    including the first time it is populated. An activation names *where* to start; this is what lets
+    the owner's viewer keep following the same live set afterwards rather than the snapshot it opened
+    on (#161)."""
+
 
 class Field[T]:
     """Base for a field: binds one logical value to the widgets that view and edit it

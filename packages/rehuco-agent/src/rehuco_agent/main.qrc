@@ -15,6 +15,9 @@
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
         <file alias="icons/expand_off.svg">../../../../design/icons/expand_off.svg</file>
         <file alias="icons/expand_on.svg">../../../../design/icons/expand_on.svg</file>
+        <file alias="icons/lightbox_list.svg">../../../../design/icons/lightbox_list.svg</file>
+        <file alias="icons/lightbox_next.svg">../../../../design/icons/lightbox_next.svg</file>
+        <file alias="icons/lightbox_prev.svg">../../../../design/icons/lightbox_prev.svg</file>
         <file alias="icons/lock_on.svg">../../../../design/icons/lock_on.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>

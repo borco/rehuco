@@ -27,6 +27,7 @@ from ..fields import (
     TypeField,
     UnknownField,
 )
+from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -199,6 +200,10 @@ def build_document_form(
         image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
+        # the height plus its change signal, the same shape the scanner above uses: the strip is built
+        # at the configured height and resizes itself when the user applies a new one (#161)
+        strip_height=shared_image_viewer_settings().preview_image_height,
+        strip_height_changed=shared_image_viewer_settings().preview_image_height_changed,  # type: ignore[attr-defined]
     )
     description_field = DescriptionField(
         "description",

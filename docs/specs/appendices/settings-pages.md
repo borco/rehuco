@@ -113,9 +113,20 @@ What "saved" or "dropped" actually *means* is entirely up to each page. Two shap
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
-  Staged-edit does **not** imply reactive settings: `ImagesPage` writes a plain-dataclass singleton
-  (`ImageViewerSettings`), because nothing already on screen has to follow the change — the maximized
-  image viewer's surface is read afresh each time one opens (§5's recipe is for the other case).
+  `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
+  it has to show its own effect on what is already on screen: every open document's image strip
+  resizes, and every open maximized viewer resizes and shows or hides its own thumbnail row. Only
+  `mode` stays read-at-open-time — it decides where the *next* viewer is built, and nothing already up
+  can follow a change to it.
+  One of its values is deliberately only a **starting point**: `strip_visible` decides whether a
+  maximized screenshot opens with its thumbnail row *the first time* a document shows one
+  ([[plugins#tutorial-plugin]]). Toggling that row inside a viewer never writes back here — it is that
+  document's own view state, and lives in its saved layout beside which tabs it has open — because a
+  shared setting would let one document's toggle decide how every other document's viewer opens.
+  Applying it does reach the viewers *currently open*, so the effect is visible where the user is
+  looking, and each of those documents then remembers the applied value as if its toggle had been
+  clicked by hand. A document with no viewer open resolves the setting afresh whenever it opens one,
+  so it is never seeded with a stale default from whenever it happened to be constructed.
 - **Immediate-effect pages** (`RegistryPage`, "System Integration") — its buttons
   (Register/Unregister) already took effect on the OS the moment they were clicked; nothing is
   staged, so `save_changes()`/`drop_changes()` are no-ops and `is_dirty()` always returns `False`.
@@ -209,5 +220,5 @@ would otherwise leak state between tests (or read the developer's real on-disk s
 autouse `isolate_shared_markdown_rendering_settings` fixture in
 `packages/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
 around every test. A new page with its own shared settings object needs the equivalent, reactive or
-not — `isolate_shared_identity_settings` and `isolate_shared_image_viewer_settings` are the
-plain-dataclass counterparts sitting right beside it.
+not — `isolate_shared_image_viewer_settings` is the second reactive one, and
+`isolate_shared_identity_settings` the plain-dataclass counterpart, both sitting right beside it.

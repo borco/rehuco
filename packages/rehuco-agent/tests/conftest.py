@@ -83,6 +83,9 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
     clicks a thumbnail (or builds an `ImagesPage`) would otherwise pin an instance loaded from the
     developer's real on-disk settings for the rest of the session -- and decide, from that file,
     which surface every later test's viewer opens on.
+
+    Tests that specifically exercise the image-viewer settings patch ``persistent_settings``
+    themselves.
     """
     shared_image_viewer_settings.cache_clear()
     mocker.patch.object(image_viewer_settings, "persistent_settings", return_value=FakeSettings())

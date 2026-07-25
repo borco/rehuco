@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
-from PySide6.QtGui import QStandardItemModel
+from PySide6.QtGui import QPixmap, QStandardItemModel
 from PySide6.QtWidgets import QTreeView
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -211,3 +211,51 @@ def test_editor_forwards_image_scanner_changed_to_the_selector(
     view = editor.findChild(QTreeView)
     assert isinstance(view, QTreeView)
     assert view.model().rowCount() == len(OTHER_PATHS)
+
+
+def test_viewer_reports_the_curated_set_as_it_is_seeded(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Building the viewer reports the curated set the strip painted (#161).
+
+    The owner needs that first set before any thumbnail can be clicked -- it is what an activation
+    opens against -- so the field wires the strip before seeding it, not after.
+
+    **Test steps:**
+
+    * connect to the field's ``curated_images_changed``, then build the viewer
+    * verify the whole screenshot set was reported
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    field = make_field(mocker)
+    reported: list[list[Path]] = []
+    field.curated_images_changed.connect(reported.append)
+
+    viewer = field.make_viewer(model.bind(field)).viewer
+
+    assert isinstance(viewer, ImageStrip)
+    qtbot.addWidget(viewer)
+    assert reported[-1] == PATHS
+
+
+def test_viewer_reports_the_curated_set_again_after_a_curation_edit(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Hiding a screenshot reports the shorter set, so an open viewer can follow it (#161).
+
+    **Test steps:**
+
+    * build the viewer, then hide the middle screenshot through the model binding
+    * verify the field reported the set without it
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    field = make_field(mocker)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ImageStrip)
+    qtbot.addWidget(viewer)
+    reported: list[list[Path]] = []
+    field.curated_images_changed.connect(reported.append)
+
+    model.hidden_images = [PATHS[1].name]
+
+    assert reported[-1] == [PATHS[0], PATHS[2]]

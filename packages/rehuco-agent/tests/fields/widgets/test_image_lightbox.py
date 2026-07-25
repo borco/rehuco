@@ -1,20 +1,45 @@
-"""Tests for ImageLightbox: the maximized screenshot viewer and its three surfaces."""
+"""Tests for ImageLightbox: the maximized screenshot viewer, its three surfaces, and its navigation."""
+
+# one cohesive suite over the viewer's surfaces, focus discipline, and navigation; a scoped disable
+# reads better than an arbitrary split (same precedent as test_rehu_document_model.py).
+# pylint: disable=too-many-lines
 
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QEnterEvent, QPixmap
+from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from qt_waits import wait_destroyed
-from rehuco_agent.fields.widgets.image_lightbox import ImageLightbox, ImageViewerMode
+from rehuco_agent.fields.widgets.image_lightbox import (
+    CLOSE_BUTTON_NAME,
+    CORNER_MARGIN,
+    DEFAULT_STRIP_HEIGHT,
+    NAVIGATION_HOVER_OPACITY,
+    NAVIGATION_IDLE_OPACITY,
+    NAVIGATION_PRESSED_OPACITY,
+    NAVIGATION_ZONE_DIVISIONS,
+    NAVIGATION_ZONE_NARROW_WIDTH,
+    NAVIGATION_ZONE_WIDTH,
+    NEXT_BUTTON_NAME,
+    PREVIOUS_BUTTON_NAME,
+    STRIP_TOGGLE_BUTTON_NAME,
+    STRIP_TOGGLE_ICON_SIZE,
+    STRIP_TOGGLE_OFF_OPACITY,
+    STRIP_TOGGLE_ON_OPACITY,
+    ImageLightbox,
+    ImageViewerMode,
+    OverlayButton,
+)
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
+from rehuco_agent.fields.widgets.image_strip import CURRENT_THUMBNAIL_STYLE, THUMBNAIL_STYLE, ImageStrip, ThumbnailLabel
 
 PATH: Final = Path("/fake/info03.png")
+PATHS: Final = [Path("/fake/info00.png"), Path("/fake/info01.png"), Path("/fake/info02.png")]
 
 
 # region fixtures
@@ -22,9 +47,13 @@ PATH: Final = Path("/fake/info03.png")
 def loadable_image(mocker: MockerFixture) -> None:
     """Make every screenshot load as a real pixmap, with no file on disk.
 
+    Patched in both modules that build one: the viewer scales its own maximized copy, and the
+    thumbnail row it hosts loads each screenshot again at thumbnail size.
+
     :param mocker: pytest-mock fixture.
     """
     mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
 
 
 @fixture
@@ -54,6 +83,79 @@ def document(qtbot: QtBot) -> Iterator[QWidget]:
     yield document
 
 
+def control(lightbox: ImageLightbox, name: str) -> QToolButton:
+    """One of the viewer's named controls.
+
+    :param lightbox: the viewer under test.
+    :param name: the control's object name.
+    :returns: that control.
+    """
+    button = lightbox.findChild(QToolButton, name)
+    assert isinstance(button, QToolButton)
+    return button
+
+
+def overlay(lightbox: ImageLightbox, name: str) -> OverlayButton:
+    """One of the viewer's named opacity-driven controls.
+
+    :param lightbox: the viewer under test.
+    :param name: the control's object name.
+    :returns: that control, typed for its ``opacity()``.
+    """
+    button = lightbox.findChild(OverlayButton, name)
+    assert isinstance(button, OverlayButton)
+    return button
+
+
+def strip_of(lightbox: ImageLightbox) -> ImageStrip:
+    """The viewer's own thumbnail row.
+
+    :param lightbox: the viewer under test.
+    :returns: the row it hosts.
+    """
+    strip = lightbox.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    return strip
+
+
+def thumbnails_of(lightbox: ImageLightbox) -> list[ThumbnailLabel]:
+    """The thumbnails currently laid out in the viewer's row, in row order.
+
+    Read off the row's own layout rather than through ``findChildren``: a rebuild takes the outgoing
+    thumbnails out of the layout and ``deleteLater``s them, so they remain children of the row until
+    the event loop gets round to deleting them.
+
+    :param lightbox: the viewer under test.
+    :returns: the laid-out thumbnails.
+    """
+    content = strip_of(lightbox).widget()
+    assert content is not None
+    layout = content.layout()
+    assert layout is not None
+    thumbnails: list[ThumbnailLabel] = []
+    for index in range(layout.count()):
+        item = layout.itemAt(index)
+        assert item is not None
+        thumbnail = item.widget()
+        assert isinstance(thumbnail, ThumbnailLabel)
+        thumbnails.append(thumbnail)
+    return thumbnails
+
+
+def reveal_over(document: QWidget, images: list[Path], current: Path, **kwargs: bool) -> ImageLightbox:
+    """Reveal a document-overlay viewer over ``document``, opened on ``current``.
+
+    :param document: the document stand-in to cover.
+    :param images: the curated set to navigate.
+    :param current: which of them to open on.
+    :param kwargs: keyword arguments passed straight through to the viewer (``strip_visible``).
+    :returns: the revealed viewer.
+    """
+    lightbox = ImageLightbox(images, current, ImageViewerMode.DOCUMENT_OVERLAY, document, **kwargs)
+    lightbox.reveal()
+    return lightbox
+
+
 # endregion
 
 
@@ -65,7 +167,7 @@ def test_document_overlay_covers_the_document_it_belongs_to(document: QWidget, q
     * reveal a viewer in document-overlay mode
     * verify it is parented to the document, is not a window, and covers the document's whole rect
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -83,7 +185,7 @@ def test_app_window_overlay_covers_the_main_windows_client_area(document: QWidge
     * reveal a viewer in app-window-overlay mode over a document nested in a main window
     * verify it is parented to that window's central widget and covers it
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -103,7 +205,7 @@ def test_full_screen_is_a_frameless_window_owned_by_the_document(document: QWidg
     * reveal a viewer in full-screen mode
     * verify it is a window, is frameless, and keeps the document as its Qt parent
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.FULL_SCREEN, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.FULL_SCREEN, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -121,7 +223,7 @@ def test_escape_dismisses_and_deletes_the_viewer(document: QWidget, qtbot: QtBot
     * reveal a viewer and press ESC on it
     * verify it reports ``closed`` and is destroyed
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     dismissed: list[bool] = []
     lightbox.closed.connect(lambda: dismissed.append(True))
@@ -140,10 +242,9 @@ def test_the_close_button_dismisses_the_viewer(document: QWidget, qtbot: QtBot) 
     * reveal a viewer and click its close button
     * verify it is destroyed
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
-    button = lightbox.findChild(QToolButton)
-    assert isinstance(button, QToolButton)
+    button = control(lightbox, CLOSE_BUTTON_NAME)
 
     with wait_destroyed(qtbot, lightbox):
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
@@ -160,7 +261,7 @@ def test_clicking_the_image_does_not_dismiss_the_viewer(document: QWidget, qtbot
     * reveal a viewer and left-click the middle of it
     * verify it is still shown
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -177,7 +278,7 @@ def test_another_key_leaves_the_viewer_up(document: QWidget, qtbot: QtBot) -> No
     * reveal a viewer and press a key that isn't ESC
     * verify it is still shown
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -194,7 +295,7 @@ def test_a_right_click_leaves_the_viewer_up(document: QWidget, qtbot: QtBot) -> 
     * reveal a viewer and right-click it
     * verify it is still shown
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -216,7 +317,7 @@ def test_dismissing_returns_focus_where_it_came_from(document: QWidget, qtbot: Q
     editor.show()
     editor.setFocus()
     assert editor.hasFocus()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     assert not editor.hasFocus()
 
@@ -246,7 +347,7 @@ def test_dismissing_leaves_focus_alone_when_it_came_from_another_document(
     outsider = QLineEdit(document.window())
     outsider.show()
     outsider.setFocus()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
     restore = mocker.patch.object(outsider, "setFocus")
 
@@ -267,10 +368,9 @@ def test_the_close_button_restores_focus_the_same_way_escape_does(document: QWid
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
-    button = lightbox.findChild(QToolButton)
-    assert isinstance(button, QToolButton)
+    button = control(lightbox, CLOSE_BUTTON_NAME)
 
     with wait_destroyed(qtbot, lightbox):
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
@@ -292,7 +392,7 @@ def test_dismissing_tolerates_the_focused_widget_being_destroyed(document: QWidg
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, editor):
@@ -314,7 +414,7 @@ def test_an_overlay_reclaims_focus_from_the_surface_it_covers(document: QWidget,
     """
     editor = QLineEdit(document)
     editor.show()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
 
     editor.setFocus()
@@ -335,10 +435,10 @@ def test_two_open_viewers_do_not_fight_over_focus(document: QWidget, qtbot: QtBo
     * reveal two app-window overlays over the same main window
     * verify the second holds focus, and ESC dismisses that one
     """
-    first = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    first = ImageLightbox([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     qtbot.addWidget(first)
     first.reveal()
-    second = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    second = ImageLightbox([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     second.reveal()
 
     assert second.hasFocus()
@@ -360,7 +460,7 @@ def test_an_overlay_leaves_focus_alone_outside_the_surface_it_covers(document: Q
     """
     outsider = QLineEdit(document.window())
     outsider.show()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -380,7 +480,7 @@ def test_an_overlay_follows_the_surface_it_covers_as_it_resizes(document: QWidge
     * reveal a document overlay, then resize the document
     * verify the overlay still covers it exactly
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
     lightbox.reveal()
 
@@ -400,7 +500,7 @@ def test_an_app_window_overlay_closes_when_its_document_goes_away(document: QWid
     * reveal an app-window overlay, then destroy the document it belongs to
     * verify the overlay is destroyed too
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
@@ -423,7 +523,7 @@ def test_a_document_close_under_an_app_window_overlay_restores_no_focus(document
     editor = QLineEdit(document)
     editor.show()
     editor.setFocus()
-    lightbox = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
@@ -438,7 +538,7 @@ def test_a_full_screen_viewer_dies_with_its_document(document: QWidget, qtbot: Q
     * reveal a full-screen viewer, then destroy the document it belongs to
     * verify the viewer is destroyed too
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.FULL_SCREEN, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.FULL_SCREEN, document)
     lightbox.reveal()
 
     with wait_destroyed(qtbot, lightbox):
@@ -453,7 +553,7 @@ def test_the_screenshot_is_scaled_to_fit_preserving_aspect(document: QWidget, qt
     * reveal a document overlay over a sized document, with a 16:9 source
     * verify the rendered pixmap fits inside the viewer and keeps 16:9
     """
-    lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
+    lightbox = ImageLightbox([PATH], PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     qtbot.addWidget(lightbox)
 
     lightbox.reveal()
@@ -464,3 +564,816 @@ def test_the_screenshot_is_scaled_to_fit_preserving_aspect(document: QWidget, qt
     assert pixmap.width() <= lightbox.width()
     assert pixmap.height() <= lightbox.height()
     assert abs(pixmap.width() / pixmap.height() - 320 / 180) < 0.05
+
+
+# region navigation tests (#161)
+def test_the_right_key_shows_the_next_screenshot(document: QWidget, qtbot: QtBot) -> None:
+    """RIGHT moves one forward through the curated set.
+
+    **Test steps:**
+
+    * reveal a viewer opened on the first of three screenshots
+    * press RIGHT
+    * verify the second one is now shown
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_the_left_key_shows_the_previous_screenshot(document: QWidget, qtbot: QtBot) -> None:
+    """LEFT moves one back through the curated set.
+
+    **Test steps:**
+
+    * reveal a viewer opened on the last of three screenshots
+    * press LEFT
+    * verify the middle one is now shown
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[2])
+    qtbot.addWidget(lightbox)
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Left)
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_home_and_end_jump_to_the_ends_of_the_set(document: QWidget, qtbot: QtBot) -> None:
+    """HOME and END go straight to the first and last screenshots.
+
+    **Test steps:**
+
+    * reveal a viewer opened on the middle of three screenshots
+    * press END, then HOME
+    * verify each landed on the matching end
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_End)
+    assert lightbox.current_image == PATHS[2]
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Home)
+    assert lightbox.current_image == PATHS[0]
+
+
+def test_navigation_stops_at_the_ends_rather_than_wrapping(document: QWidget, qtbot: QtBot) -> None:
+    """Stepping past either end leaves the viewer where it is -- the set does not wrap.
+
+    The end behaviour is a deliberate choice (#161): a wrap makes a three-image set feel endless, and
+    the ends are where its shape is legible.
+
+    **Test steps:**
+
+    * reveal a viewer on the first screenshot and press LEFT
+    * jump to the last and press RIGHT
+    * verify neither moved
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Left)
+    assert lightbox.current_image == PATHS[0]
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_End)
+    qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+    assert lightbox.current_image == PATHS[2]
+
+
+def test_clicking_the_right_half_of_the_screenshot_shows_the_next_one(document: QWidget, qtbot: QtBot) -> None:
+    """A click on the screenshot's right half steps forward (#161).
+
+    The screenshot is transparent to the mouse, so this lands on the viewer itself, which splits on
+    the click's x against its own centre.
+
+    **Test steps:**
+
+    * reveal a viewer opened on the first screenshot
+    * click just right of centre, clear of the edge hover bands
+    * verify the second screenshot is shown
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+    centre = lightbox.rect().center()
+
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_clicking_the_left_half_of_the_screenshot_shows_the_previous_one(document: QWidget, qtbot: QtBot) -> None:
+    """A click on the screenshot's left half steps back (#161).
+
+    **Test steps:**
+
+    * reveal a viewer opened on the last screenshot
+    * click just left of centre, clear of the edge hover bands
+    * verify the middle screenshot is shown
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[2])
+    qtbot.addWidget(lightbox)
+    centre = lightbox.rect().center()
+
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_a_click_on_the_screenshot_never_dismisses_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Navigating by clicking the screenshot leaves the viewer up -- only ESC and close dismiss.
+
+    Regression guard for the rule #160 removed click-to-dismiss for: the image halves mean prev/next,
+    so a click there must never also mean "close".
+
+    **Test steps:**
+
+    * reveal a viewer and click both halves in turn
+    * verify it is still shown
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    centre = lightbox.rect().center()
+
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
+
+    assert not lightbox.isHidden()
+
+
+def test_pressing_a_hover_band_steps_through_the_set(document: QWidget, qtbot: QtBot) -> None:
+    """The prev/next bands step exactly like the keys do (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the middle screenshot
+    * click the next band, then the previous band
+    * verify each moved one position
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    qtbot.mouseClick(control(lightbox, NEXT_BUTTON_NAME), Qt.MouseButton.LeftButton)
+    assert lightbox.current_image == PATHS[2]
+
+    qtbot.mouseClick(control(lightbox, PREVIOUS_BUTTON_NAME), Qt.MouseButton.LeftButton)
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_a_hover_band_leaves_the_keyboard_with_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Clicking a band does not take focus, so the keys keep working afterwards.
+
+    Regression: a focusable control inside the viewer would swallow the keyboard, and ESC (and every
+    navigation key) would then reach nothing.
+
+    **Test steps:**
+
+    * reveal a viewer and click its next band
+    * verify the viewer still holds focus, and RIGHT still navigates
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+
+    qtbot.mouseClick(control(lightbox, NEXT_BUTTON_NAME), Qt.MouseButton.LeftButton)
+
+    assert lightbox.hasFocus()
+    qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+    assert lightbox.current_image == PATHS[2]
+
+
+def test_a_hover_band_is_hidden_at_the_end_it_points_past(document: QWidget, qtbot: QtBot) -> None:
+    """With nothing to navigate to, the matching band is not there at all (#161).
+
+    Hidden rather than merely faded out: an inert band would still swallow clicks over that edge of
+    the screenshot.
+
+    **Test steps:**
+
+    * reveal a viewer on the first screenshot
+    * verify the previous band is hidden and the next one is not
+    * step to the last screenshot and verify the two swap
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+    previous = control(lightbox, PREVIOUS_BUTTON_NAME)
+    following = control(lightbox, NEXT_BUTTON_NAME)
+
+    assert previous.isHidden()
+    assert not following.isHidden()
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_End)
+
+    assert not previous.isHidden()
+    assert following.isHidden()
+
+
+def test_a_single_screenshot_shows_no_hover_bands_at_all(document: QWidget, qtbot: QtBot) -> None:
+    """A set of one has neither a previous nor a next, so neither band exists to hover.
+
+    **Test steps:**
+
+    * reveal a viewer over a single-screenshot set
+    * verify both bands are hidden
+    """
+    lightbox = reveal_over(document, [PATH], PATH)
+    qtbot.addWidget(lightbox)
+
+    assert control(lightbox, PREVIOUS_BUTTON_NAME).isHidden()
+    assert control(lightbox, NEXT_BUTTON_NAME).isHidden()
+
+
+def test_a_hover_band_is_invisible_until_the_mouse_enters_it(document: QWidget, qtbot: QtBot) -> None:
+    """A band shows nothing until hovered, then a faint hint, and nothing again once left (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with a next band available
+    * send it a real enter event, then a leave event
+    * verify the opacity went idle -> hover -> idle
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+    band = overlay(lightbox, NEXT_BUTTON_NAME)
+    assert band.opacity() == NAVIGATION_IDLE_OPACITY
+
+    inside = QPointF(band.rect().center())
+    QApplication.sendEvent(band, QEnterEvent(inside, inside, inside))
+    assert band.opacity() == NAVIGATION_HOVER_OPACITY
+
+    QApplication.sendEvent(band, QEvent(QEvent.Type.Leave))
+    assert band.opacity() == NAVIGATION_IDLE_OPACITY
+
+
+def test_a_hover_band_brightens_while_it_is_held_down(document: QWidget, qtbot: QtBot) -> None:
+    """A band is near-solid while pressed, and settles back once released (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with a next band available and press that band
+    * verify it is at the pressed opacity, and back below it after the release
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+    band = overlay(lightbox, NEXT_BUTTON_NAME)
+
+    qtbot.mousePress(band, Qt.MouseButton.LeftButton)
+    assert band.opacity() == NAVIGATION_PRESSED_OPACITY
+
+    qtbot.mouseRelease(band, Qt.MouseButton.LeftButton)
+    assert band.opacity() < NAVIGATION_PRESSED_OPACITY
+
+
+def test_the_hover_bands_are_a_fixed_width_along_each_edge(document: QWidget, qtbot: QtBot) -> None:
+    """Each band is a fixed-width strip pinned to its own edge of a wide viewer (#161).
+
+    **Test steps:**
+
+    * reveal a viewer over a comfortably wide document
+    * verify each band is :data:`NAVIGATION_ZONE_WIDTH` wide against its own edge
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    document.resize(2 * NAVIGATION_ZONE_NARROW_WIDTH, 400)
+
+    previous = control(lightbox, PREVIOUS_BUTTON_NAME)
+    following = control(lightbox, NEXT_BUTTON_NAME)
+    assert previous.geometry().x() == 0
+    assert previous.width() == NAVIGATION_ZONE_WIDTH
+    assert following.width() == NAVIGATION_ZONE_WIDTH
+    assert following.geometry().right() == lightbox.width() - 1
+
+
+def test_the_hover_bands_take_an_eighth_of_a_narrow_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Below the narrow threshold the bands scale down instead of swallowing the screenshot (#161).
+
+    **Test steps:**
+
+    * reveal a viewer and shrink the document below the narrow threshold
+    * verify each band is an eighth of the viewer's width
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    document.resize(NAVIGATION_ZONE_NARROW_WIDTH // 2, 400)
+
+    assert control(lightbox, PREVIOUS_BUTTON_NAME).width() == lightbox.width() // NAVIGATION_ZONE_DIVISIONS
+    assert control(lightbox, NEXT_BUTTON_NAME).width() == lightbox.width() // NAVIGATION_ZONE_DIVISIONS
+
+
+def test_the_hover_bands_stop_above_the_thumbnail_row(document: QWidget, qtbot: QtBot) -> None:
+    """A shown thumbnail row shortens the bands, so they never cover a thumbnail (#161).
+
+    Regression: a full-height band would sit over the row's own left/right ends and swallow the clicks
+    meant for the thumbnails there.
+
+    **Test steps:**
+
+    * reveal a viewer with the row hidden and verify a band spans the full height
+    * show the row and verify the band now stops above it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    band = control(lightbox, NEXT_BUTTON_NAME)
+    assert band.height() == lightbox.height()
+
+    control(lightbox, STRIP_TOGGLE_BUTTON_NAME).setChecked(True)
+
+    assert band.height() == lightbox.height() - DEFAULT_STRIP_HEIGHT
+
+
+# endregion
+
+
+# region thumbnail row tests (#161)
+def test_the_thumbnail_row_follows_the_setting_it_was_opened_with(document: QWidget, qtbot: QtBot) -> None:
+    """The row starts hidden or shown as the owner's stored preference asks (#161).
+
+    **Test steps:**
+
+    * reveal one viewer left at the default and one opened with the row shown
+    * verify each row's visibility matches
+    """
+    default = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(default)
+    shown = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(shown)
+
+    assert strip_of(default).isHidden()
+    assert not strip_of(shown).isHidden()
+
+
+def test_opening_on_a_stored_preference_is_not_reported_as_a_change(document: QWidget, qtbot: QtBot) -> None:
+    """Merely opening on the stored preference reports nothing -- only the user toggling does.
+
+    Regression: seeding a checkable button emits ``toggled``, which would write the preference straight
+    back on every single opening.
+
+    **Test steps:**
+
+    * connect to ``strip_visible_changed`` before revealing a viewer with the row shown
+    * verify nothing was reported
+    """
+    lightbox = ImageLightbox(PATHS, PATHS[1], ImageViewerMode.DOCUMENT_OVERLAY, document, strip_visible=True)
+    qtbot.addWidget(lightbox)
+    reported: list[bool] = []
+    lightbox.strip_visible_changed.connect(reported.append)
+
+    lightbox.reveal()
+
+    assert not reported
+
+
+def test_the_row_toggle_shows_the_row_and_reports_the_choice(document: QWidget, qtbot: QtBot) -> None:
+    """The corner toggle shows and hides the row, reporting each change for the owner to persist.
+
+    **Test steps:**
+
+    * reveal a viewer with the row hidden and click its toggle twice
+    * verify the row followed, and both changes were reported
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    reported: list[bool] = []
+    lightbox.strip_visible_changed.connect(reported.append)
+    toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+
+    qtbot.mouseClick(toggle, Qt.MouseButton.LeftButton)
+    assert not strip_of(lightbox).isHidden()
+    assert lightbox.strip_visible
+
+    qtbot.mouseClick(toggle, Qt.MouseButton.LeftButton)
+    assert strip_of(lightbox).isHidden()
+    assert reported == [True, False]
+
+
+def test_the_row_toggle_is_faint_while_the_row_is_hidden(document: QWidget, qtbot: QtBot) -> None:
+    """The toggle is never fully absent -- faint with the row hidden, brighter with it shown (#161).
+
+    With the row hidden there would otherwise be nothing at all to say the viewer has one.
+
+    **Test steps:**
+
+    * reveal a viewer with the row hidden and check the toggle's opacity
+    * show the row and check it again
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    toggle = overlay(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+
+    assert toggle.opacity() == STRIP_TOGGLE_OFF_OPACITY
+
+    toggle.setChecked(True)
+
+    assert toggle.opacity() == STRIP_TOGGLE_ON_OPACITY
+
+
+def test_the_thumbnail_row_shows_no_scrollbars(document: QWidget, qtbot: QtBot) -> None:
+    """The row scrolls programmatically, with no bar of its own painted on the backdrop (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with the row shown
+    * verify both scrollbar policies suppress the bar outright
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    strip = strip_of(lightbox)
+
+    assert strip.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+    assert strip.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+
+
+def test_the_row_lists_the_whole_curated_set(document: QWidget, qtbot: QtBot) -> None:
+    """Every screenshot in the set gets a thumbnail, not just the current one.
+
+    **Test steps:**
+
+    * reveal a viewer over three screenshots with the row shown
+    * verify three thumbnails were painted
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+
+    assert len(thumbnails_of(lightbox)) == len(PATHS)
+
+
+def test_the_current_screenshots_thumbnail_is_the_framed_one(document: QWidget, qtbot: QtBot) -> None:
+    """The row marks which screenshot is being shown, and re-marks as navigation moves (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the middle screenshot with the row shown
+    * verify only that thumbnail is framed
+    * step forward and verify the mark moved with it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    thumbnails = thumbnails_of(lightbox)
+
+    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [
+        THUMBNAIL_STYLE,
+        CURRENT_THUMBNAIL_STYLE,
+        THUMBNAIL_STYLE,
+    ]
+
+    qtbot.keyClick(lightbox, Qt.Key.Key_Right)
+
+    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [
+        THUMBNAIL_STYLE,
+        THUMBNAIL_STYLE,
+        CURRENT_THUMBNAIL_STYLE,
+    ]
+
+
+def test_a_stale_thumbnail_activation_moves_nothing(document: QWidget, qtbot: QtBot) -> None:
+    """A thumbnail reporting a screenshot the set no longer holds leaves the viewer where it is.
+
+    Regression: a rebuild takes the outgoing thumbnails out of the row and ``deleteLater``s them, so
+    one can still report a click in the moment before Qt deletes it -- and looking its path up in the
+    rebuilt set would raise.
+
+    **Test steps:**
+
+    * reveal a viewer with the row shown and have the row report a screenshot outside the set
+    * verify the current screenshot did not move
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0], strip_visible=True)
+    qtbot.addWidget(lightbox)
+
+    strip_of(lightbox).image_activated.emit(PATH)
+
+    assert lightbox.current_image == PATHS[0]
+
+
+def test_clicking_a_thumbnail_jumps_to_that_screenshot(document: QWidget, qtbot: QtBot) -> None:
+    """A thumbnail in the viewer's own row jumps straight to its screenshot (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the first screenshot with the row shown
+    * click the last thumbnail
+    * verify that screenshot is now the current one
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    thumbnails = thumbnails_of(lightbox)
+
+    qtbot.mouseClick(thumbnails[-1], Qt.MouseButton.LeftButton)
+
+    assert lightbox.current_image == PATHS[-1]
+
+
+# endregion
+
+
+# region live curated set tests (#161)
+def test_a_rebuilt_set_keeps_the_screenshot_on_screen(document: QWidget, qtbot: QtBot) -> None:
+    """A curation edit that spares the current screenshot leaves the viewer on it.
+
+    **Test steps:**
+
+    * reveal a viewer on the last of three screenshots
+    * re-point it at a set with the first one curated away
+    * verify it is still showing the same screenshot, now with the shorter set around it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[2])
+    qtbot.addWidget(lightbox)
+
+    lightbox.set_images(PATHS[1:])
+
+    assert lightbox.current_image == PATHS[2]
+    assert lightbox.images == PATHS[1:]
+
+
+def test_a_rebuilt_set_falls_back_to_the_position_when_the_screenshot_goes(document: QWidget, qtbot: QtBot) -> None:
+    """Hiding the screenshot being shown moves the viewer to whatever now holds its position.
+
+    Regression: an open viewer that kept rendering a screenshot the user had just curated *out* of the
+    lightbox would be showing something the strip no longer offers.
+
+    **Test steps:**
+
+    * reveal a viewer on the middle of three screenshots
+    * re-point it at a set with that one curated away
+    * verify it moved to the screenshot that took its position
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    lightbox.set_images([PATHS[0], PATHS[2]])
+
+    assert lightbox.current_image == PATHS[2]
+
+
+def test_a_rebuilt_set_clamps_when_the_last_screenshot_goes(document: QWidget, qtbot: QtBot) -> None:
+    """Losing the *last* screenshot lands on the new last one rather than off the end.
+
+    **Test steps:**
+
+    * reveal a viewer on the last of three screenshots
+    * re-point it at a set that drops the last two
+    * verify it clamped to the only screenshot left
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[2])
+    qtbot.addWidget(lightbox)
+
+    lightbox.set_images(PATHS[:1])
+
+    assert lightbox.current_image == PATHS[0]
+
+
+def test_an_emptied_set_dismisses_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Curating away every screenshot leaves nothing to look at, so the viewer dismisses itself.
+
+    **Test steps:**
+
+    * reveal a viewer, then re-point it at an empty set
+    * verify it is destroyed
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+
+    with wait_destroyed(qtbot, lightbox):
+        lightbox.set_images([])
+
+
+def test_a_rebuilt_set_repaints_the_thumbnail_row(document: QWidget, qtbot: QtBot) -> None:
+    """The row follows the rebuilt set, keeping the current screenshot marked (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the last of three screenshots with the row shown
+    * re-point it at a set with the first curated away
+    * verify the row lists the shorter set with the same screenshot framed
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[2], strip_visible=True)
+    qtbot.addWidget(lightbox)
+
+    lightbox.set_images(PATHS[1:])
+
+    thumbnails = thumbnails_of(lightbox)
+    assert len(thumbnails) == 2
+    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [THUMBNAIL_STYLE, CURRENT_THUMBNAIL_STYLE]
+
+
+def test_a_screenshot_outside_the_set_opens_as_a_set_of_its_own(document: QWidget, qtbot: QtBot) -> None:
+    """A viewer always has something to show, even asked to open on a screenshot it wasn't given.
+
+    **Test steps:**
+
+    * reveal a viewer on a screenshot absent from the set it was handed
+    * verify it shows that screenshot, with no navigation around it
+    """
+    lightbox = reveal_over(document, PATHS, PATH)
+    qtbot.addWidget(lightbox)
+
+    assert lightbox.current_image == PATH
+    assert lightbox.images == [PATH]
+
+
+# endregion
+
+
+def test_the_screenshot_reaches_every_edge_of_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """Nothing is inset around the screenshot -- it gets the viewer's whole area (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with the thumbnail row hidden
+    * verify the label painting the screenshot covers the viewer exactly
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    preview = lightbox.findChild(PreviewLabel)
+    assert isinstance(preview, PreviewLabel)
+    assert preview.geometry() == lightbox.rect()
+
+
+def test_the_screenshot_takes_every_pixel_the_thumbnail_row_leaves(document: QWidget, qtbot: QtBot) -> None:
+    """With the row shown, the screenshot still reaches all three other edges and meets the row (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with the row shown
+    * verify the screenshot fills the viewer down to the row, with no gap between them
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+
+    preview = lightbox.findChild(PreviewLabel)
+    assert isinstance(preview, PreviewLabel)
+    strip = strip_of(lightbox)
+    assert preview.geometry().topLeft() == lightbox.rect().topLeft()
+    assert preview.width() == lightbox.width()
+    assert preview.geometry().bottom() + 1 == strip.geometry().top()
+    assert strip.geometry().bottom() == lightbox.rect().bottom()
+
+
+def test_the_corner_controls_are_held_off_the_edge(document: QWidget, qtbot: QtBot) -> None:
+    """The corner controls keep their own margin, even though the screenshot under them has none.
+
+    Each sits flush in its corner and carries the margin *inside* itself -- a stylesheet margin, which
+    grows the control around its glyph rather than moving the control -- so the screenshot underneath
+    is still free to reach the viewer's every edge.
+
+    **Test steps:**
+
+    * reveal a viewer with the corner controls in place
+    * verify each is anchored to its own corner and carries the margin around its glyph
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+    close = control(lightbox, CLOSE_BUTTON_NAME)
+    inset = STRIP_TOGGLE_ICON_SIZE + 2 * CORNER_MARGIN
+    assert toggle.geometry().topLeft() == lightbox.rect().topLeft()
+    assert toggle.width() >= inset
+    assert toggle.height() >= inset
+    assert close.geometry().right() == lightbox.rect().right()
+    assert close.geometry().top() == lightbox.rect().top()
+    assert close.width() >= inset
+
+
+def test_the_thumbnail_row_is_as_tall_as_it_was_built(document: QWidget, qtbot: QtBot) -> None:
+    """The row takes the height its owner asked for, and the bands stop above exactly that (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with a non-default row height and the row shown
+    * verify the row is that tall and the next band stops above it
+    """
+    lightbox = ImageLightbox(
+        PATHS, PATHS[1], ImageViewerMode.DOCUMENT_OVERLAY, document, strip_visible=True, strip_height=120
+    )
+    qtbot.addWidget(lightbox)
+    lightbox.reveal()
+
+    assert strip_of(lightbox).height() == 120
+    assert control(lightbox, NEXT_BUTTON_NAME).height() == lightbox.height() - 120
+
+
+def test_the_viewer_takes_the_keyboard_back_when_focus_goes_nowhere(document: QWidget, qtbot: QtBot) -> None:
+    """Focus cleared without moving anywhere is reclaimed, so ESC keeps working (#161).
+
+    Regression: dragging a splitter between two docks clears the keyboard without moving it to any
+    widget at all. The viewer stayed up covering its document with ESC reaching nobody, and no dock
+    change for `DocumentsDock` to notice either -- so the tab still read as current, and only
+    re-selecting it brought the keyboard back.
+
+    **Test steps:**
+
+    * reveal an overlay and clear the focus it holds, as a splitter drag does
+    * verify it took the keyboard back, and that ESC still dismisses it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    assert lightbox.hasFocus()
+
+    lightbox.clearFocus()
+
+    assert lightbox.hasFocus()
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+
+def test_a_viewer_that_did_not_hold_the_keyboard_does_not_snatch_at_it(
+    document: QWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Focus going nowhere from *elsewhere* is left alone -- only what this viewer had is reclaimed.
+
+    **Test steps:**
+
+    * reveal an overlay, then move focus to a widget outside the document it covers
+    * clear that widget's focus and verify the viewer never reached for it
+    """
+    outsider = QLineEdit(document.window())
+    outsider.show()
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    outsider.setFocus()
+    assert not lightbox.hasFocus()
+    reclaim = mocker.patch.object(lightbox, "setFocus")
+
+    outsider.clearFocus()
+
+    reclaim.assert_not_called()
+
+
+def test_the_viewer_takes_the_keyboard_back_from_a_container_holding_its_document(
+    document: QWidget, qtbot: QtBot
+) -> None:
+    """Focus landing on a container *around* the covered document is reclaimed (#161).
+
+    Regression: dragging a splitter between two docks hands the keyboard to one of the containers
+    holding the document -- its dock, that dock's area, the splitter, the dock manager -- none of
+    which is under the covered surface. The viewer stayed up with ESC reaching nobody, and since the
+    current dock never changed, `DocumentsDock` had nothing to notice: the tab still read as current
+    and only re-selecting it brought the keyboard back.
+
+    **Test steps:**
+
+    * reveal an overlay, then focus the container the covered document sits in, as that drag does
+    * verify the viewer took the keyboard back and ESC still dismisses it
+    """
+    container = document.parentWidget()
+    assert container is not None
+    container.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    assert lightbox.hasFocus()
+
+    container.setFocus()
+
+    assert lightbox.hasFocus()
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+
+def test_a_viewer_leaves_focus_alone_when_it_lands_somewhere_unrelated(document: QWidget, qtbot: QtBot) -> None:
+    """Focus moving somewhere off this document's containment line is the user navigating away.
+
+    A sibling widget -- another document, the app's chrome, a settings dialog -- is neither under the
+    covered surface nor a container holding it, so the viewer must not drag the keyboard back out of
+    it.
+
+    **Test steps:**
+
+    * reveal an overlay, then focus a widget that is a sibling of the covered document
+    * verify the viewer left it alone
+    """
+    sibling = QLineEdit()
+    container = document.parentWidget()
+    assert container is not None
+    layout = container.layout()
+    assert layout is not None
+    layout.addWidget(sibling)
+    sibling.show()
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    sibling.setFocus()
+
+    assert sibling.hasFocus()
+    assert not lightbox.hasFocus()
+
+
+def test_re_applying_the_row_height_it_already_has_changes_nothing(document: QWidget, qtbot: QtBot) -> None:
+    """A height the viewer is already at is a no-op, not a needless row rebuild (#161).
+
+    **Test steps:**
+
+    * reveal a viewer with the row shown and re-apply its current height
+    * verify the very same thumbnail widgets are still in the row
+    """
+    lightbox = ImageLightbox(
+        PATHS, PATHS[1], ImageViewerMode.DOCUMENT_OVERLAY, document, strip_visible=True, strip_height=120
+    )
+    qtbot.addWidget(lightbox)
+    lightbox.reveal()
+    before = thumbnails_of(lightbox)
+
+    lightbox.set_strip_height(120)
+
+    assert thumbnails_of(lightbox) == before
