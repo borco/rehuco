@@ -8,7 +8,14 @@ from typing import Any
 
 from pytest import fixture
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
-from rehuco_agent.settings.image_viewer_settings import DEFAULT_MODE, GROUP, MODE_KEY, ImageViewerSettings
+from rehuco_agent.settings.image_viewer_settings import (
+    DEFAULT_MODE,
+    DEFAULT_STRIP_VISIBLE,
+    GROUP,
+    MODE_KEY,
+    STRIP_VISIBLE_KEY,
+    ImageViewerSettings,
+)
 
 
 # region fixtures
@@ -61,7 +68,8 @@ def test_save_then_load_round_trips_the_mode(settings: FakeSettings) -> None:
     * load into a fresh instance from the same settings stand-in
     * verify the mode came back unchanged
     """
-    viewer_settings = ImageViewerSettings(mode=ImageViewerMode.FULL_SCREEN)
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
 
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
@@ -79,7 +87,9 @@ def test_the_persisted_value_is_the_modes_readable_name(settings: FakeSettings) 
     * save the app-window-overlay mode
     * verify the raw stored value is that member's string
     """
-    ImageViewerSettings(mode=ImageViewerMode.APP_WINDOW_OVERLAY).save(settings)  # type: ignore[arg-type]
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.mode = ImageViewerMode.APP_WINDOW_OVERLAY
+    viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
     assert settings.value(MODE_KEY) == "app_window_overlay"
@@ -115,8 +125,67 @@ def test_load_falls_back_to_the_default_for_an_unrecognized_mode(settings: FakeS
     settings.beginGroup(GROUP)
     settings.setValue(MODE_KEY, "picture_in_picture")
     settings.endGroup()
-    viewer_settings = ImageViewerSettings(mode=ImageViewerMode.FULL_SCREEN)
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
 
     viewer_settings.load(settings)  # type: ignore[arg-type]
 
     assert viewer_settings.mode == DEFAULT_MODE
+
+
+def test_save_then_load_round_trips_the_thumbnail_row_choice(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the maximized viewer's thumbnail-row choice (#161).
+
+    **Test steps:**
+
+    * set a non-default row visibility and save
+    * load into a fresh instance from the same settings stand-in
+    * verify the choice came back unchanged
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.strip_visible = True
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.strip_visible is True
+
+
+def test_load_defaults_to_a_hidden_thumbnail_row_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """A fresh install opens a maximized screenshot with no thumbnail row (#161).
+
+    **Test steps:**
+
+    * load into a fresh instance from an empty settings stand-in
+    * verify the row starts hidden
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.strip_visible = True
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.strip_visible == DEFAULT_STRIP_VISIBLE
+    assert viewer_settings.strip_visible is False
+
+
+def test_saving_writes_both_choices_together(settings: FakeSettings) -> None:
+    """One save persists the whole object, so writing either choice cannot drop the other.
+
+    Regression guard: the surface is staged and saved by the settings page, while the row is written
+    straight back as the user toggles it inside a viewer -- two writers of the same group.
+
+    **Test steps:**
+
+    * save an instance carrying a non-default value for each choice
+    * verify both raw values are stored
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.mode = ImageViewerMode.FULL_SCREEN
+    viewer_settings.strip_visible = True
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    settings.beginGroup(GROUP)
+    assert settings.value(MODE_KEY) == "full_screen"
+    assert settings.value(STRIP_VISIBLE_KEY) is True

@@ -673,15 +673,16 @@ def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: Q
 def test_connect_image_activations_routes_activating_fields_to_the_owner(
     mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """``connect_image_activations`` wires each ``ImageActivator`` field's ``image_activated`` into
-    the owner's handler and leaves plain, non-activating fields untouched (#160).
+    """``connect_image_activations`` wires each ``ImageActivator`` field's whole contract -- the
+    activation and the curated set behind it -- into the owner's handlers, leaving plain,
+    non-activating fields untouched (#160, #161).
 
     **Test steps:**
 
     * build a form of a plain field and an ``images`` field (an ``ImageActivator``)
-    * connect the form to a handler recording everything it receives
-    * emit the activating field's ``image_activated``
-    * verify it reached the handler, and that only the ``images`` field is an ``ImageActivator``
+    * connect the form to handlers recording everything they receive
+    * emit the activating field's ``image_activated`` and ``curated_images_changed``
+    * verify both reached their handler, and that only the ``images`` field is an ``ImageActivator``
     """
     plain = TextField("title")
     images = ImagesField("hidden_images", image_scanner=mocker.Mock(files=mocker.Mock(return_value=[])))
@@ -691,11 +692,14 @@ def test_connect_image_activations_routes_activating_fields_to_the_owner(
     assert viewer is not None
     qtbot.addWidget(viewer)
     opened: list[Path] = []
+    curated: list[list[Path]] = []
 
-    form.connect_image_activations(opened.append)
+    form.connect_image_activations(opened.append, curated.append)
     images.image_activated.emit(Path("/fake/info00.jpg"))
+    images.curated_images_changed.emit([Path("/fake/info00.jpg"), Path("/fake/info01.jpg")])
 
     assert opened == [Path("/fake/info00.jpg")]
+    assert curated == [[Path("/fake/info00.jpg"), Path("/fake/info01.jpg")]]
     assert isinstance(images, ImageActivator)
     assert not isinstance(plain, ImageActivator)
 

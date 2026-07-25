@@ -20,7 +20,7 @@ from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -29,17 +29,21 @@ from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import (
     ON_DISK_ICON_RESOURCE,
     SAVE_PREVIEW_ICON_RESOURCE,
+    STATE_IMAGE_STRIP_VISIBLE_KEY,
     DocumentWidget,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
 from rehuco_agent.fields.widgets import ImageLightbox, ImageStrip, ImageViewerMode, PathEditor, SingleChoiceComboBox
+from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
+from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
+SCREENSHOTS: Final = [Path("/fake/info00.jpg"), Path("/fake/info01.jpg"), Path("/fake/info02.jpg")]
 
 
 # region fixtures
@@ -135,6 +139,23 @@ def activate_screenshot(widget: DocumentWidget, path: Path) -> None:
     strip = widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     strip.image_activated.emit(path)
+
+
+def curate_screenshots(widget: DocumentWidget, paths: list[Path], mocker: MockerFixture) -> None:
+    """Paint ``paths`` as the document's curated screenshot set, through its real viewer strip.
+
+    The seam a curation edit and a scanner swap both reach, so the widget picks the set up exactly as
+    it does in the app -- rather than reaching into the field composition it keeps private. Screenshots
+    are made loadable here because the strip reports only what it actually painted (#161).
+
+    :param widget: the document widget whose viewer strip to paint.
+    :param paths: the curated screenshot set.
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    strip.set_images(paths)
 
 
 # endregion
@@ -1825,3 +1846,376 @@ def test_switching_type_re_locks_the_rebuilt_editors_when_the_model_is_locked(
 
 
 # endregion
+
+
+def test_a_maximized_viewer_opens_against_the_documents_whole_curated_set(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A clicked screenshot opens with the rest of the curated set around it to navigate (#161).
+
+    **Test steps:**
+
+    * paint a three-screenshot curated set in the document's viewer strip
+    * activate the middle one, as a thumbnail click does
+    * verify the viewer opened on it, carrying the whole set
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+
+    activate_screenshot(widget, SCREENSHOTS[1])
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.current_image == SCREENSHOTS[1]
+    assert lightbox.images == SCREENSHOTS
+
+
+def test_a_curation_edit_re_points_an_open_viewer(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """An open viewer follows the strip's own curated set rather than the snapshot it opened on (#161).
+
+    **Test steps:**
+
+    * open a viewer over a three-screenshot set
+    * re-paint the strip without the first screenshot, as a curation edit does
+    * verify the open viewer is navigating the shorter set, still on the same screenshot
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[2])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+
+    curate_screenshots(widget, SCREENSHOTS[1:], mocker)
+
+    assert lightbox.images == SCREENSHOTS[1:]
+    assert lightbox.current_image == SCREENSHOTS[2]
+
+
+def toggle_thumbnail_row(widget: DocumentWidget, *, visible: bool) -> None:
+    """Check or uncheck the open viewer's thumbnail-row toggle, as the user clicking it does.
+
+    :param widget: the document widget whose open viewer to toggle.
+    :param visible: the row visibility to switch to.
+    """
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    toggle = lightbox.findChild(QToolButton, STRIP_TOGGLE_BUTTON_NAME)
+    assert isinstance(toggle, QToolButton)
+    toggle.setChecked(visible)
+
+
+def test_the_first_viewer_takes_its_thumbnail_row_from_the_shared_setting(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A document never told otherwise opens its viewer on the configured starting point (#161).
+
+    **Test steps:**
+
+    * set the shared setting to open with the row shown, then open a viewer
+    * verify the row is shown
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    shared_image_viewer_settings().strip_visible = True
+    reopened = DocumentWidget(widget.model)
+    curate_screenshots(reopened, SCREENSHOTS, mocker)
+
+    activate_screenshot(reopened, SCREENSHOTS[0])
+
+    lightbox = reopened.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.strip_visible
+
+
+def test_toggling_the_viewers_thumbnail_row_is_remembered_by_this_document_alone(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The row toggle is this document's own view state -- never written back to the shared setting.
+
+    Regression: storing it in the shared settings let one document's toggle decide how every other
+    document's viewer opened (#161).
+
+    **Test steps:**
+
+    * open a viewer and check the row's toggle, as the user clicking it does
+    * verify the shared setting is untouched
+    * dismiss that viewer and open another, verifying this document still starts with the row shown
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert not lightbox.strip_visible
+
+    toggle_thumbnail_row(widget, visible=True)
+
+    assert shared_image_viewer_settings().strip_visible is False
+    # dismissed before reopening, so the lookup below cannot land on this same viewer
+    with wait_destroyed(qtbot, lightbox):
+        lightbox.close()
+    activate_screenshot(widget, SCREENSHOTS[0])
+    reopened = widget.findChild(ImageLightbox)
+    assert isinstance(reopened, ImageLightbox)
+    assert reopened.strip_visible
+
+
+def test_the_thumbnail_row_choice_rides_the_documents_saved_layout(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The row is remembered per document, alongside its tabs, so it survives a close and reopen (#161).
+
+    **Test steps:**
+
+    * open a viewer, show its row, and save the document's state
+    * restore that state into a fresh widget over the same model
+    * verify a viewer opened there starts with the row shown
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    toggle_thumbnail_row(widget, visible=True)
+    state = widget.save_state()
+
+    restored = DocumentWidget(model)
+    qtbot.addWidget(restored)
+    restored.restore_state(state)
+    curate_screenshots(restored, SCREENSHOTS, mocker)
+    activate_screenshot(restored, SCREENSHOTS[0])
+
+    lightbox = restored.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.strip_visible
+
+
+def test_a_layout_saved_before_the_thumbnail_row_existed_falls_back_to_the_setting(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A blob with no row entry keeps its dock layout and takes the row from the shared setting (#161).
+
+    Regression guard for reading the entry defensively rather than behind a `STATE_VERSION` bump: an
+    older blob is still a perfectly good dock layout, and rejecting it would reset the user's tabs.
+
+    **Test steps:**
+
+    * strip the row entry out of a saved state, as a blob written before it existed has
+    * restore it into a fresh widget with the shared setting asking for a shown row
+    * verify the layout restored and the viewer opens with the row shown
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    values = cbor2.loads(widget.save_state())
+    del values[STATE_IMAGE_STRIP_VISIBLE_KEY]
+    shared_image_viewer_settings().strip_visible = True
+
+    restored = DocumentWidget(model)
+    qtbot.addWidget(restored)
+    assert restored.restore_state(cbor2.dumps(values))
+
+    curate_screenshots(restored, SCREENSHOTS, mocker)
+    activate_screenshot(restored, SCREENSHOTS[0])
+    lightbox = restored.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.strip_visible
+
+
+def test_the_maximized_viewers_thumbnail_height_follows_the_setting(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """The maximized viewer's own row is as tall as the settings ask (#161).
+
+    **Test steps:**
+
+    * set a distinctive lightbox thumbnail height, then open a viewer
+    * verify its row was built at that height
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    shared_image_viewer_settings().lightbox_image_height = 123
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+
+    activate_screenshot(widget, SCREENSHOTS[0])
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    strip = lightbox.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert strip.maximumHeight() == 123
+
+
+def test_the_document_strips_thumbnail_height_follows_the_setting(
+    model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A document's own image strip is as tall as the settings ask (#161).
+
+    Read when the form is built, not pushed at strips already on screen, so a change lands on the
+    next document opened -- the same non-reactive contract the viewer's surface already follows.
+
+    **Test steps:**
+
+    * set a distinctive preview thumbnail height, then build a document widget
+    * verify its viewer strip was built at that height
+    """
+    del mocker
+    shared_image_viewer_settings().preview_image_height = 77
+
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert strip.maximumHeight() == 77
+
+
+def test_applying_a_new_document_strip_height_resizes_the_one_on_screen(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A height applied in the settings resizes the strip already on screen (#161).
+
+    So that pressing Apply shows its own effect, rather than promising something about the next
+    document opened.
+
+    **Test steps:**
+
+    * paint a curated set in the document's strip, then change the configured preview height
+    * verify the live strip resized and its thumbnails were rescaled to match
+    """
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+
+    shared_image_viewer_settings().preview_image_height = 210
+
+    assert strip.maximumHeight() == 210
+    thumbnail = strip.findChildren(ThumbnailLabel)[-1]
+    assert thumbnail.pixmap().height() == 210
+
+
+def test_a_rebuilt_form_stops_the_outgoing_strip_following_the_settings(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A type switch rebuilds the strip, and only the live one follows a later height change (#161).
+
+    Regression guard for wiring the settings through ``bind_external``: the settings outlive any
+    strip, so a connection left behind by a rebuild would fire into a destroyed widget.
+
+    **Test steps:**
+
+    * rebuild the document's form, as a type switch does
+    * change the configured height and verify the rebuilt strip followed it
+    """
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    widget.model.resource_type = PROVENANCE_ABANDONED_TYPE
+
+    shared_image_viewer_settings().preview_image_height = 190
+
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert strip.maximumHeight() == 190
+
+
+def test_applying_a_new_maximized_row_height_resizes_an_open_viewer(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A height applied in the settings resizes an open maximized viewer's own row (#161).
+
+    **Test steps:**
+
+    * open a viewer with its row shown, then change the configured lightbox height
+    * verify the open viewer's row resized
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    toggle_thumbnail_row(widget, visible=True)
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+
+    shared_image_viewer_settings().lightbox_image_height = 140
+
+    strip = lightbox.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert strip.maximumHeight() == 140
+
+
+def test_applying_the_strip_default_shows_the_row_in_an_open_viewer(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """Applying the strip setting shows the row in the viewer the user is looking at (#161).
+
+    The point of applying it is to watch the effect, so it reaches open viewers -- and the document
+    then remembers the applied value exactly as if the toggle had been clicked by hand.
+
+    **Test steps:**
+
+    * open a viewer with its row hidden, then turn the configured default on
+    * verify the open viewer's row appeared and its toggle agrees
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert not lightbox.strip_visible
+
+    shared_image_viewer_settings().strip_visible = True
+
+    assert lightbox.strip_visible
+    strip = lightbox.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert not strip.isHidden()
+
+
+def test_a_document_that_never_showed_a_row_follows_a_later_default(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """The starting point is resolved when a viewer opens, not when the document was built (#161).
+
+    Regression: seeding the document at construction meant a default changed while it sat open was
+    ignored by the first viewer it ever opened.
+
+    **Test steps:**
+
+    * change the configured default on a document that has never opened a viewer
+    * open one and verify it followed the new default
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+
+    shared_image_viewer_settings().strip_visible = True
+
+    activate_screenshot(widget, SCREENSHOTS[0])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.strip_visible
+
+
+def test_a_document_that_was_told_otherwise_keeps_its_own_row_choice(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A document that was actually told otherwise keeps its own answer over the default (#161).
+
+    Opening *on* the default is not the document being told anything -- only toggling the row is (by
+    hand, or by an applied setting reaching an open viewer). From then on the default no longer
+    decides for it.
+
+    **Test steps:**
+
+    * with the default on, open a viewer and turn its row off, so the document now has its own answer
+    * dismiss it and open another
+    * verify it opens with the row off, against a default that still says on
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    shared_image_viewer_settings().strip_visible = True
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    assert first.strip_visible
+
+    toggle_thumbnail_row(widget, visible=False)
+
+    with wait_destroyed(qtbot, first):
+        first.close()
+    activate_screenshot(widget, SCREENSHOTS[0])
+    reopened = widget.findChild(ImageLightbox)
+    assert isinstance(reopened, ImageLightbox)
+    assert not reopened.strip_visible
+    assert shared_image_viewer_settings().strip_visible is True

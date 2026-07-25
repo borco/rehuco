@@ -387,6 +387,27 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   area (the default — the surrounding dock chrome, menus, and toolbars stay visible), an overlay over the whole main
   window's client area, or a frameless full-screen window. The strip itself only reports *which* screenshot was
   activated; the document surface owning it decides what opens ([[plugins#field-toolkit]]'s owner-routes-it shape).
+  A maximized screenshot opens against the **whole curated set** ([[data-model#image-meanings]]), which it navigates
+  in strip order and which **stops at both ends rather than wrapping** — a wrap makes a short set feel endless, and
+  the ends are where its shape is legible. Three affordances, all one step: LEFT/RIGHT (with HOME/END for the ends),
+  the wheel over the screenshot, and a prev/next glyph that fades in while the pointer is within a band along that
+  edge — `min(50 px, an eighth of the viewer)`, so a band never swallows a narrow viewer. **A click steps only inside
+  a band**, never on the open screenshot: half the viewer is far too large a target for a step the user did not
+  necessarily ask for, and it hid where the affordance actually ended. At the end it would point past, the band is
+  hidden outright, so a click there can never step where there is nowhere to step to.
+  **The screenshot itself carries no margin** — it fills every pixel the thumbnail row leaves,
+  and only the corner controls hold themselves off the edge. That row is the same widget the document's strip is, with
+  the current screenshot framed and scrolled into view and a click jumping straight to it. Whether it is showing is
+  **per document**, remembered in the document's own saved layout beside which tabs it has open, so one document's
+  toggle never decides another's; the settings page holds only the *starting point* a document that has never been told
+  otherwise opens with, plus the thumbnail height on each side. Applying any of those three reaches what is **already
+  on screen** — open strips resize, open viewers resize and show or hide their row — so the effect is visible where
+  the user is looking rather than promised for next time ([[appendices.settings-pages#save-drop-actions]]).
+  Neither strip ever paints a scrollbar, and a strip with nothing to show — no screenshots, or every one curated
+  away — hides itself rather than leaving an empty band. The set stays **live**: a curation edit or a scanner swap
+  ([[acquisition-tooling#tc-to-rehu]]) re-points an open viewer through the same owner, which keeps the current
+  screenshot if it survived, falls back to whatever took its position if it did not, and dismisses the viewer when the
+  set empties — a maximized screenshot is never one the strip no longer offers.
 - **Editor**: field editing including the Markdown description; folder rename from the predefined-candidates list
   ([[data-model#rehu-format]]).
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress

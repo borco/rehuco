@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from typing import Any
 
-from PySide6.QtWidgets import QRadioButton
+from PySide6.QtWidgets import QCheckBox, QRadioButton, QSpinBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -192,3 +192,117 @@ def test_the_surface_group_is_filterable_by_its_captions(page: ImagesPage) -> No
     frame_filter = SettingsFrameFilter(page, page.title)
 
     assert any("full-screen" in text for text in frame_filter.field_labels())
+
+
+def spin_box(page: ImagesPage, name: str) -> QSpinBox:
+    """One of the page's height spin boxes, by its ``images_page.ui`` name.
+
+    :param page: the page under test.
+    :param name: the spin box's object name.
+    :returns: that spin box.
+    """
+    box = page.findChild(QSpinBox, name)
+    assert isinstance(box, QSpinBox)
+    return box
+
+
+def strip_check_box(page: ImagesPage) -> QCheckBox:
+    """The page's thumbnail-strip toggle.
+
+    :param page: the page under test.
+    :returns: the check box staging the strip's starting visibility.
+    """
+    box = page.findChild(QCheckBox, "strip_visible_check_box")
+    assert isinstance(box, QCheckBox)
+    return box
+
+
+def test_the_page_starts_on_every_saved_choice(page: ImagesPage) -> None:
+    """A fresh page shows the strip toggle and both heights the shared settings currently hold (#161).
+
+    **Test steps:**
+
+    * build a page over settings that were never saved
+    * verify each widget shows that setting's default and nothing reads as pending
+    """
+    settings = shared_image_viewer_settings()
+
+    assert strip_check_box(page).isChecked() == settings.strip_visible
+    assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
+    assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height
+    assert not page.is_dirty()
+
+
+def test_toggling_the_strip_makes_the_page_dirty(page: ImagesPage) -> None:
+    """The thumbnail-strip starting point is a staged change until it is applied (#161).
+
+    **Test steps:**
+
+    * check the strip toggle
+    * verify the page is dirty and the shared settings are untouched
+    """
+    strip_check_box(page).setChecked(True)
+
+    assert page.is_dirty()
+    assert shared_image_viewer_settings().strip_visible is False
+
+
+def test_changing_a_height_makes_the_page_dirty(page: ImagesPage) -> None:
+    """Either thumbnail height is a staged change until it is applied (#161).
+
+    **Test steps:**
+
+    * change the document strip's height
+    * verify the page is dirty and the shared settings are untouched
+    """
+    saved = shared_image_viewer_settings().preview_image_height
+
+    spin_box(page, "preview_height_spin_box").setValue(saved + 20)
+
+    assert page.is_dirty()
+    assert shared_image_viewer_settings().preview_image_height == saved
+
+
+def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesPage) -> None:
+    """Applying the page writes all four choices, not just the surface (#161).
+
+    **Test steps:**
+
+    * stage a surface, the strip toggle, and both heights, then apply
+    * verify the shared settings carry every one of them
+    """
+    check(page, ImageViewerMode.FULL_SCREEN)
+    strip_check_box(page).setChecked(True)
+    spin_box(page, "preview_height_spin_box").setValue(200)
+    spin_box(page, "lightbox_height_spin_box").setValue(120)
+
+    page.save_changes()
+
+    settings = shared_image_viewer_settings()
+    assert settings.mode == ImageViewerMode.FULL_SCREEN
+    assert settings.strip_visible is True
+    assert settings.preview_image_height == 200
+    assert settings.lightbox_image_height == 120
+    assert not page.is_dirty()
+
+
+def test_drop_changes_reverts_every_staged_choice(page: ImagesPage) -> None:
+    """Resetting the page discards the staged strip toggle and heights, not only the surface (#161).
+
+    **Test steps:**
+
+    * stage a change to each widget without applying, then reset
+    * verify every widget is back on the saved value
+    """
+    settings = shared_image_viewer_settings()
+    strip_check_box(page).setChecked(not settings.strip_visible)
+    spin_box(page, "preview_height_spin_box").setValue(settings.preview_image_height + 20)
+    spin_box(page, "lightbox_height_spin_box").setValue(settings.lightbox_image_height + 20)
+    assert page.is_dirty()
+
+    page.drop_changes()
+
+    assert not page.is_dirty()
+    assert strip_check_box(page).isChecked() == settings.strip_visible
+    assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
+    assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height

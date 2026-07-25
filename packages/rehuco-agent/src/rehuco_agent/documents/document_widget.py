@@ -38,6 +38,11 @@ STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
 STATE_CURRENT_DOCK_KEY: Final = "current_dock"
 STATE_WIDGET_STATE_KEY: Final = "widget_state"
+STATE_IMAGE_STRIP_VISIBLE_KEY: Final = "image_strip_visible"
+"""Whether this document's maximized image viewer shows its thumbnail row (#161). Read defensively
+rather than behind a :data:`STATE_VERSION` bump: a blob written before this key existed is still a
+perfectly good dock layout, and the missing value simply falls back to the shared setting's default --
+unlike a dock-set change, which is what that version guards."""
 
 SAVE_ICON_RESOURCE: Final = ":/icons/document_save.svg"
 REVERT_ICON_RESOURCE: Final = ":/icons/document_revert.svg"
@@ -128,6 +133,26 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This document's maximized image viewer while one is open (#160), so becoming the current
         document can hand it the keyboard -- see :meth:`take_focus`."""
 
+        self.__curated_images: list[Path] = []
+        """This document's current curated screenshot set ([[data-model#image-meanings]]), kept in step
+        with the viewer strip's own by the `ImageActivator` contract's ``curated_images_changed`` (#161).
+        What a maximized viewer opens against, and what an open one is re-pointed at."""
+
+        self.__image_strip_visible: bool | None = None
+        """Whether this document's maximized viewer shows its thumbnail row (#161), or ``None`` while
+        this document has never been told either way. **Per document**, and persisted with the dock
+        layout (:meth:`save_state`) rather than in the shared settings: it is a view state of this
+        document, like which tabs are open, so one document showing the row must not decide it for
+        every other. ``None`` resolves against the shared setting **at the moment a viewer opens**, not
+        at construction, so a document that has never shown a row still follows a default the user
+        changes while it sits open."""
+
+        image_settings = shared_image_viewer_settings()
+        # bound methods of this QObject, so Qt severs them when this widget is destroyed -- these
+        # signals belong to a process-wide singleton that long outlives any one document (#161)
+        image_settings.strip_visible_changed.connect(self.__on_default_strip_visible_changed)  # type: ignore[attr-defined]
+        image_settings.lightbox_image_height_changed.connect(self.__on_lightbox_image_height_changed)  # type: ignore[attr-defined]
+
         self.__banner: Final = MessageBanner(self)
         # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself
         # as its parent's central widget when that parent is a QMainWindow (confirmed empirically),
@@ -164,7 +189,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # a clicked screenshot opens maximized here, not in the field that reported it: only this layer
         # knows the document the viewer belongs to, and it is the one that reads the user's surface
         # preference (#160)
-        self.__form.connect_image_activations(self.__on_image_activated)
+        self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
         # sever the current form's long-lived-signal connections when this widget is destroyed, so no
         # field's lambda outlives it (the field itself is retained via self.__form, so it is still alive
         # to be cleared). Rebuilds clear the outgoing form themselves (__rebuild_field_docks). A lambda,
@@ -299,7 +324,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         widget's own state for persistence.
 
         Widget state (e.g. the path field's expand state) rides along here -- persisted per ``.rehu``
-        together with the tab layout, not in a separate global settings section (#25).
+        together with the tab layout, not in a separate global settings section (#25). The maximized
+        image viewer's thumbnail row rides along for the same reason (#161): it is this document's own
+        view state, like which tabs it has open.
 
         :returns: cbor2-encoded state, suitable for :meth:`restore_state`
             (:class:`~rehuco_agent.settings.document_session_settings.DocumentSessionSettings.Item.state`).
@@ -310,6 +337,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
                 STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
                 STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
                 STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
+                STATE_IMAGE_STRIP_VISIBLE_KEY: self.__image_strip_visible,
                 STATE_WIDGET_STATE_KEY: {
                     name: widget.save_state() for name, widget in self.__stateful_widgets().items()
                 },
@@ -339,6 +367,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if isinstance(stashed_sizes, dict):
             self.__stashed_sizes.clear()
             self.__stashed_sizes.update(stashed_sizes)
+
+        strip_visible = values.get(STATE_IMAGE_STRIP_VISIBLE_KEY)
+        if isinstance(strip_visible, bool):
+            self.__image_strip_visible = strip_visible
 
         dock_manager_state = values.get(STATE_DOCK_MANAGER_KEY, b"")
         # restoreState() fires viewToggled(True) for every dock it reconstructs, even ones never
@@ -468,7 +500,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # re-route the rebuilt form's fresh fields' status messages; the outgoing form's fields drop
         # their connection as they are collected (Qt severs a dead QObject sender's connections).
         self.__form.connect_status_messages(self.status_message)
-        self.__form.connect_image_activations(self.__on_image_activated)
+        self.__form.connect_image_activations(self.__on_image_activated, self.__on_curated_images_changed)
         self.__swap_dock_contents(self.__editor_docks, self.__form.make_editor(self.__model))
         self.__swap_dock_contents(self.__viewer_docks, self.__form.make_viewer(self.__model))
         self.__set_editors_locked(self.__model.locked)
@@ -566,21 +598,81 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     def __on_image_activated(self, path: Path) -> None:
         """Open ``path`` maximized, on whichever surface the user's settings ask for (#160).
 
-        The viewer is parented to this widget in every mode, so a document closed underneath it takes
-        it down too -- there is no way to be left with a screenshot of a document that no longer
-        exists. It deletes itself on dismiss, so nothing is retained here between openings; a second
-        click while one is up -- reachable in full-screen mode, whose separate window leaves the strip
-        exposed -- simply opens a newer viewer, and the tracked reference follows the newest.
+        Opens against the whole curated set (#161), not the one screenshot: ``path`` says where to
+        start, and the viewer navigates from there. The viewer is parented to this widget in every
+        mode, so a document closed underneath it takes it down too -- there is no way to be left with
+        a screenshot of a document that no longer exists. It deletes itself on dismiss, so nothing is
+        retained here between openings; a second click while one is up -- reachable in full-screen
+        mode, whose separate window leaves the strip exposed -- simply opens a newer viewer, and the
+        tracked reference follows the newest.
 
         :param path: the screenshot the user clicked in the strip.
         """
-        viewer = ImageLightbox(path, shared_image_viewer_settings().mode, self)
+        settings = shared_image_viewer_settings()
+        # resolved here, not at construction: a document that has never shown a row follows whatever
+        # the shared setting says right now, including a change applied while it sat open (#161)
+        strip_visible = settings.strip_visible if self.__image_strip_visible is None else self.__image_strip_visible
+        viewer = ImageLightbox(
+            self.__curated_images,
+            path,
+            settings.mode,
+            self,
+            strip_visible=strip_visible,
+            strip_height=settings.lightbox_image_height,
+        )
         self.__image_viewer = viewer
         # cleared on both paths: dismissal (which hides it before Qt gets round to deleting it) and
         # destruction by any other route, so take_focus can never reach a viewer that is on its way out
         viewer.closed.connect(lambda: self.__on_image_viewer_gone(viewer))
         viewer.destroyed.connect(lambda: self.__on_image_viewer_gone(viewer))
+        viewer.strip_visible_changed.connect(self.__on_strip_visible_changed)
         viewer.reveal()
+
+    def __on_curated_images_changed(self, images: list[Path]) -> None:
+        """Adopt a rebuilt curated screenshot set, and re-point an open viewer at it (#161).
+
+        Fires for the field's initial population as much as for a later curation edit or scanner swap,
+        which is what makes the set available before the first thumbnail can be clicked.
+
+        :param images: the field's whole current screenshot set, in strip order.
+        """
+        self.__curated_images = list(images)
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_images(self.__curated_images)
+
+    def __on_strip_visible_changed(self, visible: bool) -> None:
+        """Remember the viewer's thumbnail-row choice as the user toggles it (#161).
+
+        Kept **here**, on the document, and persisted with its dock layout -- deliberately *not*
+        written back to the shared settings, which would let one document's toggle decide how every
+        other document's viewer opens. The viewer reports the toggle rather than storing it either
+        way, so it stays free of any dependency on where the answer is kept.
+
+        :param visible: the row's new visibility.
+        """
+        self.__image_strip_visible = visible
+
+    def __on_default_strip_visible_changed(self, visible: bool) -> None:
+        """Apply the newly-configured starting point to this document's viewer if one is open (#161).
+
+        So that applying the setting is something the user can *see* happen, rather than a promise
+        about the next viewer they open. A viewer picks it up through its own toggle, which reports
+        back through :meth:`__on_strip_visible_changed` -- so the document ends up remembering the
+        applied value exactly as if the user had clicked the toggle themselves. A document with no
+        viewer open is left alone: it resolves the setting afresh whenever it does open one.
+
+        :param visible: the newly-configured starting visibility.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_strip_visible(visible)
+
+    def __on_lightbox_image_height_changed(self, height: int) -> None:
+        """Resize an open viewer's thumbnail row to the newly-configured height (#161).
+
+        :param height: the newly-configured row height.
+        """
+        if self.__image_viewer is not None:
+            self.__image_viewer.set_strip_height(height)
 
     def __on_image_viewer_gone(self, viewer: ImageLightbox) -> None:
         """Forget ``viewer`` once dismissed or destroyed -- unless a newer one already replaced it (#160).

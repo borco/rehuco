@@ -93,6 +93,104 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QCheckBox" name="strip_visible_check_box">
+        <property name="text">
+         <string>Show the thumbnail strip</string>
+        </property>
+        <property name="toolTip">
+         <string>Whether a maximized screenshot opens with its thumbnail strip shown. Each document remembers its own strip, so this only decides what a document that has never shown one starts with.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="heights_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QFormLayout" name="heights_frame_layout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="heights_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Thumbnail height</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="preview_height_label">
+        <property name="text">
+         <string>Document strip:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="preview_height_spin_box">
+        <property name="toolTip">
+         <string>How tall the screenshots are in a document's own image strip.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>32</number>
+        </property>
+        <property name="maximum">
+         <number>600</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>150</number>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="lightbox_height_label">
+        <property name="text">
+         <string>Maximized viewer strip:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QSpinBox" name="lightbox_height_spin_box">
+        <property name="toolTip">
+         <string>How tall the screenshots are in the maximized viewer's own thumbnail strip.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>32</number>
+        </property>
+        <property name="maximum">
+         <number>600</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>96</number>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

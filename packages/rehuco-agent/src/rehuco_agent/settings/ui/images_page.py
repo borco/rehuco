@@ -11,12 +11,16 @@ from .images_page_ui import Ui_ImagesPage
 
 
 class ImagesPage(QWidget):
-    """Configure where a screenshot clicked in a document's image strip opens (#160).
+    """Configure how screenshots are presented, in the strip and maximized (#160, #161).
 
-    One choice, staged in the radio buttons until :meth:`save_changes` writes it into the shared
-    `ImageViewerSettings` and persists it. Nothing already on screen has to follow the change -- the
-    mode is read afresh each time a viewer opens -- so, unlike `DescriptionsPage`, this page has no
-    live-update wiring to drive.
+    Four choices -- the maximized viewer's surface, whether it starts with its thumbnail strip shown,
+    and the strip thumbnail heights either side -- staged in the widgets until :meth:`save_changes`
+    writes them into the shared `ImageViewerSettings` and persists them. Nothing already on screen has
+    to follow the change (every value is read afresh where it is needed, see `ImageViewerSettings`), so
+    unlike `DescriptionsPage` this page has no live-update wiring to drive.
+
+    The strip toggle here is the *starting point* only: a document remembers the strip it was last
+    left showing, in its own saved layout, so toggling one inside a viewer never comes back here (#161).
 
     :param parent: optional Qt parent.
     """
@@ -38,18 +42,45 @@ class ImagesPage(QWidget):
         return "Images"
 
     def is_dirty(self) -> bool:
-        """Whether the selected mode differs from the shared settings' current one."""
-        return self.__selected_mode() != shared_image_viewer_settings().mode
+        """Whether any staged choice differs from the shared settings' current one."""
+        return self.__staged() != self.__saved()
 
     def save_changes(self) -> None:
-        """Push the selected mode into the shared settings and persist it."""
+        """Push every staged choice into the shared settings and persist them."""
         settings = shared_image_viewer_settings()
-        settings.mode = self.__selected_mode()
+        settings.mode, settings.strip_visible, settings.preview_image_height, settings.lightbox_image_height = (
+            self.__staged()
+        )
         settings.save(persistent_settings())
 
     def drop_changes(self) -> None:
-        """Discard the staged choice, re-checking the shared settings' current mode."""
-        self.__buttons[shared_image_viewer_settings().mode].setChecked(True)
+        """Discard the staged choices, re-seeding every widget from the shared settings."""
+        mode, strip_visible, preview_height, lightbox_height = self.__saved()
+        self.__buttons[mode].setChecked(True)
+        self.__ui.strip_visible_check_box.setChecked(strip_visible)
+        self.__ui.preview_height_spin_box.setValue(preview_height)
+        self.__ui.lightbox_height_spin_box.setValue(lightbox_height)
+
+    def __staged(self) -> tuple[ImageViewerMode, bool, int, int]:
+        """The choices currently shown in this page's widgets.
+
+        :returns: the staged surface, strip visibility, and the two thumbnail heights.
+        """
+        return (
+            self.__selected_mode(),
+            self.__ui.strip_visible_check_box.isChecked(),
+            self.__ui.preview_height_spin_box.value(),
+            self.__ui.lightbox_height_spin_box.value(),
+        )
+
+    @staticmethod
+    def __saved() -> tuple[ImageViewerMode, bool, int, int]:
+        """The same choices as currently held by the shared settings, in :meth:`__staged`'s order.
+
+        :returns: the saved surface, strip visibility, and the two thumbnail heights.
+        """
+        settings = shared_image_viewer_settings()
+        return (settings.mode, settings.strip_visible, settings.preview_image_height, settings.lightbox_image_height)
 
     def __selected_mode(self) -> ImageViewerMode:
         """The mode whose radio button is currently checked.
