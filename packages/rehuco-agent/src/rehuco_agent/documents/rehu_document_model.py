@@ -113,6 +113,17 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Fires when the set of unrecognized active-block fields changes -- i.e. one is dropped via
     :meth:`remove_unknown_field` ([[plugins#fallback-editor]], #28)."""
 
+    reloaded = Signal()
+    """Fires when the document's **file seam** was crossed -- the bytes this model stands for were
+    re-read or replaced wholesale: every :meth:`revert` (re-reads the file) and every :meth:`convert`
+    (writes a new ``.rehu`` and adopts it, [[acquisition-tooling#tc-to-rehu]]). Unlike the property
+    notify signals, it is emitted **unconditionally**, because crossing the seam is the event -- a
+    revert of a *clean, unlocked* document changes no property at all (``dirty`` was already ``False``,
+    ``path`` and ``lock_reasons`` reseed to equal values) yet the file underneath may have just been
+    edited out of band, which is exactly the workflow Revert advertises. `OnDiskView` re-reads on it
+    (#174); a consumer that only cares whether a *value* moved should bind to that value's own notify
+    signal instead."""
+
     active_block_changed = Signal()
     """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
     editors go away, the incoming block's fields render, and the set of unknown-field and inactive-block
@@ -446,7 +457,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         ``unknown_fields_changed`` is emitted too, for consumers that don't rebuild on
         :attr:`active_block_changed` -- the source-preview docks re-serialize off it (#111), and it also
-        covers restored unknown active-block fields ([[plugins#fallback-editor]], #28).
+        covers restored unknown active-block fields ([[plugins#fallback-editor]], #28). :attr:`reloaded`
+        fires too, for the file seam itself: reverting a *clean, unlocked* document moves no property at
+        all, so it is the only signal telling `OnDiskView` the bytes it shows may be stale (#174).
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
@@ -456,6 +469,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
         self.active_block_changed.emit()
+        self.reloaded.emit()
         self.__recompute_upgradable()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
@@ -471,6 +485,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         ``users`` key and the result's :attr:`~RehuDocument.username` stay in agreement (#98's
         invariant); an identity-setting change made after this document was opened applies to later
         opens, not to it (#99).
+
+        Emits :attr:`reloaded` on success -- the other half of the file seam :meth:`revert` raises, since
+        this too replaces the file the model stands for (the ``.tc`` becomes a ``.rehu``, #174).
 
         :param keep_backups: whether to keep ``.orig`` backups of the ``.tc`` and legacy screenshots.
         :param overwrite: whether an already-converted ``.rehu`` at the target path may be replaced.
@@ -491,6 +508,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = RehuDocumentImageScanner(self, scan_rehu_screenshot_files)
         self.unknown_fields_changed.emit()
+        self.reloaded.emit()
         self.__recompute_upgradable()
 
     def bind[T](self, field: Field[T]) -> FieldBinding[T]:

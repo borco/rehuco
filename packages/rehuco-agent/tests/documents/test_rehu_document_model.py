@@ -945,6 +945,33 @@ def test_revert_does_not_write_back_to_a_sourceless_document(mocker: MockerFixtu
     assert document.sources == []
 
 
+def test_revert_emits_reloaded_even_when_nothing_changed(mocker: MockerFixture) -> None:
+    """Every revert emits ``reloaded``, including the reverting of a clean, unlocked document that moves
+    no property at all -- the file seam is the event, not a value change (#174).
+
+    ``dirty`` is already ``False``, ``path`` reseeds to the same path and ``lock_reasons`` to an equal
+    list, so no notify signal fires; without ``reloaded`` nothing would tell a file-watching consumer
+    that the bytes on disk may have just been edited out of band.
+
+    **Test steps:**
+
+    * build a clean, unlocked model over a document with a path, and mock ``reload`` as a no-op
+    * record ``reloaded`` emissions, then revert
+    * verify it fired once and the model stayed clean and unlocked
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    mocker.patch.object(document, "reload")
+    fired: list[None] = []
+    model.reloaded.connect(lambda: fired.append(None))
+
+    model.revert()
+
+    assert fired == [None]
+    assert model.dirty is False
+    assert model.locked is False
+
+
 def test_revert_without_a_path_propagates(model: RehuDocumentModel, document: RehuDocument) -> None:
     """revert() propagates the document's error when it has never been loaded from a file.
 
@@ -988,6 +1015,52 @@ def test_convert_replaces_the_document_reseeds_and_unlocks(mocker: MockerFixture
     assert model.title == "New Title"
     assert model.dirty is False
     assert model.locked is False
+
+
+def test_convert_emits_reloaded(mocker: MockerFixture) -> None:
+    """convert() emits ``reloaded`` too -- it replaces the file the model stands for, the other half of
+    the file seam ``revert`` raises (#174).
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document, with ``convert_tc`` mocked to a fresh document
+    * record ``reloaded`` emissions, then convert
+    * verify it fired once
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")),
+    )
+    fired: list[None] = []
+    model.reloaded.connect(lambda: fired.append(None))
+
+    model.convert(keep_backups=True)
+
+    assert fired == [None]
+
+
+def test_convert_failure_does_not_emit_reloaded(mocker: MockerFixture) -> None:
+    """A ``convert_tc`` that raises leaves the file seam uncrossed, so no ``reloaded`` fires and a
+    consumer never re-reads for a conversion that didn't happen (#174).
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document, with ``convert_tc`` raising ``FileExistsError``
+    * record ``reloaded`` emissions, then call convert and let the error propagate
+    * verify nothing fired
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.convert_tc", side_effect=FileExistsError("already converted")
+    )
+    fired: list[None] = []
+    model.reloaded.connect(lambda: fired.append(None))
+
+    with raises(FileExistsError):
+        model.convert(keep_backups=True)
+
+    assert not fired
 
 
 def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture) -> None:

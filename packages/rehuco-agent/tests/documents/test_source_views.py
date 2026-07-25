@@ -313,6 +313,34 @@ def test_on_disk_rereads_the_file_after_a_save(qtbot: QtBot, mocker: MockerFixtu
     assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
 
 
+def test_on_disk_rereads_after_a_revert(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Reverting a clean, unlocked document re-reads the file, so the view shows the out-of-band edit
+    Revert just picked up (#174).
+
+    The hard case: nothing on the model moves -- ``dirty`` was already ``False``, ``path`` and
+    ``lock_reasons`` reseed to equal values -- so none of :data:`ON_DISK_REFRESH_FIELDS` notifies. The
+    view re-reads on the model's ``reloaded`` signal instead.
+
+    **Test steps:**
+
+    * build a clean model bound to a path, over an On Disk view showing the "old" text
+    * point ``read_text`` at a "new" text (the out-of-band edit) and revert
+    * verify the label now shows the new text
+    """
+    read = mocker.patch.object(Path, "read_text", return_value="old on disk\n")
+    document = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo"}]}, REHU_PATH)
+    mocker.patch.object(document, "reload")
+    model = RehuDocumentModel(document)
+    view = OnDiskView(model)
+    qtbot.addWidget(view)
+    assert label(view, OnDiskView.LABEL_NAME).text() == "old on disk\n"
+    read.return_value = "new on disk\n"
+
+    model.revert()
+
+    assert label(view, OnDiskView.LABEL_NAME).text() == "new on disk\n"
+
+
 def test_on_disk_does_not_reread_on_a_plain_field_edit(qtbot: QtBot, mocker: MockerFixture) -> None:
     """A per-keystroke value edit doesn't re-read the file -- only file-touching seams do, so a large
     file stays off the edit path (#111).

@@ -30,7 +30,11 @@ ON_DISK_REFRESH_FIELDS: Final = ("dirty", "path", "lock_reasons")
 """The model properties whose change re-reads :class:`OnDiskView` from disk. Deliberately **not** the
 value fields (which fire per keystroke): the on-disk bytes only change at file-touching seams -- a save
 (``dirty`` clears), a revert or convert (``lock_reasons``/``path`` recompute), or a new save path -- so
-re-reading the file on those alone keeps a large file off the per-keystroke path."""
+re-reading the file on those alone keeps a large file off the per-keystroke path.
+
+Not the whole set: a property only notifies on an *actual* change, so reverting a clean, unlocked
+document moves none of these (#174). ``RehuDocumentModel.reloaded`` covers that seam unconditionally and
+:class:`OnDiskView` subscribes to it as well."""
 
 
 class MonospaceTextView(QScrollArea):
@@ -136,9 +140,12 @@ class OnDiskView(MonospaceTextView):
     original ``.tc`` itself ([[acquisition-tooling#tc-to-rehu]]). A document with no readable file yet
     (brand-new/unsaved) shows :data:`NOT_ON_DISK_PLACEHOLDER` instead.
 
-    Re-read only at the seams that actually change the file (:data:`ON_DISK_REFRESH_FIELDS`) -- a save,
-    a revert, a convert, or a new save path -- never on the per-keystroke value signals, so a large
-    file isn't re-read on every edit.
+    Re-read only at the seams that actually change the file -- a save, a revert, a convert, or a new save
+    path -- never on the per-keystroke value signals, so a large file isn't re-read on every edit. Two
+    subscriptions together make up "the seams": the :data:`ON_DISK_REFRESH_FIELDS` properties, plus
+    `RehuDocumentModel.reloaded`, which fires unconditionally on a revert/convert and so also catches the
+    revert of a *clean, unlocked* document -- the out-of-band-edit workflow Revert advertises, where no
+    property moves at all (#174).
 
     :param model: the reactive view-model whose file is shown.
     :param parent: optional Qt parent.
@@ -153,6 +160,7 @@ class OnDiskView(MonospaceTextView):
         model_type = type(model)
         for name in ON_DISK_REFRESH_FIELDS:
             getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__render)
+        model.reloaded.connect(self.__render)
         self.__render()
 
     def __render(self, *_args: object) -> None:
