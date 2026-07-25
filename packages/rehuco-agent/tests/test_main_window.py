@@ -41,6 +41,22 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
 
+def discard_unsaved_changes_on_close(mocker: MockerFixture) -> Any:
+    """Stand in an unsaved-changes dialog that answers Accepted-with-nothing-selected (discard).
+
+    Call this in a test that dispatches ``closeEvent`` over a mocked ``dirty`` model but isn't itself
+    exercising the close guard. ``closeEvent`` pops a **real modal** ``UnsavedChangesDialog`` for any
+    dirty open model (:meth:`MainWindow.closeEvent`), and its ``exec()`` would block forever with no one
+    to click it; this lets such a test close over the dirty model freely. Tests that *do* exercise the
+    guard (accept-and-select, reject, assert-not-constructed) must **not** call this -- they patch
+    ``UnsavedChangesDialog`` themselves so the real wiring stays under test.
+    """
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Accepted
+    dialog.selected_models.return_value = []
+    return mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+
+
 @fixture
 def dock_entries() -> Callable[[MainWindow], list[Any]]:
     """Factory returning ``window``'s current per-document ``View`` menu entries (#57) -- the
@@ -1278,6 +1294,38 @@ def test_close_event_skips_a_document_with_no_path_when_snapshotting(mocker: Moc
     qtbot.addWidget(window)
     widget = mocker.MagicMock()
     widget.model = mocker.MagicMock(path=None, dirty=False)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(docs_dock, "open_document_widgets", return_value=[widget])
+    mocker.patch.object(docs_dock, "open_document_models", return_value=[widget.model])
+    save = mocker.patch.object(DocumentSessionSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert not session.items
+    save.assert_called_once()
+
+
+def test_close_event_skips_a_never_saved_document_when_snapshotting(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A brand-new document bound to a path but never written to disk is not snapshotted (#175).
+
+    Restoring it would reopen via the load path and materialize a locked ``MISSING`` stub for a file
+    that never existed, resurrecting edits the user discarded at the close guard (#147 semantics).
+
+    **Test steps:**
+
+    * dispatch a close event with one open widget reporting a path but ``model.saved_on_disk is False``
+      (dirty, as a never-saved draft always is -- ``discard_unsaved_changes_on_close`` dismisses the
+      close guard so the dispatch doesn't block on its modal)
+    * verify the session gains no entry for it, and save still happens
+    """
+    discard_unsaved_changes_on_close(mocker)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    path = Path("never-saved.rehu").resolve()
+    widget = mocker.MagicMock()
+    widget.model = mocker.MagicMock(path=path, dirty=True, saved_on_disk=False)
     docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(docs_dock, "open_document_widgets", return_value=[widget])
     mocker.patch.object(docs_dock, "open_document_models", return_value=[widget.model])
