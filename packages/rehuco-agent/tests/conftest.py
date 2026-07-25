@@ -5,8 +5,9 @@ from typing import Any
 
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_agent.settings import identity_settings, markdown_rendering_settings
+from rehuco_agent.settings import identity_settings, image_viewer_settings, markdown_rendering_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
+from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.ui import settings_dialog
 
@@ -72,6 +73,21 @@ def isolate_shared_identity_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(identity_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_identity_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ImageViewerSettings` singleton (#160).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first
+    clicks a thumbnail (or builds an `ImagesPage`) would otherwise pin an instance loaded from the
+    developer's real on-disk settings for the rest of the session -- and decide, from that file,
+    which surface every later test's viewer opens on.
+    """
+    shared_image_viewer_settings.cache_clear()
+    mocker.patch.object(image_viewer_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_image_viewer_settings.cache_clear()
 
 
 @fixture(autouse=True)

@@ -350,7 +350,14 @@ class DocumentsDock(QMainWindow):
         :param dock: the newly-current dock, or ``None`` when focus leaves every document dock (a
             dock the tracker has already forgotten, e.g. one just closed, resolves to ``None`` too).
         """
-        self.document_focus_changed.emit(self.__document_docks.get(dock) if dock is not None else None)
+        widget = self.__document_docks.get(dock) if dock is not None else None
+        if widget is not None:
+            # clicking a document's tab makes it current without moving the keyboard anywhere near it
+            # (QtAds leaves focus wherever it was), which strands an open image viewer: it covers this
+            # document, yet ESC would reach whatever still holds focus elsewhere (#160). Only a document
+            # with a viewer up takes the keyboard here; every other document's focus is left as it was.
+            widget.take_focus()
+        self.document_focus_changed.emit(widget)
 
     def __on_close_dock_widget_requested(self) -> None:
         """Remove the closed dock (and its widget) from the dock manager and bookkeeping.

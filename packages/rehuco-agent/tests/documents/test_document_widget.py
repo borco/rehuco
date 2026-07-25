@@ -19,11 +19,12 @@ import PySide6QtAds as QtAds
 from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import MessageBanner
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence
+from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from qt_waits import wait_destroyed
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import (
     ON_DISK_ICON_RESOURCE,
@@ -33,7 +34,8 @@ from rehuco_agent.documents.document_widget import (
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
-from rehuco_agent.fields.widgets import PathEditor, SingleChoiceComboBox
+from rehuco_agent.fields.widgets import ImageLightbox, ImageStrip, ImageViewerMode, PathEditor, SingleChoiceComboBox
+from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
@@ -119,6 +121,180 @@ def older_widget(qtbot: QtBot, older_model: RehuDocumentModel) -> DocumentWidget
     widget = DocumentWidget(older_model)
     qtbot.addWidget(widget)
     return widget
+
+
+def activate_screenshot(widget: DocumentWidget, path: Path) -> None:
+    """Report a thumbnail activation from the document's viewer strip, as clicking one does.
+
+    Goes through the real strip inside the widget's viewer dock -- the seam a click reaches -- rather
+    than reaching into the field composition, which the widget keeps private.
+
+    :param widget: the document widget whose viewer strip to activate from.
+    :param path: the screenshot to report as activated.
+    """
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    strip.image_activated.emit(path)
+
+
+# endregion
+
+
+# region image viewer tests
+def test_activating_a_screenshot_opens_it_maximized_over_the_document(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A screenshot activated in the viewer strip opens a maximized viewer owned by this widget (#160).
+
+    **Test steps:**
+
+    * make the strip's screenshot load as a real pixmap (no file on disk)
+    * report an activation through the images field, as a thumbnail click does
+    * verify a viewer opened, parented to this widget, on the settings' default surface
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.parentWidget() is widget
+    # not isVisible(): this widget is never shown in these tests, and a child of a hidden parent can
+    # never be visible -- isHidden() is what says the viewer was actually revealed rather than built
+    assert not lightbox.isHidden()
+    assert lightbox.geometry() == widget.rect()
+
+
+def test_the_maximized_viewer_opens_on_the_surface_the_settings_name(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """The user's configured surface decides what opens, not this widget (#160).
+
+    **Test steps:**
+
+    * set the shared image-viewer settings to full-screen
+    * report an activation
+    * verify the viewer that opened is a window, not an overlay
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    shared_image_viewer_settings().mode = ImageViewerMode.FULL_SCREEN
+
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    assert lightbox.isWindow()
+
+
+def test_take_focus_hands_the_keyboard_to_an_open_viewer(widget: DocumentWidget, mocker: MockerFixture) -> None:
+    """Becoming the current document focuses its open image viewer, so ESC reaches it (#160).
+
+    Regression: clicking a document's tab makes it current without moving focus anywhere near it, so
+    an open viewer sat there unable to receive the key that dismisses it.
+
+    **Test steps:**
+
+    * open a viewer, then drop the focus it took on reveal
+    * call ``take_focus`` as `DocumentsDock` does when this document becomes current
+    * verify the viewer is this document's focus widget again
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    lightbox.clearFocus()
+    assert widget.focusWidget() is None
+
+    widget.take_focus()
+
+    assert widget.focusWidget() is lightbox
+
+
+def test_take_focus_is_a_no_op_without_an_open_viewer(widget: DocumentWidget) -> None:
+    """A document with no viewer open leaves focus exactly where the user put it.
+
+    **Test steps:**
+
+    * call ``take_focus`` on a document with nothing open
+    * verify it focused nothing inside the document
+    """
+    assert widget.focusWidget() is None
+
+    widget.take_focus()
+
+    assert widget.focusWidget() is None
+
+
+def test_a_dismissed_viewer_is_forgotten(widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Once dismissed, the viewer is dropped, so a later ``take_focus`` doesn't chase a dead widget.
+
+    **Test steps:**
+
+    * open a viewer and dismiss it with ESC
+    * call ``take_focus`` and verify it neither raises nor re-focuses anything
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    with wait_destroyed(qtbot, lightbox):
+        qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
+
+    widget.take_focus()
+
+    assert widget.findChild(ImageLightbox) is None
+
+
+def test_an_older_viewers_teardown_does_not_forget_a_newer_one(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A second viewer opened while the first is up survives the first's teardown as the tracked one.
+
+    Regression: full-screen mode leaves the strip reachable behind the viewer's separate window, so a
+    second screenshot can open while the first is still around -- and the first's teardown must not
+    null the owner's reference to the second, or ``take_focus`` goes dead for it.
+
+    **Test steps:**
+
+    * open two viewers in a row, then dismiss only the first
+    * drop the second's focus and call ``take_focus``
+    * verify the second viewer is re-focused (still the tracked one)
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+    first = widget.findChild(ImageLightbox)
+    assert isinstance(first, ImageLightbox)
+    activate_screenshot(widget, Path("/fake/info01.png"))
+    second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
+
+    with wait_destroyed(qtbot, first):
+        qtbot.keyClick(first, Qt.Key.Key_Escape)
+    second.clearFocus()
+    widget.take_focus()
+
+    assert widget.focusWidget() is second
+
+
+def test_a_screenshot_activated_after_a_type_switch_still_opens(
+    widget: DocumentWidget, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """The rebuilt form's fresh images field is wired to the owner too, not just the original one.
+
+    Regression: a type switch rebuilds every field, so wiring the activation only at construction
+    would leave thumbnails dead after the first switch (#83's rebuild).
+
+    **Test steps:**
+
+    * make the strip's screenshot load, then switch the document's type (rebuilding the form)
+    * report an activation through the rebuilt field
+    * verify a viewer still opened
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    model.resource_type = "reference_images"
+
+    activate_screenshot(widget, Path("/fake/info00.jpg"))
+
+    assert isinstance(widget.findChild(ImageLightbox), ImageLightbox)
 
 
 # endregion

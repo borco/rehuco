@@ -1,6 +1,7 @@
 """Tests for FieldsForm: composing an ordered field list into a 3-column viewer or editor grid."""
 
 from dataclasses import replace
+from pathlib import Path
 from typing import Final, override
 
 from PySide6.QtCore import QObject, QSize, Signal
@@ -13,12 +14,21 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_agent.fields.field import FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets, StatusReporter
+from rehuco_agent.fields.field import (
+    FieldBinding,
+    FieldEditorWidgets,
+    FieldsTab,
+    FieldViewerWidgets,
+    ImageActivator,
+    StatusReporter,
+)
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN, FieldsForm
 
 from fields.field_testers import AuthorsFieldTester as AuthorsField
+from fields.field_testers import ImagesFieldTester as ImagesField
 from fields.field_testers import TextFieldTester as TextField
 
 
@@ -658,6 +668,36 @@ def test_header_pinned_editor_row_without_a_label_still_pins_the_editor(qtbot: Q
     editor_cell = widget_at(grid, 0, CONTENT_COLUMN)
     assert editor_cell is not None
     assert isinstance(editor_cell.findChild(HeaderPinnedEditor), HeaderPinnedEditor)
+
+
+def test_connect_image_activations_routes_activating_fields_to_the_owner(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """``connect_image_activations`` wires each ``ImageActivator`` field's ``image_activated`` into
+    the owner's handler and leaves plain, non-activating fields untouched (#160).
+
+    **Test steps:**
+
+    * build a form of a plain field and an ``images`` field (an ``ImageActivator``)
+    * connect the form to a handler recording everything it receives
+    * emit the activating field's ``image_activated``
+    * verify it reached the handler, and that only the ``images`` field is an ``ImageActivator``
+    """
+    plain = TextField("title")
+    images = ImagesField("hidden_images", image_scanner=mocker.Mock(files=mocker.Mock(return_value=[])))
+    form = FieldsForm([plain, images])
+    # a bound viewer keeps the field's QObject alive under qtbot's teardown for the test's duration
+    viewer = images.make_viewer(model.bind(images)).viewer
+    assert viewer is not None
+    qtbot.addWidget(viewer)
+    opened: list[Path] = []
+
+    form.connect_image_activations(opened.append)
+    images.image_activated.emit(Path("/fake/info00.jpg"))
+
+    assert opened == [Path("/fake/info00.jpg")]
+    assert isinstance(images, ImageActivator)
+    assert not isinstance(plain, ImageActivator)
 
 
 def test_connect_status_messages_routes_reporting_fields_to_the_sink(qtbot: QtBot, model: RehuDocumentModel) -> None:

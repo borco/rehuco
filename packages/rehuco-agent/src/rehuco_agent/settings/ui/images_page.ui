@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImagesPage</class>
+ <widget class="QWidget" name="ImagesPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>276</width>
+    <height>212</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="surface_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="surface_frame_layout">
+      <item>
+       <widget class="QLabel" name="surface_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Maximized image viewer</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="surface_hint_label">
+        <property name="text">
+         <string>Where a screenshot opens when it is clicked in the image strip:</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="document_overlay_radio_button">
+        <property name="text">
+         <string>rehu window overlay</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the open document, leaving its tab and the app's menus and toolbars visible.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="app_window_overlay_radio_button">
+        <property name="text">
+         <string>app window overlay</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the whole main window, leaving only its menu, tool, and status bars visible.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="full_screen_radio_button">
+        <property name="text">
+         <string>frameless full-screen</string>
+        </property>
+        <property name="toolTip">
+         <string>Covers the entire screen, with no window frame.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>0</width>
+       <height>0</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

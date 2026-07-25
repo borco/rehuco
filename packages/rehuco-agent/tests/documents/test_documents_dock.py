@@ -803,6 +803,37 @@ def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> Non
     assert dock.focused_document_path() is None
 
 
+def test_becoming_the_current_document_hands_it_the_keyboard(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The newly-current document is asked to take focus, so an open image viewer answers ESC (#160).
+
+    Regression: making a dock current moves no keyboard focus of its own, which left a maximized image
+    viewer covering its document while ESC went to whatever held focus elsewhere in the window.
+
+    **Test steps:**
+
+    * register two stand-in docks and make each current in turn
+    * verify each was asked to take focus as it became current, and neither before
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    first_cdock, first_widget = mocker.MagicMock(), mocker.MagicMock()
+    first_widget.model.path = FAKE_PATH
+    second_cdock, second_widget = mocker.MagicMock(), mocker.MagicMock()
+    second_widget.model.path = OTHER_PATH
+    docks[first_cdock] = first_widget
+    docks[second_cdock] = second_widget
+
+    dock.focus_document(second_widget)
+
+    second_widget.take_focus.assert_called_once_with()
+    first_widget.take_focus.assert_not_called()
+
+    dock.focus_document(first_widget)
+
+    first_widget.take_focus.assert_called_once_with()
+
+
 def test_focus_document_makes_the_given_widgets_dock_current(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Focusing a document's widget makes its dock the current one (#61).
 

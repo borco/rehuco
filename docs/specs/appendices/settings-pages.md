@@ -57,8 +57,8 @@ page becomes current.
 
 The category tree is **two levels deep at most**: `add_page(page, group="Editors")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
-top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, and
-"System Integration" (`RegistryPage`) is top-level.
+top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, "Images"
+(`ImagesPage`) sits under **Viewers**, and "System Integration" (`RegistryPage`) is top-level.
 
 A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
 filtering) exactly as it was, rather than blanking the stack. Everything that walks pages
@@ -110,9 +110,12 @@ The dialog shell dispatches, it never interprets:
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
-- **Staged-edit pages** (`DescriptionsPage`, "Descriptions") — edits live in local widget/draft
-  state until `save_changes()` pushes them somewhere permanent; `drop_changes()` discards the draft
-  and reloads the fields from whatever is currently saved (a revert, not a no-op).
+- **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images") — edits live in
+  local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
+  discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
+  Staged-edit does **not** imply reactive settings: `ImagesPage` writes a plain-dataclass singleton
+  (`ImageViewerSettings`), because nothing already on screen has to follow the change — the maximized
+  image viewer's surface is read afresh each time one opens (§5's recipe is for the other case).
 - **Immediate-effect pages** (`RegistryPage`, "System Integration") — its buttons
   (Register/Unregister) already took effect on the OS the moment they were clicked; nothing is
   staged, so `save_changes()`/`drop_changes()` are no-ops and `is_dirty()` always returns `False`.
@@ -205,4 +208,6 @@ OS, so there is no other part of the app that needs to be told a save happened.
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the
 autouse `isolate_shared_markdown_rendering_settings` fixture in
 `packages/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
-around every test. A new page with its own shared reactive settings object needs the equivalent.
+around every test. A new page with its own shared settings object needs the equivalent, reactive or
+not — `isolate_shared_identity_settings` and `isolate_shared_image_viewer_settings` are the
+plain-dataclass counterparts sitting right beside it.

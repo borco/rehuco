@@ -19,6 +19,11 @@ POSITIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Fill")
 NEGATIVE_RATING_GLYPH: Final = Glyph("\ue46a", "Phosphor-Bold")
 """Negative-rating stars -- see :data:`POSITIVE_RATING_GLYPH`."""
 
+LIGHTBOX_CLOSE_GLYPH: Final = Glyph("\ue4f6", "Phosphor-Bold")
+"""Close affordance in the maximized image viewer (`ImageLightbox`, #160). The same codepoint as
+:data:`TAB_CLOSE_GLYPH`, kept as its own name because it is drawn a fixed white on the viewer's dark
+backdrop rather than palette-themed like the tab's -- two uses that can drift apart."""
+
 TAB_CLOSE_GLYPH: Final = Glyph("\ue4f6", "Phosphor-Bold")
 """Close button on each document/surface tab (a `QtAdsFocusTracker`'s ``close_glyph``); overrides its
 plain-Unicode default with the Phosphor ``x`` to match the app's icon set."""

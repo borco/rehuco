@@ -64,6 +64,32 @@ def test_viewer_is_an_image_strip(mocker: MockerFixture, qtbot: QtBot, model: Re
     qtbot.addWidget(viewer)
 
 
+def test_viewer_forwards_a_thumbnail_click_to_the_owner(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A clicked thumbnail is re-emitted as the field's own ``image_activated`` (#160).
+
+    The field decides nothing about what opens -- it only forwards which screenshot was picked, for
+    its owner to act on (the `ImageActivator` contract).
+
+    **Test steps:**
+
+    * build the viewer and connect to the field's ``image_activated``
+    * make the strip report an activated screenshot
+    * verify the field forwarded that same path
+    """
+    field = make_field(mocker)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ImageStrip)
+    qtbot.addWidget(viewer)
+    activated: list[Path] = []
+    field.image_activated.connect(activated.append)
+
+    viewer.image_activated.emit(PATHS[2])
+
+    assert activated == [PATHS[2]]
+
+
 def test_editor_seeds_the_selector_with_all_images_checked_except_hidden(
     mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
 ) -> None:

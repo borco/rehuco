@@ -193,6 +193,21 @@ class StatusReporter(Protocol):  # pylint: disable=too-few-public-methods
     """Fires with the message text to show; an empty string clears it."""
 
 
+@runtime_checkable
+class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
+    """A field whose viewer reports that the user activated one of its images
+    ([[plugins#field-toolkit]]) -- e.g. the ``images`` strip, whose thumbnails open maximized (#160).
+
+    The same owner-routes-it shape as `StatusReporter`, for the same reason: a toolkit field decides
+    *that* an image was picked, never *what* opens for it. The owner (`DocumentWidget`) collects the
+    fields satisfying this protocol -- by protocol, not by field type -- and builds whichever surface
+    the user's settings ask for (:meth:`FieldsForm.connect_image_activations`).
+    """
+
+    image_activated: SignalInstance
+    """Fires with the activated image's :class:`~pathlib.Path`."""
+
+
 class Field[T]:
     """Base for a field: binds one logical value to the widgets that view and edit it
     ([[plugins#field-toolkit]]).
