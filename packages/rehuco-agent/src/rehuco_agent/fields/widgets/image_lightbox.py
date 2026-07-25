@@ -335,7 +335,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     """Fires with the thumbnail row's new visibility whenever the user toggles it, for the owner to
     remember (#161). This widget never reads or writes any stored state itself."""
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         images: list[Path],
         current: Path,

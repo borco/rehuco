@@ -148,10 +148,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         changes while it sits open."""
 
         image_settings = shared_image_viewer_settings()
+        strip_default_changed = image_settings.strip_visible_changed  # type: ignore[attr-defined]
+        lightbox_height_changed = image_settings.lightbox_image_height_changed  # type: ignore[attr-defined]
         # bound methods of this QObject, so Qt severs them when this widget is destroyed -- these
         # signals belong to a process-wide singleton that long outlives any one document (#161)
-        image_settings.strip_visible_changed.connect(self.__on_default_strip_visible_changed)  # type: ignore[attr-defined]
-        image_settings.lightbox_image_height_changed.connect(self.__on_lightbox_image_height_changed)  # type: ignore[attr-defined]
+        strip_default_changed.connect(self.__on_default_strip_visible_changed)
+        lightbox_height_changed.connect(self.__on_lightbox_image_height_changed)
 
         self.__banner: Final = MessageBanner(self)
         # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself

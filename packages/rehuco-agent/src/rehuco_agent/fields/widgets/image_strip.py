@@ -271,8 +271,8 @@ class ImageStrip(QScrollArea):
             # ignored, not merely unhandled: that is what hands the wheel to whatever scrolls around us
             event.ignore()
             return
-        bar = self.horizontalScrollBar()
-        bar.setValue(bar.value() - delta)
+        scrollbar = self.horizontalScrollBar()
+        scrollbar.setValue(scrollbar.value() - delta)
         event.accept()
 
     @override
