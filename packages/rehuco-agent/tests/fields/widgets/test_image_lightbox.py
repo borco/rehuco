@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QLineEdit, QMainWindow, QToolButton, QVBoxLayout, 
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from qt_waits import wait_destroyed
 from rehuco_agent.fields.widgets.image_lightbox import ImageLightbox, ImageViewerMode
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
 
@@ -33,7 +34,6 @@ def document(qtbot: QtBot) -> Iterator[QWidget]:
     Shaped like the real host chain -- a document widget nested in a `QMainWindow`'s central widget --
     so both overlay modes have a genuine surface to resolve and cover.
 
-    :param qtbot: pytest-qt fixture.
     A generator fixture, not a plain one: the window is a local, and yielding from inside the fixture
     is what keeps it alive for the test -- returning only its descendant would let Python collect the
     window, taking the document down with it.
@@ -126,7 +126,7 @@ def test_escape_dismisses_and_deletes_the_viewer(document: QWidget, qtbot: QtBot
     dismissed: list[bool] = []
     lightbox.closed.connect(lambda: dismissed.append(True))
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
     assert dismissed == [True]
@@ -145,7 +145,7 @@ def test_the_close_button_dismisses_the_viewer(document: QWidget, qtbot: QtBot) 
     button = lightbox.findChild(QToolButton)
     assert isinstance(button, QToolButton)
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
 
 
@@ -220,7 +220,7 @@ def test_dismissing_returns_focus_where_it_came_from(document: QWidget, qtbot: Q
     lightbox.reveal()
     assert not editor.hasFocus()
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
     assert editor.hasFocus()
@@ -250,7 +250,7 @@ def test_dismissing_leaves_focus_alone_when_it_came_from_another_document(
     lightbox.reveal()
     restore = mocker.patch.object(outsider, "setFocus")
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
     restore.assert_not_called()
@@ -272,7 +272,7 @@ def test_the_close_button_restores_focus_the_same_way_escape_does(document: QWid
     button = lightbox.findChild(QToolButton)
     assert isinstance(button, QToolButton)
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.mouseClick(button, Qt.MouseButton.LeftButton)
 
     assert editor.hasFocus()
@@ -295,9 +295,9 @@ def test_dismissing_tolerates_the_focused_widget_being_destroyed(document: QWidg
     lightbox = ImageLightbox(PATH, ImageViewerMode.DOCUMENT_OVERLAY, document)
     lightbox.reveal()
 
-    with qtbot.waitSignal(editor.destroyed):
+    with wait_destroyed(qtbot, editor):
         editor.deleteLater()
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
 
@@ -320,7 +320,7 @@ def test_an_overlay_reclaims_focus_from_the_surface_it_covers(document: QWidget,
     editor.setFocus()
 
     assert lightbox.hasFocus()
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
 
@@ -343,7 +343,7 @@ def test_two_open_viewers_do_not_fight_over_focus(document: QWidget, qtbot: QtBo
 
     assert second.hasFocus()
     assert not first.hasFocus()
-    with qtbot.waitSignal(second.destroyed):
+    with wait_destroyed(qtbot, second):
         qtbot.keyClick(second, Qt.Key.Key_Escape)
 
 
@@ -403,7 +403,7 @@ def test_an_app_window_overlay_closes_when_its_document_goes_away(document: QWid
     lightbox = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         document.deleteLater()
 
 
@@ -426,7 +426,7 @@ def test_a_document_close_under_an_app_window_overlay_restores_no_focus(document
     lightbox = ImageLightbox(PATH, ImageViewerMode.APP_WINDOW_OVERLAY, document)
     lightbox.reveal()
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         document.deleteLater()
 
 
@@ -441,7 +441,7 @@ def test_a_full_screen_viewer_dies_with_its_document(document: QWidget, qtbot: Q
     lightbox = ImageLightbox(PATH, ImageViewerMode.FULL_SCREEN, document)
     lightbox.reveal()
 
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         document.deleteLater()
 
 

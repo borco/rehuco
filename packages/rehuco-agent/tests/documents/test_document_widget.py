@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from qt_waits import wait_destroyed
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import (
     ON_DISK_ICON_RESOURCE,
@@ -236,7 +237,7 @@ def test_a_dismissed_viewer_is_forgotten(widget: DocumentWidget, mocker: MockerF
     activate_screenshot(widget, Path("/fake/info00.jpg"))
     lightbox = widget.findChild(ImageLightbox)
     assert isinstance(lightbox, ImageLightbox)
-    with qtbot.waitSignal(lightbox.destroyed):
+    with wait_destroyed(qtbot, lightbox):
         qtbot.keyClick(lightbox, Qt.Key.Key_Escape)
 
     widget.take_focus()
@@ -266,7 +267,7 @@ def test_an_older_viewers_teardown_does_not_forget_a_newer_one(
     activate_screenshot(widget, Path("/fake/info01.png"))
     second = next(viewer for viewer in widget.findChildren(ImageLightbox) if viewer is not first)
 
-    with qtbot.waitSignal(first.destroyed):
+    with wait_destroyed(qtbot, first):
         qtbot.keyClick(first, Qt.Key.Key_Escape)
     second.clearFocus()
     widget.take_focus()
