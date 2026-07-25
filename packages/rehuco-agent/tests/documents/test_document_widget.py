@@ -37,7 +37,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
 from rehuco_agent.fields.widgets import ImageLightbox, ImageStrip, ImageViewerMode, PathEditor, SingleChoiceComboBox
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
-from rehuco_agent.fields.widgets.image_strip import THUMBNAIL_BORDER, ThumbnailLabel
+from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
@@ -2085,7 +2085,7 @@ def test_applying_a_new_document_strip_height_resizes_the_one_on_screen(
 
     assert strip.maximumHeight() == 210
     thumbnail = strip.findChildren(ThumbnailLabel)[-1]
-    assert thumbnail.pixmap().height() == 210 - 2 * THUMBNAIL_BORDER
+    assert thumbnail.pixmap().height() == 210
 
 
 def test_a_rebuilt_form_stops_the_outgoing_strip_following_the_settings(

@@ -389,10 +389,13 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   activated; the document surface owning it decides what opens ([[plugins#field-toolkit]]'s owner-routes-it shape).
   A maximized screenshot opens against the **whole curated set** ([[data-model#image-meanings]]), which it navigates
   in strip order and which **stops at both ends rather than wrapping** — a wrap makes a short set feel endless, and
-  the ends are where its shape is legible. Three affordances, all one step: LEFT/RIGHT (with HOME/END for the ends), a
-  click on the left or right half of the screenshot, and a prev/next glyph that fades in while the pointer is within a
-  band along that edge — hidden outright at the end it would point past, so there is no inert band swallowing clicks
-  over the screenshot. **The screenshot itself carries no margin** — it fills every pixel the thumbnail row leaves,
+  the ends are where its shape is legible. Three affordances, all one step: LEFT/RIGHT (with HOME/END for the ends),
+  the wheel over the screenshot, and a prev/next glyph that fades in while the pointer is within a band along that
+  edge — `min(50 px, an eighth of the viewer)`, so a band never swallows a narrow viewer. **A click steps only inside
+  a band**, never on the open screenshot: half the viewer is far too large a target for a step the user did not
+  necessarily ask for, and it hid where the affordance actually ended. At the end it would point past, the band is
+  hidden outright, so a click there can never step where there is nowhere to step to.
+  **The screenshot itself carries no margin** — it fills every pixel the thumbnail row leaves,
   and only the corner controls hold themselves off the edge. That row is the same widget the document's strip is, with
   the current screenshot framed and scrolled into view and a click jumping straight to it. Whether it is showing is
   **per document**, remembered in the document's own saved layout beside which tabs it has open, so one document's

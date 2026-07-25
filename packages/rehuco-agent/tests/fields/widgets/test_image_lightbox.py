@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QEnterEvent, QPixmap
+from PySide6.QtGui import QEnterEvent, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication, QLineEdit, QMainWindow, QToolButton, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -23,7 +23,6 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     NAVIGATION_IDLE_OPACITY,
     NAVIGATION_PRESSED_OPACITY,
     NAVIGATION_ZONE_DIVISIONS,
-    NAVIGATION_ZONE_NARROW_WIDTH,
     NAVIGATION_ZONE_WIDTH,
     NEXT_BUTTON_NAME,
     PREVIOUS_BUTTON_NAME,
@@ -36,10 +35,16 @@ from rehuco_agent.fields.widgets.image_lightbox import (
     OverlayButton,
 )
 from rehuco_agent.fields.widgets.image_selector import PreviewLabel
-from rehuco_agent.fields.widgets.image_strip import CURRENT_THUMBNAIL_STYLE, THUMBNAIL_STYLE, ImageStrip, ThumbnailLabel
+from rehuco_agent.fields.widgets.image_strip import ImageStrip, ThumbnailLabel
 
 PATH: Final = Path("/fake/info03.png")
 PATHS: Final = [Path("/fake/info00.png"), Path("/fake/info01.png"), Path("/fake/info02.png")]
+
+WIDE_VIEWER_WIDTH: Final = 800
+NARROW_VIEWER_WIDTH: Final = 200
+"""Viewer widths either side of where the band rule changes hands: a band is
+``min(NAVIGATION_ZONE_WIDTH, width // NAVIGATION_ZONE_DIVISIONS)``, so the fixed width wins on the
+wide one and the eighth wins on the narrow one."""
 
 
 # region fixtures
@@ -140,6 +145,32 @@ def thumbnails_of(lightbox: ImageLightbox) -> list[ThumbnailLabel]:
         assert isinstance(thumbnail, ThumbnailLabel)
         thumbnails.append(thumbnail)
     return thumbnails
+
+
+WHEEL_STEP: Final = 120
+"""One wheel notch, in eighths of a degree -- the unit Qt reports and every mouse produces."""
+
+
+def send_wheel(target: QWidget, degrees: int) -> None:
+    """Turn the wheel over ``target`` by ``degrees``, as a real mouse does.
+
+    :param target: the widget under the pointer.
+    :param degrees: the vertical wheel delta; negative is a downward turn.
+    """
+    position = QPointF(target.rect().center())
+    QApplication.sendEvent(
+        target,
+        QWheelEvent(
+            position,
+            target.mapToGlobal(position),
+            QPoint(0, 0),
+            QPoint(0, degrees),
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,  # noqa: FBT003  # positional-only in Qt's signature
+        ),
+    )
 
 
 def reveal_over(document: QWidget, images: list[Path], current: Path, **kwargs: bool) -> ImageLightbox:
@@ -643,66 +674,6 @@ def test_navigation_stops_at_the_ends_rather_than_wrapping(document: QWidget, qt
     assert lightbox.current_image == PATHS[2]
 
 
-def test_clicking_the_right_half_of_the_screenshot_shows_the_next_one(document: QWidget, qtbot: QtBot) -> None:
-    """A click on the screenshot's right half steps forward (#161).
-
-    The screenshot is transparent to the mouse, so this lands on the viewer itself, which splits on
-    the click's x against its own centre.
-
-    **Test steps:**
-
-    * reveal a viewer opened on the first screenshot
-    * click just right of centre, clear of the edge hover bands
-    * verify the second screenshot is shown
-    """
-    lightbox = reveal_over(document, PATHS, PATHS[0])
-    qtbot.addWidget(lightbox)
-    centre = lightbox.rect().center()
-
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
-
-    assert lightbox.current_image == PATHS[1]
-
-
-def test_clicking_the_left_half_of_the_screenshot_shows_the_previous_one(document: QWidget, qtbot: QtBot) -> None:
-    """A click on the screenshot's left half steps back (#161).
-
-    **Test steps:**
-
-    * reveal a viewer opened on the last screenshot
-    * click just left of centre, clear of the edge hover bands
-    * verify the middle screenshot is shown
-    """
-    lightbox = reveal_over(document, PATHS, PATHS[2])
-    qtbot.addWidget(lightbox)
-    centre = lightbox.rect().center()
-
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
-
-    assert lightbox.current_image == PATHS[1]
-
-
-def test_a_click_on_the_screenshot_never_dismisses_the_viewer(document: QWidget, qtbot: QtBot) -> None:
-    """Navigating by clicking the screenshot leaves the viewer up -- only ESC and close dismiss.
-
-    Regression guard for the rule #160 removed click-to-dismiss for: the image halves mean prev/next,
-    so a click there must never also mean "close".
-
-    **Test steps:**
-
-    * reveal a viewer and click both halves in turn
-    * verify it is still shown
-    """
-    lightbox = reveal_over(document, PATHS, PATHS[1])
-    qtbot.addWidget(lightbox)
-    centre = lightbox.rect().center()
-
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
-    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
-
-    assert not lightbox.isHidden()
-
-
 def test_pressing_a_hover_band_steps_through_the_set(document: QWidget, qtbot: QtBot) -> None:
     """The prev/next bands step exactly like the keys do (#161).
 
@@ -836,7 +807,7 @@ def test_the_hover_bands_are_a_fixed_width_along_each_edge(document: QWidget, qt
     lightbox = reveal_over(document, PATHS, PATHS[1])
     qtbot.addWidget(lightbox)
 
-    document.resize(2 * NAVIGATION_ZONE_NARROW_WIDTH, 400)
+    document.resize(WIDE_VIEWER_WIDTH, 400)
 
     previous = control(lightbox, PREVIOUS_BUTTON_NAME)
     following = control(lightbox, NEXT_BUTTON_NAME)
@@ -857,7 +828,7 @@ def test_the_hover_bands_take_an_eighth_of_a_narrow_viewer(document: QWidget, qt
     lightbox = reveal_over(document, PATHS, PATHS[1])
     qtbot.addWidget(lightbox)
 
-    document.resize(NAVIGATION_ZONE_NARROW_WIDTH // 2, 400)
+    document.resize(NARROW_VIEWER_WIDTH, 400)
 
     assert control(lightbox, PREVIOUS_BUTTON_NAME).width() == lightbox.width() // NAVIGATION_ZONE_DIVISIONS
     assert control(lightbox, NEXT_BUTTON_NAME).width() == lightbox.width() // NAVIGATION_ZONE_DIVISIONS
@@ -1013,19 +984,11 @@ def test_the_current_screenshots_thumbnail_is_the_framed_one(document: QWidget, 
     qtbot.addWidget(lightbox)
     thumbnails = thumbnails_of(lightbox)
 
-    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [
-        THUMBNAIL_STYLE,
-        CURRENT_THUMBNAIL_STYLE,
-        THUMBNAIL_STYLE,
-    ]
+    assert [thumbnail.current for thumbnail in thumbnails] == [False, True, False]
 
     qtbot.keyClick(lightbox, Qt.Key.Key_Right)
 
-    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [
-        THUMBNAIL_STYLE,
-        THUMBNAIL_STYLE,
-        CURRENT_THUMBNAIL_STYLE,
-    ]
+    assert [thumbnail.current for thumbnail in thumbnails] == [False, False, True]
 
 
 def test_a_stale_thumbnail_activation_moves_nothing(document: QWidget, qtbot: QtBot) -> None:
@@ -1155,7 +1118,7 @@ def test_a_rebuilt_set_repaints_the_thumbnail_row(document: QWidget, qtbot: QtBo
 
     thumbnails = thumbnails_of(lightbox)
     assert len(thumbnails) == 2
-    assert [thumbnail.styleSheet() for thumbnail in thumbnails] == [THUMBNAIL_STYLE, CURRENT_THUMBNAIL_STYLE]
+    assert [thumbnail.current for thumbnail in thumbnails] == [False, True]
 
 
 def test_a_screenshot_outside_the_set_opens_as_a_set_of_its_own(document: QWidget, qtbot: QtBot) -> None:
@@ -1230,7 +1193,7 @@ def test_the_corner_controls_are_held_off_the_edge(document: QWidget, qtbot: QtB
     toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
     close = control(lightbox, CLOSE_BUTTON_NAME)
     inset = STRIP_TOGGLE_ICON_SIZE + 2 * CORNER_MARGIN
-    assert toggle.geometry().topLeft() == lightbox.rect().topLeft()
+    assert toggle.geometry().bottomLeft() == lightbox.rect().bottomLeft()
     assert toggle.width() >= inset
     assert toggle.height() >= inset
     assert close.geometry().right() == lightbox.rect().right()
@@ -1377,3 +1340,204 @@ def test_re_applying_the_row_height_it_already_has_changes_nothing(document: QWi
     lightbox.set_strip_height(120)
 
     assert thumbnails_of(lightbox) == before
+
+
+def test_the_row_toggle_sits_with_the_row_it_opens(document: QWidget, qtbot: QtBot) -> None:
+    """The toggle rides the bottom of the screenshot: above the row, or in the corner without it.
+
+    **Test steps:**
+
+    * reveal a viewer with the row shown and verify the toggle sits directly above it
+    * hide the row and verify the toggle drops to the viewer's own bottom-left corner
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    toggle = control(lightbox, STRIP_TOGGLE_BUTTON_NAME)
+
+    assert toggle.geometry().left() == lightbox.rect().left()
+    assert toggle.geometry().bottom() + 1 == strip_of(lightbox).geometry().top()
+
+    toggle.setChecked(False)
+
+    # the layout re-runs on the next event-loop turn, so the drop is not instantaneous
+    qtbot.waitUntil(lambda: toggle.geometry().bottomLeft() == lightbox.rect().bottomLeft())
+
+
+def test_clicking_a_thumbnail_does_not_also_step_the_viewer(document: QWidget, qtbot: QtBot) -> None:
+    """A thumbnail click jumps to that screenshot and stops there (#161).
+
+    Regression: a ``QLabel`` ignores mouse events, so the click propagated past the thumbnail to the
+    viewer, which reads a click on itself as prev/next. Since the row starts at the left edge, that
+    extra step was almost always "previous" -- so clicking any thumbnail right of the current one
+    landed on it and bounced straight back, and the row looked like it only responded leftwards.
+
+    **Test steps:**
+
+    * reveal a viewer on the first screenshot with its row shown
+    * click the second thumbnail, which sits left of the viewer's own centre
+    * verify the viewer settled on that screenshot rather than stepping back off it
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    second = thumbnails_of(lightbox)[1]
+    assert second.mapTo(lightbox, second.rect().center()).x() < lightbox.rect().center().x()
+
+    qtbot.mouseClick(second, Qt.MouseButton.LeftButton)
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_the_wheel_over_the_screenshot_steps_through_the_set(document: QWidget, qtbot: QtBot) -> None:
+    """Wheeling over the screenshot moves through the curated set, down for forward (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the middle screenshot
+    * wheel down, then up
+    * verify each moved one position, in the direction a list moves under the same gesture
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    send_wheel(lightbox, -WHEEL_STEP)
+    assert lightbox.current_image == PATHS[2]
+
+    send_wheel(lightbox, WHEEL_STEP)
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_the_wheel_stops_at_the_ends_like_every_other_step(document: QWidget, qtbot: QtBot) -> None:
+    """The wheel obeys the same stop-at-the-ends rule as the keys and the bands (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the first screenshot and wheel up, past the start
+    * verify it stayed put
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[0])
+    qtbot.addWidget(lightbox)
+
+    send_wheel(lightbox, WHEEL_STEP)
+
+    assert lightbox.current_image == PATHS[0]
+
+
+def test_the_wheel_over_the_thumbnail_row_scrolls_it_instead(document: QWidget, qtbot: QtBot) -> None:
+    """Over the row the wheel scrolls sideways, and never doubles as a step (#161).
+
+    The two gestures share a pointer position whenever the row is up, so the row consuming its own
+    wheel is what keeps them apart.
+
+    **Test steps:**
+
+    * reveal a narrow viewer whose row overflows, with the row shown
+    * wheel over the row
+    * verify the row scrolled and the screenshot did not change
+    """
+    document.resize(200, 400)
+    lightbox = reveal_over(document, PATHS, PATHS[1], strip_visible=True)
+    qtbot.addWidget(lightbox)
+    scrollbar = strip_of(lightbox).horizontalScrollBar()
+    assert scrollbar.maximum() > 0
+
+    send_wheel(strip_of(lightbox).viewport(), -WHEEL_STEP)
+
+    assert scrollbar.value() > 0
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_a_wheel_that_reports_no_movement_changes_nothing(document: QWidget, qtbot: QtBot) -> None:
+    """A wheel event carrying no delta is ignored rather than counted as a step in some direction.
+
+    Defensive: a trackpad's inertial tail can report a zero delta, which must not be read as forward.
+
+    **Test steps:**
+
+    * reveal a viewer and send a wheel event with no delta at all
+    * verify the screenshot did not move
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+
+    send_wheel(lightbox, 0)
+
+    assert lightbox.current_image == PATHS[1]
+
+
+def test_a_click_on_the_open_screenshot_does_nothing(document: QWidget, qtbot: QtBot) -> None:
+    """Clicking the screenshot itself neither steps nor dismisses (#161).
+
+    Regression: the viewer's whole left and right halves used to mean prev/next, which made half the
+    surface a step target the user had not asked for and left the affordance's real bounds invisible.
+    A step is the band, and only the band.
+
+    **Test steps:**
+
+    * reveal a viewer on the middle screenshot and click well clear of either band
+    * verify it neither moved nor went away
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    centre = lightbox.rect().center()
+
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre + QPoint(1, 0))
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=centre - QPoint(1, 0))
+
+    assert lightbox.current_image == PATHS[1]
+    assert not lightbox.isHidden()
+
+
+def test_a_click_just_inside_a_band_steps(document: QWidget, qtbot: QtBot) -> None:
+    """The band's own area is what answers a click, right up to its inner edge (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the middle screenshot over a wide document
+    * click one pixel inside the next band's inner edge
+    * verify it stepped forward
+    """
+    document.resize(WIDE_VIEWER_WIDTH, 400)
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    band = control(lightbox, NEXT_BUTTON_NAME)
+
+    qtbot.mouseClick(band, Qt.MouseButton.LeftButton, pos=QPoint(1, band.height() // 2))
+
+    assert lightbox.current_image == PATHS[2]
+
+
+def test_a_click_where_a_hidden_band_would_be_does_nothing(document: QWidget, qtbot: QtBot) -> None:
+    """At an end there is no band, so a click over that edge steps nowhere (#161).
+
+    **Test steps:**
+
+    * reveal a viewer on the last screenshot, where the next band is hidden
+    * click the viewer over the edge that band would have covered
+    * verify nothing moved
+    """
+    document.resize(WIDE_VIEWER_WIDTH, 400)
+    lightbox = reveal_over(document, PATHS, PATHS[-1])
+    qtbot.addWidget(lightbox)
+    assert control(lightbox, NEXT_BUTTON_NAME).isHidden()
+
+    qtbot.mouseClick(lightbox, Qt.MouseButton.LeftButton, pos=QPoint(lightbox.width() - 2, lightbox.height() // 2))
+
+    assert lightbox.current_image == PATHS[-1]
+
+
+def test_the_bands_are_the_narrower_of_the_fixed_width_and_an_eighth(document: QWidget, qtbot: QtBot) -> None:
+    """A band is ``min(fixed width, an eighth of the viewer)`` at any size (#161).
+
+    **Test steps:**
+
+    * reveal a viewer and measure a band at a wide and a narrow size
+    * verify each matches the rule
+    """
+    lightbox = reveal_over(document, PATHS, PATHS[1])
+    qtbot.addWidget(lightbox)
+    band = control(lightbox, NEXT_BUTTON_NAME)
+
+    for width in (WIDE_VIEWER_WIDTH, NARROW_VIEWER_WIDTH):
+        document.resize(width, 400)
+        expected = min(NAVIGATION_ZONE_WIDTH, lightbox.width() // NAVIGATION_ZONE_DIVISIONS)
+        assert band.width() == expected

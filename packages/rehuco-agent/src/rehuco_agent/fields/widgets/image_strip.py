@@ -10,22 +10,21 @@ from pathlib import Path
 from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
-from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtGui import QMouseEvent, QPixmap
+from PySide6.QtCore import QEvent, QRectF, Qt, Signal
+from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QWidget
 
 from ..image_scanner import ImageScanner
 
-THUMBNAIL_BORDER: Final = 2
-"""Width, in pixels, of the frame drawn around every thumbnail. Always reserved -- transparent on the
-others, colored on the current one (#161) -- so marking the current thumbnail cannot shift the row's
-layout by a pixel."""
+THUMBNAIL_BORDER: Final = 3
+"""Width, in pixels, of the frame marking the current thumbnail (#161). Painted **over** the
+screenshot's own edge rather than around it: a border that reserved its own space would inset every
+thumbnail by this much on every side, which is padding the strip is not supposed to have, and would
+leave each image short of the height it was given."""
 
-THUMBNAIL_STYLE: Final = f"border: {THUMBNAIL_BORDER}px solid transparent;"
-CURRENT_THUMBNAIL_STYLE: Final = f"border: {THUMBNAIL_BORDER}px solid palette(highlight);"
-"""How a thumbnail is drawn plain and as the current one (#161). Palette-themed rather than a fixed
-color: the strip serves both the document's own viewer dock and the maximized viewer's dark backdrop,
-and ``highlight`` is legible on either."""
+THUMBNAIL_SPACING: Final = 0
+"""Gap, in pixels, between thumbnails. Set explicitly because a layout's default spacing comes from
+the style and is several pixels, which reads as stray padding in a row this dense."""
 
 
 class ThumbnailLabel(QLabel):
@@ -44,15 +43,64 @@ class ThumbnailLabel(QLabel):
     def __init__(self, path: Path, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__path: Final = path
+        self.__current = False
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.set_current(current=False)
+
+    @property
+    def current(self) -> bool:
+        """Whether this thumbnail stands for the screenshot currently shown maximized."""
+        return self.__current
 
     def set_current(self, *, current: bool) -> None:
         """Frame this thumbnail as the one being shown maximized, or unframe it (#161).
 
         :param current: whether this thumbnail stands for the current screenshot.
         """
-        self.setStyleSheet(CURRENT_THUMBNAIL_STYLE if current else THUMBNAIL_STYLE)
+        if current == self.__current:
+            return
+        self.__current = current
+        self.update()
+
+    @override
+    def paintEvent(self, event: QPaintEvent) -> None:
+        """Paint the screenshot, then frame it when it is the current one.
+
+        Drawn over the screenshot's own edge and **wholly inside** the thumbnail: it takes no space of
+        its own, so marking a thumbnail neither shifts the row nor shrinks the image
+        ([[plugins#tutorial-plugin]]). Palette-themed rather than a fixed color, since this strip
+        serves both a document's own surface and the maximized viewer's dark backdrop.
+
+        Filled as a ring -- the thumbnail's rect with the inset rect punched out of it -- rather than
+        stroked with a pen. A stroke is centred on the path it follows, so half of it falls outside the
+        thumbnail: the frame rasterized a pixel wider on two sides than the other two, and its corners
+        came out cut off (a pen's default join is a bevel), letting the screenshot -- or, once the row's
+        thumbnails sit flush, the neighbour -- bleed through all four corners. A ring has no centring
+        and no joins, so every side is exactly :data:`THUMBNAIL_BORDER` and the corners close.
+
+        :param event: the Qt paint event, forwarded to the base class.
+        """
+        super().paintEvent(event)
+        if not self.__current:
+            return
+        border = THUMBNAIL_BORDER
+        ring = QPainterPath()
+        ring.addRect(QRectF(self.rect()))
+        ring.addRect(QRectF(self.rect().adjusted(border, border, -border, -border)))
+        # the default odd-even fill leaves the punched-out middle -- the screenshot -- untouched
+        QPainter(self).fillPath(ring, self.palette().color(QPalette.ColorRole.Highlight))
+
+    @override
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Take the press, so the click never also reaches whatever this thumbnail sits on.
+
+        A `QLabel` ignores mouse events, which propagates them to its ancestors -- so a thumbnail
+        click doubled as a click on the surface hosting the strip, and whatever *that* means happened
+        too (#161).
+
+        :param event: the Qt mouse-press event, forwarded to the base class.
+        """
+        super().mousePressEvent(event)
+        event.accept()
 
     @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -60,11 +108,12 @@ class ThumbnailLabel(QLabel):
 
         Release, not press: Qt grabs the mouse on press, so a release still inside the widget is the
         standard "this was a click, not a drag away" test -- pressing here and letting go elsewhere
-        must not open anything.
+        must not open anything. Accepted for the same reason the press is.
 
         :param event: the Qt mouse-release event, forwarded to the base class.
         """
         super().mouseReleaseEvent(event)
+        event.accept()
         if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
             self.clicked.emit(self.__path)
 
@@ -82,6 +131,10 @@ class ImageStrip(QScrollArea):
 
     :param parent: optional Qt parent.
     :param height: the strip's fixed pixel height, and the height each thumbnail is scaled to.
+    :param wheel_scrolls: whether a plain vertical wheel scrolls this row sideways (keyword-only).
+        Off by default: a strip embedded in a scrollable form must leave the wheel to the form, so
+        only a strip that is a control in its own right -- the maximized viewer's -- turns it on.
+        A horizontal wheel scrolls the row either way.
     """
 
     image_activated = Signal(Path)
@@ -96,9 +149,10 @@ class ImageStrip(QScrollArea):
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
 
-    def __init__(self, parent: QWidget | None = None, height: int = 150) -> None:
+    def __init__(self, parent: QWidget | None = None, height: int = 150, *, wheel_scrolls: bool = False) -> None:
         super().__init__(parent)
         self.__height = height
+        self.__wheel_scrolls: Final = wheel_scrolls
         self.__hidden: list[str] = []
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
         self.__current: Path | None = None
@@ -113,7 +167,7 @@ class ImageStrip(QScrollArea):
         self.setViewportMargins(0, 0, 0, 0)
         # neither bar is ever painted: the strip is a fixed-height row of thumbnails, and a scrollbar
         # eating part of that height (or sitting on the maximized viewer's backdrop) is chrome this
-        # design does not want. Overflow is reached by wheel/drag, and the current thumbnail is
+        # design does not want. Overflow is reached by the wheel, and the current thumbnail is
         # scrolled into view programmatically (:meth:`set_current`), neither of which needs a bar.
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -121,6 +175,7 @@ class ImageStrip(QScrollArea):
         content = QWidget()
         self.__row: Final = QHBoxLayout(content)
         self.__row.setContentsMargins(0, 0, 0, 0)
+        self.__row.setSpacing(THUMBNAIL_SPACING)
         self.__row.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.setWidget(content)
 
@@ -195,6 +250,32 @@ class ImageStrip(QScrollArea):
         self.setVisible(self.__wants_visible())
 
     @override
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Scroll the row sideways on the wheel -- but only where the wheel is the strip's to take.
+
+        A one-row strip only ever scrolls horizontally, while a plain wheel reports a *vertical*
+        delta, which the inherited handler spends on a vertical scrollbar this widget does not have.
+        So a **horizontal** delta (a tilt wheel, or the platform's shift-wheel) always scrolls the row:
+        nothing else wants it.
+
+        A plain vertical wheel is the strip's only when ``wheel_scrolls`` says so -- the maximized
+        viewer's row, which is a control in its own right. Inside a document the strip is one row of a
+        scrollable form, and taking the wheel there would stop the form scrolling whenever the pointer
+        happened to be over the screenshots.
+
+        :param event: the Qt wheel event.
+        """
+        horizontal = event.angleDelta().x()
+        delta = horizontal or (event.angleDelta().y() if self.__wheel_scrolls else 0)
+        if not delta:
+            # ignored, not merely unhandled: that is what hands the wheel to whatever scrolls around us
+            event.ignore()
+            return
+        bar = self.horizontalScrollBar()
+        bar.setValue(bar.value() - delta)
+        event.accept()
+
+    @override
     def changeEvent(self, event: QEvent) -> None:
         """Settle a strip that was seeded before it had a parent, as it is given one.
 
@@ -232,8 +313,9 @@ class ImageStrip(QScrollArea):
                 widget.deleteLater()
         self.__thumbnails.clear()
 
-        # the frame is always drawn, so it never eats into the thumbnail it surrounds
-        thumbnail_height = self.__height - 2 * THUMBNAIL_BORDER
+        # the whole strip height: the current-item frame is painted over the screenshot rather
+        # than around it, so it costs the thumbnail nothing
+        thumbnail_height = self.__height
         for path in paths:
             pixmap = QPixmap(str(path))
             if pixmap.isNull():

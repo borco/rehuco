@@ -26,6 +26,7 @@ from PySide6.QtGui import (
     QPaintEvent,
     QPixmap,
     QResizeEvent,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -109,15 +110,12 @@ NEXT_ICON_RESOURCE: Final = ":/icons/lightbox_next.svg"
 STRIP_TOGGLE_ICON_RESOURCE: Final = ":/icons/lightbox_list.svg"
 
 NAVIGATION_ZONE_WIDTH: Final = 50
-"""How far in from the left/right edge, in pixels, the mouse reveals the matching prev/next
-affordance (#161)."""
-
-NAVIGATION_ZONE_NARROW_WIDTH: Final = 400
 NAVIGATION_ZONE_DIVISIONS: Final = 8
-"""Below :data:`NAVIGATION_ZONE_NARROW_WIDTH` pixels wide, each zone is an eighth of the viewer
-instead of a fixed :data:`NAVIGATION_ZONE_WIDTH` -- which is the same 50 px at that threshold, so the
-two rules meet without a step. A fixed band would otherwise swallow most of a narrow viewer, leaving
-almost no plain image between the two zones."""
+"""How far in from the left/right edge a prev/next band reaches (#161):
+``min(NAVIGATION_ZONE_WIDTH, width // NAVIGATION_ZONE_DIVISIONS)``. A fixed 50 px would swallow most
+of a narrow viewer, leaving almost no plain screenshot between the two bands, so below 400 px wide
+each band is an eighth of the viewer instead -- the two rules meet exactly at that width, with no
+step. This is the whole clickable area for a step: the band **is** the affordance."""
 
 NAVIGATION_ICON_SIZE: Final = 48
 NAVIGATION_ICON_PADDING: Final = 8
@@ -268,9 +266,14 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     **Navigation** moves through the curated set in strip order and **stops at both ends** rather than
     wrapping: the ends are where the set's shape is legible, and a wrap makes a two-image set
     indistinguishable from an endless one. Three affordances, all the same step: the LEFT/RIGHT keys
-    (with HOME/END for the ends), a click on the left or right half of the screenshot, and the
-    prev/next hover bands (:class:`NavigationButton`) along the viewer's edges. At either end the
-    matching band is hidden outright, so there is nothing to hover and nothing to press.
+    (with HOME/END for the ends), the wheel over the screenshot, and the prev/next hover bands
+    (:class:`NavigationButton`) along the viewer's edges.
+
+    A **click** steps only inside a band -- never on the open screenshot, whose whole left/right halves
+    once meant prev/next. Half the viewer is far too large a target for a step the user did not
+    necessarily ask for, and it made the affordance's real bounds invisible: the band is exactly the
+    area that answers, and it is hidden outright at the end it would point past, so a click can never
+    step where there is nowhere to step to.
 
     **The thumbnail row** is the same `ImageStrip` the document's own viewer dock uses -- it already
     presents a screenshot set and reports which one was clicked, which is exactly what is needed here
@@ -310,9 +313,8 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
     the owning document are tracked through their own ``destroyed`` signals, so a form rebuild (a type
     switch) or a closing document leaves nothing to restore instead of reaching into a dead object.
 
-    **Dismiss is ESC or the close button, and nothing else** -- deliberately not a click on the image:
-    the two halves of the image are the prev/next affordance, so a click there must never be able to
-    mean "close" as well. Both paths funnel through ``close()``, and the widget deletes itself
+    **Dismiss is ESC or the close button, and nothing else** -- deliberately not a click on the image,
+    which does nothing at all. Both paths funnel through ``close()``, and the widget deletes itself
     afterwards (``WA_DeleteOnClose``).
 
     :param images: the curated screenshot set to navigate, in strip order.
@@ -377,7 +379,10 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__previous_button: Final = self.__make_navigation_button(PREVIOUS_ICON_RESOURCE, "Previous (Left)", -1)
         self.__next_button: Final = self.__make_navigation_button(NEXT_ICON_RESOURCE, "Next (Right)", 1)
         self.__strip_toggle: Final = self.__make_strip_toggle(strip_visible=strip_visible)
-        layout.addWidget(self.__strip_toggle, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        # bottom-left of the *screenshot* area, so it sits directly above the thumbnail row it opens
+        # and drops to the viewer's own bottom-left corner when that row is hidden -- the control stays
+        # with the thing it controls instead of being parked in an unrelated corner
+        layout.addWidget(self.__strip_toggle, 0, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom)
         layout.addWidget(self.__make_close_button(), 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         self.__strip.set_images(self.__images)
         self.__show_current()
@@ -530,21 +535,19 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
                 super().keyPressEvent(event)
 
     @override
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        """Step through the curated set on a click in the screenshot's left or right half (#161).
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Step through the curated set on the wheel over the screenshot (#161).
 
-        Release, not press, and only when both landed on the viewer -- the same "this was a click, not
-        a drag away" test the thumbnails use. The screenshot itself is transparent to the mouse, so a
-        press anywhere over it arrives here; the thumbnail row and the corner controls are real
-        widgets and swallow their own clicks before this ever sees them.
+        Wheeling **down** goes forward, matching the direction every list in the app moves under the
+        same gesture. Only reaches here from the screenshot itself: the thumbnail row consumes its own
+        wheel to scroll sideways, so the two gestures never fight over the same pointer position.
 
-        :param event: the Qt mouse-release event, forwarded to the base class.
+        :param event: the Qt wheel event.
         """
-        super().mouseReleaseEvent(event)
-        position = event.position().toPoint()
-        if event.button() != Qt.MouseButton.LeftButton or not self.rect().contains(position):
-            return
-        self.__step(-1 if position.x() < self.rect().center().x() else 1)
+        delta = event.angleDelta().y() or event.angleDelta().x()
+        if delta:
+            self.__step(-1 if delta > 0 else 1)
+        event.accept()
 
     @override
     def resizeEvent(self, event: QResizeEvent) -> None:
@@ -719,7 +722,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
         has necessarily settled at the new size.
         """
         width = self.width()
-        zone = NAVIGATION_ZONE_WIDTH if width >= NAVIGATION_ZONE_NARROW_WIDTH else width // NAVIGATION_ZONE_DIVISIONS
+        zone = min(NAVIGATION_ZONE_WIDTH, width // NAVIGATION_ZONE_DIVISIONS)
         # isHidden(), not isVisible(): the row's own explicit state, which is set before the viewer is
         # ever shown and would read as "not visible" on a widget whose parent is still hidden
         row = 0 if self.__strip.isHidden() else self.__strip_height
@@ -737,7 +740,7 @@ class ImageLightbox(QWidget):  # pylint: disable=too-many-instance-attributes
 
         :returns: the thumbnail row, wired to navigate on a click, hidden or shown by the caller.
         """
-        strip = ImageStrip(self, height=self.__strip_height)
+        strip = ImageStrip(self, height=self.__strip_height, wheel_scrolls=True)
         strip.setFrameShape(ImageStrip.Shape.NoFrame)
         strip.setStyleSheet("background: transparent;")
         strip.setFocusPolicy(Qt.FocusPolicy.NoFocus)

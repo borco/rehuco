@@ -3,16 +3,14 @@
 from collections.abc import Iterator
 from pathlib import Path
 
-from PySide6.QtCore import QMargins, Qt
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtCore import QMargins, QPoint, QPointF, Qt
+from PySide6.QtGui import QColor, QPalette, QPixmap, QWheelEvent
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_strip import (
-    CURRENT_THUMBNAIL_STYLE,
     THUMBNAIL_BORDER,
-    THUMBNAIL_STYLE,
     ImageStrip,
     ThumbnailLabel,
 )
@@ -21,6 +19,53 @@ PATHS = [Path("/fake/info00.jpg"), Path("/fake/info01.png")]
 WIDE_PIXMAP = 400
 """Source size for a thumbnail whose scaled height is worth asserting on -- big enough that the
 strip scales it down rather than leaving it at its own size."""
+
+
+ODD_STRIP_HEIGHT = 41
+"""A strip height with no even factor to hide behind: a frame centred on the thumbnail's edge
+rasterizes unevenly here, where an even one can come out symmetric by luck."""
+
+FLAT_COLOUR = "#F4511E"
+"""A screenshot colour that is nothing like the palette highlight, so a test can tell the current
+thumbnail's frame apart from the image it is painted over."""
+
+
+def flat_pixmap() -> QPixmap:
+    """A thumbnail-sized pixmap in one flat colour.
+
+    :returns: the pixmap, filled with :data:`FLAT_COLOUR`.
+    """
+    pixmap = QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
+    pixmap.fill(QColor(FLAT_COLOUR))
+    return pixmap
+
+
+WHEEL_STEP = 120
+"""One wheel notch, in eighths of a degree -- the unit Qt reports and every mouse produces."""
+
+
+def send_wheel(target: QWidget, degrees: int, *, horizontal: bool = False) -> bool:
+    """Turn the wheel over ``target`` by ``degrees``, as a real mouse does.
+
+    :param target: the widget under the pointer.
+    :param degrees: the wheel delta; negative is a downward (or rightward) turn.
+    :param horizontal: send it as a sideways turn -- a tilt wheel, or the platform's shift-wheel.
+    :returns: whether ``target`` accepted the event; ``False`` means it was left to its ancestors.
+    """
+    position = QPointF(target.rect().center())
+    delta = QPoint(degrees, 0) if horizontal else QPoint(0, degrees)
+    event = QWheelEvent(
+        position,
+        target.mapToGlobal(position),
+        QPoint(0, 0),
+        delta,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,  # noqa: FBT003  # positional-only in Qt's signature
+    )
+    QApplication.sendEvent(target, event)
+    return event.isAccepted()
 
 
 def fake_scanner(mocker: MockerFixture, files: list[Path]) -> object:
@@ -82,6 +127,36 @@ def hosted_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
     qtbot.addWidget(host)
     host.show()
     yield strip
+
+
+@fixture
+def hosted_wheel_strip(qtbot: QtBot) -> Iterator[ImageStrip]:
+    """A hosted strip that takes the plain wheel, as the maximized viewer's own row does.
+
+    Same host-keeps-it-alive shape as :func:`hosted_strip`; only ``wheel_scrolls`` differs.
+
+    :param qtbot: pytest-qt fixture.
+    :returns: the strip, parented and shown.
+    """
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    strip = ImageStrip(wheel_scrolls=True)
+    layout.addWidget(strip)
+    qtbot.addWidget(host)
+    host.show()
+    yield strip
+
+
+def current_of(strip: ImageStrip, index: int) -> bool:
+    """Whether the thumbnail at ``index`` is marked as the current screenshot.
+
+    :param strip: the strip under test.
+    :param index: the thumbnail's position in the row.
+    :returns: whether it carries the current-item mark.
+    """
+    thumbnail = thumbnail_at(strip, index)
+    assert isinstance(thumbnail, ThumbnailLabel)
+    return thumbnail.current
 
 
 def test_strip_is_fixed_to_its_height(qtbot: QtBot) -> None:
@@ -347,8 +422,8 @@ def test_set_current_frames_only_that_thumbnail(mocker: MockerFixture, qtbot: Qt
 
     strip.set_current(PATHS[1])
 
-    assert thumbnail_at(strip, 0).styleSheet() == THUMBNAIL_STYLE
-    assert thumbnail_at(strip, 1).styleSheet() == CURRENT_THUMBNAIL_STYLE
+    assert not current_of(strip, 0)
+    assert current_of(strip, 1)
 
 
 def test_set_current_survives_a_rebuild(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -370,7 +445,7 @@ def test_set_current_survives_a_rebuild(mocker: MockerFixture, qtbot: QtBot) -> 
 
     strip.set_images(PATHS)
 
-    assert thumbnail_at(strip, 1).styleSheet() == CURRENT_THUMBNAIL_STYLE
+    assert current_of(strip, 1)
 
 
 def test_set_current_leaves_the_row_unmarked_for_a_screenshot_it_does_not_show(
@@ -390,7 +465,7 @@ def test_set_current_leaves_the_row_unmarked_for_a_screenshot_it_does_not_show(
 
     strip.set_current(Path("/fake/gone.png"))
 
-    assert thumbnail_at(strip, 0).styleSheet() == THUMBNAIL_STYLE
+    assert not current_of(strip, 0)
 
 
 def test_a_thumbnail_starts_unframed(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -411,7 +486,7 @@ def test_a_thumbnail_starts_unframed(mocker: MockerFixture, qtbot: QtBot) -> Non
 
     thumbnail = thumbnail_at(strip, 0)
     assert isinstance(thumbnail, ThumbnailLabel)
-    assert thumbnail.styleSheet() == THUMBNAIL_STYLE
+    assert not thumbnail.current
 
 
 def test_a_strip_with_nothing_to_show_hides_itself(mocker: MockerFixture, hosted_strip: ImageStrip) -> None:
@@ -534,7 +609,7 @@ def test_a_thumbnail_fills_the_strip_height_less_its_frame(mocker: MockerFixture
 
     thumbnail = thumbnail_at(strip, 0)
     assert isinstance(thumbnail, ThumbnailLabel)
-    assert thumbnail.pixmap().height() == 100 - 2 * THUMBNAIL_BORDER
+    assert thumbnail.pixmap().height() == 100
 
 
 def test_a_parentless_strip_never_shows_itself(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -623,7 +698,7 @@ def test_set_height_rescales_the_thumbnails(mocker: MockerFixture, hosted_strip:
     assert hosted_strip.maximumHeight() == 80
     thumbnail = thumbnail_at(hosted_strip, 0)
     assert isinstance(thumbnail, ThumbnailLabel)
-    assert thumbnail.pixmap().height() == 80 - 2 * THUMBNAIL_BORDER
+    assert thumbnail.pixmap().height() == 80
 
 
 def test_set_height_to_the_current_height_rebuilds_nothing(mocker: MockerFixture, hosted_strip: ImageStrip) -> None:
@@ -654,3 +729,148 @@ def test_the_strip_draws_no_frame_of_its_own(hosted_strip: ImageStrip) -> None:
     assert hosted_strip.frameShape() == QFrame.Shape.NoFrame
     assert hosted_strip.frameWidth() == 0
     assert hosted_strip.viewportMargins() == QMargins(0, 0, 0, 0)
+
+
+def test_the_wheel_scrolls_the_row_sideways(mocker: MockerFixture, hosted_wheel_strip: ImageStrip) -> None:
+    """A plain wheel scrolls the one-row strip horizontally (#161).
+
+    Regression: a wheel reports a *vertical* delta, which the inherited handler spends on a vertical
+    scrollbar this widget does not have -- so the wheel did nothing at all over a row too long to fit.
+    Sent to the viewport, which is where Qt delivers it (a thumbnail ignores wheels, so a real one
+    propagates there from wherever the pointer sits).
+
+    **Test steps:**
+
+    * fill a strip past its width, then wheel down over it and back up
+    * verify the row scrolled out and back
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
+    hosted_wheel_strip.set_images(PATHS * 8)
+    scrollbar = hosted_wheel_strip.horizontalScrollBar()
+    assert scrollbar.maximum() > 0
+
+    send_wheel(hosted_wheel_strip.viewport(), -WHEEL_STEP)
+    assert scrollbar.value() > 0
+
+    send_wheel(hosted_wheel_strip.viewport(), WHEEL_STEP)
+    assert scrollbar.value() == 0
+
+
+def test_a_thumbnail_click_is_not_passed_on_to_whatever_is_behind(
+    mocker: MockerFixture, hosted_strip: ImageStrip, qtbot: QtBot
+) -> None:
+    """A thumbnail consumes its click, so it never doubles as a click on the surface underneath.
+
+    Regression: a ``QLabel`` ignores mouse events, which propagates them to its ancestors -- and the
+    maximized viewer reads a click on itself as prev/next, so every thumbnail click was also a
+    navigation step (#161).
+
+    **Test steps:**
+
+    * paint a thumbnail and click it
+    * verify it reported its own screenshot and the click did not reach the host behind it
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    hosted_strip.set_images(PATHS[:1])
+    activated: list[Path] = []
+    hosted_strip.image_activated.connect(activated.append)
+    host = hosted_strip.parentWidget()
+    assert host is not None
+    reached_host: list[bool] = []
+    host.mouseReleaseEvent = lambda _event: reached_host.append(True)  # type: ignore[method-assign]
+
+    qtbot.mouseClick(thumbnail_at(hosted_strip, 0), Qt.MouseButton.LeftButton)
+
+    assert activated == PATHS[:1]
+    assert not reached_host
+
+
+def test_a_plain_wheel_is_left_to_whatever_scrolls_around_the_strip(
+    mocker: MockerFixture, hosted_strip: ImageStrip
+) -> None:
+    """By default the strip does not take the wheel at all (#161).
+
+    Regression: taking it stopped a document's own viewer scrolling vertically whenever the pointer
+    happened to be over the screenshots -- the strip is one row of a scrollable form there, not a
+    control in its own right.
+
+    **Test steps:**
+
+    * fill a default strip past its width and wheel over it
+    * verify it did not scroll and left the event unaccepted for the form around it
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
+    hosted_strip.set_images(PATHS * 8)
+    scrollbar = hosted_strip.horizontalScrollBar()
+    assert scrollbar.maximum() > 0
+
+    accepted = send_wheel(hosted_strip.viewport(), -WHEEL_STEP)
+
+    assert scrollbar.value() == 0
+    assert not accepted
+
+
+def test_a_horizontal_wheel_scrolls_the_row_whoever_hosts_it(mocker: MockerFixture, hosted_strip: ImageStrip) -> None:
+    """A sideways wheel scrolls the row even on a strip that leaves the plain wheel alone (#161).
+
+    Nothing around the strip wants a horizontal wheel, so taking it costs the form nothing -- and it
+    is what keeps an overflowing document strip reachable at all.
+
+    **Test steps:**
+
+    * fill a default strip past its width and send a horizontal wheel over it
+    * verify the row scrolled
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, 10))
+    hosted_strip.set_images(PATHS * 8)
+    scrollbar = hosted_strip.horizontalScrollBar()
+
+    send_wheel(hosted_strip.viewport(), -WHEEL_STEP, horizontal=True)
+
+    assert scrollbar.value() > 0
+
+
+def test_the_current_frame_is_even_on_every_side_and_closed_at_its_corners(
+    mocker: MockerFixture, hosted_strip: ImageStrip
+) -> None:
+    """The mark is a frame of one thickness all round, with no gap at any corner (#161).
+
+    Regression: it was stroked with a pen, which centres on the path it follows, so half of it fell
+    outside the thumbnail -- the frame came out a pixel wider on two sides than the other two, and a
+    pen's default bevel join cut the corners off, letting the screenshot (or, with the row's
+    thumbnails flush, the neighbour) bleed through all four. Measured at an odd size, which is where
+    a centred stroke rasterizes unevenly.
+
+    **Test steps:**
+
+    * paint a thumbnail in a known flat colour at an odd size and mark it as current
+    * verify the frame is exactly ``THUMBNAIL_BORDER`` thick on all four sides
+    * verify every corner pixel carries it, and the screenshot in the middle is untouched
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: flat_pixmap())
+    hosted_strip.set_height(ODD_STRIP_HEIGHT)
+    hosted_strip.set_images(PATHS[:1])
+    hosted_strip.set_current(PATHS[0])
+
+    thumbnail = thumbnail_at(hosted_strip, 0)
+    painted = thumbnail.grab().toImage()
+    highlight = thumbnail.palette().color(QPalette.ColorRole.Highlight).rgb()
+    width, height = painted.width(), painted.height()
+    middle_x, middle_y = width // 2, height // 2
+
+    def thickness(pixels: Iterator[int]) -> int:
+        """How many pixels of frame a scan line crosses before reaching the screenshot."""
+        crossed = 0
+        for pixel in pixels:
+            if pixel != highlight:
+                break
+            crossed += 1
+        return crossed
+
+    assert thickness(painted.pixel(x, middle_y) for x in range(width)) == THUMBNAIL_BORDER
+    assert thickness(painted.pixel(width - 1 - x, middle_y) for x in range(width)) == THUMBNAIL_BORDER
+    assert thickness(painted.pixel(middle_x, y) for y in range(height)) == THUMBNAIL_BORDER
+    assert thickness(painted.pixel(middle_x, height - 1 - y) for y in range(height)) == THUMBNAIL_BORDER
+    corners = ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1))
+    assert [painted.pixel(x, y) for x, y in corners] == [highlight] * len(corners)
+    assert painted.pixel(middle_x, middle_y) == QColor(FLAT_COLOUR).rgb()
