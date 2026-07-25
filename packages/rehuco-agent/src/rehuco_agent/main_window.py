@@ -416,12 +416,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Snapshot every open document's dock layout and focus, and persist the open-file set.
 
         Currently open documents always count as the most-recently-used ones (moved to the end of
-        the LRU order); everything else keeps its prior state but is marked closed.
+        the LRU order); everything else keeps its prior state but is marked closed. A brand-new
+        document not yet written to its path (``saved_on_disk`` false) is skipped -- there is nothing
+        on disk to restore, and reopening it via the load path would materialize a locked ``MISSING``
+        stub for a file that never existed, resurrecting edits the user discarded (#175, #147).
         """
         open_widgets = {
             widget.model.path: widget
             for widget in self.__documents_dock.open_document_widgets()
-            if widget.model.path is not None
+            if widget.model.path is not None and widget.model.saved_on_disk
         }
 
         for path in open_widgets:
