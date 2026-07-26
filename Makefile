@@ -1,5 +1,12 @@
-.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-serve publish setup-git uis qrcs icons \
-	agent-build agent-build-clean agent-register agent-unregister
+.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-serve docs-build publish setup-git \
+	uis qrcs icons agent-build agent-build-clean agent-register agent-unregister
+
+# UTF-8 mode (PEP 540) for every recipe, so a tool printing non-ASCII cannot die on the console's
+# encoding. mkdocs-puml ends its run with a "✔️", which a Windows console's default cp1252 stdout
+# cannot encode -- the UnicodeEncodeError propagates out of the plugin hook and takes the whole
+# mkdocs build/serve down with it. Exported rather than set per docs target: it costs nothing, and
+# the next tool to print a check mark shouldn't have to rediscover this.
+export PYTHONUTF8 := 1
 
 SEARCH_DIRS := packages spikes
 # pyside6-uic --python-paths uses the OS-native path separator (os.pathsep): ';' on Windows,
@@ -83,6 +90,13 @@ qa: format check-slugs cov bandit pyright pylint
 
 docs-serve:
 	uv run mkdocs serve
+
+# --strict, so a broken internal link or a page missing from the nav fails instead of warning: both
+# are invisible in `docs-serve` (which happily renders an unreachable page) and only show up once
+# the site is published. Deliberately not part of `qa` -- mkdocs-puml renders diagrams through a
+# PlantUML server, so a cold cache makes this need the network, which `qa` must not.
+docs-build:
+	uv run mkdocs build --strict
 
 publish:
 	uv build --all-packages --out-dir .dist

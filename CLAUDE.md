@@ -4,6 +4,9 @@
 
 Read before any non-trivial task:
 
+- **How it works:** `docs/specs/how-it-works.md` — one closed page on the system as it exists today.
+  Start here when the shape of the thing isn't already in context; it is deliberately short and says
+  plainly which parts are unbuilt.
 - **Design specs:** `docs/specs/` — one topic file per global section range. `docs/specs/README.md` is the
   document map: resolve any `§N.M` reference there, or use the stable `[[doc#slug]]` cross-reference
   convention it defines. Overview (§1–§3) in `docs/specs/architecture-design.md`. Numbers are global and
@@ -71,7 +74,9 @@ findings kept in [[packaging-deployment#glibc-canary]]). Nodes must tolerate the
 ruff formatting/linting; pylint, mypy, and black are disabled there.
 
 Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint`, `check-slugs`,
-`qa` (format + check-slugs + cov + bandit + pyright + pylint), `docs-serve`, `publish`, `uis`/`qrcs`/`icons`
+`qa` (format + check-slugs + cov + bandit + pyright + pylint), `docs-serve`, `docs-build` (strict —
+catches broken links and pages missing from the nav; needs the PlantUML server on a cold diagram cache,
+which is why it is outside `qa`), `publish`, `uis`/`qrcs`/`icons`
 (regenerate the gitignored `*_ui.py`/`*_rc.py` and brand-icon exports — run `make uis` after a fresh
 checkout/sync), `setup-git`, and the Windows-only dev-launcher targets
 `agent-build`/`agent-build-clean`/`agent-register`/`agent-unregister`.

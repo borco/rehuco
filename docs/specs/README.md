@@ -2,9 +2,14 @@
 
 [[[readme]]]
 
-This directory holds the rehuco design, split into topic files. The high-level overview is in
-[architecture-design.md](architecture-design.md). Cross-references between specs use the stable
-`[[doc#slug]]` tokens defined below — see "Symbolic cross-references."
+**New here? Read [how-it-works.md](how-it-works.md) and stop.** It is one closed page describing the
+system as it exists today — enough to reason about the rest, with nothing in it you have to follow.
+
+Everything else in this directory is the **design**, split into topic files: it describes what the
+system is intended to be, in far more depth than is built, so a section existing here is not evidence
+that the behavior does. `architecture-design.md` holds the high-level argument for that design
+(§1–§3). Cross-references between specs use the stable `[[doc#slug]]` tokens defined below — see
+"Symbolic cross-references."
 
 ## Document map
 
@@ -18,6 +23,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 
 | § | Doc key | Section | File |
 | --- | --- | --- | --- |
+| — | `how-it-works` | **Start here:** the system as it exists today, in one closed page | [how-it-works.md](how-it-works.md) |
 | 1–3 | `architecture-design` | Problem statement · why distributed · components | [architecture-design.md](architecture-design.md) |
 | 4 | `data-model` | Data Model | [data-model.md](data-model.md) |
 | 5 | `nodes` | Node Communication | [nodes.md](nodes.md) |

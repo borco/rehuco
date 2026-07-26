@@ -14,6 +14,9 @@ for a resource's **details**, not for the media itself.
 Those details live in a small JSON file — a `.rehu` — sitting in the folder next to the resource it
 describes, one per resource. That's the whole storage model, and the name is its stem.
 
+**[How it works](specs/how-it-works.md)** is one page on the whole system as it stands: the file, the
+rules that keep it trustworthy, the app's panels, and what isn't built.
+
 ## What it does
 
 - **Edits a resource's details.** Open a `.rehu` from the file manager or from the app: title,
