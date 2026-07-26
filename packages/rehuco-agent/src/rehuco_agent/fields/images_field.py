@@ -49,6 +49,11 @@ class ImagesField(Field[list[str]], QObject):
     :param strip_height_changed: fires with a new configured height, forwarded into the strip so an
         applied settings change resizes the one already on screen (keyword-only, #161) -- the same
         value-plus-its-signal shape ``image_scanner``/``image_scanner_changed`` already uses.
+    :param strip_wrap: whether the strip wraps its thumbnails instead of keeping them on one row
+        (keyword-only, #70); the owner passes the user's configured choice.
+    :param strip_wrap_changed: fires with a new configured choice, forwarded into the strip so an
+        applied settings change re-lays out the one already on screen (keyword-only, #70) -- the same
+        shape as ``strip_height``/``strip_height_changed`` beside it.
     """
 
     TYPE = "images"
@@ -75,16 +80,20 @@ class ImagesField(Field[list[str]], QObject):
         editor_tab: FieldsTab,
         strip_height: int = IMAGE_STRIP_HEIGHT,
         strip_height_changed: SignalInstance | None = None,
+        strip_wrap: bool = False,
+        strip_wrap_changed: SignalInstance | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__image_scanner: Final = image_scanner
         self.__image_scanner_changed: Final = image_scanner_changed
         self.__strip_height: Final = strip_height
         self.__strip_height_changed: Final = strip_height_changed
+        self.__strip_wrap: Final = strip_wrap
+        self.__strip_wrap_changed: Final = strip_wrap_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
-        strip = ImageStrip(height=self.__strip_height)
+        strip = ImageStrip(height=self.__strip_height, wrap=self.__strip_wrap)
         # wired before it is seeded, not after: seeding is itself a rebuild, and the owner needs that
         # first curated set as much as any later one -- it is what a thumbnail click opens against (#161)
         strip.image_activated.connect(self.image_activated)
@@ -98,6 +107,9 @@ class ImagesField(Field[list[str]], QObject):
             # through bind_external, not a raw connect: the settings outlive this strip, so the owner
             # has to be able to sever it deterministically when a form rebuild destroys the widget
             self.bind_external(self.__strip_height_changed, strip.set_height)
+        if self.__strip_wrap_changed is not None:
+            # through bind_external for the same reason the height above is: the settings outlive the strip
+            self.bind_external(self.__strip_wrap_changed, strip.set_wrap)
         # no label: the strip is a self-explanatory hero, stacked full-width above the description
         return FieldViewerWidgets(self.viewer_tab, None, strip, vertical=True)
 

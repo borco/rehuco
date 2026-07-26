@@ -17,7 +17,7 @@ from typing import Final
 import cbor2
 import PySide6QtAds as QtAds
 from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
-from borco_pyside.widgets import MessageBanner
+from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
 from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton
@@ -156,6 +156,17 @@ def curate_screenshots(widget: DocumentWidget, paths: list[Path], mocker: Mocker
     strip = widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     strip.set_images(paths)
+
+
+def strip_wraps(strip: ImageStrip) -> bool:
+    """Whether ``strip`` is laying its thumbnails out wrapped rather than on one row (#70).
+
+    :param strip: the document's own viewer strip.
+    :returns: whether its scrolled content is in a wrapping layout.
+    """
+    content = strip.widget()
+    assert content is not None
+    return isinstance(content.layout(), FlowLayout)
 
 
 # endregion
@@ -2062,6 +2073,49 @@ def test_the_document_strips_thumbnail_height_follows_the_setting(
     strip = widget.findChild(ImageStrip)
     assert isinstance(strip, ImageStrip)
     assert strip.maximumHeight() == 77
+
+
+def test_the_document_strips_layout_follows_the_setting(
+    model: RehuDocumentModel, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A document's own image strip wraps its thumbnails when the settings ask it to (#70).
+
+    **Test steps:**
+
+    * ask for wrapped thumbnails, then build a document widget
+    * verify its viewer strip was built around a wrapping layout
+    """
+    del mocker
+    shared_image_viewer_settings().preview_wrap = True
+
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    assert strip_wraps(strip)
+
+
+def test_applying_a_new_document_strip_layout_re_lays_out_the_one_on_screen(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A layout applied in the settings re-lays out the strip already on screen (#70).
+
+    The same show-its-own-effect contract the thumbnail height beside it follows.
+
+    **Test steps:**
+
+    * paint a curated set in the document's strip, then ask for wrapped thumbnails
+    * verify the live strip wrapped, keeping the screenshots it was showing
+    """
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+
+    shared_image_viewer_settings().preview_wrap = True
+
+    assert strip_wraps(strip)
+    assert len(strip.findChildren(ThumbnailLabel)) == len(SCREENSHOTS)
 
 
 def test_applying_a_new_document_strip_height_resizes_the_one_on_screen(

@@ -1,8 +1,14 @@
-"""Tests for ImageStrip: the fixed-height horizontal thumbnail row."""
+"""Tests for ImageStrip: the thumbnail row, and the wrapped block it becomes on request (#70)."""
+
+# the strip carries a lot for one widget -- curation, the current-item mark, visibility, the wheel,
+# and now two layouts -- and every one of those is tested against the same fixtures; one cohesive
+# module reads better than an arbitrary split, so the module-length cap is lifted here.
+# pylint: disable=too-many-lines
 
 from collections.abc import Iterator
 from pathlib import Path
 
+from borco_pyside.widgets import FlowLayout
 from PySide6.QtCore import QMargins, QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QPalette, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
@@ -88,6 +94,19 @@ def strip_layout(strip: ImageStrip) -> QHBoxLayout:
     assert isinstance(content, QWidget)
     layout = content.layout()
     assert isinstance(layout, QHBoxLayout)
+    return layout
+
+
+def wrapped_layout(strip: ImageStrip) -> FlowLayout:
+    """The strip's inner thumbnail layout, wrapped (#70).
+
+    :param strip: the strip under test.
+    :returns: the `FlowLayout` holding the thumbnail labels.
+    """
+    content = strip.widget()
+    assert isinstance(content, QWidget)
+    layout = content.layout()
+    assert isinstance(layout, FlowLayout)
     return layout
 
 
@@ -874,3 +893,245 @@ def test_the_current_frame_is_even_on_every_side_and_closed_at_its_corners(
     corners = ((0, 0), (width - 1, 0), (0, height - 1), (width - 1, height - 1))
     assert [painted.pixel(x, y) for x, y in corners] == [highlight] * len(corners)
     assert painted.pixel(middle_x, middle_y) == QColor(FLAT_COLOUR).rgb()
+
+
+THUMBNAIL_SIDE = 50
+"""Height -- and so also width -- of a square thumbnail in the wrapping tests. Square, so how many
+fit on a row is the strip's width divided by this and nothing else."""
+
+WRAPPING_PATHS = [Path(f"/fake/wrap{index:02}.png") for index in range(6)]
+"""Six **distinct** screenshots, so a set can actually wrap: the strip keys its thumbnails by path,
+so a repeated one is a single thumbnail as far as a rebuild is concerned."""
+
+
+def hosted(strip: ImageStrip, width: int, mocker: MockerFixture, qtbot: QtBot) -> QWidget:
+    """Put ``strip`` in a shown host exactly ``width`` wide, with square thumbnails.
+
+    A **shown** host, because an unshown widget only gets its resize event once it appears -- so a
+    width set on one is not a width the strip has been told about yet. Margins are zeroed so the
+    strip's width is the host's, which is what the row arithmetic in these tests counts on.
+
+    :param strip: the strip to host.
+    :param width: the host's width, and so the strip's.
+    :param mocker: pytest-mock fixture, used to make every screenshot load as a square.
+    :param qtbot: pytest-qt fixture.
+    :returns: the host -- **which the caller must keep**, since pytest-qt tracks it weakly and the
+        strip's content goes down with it.
+    """
+    mocker.patch(
+        "rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(WIDE_PIXMAP, WIDE_PIXMAP)
+    )
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.addWidget(strip)
+    qtbot.addWidget(host)
+    host.resize(width, 400)
+    host.show()
+    qtbot.waitExposed(host)
+    return host
+
+
+def test_a_wrapped_strip_lays_its_thumbnails_out_in_a_flow(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Asked to wrap, the strip holds its thumbnails in a `FlowLayout` rather than one row (#70).
+
+    **Test steps:**
+
+    * build a wrapped strip and paint two thumbnails
+    * verify they sit in a flow layout
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = ImageStrip(wrap=True)
+    qtbot.addWidget(strip)
+
+    strip.set_images(PATHS)
+
+    assert wrapped_layout(strip).count() == 2
+
+
+def test_switching_to_wrapped_keeps_the_screenshots_it_had(mocker: MockerFixture, hosted_strip: ImageStrip) -> None:
+    """Wrapping an already-populated strip repaints the same screenshots in the new layout (#70).
+
+    The two layouts are different `QLayout` types and a widget only ever has one, so the thumbnails
+    are rebuilt rather than moved -- which is exactly where a set could be dropped.
+
+    **Test steps:**
+
+    * paint two thumbnails on a plain strip, then ask it to wrap and to stop again
+    * verify the same screenshots are on it in each layout
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    hosted_strip.set_images(PATHS)
+
+    hosted_strip.set_wrap(True)
+    assert wrapped_layout(hosted_strip).count() == 2
+
+    hosted_strip.set_wrap(False)
+    assert strip_layout(hosted_strip).count() == 2
+
+
+def test_switching_to_the_layout_it_already_has_rebuilds_nothing(
+    mocker: MockerFixture, hosted_strip: ImageStrip
+) -> None:
+    """Re-applying the layout the strip is already in leaves its thumbnails exactly as they were (#70).
+
+    **Test steps:**
+
+    * paint a thumbnail, then ask for the layout the strip already uses
+    * verify the very same thumbnail widget is still in the row
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    hosted_strip.set_images(PATHS[:1])
+    before = thumbnail_at(hosted_strip, 0)
+
+    hosted_strip.set_wrap(False)
+
+    assert thumbnail_at(hosted_strip, 0) is before
+
+
+def test_a_wrapped_thumbnail_still_reports_its_screenshot(
+    mocker: MockerFixture, hosted_strip: ImageStrip, qtbot: QtBot
+) -> None:
+    """Thumbnails repainted into the wrapped layout are wired up like any others (#70).
+
+    **Test steps:**
+
+    * paint two thumbnails, wrap the strip, and click the second
+    * verify it reported its own screenshot
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    hosted_strip.set_images(PATHS)
+    hosted_strip.set_wrap(True)
+    activated: list[Path] = []
+    hosted_strip.image_activated.connect(activated.append)
+
+    item = wrapped_layout(hosted_strip).itemAt(1)
+    assert item is not None
+    thumbnail = item.widget()
+    assert thumbnail is not None
+    qtbot.mouseClick(thumbnail, Qt.MouseButton.LeftButton)
+
+    assert activated == [PATHS[1]]
+
+
+def test_a_wrapped_strip_is_fixed_to_the_block_its_rows_make(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A wrapped strip is pinned to the height its thumbnails need at its own width (#70).
+
+    Declared rather than hinted at: the plain container each full-width form row sits in caches a
+    hint, so a hint alone left the lower rows drawn below the visible rectangle and their thumbnails
+    simply gone.
+
+    **Test steps:**
+
+    * paint six square thumbnails in a wrapped strip only three of them wide
+    * verify it is fixed to two rows' worth of height
+    """
+    strip = ImageStrip(height=THUMBNAIL_SIDE, wrap=True)
+    host = hosted(strip, THUMBNAIL_SIDE * 3, mocker, qtbot)
+
+    strip.set_images(WRAPPING_PATHS)
+
+    assert strip.minimumHeight() == 2 * THUMBNAIL_SIDE
+    assert strip.maximumHeight() == 2 * THUMBNAIL_SIDE
+    assert host.isVisible()
+
+
+def test_wrapping_a_populated_strip_grows_it_there_and_then(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Wrapping a strip that already has thumbnails re-fixes its height immediately (#70).
+
+    Regression: applying the setting to a strip whose thumbnails then needed two rows left it one row
+    tall -- the second row was laid out below the visible rectangle, so those screenshots vanished.
+    The freshly-built thumbnails have to be measurable *as they are added*, which a child that has
+    never been shown is not: it counts as an empty layout item, of no size at all.
+
+    **Test steps:**
+
+    * paint six square thumbnails on a plain strip three of them wide
+    * ask it to wrap
+    * verify it took the two-row height at once, with no resize or event loop in between
+    """
+    strip = ImageStrip(height=THUMBNAIL_SIDE)
+    host = hosted(strip, THUMBNAIL_SIDE * 3, mocker, qtbot)
+    strip.set_images(WRAPPING_PATHS)
+    assert strip.maximumHeight() == THUMBNAIL_SIDE
+
+    strip.set_wrap(True)
+
+    assert strip.maximumHeight() == 2 * THUMBNAIL_SIDE
+    assert host.isVisible()
+
+
+def test_narrowing_a_wrapped_strip_grows_it_a_row(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A wrapped strip re-fixes its height as its width changes the rows it folds into (#70).
+
+    **Test steps:**
+
+    * paint six square thumbnails in a wrapped strip three of them wide
+    * narrow it to two thumbnails wide
+    * verify it went from two rows to three
+    """
+    strip = ImageStrip(height=THUMBNAIL_SIDE, wrap=True)
+    host = hosted(strip, THUMBNAIL_SIDE * 3, mocker, qtbot)
+    strip.set_images(WRAPPING_PATHS)
+    assert strip.maximumHeight() == 2 * THUMBNAIL_SIDE
+
+    host.resize(THUMBNAIL_SIDE * 2, host.height())
+
+    qtbot.waitUntil(lambda: strip.maximumHeight() == 3 * THUMBNAIL_SIDE)
+
+
+def test_unwrapping_pins_the_strip_back_to_one_thumbnail(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Dropping the wrap takes the strip back to a single row's height, however many thumbnails (#70).
+
+    **Test steps:**
+
+    * paint six thumbnails in a wrapped strip three of them wide, then unwrap it
+    * verify it is one thumbnail tall again
+    """
+    strip = ImageStrip(height=THUMBNAIL_SIDE, wrap=True)
+    host = hosted(strip, THUMBNAIL_SIDE * 3, mocker, qtbot)
+    strip.set_images(WRAPPING_PATHS)
+    assert strip.maximumHeight() == 2 * THUMBNAIL_SIDE
+
+    strip.set_wrap(False)
+
+    assert strip.minimumHeight() == THUMBNAIL_SIDE
+    assert strip.maximumHeight() == THUMBNAIL_SIDE
+    assert host.isVisible()
+
+
+def test_a_new_thumbnail_height_re_fixes_a_wrapped_strip(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Applying a thumbnail height to a wrapped strip re-measures the block, not just one row (#70).
+
+    **Test steps:**
+
+    * paint six square thumbnails in a wrapped strip three of them wide, then halve their height
+    * verify the strip is one row of the halved height -- halving it narrows the thumbnails too, so
+      the row now holds all six
+    """
+    strip = ImageStrip(height=THUMBNAIL_SIDE, wrap=True)
+    host = hosted(strip, THUMBNAIL_SIDE * 3, mocker, qtbot)
+    strip.set_images(WRAPPING_PATHS)
+    assert strip.maximumHeight() == 2 * THUMBNAIL_SIDE
+
+    strip.set_height(THUMBNAIL_SIDE // 2)
+
+    assert strip.maximumHeight() == THUMBNAIL_SIDE // 2
+    assert host.isVisible()
+
+
+def test_an_empty_wrapped_strip_is_still_one_thumbnail_tall(qtbot: QtBot) -> None:
+    """With nothing on it, a wrapped strip keeps a thumbnail's height rather than a sliver (#70).
+
+    **Test steps:**
+
+    * build a wrapped strip and paint nothing on it
+    * verify it is one thumbnail tall
+    """
+    strip = ImageStrip(height=50, wrap=True)
+    qtbot.addWidget(strip)
+
+    strip.set_images([])
+
+    assert strip.minimumHeight() == 50
+    assert strip.maximumHeight() == 50

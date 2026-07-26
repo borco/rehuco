@@ -217,8 +217,19 @@ def strip_check_box(page: ImagesPage) -> QCheckBox:
     return box
 
 
+def wrap_check_box(page: ImagesPage) -> QCheckBox:
+    """The page's document-strip wrap toggle (#70).
+
+    :param page: the page under test.
+    :returns: the check box staging whether a document's strip wraps its thumbnails.
+    """
+    box = page.findChild(QCheckBox, "wrap_check_box")
+    assert isinstance(box, QCheckBox)
+    return box
+
+
 def test_the_page_starts_on_every_saved_choice(page: ImagesPage) -> None:
-    """A fresh page shows the strip toggle and both heights the shared settings currently hold (#161).
+    """A fresh page shows the toggles and both heights the shared settings currently hold (#161, #70).
 
     **Test steps:**
 
@@ -228,9 +239,24 @@ def test_the_page_starts_on_every_saved_choice(page: ImagesPage) -> None:
     settings = shared_image_viewer_settings()
 
     assert strip_check_box(page).isChecked() == settings.strip_visible
+    assert wrap_check_box(page).isChecked() == settings.preview_wrap
     assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
     assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height
     assert not page.is_dirty()
+
+
+def test_toggling_the_document_strip_layout_makes_the_page_dirty(page: ImagesPage) -> None:
+    """The document strip's wrap choice is a staged change until it is applied (#70).
+
+    **Test steps:**
+
+    * check the wrap toggle
+    * verify the page is dirty and the shared settings are untouched
+    """
+    wrap_check_box(page).setChecked(True)
+
+    assert page.is_dirty()
+    assert shared_image_viewer_settings().preview_wrap is False
 
 
 def test_toggling_the_strip_makes_the_page_dirty(page: ImagesPage) -> None:
@@ -264,15 +290,16 @@ def test_changing_a_height_makes_the_page_dirty(page: ImagesPage) -> None:
 
 
 def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesPage) -> None:
-    """Applying the page writes all four choices, not just the surface (#161).
+    """Applying the page writes all five choices, not just the surface (#161, #70).
 
     **Test steps:**
 
-    * stage a surface, the strip toggle, and both heights, then apply
+    * stage a surface, both toggles, and both heights, then apply
     * verify the shared settings carry every one of them
     """
     check(page, ImageViewerMode.FULL_SCREEN)
     strip_check_box(page).setChecked(True)
+    wrap_check_box(page).setChecked(True)
     spin_box(page, "preview_height_spin_box").setValue(200)
     spin_box(page, "lightbox_height_spin_box").setValue(120)
 
@@ -281,6 +308,7 @@ def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesP
     settings = shared_image_viewer_settings()
     assert settings.mode == ImageViewerMode.FULL_SCREEN
     assert settings.strip_visible is True
+    assert settings.preview_wrap is True
     assert settings.preview_image_height == 200
     assert settings.lightbox_image_height == 120
     assert not page.is_dirty()
@@ -296,6 +324,7 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesPage) -> None:
     """
     settings = shared_image_viewer_settings()
     strip_check_box(page).setChecked(not settings.strip_visible)
+    wrap_check_box(page).setChecked(not settings.preview_wrap)
     spin_box(page, "preview_height_spin_box").setValue(settings.preview_image_height + 20)
     spin_box(page, "lightbox_height_spin_box").setValue(settings.lightbox_image_height + 20)
     assert page.is_dirty()
@@ -304,5 +333,6 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesPage) -> None:
 
     assert not page.is_dirty()
     assert strip_check_box(page).isChecked() == settings.strip_visible
+    assert wrap_check_box(page).isChecked() == settings.preview_wrap
     assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
     assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height

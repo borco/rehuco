@@ -1,18 +1,20 @@
-"""A horizontal, fixed-height strip of screenshot thumbnails -- the lightbox viewer ([[plugins#field-toolkit]], #27).
+"""A strip of screenshot thumbnails -- the lightbox viewer ([[plugins#field-toolkit]], #27).
 
 The read-only counterpart of :class:`~rehuco_agent.fields.widgets.image_selector.ImageSelector`: it shows
-the *curated* set of screenshots (all siblings minus the hidden exceptions) as thumbnails on one
-horizontal, scrollable row. Content-sizing is deliberately capped in height (§13.5's image strip); a
-future preferences slice makes that height configurable ([[appendices.open-questions#still-open]]).
+the *curated* set of screenshots (all siblings minus the hidden exceptions) as thumbnails, either on one
+horizontal, scrollable row (the default) or wrapped over as many rows as the width needs (#70). Each
+thumbnail's height is the user's own choice ("Viewers > Images"), and so is which of the two layouts a
+document's strip uses.
 """
 
 from pathlib import Path
 from typing import Final, override
 
 from borco_pyside.core import SimpleProperty
+from borco_pyside.widgets import FlowLayout
 from PySide6.QtCore import QEvent, QRectF, Qt, Signal
-from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QPixmap, QWheelEvent
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QWidget
+from PySide6.QtGui import QMouseEvent, QPainter, QPainterPath, QPaintEvent, QPalette, QPixmap, QResizeEvent, QWheelEvent
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QScrollArea, QWidget
 
 from ..image_scanner import ImageScanner
 
@@ -23,8 +25,8 @@ thumbnail by this much on every side, which is padding the strip is not supposed
 leave each image short of the height it was given."""
 
 THUMBNAIL_SPACING: Final = 0
-"""Gap, in pixels, between thumbnails. Set explicitly because a layout's default spacing comes from
-the style and is several pixels, which reads as stray padding in a row this dense."""
+"""Gap, in pixels, between thumbnails, in either layout. Set explicitly because a layout's default
+spacing comes from the style and is several pixels, which reads as stray padding in a row this dense."""
 
 
 class ThumbnailLabel(QLabel):
@@ -118,23 +120,37 @@ class ThumbnailLabel(QLabel):
             self.clicked.emit(self.__path)
 
 
-class ImageStrip(QScrollArea):
-    """A single horizontal row of fixed-height screenshot thumbnails ([[plugins#field-toolkit]], #27).
+class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
+    """A row -- or, wrapped, a block -- of screenshot thumbnails ([[plugins#field-toolkit]], #27, #70).
 
-    Each image is scaled to the strip's height (preserving aspect ratio) and laid out left-to-right; a
-    horizontal scrollbar appears when they overflow. The strip never grows vertically -- it is fixed to
-    ``height`` -- so an over-tall image cannot force the viewer tall.
+    Every image is scaled to ``height`` (preserving aspect ratio) and laid out left-to-right. The two
+    layouts differ only in what happens at the right edge:
+
+    - **row** (the default): the thumbnails run on past it and the strip stays exactly ``height`` tall,
+      so an over-long set cannot force the surface hosting it tall. Overflow is reached by the wheel.
+    - **wrapped** (``wrap``, #70): the thumbnails fold onto a new line instead, and the strip is fixed
+      to however tall the block that makes is at its current width -- ``height`` at its shortest.
+      Nothing scrolls inside it; the form around it does, which is where a document's own vertical
+      scrolling already lives.
+
+    Either way the height is **declared**, never merely hinted at (:meth:`__apply_height`): a hint has
+    to survive being re-read through every layout between here and the dock, and one of them caches it,
+    so a wrapped strip that had grown stayed at its old height with its lower rows clipped away.
 
     Holds its own :attr:`image_scanner`, so it can re-fetch its screenshots and rebuild itself whenever
     that changes (e.g. a `.tc` -> `.rehu` conversion switching naming conventions,
     [[acquisition-tooling#tc-to-rehu]]) without its owner having to push a fresh file list explicitly.
 
     :param parent: optional Qt parent.
-    :param height: the strip's fixed pixel height, and the height each thumbnail is scaled to.
+    :param height: the height each thumbnail is scaled to, and the strip's own fixed height while it
+        is a single row.
     :param wheel_scrolls: whether a plain vertical wheel scrolls this row sideways (keyword-only).
         Off by default: a strip embedded in a scrollable form must leave the wheel to the form, so
         only a strip that is a control in its own right -- the maximized viewer's -- turns it on.
         A horizontal wheel scrolls the row either way.
+    :param wrap: whether to start wrapped rather than as a single row (keyword-only, #70). The user's
+        own choice for a document's strip; the maximized viewer's row is never wrapped, since it is an
+        index alongside the screenshot rather than the content itself.
     """
 
     image_activated = Signal(Path)
@@ -149,15 +165,18 @@ class ImageStrip(QScrollArea):
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
 
-    def __init__(self, parent: QWidget | None = None, height: int = 150, *, wheel_scrolls: bool = False) -> None:
+    def __init__(
+        self, parent: QWidget | None = None, height: int = 150, *, wheel_scrolls: bool = False, wrap: bool = False
+    ) -> None:
         super().__init__(parent)
         self.__height = height
+        self.__wrap = wrap
         self.__wheel_scrolls: Final = wheel_scrolls
         self.__hidden: list[str] = []
         self.__thumbnails: dict[Path, ThumbnailLabel] = {}
         self.__current: Path | None = None
         self.__requested_visible = True
-        self.setFixedHeight(height)
+        self.__row: QLayout
         self.setWidgetResizable(True)
         # nothing but the thumbnails: a scroll area's default sunken panel would draw a border around
         # the row and inset it by the frame width, which reads as stray padding around the images on
@@ -172,12 +191,8 @@ class ImageStrip(QScrollArea):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        content = QWidget()
-        self.__row: Final = QHBoxLayout(content)
-        self.__row.setContentsMargins(0, 0, 0, 0)
-        self.__row.setSpacing(THUMBNAIL_SPACING)
-        self.__row.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.setWidget(content)
+        self.__build_content()
+        self.__apply_height()
 
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
 
@@ -224,14 +239,78 @@ class ImageStrip(QScrollArea):
         Lets an already-built strip follow the user's configured thumbnail height the moment they
         apply it, rather than only on the next document opened.
 
-        :param height: the strip's new fixed pixel height.
+        :param height: the new pixel height of a thumbnail (and, unwrapped, of the strip itself).
         """
         if height == self.__height:
             return
         self.__height = height
-        self.setFixedHeight(height)
+        self.__apply_height()
         # the thumbnails are scaled at build time, so the row has to be rebuilt to rescale them
         self.set_images(list(self.__thumbnails))
+
+    def set_wrap(self, wrap: bool) -> None:
+        """Lay the thumbnails out on one row, or wrapped over as many as the width needs (#70).
+
+        The two layouts are different `QLayout` types and a widget only ever has one, so the content
+        widget is rebuilt rather than reconfigured -- taking its thumbnails with it, which is why the
+        screenshots are read off first and repainted into the new layout afterwards.
+
+        :param wrap: whether the thumbnails wrap.
+        """
+        if wrap == self.__wrap:
+            return
+        self.__wrap = wrap
+        paths = list(self.__thumbnails)
+        # the labels themselves are about to be destroyed with the content widget holding them
+        self.__thumbnails.clear()
+        self.__build_content()
+        self.__apply_height()
+        self.set_images(paths)
+
+    def __build_content(self) -> None:
+        """Install a fresh content widget laid out the way :attr:`__wrap` currently asks for.
+
+        Replacing a scroll area's widget destroys the previous one, so this is also what disposes of
+        the outgoing layout and everything in it.
+        """
+        content = QWidget()
+        if self.__wrap:
+            # an explicit gap, not the layout's own plus the style's recommendation: these thumbnails
+            # sit flush in either layout, and the style's spacing would read as stray padding
+            self.__row = FlowLayout(content, spacing=THUMBNAIL_SPACING)
+        else:
+            self.__row = QHBoxLayout(content)
+            self.__row.setContentsMargins(0, 0, 0, 0)
+            self.__row.setSpacing(THUMBNAIL_SPACING)
+            self.__row.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.setWidget(content)
+
+    def __apply_height(self) -> None:
+        """Fix the strip to the height its current layout needs (#70).
+
+        One thumbnail as a single row, whatever it holds; the whole block's height when wrapped, with
+        one thumbnail as the floor so an empty strip is still a legible band rather than a sliver.
+
+        **Fixed, not hinted.** A size hint has to be re-read by every layout between this widget and
+        its dock, and the plain container each full-width form row sits in caches its own -- so a
+        wrapped strip that grew a row kept the height it had, with the new row drawn below the visible
+        rectangle and its thumbnails simply gone (#70). Setting the height outright changes this
+        widget's minimum *and* maximum, which is what Qt propagates all the way up; it is also how the
+        configured thumbnail height has always reached the screen (#161).
+        """
+        wanted = self.__wanted_height()
+        if (self.minimumHeight(), self.maximumHeight()) != (wanted, wanted):
+            self.setFixedHeight(wanted)
+
+    def __wanted_height(self) -> int:
+        """The height this strip needs right now.
+
+        :returns: one thumbnail as a single row; the wrapped block's own height at the strip's current
+            width otherwise, never less than one thumbnail.
+        """
+        if not self.__wrap:
+            return self.__height
+        return max(self.__height, self.__row.heightForWidth(self.width()))
 
     def __wants_visible(self) -> bool:
         """Whether the strip should be on screen: its owner wants it, and it has something to show."""
@@ -274,6 +353,19 @@ class ImageStrip(QScrollArea):
         scrollbar = self.horizontalScrollBar()
         scrollbar.setValue(scrollbar.value() - delta)
         event.accept()
+
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Re-fix the strip's height whenever its width changes, since that is what wrapping folds on (#70).
+
+        Deliberately blind to a height change: applying the new height *is* one, so answering those
+        too would be a loop.
+
+        :param event: the Qt resize event, forwarded to the base class.
+        """
+        super().resizeEvent(event)
+        if self.__wrap and event.size().width() != event.oldSize().width():
+            self.__apply_height()
 
     @override
     def changeEvent(self, event: QEvent) -> None:
@@ -324,10 +416,18 @@ class ImageStrip(QScrollArea):
             label.clicked.connect(self.image_activated)
             label.setPixmap(pixmap.scaledToHeight(thumbnail_height, Qt.TransformationMode.SmoothTransformation))
             self.__row.addWidget(label)
+            # shown here rather than left to the layout to show along with the row: a child that has
+            # never been shown counts as an *empty* layout item, whose size hint is nothing at all --
+            # so the wrapped block measured zero high until something else happened to lay the row out
+            # (#70). Safe for a strip that is itself hidden or parentless: this is a child of the
+            # scrolled content, so showing it can never flash a window of its own.
+            label.show()
             self.__thumbnails[path] = label  # pylint: disable=unsupported-assignment-operation
 
         # re-mark whatever was current before the rebuild, so a curation edit under an open viewer
         # doesn't silently lose the mark on a screenshot that survived it
         self.set_current(self.__current)
+        # a wrapped strip's height is its block's, so a rebuild is exactly when it can change (#70)
+        self.__apply_height()
         self.__apply_visibility()
         self.images_changed.emit(list(self.__thumbnails))

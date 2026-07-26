@@ -10,9 +10,11 @@ from pytest import fixture
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings.image_viewer_settings import (
     DEFAULT_MODE,
+    DEFAULT_PREVIEW_WRAP,
     DEFAULT_STRIP_VISIBLE,
     GROUP,
     MODE_KEY,
+    PREVIEW_WRAP_KEY,
     STRIP_VISIBLE_KEY,
     ImageViewerSettings,
 )
@@ -170,6 +172,43 @@ def test_load_defaults_to_a_hidden_thumbnail_row_when_nothing_was_saved(settings
     assert viewer_settings.strip_visible is False
 
 
+def test_save_then_load_round_trips_the_document_strip_layout(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the document strip's wrap choice (#70).
+
+    **Test steps:**
+
+    * set a non-default layout and save
+    * load into a fresh instance from the same settings stand-in
+    * verify the choice came back unchanged
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.preview_wrap = True
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.preview_wrap is True
+
+
+def test_load_defaults_to_an_unwrapped_document_strip_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """A fresh install keeps a document's screenshots on one row (#70).
+
+    **Test steps:**
+
+    * load into a fresh instance from an empty settings stand-in
+    * verify the strip is unwrapped
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.preview_wrap = True
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.preview_wrap == DEFAULT_PREVIEW_WRAP
+    assert viewer_settings.preview_wrap is False
+
+
 def test_saving_writes_both_choices_together(settings: FakeSettings) -> None:
     """One save persists the whole object, so writing either choice cannot drop the other.
 
@@ -184,8 +223,10 @@ def test_saving_writes_both_choices_together(settings: FakeSettings) -> None:
     viewer_settings = ImageViewerSettings()
     viewer_settings.mode = ImageViewerMode.FULL_SCREEN
     viewer_settings.strip_visible = True
+    viewer_settings.preview_wrap = True
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
     assert settings.value(MODE_KEY) == "full_screen"
     assert settings.value(STRIP_VISIBLE_KEY) is True
+    assert settings.value(PREVIEW_WRAP_KEY) is True
