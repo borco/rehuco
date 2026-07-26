@@ -7,8 +7,12 @@
 [![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=macos)
 [![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
-rehuco is a desktop editor for `.rehu` files — JSON sidecars that describe one resource (a video
-tutorial, an online course, an archive of reference images) and sit next to it on disk.
+A personal media catalog for the things you collect to learn from and work with — video tutorials,
+online courses, archives of reference images. Today it is the part that comes first: a desktop editor
+for a resource's **details**, not for the media itself.
+
+Those details live in a small JSON file — a `.rehu` — sitting in the folder next to the resource it
+describes, one per resource. That's the whole storage model, and the name is its stem.
 
 ## What it does
 

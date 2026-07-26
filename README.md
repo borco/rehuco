@@ -20,9 +20,12 @@ exercised, not because they are ready to depend on.
 
 ## What it is
 
-rehuco is a desktop editor for `.rehu` files — JSON sidecars that describe one resource (a video
-tutorial, an online course, an archive of reference images) and sit next to it on disk. The name is
-the stem of `.rehu`, the one format it implements today.
+A personal media catalog for the things you collect to learn from and work with — video tutorials,
+online courses, archives of reference images. Today it is the part that comes first: a desktop editor
+for a resource's **details**, not for the media itself.
+
+Those details live in a small JSON file — a `.rehu` — sitting in the folder next to the resource it
+describes, one per resource. That's the whole storage model, and the name is its stem.
 
 ## What it does
 
@@ -37,8 +40,8 @@ the stem of `.rehu`, the one format it implements today.
   file written by a newer version of the format opens read-only rather than being rewritten.
 - **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.
 
-Self-describing by design: a `.rehu` sits next to the content it describes, so reading a resource's
-details needs nothing but the file itself — no index, no server, no account.
+Self-describing by design: because the details sit next to the content, reading a resource needs
+nothing but the folder it's in — no index to build first, no server, no account.
 
 Tested on Windows, macOS, and Linux.
 
