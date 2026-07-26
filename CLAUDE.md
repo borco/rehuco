@@ -4,6 +4,9 @@
 
 Read before any non-trivial task:
 
+- **How it works:** `docs/specs/how-it-works.md` — one closed page on the system as it exists today.
+  Start here when the shape of the thing isn't already in context; it is deliberately short and says
+  plainly which parts are unbuilt.
 - **Design specs:** `docs/specs/` — one topic file per global section range. `docs/specs/README.md` is the
   document map: resolve any `§N.M` reference there, or use the stable `[[doc#slug]]` cross-reference
   convention it defines. Overview (§1–§3) in `docs/specs/architecture-design.md`. Numbers are global and

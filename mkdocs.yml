@@ -86,6 +86,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Design Specs:
+      - How It Works: specs/how-it-works.md
       - Document Map: specs/README.md
       - Overview: specs/architecture-design.md
       - Data Model: specs/data-model.md
@@ -113,8 +114,11 @@ nav:
           - Continuous Integration: specs/appendices/continuous-integration.md
           - Open Questions: specs/appendices/open-questions.md
           - Post-Mortem: specs/appendices/post-mortem.md
+          - Project Management: specs/appendices/project-management.md
           - QtAds: specs/appendices/qt-ads.md
+          - Settings Pages: specs/appendices/settings-pages.md
           - Testing: specs/appendices/testing.md
+          - Theming & Styling: specs/appendices/theming_and_styling.md
           - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
       - History:
           - Overview: specs/history/README.md
