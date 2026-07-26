@@ -77,9 +77,11 @@ display title and the basis for folder/file-name suggestions ([[field-schema#sou
 ² **`authors` stays one shared list**, not per-source — a differing author set signals a
 *different* tutorial, not another source of the same one ([[field-schema#sources]]).
 ³ one **collection membership** = `{ title, index, url? }`; a resource may belong to several
-series ([[field-schema#sources]]).
-⁴ **learning paths** are `{ title, index, visibility }`; `visibility` is the UI `public` /
-`private` toggle; the owner is implicit by per-user block ([[field-schema#sources]]).
+series, and `url` is a cached copy of the series' own page rather than authored here
+([[field-schema#sources]]).
+⁴ **learning paths** are `{ title, index, ref }` when owned and `{ ref }` when subscribed, filed
+under the owning identity in the block's `users` map — ownership is structural, and there is no
+`visibility` flag ([[field-schema#learning-path-ownership]]).
 
 Values tc4 derives rather than stores (not `.tc` keys): the folder/parent path (from the file
 location), canonical folder-name suggestions, and the transient "Computed" duration/size from a
@@ -131,13 +133,31 @@ fixtures.
 - [x] [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
 - [x] [#109: feat: current + unknown identities — .tc imports file per-user state under "unknown", UI edits under the current user](https://github.com/borco/rehuco/issues/109)
 
-`rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **private**
+`rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **all**
 `learning_paths` are **per-user** state, not properties of the resource. v1 is single-user/local
 so this is invisible, but the schema must keep them separable from shared fields so the
 multi-user model ([[sync#overview]], [[data-model#rehu-format]]'s per-user `progress`) does not have to relocate them
-later. The
-shared flags (`complete`, `online`) and a learning path toggled **public** (or curated by the
-admin) are propagated swarm state instead ([[field-schema#sources]], [[field-schema#boolean-flags]]).
+later. The shared flags (`complete`, `online`) and the `collections` memberships are properties of the
+resource and stay inline in the block ([[field-schema#sources]], [[field-schema#boolean-flags]]).
+
+**The map is keyed by scope, not strictly by person.** Two of its keys are not people: `unknown`, which
+imported state is filed under because its real owner is unknown (below), and the reserved `public`,
+which holds learning paths shared with everyone ([[field-schema#learning-path-ownership]]). `public`
+must be **reserved** — unlike `unknown`, which is a configurable setting — since a real user by that
+name would silently become the publishing scope, the same way `RESERVED_KEYS` protects `core` from a
+plugin claiming it ([[data-model#rehu-format]]).
+
+**Private is not secret.** A private path is one that is *not propagated as swarm state and not shown in
+another user's viewer* — it is not hidden from anyone with the file. The `users` map is a **convention,
+not a boundary**: any process that can read the document reads all of it, and two of the app's own docks
+already print it verbatim ([[field-schema#source-inspection-docks]]). What each surface shows is a presentation
+rule, applied consistently:
+
+| Surface | Shows |
+| --- | --- |
+| Viewer | the current identity's own state only — one user's values never see another's |
+| Editor | the file's editable content, other users' paths included, so subscribing is possible |
+| Save Preview / On Disk | everything, unfiltered — that is what they are for |
 
 **Stored per-user from day 1 — nested under the block's `users` map, keyed by username** (decided 2026-07, superseding
 the earlier live-inline-for-now deferral):
@@ -207,18 +227,26 @@ collections:
 ```
 
 - Each entry is `{ title, index, url? }`. `title` is the series name (it matches a
-  `type: Collection` record's `title`); `index` is the position within that series; `url`
-  optionally links the series' own page. **Publisher-defined.**
-- **`learning_paths`** use the `{ title, index, visibility }` shape and render apart from the tag
-  fields (a plain tag can't carry an order). **`visibility` is a `public` / `private` toggle in the
-  UI**: *private* = only its owner sees it; *public* = shared with the swarm (the admin can also
-  curate public ones, [[discovery-trust-access]]). The **owner stays implicit** — a personal path lives in that user's
-  per-user block ([[field-schema#per-user-shared]]), so we store the **`visibility` flag, not a `user` field**. Public
-  paths are propagated swarm state; private ones stay per-user, mirroring `rating` / `viewed` /
-  `progress` ([[sync#overview]]). v1 is single-user, so the public/private split only bites once there's a
-  swarm.
+  `type: Collection` record's `title`); `index` is the position within that series. **Publisher-defined.**
+- `url` is a **cached copy** of the series' own page, not authored here: the page belongs to the
+  collection, which owns it once rather than once per member ([[plugins#grouping-entities]]). It is carried
+  through untouched and gets **no editor cell** — the same child-caches-what-the-entity-owns rule the
+  membership entries themselves follow. It never arrives from a `.tc`, which has no such field.
+- **Duplicate `(title, index)` pairs are legal**, and entries sharing an `index` order
+  **alphabetically by title**. `index` is a position, not a key: nothing enforces uniqueness, because
+  the only writer that could is the entity, and it does not exist yet.
+- **Renumbering every member of a collection** — dragging one into a new position and rewriting the
+  rest — is an entity-era, multi-file operation ([[plugins#grouping-entities]]), not something a
+  single document's editor can do.
+- **`learning_paths`** use the `{ title, index }` shape and render apart from the tag fields (a plain
+  tag can't carry an order), but they are **owned**, which collections are not — see
+  [[field-schema#learning-path-ownership]] for the storage that expresses it.
 - **Legacy import** — scalar `collection` + `collection_index` become one entry; the flat
-  `learning_paths` names become entries with `index` by stored order.
+  `learning_paths` names become owned entries under the importing identity, each with **`index: 0`**.
+  tc4's list order was list order, never a curated position, so numbering them 1, 2, 3 … would mint an
+  authority the source never had — the same reason absent scalars are omitted rather than defaulted
+  ([[field-schema#deferred-items]]). All-zero plus the alphabetical tie-break above reads as *no order
+  chosen yet*, which is the truth.
 
 Only the **Collection *type*** stays deferred — which fields a `type: Collection` record
 shows/edits, and whether it carries a recomputed member-stats cache ([[field-schema#resource-types]],
@@ -229,7 +257,55 @@ Collections and learning paths (with authors) later gain optional **entity docum
 entity-as-authority, materialize-on-description — as grouping-entity plugins ([[plugins#grouping-entities]]); the
 membership fields above are the reference mechanism that design builds on and are unchanged on disk by it.
 
-### §17.2.4 The `online` flag and local backup
+### §17.2.4 Learning-path ownership: owned, subscribed, public
+
+[[[field-schema#learning-path-ownership]]]
+
+A collection is publisher-defined and belongs to nobody, so its entries sit inline in the plugin block.
+A **learning path is somebody's** — one person curates its order — so its entries live in the block's
+`users` map ([[field-schema#per-user-shared]]) and ownership is expressed by **where the entry sits and
+what it carries**, with no `owner` field and no `visibility` flag:
+
+```json
+"users": {
+  "public": { "learning_paths": [ { "title": "Sculpting Fundamentals", "index": 3, "ref": 1 } ] },
+  "admin":  { "learning_paths": [ { "ref": 1 },
+                                  { "title": "My Sculpting Order", "index": 7, "ref": 2 } ] },
+  "foo":    { "learning_paths": [ { "ref": 1 }, { "ref": 2 } ] }
+}
+```
+
+- **A full entry (`title`, `index`, `ref`) is an owned path.** Whoever holds it owns it — ownership is
+  structural, so there is nothing to record at creation and nothing a later migration would have to guess.
+- **A bare `{ ref }` is a subscription** to the owned entry carrying that `ref` in the same file. A
+  subscriber has no title and no index of their own: a differently-named path is nobody's idea of a
+  feature, and a different order means *a different path*, which they are free to own. So an owner's fix
+  reaches every subscriber with no work, and one resource can sit at different positions in several paths
+  by belonging to several.
+- **`ref` is a file-scoped slot** — a small integer, unique across every block in that file, minted when
+  a path is created. Deliberately not a UUID and never compared across files: it exists so a subscription
+  survives its owner retitling the path, which linking by name could not.
+- **`public` is a reserved scope**, not a user. Publishing **copies** a full entry into it; the original
+  is untouched, so there is no un-publish — only deleting the public copy, which leaves every private one
+  standing. A public path is visible to everyone without subscribing; subscription is for *other users'*
+  paths.
+- **An unresolvable `ref` is ignored** on read and dropped on the next save — a subscription whose target
+  is gone is nothing, and must not render blank or raise.
+- **An owner deleting a path that others subscribe to reparents it to the `unknown` identity** rather
+  than stranding them, which leaves it ownerless and so maintainable only by the admin. With no
+  subscribers it simply goes. (`unknown` is a configurable setting rather than a reserved name, so an
+  install that points it at a real person inherits such paths — the same quirk imports already have.)
+- **The document editor has no global rename.** Editing an owned entry's title renames the path **in this
+  file**; other files keep the old name until the catalog can update them ([[plugins#grouping-entities]]).
+  The cell is editable and says so, rather than being disabled for a limit that is temporary and usually
+  irrelevant — most paths have one owner and one file's worth of members.
+
+**Ordering is the entity's, cached on the members.** The per-member `index` is the pre-entity form of the
+ordered item list a materialized learning path will own ([[plugins#grouping-entities]]); when one exists,
+the members keep their copies *"not for authority but for self-description"*, so nothing here is undone by
+that arrival.
+
+### §17.2.5 The `online` flag and local backup
 
 [[[field-schema#online-flag]]]
 
@@ -245,7 +321,7 @@ Local presence is read from `current_size` / `complete`, not from `online`. The 
 sense to disambiguate against, so the finer `source_online` / `available_online` rename is not
 worth it.
 
-### §17.2.5 Record timestamps
+### §17.2.6 Record timestamps
 
 [[[field-schema#record-timestamps]]]
 
@@ -267,7 +343,7 @@ Once the `versions` list lands in the schema ([[sync#overview]] — v1 carries n
 [[sync#overview]]) and `updated` = the latest entry's date. A later format version may then drop the stored
 fields in favor of the derived values — [[data-model#schema-version]] makes that migration safe.
 
-### §17.2.6 Boolean flags
+### §17.2.7 Boolean flags
 
 [[[field-schema#boolean-flags]]]
 
@@ -288,7 +364,7 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   migration safe to do in a later revision. `favorite` would stay separate regardless. `rating`
   never folds in (it is an integer, not a toggle).
 
-### §17.2.7 Author entries: plain name or `{name, url}` record
+### §17.2.8 Author entries: plain name or `{name, url}` record
 
 [[[field-schema#authors]]]
 
@@ -484,11 +560,17 @@ Field order, in the three groups the layout separates:
 - **Per-user storage — resolved** ([[field-schema#per-user-shared]]): per-user keys nest under the plugin block's
   `users` map from block layout v1. Still open here: the catalog-cache-era **mass-rename** job (old username → new,
   across every file naming the user) and where a **public** learning path lives (below).
-- **Learning-path visibility storage** — the `public` / `private` toggle ([[field-schema#sources]]): confirm
-  whether a public user path stays in the owner's per-user block (owner implicit) or moves to
-  the shared record on toggle. Swarm-era, not v1. Refined by the grouping-entity design
-  ([[plugins#grouping-entities]]): a private path likely stays pure per-user state, with the entity document minted
-  **at publication** (privacy by non-existence), and ordering moves to the entity once one exists.
+- **Learning-path visibility storage — resolved** ([[field-schema#learning-path-ownership]]): a public path
+  is a **copy** into the reserved `public` scope, leaving the owner's entry untouched, so there is no
+  un-publish and no question of where an un-shared path lands. Ownership is structural (who holds the full
+  entry) rather than a recorded field. Still open around it: whether **publishing also mints the entity
+  document** ([[plugins#grouping-entities]]'s materialize-at-publication sketch) or only copies the entry —
+  two acts that want one sentence; and how two users' same-titled paths reconcile when one is published.
+- **Identity collapse on import — undecided.** Imports file per-user state under `unknown` while the viewer
+  shows the *current* identity, so a freshly converted resource shows none of its imported learning paths
+  (or its rating) until the two usernames are set to the same value — which is explicitly supported. If
+  that is the intended migration flow it should be said here; if it is not, "subscribe to the `unknown`
+  identity's entries" becomes a third remedy alongside the mass-rename job (#108).
 - **`default_tags` consolidation — deferred** ([[field-schema#boolean-flags]]) — a later revision may fold the
   fixed-vocabulary bools (`complete`/`online`/`viewed`/`todo`/`keep`) into one toggle-set list
   with a vocabulary from `.rehuco` (scope, labels/icons), migrated via a plugin-block
@@ -607,7 +689,7 @@ parser/schema validation fixtures.
           {
             "title": "My Sculpting Path",
             "index": 2,
-            "visibility": "private"
+            "ref": 1
           }
         ],
         "rating": 4,

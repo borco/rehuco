@@ -477,7 +477,7 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
 | --- | --- | --- | --- |
 | **collection** | member's `collections[]` | members' parent dir *when containment-shaped*, else the configured home | dual placement |
 | **author** | credited name in `authors` ([[field-schema#authors]]) | configured home | alias aggregation |
-| **learning path** | member's `learning_paths[]` | configured home / owner's per-user state | per-user, private/public |
+| **learning path** | member's `learning_paths[]` | configured home / owner's per-user state | owned per-user, shared by copy into the reserved `public` scope ([[field-schema#learning-path-ownership]]) |
 
 - **Discovered vs. genuine.** An entity needs no document to exist: the membership entries on resources alone define a
   *discovered* entity — browsable, weightless, derived. A *genuine* entity has its own `.rehu`. The rule for which is
