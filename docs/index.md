@@ -7,37 +7,54 @@
 [![macOS](https://img.shields.io/codecov/c/github/borco/rehuco?flag=macos&label=macOS)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=macos)
 [![Linux](https://img.shields.io/codecov/c/github/borco/rehuco?flag=linux&label=Linux)](https://app.codecov.io/gh/borco/rehuco?flags%5B0%5D=linux)
 
-rehuco is a distributed resource management system for tutorials and reference images.
+rehuco is a desktop editor for `.rehu` files — JSON sidecars that describe one resource (a video
+tutorial, an online course, an archive of reference images) and sit next to it on disk.
 
-See the [design specs](specs/README.md) for architecture and implementation details.
+## What it does
 
-## Roadmap
+- **Edits a resource's details.** Open a `.rehu` from the file manager or from the app: title,
+  authors, publisher, release date, URL, durations, sizes, rating, level, tags, flags, and a Markdown
+  description.
+- **Shows its screenshots.** A thumbnail strip beside the fields — click one to fill the window,
+  arrow keys or the wheel to move through the set, and pick which of them the strip shows.
+- **Converts legacy `.tc` catalogs.** Reads the older format, writes `.rehu`, and keeps backups it
+  can roll back if the conversion goes wrong.
+- **Doesn't damage what it doesn't understand.** Unrecognized fields survive a save untouched, and a
+  file written by a newer version of the format opens read-only rather than being rewritten.
+- **Keeps your workspace.** Atomic saves, and each file's panel layout remembered between sessions.
 
-The build is organized into milestones, each mapping to a personal use-case and adding one new
-architectural spine. See the [implementation plan](specs/implementation-plan.md) for detail.
+Self-describing by design: a `.rehu` sits next to the content it describes, so reading a resource's
+details needs nothing but the file itself — no index, no server, no account.
 
-| Milestone | What it does |
-| --- | --- |
-| **LocalEdit** *(current)* | Local viewing and editing of `.rehu` files — one machine, no network, no login. |
-| **CacheDB** | Scan folders, cache the scan results into a `.rehudb` database, and search the catalog. Brings the app close to the original tutcatalog. |
-| **WatchTutorial** | Watch tutorials locally, or from a browser/tablet via an embedded web server, with progress remembered. |
-| **Borrowing** | Borrow a copy onto a laptop, watch it offline, and reconcile progress and notes on return — two-party sync (home node ↔ laptop), the minimal reconcile topology. |
-| **Swarm** | The full multi-node swarm — peer discovery, pairing and trust, registry resolution, and N-way sync across many machines. |
-| **Daz3D** | Migrate from the daz3d-personal-database predecessor — import and browse `.dpdml` files, and install/uninstall Daz3D plugins/extensions. |
+Tested on Windows, macOS, and Linux.
 
-Maintenance is tracked separately in **audit-run milestones** `X1`, `X2`, … — each collects the
-issues found during the N-th codebase audit. Acquisition tooling and richer reference-image plugins
-remain deferred beyond the milestones above.
+## Where it's going
+
+The **editor plus a basic browser** is the part worth finishing: the remaining editor work (a
+reference-images resource type, a log dock and task queue, tray and preferences), and then a view over
+a folder of resources — a rebuildable cache with search, so a collection can be looked through rather
+than opened one file at a time. See the [implementation plan](specs/implementation-plan.md).
+
+Past that point the design reaches further — playback with progress tracking, a headless node with a
+REST API, sync and offline borrowing between machines, multi-user access rules, a browser interface,
+Daz3D library migration. None of it is implemented, none of it is scheduled, and some of it may never
+be: it is what the architecture is shaped to allow, and each piece has to earn its place when its turn
+comes. The [design specs](specs/README.md) explore that territory in depth — as intent, not as a
+description of the current build.
+
+Maintenance is tracked separately in **audit-run milestones** `X1`, `X2`, … — each collects the issues
+found during the N-th codebase audit.
 
 ## rehuco packages
 
-rehuco is published as three separate packages on PyPI.
+rehuco is published as three separate packages on PyPI, all at an early `0.0.x` — published so the
+names are taken and the release plumbing is exercised, not because they are ready to depend on.
 
 | Package | Description | PyPI | Downloads | Python |
 | --- | --- | --- | --- | --- |
 | [rehuco-agent](https://pypi.org/project/rehuco-agent/) | PySide6 desktop GUI | [![PyPI](https://img.shields.io/pypi/v/rehuco-agent)](https://pypi.org/project/rehuco-agent/) | [![Downloads](https://static.pepy.tech/badge/rehuco-agent)](https://pepy.tech/project/rehuco-agent) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-agent)](https://pypi.org/project/rehuco-agent/) |
-| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, sync primitives | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
-| [rehuco-node](https://pypi.org/project/rehuco-node/) | Headless REST node | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
+| [rehuco-core](https://pypi.org/project/rehuco-core/) | Shared library: models, `.rehu` I/O, legacy `.tc` reading | [![PyPI](https://img.shields.io/pypi/v/rehuco-core)](https://pypi.org/project/rehuco-core/) | [![Downloads](https://static.pepy.tech/badge/rehuco-core)](https://pepy.tech/project/rehuco-core) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/) |
+| [rehuco-node](https://pypi.org/project/rehuco-node/) | A reserved name; no service written yet | [![PyPI](https://img.shields.io/pypi/v/rehuco-node)](https://pypi.org/project/rehuco-node/) | [![Downloads](https://static.pepy.tech/badge/rehuco-node)](https://pepy.tech/project/rehuco-node) | [![Python](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/) |
 
 ## Generic libraries (temporarily hosted)
 
