@@ -377,6 +377,7 @@ filter://publishers?name=Example%20Publisher
 
 - [x] [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
 - [x] [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
+- [ ] [#70: feat: flow vs. list layout toggle for image views](https://github.com/borco/rehuco/issues/70)
 
 The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
 
@@ -404,7 +405,12 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   on screen** — open strips resize, open viewers resize and show or hide their row — so the effect is visible where
   the user is looking rather than promised for next time ([[appendices.settings-pages#save-drop-actions]]).
   Neither strip ever paints a scrollbar, and a strip with nothing to show — no screenshots, or every one curated
-  away — hides itself rather than leaving an empty band. The set stays **live**: a curation edit or a scanner swap
+  away — hides itself rather than leaving an empty band. The document's own strip has a second layout to offer,
+  picked in the same settings ("Viewers > Images"): **wrapped**, folding the thumbnails onto as many rows as the
+  width needs instead of running them off the right edge, with the strip then as tall as that takes and the
+  document's own scrolling reaching the rest. It applies to the strips already on screen like the heights beside
+  it. The maximized viewer's row is never wrapped — there it is an index alongside the screenshot, not the content
+  itself. The set stays **live**: a curation edit or a scanner swap
   ([[acquisition-tooling#tc-to-rehu]]) re-points an open viewer through the same owner, which keeps the current
   screenshot if it survived, falls back to whatever took its position if it did not, and dismisses the viewer when the
   set empties — a maximized screenshot is never one the strip no longer offers.

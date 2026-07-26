@@ -139,6 +139,127 @@ def test_flow_layout_size_hint_and_height_for_width_match_minimum_size(qtbot: Qt
     assert layout.heightForWidth(200) == layout.minimumSize().height()
 
 
+def test_flow_layout_leaves_the_style_recommended_gap_by_default(qtbot: QtBot) -> None:
+    """With no explicit spacing, items are separated by more than the layout's own spacing alone.
+
+    The default is Qt's own example: the layout's spacing *plus* whatever the style recommends between
+    two controls, which is what a form of controls wants.
+
+    **Test steps:**
+
+    * build a `FlowLayout` with two fixed-size widgets side by side on a wide container
+    * verify the second starts beyond the first's right edge by the style's own recommendation
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout(container)
+    layout.setSpacing(0)
+    first, second = QWidget(container), QWidget(container)
+    for widget in (first, second):
+        widget.setFixedSize(20, 20)
+        policy = widget.sizePolicy()
+        policy.setControlType(QSizePolicy.ControlType.PushButton)
+        widget.setSizePolicy(policy)
+        layout.addWidget(widget)
+
+    container.resize(200, 100)
+    container.show()
+    qtbot.waitExposed(container)
+
+    recommended = first.style().layoutSpacing(
+        QSizePolicy.ControlType.PushButton, QSizePolicy.ControlType.PushButton, Qt.Orientation.Horizontal
+    )
+    assert second.geometry().x() == first.geometry().right() + 1 + recommended
+
+
+def test_flow_layout_honours_an_explicit_spacing_of_zero(qtbot: QtBot) -> None:
+    """An explicit ``spacing`` is the whole gap, so items asked to sit flush actually do.
+
+    Regression risk: adding the style's recommendation on top of the layout's own spacing makes a
+    zero gap unreachable, which is exactly what a strip of flush thumbnails needs.
+
+    **Test steps:**
+
+    * build a `FlowLayout` with ``spacing=0`` and two fixed-size widgets on a wide container
+    * verify the second's left edge touches the first's right edge, with nothing in between
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout(container, spacing=0)
+    first, second = QWidget(container), QWidget(container)
+    for widget in (first, second):
+        widget.setFixedSize(20, 20)
+        policy = widget.sizePolicy()
+        policy.setControlType(QSizePolicy.ControlType.PushButton)
+        widget.setSizePolicy(policy)
+        layout.addWidget(widget)
+
+    container.resize(200, 100)
+    container.show()
+    qtbot.waitExposed(container)
+
+    assert layout.spacing() == 0
+    assert second.geometry().x() == first.geometry().right() + 1
+
+
+def test_flow_layout_wraps_a_zero_spaced_row_against_the_bare_width(qtbot: QtBot) -> None:
+    """Explicit spacing decides where a row wraps too, not only the gaps inside it.
+
+    **Test steps:**
+
+    * build a ``spacing=0`` `FlowLayout` on a container exactly two flush widgets wide
+    * verify both stay on the same row, which the style's own gap would have broken
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout(container, spacing=0)
+    first, second = QWidget(container), QWidget(container)
+    for widget in (first, second):
+        widget.setFixedSize(50, 20)
+        policy = widget.sizePolicy()
+        policy.setControlType(QSizePolicy.ControlType.PushButton)
+        widget.setSizePolicy(policy)
+        layout.addWidget(widget)
+    # exactly the room a flush pair needs and not one pixel more, so any gap at all between them --
+    # the style's included -- pushes the second onto its own row
+    flush_width = 50 + 50
+
+    container.resize(flush_width, 100)
+    container.show()
+    qtbot.waitExposed(container)
+
+    assert first.geometry().y() == second.geometry().y()
+    assert layout.heightForWidth(flush_width) == 20
+
+
+def test_flow_layout_keeps_an_item_that_ends_exactly_on_the_right_edge(qtbot: QtBot) -> None:
+    """An item whose last pixel is the rect's last pixel fits, rather than starting a new row.
+
+    Regression: the wrap test compared a column *past* the item against the last column *inside* the
+    rect, so an exact fit overflowed by nothing and still wrapped -- which, with items all one width,
+    left every row a whole item short.
+
+    **Test steps:**
+
+    * lay three flush 50px widgets out at exactly 150px wide
+    * verify all three share one row
+    """
+    container = QWidget()
+    qtbot.addWidget(container)
+    layout = FlowLayout(container, spacing=0)
+    widgets = [QWidget(container) for _ in range(3)]
+    for widget in widgets:
+        widget.setFixedSize(50, 20)
+        layout.addWidget(widget)
+
+    container.resize(150, 100)
+    container.show()
+    qtbot.waitExposed(container)
+
+    assert [widget.geometry().x() for widget in widgets] == [0, 50, 100]
+    assert layout.heightForWidth(150) == 20
+
+
 def test_flow_layout_tolerates_a_non_widget_item(qtbot: QtBot) -> None:
     """A non-widget item (e.g. a spacer added via `addItem` directly) doesn't crash layout geometry.
 

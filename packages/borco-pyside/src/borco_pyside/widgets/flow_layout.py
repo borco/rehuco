@@ -19,13 +19,21 @@ class FlowLayout(QLayout):
 
     :param parent: optional parent widget; when given, installs this layout on it directly (the
         `QLayout(parent)` constructor form) and zeroes its content margins.
+    :param spacing: the exact gap, in pixels, to leave after every item in both directions
+        (keyword-only). Omitted, the gap is the layout's own :meth:`spacing` *plus* the style's
+        recommended control spacing -- which is what a form of controls wants, and what Qt's own
+        example does. Named explicitly, the style has no say at all, which is the only way to reach a
+        gap the style would not have chosen -- notably ``0``, for items meant to sit flush.
     """
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, spacing: int | None = None) -> None:
         super().__init__(parent)
         if parent is not None:
             self.setContentsMargins(QMargins(0, 0, 0, 0))
         self.__items: Final[list[QLayoutItem]] = []
+        self.__spacing: Final = spacing
+        if spacing is not None:
+            self.setSpacing(spacing)
 
     @override
     def addItem(self, item: QLayoutItem) -> None:
@@ -86,13 +94,16 @@ class FlowLayout(QLayout):
         x = effective_rect.x()
         y = effective_rect.y()
         line_height = 0
-        spacing = self.spacing()
 
         for item in self.__items:
-            space_x = spacing + self.__item_layout_spacing(item, Qt.Orientation.Horizontal)
-            space_y = spacing + self.__item_layout_spacing(item, Qt.Orientation.Vertical)
+            space_x = self.__spacing_after(item, Qt.Orientation.Horizontal)
+            space_y = self.__spacing_after(item, Qt.Orientation.Vertical)
             next_x = x + item.sizeHint().width() + space_x
-            if next_x - space_x > effective_rect.right() and line_height > 0:
+            # `next_x - space_x` is the column just *past* the item, while `right()` is the last column
+            # inside the rect -- so the two are compared one apart, or an item ending exactly on the
+            # right edge wraps with nothing overflowing. Visible whenever the items are all one width
+            # (a row of thumbnails): every row then leaves a whole item's worth of unused space.
+            if next_x - space_x > effective_rect.right() + 1 and line_height > 0:
                 x = effective_rect.x()
                 y += line_height + space_y
                 next_x = x + item.sizeHint().width() + space_x
@@ -105,6 +116,21 @@ class FlowLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
 
         return y + line_height - rect.y() + margins.bottom()
+
+    def __spacing_after(self, item: QLayoutItem, orientation: Qt.Orientation) -> int:
+        """The gap to leave after `item` in `orientation`.
+
+        The constructor's ``spacing`` wins outright when it was given: it is the caller stating the
+        exact gap, and adding the style's recommendation on top would make ``0`` unreachable.
+        Otherwise the gap is this layout's own spacing plus that recommendation, as Qt's example has it.
+
+        :param item: the layout item about to be followed by another.
+        :param orientation: which gap to compute.
+        :returns: the gap in pixels.
+        """
+        if self.__spacing is not None:
+            return self.__spacing
+        return self.spacing() + self.__item_layout_spacing(item, orientation)
 
     @staticmethod
     def __item_layout_spacing(item: QLayoutItem, orientation: Qt.Orientation) -> int:

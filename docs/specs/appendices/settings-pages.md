@@ -115,7 +115,8 @@ What "saved" or "dropped" actually *means* is entirely up to each page. Two shap
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
   `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
   it has to show its own effect on what is already on screen: every open document's image strip
-  resizes, and every open maximized viewer resizes and shows or hides its own thumbnail row. Only
+  resizes and takes up the chosen layout — one row or wrapped ([[plugins#tutorial-plugin]]) — and
+  every open maximized viewer resizes and shows or hides its own thumbnail row. Only
   `mode` stays read-at-open-time — it decides where the *next* viewer is built, and nothing already up
   can follow a change to it.
   One of its values is deliberately only a **starting point**: `strip_visible` decides whether a

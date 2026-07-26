@@ -204,6 +204,10 @@ def build_document_form(
         # at the configured height and resizes itself when the user applies a new one (#161)
         strip_height=shared_image_viewer_settings().preview_image_height,
         strip_height_changed=shared_image_viewer_settings().preview_image_height_changed,  # type: ignore[attr-defined]
+        # and the same again for the strip's layout: built wrapped or not as configured, and re-laid
+        # out when the user applies the other choice (#70)
+        strip_wrap=shared_image_viewer_settings().preview_wrap,
+        strip_wrap_changed=shared_image_viewer_settings().preview_wrap_changed,  # type: ignore[attr-defined]
     )
     description_field = DescriptionField(
         "description",

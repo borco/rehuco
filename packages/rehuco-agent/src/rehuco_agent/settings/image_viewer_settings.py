@@ -15,6 +15,7 @@ MODE_KEY: Final = "mode"
 STRIP_VISIBLE_KEY: Final = "strip_visible"
 PREVIEW_IMAGE_HEIGHT_KEY: Final = "preview_image_height"
 LIGHTBOX_IMAGE_HEIGHT_KEY: Final = "lightbox_image_height"
+PREVIEW_WRAP_KEY: Final = "preview_wrap"
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -23,6 +24,10 @@ the app stays where it was, and only the document being read is covered."""
 DEFAULT_STRIP_VISIBLE: Final = False
 """Whether a maximized screenshot starts with its thumbnail row shown (#161). Off: the point of
 maximizing is the screenshot itself, and the row is one click away whenever it is wanted."""
+
+DEFAULT_PREVIEW_WRAP: Final = False
+"""Whether a document's own image strip wraps its thumbnails over several rows (#70). Off: one row is
+the compact shape the viewer is laid out around, and it leaves the space below it to the description."""
 
 DEFAULT_PREVIEW_IMAGE_HEIGHT: Final = IMAGE_STRIP_HEIGHT
 DEFAULT_LIGHTBOX_IMAGE_HEIGHT: Final = DEFAULT_STRIP_HEIGHT
@@ -38,11 +43,11 @@ class ImageViewerSettings(QObject):
     A reactive ``QObject`` (``SimpleProperty`` fields), following
     :class:`~rehuco_agent.settings.markdown_rendering_settings.MarkdownRenderingSettings` rather than
     the plain dataclass most of this app's settings sections use: applying the settings page has to
-    show its effect on what is **already on screen** -- every open document's strip resizes, and every
-    open maximized viewer resizes and shows or hides its own row -- which is the whole point of having
-    an Apply button to watch. :func:`shared_image_viewer_settings` is the single, process-wide instance
-    every consumer reads and subscribes to; a fresh one per reader would get its own disconnected copy
-    and defeat the live-update wiring entirely.
+    show its effect on what is **already on screen** -- every open document's strip resizes and takes
+    up the chosen layout (#70), and every open maximized viewer resizes and shows or hides its own row
+    -- which is the whole point of having an Apply button to watch. :func:`shared_image_viewer_settings`
+    is the single, process-wide instance every consumer reads and subscribes to; a fresh one per reader
+    would get its own disconnected copy and defeat the live-update wiring entirely.
 
     :attr:`mode` alone stays read-at-open-time: it decides where the *next* viewer is built, and
     nothing already on screen can follow a change to it.
@@ -60,6 +65,9 @@ class ImageViewerSettings(QObject):
 
     strip_visible = SimpleProperty(DEFAULT_STRIP_VISIBLE)
     """Whether a maximized screenshot starts with its thumbnail row shown."""
+
+    preview_wrap = SimpleProperty(DEFAULT_PREVIEW_WRAP)
+    """Whether a document's own image strip wraps its thumbnails instead of keeping them on one row."""
 
     preview_image_height = SimpleProperty(DEFAULT_PREVIEW_IMAGE_HEIGHT)
     """How tall a screenshot is in a document's own image strip."""
@@ -79,6 +87,7 @@ class ImageViewerSettings(QObject):
         settings.beginGroup(GROUP)
         stored = cast(str, settings.value(MODE_KEY, DEFAULT_MODE.value, type=str))
         self.strip_visible = cast(bool, settings.value(STRIP_VISIBLE_KEY, DEFAULT_STRIP_VISIBLE, type=bool))
+        self.preview_wrap = cast(bool, settings.value(PREVIEW_WRAP_KEY, DEFAULT_PREVIEW_WRAP, type=bool))
         self.preview_image_height = cast(
             int, settings.value(PREVIEW_IMAGE_HEIGHT_KEY, DEFAULT_PREVIEW_IMAGE_HEIGHT, type=int)
         )
@@ -99,6 +108,7 @@ class ImageViewerSettings(QObject):
         settings.beginGroup(GROUP)
         settings.setValue(MODE_KEY, self.mode.value)
         settings.setValue(STRIP_VISIBLE_KEY, self.strip_visible)
+        settings.setValue(PREVIEW_WRAP_KEY, self.preview_wrap)
         settings.setValue(PREVIEW_IMAGE_HEIGHT_KEY, self.preview_image_height)
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
         settings.endGroup()
