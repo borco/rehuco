@@ -12,6 +12,19 @@ Read before any non-trivial task:
 - **Code conventions:** [[appendices.code-conventions]] (`docs/specs/appendices/code-conventions.md`) — code,
   PySide6 UI, and Markdown conventions for any contributor (not just Claude Code sessions).
 
+## Public-facing claims
+
+`README.md`, `docs/index.md`, every package's `README.md` and its `description`/`keywords`, and the GH
+description and topics describe **only what runs today**. Verify against the code in the same session
+before writing a capability in the present tense — the failure mode is writing the intended system as
+though it existed, which is how "the system *is* a swarm of peer nodes" survived on the front page while
+`rehuco-node` was five lines. Intentions go under a heading that says so, with no dates and no ordering,
+and stay in one place rather than seasoning the description. Scope by being **specific** ("edits one
+resource's details"), never by listing absences ("no network, no database") — a newcomer has no roadmap
+in their head to deny, and denials leak one. `docs/specs/` is the exception: it describes intended design
+by nature, so it says so at the top instead. Under-claiming is a defect too: "not yet functional" on a
+working editor teaches readers to discount the status line, which is what makes an overclaim dangerous.
+
 ## Repository
 
 - GitHub: <https://github.com/borco/rehuco>

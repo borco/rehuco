@@ -16,6 +16,28 @@ Each issue's body carries the matching prose sections: a `## Model` section nami
 and a `## Estimate` section with the expected agent time. The label is the skimmable index; the
 body section is the record (and can carry a one-line rationale). Keep the two in step.
 
+## Audit runs
+
+[[[appendices.project-management#audit-runs]]]
+
+Maintenance is collected into **audit-run milestones** — `X1`, `X2`, … — one per sweep of the codebase.
+A run reads the code as a whole rather than following a feature, and each finding becomes an ordinary
+issue on that run's milestone, sized and labeled like any other. The point of a numbered run is that
+quality work is **periodic and bounded**: a sweep that produces 24 issues is a batch to schedule, where
+the same 24 noticed one at a time are noise to be ignored.
+
+Standing sweeps, each looking for a different kind of rot:
+
+- **Code** — correctness against untrusted input, edge hardening, and residue left by earlier slices.
+- **Docs vs. code** — where the design docs and the implementation have drifted apart.
+- **Public claims vs. reality** — `README.md`, `docs/index.md`, package descriptions and READMEs, and
+  the GH description and topics, against what actually runs. The rule they answer to is in `CLAUDE.md`
+  ("Public-facing claims"); this sweep is what catches the pages that were written before the rule, or
+  by a hand the rule doesn't reach. It is deliberately a periodic audit rather than a build-time check:
+  the failure is a sentence written in the present tense too early, which no checker recognizes — and a
+  checker would need its own hand-maintained table of claims and their proof, drifting exactly like the
+  thing it polices.
+
 ## Model labels
 
 [[[appendices.project-management#model-labels]]]
