@@ -4,45 +4,33 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-node)](https://pypi.org/project/rehuco-node/)
 
-*Headless REST node for [rehuco](https://borco.github.io/rehuco/): serve and sync `.rehu` collections over a local network.*
+*A reserved name for a future headless node in [rehuco](https://borco.github.io/rehuco/). Nothing is
+implemented yet — installing this package gets you a version constant.*
 
 [View on PyPI](https://pypi.org/project/rehuco-node/) · [View on GitHub](https://github.com/borco/rehuco)
 
 ## Status
 
-**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's
-planned and in progress.
+**Empty.** This package holds its name on PyPI and takes part in the release plumbing alongside the
+others in the monorepo. It contains no service, no endpoints, and no client — one module with a
+docstring and a `__version__`. There is nothing here to install for a reason.
 
-## What it is
+Today, rehuco is a desktop editor for `.rehu` sidecar files
+([rehuco-agent](https://pypi.org/project/rehuco-agent/)). It does not talk to anything over a network.
 
-`rehuco-node` is the headless server component of the [rehuco](https://borco.github.io/rehuco/) distributed
-resource management system. It runs on always-on machines — a NAS, a home server, or a cloud VPS — and
-exposes a REST API over the local network so that desktop agents can sync `.rehu` collections with it.
+## What it is intended to be
 
-It is designed to run on low-spec hardware such as the QNAP TS-230 (glibc 2.23, aarch64), with no GUI
-dependencies.
+A headless service that answers for the resources one machine owns, so that several machines can
+eventually share a catalog. That means a REST API, discovery on the local network, and sync — none of
+it written, none of it scheduled, and possibly none of it ever: whether it is needed at all is a
+question the desktop editor has to answer first.
 
-## Goals
-
-`rehuco-node` aims to be:
-
-- **MIT licensed** — usable in open-source or closed-source projects freely
-- **Dependency-light** — FastAPI + uvicorn + zeroconf; no GUI stack
-- **Low-spec compatible** — installable on NAS hardware via `uv tool install rehuco-node`
-- **Self-announcing** — advertises itself on the local network via mDNS (zeroconf)
-- **Typed** — fully annotated public API with a `py.typed` marker for type-checker integration
+The [design specs](https://borco.github.io/rehuco/specs/nodes/) describe the intended shape in
+detail. They are a design, not a description of released software.
 
 ## Installation
 
-```bash
-pip install rehuco-node
-```
-
-Or on a NAS or server using [uv](https://docs.astral.sh/uv/):
-
-```bash
-uv tool install rehuco-node
-```
+There is no reason to install this package yet. When there is, it will be documented here.
 
 ## License
 

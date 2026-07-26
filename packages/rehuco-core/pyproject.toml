@@ -1,14 +1,14 @@
 [project]
 name = "rehuco-core"
 dynamic = ["version"]
-description = "rehuco shared library: models, .rehu I/O, sync primitives"
+description = "rehuco shared library: models, .rehu I/O, legacy .tc reading"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "rehu", "sync", "library"]
+keywords = ["rehuco", "resource-management", "rehu", "metadata", "library"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",

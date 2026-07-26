@@ -4,25 +4,29 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/borco/rehuco/blob/master/LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/rehuco-core)](https://pypi.org/project/rehuco-core/)
 
-*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, and sync primitives.*
+*Shared library for [rehuco](https://borco.github.io/rehuco/): data models, `.rehu` file I/O, and legacy `.tc` reading.*
 
 [View on PyPI](https://pypi.org/project/rehuco-core/) · [View on GitHub](https://github.com/borco/rehuco)
 
 ## Status
 
-**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's
-planned and in progress.
+**Early — `0.0.x`.** It does real work: it is what the desktop editor reads and writes files with. But
+it is developed for that one consumer, the `.rehu` format is still moving, and the API changes without
+notice. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's in progress.
 
 ## What it is
 
-`rehuco-core` is the foundation shared by the desktop agent (`rehuco-agent`) and the headless node
-(`rehuco-node`) in the [rehuco](https://borco.github.io/rehuco/) distributed resource management system.
+`rehuco-core` is the non-GUI half of [rehuco](https://borco.github.io/rehuco/): everything the desktop
+editor needs to read and write a resource's `.rehu` sidecar, with no Qt dependency.
 
 It provides:
 
-- **Data models** — the `.rehu` file format for tutorials and reference images
-- **File I/O** — atomic read and write of `.rehu` files
-- **Sync primitives** — version vectors, activity log, conflict resolution, and tombstones
+- **Data models** — the `.rehu` document, its common fields, and per-type plugin blocks
+- **File I/O** — atomic read and write, with unknown fields preserved verbatim
+- **Format versioning** — a per-file version, migrations applied on load, and read-only handling of a
+  file written by a newer version
+- **Legacy `.tc` reading** — parsing the predecessor format and converting it to `.rehu`, with backups
+  and rollback
 
 ## Goals
 

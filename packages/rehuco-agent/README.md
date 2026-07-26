@@ -10,18 +10,24 @@
 
 ## Status
 
-**Pre-alpha.** Not yet functional. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's
-planned and in progress.
+**Early — `0.0.x`.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
+The `.rehu` format is still moving and there is no upgrade guarantee between `0.0.x` releases yet, so
+keep backups of anything you point it at. See [GitHub Issues](https://github.com/borco/rehuco/issues)
+for what's in progress.
 
 ## What it is
 
-`rehuco-agent` is the desktop GUI for the [rehuco](https://borco.github.io/rehuco/) distributed resource
-management system. It runs on capable desktop machines (Linux, macOS, Windows) and provides:
+`rehuco-agent` is [rehuco](https://borco.github.io/rehuco/) itself, as far as anything you can run
+goes: a desktop editor for the `.rehu` sidecar that describes one resource. Tested on Windows, macOS,
+and Linux.
 
 - **Single-instance launcher** — double-click a `.rehu` file to open it in the running instance
-- **Rich viewer** — common fields, Markdown, and an image strip per resource
-- **Inline editing** — edit fields and save atomically back to disk
-- **Swarm sync** — stays in sync with other nodes via `rehuco-core`'s sync engine
+- **Viewer and editor** — common fields, a Markdown description, and the resource's screenshots as a
+  thumbnail strip with a click-to-maximize lightbox
+- **Editing that saves atomically** — with unrecognized fields left untouched, and a file from a newer
+  format version opened read-only rather than rewritten
+- **Legacy `.tc` conversion** — read the predecessor format and write `.rehu`, keeping backups
+- **A workspace that persists** — per-file panel layout and session restore
 
 ## Goals
 

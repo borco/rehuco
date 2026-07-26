@@ -1,14 +1,14 @@
 [project]
 name = "rehuco-node"
 dynamic = ["version"]
-description = "rehuco headless REST node"
+description = "Reserved name for a future rehuco headless node — no service implemented yet"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
     { name = "Ioan Calin", email = "iborco@gmail.com" },
 ]
-keywords = ["rehuco", "resource-management", "rehu", "fastapi", "rest", "nas", "server", "zeroconf", "mdns"]
+keywords = ["rehuco", "resource-management", "rehu", "placeholder"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: System Administrators",
@@ -16,16 +16,15 @@ classifiers = [
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Software Development :: Libraries",
 ]
 requires-python = ">=3.14"
+# nothing here until something imports it: the service's intended stack (FastAPI, uvicorn,
+# zeroconf, cryptography) belongs in this list the day the first endpoint is written, not while
+# the package is a name and a version constant -- an install that pulls a web server and an mDNS
+# stack for five lines of docstring advertises a service that does not exist
 dependencies = [
     "rehuco-core",
-    "cryptography",
-    "fastapi",
-    "pydantic",
-    "uvicorn[standard]",
-    "zeroconf",
 ]
 
 [project.urls]
