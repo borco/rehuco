@@ -65,6 +65,11 @@ enable = ["useless-suppression"]
 # import-error. A per-line disable can't be used here -- useless-suppression (enabled above)
 # would flag it on Windows, where the import resolves fine. Ignoring the module is platform-safe.
 ignored-modules = ["winreg"]
+# The mirror case: os.chown is POSIX-only, so a Windows run raises no-member on the guarded
+# call in borco_core.atomic_write while a POSIX run resolves it fine -- a per-line disable is
+# correct on exactly one platform and useless on the other. Declaring the member is what makes
+# the same source pass on all three runners; the runtime hasattr guard is what makes it correct.
+generated-members = ["os.chown"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers"

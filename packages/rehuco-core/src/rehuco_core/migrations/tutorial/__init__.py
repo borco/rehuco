@@ -5,6 +5,10 @@ mints ``ref``s at v2 ([[field-schema#learning-path-ownership]]). ``CURRENT_VERSI
 derived not declared.
 """
 
+# every target declares its own chain, frozen independently -- two plugins that happen to
+# share both steps therefore read alike on purpose, and collapsing them would be the very
+# coupling the per-target declaration exists to prevent
+# pylint: disable=duplicate-code
 from . import v1_migrate_user_fields, v2_learning_path_refs
 
 BASE_VERSION = 0

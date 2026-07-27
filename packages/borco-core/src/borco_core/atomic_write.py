@@ -60,9 +60,12 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
         os.chmod(tmp_path, mode)
         if dest_stat is not None and hasattr(os, "chown"):
             # os.chown is POSIX-only (absent from the os module on Windows) and even
-            # there requires a privilege an unprivileged process may lack.
+            # there requires a privilege an unprivileged process may lack. Its absence
+            # on Windows is declared to pylint in pyproject (generated-members) rather
+            # than suppressed here: a per-line disable is right on exactly one platform
+            # and flagged as useless on the other.
             try:
-                os.chown(tmp_path, dest_stat.st_uid, dest_stat.st_gid)  # pylint: disable=no-member
+                os.chown(tmp_path, dest_stat.st_uid, dest_stat.st_gid)
             except OSError:
                 LOG.warning("Could not restore owner/group on %s", path, exc_info=True)
         os.replace(tmp_path, path)
