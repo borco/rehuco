@@ -378,7 +378,7 @@ filter://publishers?name=Example%20Publisher
 - [x] [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
 - [x] [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
 - [x] [#70: feat: wrapped vs. single-row layout for a document's image strip](https://github.com/borco/rehuco/issues/70)
-- [ ] [#162: feat: LocalEdit5.2 — folder-rename-from-suggestions renames on disk](https://github.com/borco/rehuco/issues/162)
+- [x] [#162: feat: LocalEdit5.2 — folder-rename-from-suggestions renames on disk](https://github.com/borco/rehuco/issues/162)
 
 The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
 
