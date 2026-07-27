@@ -724,7 +724,8 @@ def test_v1_to_v2_drops_visibility_and_mints_a_ref_per_owned_path() -> None:
 
 def test_v1_to_v2_mints_refs_unique_across_every_user_in_the_block() -> None:
     """Refs are minted in one pass over the whole block, in ascending username order, so two users' owned
-    paths never collide -- the file has at most one plugin block, so that is the whole file's ref space
+    paths never collide -- the widest scope a block-scoped step can guarantee, and in practice the file's
+    whole ref space, since no importer writes learning paths into two blocks
     ([[field-schema#learning-path-ownership]]).
 
     **Test steps:**

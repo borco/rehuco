@@ -16,6 +16,18 @@ TARGET_PATH: Final = DIRECTORY / "info.rehu"
 
 TC_YAML: Final = "type: Tutorial\ntitle: Some Title\ndescription: '![](cover)'\n"
 
+# The membership fields together: one scalar collection and several flat learning-path names, listed
+# deliberately out of alphabetical order so the round-trip test can tell list order from a sort.
+TC_YAML_WITH_MEMBERSHIPS: Final = (
+    "type: Tutorial\n"
+    "title: Some Title\n"
+    "collection: Some Collection\n"
+    "collection_index: 2\n"
+    "learning_paths:\n"
+    "  - Path B\n"
+    "  - Path A\n"
+)
+
 MTIME: Final = 1700000000.0
 SEEDED_TIMESTAMP: Final = "2023-11-14T22:13:20Z"
 
@@ -36,6 +48,7 @@ def mock_environment(
     existing: frozenset[Path] = frozenset(),
     renames: Sequence[ScreenshotRename] = RENAMES,
     copy_side_effect: Any = None,
+    tc_yaml: str = TC_YAML,
 ) -> dict[str, Any]:
     """Mock every filesystem touchpoint :class:`~rehuco_core.tc_conversion.TcConverter` uses.
 
@@ -43,9 +56,10 @@ def mock_environment(
     :param existing: paths that should report as already existing on disk.
     :param renames: the screenshot scan result to hand back.
     :param copy_side_effect: optional ``side_effect`` for the image-copy mock (e.g. to fail partway).
+    :param tc_yaml: the ``.tc`` file's raw YAML text; defaults to :data:`TC_YAML`.
     :returns: the created mocks, keyed by what they stand in for.
     """
-    mocker.patch.object(Path, "read_text", return_value=TC_YAML)
+    mocker.patch.object(Path, "read_text", return_value=tc_yaml)
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in existing)
     mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME))
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
@@ -137,6 +151,42 @@ def test_convert_files_per_user_flags_under_the_unknown_user_by_default(mocker: 
     saved = json.loads(mocks["write"].call_args[0][1])
     assert set(saved["tutorial"]["users"]) == {"unknown"}
     assert document.username == "unknown"
+
+
+def test_convert_round_trips_collection_and_owned_learning_paths(mocker: MockerFixture) -> None:
+    """A ``.tc`` carrying a collection and several learning paths converts into the settled membership
+    shapes and round-trips through the written payload unchanged (#188,
+    [[field-schema#learning-path-ownership]]).
+
+    The paths come back **owned** by the importing identity: full ``{title, index, ref}`` entries with
+    ``index: 0`` on every one (tc4's list order was never a curated position), refs minted in list
+    order, and no retired ``visibility`` flag anywhere in the file. The written block is stamped at the
+    plugin's current version, so loading the payload back runs no migration over it -- the shape on
+    disk *is* the shape in memory.
+
+    **Test steps:**
+
+    * convert a ``.tc`` with one collection and two learning paths (listed out of alphabetical order)
+    * verify the saved ``collections`` entry, and the owned learning-path entries in list order
+    * verify no ``visibility`` key survives anywhere in the saved payload
+    * construct a document from the saved payload and verify the block is not reshaped on load
+    """
+    mocks = mock_environment(mocker, tc_yaml=TC_YAML_WITH_MEMBERSHIPS)
+
+    convert_tc(TC_PATH, keep_backups=True)
+
+    saved = json.loads(mocks["write"].call_args[0][1])
+    block = saved["tutorial"]
+    assert block["format_version"] == current_block_version("tutorial")
+    assert block["collections"] == [{"title": "Some Collection", "index": 2}]
+    assert block["users"]["unknown"]["learning_paths"] == [
+        {"title": "Path B", "index": 0, "ref": 1},
+        {"title": "Path A", "index": 0, "ref": 2},
+    ]
+    assert "visibility" not in json.dumps(saved)
+
+    reloaded = RehuDocument(json.loads(mocks["write"].call_args[0][1]))
+    assert reloaded.data["tutorial"] == block
 
 
 def test_keep_backups_leaves_the_orig_siblings(mocker: MockerFixture) -> None:

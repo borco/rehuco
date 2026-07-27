@@ -15,9 +15,13 @@ def migrate_learning_path_refs(block: dict[str, Any], *, users_key: str) -> None
 
     A v1 block has only owned entries -- the bare ``{ref}`` subscription shape did not exist before this
     step -- so every entry present gets a fresh ``ref``. Refs are minted in one pass over every user
-    already in the block, in ascending username order, so they are unique across the whole block: the
-    file has at most one plugin block, so that is the whole file's ref space
-    ([[field-schema#learning-path-ownership]]).
+    already in the block, in ascending username order, so they are unique across the whole block -- the
+    widest scope a block migration can guarantee, since a step is handed one block and never sees a
+    sibling. In practice that is the file's whole ref space: no importer writes learning paths into two
+    blocks, and only the active block is ever migrated. But a file already carrying a *second* block
+    with such entries mints from 1 again when that block later becomes active, so the file-wide
+    uniqueness of [[field-schema#learning-path-ownership]] is the invariant of ref-minting writers,
+    not of this per-block step.
 
     :param block: one block's own fields; mutated in place.
     :param users_key: the map key the per-user subset already nests under (this step never runs before
