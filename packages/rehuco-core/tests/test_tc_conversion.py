@@ -8,7 +8,7 @@ from uuid import UUID
 
 import pytest
 from pytest_mock import MockerFixture
-from rehuco_core import RehuDocument, ScreenshotRename, convert_tc
+from rehuco_core import RehuDocument, ScreenshotRename, convert_tc, current_block_version
 
 DIRECTORY: Final = Path("/fake/tutorial")
 TC_PATH: Final = DIRECTORY / "info.tc"
@@ -101,15 +101,15 @@ def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFix
     **Test steps:**
 
     * convert a `.tc` under an explicit username
-    * verify the saved v1 block nests the per-user flags under that username, and the returned document
-      reads them back as that identity
+    * verify the saved current-stamped block nests the per-user flags under that username, and the
+      returned document reads them back as that identity
     """
     mocks = mock_environment(mocker)
 
     document = convert_tc(TC_PATH, keep_backups=True, username="alice")
 
     saved = json.loads(mocks["write"].call_args[0][1])
-    assert saved["tutorial"]["format_version"] == 1
+    assert saved["tutorial"]["format_version"] == current_block_version("tutorial")
     assert set(saved["tutorial"]["users"]) == {"alice"}
     assert saved["tutorial"]["users"]["alice"]["favorite"] is False
     assert document.username == "alice"

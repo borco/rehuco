@@ -5,7 +5,15 @@ from typing import Final
 
 import pytest
 from pytest_mock import MockerFixture
-from rehuco_core import CURRENT_FORMAT_VERSION, RehuDocument, RehuFormatError, TcDocument, load_tc, tc_to_rehu_data
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    RehuDocument,
+    RehuFormatError,
+    TcDocument,
+    current_block_version,
+    load_tc,
+    tc_to_rehu_data,
+)
 
 FAKE_PATH: Final = Path("/fake/info.tc")
 
@@ -136,17 +144,18 @@ def test_tutorial_mapping(mocker: MockerFixture) -> None:
             "favorite": False,
             "keep": True,
             "learning_paths": [
-                {"title": "Some learning path 1", "index": 1, "visibility": "private"},
-                {"title": "Some learning path 2", "index": 2, "visibility": "private"},
+                {"title": "Some learning path 1", "index": 0, "ref": 1},
+                {"title": "Some learning path 2", "index": 0, "ref": 2},
             ],
             "rating": 5,
             "todo": True,
             "viewed": True,
         }
     }
-    # the importer emits block layout v1 directly ([[field-schema#per-user-shared]]), so construction
-    # finds it already current and never re-migrates it -- not a tc4 field, but not stray either
-    assert block["format_version"] == 1
+    # the importer emits the current block layout directly ([[field-schema#per-user-shared]]), so
+    # construction finds it already current and never re-migrates it -- not a tc4 field, but not stray
+    # either
+    assert block["format_version"] == 2
 
 
 def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -> None:
@@ -164,7 +173,7 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     assert doc.type == "reference_images"
     assert doc.active_block_key == "reference_images"
     block = doc.active_block
-    assert block["format_version"] == 1
+    assert block["format_version"] == 2
     assert block["complete"] is False
     assert block["collections"] == []
     assert block["users"] == {
@@ -395,4 +404,4 @@ def test_tc_to_rehu_data_files_per_user_flags_under_the_given_username() -> None
     assert set(users) == {"bob"}
     assert users["bob"]["rating"] == 3
     assert users["bob"]["favorite"] is False
-    assert data["tutorial"]["format_version"] == 1
+    assert data["tutorial"]["format_version"] == current_block_version("tutorial")

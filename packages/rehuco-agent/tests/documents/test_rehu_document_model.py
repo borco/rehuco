@@ -19,6 +19,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     LockReasonKind,
     RehuDocument,
+    current_block_version,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
 )
@@ -2210,7 +2211,7 @@ def test_a_document_current_at_both_layers_is_not_upgradable(mocker: MockerFixtu
             {
                 "format_version": CURRENT_FORMAT_VERSION,
                 "core": {"type": "tutorial"},
-                "tutorial": {"format_version": 1},
+                "tutorial": {"format_version": current_block_version("tutorial")},
             }
         ),
     )

@@ -1,0 +1,24 @@
+type: Tutorial
+publisher: Example Publisher
+collection: Sculpting Fundamentals
+collection_index: 2
+title: Intro to Anatomical Sculpting
+author: [Jane Doe, John Smith]
+released: 2025.11
+duration: 5400
+original_size: 2147483648
+current_size: 2147483648
+level: [beginner, intermediate]
+url: https://example.com/anatomical-sculpting
+rating: 4
+complete: true
+todo: false
+viewed: true
+keep: true
+online: true
+tags: [sculpting, anatomy]
+extraTags: [reference]
+learning_paths:
+  - Sculpting Fundamentals Path
+  - Anatomy Deep Dive
+  - Weekend Warmups

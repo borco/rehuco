@@ -1681,7 +1681,7 @@ def test_switching_type_rebuilds_the_docks_with_the_abandoned_block_flagged(
     block_model.resource_type = "reference_images"
 
     tooltips = flagged_tooltips(widget)
-    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 1}"] == PROVENANCE_ABANDONED_TYPE
+    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 2}"] == PROVENANCE_ABANDONED_TYPE
 
 
 def test_a_rebuilt_unknown_field_row_stays_reactive_after_a_round_trip_switch(qtbot: QtBot) -> None:

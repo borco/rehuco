@@ -165,7 +165,7 @@ def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
     editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
 
-    assert drop_button_for(editor, "{'users': {'admin': {'rating': 4}}, 'format_version': 1}") is None
+    assert drop_button_for(editor, "{'users': {'admin': {'rating': 4}}, 'format_version': 2}") is None
     assert drop_button_for(editor, "{'images_count': 12}") is not None
 
 
@@ -252,7 +252,7 @@ def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot:
 
     tooltips = viewer_tooltips(qtbot, model)
 
-    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 1}"] == PROVENANCE_ABANDONED_TYPE
+    assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 2}"] == PROVENANCE_ABANDONED_TYPE
     assert tooltips["{'images_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
 
 
