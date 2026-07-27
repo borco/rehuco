@@ -33,7 +33,7 @@ own fallback glyph. It therefore leans on the platform's font fallback covering 
 ever render as tofu, the guaranteed alternative is a separate marker label per row drawn in Phosphor."""
 
 
-class PathEditor(QWidget):
+class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     """Edits a resource's name by picking a rename suggestion ([[plugins#field-toolkit]],
     [[field-schema#field-mapping]]). No free-text entry: the current name over a collapsible vertical
     list of clickable suggestion labels.

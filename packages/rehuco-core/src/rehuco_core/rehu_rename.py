@@ -77,7 +77,7 @@ def rehu_rename_conflict(path: Path, new_name: str) -> Path | None:
     return RehuRenamer(path, new_name).conflict()
 
 
-class RehuRenamer:  # pylint: disable=too-few-public-methods
+class RehuRenamer:
     """Renames one ``.rehu`` resource's files to a new name ([[plugins#toolkit-surfaces]]).
 
     Three phases: **plan** (pure reads -- which files this resource's scope owns, and what each is to be

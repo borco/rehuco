@@ -21,7 +21,7 @@ SIBLINGS: Final = (FILE_PATH, DIRECTORY / "old_file00.jpg", DIRECTORY / "old_fil
 SCREENSHOTS: Final = SIBLINGS[1:]
 
 
-def mock_environment(
+def mock_environment(  # pylint: disable=too-many-arguments
     mocker: MockerFixture,
     *,
     existing: frozenset[Path] = frozenset(),

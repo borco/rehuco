@@ -196,7 +196,7 @@ def test_an_occupied_suggestion_cannot_be_clicked(qtbot: QtBot) -> None:
     editor.set_suggestions(["Foo2"])
 
     assert "href" not in suggestion_labels(editor)["Foo2"].text()
-    assert received == []
+    assert not received
 
 
 def test_without_a_conflict_check_every_suggestion_is_available(qtbot: QtBot) -> None:
