@@ -191,7 +191,7 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
 [[nodes#local-vs-swarm]] (local-file mode), [[plugins#fallback-editor]] (generic editor), [[plugins#tutorial-plugin]]
 (Markdown + image strip).
 
-### LocalEdit2–LocalEdit8 — Thicken the spine (iterations, each shippable)
+### LocalEdit2–LocalEditX — Thicken the spine (iterations, each shippable)
 
 - **LocalEdit2 — Field toolkit.** Real field widgets (text, switch, tag-list, date, rating, duration, size, choice, path,
   image-count) with editor/viewer variants — the shared toolkit plugins compose from ([[plugins#core-vs-plugin]]); the
@@ -227,10 +227,16 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
      client and every later milestone (CacheDB scans, Borrowing sync/copies) assumes it exists.
   3. **Checksums** — generate/verify with algorithm-tagging, as task-queue jobs ([[data-model#checksums]])
      — pairs naturally with migration.
-- **LocalEdit8 — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences.
+- **LocalEdit8 — Legacy catalog import.** Bulk `.tc`→`.rehu` conversion across a folder tree, run as task-queue jobs
+  (LocalEdit7) over a dry-run plan, with backups retained by default and an in-app revert/discard surface replacing the
+  file-manager round-trip ([[acquisition-tooling#tc-to-rehu]]). This is the one-time migration of an existing tc4
+  catalog, and doing it here is what keeps `.tc` out of CacheDB's scanner entirely.
+- **LocalEditX — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences. Last in the
+  milestone by construction: the catch-all polish slice, named like an audit run because it is never "next", only "after
+  everything else".
 
-**Exit criteria:** open any tutorial or ref-image `.rehu` (or migrate a `.tc`), view it richly, edit and atomic-save,
-generate/verify checksums. Standalone, no infrastructure.
+**Exit criteria:** open any tutorial or ref-image `.rehu` (or migrate a whole `.tc` catalog), view it richly, edit and
+atomic-save, generate/verify checksums. Standalone, no infrastructure.
 
 **Rough size:** ~3–5 focused dev-weeks (front-loaded refactoring against prior-version design knowledge, not
 greenfield).
