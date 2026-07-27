@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import PartialRenameError, rename_rehu_resource
+from rehuco_core import PartialRenameError, rehu_rename_conflict, rename_rehu_resource
 
 DIRECTORY: Final = Path("/fake/library")
 FOLDER: Final = DIRECTORY / "old_folder"
@@ -280,6 +280,122 @@ def test_file_scoped_collision_on_a_screenshot_refuses_the_whole_plan(mocker: Mo
 
     assert f"{NEW_NAME}01.png" in str(error.value)
     mock_rename.assert_not_called()
+
+
+# endregion
+
+
+# region the advisory conflict query
+def test_conflict_reports_the_directory_a_folder_rename_would_land_on(mocker: MockerFixture) -> None:
+    """Editing a directory-scoped resource's title to a name a **folder** already carries reports that
+    folder, so the editor can show the candidate as unavailable rather than offer it.
+
+    **Test steps:**
+
+    * mock a ``new_name`` directory as already present
+    * ask for the conflict
+    * verify it names that directory
+    """
+    mock_environment(mocker, existing=frozenset({DIRECTORY / NEW_NAME}))
+
+    assert rehu_rename_conflict(INFO_PATH, NEW_NAME) == DIRECTORY / NEW_NAME
+
+
+def test_conflict_reports_the_rehu_a_file_rename_would_land_on(mocker: MockerFixture) -> None:
+    """The file-scoped half: a candidate whose `.rehu` already exists is taken.
+
+    **Test steps:**
+
+    * mock ``new_name.rehu`` as already present
+    * ask for the conflict
+    * verify it names that file
+    """
+    mock_environment(mocker, existing=frozenset({DIRECTORY / f"{NEW_NAME}.rehu"}))
+
+    assert rehu_rename_conflict(FILE_PATH, NEW_NAME) == DIRECTORY / f"{NEW_NAME}.rehu"
+
+
+def test_conflict_is_none_for_a_free_name(mocker: MockerFixture) -> None:
+    """A name nothing occupies is free, in either scope.
+
+    **Test steps:**
+
+    * mock an empty directory
+    * ask for both scopes' conflicts
+    * verify both are ``None``
+    """
+    mock_environment(mocker)
+
+    assert rehu_rename_conflict(INFO_PATH, NEW_NAME) is None
+    assert rehu_rename_conflict(FILE_PATH, NEW_NAME) is None
+
+
+@mark.parametrize(
+    ("path", "name"),
+    [
+        param(INFO_PATH, FOLDER.name, id="directory-scoped"),
+        param(FILE_PATH, FILE_PATH.stem, id="file-scoped"),
+    ],
+)
+def test_conflict_never_reports_the_resource_against_itself(mocker: MockerFixture, path: Path, name: str) -> None:
+    """A resource always occupies its own name -- reporting that would flag every document as
+    conflicting with itself.
+
+    **Test steps:**
+
+    * mock the resource's own entry as present, and ask for the conflict on its current name
+    * verify it is ``None``
+    """
+    mock_environment(mocker, existing=frozenset({FOLDER, FILE_PATH}))
+
+    assert rehu_rename_conflict(path, name) is None
+
+
+def test_conflict_ignores_a_case_only_difference(mocker: MockerFixture) -> None:
+    """Recasing a name is not a conflict: on a case-insensitive filesystem the destination "exists"
+    because it *is* the source, and offering the rename is the whole point.
+
+    **Test steps:**
+
+    * force Windows-style case folding and mock the recased folder as present
+    * ask for the conflict on the recased name
+    * verify it is ``None``
+    """
+    mocker.patch.object(os.path, "normcase", side_effect=lambda path: str(path).lower())
+    recased = FOLDER.name.upper()
+    mock_environment(mocker, existing=frozenset({DIRECTORY / recased}))
+
+    assert rehu_rename_conflict(INFO_PATH, recased) is None
+
+
+@mark.parametrize("name", [param("", id="empty"), param(".", id="dot"), param("sub/name", id="separator")])
+def test_conflict_is_none_for_a_name_that_is_not_plain(mocker: MockerFixture, name: str) -> None:
+    """A name that isn't a plain filename has nothing to report -- it fails for its own reason, which
+    only the rename itself is in a position to state.
+
+    **Test steps:**
+
+    * ask for the conflict on each rejected name
+    * verify ``None`` came back rather than an error
+    """
+    mock_environment(mocker)
+
+    assert rehu_rename_conflict(FILE_PATH, name) is None
+
+
+def test_conflict_never_lists_the_directory(mocker: MockerFixture) -> None:
+    """The query stays cheap: one existence check, no sibling sweep -- it is re-asked per keystroke
+    behind a live suggestion list, possibly over an offline mount.
+
+    **Test steps:**
+
+    * make any attempt to list a directory raise
+    * ask for a file-scoped conflict
+    * verify it answered rather than raising
+    """
+    mock_environment(mocker, listing_error=OSError("the directory must not be listed"))
+
+    assert rehu_rename_conflict(FILE_PATH, NEW_NAME) is None
 
 
 # endregion

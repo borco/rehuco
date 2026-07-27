@@ -1,11 +1,11 @@
 """Tests for PathEditor: current-name label (warning-colored when unmatched), collapsible clickable
-rename suggestions, and the live setters.
+rename suggestions, unavailable candidates, and the live setters.
 """
 
 from borco_pyside.widgets import ElidedLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.widgets.path_editor import PathEditor
+from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, PathEditor
 
 
 def name_label(editor: PathEditor) -> ElidedLabel:
@@ -24,6 +24,15 @@ def suggestion_labels(editor: PathEditor) -> dict[str, ElidedLabel]:
     :returns: the internal suggestion labels, keyed by sanitized name.
     """
     return editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def full_text(label: ElidedLabel) -> str:
+    """Return a label's un-elided text -- ``text()`` is whatever fits its current width.
+
+    :param label: the label to inspect.
+    :returns: the full text it was given.
+    """
+    return label._ElidedLabel__full  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def suggestions_widget(editor: PathEditor) -> ElidedLabel:
@@ -122,6 +131,109 @@ def test_suggestion_matching_current_name_is_disabled_without_a_link(qtbot: QtBo
     assert "<a " not in labels["Foo"].text()
     assert labels["Bar"].isEnabled() is True
     assert "<a " in labels["Bar"].text()
+
+
+def test_an_occupied_suggestion_is_disabled_marked_and_unlinked(qtbot: QtBot) -> None:
+    """A candidate something already occupies is shown as unavailable rather than offered (#162):
+    disabled, marker-suffixed, and carrying no link to activate.
+
+    **Test steps:**
+
+    * set suggestions and a conflict check reporting only ``Foo2`` as taken
+    * verify ``Foo2`` is disabled, marked and unlinked
+    * verify the free ``Bar`` is still a live, unmarked link
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_conflict_check(lambda name: name == "Foo2")
+    editor.set_suggestions(["Foo2", "Bar"])
+    labels = suggestion_labels(editor)
+
+    assert labels["Foo2"].isEnabled() is False
+    assert full_text(labels["Foo2"]) == f"Foo2{UNAVAILABLE_SUFFIX}"
+    assert "<a " not in labels["Foo2"].text()
+    assert labels["Bar"].isEnabled() is True
+    assert full_text(labels["Bar"]) == "Bar"
+    assert "<a " in labels["Bar"].text()
+
+
+def test_the_current_name_wins_over_being_occupied(qtbot: QtBot) -> None:
+    """A resource always occupies its own name, so the current name renders plain-disabled rather than
+    flagged as a conflict with itself (#162).
+
+    **Test steps:**
+
+    * set a current name and a conflict check that reports every name as taken
+    * verify the current name's row is disabled but carries no unavailable marker
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_current_name("Foo")
+    editor.set_conflict_check(lambda _name: True)
+    editor.set_suggestions(["Foo"])
+    label = suggestion_labels(editor)["Foo"]
+
+    assert label.isEnabled() is False
+    assert full_text(label) == "Foo"
+
+
+def test_an_occupied_suggestion_cannot_be_clicked(qtbot: QtBot) -> None:
+    """The point of disabling it: no rename can be commanded from a name that could only fail (#162).
+
+    **Test steps:**
+
+    * mark a suggestion as occupied and connect to ``suggestion_selected``
+    * verify its label carries no link to activate, so nothing can be emitted
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    received: list[str] = []
+    editor.suggestion_selected.connect(received.append)
+
+    editor.set_conflict_check(lambda _name: True)
+    editor.set_suggestions(["Foo2"])
+
+    assert "href" not in suggestion_labels(editor)["Foo2"].text()
+    assert received == []
+
+
+def test_without_a_conflict_check_every_suggestion_is_available(qtbot: QtBot) -> None:
+    """The widget stays usable on its own: with no predicate supplied, nothing is unavailable.
+
+    **Test steps:**
+
+    * set suggestions on a fresh editor, supplying no conflict check
+    * verify every row is a live, unmarked link
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+
+    editor.set_suggestions(["Foo2", "Bar"])
+
+    for name, label in suggestion_labels(editor).items():
+        assert label.isEnabled() is True
+        assert full_text(label) == name
+
+
+def test_setting_the_conflict_check_re_renders_the_existing_rows(qtbot: QtBot) -> None:
+    """The predicate can arrive after the suggestions and still take effect -- it re-renders rather
+    than waiting for the next suggestion change (#162).
+
+    **Test steps:**
+
+    * set suggestions first, then supply a conflict check
+    * verify the already-built row became unavailable
+    """
+    editor = PathEditor()
+    qtbot.addWidget(editor)
+    editor.set_suggestions(["Foo2"])
+    assert suggestion_labels(editor)["Foo2"].isEnabled() is True
+
+    editor.set_conflict_check(lambda _name: True)
+
+    assert suggestion_labels(editor)["Foo2"].isEnabled() is False
 
 
 def test_clicking_a_suggestion_emits_its_sanitized_name(qtbot: QtBot) -> None:

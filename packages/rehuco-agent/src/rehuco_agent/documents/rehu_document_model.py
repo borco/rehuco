@@ -18,6 +18,7 @@ from rehuco_core import (
     LockReason,
     RehuDocument,
     convert_tc,
+    rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
@@ -409,6 +410,25 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # explicit, not left to the dirty_changed connection alone: a clean-but-upgradable document
         # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
         self.__recompute_upgradable()
+
+    def rename_conflicts(self, new_name: str) -> bool:
+        """Whether renaming to ``new_name`` would land on something already there
+        ([[plugins#toolkit-surfaces]]).
+
+        What lets the editor show an unavailable candidate as unavailable -- disabled, and colored --
+        instead of offering a click that can only fail. Advisory by design
+        (:func:`~rehuco_core.rehu_rename_conflict`): it answers the collision the user can see coming,
+        another resource already sitting under that name, and leaves the authoritative whole-plan check
+        to :meth:`rename_location`.
+
+        :param new_name: the candidate folder/file name.
+        :returns: whether something already occupies the destination; ``False`` for a document with no
+            location yet, which has no destination to compare against.
+        """
+        path = self.path
+        if path is None:
+            return False
+        return rehu_rename_conflict(path, new_name) is not None
 
     def rename_location(self, new_name: str) -> bool:
         """Rename this resource to ``new_name`` -- clicked from a `PathField` rename suggestion.

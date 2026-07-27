@@ -188,6 +188,9 @@ def build_document_form(
         on_suggestion_selected=rename_to,
         current_name=lambda: model.current_name,
         suggestions_changed=name_suggestions.changed,
+        # a lambda for the same reason ``rename_to`` is one: the lookup is deferred to render time, so
+        # a test that swaps the model's answer after construction is still seen
+        conflicts=lambda name: model.rename_conflicts(name),  # pylint: disable=unnecessary-lambda
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )

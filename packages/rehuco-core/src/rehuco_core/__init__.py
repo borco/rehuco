@@ -30,7 +30,7 @@ from .rehu_document import (
     authors_comma_editable,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
-from .rehu_rename import PartialRenameError, RehuRenamer, rename_rehu_resource
+from .rehu_rename import PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .tc_conversion import TcConverter, convert_tc
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
@@ -78,6 +78,7 @@ __all__ = [
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
+    "rehu_rename_conflict",
     "rename_rehu_resource",
     "rewrite_description_images",
     "scan_rehu_screenshot_files",

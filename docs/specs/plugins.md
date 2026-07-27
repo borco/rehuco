@@ -434,9 +434,21 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   of them fails, so a resource is never left split between two names ([[data-model#write-integrity]]) — and the one
   case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem
   by construction; the checksum-gated cross-filesystem move ([[mounts-and-storage#safe-move-rename]]) is a different
-  operation, reached from a destination-choosing UI that does not exist. A rename that fails reports as an inline
-  banner row on the document, not a modal: the resource is untouched and the candidate list that produced the name is
-  still on screen.
+  operation, reached from a destination-choosing UI that does not exist.
+  A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
+  file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
+  rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets
+  cannot inject content anyway (no `content`, no `::before`/`::after` — Qt's pseudo-elements are widget subcontrols),
+  so the displayed text is where it has to live. The editor
+  holds no path and reads no directory: it asks its owner through a predicate, the same
+  field-decides-*that*-never-*what* rule the rest of the toolkit follows. The check is one existence test on the
+  resource's own destination, not the whole plan — it is re-asked per keystroke behind a live suggestion list, and
+  measured at ~15 µs against ~24 ms for a sibling sweep. It is deliberately **uncached**: a memo table would go stale
+  under the app's own rename, under a new document's first save, and under anything done in a file manager while the
+  editor sits open, and the OS attribute cache already supplies the speed with invalidation this layer cannot see.
+  A rename that fails anyway — a collision on a sibling the cheap check does not cover, or any other refusal — reports
+  as an inline banner row on the document, not a modal: the resource is untouched and the candidate list that produced
+  the name is still on screen.
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress
   and duration; note-taking (create/view/edit); bookmarking. Progress sync follows
   [[sync#overview]]/[[mounts-and-storage#node-handoff]].

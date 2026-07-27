@@ -37,6 +37,10 @@ class PathField(Field[str]):
     :param current_name: called with no arguments for the resource's current name.
     :param suggestions_changed: fires when a field the suggestions are built from changes, to
         re-pull ``suggestions``/``current_name`` live.
+    :param conflicts: called with a sanitized candidate name for whether something already occupies
+        it, so the editor can show it as unavailable rather than offer a rename that could only fail
+        (#162). Omit to leave every candidate offerable. This field still touches no filesystem
+        itself -- it forwards the owner's answer, exactly as it forwards a click.
     :param expanded: the suggestions panel's starting expand state.
     """
 
@@ -50,6 +54,7 @@ class PathField(Field[str]):
         on_suggestion_selected: Callable[[str], None] | None = None,
         current_name: Callable[[], str] | None = None,
         suggestions_changed: SignalInstance | None = None,
+        conflicts: Callable[[str], bool] | None = None,
         expanded: bool = False,
         *,
         viewer_tab: FieldsTab,
@@ -60,6 +65,7 @@ class PathField(Field[str]):
         self.__on_suggestion_selected = on_suggestion_selected
         self.__current_name = current_name
         self.__suggestions_changed = suggestions_changed
+        self.__conflicts = conflicts
         self.__expanded = expanded
 
     @override
@@ -75,6 +81,8 @@ class PathField(Field[str]):
         editor = PathEditor()
         editor.setObjectName(self.name)
         editor.expanded = self.__expanded
+        # set before the first __refresh below, so the opening render already marks the taken names
+        editor.set_conflict_check(self.__conflicts)
         if self.__on_suggestion_selected is not None:
             editor.suggestion_selected.connect(self.__on_suggestion_selected)
 
