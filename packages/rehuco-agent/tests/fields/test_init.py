@@ -8,6 +8,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_DESCRIPTION_TAB,
     EDITOR_MAIN_TAB,
+    VIEWER_TAB,
     build_document_form,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -79,6 +80,38 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
     ]
     # the description editor carries no row label -- its own dock tab ("Description") already names it
     assert not form_labels(description)
+
+
+def test_build_document_form_puts_the_record_list_rows_where_tc4_had_them(qtbot: QtBot) -> None:
+    """The two record lists are viewer rows, placed as tc4's layout had them
+    ([[field-schema#tc4-viewer-layout]], #189): ``collections`` in the header group after the publisher,
+    ``learning_paths`` last, after the tag lists.
+
+    **Test steps:**
+
+    * build the viewer over a model carrying a collection and an owned learning path
+    * verify each row sits where tc4 put it and renders ``Title [index]``
+    """
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "type": "Tutorial",
+                "tutorial": {
+                    "collections": [{"title": "Sculpting Series", "index": 2}],
+                    "users": {"admin": {"learning_paths": [{"title": "My Order", "index": 7, "ref": 1}]}},
+                },
+            }
+        )
+    )
+    viewer = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_TAB]
+    qtbot.addWidget(viewer)
+
+    labels = form_labels(viewer)
+    assert labels[labels.index("Collections") - 1] == "Publisher"
+    assert labels[labels.index("Learning Paths") - 1] == "Extra Tags"
+    texts = {label.text() for label in viewer.findChildren(QLabel)}
+    assert "Sculpting Series [2]" in texts
+    assert "My Order [7]" in texts
 
 
 def test_build_document_form_trails_unknown_fields_after_the_record_fields(qtbot: QtBot) -> None:

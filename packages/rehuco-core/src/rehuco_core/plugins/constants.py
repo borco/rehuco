@@ -20,6 +20,16 @@ This is the *current* spelling, read and written by the live accessors and the i
 relocates fields under this map inlines its own frozen ``"users"`` literal instead of importing this, so a
 future rename of the key never rewrites history."""
 
+PUBLIC_USERNAME: Final = "public"
+"""The **reserved** scope in the per-user map that holds learning paths shared with everyone
+([[field-schema#learning-path-ownership]]).
+
+Not a person: publishing a path *copies* a full entry into this scope, and every identity sees what sits
+there without subscribing. Reserved rather than configurable -- unlike :data:`DEFAULT_UNKNOWN_USERNAME`,
+which is a setting -- since a real user by this name would silently become the publishing scope, the same
+way ``RESERVED_KEYS`` protects ``core`` from a plugin claiming it ([[data-model#rehu-format]]). Nothing
+enforces the reservation yet: it is read as the shared scope, not refused as a username."""
+
 DEFAULT_CURRENT_USERNAME: Final = "admin"
 """The fallback **current** identity -- who *this install's* own edits are filed under.
 

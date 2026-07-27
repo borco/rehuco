@@ -784,6 +784,41 @@ def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
     assert block["format_version"] == 2
 
 
+def test_v1_to_v2_skips_a_malformed_entry_without_spending_a_ref() -> None:
+    """An entry that isn't a record is left exactly as it is -- not repaired, not dropped, and not given
+    a ``ref`` it could never be subscribed to by ([[data-model#write-integrity]]).
+
+    A migration reads hostile input like every other accessor: it must neither crash on a stray value nor
+    silently rewrite it. Minting for it would also burn a slot, leaving the real entries' refs describing
+    a numbering nothing in the file explains.
+
+    **Test steps:**
+
+    * migrate a v1 block whose ``learning_paths`` list holds a string between two owned records
+    * verify the string survives untouched and the two records take refs 1 and 2
+    """
+    block: dict[str, Any] = {
+        "format_version": 1,
+        "users": {
+            "admin": {
+                "learning_paths": [
+                    {"title": "P1", "index": 1, "visibility": "private"},
+                    "not a record",
+                    {"title": "P2", "index": 2, "visibility": "public"},
+                ]
+            }
+        },
+    }
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"]["admin"]["learning_paths"] == [
+        {"title": "P1", "index": 1, "ref": 1},
+        "not a record",
+        {"title": "P2", "index": 2, "ref": 2},
+    ]
+
+
 def test_v1_to_v2_is_idempotent() -> None:
     """Re-running the migration is a no-op: the second pass finds a v2 block, runs no step, and rewrites
     the same stamp.

@@ -89,6 +89,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("authors", "authors"),
     FieldSpec("date", "released"),
     FieldSpec("text", "publisher"),
+    FieldSpec("indexed_list", "collections"),
     FieldSpec("url", "url"),
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("duration", "original_duration"),
@@ -105,6 +106,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("multi_choice", "level", {"choices": LEVEL_CHOICES}),
     FieldSpec("text_list", "advertised_tags"),
     FieldSpec("text_list", "extra_tags"),
+    FieldSpec("indexed_list", "learning_paths"),
 )
 """The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
 ``(type, name)`` pair alone, with no runtime model wiring. This is a **model-layer** statement of
@@ -120,8 +122,12 @@ where the display order is authored are open questions
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
 fields, the common-core original/current size pair, the shared resource-type scalar flags, rating, the
-Tutorial-only ``level`` tags, and the tag lists ([[field-schema#resource-types]],
-[[field-schema#duration-size]]). The Markdown ``description`` is model-aware too (it needs an
+Tutorial-only ``level`` tags, the tag lists, and the two read-only record lists
+([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the
+record lists sit where tc4's viewer put them (``collections`` up in the header group beside the
+publisher, ``learning_paths`` last, after the tag lists, [[field-schema#tc4-viewer-layout]]), which
+costs nothing while registration order still happens to be display order. The Markdown ``description``
+is model-aware too (it needs an
 `ImageScanner` to resolve embedded images, [[data-model#image-meanings]]) and so is constructed
 directly in :func:`build_document_form` alongside ``location``/images, not listed here. A hardcoded
 constant for now."""

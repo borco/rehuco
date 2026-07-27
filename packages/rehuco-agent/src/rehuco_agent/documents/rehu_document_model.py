@@ -1,5 +1,11 @@
 """Reactive view-model wrapping a `RehuDocument` for the viewer/editor surfaces ([[plugins#view-model]])."""
 
+# the model is one class per document, and most of its length is the per-field ``SimpleProperty``
+# declarations and the docstrings that say what each field means -- splitting them off would put a
+# field's declaration and its write-through handler in different files for no gain, so the
+# module-length cap is lifted here rather than fragmenting the seam.
+# pylint: disable=too-many-lines
+
 import logging
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
@@ -15,6 +21,8 @@ from rehuco_core import (
     INFO_REHU_FILENAME,
     USERS_KEY,
     AuthorEntry,
+    CollectionEntry,
+    LearningPathEntry,
     LockReason,
     RehuDocument,
     convert_tc,
@@ -43,15 +51,29 @@ TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
 mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
 at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
+TYPE_FIELD_RECORD_LIST_NAMES: Final = ("collections",)
+"""The type-field **record lists** stored inline in the block ([[field-schema#field-types]]): a list of
+small records, none of the scalar groups above. Read-only here -- the model projects them through the
+document's own resolving accessor and never writes them back, so they are absent from the write-through
+loops (:meth:`__init__`); editing them is the record-list machinery (#97). Listed all the same, because
+being a *known* field is what keeps ``collections`` out of the generic unknown-field fallback, which
+would otherwise flag a settled v1 field as coming from a newer version (:meth:`unknown_field_names`,
+#189). ``learning_paths`` is stored the same way but is not here: it lives under the block's ``users``
+map, which the fallback already excludes wholesale."""
+
 USER_FIELD_NAMES: Final = frozenset(("rating", "viewed", "todo", "keep", "favorite"))
 """The subset of the groups above that is **per-user** ([[field-schema#per-user-shared]], #99): these
 route through the document's per-user accessors (`RehuDocument.active_user_field` /
 `~RehuDocument.set_active_user_field` -- nested under the active block's ``users`` map, block layout
 v1) instead of the shared inline ones. Mirrors the core importer's per-user set
-(``tc_document``'s user fields), minus ``learning_paths`` -- a record list the model doesn't expose
-yet, not a scalar of these groups."""
+(``tc_document``'s user fields), minus ``learning_paths`` -- a record list, not a scalar of these groups,
+and one whose *visible* set spans several identities (this one's own entries, its subscriptions, and the
+reserved ``public`` scope), so it resolves through :attr:`~RehuDocument.learning_paths` rather than the
+single-identity accessors this set routes through."""
 
-KNOWN_TYPE_FIELD_NAMES: Final = frozenset(TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES)
+KNOWN_TYPE_FIELD_NAMES: Final = frozenset(
+    TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES + TYPE_FIELD_RECORD_LIST_NAMES
+)
 """Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
 key in the active block is an **unknown field** surfaced through the generic fallback
 ([[plugins#fallback-editor]], #28)."""
@@ -238,6 +260,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     current_size = SimpleProperty[int | None](None)
     """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]), or ``None``
     when absent ([[field-schema#deferred-items]])."""
+
+    collections = SimpleProperty[list[CollectionEntry]](default_factory=list)
+    """The resource's collection memberships, resolved for display ([[field-schema#sources]]) -- a
+    publisher-defined series and this resource's position in it, sorted by index then title. **Read-only**
+    (#189): a projection of the block's own records, reseeded from the document at every seam that
+    reseeds the type fields, with no write-through -- the stored records, and whatever else they carry
+    (the collection's cached ``url``), are untouched, so a document that is merely viewed round-trips
+    unchanged. Editing them is #97's record-list machinery."""
+
+    learning_paths = SimpleProperty[list[LearningPathEntry]](default_factory=list)
+    """The learning paths the **current identity** sees ([[field-schema#learning-path-ownership]]): its own
+    entries, its subscriptions, and the reserved ``public`` scope -- never another user's private paths,
+    which the editor will show once it can act on them. Read-only and reseeded exactly like
+    :attr:`collections` -- a separate type, though, not a shared one: a path is owned where a collection
+    belongs to nobody. The resolution itself (ownership is structural, a bare ``{ref}`` is a subscription,
+    an unresolvable one is ignored) belongs to the document (:attr:`~RehuDocument.learning_paths`), not to
+    this model."""
 
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
@@ -793,6 +832,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             value = self.__read_field(name, default)
             coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
             setattr(self, name, coerced)
+        # the record lists are read-only projections, so they take the document's own resolving accessors
+        # whole rather than a generic block read plus a coercion here: which entries a learning path even
+        # *shows* is an ownership question ([[field-schema#learning-path-ownership]]) that belongs to the
+        # document, and the collections list is coerced and sorted by the same rule next to it
+        self.collections = self.__document.collections
+        self.learning_paths = self.__document.learning_paths
 
     def __read_field(self, name: str, default: Any) -> Any:
         """Read active-block field ``name`` through its own accessor: the per-user one for a

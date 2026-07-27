@@ -6,6 +6,7 @@ from rehuco_agent.fields.boolean_field import BooleanField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field_registry import FieldRegistry
+from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
@@ -63,6 +64,19 @@ def test_registry_resolves_the_list_and_url_field_types() -> None:
 
     assert registry.types["text_list"] is TextListField
     assert registry.types["url"] is UrlField
+
+
+def test_registry_resolves_the_indexed_list_field_type() -> None:
+    """The registry maps the ``indexed_list`` type to ``IndexedListField`` (#189).
+
+    **Test steps:**
+
+    * build a default registry
+    * verify the ``indexed_list`` type resolves to ``IndexedListField``
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["indexed_list"] is IndexedListField
 
 
 def test_registry_resolves_the_authors_field_type() -> None:

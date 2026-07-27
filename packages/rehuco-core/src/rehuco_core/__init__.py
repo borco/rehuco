@@ -1,6 +1,8 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
+from .collection_entries import CollectionEntry, collection_entries
 from .constants import IMAGE_EXTENSIONS, INFO_REHU_FILENAME
+from .learning_path_entries import LearningPathEntry, visible_learning_paths
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -15,6 +17,7 @@ from .plugins import (
     DEFAULT_CURRENT_USERNAME,
     DEFAULT_PLUGIN_REGISTRY,
     DEFAULT_UNKNOWN_USERNAME,
+    PUBLIC_USERNAME,
     REFERENCE_IMAGES_PLUGIN,
     TUTORIAL_PLUGIN,
     USERS_KEY,
@@ -43,6 +46,7 @@ __all__ = [
     "BUILTIN_PLUGINS",
     "AuthorEntry",
     "COLLECTION_PLUGIN",
+    "CollectionEntry",
     "CORE_BLOCK_KEY",
     "CORE_PLUGIN",
     "CURRENT_FORMAT_VERSION",
@@ -52,8 +56,10 @@ __all__ = [
     "FORMAT_VERSION_KEY",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
+    "LearningPathEntry",
     "LockReason",
     "LockReasonKind",
+    "PUBLIC_USERNAME",
     "REFERENCE_IMAGES_PLUGIN",
     "RESERVED_KEYS",
     "TUTORIAL_PLUGIN",
@@ -74,6 +80,7 @@ __all__ = [
     "TcDocument",
     "TcScreenshotScanner",
     "convert_tc",
+    "collection_entries",
     "current_block_version",
     "load_tc",
     "migrate_block_data",
@@ -85,4 +92,5 @@ __all__ = [
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "tc_to_rehu_data",
+    "visible_learning_paths",
 ]
