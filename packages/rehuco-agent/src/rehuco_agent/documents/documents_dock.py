@@ -9,14 +9,14 @@ import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
-from rehuco_core import LockReasonKind, RehuDocument, RehuFormatError, load_tc
+from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
 from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
 from .document_dock import DocumentDock
 from .document_widget import DocumentWidget
-from .rehu_document_model import INFO_REHU_FILENAME, RehuDocumentModel
+from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 
 LOG: Final = logging.getLogger(__name__)

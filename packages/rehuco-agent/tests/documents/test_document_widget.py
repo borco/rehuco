@@ -20,7 +20,7 @@ from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton, QWidget
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -1226,6 +1226,42 @@ def test_a_successful_convert_clears_the_banner(
 
     assert legacy_model.locked is False
     assert banner(legacy_widget).findChildren(QLabel) == []
+
+
+def test_a_failed_rename_shows_an_error_banner_row(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """A rename failure reports through the same strip, as an ``error`` row -- the document is
+    untouched, so there is nothing to raise a modal for (#162).
+
+    **Test steps:**
+
+    * set the model's ``rename_error``
+    * verify the banner shows that message, on a row marked ``error``
+    """
+    model.rename_error = 'Could not rename "old" to "new": Permission denied.'
+
+    strip = banner(widget)
+    assert 'Could not rename "old" to "new": Permission denied.' in {
+        label.text() for label in strip.findChildren(QLabel)
+    }
+    assert "error" in {row.property("severity") for row in strip.findChildren(QWidget)}
+
+
+def test_the_banner_drops_the_rename_row_once_the_error_clears(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """A retry that succeeds clears ``rename_error``, and the row goes with it (#162).
+
+    **Test steps:**
+
+    * set ``rename_error``, then clear it
+    * verify the banner is empty again
+    """
+    model.rename_error = 'Could not rename "old" to "new": Permission denied.'
+    assert banner(widget).findChildren(QLabel) != []
+
+    model.rename_error = ""
+
+    assert banner(widget).findChildren(QLabel) == []
 
 
 # endregion

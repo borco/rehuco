@@ -868,7 +868,7 @@ def test_focus_document_makes_the_given_widgets_dock_current(mocker: MockerFixtu
 def test_focus_document_works_for_a_document_with_no_path(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Focusing a document's widget works even with no path yet, unlike
     :meth:`DocumentsDock.open_document`, which needs a path to look a dock up by (a genuinely
-    path-less "New Document" dock, pending #25, could otherwise never be focused this way).
+    path-less "New Document" dock could otherwise never be focused this way).
 
     **Test steps:**
 

@@ -588,6 +588,21 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         # (#142), so a save right after a revert reads as the no-op it is
         self.__saved_serialization = self.serialize()
 
+    def rebind_path(self, path: Path | str) -> None:
+        """Re-point this document at ``path`` after its file moved on disk underneath it -- a completed
+        rename (:func:`~rehuco_core.rename_rehu_resource`, [[plugins#toolkit-surfaces]]).
+
+        Nothing is read and nothing is written: the bytes are the same bytes, only their location
+        changed. That is what makes this deliberately *not* a :meth:`reload` -- the save baseline
+        (:attr:`__saved_serialization`), the on-disk version stamps, this session's block claims, and any
+        load-failure verdict all still describe this very file, so re-deriving them would only risk
+        replacing correct state with a re-read of the same content. A later :meth:`save` or
+        :meth:`reload` simply targets the new location.
+
+        :param path: the file's new location.
+        """
+        self.__path = Path(path)
+
     @property
     def data(self) -> dict[str, Any]:
         """The backing JSON object (the source of truth, including unknown keys)."""

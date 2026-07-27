@@ -1,6 +1,6 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
-from .constants import IMAGE_EXTENSIONS
+from .constants import IMAGE_EXTENSIONS, INFO_REHU_FILENAME
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -30,6 +30,7 @@ from .rehu_document import (
     authors_comma_editable,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_rename import PartialRenameError, RehuRenamer, rename_rehu_resource
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .tc_conversion import TcConverter, convert_tc
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
@@ -50,6 +51,7 @@ __all__ = [
     "DEFAULT_UNKNOWN_USERNAME",
     "FORMAT_VERSION_KEY",
     "IMAGE_EXTENSIONS",
+    "INFO_REHU_FILENAME",
     "LockReason",
     "LockReasonKind",
     "REFERENCE_IMAGES_PLUGIN",
@@ -57,11 +59,13 @@ __all__ = [
     "TUTORIAL_PLUGIN",
     "USERS_KEY",
     "__version__",
+    "PartialRenameError",
     "PluginBlock",
     "PluginRegistry",
     "PluginSpec",
     "RehuDocument",
     "RehuFormatError",
+    "RehuRenamer",
     "ScreenshotRename",
     "author_name",
     "authors_comma_editable",
@@ -74,6 +78,7 @@ __all__ = [
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
+    "rename_rehu_resource",
     "rewrite_description_images",
     "scan_rehu_screenshot_files",
     "scan_tc_screenshot_files",

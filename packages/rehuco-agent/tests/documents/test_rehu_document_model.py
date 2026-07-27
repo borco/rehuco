@@ -218,8 +218,8 @@ def test_model_seeds_location_empty_when_the_document_has_no_path(model: RehuDoc
 def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentModel, document: RehuDocument) -> None:
     """Setting ``location`` (as the viewer binding does) never touches the document or dirties the model.
 
-    ``location`` mirrors the file path for the viewer; it isn't a document field. Rename-on-disk is
-    the separate :meth:`rename_location` path, deferred (#25).
+    ``location`` mirrors the file path for the viewer; it isn't a document field. Renaming on disk is
+    the separate :meth:`rename_location` path.
 
     **Test steps:**
 
@@ -232,120 +232,327 @@ def test_setting_location_does_not_write_through_or_dirty(model: RehuDocumentMod
     assert model.dirty is False
 
 
-def test_rename_location_always_fails_and_logs_an_error(
-    caplog: pytest.LogCaptureFixture, model: RehuDocumentModel
-) -> None:
-    """``rename_location`` always fails for now (the real move is deferred, #25), logging an error.
+def test_rename_location_adopts_the_new_path_on_success(mocker: MockerFixture) -> None:
+    """A successful rename re-points the model **and** its document at the returned path, reseeding
+    ``location`` and ``current_name`` from it and leaving the model clean.
 
     **Test steps:**
 
-    * call ``rename_location`` on a clean model
-    * verify it returns ``False`` and an error is logged
-    """
-    with caplog.at_level(logging.INFO):
-        result = model.rename_location("new_name")
-
-    assert result is False
-    assert any(record.levelno == logging.ERROR for record in caplog.records)
-
-
-def test_rename_location_logs_the_attempt_before_the_move_fails(
-    caplog: pytest.LogCaptureFixture, model: RehuDocumentModel
-) -> None:
-    """The attempt is logged before the (always-failing) move is even tried.
-
-    **Test steps:**
-
+    * build a model over a directory-scoped document and mock the core rename to succeed
     * call ``rename_location``
-    * verify an info-level "attempting" log precedes the error-level failure log
+    * verify it returned ``True``, the core rename got the old path and the new name, and path /
+      location / current_name / the document's own path all moved to the new location
     """
+    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu"))
+    model = RehuDocumentModel(document)
+    renamed = Path("C:/tutorials/new_name/info.rehu")
+    rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
+
+    assert model.rename_location("new_name") is True
+
+    rename.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    assert model.path == renamed
+    assert model.location == "C:/tutorials/new_name/info.rehu"
+    assert model.current_name == "new_name"
+    assert document.path == renamed
+    assert model.dirty is False
+    assert model.rename_error == ""
+
+
+def test_rename_location_reinstalls_the_image_scanner_on_success(mocker: MockerFixture) -> None:
+    """A successful rename installs a **fresh** scanner, so ``image_scanner_changed`` tells the image
+    strip and the Markdown viewer that the screenshot names they hold are stale.
+
+    **Test steps:**
+
+    * mock the core rename to succeed on a file-scoped document
+    * connect to ``image_scanner_changed`` and rename
+    * verify the signal fired and the scanner object was replaced, still over the `.rehu` lister
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    original = model.image_scanner
+    received: list[object] = []
+    model.image_scanner_changed.connect(received.append)  # type: ignore[attr-defined]
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        return_value=Path("C:/tutorials/new_name.rehu"),
+    )
+
+    model.rename_location("new_name")
+
+    assert len(received) == 1
+    assert model.image_scanner is not original
+    assert model.image_scanner is not None
+    assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
+
+
+def test_rename_location_logs_the_attempt_before_the_move_runs(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The attempt is logged *before* the move is tried, so the log records what was asked for even
+    when the move then fails.
+
+    **Test steps:**
+
+    * make the core rename fail, capturing the log around it
+    * verify the "Attempting" info record precedes the error record
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=OSError("boom"))
+
     with caplog.at_level(logging.INFO):
         model.rename_location("new_name")
 
     levels = [record.levelno for record in caplog.records]
-    assert logging.INFO in levels
-    assert logging.ERROR in levels
     assert levels.index(logging.INFO) < levels.index(logging.ERROR)
 
 
-def test_rename_location_saves_first_when_dirty(mocker: MockerFixture, model: RehuDocumentModel) -> None:
-    """A dirty model is saved before the move is attempted, so the file being moved isn't stale.
+def test_rename_location_reports_a_failed_move_without_touching_the_document(mocker: MockerFixture) -> None:
+    """A refused rename leaves everything as it was and explains itself through ``rename_error``, using
+    the OS's own ``strerror`` rather than the full ``[Errno n] ...`` rendering.
 
     **Test steps:**
 
-    * dirty the model, then patch ``save``
+    * make the core rename raise ``PermissionError`` on a file-scoped document
+    * call ``rename_location``
+    * verify it returned ``False``, path/location are unchanged, and ``rename_error`` names both names
+      and the OS reason
+    """
+    path = Path("C:/tutorials/old_file.rehu")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        side_effect=PermissionError(13, "Permission denied", str(path)),
+    )
+
+    assert model.rename_location("new_name") is False
+
+    assert model.path == path
+    assert model.location == "C:/tutorials/old_file.rehu"
+    assert model.rename_error == 'Could not rename "old_file" to "new_name": Permission denied.'
+
+
+def test_rename_location_reports_a_refused_name(mocker: MockerFixture) -> None:
+    """A name the core renamer refuses outright (a ``ValueError``, not an ``OSError``) reports through
+    the same channel -- the banner explains, nothing is moved.
+
+    **Test steps:**
+
+    * make the core rename raise ``ValueError``
+    * call ``rename_location``
+    * verify ``False`` came back and ``rename_error`` carries the refusal
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        side_effect=ValueError("'..' is not a plain file or folder name."),
+    )
+
+    assert model.rename_location("..") is False
+
+    assert model.rename_error == 'Could not rename "old_file" to "..": \'..\' is not a plain file or folder name.'
+
+
+def test_rename_location_clears_a_previous_error_when_a_retry_succeeds(mocker: MockerFixture) -> None:
+    """``rename_error`` describes the **current** attempt: a retry that works takes the banner row away.
+
+    **Test steps:**
+
+    * fail one rename, then succeed the next
+    * verify ``rename_error`` is set after the first and empty after the second
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    rename = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        side_effect=[FileExistsError('"taken.rehu" already exists.'), Path("C:/tutorials/free.rehu")],
+    )
+
+    model.rename_location("taken")
+    assert model.rename_error != ""
+
+    model.rename_location("free")
+
+    assert model.rename_error == ""
+    assert rename.call_count == 2
+
+
+def test_rename_location_refuses_a_document_with_no_location(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+    """A document with no location at all has nothing to rename: refused before any save or move is
+    attempted. Distinct from a document merely not written *yet*
+    (:func:`test_rename_location_renames_a_never_saved_document`), which renames fine.
+
+    **Test steps:**
+
+    * call ``rename_location`` on the path-less fixture model
+    * verify ``False`` came back, ``rename_error`` says why, and the core rename was never called
+    """
+    rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
+
+    assert model.rename_location("new_name") is False
+
+    assert "no location yet" in model.rename_error
+    rename.assert_not_called()
+
+
+def test_rename_location_renames_a_never_saved_document(mocker: MockerFixture) -> None:
+    """A brand-new document -- "open in rehuco" on a folder, or an archive's companion -- renames like
+    any other: it is born dirty, so the pre-move save writes its `.rehu` at the location it was bound
+    to, and the rename then has a real file to move. Not being written *yet* is a reason to write it
+    first, never a reason to refuse.
+
+    **Test steps:**
+
+    * build a ``create_new`` model bound to a folder's ``info.rehu``, never saved
+    * patch ``save`` (standing in for the real write) and the core rename
+    * call ``rename_location``
+    * verify it saved first, then renamed, and adopted the new path
+    """
+    model = RehuDocumentModel.create_new(Path("C:/tutorials/My Tutorial/info.rehu"))
+    assert model.dirty is True
+    assert model.saved_on_disk is False
+    save = mocker.patch.object(model, "save")
+    renamed = Path("C:/tutorials/Renamed/info.rehu")
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
+
+    assert model.rename_location("Renamed") is True
+
+    save.assert_called_once()
+    assert model.path == renamed
+    assert model.current_name == "Renamed"
+    assert model.rename_error == ""
+
+
+def test_rename_location_saves_first_when_dirty(mocker: MockerFixture) -> None:
+    """A dirty model is saved before the move is attempted, so the files being moved aren't stale.
+
+    **Test steps:**
+
+    * dirty a model over a real path, then patch ``save`` and the core rename
     * call ``rename_location``
     * verify ``save`` was called
     """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
     model.title = "New Title"
     assert model.dirty is True
     save = mocker.patch.object(model, "save")
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        return_value=Path("C:/tutorials/new_name.rehu"),
+    )
 
     model.rename_location("new_name")
 
     save.assert_called_once()
 
 
-def test_rename_location_aborts_with_a_logged_error_when_the_save_fails(
-    mocker: MockerFixture, model: RehuDocumentModel, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A pre-move save that raises ``OSError`` (an offline mount, #146) aborts the rename: an error is
-    logged, ``False`` is returned, and the move is never attempted -- the same log-and-fail channel the
-    (deferred, #25) move itself reports through, since this view-model has no widget to parent a
-    retry/cancel dialog to.
+def test_rename_location_aborts_when_the_pre_move_save_fails(mocker: MockerFixture) -> None:
+    """A pre-move save that raises ``OSError`` (an offline mount, #146) aborts the rename: nothing is
+    moved, the document simply stays dirty, and ``rename_error`` explains -- this view-model has no
+    widget to parent a retry/cancel dialog to, and a banner row is the channel every other failure here
+    uses anyway.
 
     **Test steps:**
 
-    * dirty the model, patch ``save`` to raise ``OSError``, and patch the private move to detect a call
+    * dirty a model, patch ``save`` to raise ``OSError``, and patch the core rename to detect a call
     * call ``rename_location``
-    * verify it returned ``False``, logged an error, and never attempted the move
+    * verify ``False`` came back, ``rename_error`` names the save, the model is still dirty, and no
+      rename was attempted
     """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
     model.title = "New Title"
-    mocker.patch.object(model, "save", side_effect=OSError("offline mount"))
-    move = mocker.patch.object(model, "_RehuDocumentModel__move", return_value=True)
+    mocker.patch.object(model, "save", side_effect=OSError(5, "offline mount"))
+    rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
 
-    with caplog.at_level(logging.INFO):
-        result = model.rename_location("new_name")
+    assert model.rename_location("new_name") is False
 
-    assert result is False
-    assert logging.ERROR in [record.levelno for record in caplog.records]
-    move.assert_not_called()
+    assert model.rename_error == 'Could not save "old_file" before renaming it: offline mount.'
+    assert model.dirty is True
+    rename.assert_not_called()
 
 
-def test_rename_location_does_not_save_when_clean(mocker: MockerFixture, model: RehuDocumentModel) -> None:
+def test_rename_location_aborts_when_the_pre_move_save_is_refused_by_a_lock(mocker: MockerFixture) -> None:
+    """A save the document itself refuses raises ``ValueError``, not ``OSError`` -- a locked document's
+    save is blocked ([[data-model#write-integrity]]) -- and is reported through the same channel rather
+    than escaping as an unhandled error.
+
+    **Test steps:**
+
+    * dirty a model and patch ``save`` to raise the refusal a save-blocking lock produces
+    * call ``rename_location``
+    * verify ``False`` came back, ``rename_error`` carries the refusal, and no rename was attempted
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    model.title = "New Title"
+    mocker.patch.object(model, "save", side_effect=ValueError("Refusing to save a locked document (missing)."))
+    rename = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
+
+    assert model.rename_location("new_name") is False
+
+    assert "Refusing to save a locked document" in model.rename_error
+    rename.assert_not_called()
+
+
+def test_rename_location_reports_a_resource_whose_file_has_gone_missing(mocker: MockerFixture) -> None:
+    """A clean document whose file vanished out of band is refused by the core rename, and the refusal
+    reaches the banner like any other -- nothing is renamed on a guess about what the set used to be.
+
+    **Test steps:**
+
+    * make the core rename raise ``FileNotFoundError``
+    * call ``rename_location``
+    * verify ``False`` came back and ``rename_error`` says the file is gone
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        side_effect=FileNotFoundError('"old_file.rehu" is no longer on disk.'),
+    )
+
+    assert model.rename_location("new_name") is False
+
+    assert model.rename_error == 'Could not rename "old_file" to "new_name": "old_file.rehu" is no longer on disk.'
+
+
+def test_revert_clears_a_standing_rename_error(mocker: MockerFixture) -> None:
+    """A revert clears a lingering rename failure along with everything else -- a revert leaves the
+    model exactly as a fresh open would, and a fresh open carries no failed attempt.
+
+    **Test steps:**
+
+    * fail a rename so ``rename_error`` is set, then mock ``document.reload`` and revert
+    * verify ``rename_error`` is empty again
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
+    mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", side_effect=OSError("boom"))
+    model.rename_location("new_name")
+    assert model.rename_error != ""
+    mocker.patch.object(model.document, "reload")
+
+    model.revert()
+
+    assert model.rename_error == ""
+
+
+def test_rename_location_does_not_save_when_clean(mocker: MockerFixture) -> None:
     """A clean model is not saved before attempting the move -- there is nothing to save.
 
     **Test steps:**
 
-    * patch ``save`` on a clean model
+    * patch ``save`` and the core rename on a clean model
     * call ``rename_location``
     * verify ``save`` was not called
     """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_file.rehu")))
     assert model.dirty is False
     save = mocker.patch.object(model, "save")
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.rename_rehu_resource",
+        return_value=Path("C:/tutorials/new_name.rehu"),
+    )
 
     model.rename_location("new_name")
 
     save.assert_not_called()
-
-
-def test_rename_location_returns_whether_the_move_succeeded(mocker: MockerFixture, model: RehuDocumentModel) -> None:
-    """``rename_location`` returns the (deferred) move's result -- ``True`` when it would succeed.
-
-    The move itself always fails today (#25) and owns committing :attr:`location`; this drives the
-    success branch by patching the private move to report success.
-
-    **Test steps:**
-
-    * patch the private move to report success
-    * call ``rename_location`` and verify it returns ``True``
-    """
-    move = mocker.patch.object(model, "_RehuDocumentModel__move", return_value=True)
-
-    result = model.rename_location("new_name")
-
-    assert result is True
-    move.assert_called_once_with("new_name")
 
 
 @mark.parametrize(
