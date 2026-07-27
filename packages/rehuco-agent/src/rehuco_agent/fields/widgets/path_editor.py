@@ -5,7 +5,7 @@ The expand/collapse control is deliberately *not* part of this widget -- the for
 own "misc" grid column (see `FieldsForm`/`PathField`); this widget only exposes :attr:`expanded`.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
@@ -19,6 +19,18 @@ from ..colors import WARNING_COLOR
 
 WARNING_STYLESHEET: Final = f"QLabel {{ color: {WARNING_COLOR}; }}"
 """Applied to the current-name label when the name matches none of the suggestions ([[plugins#field-toolkit]])."""
+
+UNAVAILABLE_SUFFIX: Final = " ⚿"
+"""Appended to a suggestion something already occupies (#162) -- a marker, not a color, so the row
+carries its own meaning instead of relying on a hue the disabled palette fights and a colorblind reader
+may not separate at all. `ElidedLabel` middle-elides, keeping both ends, so the marker survives however
+narrow the column gets.
+
+A plain Unicode codepoint (U+26BF SQUARED KEY), not one of the app's Phosphor glyphs
+(:mod:`rehuco_agent.glyphs`): those resolve only in their own font family, and this rides inline in a
+label already rendering the resource name in the UI font. The same trade `MessageBanner` makes for its
+own fallback glyph. It therefore leans on the platform's font fallback covering U+26BF; should that
+ever render as tofu, the guaranteed alternative is a separate marker label per row drawn in Phosphor."""
 
 
 class PathEditor(QWidget):
@@ -36,6 +48,14 @@ class PathEditor(QWidget):
     Clicking a live suggestion emits :attr:`suggestion_selected` with its sanitized name -- this
     widget never touches the filesystem itself.
 
+    A suggestion something already occupies renders **disabled, with a trailing**
+    :data:`UNAVAILABLE_SUFFIX` marker (#162), so a rename that could only fail is never offered as a
+    click. Which names those are is not this widget's to
+    know -- it holds no path and reads no directory -- so it *asks*, through the
+    :meth:`set_conflict_check` predicate its owner supplies: the toolkit's standing rule that a field
+    decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
+    With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
+
     :param parent: optional Qt parent.
     """
 
@@ -50,6 +70,9 @@ class PathEditor(QWidget):
         self.__current_name = ""
         self.__suggestions: list[str] = []
         self.__suggestion_labels: dict[str, ElidedLabel] = {}
+        self.__conflicts: Callable[[str], bool] | None = None
+        """Answers whether a candidate name is already taken, supplied by the owner
+        (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
 
         self.__name_label: Final = ElidedLabel()
 
@@ -77,6 +100,19 @@ class PathEditor(QWidget):
         :param name: the current file/folder name.
         """
         self.__current_name = name
+        self.__render()
+
+    def set_conflict_check(self, conflicts: Callable[[str], bool] | None) -> None:
+        """Supply the predicate deciding whether a candidate name is already taken (#162).
+
+        Asked for every suggestion on every render, so it must be cheap: the owner is expected to hand
+        over something that answers with a single existence check rather than a directory sweep (see
+        :meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.rename_conflicts`).
+
+        :param conflicts: called with a sanitized candidate name, returning whether something already
+            occupies it; ``None`` to treat every name as available.
+        """
+        self.__conflicts = conflicts
         self.__render()
 
     def set_suggestions(self, raw_suggestions: Sequence[str]) -> None:
@@ -125,14 +161,31 @@ class PathEditor(QWidget):
             self.__suggestion_labels[name] = label  # pylint: disable=unsupported-assignment-operation
 
     def __render(self) -> None:
-        """Refresh the current-name label (warning-colored when unmatched) and each suggestion's state."""
+        """Refresh the current-name label (warning-colored when unmatched) and each suggestion's state.
+
+        Three states per suggestion, in precedence order: the **current name** (disabled, plain -- a
+        rename to it is a no-op, not a problem), a name something already **occupies** (disabled, and
+        marked with :data:`UNAVAILABLE_SUFFIX`, #162), and otherwise a live link. The current name wins
+        when both apply, since a resource always "occupies" its own name and saying so would flag every
+        document as a conflict with itself -- which is also why the check is skipped entirely for it
+        rather than merely overridden: no reason to ask about a name whose answer cannot matter.
+
+        The marker rides in the label's own **text**, because Qt Style Sheets cannot inject content:
+        they implement no ``content`` property and no ``::before``/``::after`` (Qt's pseudo-elements are
+        widget subcontrols like ``::indicator``). ``name`` stays the dict key and the value
+        :attr:`suggestion_selected` would carry, so the marker never leaks into what a rename renames to.
+        """
         self.__name_label.set_text(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
         self.__name_label.setStyleSheet(WARNING_STYLESHEET if unmatched else "")
         for name, label in self.__suggestion_labels.items():
             is_current = name == self.__current_name
-            label.setEnabled(not is_current)
-            label.set_text(name, href="" if is_current else "#")
+            unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
+            label.setEnabled(not is_current and not unavailable)
+            label.set_text(
+                f"{name}{UNAVAILABLE_SUFFIX}" if unavailable else name,
+                href="" if is_current or unavailable else "#",
+            )
 
     @staticmethod
     def __sanitize_all(raw_suggestions: Sequence[str]) -> list[str]:

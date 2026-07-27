@@ -20,7 +20,7 @@ from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton
+from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton, QWidget
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -38,6 +38,7 @@ from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab
 from rehuco_agent.fields.widgets import ImageLightbox, ImageStrip, ImageViewerMode, PathEditor, SingleChoiceComboBox
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
+from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
@@ -1228,6 +1229,42 @@ def test_a_successful_convert_clears_the_banner(
     assert banner(legacy_widget).findChildren(QLabel) == []
 
 
+def test_a_failed_rename_shows_an_error_banner_row(widget: DocumentWidget, model: RehuDocumentModel) -> None:
+    """A rename failure reports through the same strip, as an ``error`` row -- the document is
+    untouched, so there is nothing to raise a modal for (#162).
+
+    **Test steps:**
+
+    * set the model's ``rename_error``
+    * verify the banner shows that message, on a row marked ``error``
+    """
+    model.rename_error = 'Could not rename "old" to "new": Permission denied.'
+
+    strip = banner(widget)
+    assert 'Could not rename "old" to "new": Permission denied.' in {
+        label.text() for label in strip.findChildren(QLabel)
+    }
+    assert "error" in {row.property("severity") for row in strip.findChildren(QWidget)}
+
+
+def test_the_banner_drops_the_rename_row_once_the_error_clears(
+    widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """A retry that succeeds clears ``rename_error``, and the row goes with it (#162).
+
+    **Test steps:**
+
+    * set ``rename_error``, then clear it
+    * verify the banner is empty again
+    """
+    model.rename_error = 'Could not rename "old" to "new": Permission denied.'
+    assert banner(widget).findChildren(QLabel) != []
+
+    model.rename_error = ""
+
+    assert banner(widget).findChildren(QLabel) == []
+
+
 # endregion
 
 
@@ -1455,6 +1492,28 @@ def test_clicking_a_location_suggestion_renames_through_the_model(
     label.linkActivated.emit("#")
 
     rename.assert_called_once_with(name)
+
+
+def test_an_occupied_location_suggestion_is_offered_disabled(
+    mocker: MockerFixture, widget: DocumentWidget, model: RehuDocumentModel
+) -> None:
+    """End to end: the form wires the model's conflict answer into the editor, so a candidate something
+    already occupies cannot be clicked at all (#162) -- the rename is never attempted.
+
+    **Test steps:**
+
+    * make the model report every candidate as occupied, and re-render the editor
+    * verify the suggestion is disabled and marker-suffixed, and carries no link
+    """
+    mocker.patch.object(model, "rename_conflicts", return_value=True)
+    editor = location_editor(widget)
+    editor.set_suggestions(["Taken Name"])
+
+    labels = editor._PathEditor__suggestion_labels  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    label = labels["Taken Name"]
+    assert label.isEnabled() is False
+    assert label._ElidedLabel__full == f"Taken Name{UNAVAILABLE_SUFFIX}"  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert "<a " not in label.text()
 
 
 # endregion

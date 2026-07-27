@@ -113,6 +113,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     successful Revert. The inline notice banner also gets a row for it, same as every lock reason --
     message-only, since the remedy already sits right above the strip.
 
+    A rename that fails (:attr:`~RehuDocumentModel.rename_error`, #162) reports through that same
+    strip, as an **error** row: the resource is untouched and its editor's path field still offers
+    every other name, so there is nothing to interrupt the user with a modal for.
+
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
     """
@@ -259,6 +263,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__banner.set_rows(self.__banner_rows())
         model.lock_reasons_changed.connect(self.__on_lock_reasons_changed)  # type: ignore[attr-defined]
         model.upgradable_changed.connect(self.__on_upgradable_changed)  # type: ignore[attr-defined]
+        model.rename_error_changed.connect(self.__on_rename_error_changed)  # type: ignore[attr-defined]
         model.active_block_changed.connect(self.__rebuild_field_docks)
 
         toolbar = self.addToolBar("View")
@@ -473,6 +478,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_rename_error_changed(self) -> None:
+        """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
+
+        The banner half of :meth:`__on_upgradable_changed`'s shape with no toolbar half: a failed rename
+        changes nothing about what this document can do -- it is still exactly the document it was, at
+        the path it was -- so there is nothing to swap, only something to say. Takes no arguments and
+        re-reads the model, same as its siblings.
+        """
+        self.__banner.set_rows(self.__banner_rows())
+
     def __rebuild_field_docks(self) -> None:
         """Re-resolve the document's field composition into the existing viewer/editor docks after a
         type switch (:attr:`~RehuDocumentModel.active_block_changed`, #83).
@@ -530,21 +545,29 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             old.deleteLater()
 
     def __banner_rows(self) -> list[MessageBannerRow]:
-        """Build the inline notice strip's current rows: one per active lock reason (#94), plus the
-        upgrade offer (#89) when the document has one.
+        """Build the inline notice strip's current rows: one per active lock reason (#94), the upgrade
+        offer (#89) when the document has one, and the last rename failure (#162) while one stands.
 
-        Message-only, with no remedy button -- every kind's remedy is already on this widget's own
-        toolbar (Revert, always visible except during ``legacy_tc``; the convert actions, visible
-        exactly during it; :attr:`upgrade_action`, visible exactly while
-        :attr:`~RehuDocumentModel.upgradable`), so a button here would only duplicate a control already
-        sitting right above the strip.
+        Message-only, with no remedy button -- every kind's remedy is already on screen: on this
+        widget's own toolbar for the first two (Revert, always visible except during ``legacy_tc``; the
+        convert actions, visible exactly during it; :attr:`upgrade_action`, visible exactly while
+        :attr:`~RehuDocumentModel.upgradable`), and in the editor's own path field for a failed rename,
+        whose remedy is picking a different name from the suggestions that produced the last one. A
+        button here would only duplicate a control already sitting a few pixels away.
 
-        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, plus a
-            trailing upgrade row when :attr:`~RehuDocumentModel.upgradable` is set.
+        The rename row is an **error**, not a warning: warnings here describe a state that makes acting
+        unsafe, while this describes an action that already went wrong
+        (`MessageBannerSeverity`) and left the document as it was.
+
+        :returns: one row per :attr:`~RehuDocumentModel.lock_reasons` entry, in the same order, then an
+            upgrade row when :attr:`~RehuDocumentModel.upgradable` is set, then a rename row when
+            :attr:`~RehuDocumentModel.rename_error` is non-empty.
         """
         rows = [MessageBannerRow(MessageBannerSeverity.WARNING, reason.message) for reason in self.__model.lock_reasons]
         if self.__model.upgradable:
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
+        if self.__model.rename_error:
+            rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.rename_error))
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

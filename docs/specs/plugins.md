@@ -160,7 +160,7 @@ convenience (label + middle control column + row alignment), which is why its ow
 *leading field* rather than from the type's field list. Its interface is therefore **not** a value: it is
 a **command out** (a chosen name — `suggestion_clicked(str)`) plus **display-only inputs** (the
 suggestions to show and the current name); its `location` display is a read-only projection of the path
-that only changes when a rename actually succeeds (deferred to LocalEdit5). So the value-widget contract is the
+that only changes when a rename actually succeeds. So the value-widget contract is the
 default for content fields, and the `path` field is not an exception to it but a different kind of
 object outside its scope. The suggestions it displays are still derived from content fields
 (`title` / `publisher` / …), so the naming domain logic belongs in a dedicated suggestion source, not in
@@ -378,6 +378,7 @@ filter://publishers?name=Example%20Publisher
 - [x] [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
 - [x] [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
 - [x] [#70: feat: wrapped vs. single-row layout for a document's image strip](https://github.com/borco/rehuco/issues/70)
+- [ ] [#162: feat: LocalEdit5.2 — folder-rename-from-suggestions renames on disk](https://github.com/borco/rehuco/issues/162)
 
 The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
 
@@ -414,8 +415,40 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   ([[acquisition-tooling#tc-to-rehu]]) re-points an open viewer through the same owner, which keeps the current
   screenshot if it survived, falls back to whatever took its position if it did not, and dismisses the viewer when the
   set empties — a maximized screenshot is never one the strip no longer offers.
-- **Editor**: field editing including the Markdown description; folder rename from the predefined-candidates list
-  ([[data-model#rehu-format]]).
+- **Editor**: field editing including the Markdown description; rename from the predefined-candidates list
+  ([[data-model#rehu-format]]), which renames on disk. Each scope moves what its own naming convention owns
+  ([[data-model#resource-scoping]]): a directory-scoped `info.rehu` renames its **parent directory**, one atomic
+  operation carrying everything inside it; a file-scoped `foo.rehu` renames **every file named after it** — the
+  record, the `fooNN` screenshots, the `.sfv`/`.md5` manifest, and the content itself, whether that is one `foo.zip`
+  or a `foo.001`/`foo.002` multi-part set. Until a `.rehu` carries an explicit manifest of the files it describes
+  ([[data-model#resource-scoping]] names that gap), being named after the resource *is* the association, so renaming
+  only the record would break the very thing tying the set together. What counts as named after it is decided by a
+  **separator**, not a bare prefix: what follows the stem must be nothing, a `.`, or a digit. More letters make a
+  different name that merely starts alike, so `foobar.zip` is left to whoever it belongs to. Two further exclusions:
+  **directories** (a file-scoped `.rehu` describes files) and anything owned by a **sibling record** whose stem
+  extends this one's — with `foo.rehu` and `foo2.rehu` side by side, the digit rule would otherwise sweep `foo2`'s
+  whole set into `foo`'s rename.
+  A resource whose `.rehu` is **not on disk** is refused outright: a missing record's remedy is a re-read
+  ([[data-model#write-integrity]]), and with the record gone there is nothing left to establish what its set was.
+  The set is collision-checked whole before the first rename runs and rolled back if one
+  of them fails, so a resource is never left split between two names ([[data-model#write-integrity]]) — and the one
+  case a rollback cannot fix says so by name. Both scopes rename within a single directory and so are same-filesystem
+  by construction; the checksum-gated cross-filesystem move ([[mounts-and-storage#safe-move-rename]]) is a different
+  operation, reached from a destination-choosing UI that does not exist.
+  A candidate **something already occupies** — another folder for a directory-scoped resource, another `.rehu` for a
+  file-scoped one — is offered *disabled, with a trailing `⚿`* rather than as a click that could only fail. A marker
+  rather than a color: the disabled palette fights a hue, a colorblind reader may not separate one, and Qt Style Sheets
+  cannot inject content anyway (no `content`, no `::before`/`::after` — Qt's pseudo-elements are widget subcontrols),
+  so the displayed text is where it has to live. The editor
+  holds no path and reads no directory: it asks its owner through a predicate, the same
+  field-decides-*that*-never-*what* rule the rest of the toolkit follows. The check is one existence test on the
+  resource's own destination, not the whole plan — it is re-asked per keystroke behind a live suggestion list, and
+  measured at ~15 µs against ~24 ms for a sibling sweep. It is deliberately **uncached**: a memo table would go stale
+  under the app's own rename, under a new document's first save, and under anything done in a file manager while the
+  editor sits open, and the OS attribute cache already supplies the speed with invalidation this layer cannot see.
+  A rename that fails anyway — a collision on a sibling the cheap check does not cover, or any other refusal — reports
+  as an inline banner row on the document, not a modal: the resource is untouched and the candidate list that produced
+  the name is still on screen.
 - **Follow** (a distinct mode from viewer/editor): sequential playback of the tutorial's files, recording watch progress
   and duration; note-taking (create/view/edit); bookmarking. Progress sync follows
   [[sync#overview]]/[[mounts-and-storage#node-handoff]].

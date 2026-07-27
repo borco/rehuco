@@ -101,7 +101,7 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 | Panel | What it shows |
 | --- | --- |
 | **Viewer** | The resource read-only: its fields, the rendered Markdown description, and its screenshots as a thumbnail strip. Clicking a thumbnail fills the window with it; arrow keys or the wheel move through the set. |
-| **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. |
+| **Main Editor** | The same fields, editable, plus the type selector that decides which block is active. Its path row offers names built from the record — title, publisher, authors, year — and picking one renames the resource on disk: the folder for a directory-scoped resource, and for a standalone one every file named after it, archives and screenshots alike. |
 | **Description** | The Markdown description in its own panel, so prose can be written with room. |
 | **Images** | Which screenshots the strip shows: every sibling image, checkable, beside a preview. |
 | **Save Preview** / **On Disk** | Hidden by default: exactly what a save would write, and the file as it is on disk right now. The pair is how you see a migration or a preserved unknown field with your own eyes. |

@@ -12,11 +12,14 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
     FORMAT_VERSION_KEY,
+    INFO_REHU_FILENAME,
     USERS_KEY,
     AuthorEntry,
     LockReason,
     RehuDocument,
     convert_tc,
+    rehu_rename_conflict,
+    rename_rehu_resource,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
 )
@@ -25,10 +28,6 @@ from ..fields.field import Field, FieldBinding
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
-
-INFO_REHU_FILENAME: Final = "info.rehu"
-"""A directory-scoped resource's filename ([[data-model#resource-scoping]]); its label uses the parent
-directory's name instead, since the literal filename is the same for every such resource."""
 
 TYPE_FIELD_BOOL_NAMES: Final = ("complete", "online", "viewed", "todo", "keep", "favorite")
 """The type-field boolean flags ([[field-schema#boolean-flags]]); each name's default lives on its own
@@ -137,15 +136,25 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     path = SimpleProperty[Path | None](None)
     """The document's current file path, mirroring :attr:`document`'s own path -- reassigned whenever
-    it changes (construction, :meth:`revert`, :meth:`convert`, and eventually a completed rename, #25),
+    it changes (construction, :meth:`revert`, :meth:`convert`, and a completed :meth:`rename_location`),
     so a consumer that needs to react to the document's identity changing (e.g. `DocumentsDock`
     resyncing a dock's persisted identity) can bind to `path_changed` instead of polling it."""
 
     location = SimpleProperty("")
     """The document's file location, seeded from :attr:`path` ([[field-schema#field-mapping]]'s derived
     folder/location links). The viewer binds to it (rendered as a native-path link); it is not edited
-    directly -- :meth:`rename_location` is the only thing that changes it, and only once the deferred
-    move-on-disk (#25) actually succeeds."""
+    directly -- :meth:`rename_location` is the only thing that changes it, and only once the rename on
+    disk has actually succeeded ([[plugins#toolkit-surfaces]]'s read-only projection)."""
+
+    rename_error = SimpleProperty("")
+    """Why the last :meth:`rename_location` attempt failed, or empty when none has failed since
+    ([[plugins#toolkit-surfaces]]). Surfaced as an inline `MessageBanner` row (#94) rather than a modal,
+    like every other condition this document reports: a failed rename leaves the document exactly as it
+    was, so there is nothing to interrupt the user for -- the name they picked simply isn't on disk, and
+    the suggestion list they picked it from is still right there. Cleared at the **start** of every
+    attempt, so the strip always shows the current attempt's outcome and a retry that succeeds takes the
+    row away -- and at the file seams, :meth:`revert` and :meth:`convert`, since a revert is defined to
+    leave the model exactly as a fresh open would, and a fresh open carries no failed attempt."""
 
     resource_type = SimpleProperty("")
     """The document's resource type ([[field-schema#resource-types]]) -- the key of its **active**
@@ -297,11 +306,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         self.__seed_from_document()
         self.lock_reasons = list(self.__document.lock_reasons)
-        self.image_scanner = (
-            RehuDocumentImageScanner(self, scan_tc_screenshot_files)
-            if self.__document.legacy_tc
-            else RehuDocumentImageScanner(self, scan_rehu_screenshot_files)
-        )
+        self.image_scanner = self.__make_image_scanner()
         self.__recompute_upgradable()
 
         # a live edit toggles dirty, and a lock can appear/clear outside revert/convert too (tests
@@ -406,35 +411,70 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # (the Upgrade path) saves without dirty ever having been True, so no dirty_changed would fire
         self.__recompute_upgradable()
 
+    def rename_conflicts(self, new_name: str) -> bool:
+        """Whether renaming to ``new_name`` would land on something already there
+        ([[plugins#toolkit-surfaces]]).
+
+        What lets the editor show an unavailable candidate as unavailable -- disabled, and colored --
+        instead of offering a click that can only fail. Advisory by design
+        (:func:`~rehuco_core.rehu_rename_conflict`): it answers the collision the user can see coming,
+        another resource already sitting under that name, and leaves the authoritative whole-plan check
+        to :meth:`rename_location`.
+
+        :param new_name: the candidate folder/file name.
+        :returns: whether something already occupies the destination; ``False`` for a document with no
+            location yet, which has no destination to compare against.
+        """
+        path = self.path
+        if path is None:
+            return False
+        return rehu_rename_conflict(path, new_name) is not None
+
     def rename_location(self, new_name: str) -> bool:
         """Rename this resource to ``new_name`` -- clicked from a `PathField` rename suggestion.
 
-        Orchestration only: the intent is logged *before* anything is attempted (so the log reflects
-        what was asked for even if it then fails), a dirty document is saved first (so the files
-        actually being moved are never stale), and the move itself is delegated to :meth:`__move`.
-        :meth:`__move` owns performing the rename and reseeding :attr:`location` on success; it always
-        fails for now -- the real rename-on-disk (folder-rename-from-suggestions, checksum-gated safe
-        move) is deferred (#25) -- so :attr:`location` never actually
-        changes through this path yet.
+        Orchestration only ([[plugins#toolkit-surfaces]]'s **execute** role): the intent is logged
+        *before* anything is attempted (so the log reflects what was asked for even if it then fails),
+        a dirty document is saved first (so the files actually being moved are never stale), and the
+        rename itself is delegated to :meth:`__move`, which performs it and adopts the new location.
 
-        A save that fails (``OSError``, e.g. an offline mount) aborts the rename with a logged error
-        and ``False`` -- the same log-and-fail channel :meth:`__move` itself reports through, and all
-        this view-model can do: a retry/cancel dialog
-        (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`, #146) needs a
-        widget to parent to, which a `QObject` doesn't have. The document simply stays dirty; nothing
-        was moved. Real failure UX for this path belongs to #25's rename-on-disk.
+        A document that has **never been saved** renames perfectly well: it is born dirty
+        (:meth:`create_new`), so the save below writes its ``.rehu`` at the location it was bound to
+        (``folder/info.rehu``, or an archive's ``foo.rehu`` companion) and the rename then finds a real
+        file to move. Not being on disk *yet* is a reason to write it first, never a reason to refuse --
+        what is refused is a document with no location at all, which no route through the app currently
+        produces (both openers bind a path; there is no File > New).
+
+        **Every failure leaves the document exactly as it was** and reports through
+        :attr:`rename_error` plus a ``False`` return: a document with no location at all, a pre-move
+        save that is refused (an ``OSError`` such as an offline mount, or the ``ValueError``
+        :meth:`~RehuDocument.save` raises for a locked document -- either way it simply stays dirty and
+        nothing is moved), a resource whose file has since gone missing (refused by
+        :func:`~rehuco_core.rename_rehu_resource` before anything is attempted), or the rename itself.
+        There is no half-done outcome to recover from -- that function rolls its own multi-file plan
+        back, and the one case it cannot (`PartialRenameError`) says so in the message it carries, which
+        is the message this model then shows.
+
+        A banner row, not a dialog: a retry/cancel dialog
+        (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`, #146) needs a widget
+        to parent to, which a `QObject` doesn't have -- but a failed rename also has nothing to
+        interrupt for, since the suggestion list that produced the name is still on screen.
 
         :param new_name: the destination file/folder name (already sanitized by the caller, e.g. a
             clicked `PathField` suggestion).
         :returns: whether the rename succeeded.
         """
         LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
+        self.rename_error = ""
+        if self.path is None:
+            return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
         if self.dirty:
             try:
                 self.save()
-            except OSError:
-                LOG.exception("Rename aborted: saving %r before the move failed", self.current_name)
-                return False
+            except (OSError, ValueError) as error:
+                return self.__rename_failed(
+                    f'Could not save "{self.current_name}" before renaming it: {self.__failure_reason(error)}'
+                )
         return self.__move(new_name)
 
     def revert(self) -> None:
@@ -466,6 +506,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.__document.reload()
         self.__seed_from_document()
         self.dirty = False
+        self.rename_error = ""
         self.lock_reasons = list(self.__document.lock_reasons)
         self.unknown_fields_changed.emit()
         self.active_block_changed.emit()
@@ -505,8 +546,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         )
         self.__seed_from_document()
         self.dirty = False
+        self.rename_error = ""
         self.lock_reasons = list(self.__document.lock_reasons)
-        self.image_scanner = RehuDocumentImageScanner(self, scan_rehu_screenshot_files)
+        self.image_scanner = self.__make_image_scanner()
         self.unknown_fields_changed.emit()
         self.reloaded.emit()
         self.__recompute_upgradable()
@@ -768,24 +810,83 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return self.__document.active_field(name, default)
 
     def __move(self, new_name: str) -> bool:
-        """Rename this document's underlying file(s) to ``new_name`` and reseed :attr:`location`.
+        """Rename this document's file(s) to ``new_name`` on disk and adopt the result.
 
-        Always fails, for now -- the real rename-on-disk (folder-rename-from-suggestions, plus the
-        checksum-gated safe move a cross-filesystem destination needs) is deferred (#25); this stub
-        exists so :meth:`rename_location` has somewhere to call
-        that already fails the way missing permissions or a name collision would, rather than
-        silently pretending to succeed. When implemented, it will perform the move and reseed
-        :attr:`location`/:attr:`current_name` from the new path.
+        The filesystem work -- which files each resource scope owns, the collision check, the rollback
+        ([[data-model#resource-scoping]], [[data-model#write-integrity]]) -- belongs to
+        :func:`~rehuco_core.rename_rehu_resource`, so all that is left here is *adopting* what it
+        returns: the document is re-pointed at its new location (:meth:`~RehuDocument.rebind_path`),
+        :attr:`path` and :attr:`location` reseed from it, and a fresh screenshot scanner is installed.
+        :attr:`current_name` and :attr:`label` derive from :attr:`path`, so they follow on their own, as
+        does the dock identity `DocumentsDock` resyncs off ``path_changed``.
+
+        The scanner is **replaced** rather than left alone even though it reads the model's live path
+        and so would already resolve the moved screenshots: replacing it is what emits
+        ``image_scanner_changed``, which is the only thing telling the image strip and the Markdown
+        viewer that the names they are holding are stale.
+
+        Nothing here writes back to the document's payload, so a rename is not an edit: the model ends
+        as clean as :meth:`rename_location`'s pre-move save left it.
 
         :param new_name: the destination file/folder name.
-        :returns: always ``False``.
+        :returns: whether the rename succeeded; a failure's reason is left in :attr:`rename_error`.
         """
-        LOG.error(
-            "Rename not implemented yet (rename-on-disk is deferred, #25): %r -> %r",
-            self.current_name,
-            new_name,
-        )
+        path = self.path
+        if path is None:  # pragma: no cover -- rename_location refuses a path-less document before this
+            return False
+        current_name = self.current_name
+        try:
+            new_path = rename_rehu_resource(path, new_name)
+        except (OSError, ValueError) as error:
+            return self.__rename_failed(
+                f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
+            )
+        self.__document.rebind_path(new_path)
+        self.path = new_path
+        self.location = new_path.as_posix()
+        self.image_scanner = self.__make_image_scanner()
+        LOG.info("Renamed %r to %r", current_name, new_name)
+        return True
+
+    def __rename_failed(self, message: str) -> bool:
+        """Record a failed rename attempt: log it, and hand ``message`` to the banner channel.
+
+        :param message: the user-facing explanation, a complete sentence.
+        :returns: always ``False``, so a caller can ``return`` this directly as its own result.
+        """
+        LOG.error("%s", message)
+        self.rename_error = message
         return False
+
+    @staticmethod
+    def __failure_reason(error: Exception) -> str:
+        """The human-readable half of a failed rename's message.
+
+        An ``OSError`` carries the operating system's own ``strerror`` ("Permission denied", "The
+        process cannot access the file because it is being used by another process"), which reads far
+        better in a banner than its full ``[Errno 13] ...: '/path/to/thing'`` rendering; anything else
+        -- a refused name's ``ValueError``, or an error this codebase raised itself with a plain
+        message -- has only its ``str``. Punctuated either way, so the caller's sentence closes cleanly
+        whichever kind reached it.
+
+        :param error: the failure to describe.
+        :returns: the reason, ending in a period.
+        """
+        reason = getattr(error, "strerror", None) or str(error)
+        return reason if reason.endswith(".") else f"{reason}."
+
+    def __make_image_scanner(self) -> RehuDocumentImageScanner:
+        """Build the screenshot scanner matching this document's current naming convention.
+
+        Over `scan_tc_screenshot_files` while the document is :attr:`~RehuDocument.legacy_tc`, over
+        `scan_rehu_screenshot_files` once converted or genuinely ``.rehu``-native
+        ([[acquisition-tooling#tc-to-rehu]]). The one place that choice is made, so construction, a
+        conversion, and a rename all install a scanner picked the same way.
+
+        :returns: the scanner to assign to :attr:`image_scanner`.
+        """
+        lister = scan_tc_screenshot_files if self.__document.legacy_tc else scan_rehu_screenshot_files
+        return RehuDocumentImageScanner(self, lister)
 
     def __on_resource_type_changed(self, value: str) -> None:
         """Switch the document's active type ([[plugins#plugin-blocks]], #83): claim the newly-active
