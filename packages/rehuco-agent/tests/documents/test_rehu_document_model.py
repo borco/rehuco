@@ -17,6 +17,8 @@ from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImage
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    CollectionEntry,
+    LearningPathEntry,
     LockReasonKind,
     RehuDocument,
     current_block_version,
@@ -1964,6 +1966,84 @@ def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: Rehu
     assert model.unknown_field_names() == ["alpha", "zeta"]
 
 
+def test_unknown_field_names_excludes_the_collections_record_list(document: RehuDocument) -> None:
+    """``collections`` is a **known** field, so it never reaches the newer-version fallback (#189).
+
+    A settled v1 field rehuco's own importer writes -- flagged as *"comes from a newer version"* for as
+    long as the model recognized only bools, ints and string lists.
+
+    **Test steps:**
+
+    * seed the block with a ``collections`` record list beside one genuinely unknown key
+    * verify only the unknown key is reported
+    """
+    document.set_active_field("collections", [{"title": "Series", "index": 2}])
+    document.set_active_field("mystery", 1)
+    model = RehuDocumentModel(document)
+
+    assert model.unknown_field_names() == ["mystery"]
+
+
+def test_model_seeds_the_record_lists(document: RehuDocument) -> None:
+    """Both record lists seed from the document, resolved and sorted ([[field-schema#sources]], #189).
+
+    **Test steps:**
+
+    * seed the block with two collections and the current identity's own learning path
+    * verify each list reads back projected and index-ordered
+    """
+    document.set_active_field("collections", [{"title": "Second", "index": 2}, {"title": "First", "index": 1}])
+    document.set_active_user_field("learning_paths", [{"title": "My Order", "index": 7, "ref": 1}])
+    model = RehuDocumentModel(document)
+
+    assert model.collections == [CollectionEntry(1, "First"), CollectionEntry(2, "Second")]
+    assert model.learning_paths == [LearningPathEntry(7, "My Order")]
+
+
+def test_model_learning_paths_exclude_another_identitys_private_paths(document: RehuDocument) -> None:
+    """The viewer rule holds through the model: own entries, subscriptions, and ``public`` only
+    ([[field-schema#learning-path-ownership]], #189).
+
+    **Test steps:**
+
+    * file a private path under another identity, a published one, and a subscription to it
+    * verify the model shows the published path and not the private one
+    """
+    document.set_active_field(
+        "users",
+        {
+            "admin": {"learning_paths": [{"ref": 1}]},
+            "public": {"learning_paths": [{"title": "Shared", "index": 3, "ref": 1}]},
+            "foo": {"learning_paths": [{"title": "Private", "index": 1, "ref": 2}]},
+        },
+    )
+    model = RehuDocumentModel(document)
+
+    assert model.learning_paths == [LearningPathEntry(3, "Shared")]
+
+
+def test_model_reseeds_the_record_lists_on_revert(mocker: MockerFixture, document: RehuDocument) -> None:
+    """A revert re-reads both record lists from disk, like every other seeded field.
+
+    **Test steps:**
+
+    * construct a model over a document with no record lists
+    * mock ``document.reload`` to bring in a collection membership, and revert
+    * verify the list follows
+    """
+    model = RehuDocumentModel(document)
+    assert model.collections == []
+
+    def fake_reload() -> None:
+        document.set_active_field("collections", [{"title": "Series", "index": 2}])
+
+    mocker.patch.object(document, "reload", side_effect=fake_reload)
+
+    model.revert()
+
+    assert model.collections == [CollectionEntry(2, "Series")]
+
+
 def test_unknown_field_names_excludes_the_users_map(document: RehuDocument) -> None:
     """The block's ``users`` map is per-user storage structure (#98), not an unknown resource field --
     excluded the same way the block's own ``format_version`` stamp is (#99).
@@ -2431,6 +2511,26 @@ def test_switching_type_claims_the_new_block_reseeds_it_and_dirties(document: Re
     assert model.images_count == 12
     assert model.dirty is True
     assert fired == [None]
+
+
+def test_switching_type_reseeds_the_record_lists(document: RehuDocument) -> None:
+    """The record lists are block-scoped, so a type switch re-reads them from the newly-active block
+    ([[field-schema#sources]], #189).
+
+    **Test steps:**
+
+    * give the tutorial block one collection and the ``reference_images`` block another
+    * switch the type
+    * verify the incoming block's record list is what the model holds
+    """
+    document.set_active_field("collections", [{"title": "Tutorial Series", "index": 1}])
+    document.data["reference_images"] = {"collections": [{"title": "Image Series", "index": 5}]}
+    model = RehuDocumentModel(document)
+    assert model.collections == [CollectionEntry(1, "Tutorial Series")]
+
+    model.resource_type = "reference_images"
+
+    assert model.collections == [CollectionEntry(5, "Image Series")]
 
 
 def test_switching_type_leaves_the_common_core_fields_untouched(document: RehuDocument) -> None:

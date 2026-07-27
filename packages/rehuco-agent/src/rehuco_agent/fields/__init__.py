@@ -24,6 +24,7 @@ from .field_registry import FieldRegistry
 from .fields_form import FieldsForm
 from .file_size_field import FileSizeField
 from .images_field import ImagesField
+from .indexed_list_field import IndexedEntry, IndexedListField
 from .int_field import IntField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
@@ -57,6 +58,8 @@ __all__ = [
     "RatingField",
     "IntField",
     "TextListField",
+    "IndexedListField",
+    "IndexedEntry",
     "UrlField",
     "DateField",
     "DurationField",

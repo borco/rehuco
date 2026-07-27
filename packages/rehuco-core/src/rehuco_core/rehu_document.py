@@ -27,6 +27,8 @@ from uuid import uuid4
 
 from borco_core import atomic_write_text
 
+from .collection_entries import COLLECTIONS_KEY, CollectionEntry, collection_entries
+from .learning_path_entries import LearningPathEntry, visible_learning_paths
 from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -1266,6 +1268,36 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
             del user[key]
             return True
         return False
+
+    @property
+    def collections(self) -> list[CollectionEntry]:
+        """This resource's **collection memberships**, resolved for display ([[field-schema#sources]]).
+
+        A collection is publisher-defined and belongs to nobody, so its entries sit inline in the active
+        block, alongside the shared flags. Read-only: a projection of the stored records, sorted by
+        ``index`` then ``title``, that never touches them -- whatever else an entry carries (the cached
+        ``url`` the collection itself owns) stays in the document untouched. Editing the records is the
+        record-list machinery (#97).
+        """
+        return collection_entries(self.active_field(COLLECTIONS_KEY))
+
+    @property
+    def learning_paths(self) -> list[LearningPathEntry]:
+        """The learning paths **this document's identity sees**, resolved for display
+        ([[field-schema#learning-path-ownership]]).
+
+        A learning path is somebody's, so its entries live in the active block's ``users`` map and
+        ownership is structural. This reads :attr:`username`'s own entries, its subscriptions (resolved
+        against whichever owned entry in the block carries that ``ref``), and the reserved ``public``
+        scope -- never another identity's private paths (:func:`~rehuco_core.visible_learning_paths`).
+
+        Stored like :attr:`collections` and read-only for the same reason, but a different thing and so a
+        different type: a path is owned, a collection isn't. Note that a
+        freshly imported document files its paths under the **unknown** identity while this reads the
+        *current* one, so a just-converted ``.tc`` shows none of them until the two names agree -- the
+        identity-collapse item in [[field-schema#deferred-items]], equally true of an imported rating.
+        """
+        return visible_learning_paths(self.active_block.get(USERS_KEY), username=self.__username)
 
     def __normalize(self) -> None:
         """Rewrite alias spellings to their plugin's main key, in place, at construction

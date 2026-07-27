@@ -8,7 +8,7 @@ The package is split by dependency layer:
 
 - :mod:`~rehuco_core.plugins.plugin_spec` -- the :class:`~rehuco_core.PluginSpec` identity dataclass.
 - :mod:`~rehuco_core.plugins.constants` -- the live per-user vocabulary (`USERS_KEY`, the current/unknown
-  identity defaults).
+  identity defaults, the reserved `PUBLIC_USERNAME` scope).
 - :mod:`~rehuco_core.plugins.plugin_registry` -- the shipped plugin declarations (including the
   descriptive :data:`~rehuco_core.CORE_PLUGIN`) and the :class:`~rehuco_core.PluginRegistry` index.
 
@@ -17,7 +17,7 @@ The ``.rehu`` file-format grammar (reserved keys, the core block key) lives in
 plugin knows nothing about how its block was laid out in an older build.
 """
 
-from .constants import DEFAULT_CURRENT_USERNAME, DEFAULT_UNKNOWN_USERNAME, USERS_KEY
+from .constants import DEFAULT_CURRENT_USERNAME, DEFAULT_UNKNOWN_USERNAME, PUBLIC_USERNAME, USERS_KEY
 from .plugin_registry import (
     BUILTIN_PLUGINS,
     COLLECTION_PLUGIN,
@@ -36,6 +36,7 @@ __all__ = [
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
+    "PUBLIC_USERNAME",
     "REFERENCE_IMAGES_PLUGIN",
     "TUTORIAL_PLUGIN",
     "USERS_KEY",

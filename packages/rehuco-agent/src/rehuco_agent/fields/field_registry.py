@@ -9,6 +9,7 @@ from .description_field import DescriptionField
 from .duration_field import DurationField
 from .field import Field, FieldsTab
 from .file_size_field import FileSizeField
+from .indexed_list_field import IndexedListField
 from .int_field import IntField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
@@ -33,6 +34,7 @@ class FieldRegistry:
             RatingField,
             IntField,
             TextListField,
+            IndexedListField,
             UrlField,
             AuthorsField,
             DateField,
