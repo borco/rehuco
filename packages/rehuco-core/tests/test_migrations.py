@@ -311,7 +311,7 @@ def test_loading_a_v1_file_migrates_it_and_saving_stamps_the_new_version(mocker:
     assert doc.type == "tutorial"
     assert doc.title == "Intro to Sculpting"
     assert doc.authors == ["First Author"]
-    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
+    assert doc.active_block == {"format_version": current_block_version("tutorial"), "users": {"admin": {"rating": 4}}}
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images"]
     assert doc.format_version == CURRENT_FORMAT_VERSION
 
@@ -460,7 +460,8 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_tutorial_block() -> No
     * migrate a v0 tutorial block carrying every per-user key and every shared key
     * verify the per-user subset landed under ``users[<username>]``, in full
     * verify every shared field stayed inline and no per-user key was left behind
-    * verify the block is stamped v1
+    * verify the block is stamped v2 -- the chain also walks its v1->v2 step, dropping the learning
+      path's retired ``visibility`` and minting it a ``ref`` ([[field-schema#learning-path-ownership]])
     """
     block: dict[str, Any] = {
         "rating": 4,
@@ -485,7 +486,7 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_tutorial_block() -> No
             "todo": False,
             "keep": True,
             "favorite": True,
-            "learning_paths": [{"title": "P", "index": 1, "visibility": "private"}],
+            "learning_paths": [{"title": "P", "index": 1, "ref": 1}],
         }
     }
     assert block["complete"] is True
@@ -493,7 +494,7 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_tutorial_block() -> No
     assert block["collections"] == [{"title": "Series", "index": 1}]
     assert block["original_duration"] == 71220
     assert block["level"] == ["intermediate"]
-    assert block["format_version"] == 1
+    assert block["format_version"] == 2
     for key in ("rating", "viewed", "todo", "keep", "favorite", "learning_paths"):
         assert key not in block
 
@@ -539,7 +540,7 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block
     assert block["online"] is False
     assert block["collections"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
     assert block["images_count"] is None
-    assert block["format_version"] == 1
+    assert block["format_version"] == 2
     assert "rating" not in block
 
 
@@ -574,7 +575,12 @@ def test_v0_to_v1_gives_every_block_a_users_map_even_with_nothing_to_move() -> N
 
     migrate_block_data(block, "tutorial", "admin")
 
-    assert block == {"complete": True, "online": False, "format_version": 1, "users": {"admin": {}}}
+    assert block == {
+        "complete": True,
+        "online": False,
+        "format_version": current_block_version("tutorial"),
+        "users": {"admin": {}},
+    }
 
 
 def test_v0_to_v1_declines_a_block_that_already_has_a_users_map() -> None:
@@ -591,7 +597,7 @@ def test_v0_to_v1_declines_a_block_that_already_has_a_users_map() -> None:
 
     * migrate an unstamped tutorial block carrying a populated ``users`` map plus an inline stray ``rating``
     * verify every filed per-user record survived untouched, for both usernames
-    * verify the stray ``rating`` stayed inline and the block is stamped v1
+    * verify the stray ``rating`` stayed inline and the block is stamped v2
     """
     block: dict[str, Any] = {
         "complete": True,
@@ -604,7 +610,7 @@ def test_v0_to_v1_declines_a_block_that_already_has_a_users_map() -> None:
     assert block["users"] == {"admin": {"rating": 5, "viewed": True}, "alice": {"rating": 3}}
     assert block["rating"] == 2
     assert block["complete"] is True
-    assert block["format_version"] == 1
+    assert block["format_version"] == 2
 
 
 def test_migrating_a_v0_block_twice_is_idempotent() -> None:
@@ -664,18 +670,138 @@ def test_two_usernames_file_into_distinct_sub_maps_with_no_cross_contamination()
 
 def test_current_block_version_is_the_chain_head_derived_not_declared() -> None:
     """ "What's current" is the highest target in a plugin's chain, not a number the plugin states about
-    itself ([[plugins#plugin-blocks]]) -- so the tutorial/reference-images per-user chains read head ``1``,
-    while a plugin with no chain (Collection, or any unknown key) reads ``0``.
+    itself ([[plugins#plugin-blocks]]) -- so the tutorial/reference-images chains (per-user map at v1,
+    learning-path ``ref``s at v2, [[field-schema#learning-path-ownership]]) read head ``2``, while a
+    plugin with no chain (Collection, or any unknown key) reads ``0``.
 
     **Test steps:**
 
-    * verify each per-user type's head is ``1``
+    * verify each per-user type's head is ``2``
     * verify a chainless builtin and an unknown key both read ``0``
     """
-    assert current_block_version("tutorial") == 1
-    assert current_block_version("reference_images") == 1
+    assert current_block_version("tutorial") == 2
+    assert current_block_version("reference_images") == 2
     assert current_block_version("collection") == 0
     assert current_block_version("audiopack") == 0
+
+
+# endregion
+
+
+# region Learning-path ownership block layout v2 (#188, [[field-schema#learning-path-ownership]])
+
+
+def test_v1_to_v2_drops_visibility_and_mints_a_ref_per_owned_path() -> None:
+    """The real tutorial plugin's v1->v2 step strips the retired ``visibility`` flag from every owned
+    learning path and mints each a ``ref``, in list order.
+
+    **Test steps:**
+
+    * migrate a v1 tutorial block whose single user owns two learning paths
+    * verify both entries lost ``visibility`` and gained sequential ``ref``s, ``title``/``index`` untouched
+    * verify the block is stamped v2
+    """
+    block: dict[str, Any] = {
+        "format_version": 1,
+        "users": {
+            "admin": {
+                "learning_paths": [
+                    {"title": "P1", "index": 3, "visibility": "private"},
+                    {"title": "P2", "index": 7, "visibility": "private"},
+                ]
+            }
+        },
+    }
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"]["admin"]["learning_paths"] == [
+        {"title": "P1", "index": 3, "ref": 1},
+        {"title": "P2", "index": 7, "ref": 2},
+    ]
+    assert block["format_version"] == 2
+
+
+def test_v1_to_v2_mints_refs_unique_across_every_user_in_the_block() -> None:
+    """Refs are minted in one pass over the whole block, in ascending username order, so two users' owned
+    paths never collide -- the file has at most one plugin block, so that is the whole file's ref space
+    ([[field-schema#learning-path-ownership]]).
+
+    **Test steps:**
+
+    * migrate a v1 tutorial block whose two users each own one learning path
+    * verify the earlier username's path is minted ``ref: 1`` and the other ``ref: 2``
+    """
+    block: dict[str, Any] = {
+        "format_version": 1,
+        "users": {
+            "bob": {"learning_paths": [{"title": "Bob's path", "index": 0, "visibility": "private"}]},
+            "alice": {"learning_paths": [{"title": "Alice's path", "index": 0, "visibility": "private"}]},
+        },
+    }
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"]["alice"]["learning_paths"] == [{"title": "Alice's path", "index": 0, "ref": 1}]
+    assert block["users"]["bob"]["learning_paths"] == [{"title": "Bob's path", "index": 0, "ref": 2}]
+
+
+def test_v1_to_v2_leaves_a_block_with_no_learning_paths_untouched_but_stamped() -> None:
+    """A block with no ``learning_paths`` key at all -- or an empty list -- has nothing to mint, and the
+    step is a no-op beyond the stamp.
+
+    **Test steps:**
+
+    * migrate a v1 tutorial block whose user carries no ``learning_paths`` key
+    * verify the user's subset is unchanged and the block is stamped v2
+    """
+    block: dict[str, Any] = {"format_version": 1, "users": {"admin": {"rating": 4}}}
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block["users"] == {"admin": {"rating": 4}}
+    assert block["format_version"] == 2
+
+
+def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
+    """The reference-images plugin runs the **same** v1->v2 step -- the two plugins must not diverge, the
+    same trap the v0->v1 relocation guards against.
+
+    **Test steps:**
+
+    * migrate a v1 reference-images block whose user owns one learning path
+    * verify ``visibility`` was dropped and a ``ref`` minted
+    """
+    block: dict[str, Any] = {
+        "format_version": 1,
+        "users": {"admin": {"learning_paths": [{"title": "P", "index": 0, "visibility": "private"}]}},
+    }
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["users"]["admin"]["learning_paths"] == [{"title": "P", "index": 0, "ref": 1}]
+    assert block["format_version"] == 2
+
+
+def test_v1_to_v2_is_idempotent() -> None:
+    """Re-running the migration is a no-op: the second pass finds a v2 block, runs no step, and rewrites
+    the same stamp.
+
+    **Test steps:**
+
+    * migrate a v1 tutorial block with an owned path, snapshot the result, then migrate it again
+    * verify the second run changed nothing, in particular minting no second ``ref``
+    """
+    block: dict[str, Any] = {
+        "format_version": 1,
+        "users": {"admin": {"learning_paths": [{"title": "P", "index": 0, "visibility": "private"}]}},
+    }
+    migrate_block_data(block, "tutorial", "admin")
+    once = json.loads(json.dumps(block))
+
+    migrate_block_data(block, "tutorial", "admin")
+
+    assert block == once
 
 
 # endregion

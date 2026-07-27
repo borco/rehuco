@@ -59,7 +59,11 @@ TUTORIAL: Final = {
         "extra_tags": ["rework"],
         "some_future_core_key": "kept verbatim",
     },
-    "tutorial": {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}},
+    "tutorial": {
+        "format_version": current_block_version("tutorial"),
+        "complete": True,
+        "users": {"admin": {"rating": 4}},
+    },
     "some_future_key": {"nested": [1, 2, 3]},
 }
 
@@ -130,7 +134,11 @@ def test_roundtrip_preserves_unknown_fields(mocker: MockerFixture) -> None:
     assert saved["core"]["sources"][0]["title"] == "Renamed Title"
     assert saved["core"]["sources"][0]["some_future_source_key"] == "kept verbatim"
     assert saved["core"]["some_future_core_key"] == "kept verbatim"
-    assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
+    assert saved["tutorial"] == {
+        "format_version": current_block_version("tutorial"),
+        "complete": True,
+        "users": {"admin": {"rating": 4}},
+    }
     assert saved["some_future_key"] == {"nested": [1, 2, 3]}
     assert saved["core"]["updated"] != TUTORIAL["core"]["updated"]  # a changed save refreshes updated (#142)
 
@@ -596,10 +604,16 @@ def test_save_leaves_a_malformed_users_map_or_per_user_value_untouched(mocker: M
     * verify both reach the file unchanged
     """
     malformed_map = RehuDocument(
-        {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1, "users": "not-an-object"}}
+        {
+            "core": {"type": "tutorial"},
+            "tutorial": {"format_version": current_block_version("tutorial"), "users": "not-an-object"},
+        }
     )
     malformed_user = RehuDocument(
-        {"core": {"type": "tutorial"}, "tutorial": {"format_version": 1, "users": {"alice": "not-an-object"}}}
+        {
+            "core": {"type": "tutorial"},
+            "tutorial": {"format_version": current_block_version("tutorial"), "users": {"alice": "not-an-object"}},
+        }
     )
 
     assert saved_json(malformed_map, mocker)["tutorial"]["users"] == "not-an-object"
@@ -1571,9 +1585,11 @@ def test_set_active_field_updates_an_existing_block() -> None:
     * set a new value on one key
     * verify the key updated and the block's ``format_version`` is untouched
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": False}})
+    doc = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": current_block_version("tutorial"), "complete": False}}
+    )
     doc.set_active_field("complete", True)
-    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
+    assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": True}
 
 
 def test_set_active_field_creates_the_block_when_absent() -> None:
@@ -1677,9 +1693,14 @@ def test_remove_active_field_deletes_a_present_key() -> None:
     * remove that key
     * verify it returns ``True`` and the key is gone while the rest of the block is intact
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": True, "mystery": 42}})
+    doc = RehuDocument(
+        {
+            "type": "tutorial",
+            "tutorial": {"format_version": current_block_version("tutorial"), "complete": True, "mystery": 42},
+        }
+    )
     assert doc.remove_active_field("mystery") is True
-    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
+    assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": True}
 
 
 def test_remove_active_field_is_a_noop_when_absent() -> None:
@@ -1690,9 +1711,11 @@ def test_remove_active_field_is_a_noop_when_absent() -> None:
     * a Tutorial document with a block missing the key -> ``False``
     * a document with no block at all -> ``False``
     """
-    doc = RehuDocument({"type": "tutorial", "tutorial": {"format_version": 1, "complete": True}})
+    doc = RehuDocument(
+        {"type": "tutorial", "tutorial": {"format_version": current_block_version("tutorial"), "complete": True}}
+    )
     assert doc.remove_active_field("mystery") is False
-    assert doc.data["tutorial"] == {"format_version": 1, "complete": True}
+    assert doc.data["tutorial"] == {"format_version": current_block_version("tutorial"), "complete": True}
 
     blockless = RehuDocument({"type": "tutorial"})
     assert blockless.remove_active_field("mystery") is False
@@ -1764,7 +1787,10 @@ def test_plugin_blocks_classifies_the_types_block_active_and_every_other_inactiv
         ("daz3d", False),
     ]
     assert [block.key for block in doc.inactive_blocks()] == ["reference_images", "daz3d"]
-    assert doc.plugin_blocks()[0].fields == {"format_version": 1, "users": {"admin": {"rating": 4}}}
+    assert doc.plugin_blocks()[0].fields == {
+        "format_version": current_block_version("tutorial"),
+        "users": {"admin": {"rating": 4}},
+    }
 
 
 def test_an_installed_plugins_block_is_inactive_when_the_type_does_not_name_it() -> None:
@@ -1841,7 +1867,11 @@ def test_alias_type_and_block_key_normalize_to_the_declared_main_key() -> None:
     )
     assert doc.core["type"] == "reference_images"
     assert doc.active_block_key == "reference_images"
-    assert doc.active_block == {"images_count": 12, "format_version": 1, "users": {"admin": {}}}
+    assert doc.active_block == {
+        "images_count": 12,
+        "format_version": current_block_version("reference_images"),
+        "users": {"admin": {}},
+    }
     assert doc.data["tutorial"] == {"rating": 1}
     assert "refimages" not in doc.data
 
@@ -1865,7 +1895,11 @@ def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() 
             "refimages": {"images_count": 99},
         }
     )
-    assert doc.active_block == {"images_count": 12, "format_version": 1, "users": {"admin": {}}}
+    assert doc.active_block == {
+        "images_count": 12,
+        "format_version": current_block_version("reference_images"),
+        "users": {"admin": {}},
+    }
     assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
 
 
@@ -1942,7 +1976,11 @@ def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: 
     doc.save()
 
     saved = json.loads(mock_write.call_args[0][1])
-    assert saved["tutorial"] == {"format_version": 1, "complete": True, "users": {"admin": {"rating": 4}}}
+    assert saved["tutorial"] == {
+        "format_version": current_block_version("tutorial"),
+        "complete": True,
+        "users": {"admin": {"rating": 4}},
+    }
     assert saved["reference_images"] == {"images_count": 12}
     assert saved["daz3d"] == {"sku": "12345", "figures": ["G8F"]}
 
@@ -1964,7 +2002,7 @@ def test_save_normalizes_alias_spellings_on_disk(mocker: MockerFixture) -> None:
 
     saved = json.loads(mock_write.call_args[0][1])
     assert saved["core"]["type"] == "tutorial"
-    assert saved["tutorial"] == {"format_version": 1, "users": {"admin": {"rating": 4}}}
+    assert saved["tutorial"] == {"format_version": current_block_version("tutorial"), "users": {"admin": {"rating": 4}}}
     assert "Tutorial" not in saved
 
 
@@ -2983,16 +3021,18 @@ def test_constructing_a_document_stamps_and_migrates_an_unstamped_active_block()
     to that plugin's current version at construction, mirroring the file-wide upgrade-on-load step
     ([[plugins#plugin-blocks]]).
 
-    Exercised against the **real** tutorial plugin, now at block v1: an unstamped block runs its v0->v1
-    step (the per-user relocation, [[field-schema#per-user-shared]]) and is stamped ``1``.
+    Exercised against the **real** tutorial plugin, now at block v2: an unstamped block runs its full
+    chain -- the v0->v1 per-user relocation ([[field-schema#per-user-shared]]) then the v1->v2
+    learning-path ``ref`` minting (a no-op here, with no ``learning_paths`` present,
+    [[field-schema#learning-path-ownership]]) -- landing stamped at the chain's head.
 
     **Test steps:**
 
     * construct a tutorial-typed document whose block carries no ``format_version``
-    * verify the per-user ``rating`` moved under the default user and the block is stamped v1
+    * verify the per-user ``rating`` moved under the default user and the block is stamped current
     """
     doc = RehuDocument({"type": "tutorial", "tutorial": {"rating": 4}})
-    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
+    assert doc.active_block == {"format_version": current_block_version("tutorial"), "users": {"admin": {"rating": 4}}}
 
 
 def test_an_uninstalled_active_type_is_never_stamped() -> None:
@@ -3075,7 +3115,7 @@ def test_on_disk_active_block_format_version_reports_the_file_not_the_payload(mo
     * verify the in-memory block reads current while the on-disk figure still reads the old value
     """
     doc = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
-    assert doc.active_block == {"format_version": 1, "users": {"admin": {"rating": 4}}}
+    assert doc.active_block == {"format_version": current_block_version("tutorial"), "users": {"admin": {"rating": 4}}}
     assert doc.on_disk_active_block_format_version == 0
 
 
@@ -3106,7 +3146,9 @@ def test_active_block_upgrade_pending_true_only_when_the_on_disk_block_is_old(mo
     behind = load_doc(mocker, {"type": "tutorial", "tutorial": {"rating": 4}})
     assert behind.active_block_upgrade_pending is True
 
-    current = load_doc(mocker, {"type": "tutorial", "tutorial": {"format_version": 1, "rating": 4}})
+    current = load_doc(
+        mocker, {"type": "tutorial", "tutorial": {"format_version": current_block_version("tutorial"), "rating": 4}}
+    )
     assert current.active_block_upgrade_pending is False
 
 
@@ -3149,8 +3191,8 @@ def test_an_alias_spelled_type_or_block_still_reports_a_pending_upgrade(mocker: 
     assert alias_block.on_disk_active_block_format_version == 0
     assert alias_block.active_block_upgrade_pending is True
 
-    current = load_doc(mocker, {"type": "Tutorial", "tutorial": {"format_version": 1}})
-    assert current.on_disk_active_block_format_version == 1
+    current = load_doc(mocker, {"type": "Tutorial", "tutorial": {"format_version": 2}})
+    assert current.on_disk_active_block_format_version == 2
     assert current.active_block_upgrade_pending is False
 
 

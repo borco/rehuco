@@ -276,13 +276,18 @@ class TcDocument:
     def __learning_paths(self) -> list[dict[str, Any]]:
         """Synthesize the ``learning_paths`` record list from tc4's flat list of path names.
 
-        :returns: one record per name, ``index`` by stored order (1-based) and ``visibility``
-            defaulted to ``"private"`` -- tc4 had no visibility concept, and v1 has no swarm to share
-            a public path with yet ([[field-schema#sources]]).
+        Each name becomes an **owned** entry under the importing identity ([[field-schema#learning-path-ownership]]):
+        ``index: 0`` rather than the list position -- tc4's order was list order, never a curated position,
+        so numbering them 1, 2, 3... would mint an authority the source never had (the same reason
+        :meth:`__put_optional` omits absent scalars rather than defaulting them) -- and a freshly minted
+        ``ref``, unique within this newly built block since it is the only ``learning_paths`` list this
+        import produces.
+
+        :returns: one owned record per name.
         """
         return [
-            {"title": title, "index": index, "visibility": "private"}
-            for index, title in enumerate(self.__str_list("learning_paths"), start=1)
+            {"title": title, "index": 0, "ref": ref}
+            for ref, title in enumerate(self.__str_list("learning_paths"), start=1)
         ]
 
     def __str_list(self, key: str) -> list[str]:
