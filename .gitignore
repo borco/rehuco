@@ -16,6 +16,11 @@
 docs/assets/images/favicon.svg
 docs/assets/images/logo.svg
 
+# AppImage recipe's generated icon (copied from design/icons) and requirements.txt (absolute local
+# package paths, so machine-specific -- `make agent-appimage-build`, [[packaging-deployment#linux-format]])
+packages/rehuco-agent/appimage/rehuco-agent.png
+packages/rehuco-agent/appimage/requirements.txt
+
 # Python
 __pycache__/
 *.py[cod]

@@ -35,6 +35,13 @@ packaging = [
     "briefcase>=0.4.4",
 ]
 
+# python-appimage builds the Linux AppImage (`make agent-appimage-build`,
+# [[packaging-deployment#linux-format]] point 5). Opt-in for the same reason as `packaging` above: it's
+# release-time tooling, not something a plain `uv sync` should carry.
+appimage = [
+    "python-appimage>=1.4",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py314"

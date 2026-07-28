@@ -1,6 +1,7 @@
 .PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build publish setup-git \
 	uis qrcs icons agent-dev-build agent-dev-clean agent-dev-register agent-dev-unregister \
-	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean
+	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean \
+	agent-appimage-build agent-appimage-clean
 
 # UTF-8 mode (PEP 540) for every recipe, so a tool printing non-ASCII cannot die on the console's
 # encoding. mkdocs-puml ends its run with a "✔️", which a Windows console's default cp1252 stdout
@@ -245,3 +246,42 @@ agent-dist-package: uis $(ICON_FILES) $(INSTALLER_IMAGES)
 
 agent-dist-clean:
 	rm -rf packages/rehuco-agent/build packages/rehuco-agent/dist
+
+# agent-appimage-*: the Linux artifact ([[packaging-deployment#linux-format]] point 5) -- a python-appimage
+# recipe over a relocatable manylinux_2_28 CPython, never Briefcase's own AppImage backend (which reprocesses
+# already-relocated PySide6 libraries and can break them, [[appendices.briefcase-packaging#linux-backends]]).
+# Only built on a tagged release ([[appendices.continuous-integration#release-agent]]), so this target is not
+# part of qa/tests/publish either -- it downloads a ~50 MB base runtime and pip-installs the whole Qt stack
+# into it, same cost profile as agent-dist-build.
+AGENT_APPIMAGE_DIR    := packages/rehuco-agent/appimage
+AGENT_APPIMAGE_OUT    := .dist/appimage
+# python-appimage's `-p` matches a *release tag* ("3.14"), not a patch version -- the runtime
+# it resolves to (currently 3.14.6) is picked up from the release's own asset filenames.
+AGENT_APPIMAGE_PYTHON := 3.14
+AGENT_APPIMAGE        := $(AGENT_APPIMAGE_OUT)/rehuco-agent-x86_64.AppImage
+
+PYTHON_APPIMAGE := uv run --group appimage --directory $(AGENT_APPIMAGE_OUT) python-appimage
+
+# requirements.txt is generated, not committed (gitignored: machine-specific absolute paths). Each line is
+# pip-installed *separately* by python-appimage, in order -- borco-core/rehuco-core/borco-pyside first (each
+# from its own source tree, built on the fly by pip via hatchling) so that rehuco-agent's own install last
+# finds all three already satisfied locally instead of reaching PyPI, where the same four names already exist
+# as unrelated 0.0.x stub releases ([[packaging-deployment#linux-format]] point 5). Absolute paths are
+# required: python-appimage pip-installs from a temporary build directory, so a relative path would resolve
+# against the wrong cwd.
+agent-appimage-build: uis $(ICON_FILES)
+	cp $(ICON_DIR)/rehuco-agent.png $(AGENT_APPIMAGE_DIR)/rehuco-agent.png
+	printf '%s\n' \
+		"$(CURDIR)/packages/borco-core" \
+		"$(CURDIR)/packages/rehuco-core" \
+		"$(CURDIR)/packages/borco-pyside" \
+		"$(CURDIR)/packages/rehuco-agent" \
+		> $(AGENT_APPIMAGE_DIR)/requirements.txt
+	mkdir -p $(AGENT_APPIMAGE_OUT)
+	$(PYTHON_APPIMAGE) build app -p $(AGENT_APPIMAGE_PYTHON) $(CURDIR)/$(AGENT_APPIMAGE_DIR)
+	mv $(AGENT_APPIMAGE_OUT)/Rehuco-*.AppImage $(AGENT_APPIMAGE)
+	chmod +x $(AGENT_APPIMAGE)
+
+agent-appimage-clean:
+	rm -f $(AGENT_APPIMAGE_DIR)/rehuco-agent.png $(AGENT_APPIMAGE_DIR)/requirements.txt
+	rm -rf $(AGENT_APPIMAGE_OUT)

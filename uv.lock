@@ -12,6 +12,7 @@ members = [
 ]
 
 [manifest.dependency-groups]
+appimage = [{ name = "python-appimage", specifier = ">=1.4" }]
 dev = [
     { name = "bandit", specifier = ">=1.8" },
     { name = "markdown-callouts", specifier = ">=0.4" },
@@ -1120,6 +1121,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d3/61/8bdec02663c18bf5016709b909411dce04a868710477dc9b9844ffcf8dd2/pytest_qt-4.5.0.tar.gz", hash = "sha256:51620e01c488f065d2036425cbc1cbcf8a6972295105fd285321eb47e66a319f", size = 128702, upload-time = "2025-07-01T17:24:39.889Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/d0/8339b888ad64a3d4e508fed8245a402b503846e1972c10ad60955883dcbb/pytest_qt-4.5.0-py3-none-any.whl", hash = "sha256:ed21ea9b861247f7d18090a26bfbda8fb51d7a8a7b6f776157426ff2ccf26eff", size = 37214, upload-time = "2025-07-01T17:24:38.226Z" },
+]
+
+[[package]]
+name = "python-appimage"
+version = "1.4.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "setuptools" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/a2/dcd2ae18dd55f895e6e188ccfd21dbcf81f5b46a2448f6ae0c672106a737/python_appimage-1.4.6.tar.gz", hash = "sha256:6879f38c4aab1868c6e50cce8a79c85e7e949b3ab157ba3838fd6124802cbb15", size = 72046, upload-time = "2026-07-23T15:49:20.218Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/07/d1b512f2fced11388bd2995c3ec759d4ad6929d42c19448bb191025dd9ad/python_appimage-1.4.6-py3-none-any.whl", hash = "sha256:3a120438eea6769a14bbb051e5d0708b40b5a9f993d6dbc39ab4ab127f94ac57", size = 81600, upload-time = "2026-07-23T15:49:19.152Z" },
 ]
 
 [[package]]

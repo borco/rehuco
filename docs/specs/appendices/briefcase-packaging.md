@@ -437,12 +437,44 @@ addressing AppImage bugs a priority*". A PySide6 app is the case they are warnin
 
 ### Building the AppImage without Briefcase
 
+- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+
 Since the AppImage *format* is fine and only `linuxdeploy` is not
 ([[packaging-deployment#linux-format]] point 5), the Linux artifact is built with
 [python-appimage](https://github.com/niess/python-appimage) instead: it extracts a relocatable CPython
 from a manylinux image and installs wheels into it untouched, so `auditwheel`'s work is never redone.
-A recipe is a folder holding `requirements.txt`, an `entrypoint.desktop` and an icon; the build must run
-where the wheels are installable (glibc ≥ 2.34 for x86_64, ≥ 2.38 for aarch64).
+A recipe is a folder holding `requirements.txt`, a `*.desktop` file and an icon named after its `Icon=`
+value; the build must run where the wheels are installable (glibc ≥ 2.34 for x86_64, ≥ 2.38 for
+aarch64). **The desktop file must not be named `entrypoint.desktop`** — python-appimage globs
+`entrypoint.*` for the *shell script* half of the recipe, and matched the desktop file instead the one
+time this repo's own recipe was named that way, silently turning the packaged app's `AppRun` into an
+attempt to execute a `.desktop` file as shell (`packages/rehuco-agent/appimage/rehuco-agent.desktop`,
+found by actually running the build rather than by reading the upstream source).
+
+**What's built (#210):** `packages/rehuco-agent/appimage/` holds `rehuco-agent.desktop` and
+`entrypoint.sh` (checked in); `make agent-appimage-build` copies the icon in from the design master and
+generates `requirements.txt` with **absolute paths** to the four workspace packages, in dependency order
+(`borco-core`, `rehuco-core`, `borco-pyside`, `rehuco-agent`) — python-appimage `pip install`s each
+`requirements.txt` line *separately*, so a bare package name would resolve against PyPI's own unrelated
+**0.0.1 stub** releases of the same four names rather than this checkout's code. `rehuco-agent` installing
+last then finds the first three already satisfied locally and reaches PyPI only for its real third-party
+dependencies (`PySide6-Essentials`, etc.). `python-appimage build app -p 3.14` (a release-tag version,
+"3.14" — not the patch version "3.14.6" the resolved runtime turns out to be) auto-selected the more
+portable `manylinux2014_x86_64` base over the `manylinux_2_28` this repo's docs otherwise reference,
+since python-appimage's own release picks the lowest compatible manylinux tag published for that Python
+version; either way the *build host* still needs glibc ≥ 2.34 to install the Qt stack into it.
+
+**A hatchling gap this surfaced, unrelated to the AppImage format itself:** hatchling's default file
+selection follows VCS tracking, so `packages/rehuco-agent`'s gitignored `*_ui.py`/`*_rc.py`
+(pyside6-uic/-rcc output, `make uis`) were silently dropped from every wheel build — confirmed with a
+bare `uv build --package rehuco-agent`, which produced a wheel importing cleanly until the first Qt
+resource read, then `ImportError: cannot import name 'main_rc'`. Briefcase never hit this (it copies
+`src/rehuco_agent` verbatim, no wheel build) and neither does a plain `uv sync` (an editable install has
+no file-selection step) — a real `pip install <path>`, which is exactly what the AppImage recipe's
+`requirements.txt` does, was the first thing to actually build a wheel from this package. Fixed by adding
+`[tool.hatch.build] artifacts = ["*_ui.py", "*_rc.py"]` to `packages/rehuco-agent/pyproject.toml`, which
+force-includes matching files regardless of VCS status — so this was latent in the PyPI-publishable wheel
+all along, not something this issue introduced.
 
 What the runtime gives the app, read from `type2-runtime`'s `runtime.c` on 2026-07-28 — these are the
 facts the self-registration path (#209) depends on:

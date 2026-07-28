@@ -1,0 +1,14 @@
+# python-appimage's build-time metadata (name/icon/menu categories for third-party AppImage
+# integrators, e.g. appimaged) -- NOT the real .rehu association, which rehuco_agent.linux_registration
+# writes at runtime (#209). Keep Name/Icon/MimeType/StartupWMClass here in sync with that module's
+# APPLICATION_NAME/DESKTOP_FILE_NAME/MIME_TYPE constants by hand; nothing enforces it automatically.
+[Desktop Entry]
+Type=Application
+Name=Rehuco
+Comment=View and edit rehuco resource documents
+Exec=rehuco-agent
+Icon=rehuco-agent
+Categories=Utility;
+MimeType=application/x-rehuco;
+StartupWMClass=io.github.borco.rehuco-agent
+Terminal=false
