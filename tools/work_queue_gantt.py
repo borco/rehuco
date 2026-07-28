@@ -1,9 +1,9 @@
-"""Schedule a markdown work queue and draw it as a mermaid Gantt chart.
+"""Schedule a markdown work queue and draw it as a PlantUML Gantt chart.
 
 Reads the plan out of a markdown document (default ``continue_prompt_x.md``, gitignored), packs it into
-working days, and writes a ``.mermaid`` file showing the plan plus an *Actual* track dated from each
-issue's GitHub close time. The queue document is the only source of truth: this tool decides nothing
-about the work, and every input below is read from it.
+working days, and writes a ``.plantuml`` file showing the plan with finished work marked. The queue
+document is the only source of truth: this tool decides nothing about the work, and every input below is
+read from it.
 
     REGENERATE                uv run python tools/work_queue_gantt.py
     RECONCILE WITH GITHUB     uv run python tools/work_queue_gantt.py --check
@@ -11,16 +11,14 @@ about the work, and every input below is read from it.
     RECORD FINISHED WORK      tick a row's `Done` cell with a check, then --compact
     RE-PLAN                   --hours 7 / --start 2026-08-03 / --width 2600
 
-    THREE OUTPUT FORMATS, written together by default (--mermaid / --plantuml / --markwhen pick one):
-        .mermaid    renders in VSCode's markdown preview and on GitHub. Sections, a red bar for
-                    anything another row needs, and a separate Actual track. No dependency arrows --
-                    mermaid gantt has none.
-        .plantuml   renders through the PlantUML server this repo already configures. Draws real
-                    dependency arrows, per-task completion, and skips closed days itself. It has no
-                    intra-day placement, so tasks are chained and durations scaled -- see
-                    :func:`render_plantuml`. `--zoom` is what makes the bars wide enough to see.
-        .mw         Markwhen, for its VSCode extension: the most legible source of the three, with
-                    real times rather than scaled ones, and no dependency notion at all.
+    THE OUTPUT is a single ``.plantuml`` file, rendered through the PlantUML server this repo already
+    configures. It draws real dependency arrows, colours each bar by state (:data:`DONE_COLOUR` for
+    finished work, :data:`BLOCKER_COLOUR` for a row something else needs), and skips closed days itself.
+    It has no intra-day placement, so tasks are chained and durations scaled -- see
+    :func:`render_plantuml`. ``--zoom`` is what makes the bars wide enough to see.
+
+    Mermaid and Markwhen renderers were dropped once PlantUML carried everything they showed: mermaid
+    could not draw dependency arrows, and neither was being read.
 
 THE QUEUE DOCUMENT'S FORMAT
     Written out in full so the document can be rebuilt from scratch if it is ever lost -- it is
@@ -51,7 +49,8 @@ THE QUEUE DOCUMENT'S FORMAT
     the last cell       the work itself, shortened into the bar's label
     ==================  =========================================================================
 
-    A row whose issue another row *needs* is drawn red, and :func:`check` fails if it is scheduled after
+    A finished row is drawn green, a row whose issue another row *needs* is drawn red (green wins: the
+    block is resolved), and :func:`check` fails if a row is scheduled after
     something that needs it. Anything outside a marked table is prose and is ignored.
 
 THE .done FILE
@@ -66,9 +65,9 @@ THE .done FILE
     chart is drawn. Closing is a proxy for finishing, which holds where an issue closes when its branch
     merges.
 
-THE PROJECT BOARD, AS A FOURTH OUTPUT
+THE PROJECT BOARD, AS A SECOND OUTPUT
     ``--gh`` writes each scheduled row's planned day onto the two date fields a GitHub roadmap view
-    draws its bars between (:data:`DATE_FIELDS`), making the board a fourth rendering of this same
+    draws its bars between (:data:`DATE_FIELDS`), making the board a second rendering of this same
     schedule rather than a second, hand-kept version of it. Without it the board is a snapshot: the
     chart redraws on every run, the board does not, so ticking a row silently leaves stale bars behind.
 
@@ -81,9 +80,11 @@ THE PROJECT BOARD, AS A FOURTH OUTPUT
     it there. Issues absent from the board are reported rather than added -- board membership is a
     decision this tool does not make -- and are the one thing that makes ``--gh`` exit non-zero.
 
-WHY THE CLOCK TIMES ARE FAKE
+WHY THE DURATIONS ARE FAKE
     A worked day is drawn as the whole calendar day, so a 1h bar is 1/6 of a day rather than 1/24 of
-    one -- otherwise every bar is an unreadable sliver. The dates are exact; the times are not.
+    one -- otherwise every bar is an unreadable sliver. **The dates and the order are exact; the drawn
+    durations are scaled**, which is also why the table PlantUML puts beside the chart reads in scaled
+    hours (:func:`render_plantuml` says by how much). The queue document has the real effort.
 """
 
 import argparse
@@ -159,9 +160,12 @@ query($owner: String!, $number: Int!, $cursor: String) {
 }
 """
 
-WORKDAY_STARTS: Final = 9
-"""The hour a working day is drawn as beginning. Presentation only -- the schedule counts hours, not
-clock times, and only the dates it produces are meaningful."""
+DONE_COLOUR: Final = "PaleGreen"
+"""Finished work: ticked in the queue, moved into the ``.done`` file, or closed on GitHub. Light enough
+that the darker shade PlantUML paints over a completed bar stays legible on top of it."""
+
+BLOCKER_COLOUR: Final = "LightCoral"
+"""A row some other row's ``Needs`` names -- worth seeing before it is picked up, not after."""
 
 
 def clean_title(cell: str) -> str:
@@ -294,89 +298,6 @@ def schedule(rows: list[dict[str, Any]], start: datetime.date, hours_per_day: fl
     return rows
 
 
-def plan_bar(row: dict[str, Any], hours_per_day: float) -> str:
-    """One plan bar.
-
-    :param row: a scheduled row.
-    :param hours_per_day: agentic hours per day, for the day scale.
-    :returns: the mermaid task line.
-    """
-    drawn = row["hours"] * 24.0 / hours_per_day
-    duration = f"{int(drawn)}h" if drawn == int(drawn) else f"{int(drawn * 60)}m"
-    tag = "crit, " if row["blocks"] else ""
-    label = f"#{row['issue']} {row['title']} [{row['size']} {row['model']}]"
-    return f"    {label} :{tag}i{row['issue']}, {row['begins']:%Y-%m-%d %H:%M}, {duration}"
-
-
-def actual_bar(row: dict[str, Any], landed: datetime.date, hours_per_day: float) -> str:
-    """One Actual-track bar, drawn on the day the issue closed.
-
-    :param row: a scheduled row that is finished.
-    :param landed: the day GitHub says its issue closed.
-    :param hours_per_day: agentic hours per day, for the day scale.
-    :returns: the mermaid task line, annotated with the drift from its planned day.
-    """
-    drawn = row["hours"] * 24.0 / hours_per_day
-    duration = f"{int(drawn)}h" if drawn == int(drawn) else f"{int(drawn * 60)}m"
-    slipped = (landed - row["begins"].date()).days
-    drift = f" {slipped:+d}d" if slipped else ""
-    return f"    #{row['issue']} {row['title']}{drift} :done, a{row['issue']}, {landed:%Y-%m-%d} 00:00, {duration}"
-
-
-def render_mermaid(
-    rows: list[dict[str, Any]], closed: dict[int, datetime.date], hours_per_day: float, width: int
-) -> str:
-    """Render the plan, and the Actual track beneath it, as a mermaid gantt document.
-
-    :param rows: the output of :func:`schedule`.
-    :param closed: ``{issue: close date}`` from GitHub, which dates the Actual track.
-    :param hours_per_day: agentic hours per day, for the day scale.
-    :param width: canvas width in pixels.
-    :returns: the complete ``.mermaid`` document.
-    """
-    # the diagram keyword must be the first line after any frontmatter -- a %% header above it is a
-    # parse error, so the generated-by note lives inside the body instead
-    lines = [
-        f"""---
-config:
-  gantt:
-    useWidth: {width}
-    barHeight: 18
-    barGap: 3
-    leftPadding: 220
-    rightPadding: 40
-    fontSize: 12
----
-gantt
-    title rehuco work queue
-    dateFormat YYYY-MM-DD HH:mm
-    axisFormat %a %d %b
-    tickInterval 1day
-    excludes sunday
-
-    %% GENERATED by tools/work_queue_gantt.py -- do not hand-edit; edit the queue document instead.
-    %% Its assumptions, and the format it reads, are documented in that script's docstring.
-"""
-    ]
-    band = None
-    for row in rows:
-        if row["band"] != band:
-            band = row["band"]
-            lines.append(f"\n    section {band}")
-        lines.append(plan_bar(row, hours_per_day))
-
-    # every finished row, drawn on the day GitHub says its issue closed. A row that is finished but
-    # whose issue is still open -- or unreachable -- simply does not appear here.
-    executed = [row for row in rows if (row["ticked"] or row["compacted"]) and row["issue"] in closed]
-    if executed:
-        lines.append("\n    section Actual")
-        lines.extend(
-            actual_bar(row, closed[row["issue"]], hours_per_day)
-            for row in sorted(executed, key=lambda item: closed[item["issue"]])
-        )
-    return "\n".join(lines) + "\n"
-
-
 def render_plantuml(
     rows: list[dict[str, Any]], closed: dict[int, datetime.date], hours_per_day: float, zoom: int
 ) -> str:
@@ -385,7 +306,7 @@ def render_plantuml(
     **PlantUML gantt has no intra-day placement.** ``starts <date> at <time>`` parses but the time is
     ignored, so every task on a day would begin at 00:00 and sit on top of its neighbours. The only way
     to order tasks within a day is to chain them -- ``starts at [previous]'s end`` -- which is also what
-    earns the dependency arrows mermaid cannot draw.
+    earns the dependency arrows.
 
     Durations are **scaled** by ``24 / hours_per_day`` so a working day fills its calendar day rather
     than the first quarter of it -- otherwise the bars are slivers and three quarters of the chart is
@@ -397,7 +318,9 @@ def render_plantuml(
     therefore in scaled hours. Divide by the scale to read real effort; the queue document has it exact.
 
     :param rows: the output of :func:`schedule`.
-    :param closed: ``{issue: close date}`` from GitHub, for per-task completion.
+    :param closed: ``{issue: close date}`` from GitHub; a row is drawn finished when it is ticked, has
+        been compacted, or appears here, so the chart still shows the work as done when GitHub is
+        unreachable and the queue's own tick is all there is.
     :param hours_per_day: agentic hours per day, which sets the duration scale.
     :param zoom: the daily print scale; without it every sub-day bar is a sliver.
     :returns: the complete ``.plantuml`` document.
@@ -434,48 +357,14 @@ def render_plantuml(
         if row["begins"].date() != day:
             day = row["begins"].date()
             lines.append(f"{name} starts {day:%Y-%m-%d}")
-        if row["blocks"]:
-            lines.append(f"{name} is colored in LightCoral")
-        if row["issue"] in closed:
+        # green beats red: a finished row's block is resolved, so "done" is the more useful thing to see
+        if row["ticked"] or row["compacted"] or row["issue"] in closed:
+            lines.append(f"{name} is colored in {DONE_COLOUR}")
             lines.append(f"{name} is 100% completed")
+        elif row["blocks"]:
+            lines.append(f"{name} is colored in {BLOCKER_COLOUR}")
         previous = name
     lines.append("@endgantt")
-    return "\n".join(lines) + "\n"
-
-
-def render_markwhen(rows: list[dict[str, Any]], closed: dict[int, datetime.date]) -> str:
-    """Render the plan as a Markwhen timeline.
-
-    Markwhen has no dependency notion, so ``Needs`` survives only as a note on the row. Unlike the other
-    two it needs no scaling trick: it takes real times, so the working day is written as it is.
-
-    :param rows: the output of :func:`schedule`.
-    :param closed: ``{issue: close date}`` from GitHub, noted on each finished row.
-    :returns: the complete ``.mw`` document.
-    """
-    lines = ["title: rehuco work queue", "", "#plan: #4a6fd4", "#done: #6c9e6c", ""]
-    band, day, used = None, rows[0]["begins"].date(), 0.0
-    for row in rows:
-        if row["begins"].date() != day:
-            day, used = row["begins"].date(), 0.0
-        start = datetime.datetime.combine(day, datetime.time(WORKDAY_STARTS)) + datetime.timedelta(hours=used)
-        finish = start + datetime.timedelta(hours=row["hours"])
-        used += row["hours"]
-        if row["band"] != band:
-            if band is not None:
-                lines.append("endGroup")
-            band = row["band"]
-            lines.append("")
-            lines.append(f"group {band}")
-        needs = f" (needs {', '.join(f'#{ref}' for ref in row['needs'])})" if row["needs"] else ""
-        landed = f" [closed {closed[row['issue']]:%Y-%m-%d}]" if row["issue"] in closed else ""
-        tag = "#done" if row["issue"] in closed else "#plan"
-        lines.append(
-            f"{start:%Y-%m-%d %H:%M}/{finish:%Y-%m-%d %H:%M}: "
-            f"{row['issue']} {row['title']} [{row['size']} {row['model']}]{needs}{landed} {tag}"
-        )
-    if band is not None:
-        lines.append("endGroup")
     return "\n".join(lines) + "\n"
 
 
@@ -768,6 +657,26 @@ def compact(queue: pathlib.Path, done: pathlib.Path) -> int:
     return 0
 
 
+def row_disagreement(row: dict[str, Any], issue: dict[str, Any] | None) -> str:
+    """How one row disagrees with GitHub, if it does.
+
+    A **finished** row (ticked, or moved into the ``.done`` file) stays in the plan so the chart keeps
+    its whole shape, so its issue being closed is the expected state and its being *open* is the news.
+    An unfinished row is the other way round, and is additionally compared on size.
+
+    :param row: one parsed row.
+    :param issue: the matching **open** issue, or ``None`` when GitHub has no open issue by that number.
+    :returns: the disagreement, or an empty string when the two agree.
+    """
+    if row["ticked"] or row["compacted"]:
+        return f"#{row['issue']} {row['title']!r} is marked done but still open" if issue else ""
+    if issue is None:
+        return f"#{row['issue']} {row['title']!r} is scheduled but no longer open"
+    if issue["size"] != row["size"]:
+        return f"#{row['issue']} is {issue['size'] or 'unsized'} on GitHub, {row['size']} in the queue"
+    return ""
+
+
 def check(rows: list[dict[str, Any]], unscheduled: dict[int, str]) -> int:
     """Reconcile the queue against GitHub, and its ``Needs`` column against its own order.
 
@@ -789,11 +698,8 @@ def check(rows: list[dict[str, Any]], unscheduled: dict[int, str]) -> int:
         print(f"cannot reach GitHub, checking the document against itself only: {error}")
         issues = {}
     for row in rows:
-        issue = issues.get(row["issue"])
-        if issues and issue is None:
-            problems.append(f"#{row['issue']} {row['title']!r} is scheduled but no longer open")
-        elif issue and issue["size"] != row["size"]:
-            problems.append(f"#{row['issue']} is {issue['size'] or 'unsized'} on GitHub, {row['size']} in the queue")
+        if issues and (problem := row_disagreement(row, issues.get(row["issue"]))):
+            problems.append(problem)
     for number, issue in sorted(issues.items()):
         if number not in position and issue["milestone"] and number not in unscheduled:
             problems.append(f"#{number} ({issue['milestone']}) is open but not in the queue: {issue['title']}")
@@ -803,26 +709,17 @@ def check(rows: list[dict[str, Any]], unscheduled: dict[int, str]) -> int:
     return 1 if problems else 0
 
 
-def write_formats(rows: list[dict[str, Any]], closed: dict[int, datetime.date], args: argparse.Namespace) -> list[str]:
-    """Write each requested output format beside the others.
+def write_chart(rows: list[dict[str, Any]], closed: dict[int, datetime.date], args: argparse.Namespace) -> str:
+    """Write the chart beside the queue document.
 
     :param rows: the scheduled rows.
     :param closed: ``{issue: close date}`` from GitHub.
-    :param args: the parsed command line, for the stem and the per-format options.
-    :returns: the names of the files written.
+    :param args: the parsed command line, for the stem and the render options.
+    :returns: the name of the file written.
     """
-    written = []
-    for name in args.formats or ["mermaid", "plantuml", "markwhen"]:
-        if name == "mermaid":
-            path, text = args.stem.with_suffix(".mermaid"), render_mermaid(rows, closed, args.hours, args.width)
-        elif name == "plantuml":
-            text = render_plantuml(rows, closed, args.hours, args.zoom)
-            path = args.stem.with_suffix(".plantuml")
-        else:
-            path, text = args.stem.with_suffix(".mw"), render_markwhen(rows, closed)
-        path.write_text(text, encoding="utf-8")
-        written.append(path.name)
-    return written
+    path = args.stem.with_suffix(".plantuml")
+    path.write_text(render_plantuml(rows, closed, args.hours, args.zoom), encoding="utf-8")
+    return path.name
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -837,19 +734,8 @@ def parse_arguments() -> argparse.Namespace:
         "--stem",
         type=pathlib.Path,
         default=pathlib.Path("continue_prompt_x_gantt"),
-        help="output path without a suffix; each format appends its own",
+        help="output path without a suffix; the .plantuml suffix is appended",
     )
-    parser.add_argument(
-        "--format",
-        dest="formats",
-        action="append",
-        choices=["mermaid", "plantuml", "markwhen"],
-        help="write only this format; repeatable, and all three are written when omitted",
-    )
-    for name in ("mermaid", "plantuml", "markwhen"):
-        parser.add_argument(
-            f"--{name}", dest="formats", action="append_const", const=name, help=f"shorthand for --format {name}"
-        )
     parser.add_argument("--zoom", type=int, default=12, help="PlantUML daily print scale")
     parser.add_argument("--check", action="store_true", help="reconcile the queue against GitHub and exit")
     parser.add_argument("--gh", action="store_true", help="also push the schedule onto the project board's date fields")
@@ -857,7 +743,6 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--compact", action="store_true", help="move ticked rows into the .done file")
     parser.add_argument("--start", type=datetime.date.fromisoformat, help="first working day (default: tomorrow)")
     parser.add_argument("--hours", type=float, default=HOURS_PER_DAY, help="agentic hours per day")
-    parser.add_argument("--width", type=int, default=2600, help="canvas width in pixels")
     return parser.parse_args()
 
 
@@ -884,14 +769,14 @@ def main() -> int:
     while start.weekday() == 6:  # never start on the rest day
         start += datetime.timedelta(days=1)
     scheduled = schedule(rows, start, args.hours)
-    written = write_formats(scheduled, closed, args)
+    written = write_chart(scheduled, closed, args)
 
     hours = sum(row["hours"] for row in scheduled)
     heavy = sum(row["hours"] for row in scheduled if row["size"] in ("L", "XL"))
     finished = sum(1 for row in scheduled if row["ticked"] or row["compacted"])
     origin = "the .done file" if baseline else "tomorrow (no date on the .done file's first line)"
     print(
-        f"{len(scheduled)} issues -> {', '.join(written)}; {hours:g} agent-hours at {args.hours:g} h/day "
+        f"{len(scheduled)} issues -> {written}; {hours:g} agent-hours at {args.hours:g} h/day "
         f"= {hours / args.hours:.1f} working days, {start} -> {scheduled[-1]['begins']:%Y-%m-%d}"
     )
     print(
