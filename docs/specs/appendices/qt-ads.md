@@ -309,3 +309,35 @@ second/split area reverted the first area's hide too). Fix: defer the hide with
 `dockAreaCreated` (new areas) and `dockWidgetRemoved` (re-hide every remaining area, since removal can
 also flip the count through 1). With both hooked and deferred, an outer manager's button stayed hidden
 through add, split, and remove, while an untouched inner manager kept the global default.
+
+## 7. `pyside6-qtads`'s vendored `libxkbcommon` crashes Qt on Linux mouse motion
+
+[[[appendices.qt-ads#libxkbcommon-race]]]
+
+**Symptom:** on Linux (confirmed under WSLg's Wayland platform plugin), the app builds and shows
+fine, then segfaults the instant the mouse enters any window — a `gdb` backtrace shows the crash
+inside `atom_intern()`/`xkb_state_mod_name_is_active()`, called from Qt's own (official)
+`QXkbCommon::modifiers()` during `QWaylandInputDevice::Pointer::pointer_motion`.
+
+**Root cause:** the `pyside6-qtads` wheel vendors its own private copy of `libxkbcommon` under
+`pyside6_qtads.libs/`. `PySide6QtAds.so` is a normal Python C extension, loaded with global symbol
+visibility, so importing it adds its private `libxkbcommon` to the process's *global* symbol scope.
+Linux's dynamic linker resolves an unversioned symbol name (`atom_intern`, etc.) by searching that
+global scope in load order and using the first match — for *every* caller, regardless of which
+literal file that caller's own dependency list names. If `import PySide6QtAds` runs before Qt's own
+`libxkbcommon.so.0` (the system copy `libQt6Gui.so.6` itself directly depends on) has been loaded,
+QtAds' copy wins that race and Qt's real keyboard/pointer-modifier handling gets silently rebound to
+it — an ABI-incompatible build it was never tested against.
+
+**Fix:** import anything from `PySide6` proper before `import PySide6QtAds` anywhere in the process
+(confirmed with `gdb`: constructing a `QApplication` first is enough, the crash disappears).
+`rehuco_agent/app.py` is the app's actual entry point for this — its own `import PySide6QtAds as
+QtAds` is placed *after* its `PySide6.Qt*` imports, marked `# isort: skip` so `ruff`'s import
+sorter (which otherwise sorts plain `import` statements before `from ... import` ones, undoing the
+order) leaves it alone. No other file needs the same treatment: Python caches modules, so only the
+*first* `import PySide6QtAds` anywhere in the process matters, and `app.py` is always that first
+one on the real startup path.
+
+Filed upstream: [mborgerson/pyside6_qtads#123](https://github.com/mborgerson/pyside6_qtads/issues/123).
+If upstream stops vendoring `libxkbcommon`, this ordering requirement goes away too, but there's no
+harm in leaving `app.py`'s import order as-is.

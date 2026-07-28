@@ -242,10 +242,17 @@ class DocumentsDock(QMainWindow):
         re-tracks every rebuilt area itself (it listens on ``stateRestored``), so nothing extra is
         needed here for tab switches to keep updating the current dock after a restore.
 
+        Empty ``state`` (no session saved yet) short-circuits before reaching
+        ``CDockManager.restoreState()`` -- it would return ``False`` anyway, but only after Qt's
+        ``qUncompress()`` logs a spurious "Input data is corrupted" warning to stderr, since an empty
+        buffer isn't a valid ``qCompress`` payload.
+
         :param state: the raw bytes from a prior :meth:`save_state`.
         :returns: ``True`` if the dock manager's own state was restored successfully; ``False`` if
             ``state`` was empty or not a recognized ``CDockManager`` state.
         """
+        if not state:
+            return False
         return bool(self.__dock_manager.restoreState(QByteArray(state)))
 
     def __activate(self, dock: QtAds.CDockWidget) -> DocumentWidget:

@@ -5,6 +5,11 @@
 import logging
 from typing import Final, override
 
+# force PySide6.Qt* imports to run before importing PySide6QtAds: see [[appendices.qt-ads#libxkbcommon-race]]
+from PySide6.QtCore import QEvent  # isort: skip
+from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QGuiApplication, QIcon  # isort: skip
+from PySide6.QtWidgets import QApplication  # isort: skip
+
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
@@ -15,9 +20,6 @@ from borco_pyside.widgets import (
     MessageBannerSeverity,
     MessageBannerSeverityStyle,
 )
-from PySide6.QtCore import QEvent
-from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QGuiApplication, QIcon
-from PySide6.QtWidgets import QApplication
 
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR

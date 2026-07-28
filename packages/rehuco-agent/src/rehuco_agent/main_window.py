@@ -128,8 +128,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
         # dialog's own window is already created and ready to be restored to its prior
-        # visibility (#47, #55)
-        self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+        # visibility (#47, #55). Skipped when empty (no session saved yet): CDockManager.restoreState()
+        # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
+        # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
+        if self.__window_settings.outer_docks_state:
+            self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.
