@@ -5,6 +5,11 @@
 import logging
 from typing import Final, override
 
+# force PySide6.Qt* imports to run before importing PySide6QtAds: see [[appendices.qt-ads#libxkbcommon-race]]
+from PySide6.QtCore import QEvent  # isort: skip
+from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QGuiApplication, QIcon  # isort: skip
+from PySide6.QtWidgets import QApplication  # isort: skip
+
 import PySide6QtAds as QtAds
 from borco_pyside.core import ApplicationSingleton
 from borco_pyside.logging import setup_console_logging
@@ -15,13 +20,11 @@ from borco_pyside.widgets import (
     MessageBannerSeverity,
     MessageBannerSeverityStyle,
 )
-from PySide6.QtCore import QEvent
-from PySide6.QtGui import QColor, QFileOpenEvent, QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication
 
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .glyphs import CLEAR_ACTION_GLYPH
+from .linux_registration import DESKTOP_FILE_NAME
 from .main_window import MainWindow
 from .settings.persistent_settings import persistent_settings
 
@@ -154,11 +157,20 @@ class Application(QApplication):
 def run(argv: list[str]) -> int:
     """Claim the single-instance role (or forward to the existing one) and start the event loop.
 
+    Sets the desktop file name before the ``QApplication`` exists, because that is what ties this
+    process's windows to the ``.desktop`` entry `rehuco_agent.linux_registration` writes (#209):
+    the Wayland ``app_id``, and ``StartupWMClass`` matching on X11. Without it the icon and the
+    taskbar pin resolve to nothing in particular -- the Linux counterpart of the Windows AUMID set
+    in ``__main__``. Deliberately unconditional rather than behind a ``sys.platform`` branch: Qt
+    reads it on the X11/Wayland platform plugins only, so it is inert on Windows and macOS, and a
+    branch would buy a coverage exclusion instead of behaviour.
+
     :param argv: process argv (``sys.argv``); ``argv[1:]`` are ``.rehu``/directory paths to open
         immediately (see :meth:`Application.open_path`).
     :returns: process exit code; ``0`` immediately if this process forwarded to a running primary.
     """
     setup_console_logging()
+    QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
     LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)

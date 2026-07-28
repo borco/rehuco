@@ -194,6 +194,32 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
+def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """On Linux, the Desktop Integration settings page (#209) fills the same System Integration slot.
+
+    Faked rather than skipped off Linux: the page and the `linux_registration` module behind it are
+    plain ``pathlib`` code, so they construct anywhere -- unlike the Windows page, which needs
+    ``winreg``.
+
+    **Test steps:**
+
+    * force ``sys.platform`` to Linux, then construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``DesktopIntegrationPage``
+    """
+    from rehuco_agent.settings.ui.desktop_integration_page import (  # pylint: disable=import-outside-toplevel
+        DesktopIntegrationPage,
+    )
+
+    mocker.patch("rehuco_agent.main_window.sys.platform", "linux")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
+
+
 def test_registers_the_identity_page(qtbot: QtBot) -> None:
     """The Identity settings page (#99) is registered into the settings dialog, on every platform.
 

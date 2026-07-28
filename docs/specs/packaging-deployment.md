@@ -263,6 +263,8 @@ deleted and this issue closed).
 
 - [x] [#206: feat: Briefcase desktop build — installers with native app identity and file
   association](https://github.com/borco/rehuco/issues/206)
+- [x] [#209: feat: Linux desktop integration page — register the .rehu association from the app, like the
+  Windows one](https://github.com/borco/rehuco/issues/209)
 
 Distribution splits by audience, structurally (as the package split does, [[packaging-deployment#three-packages]]):
 
@@ -374,6 +376,18 @@ turn out to buy nothing ([[appendices.briefcase-packaging#linux-backends]], Brie
    "registered, but from a different location" state becomes the ordinary case rather than an edge one. The
    `--register`/`--unregister` flags work unchanged: the runtime claims only its own `--appimage-*` namespace and
    forwards every other argument verbatim ([[appendices.briefcase-packaging#linux-backends]]).
+
+**What the self-registration half now is (#209).** `rehuco_agent.linux_registration` writes the three files above —
+the desktop entry, the `application/x-rehuco` MIME package that makes its `MimeType` mean anything, and the icon in
+the per-user `hicolor` theme — over generic XDG primitives in `borco_core.platforms.linux`, mirroring how the Windows
+HKCU registration splits between `windows_registration` and `borco_core.platforms.windows`. It is reached from
+`--register`/`--unregister` and from a **Desktop Integration** settings page, the same two call sites the Windows half
+has. Three things are specific to Linux rather than copied: `Exec=` comes from `$APPIMAGE` when set, never from
+`sys.executable`; the app declares `QGuiApplication.setDesktopFileName("io.github.borco.rehuco-agent")` so the Wayland
+`app_id` and X11 `StartupWMClass` resolve back to that entry; and the page reports **four** states, not three —
+"registered, but launching a different location" is separated from "registered, but out of date", because for an
+AppImage the first is the ordinary case and re-registering is the fix. Inside Flatpak or Snap it refuses and says so:
+the XDG directories are the package's, and a false "Registered." would be worse than an honest no.
 
 **Two things this decision corrects, both verified rather than argued:**
 

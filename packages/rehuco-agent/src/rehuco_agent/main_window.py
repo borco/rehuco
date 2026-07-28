@@ -128,8 +128,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
         # dialog's own window is already created and ready to be restored to its prior
-        # visibility (#47, #55)
-        self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+        # visibility (#47, #55). Skipped when empty (no session saved yet): CDockManager.restoreState()
+        # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
+        # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
+        if self.__window_settings.outer_docks_state:
+            self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none.
@@ -286,11 +289,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Register every settings category page this platform supports (#47).
 
         Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
-        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76). The System
-        Integration page is top-level and Windows-only (it wraps
-        ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
+        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76).
+
+        The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
+        wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
+        wrapping the XDG desktop entry / MIME type / icon (#209), and macOS neither -- there the
+        association comes from the app bundle itself ([[packaging-deployment#app-identity]]). Both
+        are imported lazily, only here: the Windows one *must* be, mirroring the gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
-        it wraps) already requires.
+        it wraps) already requires, and the Linux one follows for symmetry. Two separate ``if``s
+        rather than an ``if``/``elif`` chain: coverage excludes the whole construct when its first
+        guard line is excluded off Windows, which would silently drop the Linux branch from the
+        report there.
         """
         self.__settings_dialog.add_page(IdentityPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
@@ -300,6 +310,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from .settings.ui.registry_page import RegistryPage
 
             self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
+
+        if sys.platform == "linux":
+            # pylint: disable-next=import-outside-toplevel
+            from .settings.ui.desktop_integration_page import DesktopIntegrationPage
+
+            self.__settings_dialog.add_page(DesktopIntegrationPage())
 
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")
