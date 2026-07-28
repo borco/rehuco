@@ -273,8 +273,10 @@ Two design facts shape the choice:
 
 - **File association is OS-specific, and macOS is the binding constraint.** Only a real application bundle can be a
   document type's default handler there, and the opened path is delivered as an in-process event rather than a
-  command-line argument — so it must reach the already-running single instance ([[nodes#single-instance]]). Windows and
-  Linux register the association declaratively and need no elevation.
+  command-line argument — so it must reach the already-running single instance ([[nodes#single-instance]]). Windows
+  registers the association declaratively and needs no elevation. **Linux registers nothing declaratively** — no
+  Briefcase Linux backend emits a MIME type at all ([[appendices.briefcase-packaging#linux-backends]]), so there the
+  app has to register itself (#209), whichever format it ships in ([[packaging-deployment#linux-format]]).
 - **Windows app identity (icon / pin / running) is an identity-registration concern, not a "must be a compiled binary"
   one.** A prior version (`resource-hub`) achieved a correct taskbar icon/pin/running indicator only from a frozen
   PyInstaller build, but the real requirement is a stable per-application identity plus an *in-process* per-app launcher
@@ -296,7 +298,125 @@ strongest Windows identity. This is wider-distribution polish — not needed for
 file-association and single-instance mechanics it rests on were de-risked by a dedicated spike before LocalEdit1 relied on
 "double-click opens" (macOS #13, Windows #1). **The how-to and hurdles of actually using Briefcase — config,
 build/iterate loop, the macOS UTI/`QFileOpenEvent` recipe, and per-OS gotchas — live in
-[[appendices.briefcase-packaging#overview]].**
+[[appendices.briefcase-packaging#overview]].** The Linux half of the question — *which package format* — is settled
+separately in [[packaging-deployment#linux-format]].
+
+### §16.8.1 Two Linux channels: `uv tool install` and an AppImage, both self-registering
+
+[[[packaging-deployment#linux-format]]]
+
+- [x] [#207: decision: Linux distribution format for rehuco-agent — system packages (.deb/.rpm), AppImage, Flatpak
+  and/or Snap](https://github.com/borco/rehuco/issues/207)
+
+The question was *which package format*, and the answer is **neither a distro package nor a sandbox**: Linux ships
+`uv tool install` for anyone with uv, and a **single-file AppImage** for everyone else. Every reason Windows and macOS
+require a bundled artifact turns out to be absent here, and Linux's entire integration surface is a handful of text
+files the app can write itself. The sandbox axis still decides the sandboxed candidates, and Briefcase's Linux backends
+turn out to buy nothing ([[appendices.briefcase-packaging#linux-backends]], Briefcase 0.4.4).
+
+**Decided:**
+
+1. **Sandbox-free — Flatpak and Snap are out, permanently.** Both mediate filesystem access, and this app fails at its
+   one job if it cannot read a catalog on an SMB mount ([[mounts-and-storage#offline-mounts]]) or if a file-manager
+   launch lands outside the running instance's `QLocalServer` ([[nodes#single-instance]]). Each also has an independent
+   disqualifier: **Snap has no Briefcase backend at all** (its module is a one-line placeholder), and Flatpak's
+   freedesktop 25.08 runtime provides Python 3.13, below the agent's `>=3.14` floor. The portal behaviour itself was
+   **not** tested hands-on — there is no Linux desktop here to test on — but each candidate is refused by a verified
+   fact of its own, so the untested risk never has to carry the decision.
+2. **Briefcase's AppImage backend is out** — the format is fine, the bundler is not. `linuxdeploy` re-processes
+   libraries that `auditwheel` already relocated inside every manylinux wheel, which upstream says "can result in a
+   binary library that cannot be loaded at runtime"; hence its own warning that
+   AppImages "cannot use pre-compiled binary wheels" and have "significant problems with most commonly used GUI toolkits
+   (including GTK and **PySide**)", and that they do not treat AppImage bugs as a priority. A PySide6 app is precisely
+   the case being warned about. A hand-rolled AppImage over python-appimage's relocatable runtime never runs
+   `linuxdeploy` and so avoids this entirely — which is the route point 5 takes.
+3. **The primary channel is PyPI: `uv tool install rehuco-agent`, with the desktop entry written by the app (#209).**
+   What Windows needs a bundled launcher *for* does not exist on Linux. There, the whole of desktop integration is a
+   `.desktop` entry (`Exec`, `Icon`, `MimeType`, `StartupWMClass`), a MIME package XML, and an icon in the hicolor
+   theme, then the two `update-*-database` calls — per-user, no root, and exactly what a `.deb` would install into
+   `/usr/share` instead of `~/.local/share`. **Identity works out too, for a reason specific to POSIX:** on Windows a
+   console-script shim is an `.exe` that spawns `python.exe`, so the taskbar identity resolves to Python (#1), whereas
+   a POSIX shim is a shebang script the kernel execs the interpreter *as* — one process, and the window is the app's
+   own. Its name then comes from the entry: `StartupWMClass` matched against WM_CLASS on X11, and the Wayland `app_id`
+   from `QGuiApplication.setDesktopFileName()`, which the agent does not call yet (it sets only the window icon) and
+   which belongs with #209. And because uv brings its own 3.14, the distro's `python3` stops mattering at all — which
+   is what dissolves the per-release matrix that made system packages expensive. `uv tool upgrade` is the update path,
+   `uvx rehuco-agent` covers a one-off trial, and the entry's `Exec=` points at the installed shim rather than at
+   `uvx`, so a double-click never resolves a version or touches the network.
+4. **`.deb` and `.rpm` are not planned.** They would install the same three files the app can write, and charge for it:
+   a build per family (`.deb` reaches the Debian side only, `.rpm` has its own macro and dependency conventions), and
+   no upgrade path from GitHub — **GitHub Packages has no apt or yum registry** ([[packaging-deployment#channels]]),
+   so a real repository means GitHub Pages plus `reprepro`/`aptly` and a signing key owned forever. If a reliable
+   build ever falls out of other work they can be added as a convenience, but they buy no coverage the channel above
+   lacks.
+5. **An AppImage is the second channel, for users who want one file and no toolchain** — hand-rolled over
+   python-appimage's relocatable **Python 3.14.6** runtime (manylinux2014/2_28, x86_64 and aarch64) —
+   never Briefcase's backend, whose `linuxdeploy` step is the whole problem in point 2. Built (#210) in CI beside the
+   other platforms' artifacts, and cheap: the recipe is a `requirements.txt`, a `.desktop` and an icon. One file
+   for every distro, at the price of: FUSE (libfuse2 is not installed by default on Ubuntu 24.04+, so
+   `--appimage-extract-and-run` or a fuse3 static runtime), a floor of glibc ≥ 2.34 on x86_64 and ≥ 2.38 on aarch64
+   from the wheels, no uninstall, and #209 all the same — plus a full re-download per update, unless zsync update
+   information is embedded. **Registration from inside an AppImage has one hard requirement:** the runtime exports
+   `APPIMAGE` (the absolute path of the file the user launched), `APPDIR` (a temporary mount) and `OWD`, so the entry
+   must be `Exec=$APPIMAGE %F` resolved from `APPIMAGE` — **never** from `sys.executable`, which points into
+   `/tmp/.mount_XXXX/` and ceases to exist on exit. Since the user can move or rename the file at will, #209's
+   "registered, but from a different location" state becomes the ordinary case rather than an edge one. The
+   `--register`/`--unregister` flags work unchanged: the runtime claims only its own `--appimage-*` namespace and
+   forwards every other argument verbatim ([[appendices.briefcase-packaging#linux-backends]]).
+
+**Two things this decision corrects, both verified rather than argued:**
+
+- **Linux does not register the association declaratively.** None of the three Linux backends emits a `MimeType=` line
+  or a MIME package, so `document_type` — which generates the macOS declaration — yields nothing there. #209 is
+  not a convenience on Linux; it is the only association path, and every format above depends on it. That also means
+  #209 no longer waits on this decision, and vice versa.
+- **The interpreter floor is ours, not upstream's.** `PySide6`, `pyside6-qtads` and `pyside6-scintilla` all ship
+  limited-API (`abi3`) manylinux wheels for x86_64 and aarch64, so nothing in the Qt stack pins a Python version or an
+  architecture. What would keep a distro-Python `.deb` off Ubuntu 24.04 is the agent's own `requires-python = ">=3.14"`
+  — deliberate, and the reason such a package would be pinned to Ubuntu 26.04-class releases. The uv channel sidesteps
+  the question rather than answering it.
+
+**The price of this choice, stated plainly:** the Linux audience is "someone who can install uv" — one command, no
+root, and no Python knowledge beyond it — and PySide6 still needs the usual X/Wayland/GL/font system libraries, which
+a desktop distro has and a minimal one may not — **and the AppImage does not escape that second half**, since
+python-appimage bundles the interpreter and the wheels but not the host's system libraries. The uv prerequisite is what
+point 5 removes; the Qt system-library one is common to both channels and is the thing to verify in a bare container
+before promising "download and run".
+
+Signing is untouched by this. On Linux it only arises if a `.deb`/`.rpm` is ever *hosted* in a repository rather than
+downloaded directly, and the Windows/macOS signing gap stays open ([[appendices.open-questions#still-open]]).
+
+### §16.8.2 How end users get it: the channels
+
+[[[packaging-deployment#channels]]]
+
+Distribution is as much a *channel* question as an artifact one. Every channel below feeds off a GitHub Release or
+PyPI, so none of them needs hosting this project does not already have — and the per-channel work is deliberately
+unfiled rather than promised.
+
+| Channel | OS | What it needs from us | Gatekeeping |
+| --- | --- | --- | --- |
+| PyPI, via `uv tool install` / `uvx` | all three | nothing beyond publishing (#18) | none |
+| GitHub Release download | all three | just the artifact | none |
+| **AppImage** on a Release | Linux | a python-appimage recipe and a CI job ([[packaging-deployment#linux-format]]) | none |
+| **Scoop**, own bucket | Windows | a bucket repo of JSON manifests pointing at a release URL; a plain zip suffices | none — it is our repo |
+| **winget** | Windows | a PR to `microsoft/winget-pkgs` with `InstallerUrl` + `InstallerSha256`. **No MSI required** — `portable` (winget ≥ 1.3) and `zip` (≥ 1.5) installer types exist, with `NestedInstallerFiles` naming the exe inside | PR validation |
+| **Chocolatey** | Windows | a nuspec plus a PowerShell install script | moderation queue |
+| **Homebrew cask**, own tap | macOS | a `homebrew-<name>` repo; the cask points at a hosted `.dmg`/`.zip`/`.pkg` | none for our own tap |
+| apt / yum repository | Linux | GitHub Pages plus `reprepro`/`aptly` and a GPG key kept forever — **GitHub Packages has no apt or yum registry** (npm, RubyGems, Maven, Gradle, NuGet and Docker only) | none, but the key is ours to hold |
+
+Two consequences worth stating. The Windows and macOS channels all want **the artifact #206 already has to produce**,
+so they are downstream of it rather than separate decisions — a zip or `.dmg` on a Release feeds Scoop, winget and a
+Homebrew tap with no extra build. And the Linux row is the one deliberately **not** walked
+([[packaging-deployment#linux-format]]): `uv tool install` is already the Linux channel, with no repository, no signing
+key and no per-distro build behind it.
+
+**One payload fact that cuts across every channel:** the Linux x86_64 Qt stack is ~258 MB of compressed wheels, of
+which **~175 MB is `PySide6-Addons`** — which no code here imports (only QtWidgets, QtCore, QtGui, QtSvg, QtNetwork,
+all in `PySide6-Essentials`). It arrives because `pyside6-scintilla` requires the `pyside6` meta-package, where
+`pyside6-qtads` already requires `pyside6-essentials` directly. Loosening that one dependency would take ~175 MB off
+every artifact and every install, so it is worth doing before the AppImage's size is treated as fixed — #211 here, and
+[borco/pyside6-scintilla#14](https://github.com/borco/pyside6-scintilla/issues/14) for the dependency that causes it.
 
 ## §16.9 Auto-update
 

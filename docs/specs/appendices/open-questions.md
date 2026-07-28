@@ -107,7 +107,10 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   binding constraint; Windows taskbar identity is an identity-registration matter, not a reason to freeze the app;
   **Briefcase** is chosen for end-user installers over PyInstaller, with MSIX a possible later upgrade; auto-update
   checks a public version oracle and delegates installation to the platform installer. All wider-distribution polish,
-  off the personal critical path.
+  off the personal critical path. **The Linux format is settled too** ([[packaging-deployment#linux-format]]):
+  Linux ships no package — `uv tool install` plus the desktop entry the app writes (#209) — with Flatpak, Snap and
+  AppImage each ruled out on a verified ground, and Linux association turning out to be the app's own job rather than
+  Briefcase's ([[appendices.briefcase-packaging#linux-backends]]).
 - **File-association + app-identity mechanics** — now **proven on current versions** by the Pre-work spikes: macOS (#13)
   — a Briefcase `.app` registers the extension (UTI + `CFBundleDocumentTypes`) and double-clicks arrive as
   `QFileOpenEvent` into the single instance ([[nodes#single-instance]]); Windows (#1) — an HKCU ProgID default handler
