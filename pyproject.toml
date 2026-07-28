@@ -121,8 +121,6 @@ omit = [
     "*conftest.py",
     # test/coverage infrastructure, not product code
     "*coverage_platform.py",
-    # a personal planning tool with no stake in the product; deliberately untested
-    "*work_queue_gantt.py",
 ]
 
 [tool.coverage.html]
