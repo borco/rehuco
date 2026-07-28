@@ -79,29 +79,44 @@ SANDBOXED_BLOCKER: Final = (
 """Why registration is refused inside a sandbox, with the sandbox's name."""
 
 NOT_AN_EXECUTABLE_BLOCKER: Final = (
-    "Cannot register/unregister from {path} -- not an executable; run the installed rehuco-agent "
-    "command or the AppImage, not `python -m rehuco_agent`."
+    "Cannot register/unregister from {path} -- not an executable; run `uv sync` first, or use the "
+    "installed rehuco-agent command, not `python -m rehuco_agent`."
 )
-"""Why registration is refused from a source checkout, with the offending path."""
+"""Why registration is refused from a source checkout with no venv shim to fall back to, with the
+offending path."""
 
 
 def executable_path() -> Path:
     """The path a desktop entry's ``Exec`` must launch to start this app again.
 
-    Resolved from :data:`APPIMAGE_VARIABLE` when set, and only then from ``sys.argv[0]``. Inside an
-    AppImage both ``sys.executable`` and ``__file__`` point into ``$APPDIR``, a temporary mount
-    that ceases to exist when the process exits -- an entry written from either is dead the moment
-    it is written ([[packaging-deployment#linux-format]]). Outside one, ``sys.argv[0]`` is the
-    installed ``rehuco-agent`` shim (e.g. ``~/.local/bin/rehuco-agent``), never ``uvx``, so a
-    double-click resolves no version and touches no network.
+    Resolved from :data:`APPIMAGE_VARIABLE` when set; failing that, from ``sys.argv[0]`` -- upgraded
+    to the venv's own ``rehuco-agent`` console-script shim when ``sys.argv[0]`` is a ``.py`` source
+    path (``python -m rehuco_agent``, or running ``__main__.py`` directly) and that shim exists.
+    ``uv sync``/``pip install -e .`` always installs it next to the interpreter actually running
+    this process (``sys.executable``), so this is never a guess -- if it is there, it is the real
+    console-script entry point, already runnable, no build step involved
+    ([[packaging-deployment#linux-format]]).
+
+    Inside an AppImage both ``sys.executable`` and ``__file__`` point into ``$APPDIR``, a temporary
+    mount that ceases to exist when the process exits -- an entry written from either is dead the
+    moment it is written. Outside one, ``sys.argv[0]`` is the installed ``rehuco-agent`` shim (e.g.
+    ``~/.local/bin/rehuco-agent``), never ``uvx``, so a double-click resolves no version and touches
+    no network.
 
     The AppImage path is taken verbatim rather than resolved: it is already absolute, and it is the
     file the *user* launched -- resolving it through a symlink would record a path they never chose.
 
-    :returns: the AppImage's own path, or the resolved ``sys.argv[0]``.
+    :returns: the AppImage's own path, the venv's console-script shim, or the resolved ``sys.argv[0]``.
     """
     appimage = os.environ.get(APPIMAGE_VARIABLE)
-    return Path(appimage) if appimage else Path(sys.argv[0]).resolve()
+    if appimage:
+        return Path(appimage)
+    argv0 = Path(sys.argv[0]).resolve()
+    if argv0.suffix == ".py":
+        venv_shim = Path(sys.executable).with_name("rehuco-agent")
+        if os.access(venv_shim, os.X_OK):
+            return venv_shim
+    return argv0
 
 
 def is_running_from_executable(exe_path: Path) -> bool:
@@ -147,11 +162,26 @@ def registration_blocker(exe_path: Path) -> str | None:
     :param exe_path: the path that would be registered, typically :func:`executable_path`'s result.
     :returns: the reason registration is refused, or ``None`` if nothing blocks it.
     """
+    blocker = unregistration_blocker()
+    if blocker is not None:
+        return blocker
+    if not is_running_from_executable(exe_path):
+        return NOT_AN_EXECUTABLE_BLOCKER.format(path=exe_path)
+    return None
+
+
+def unregistration_blocker() -> str | None:
+    """Why unregistering cannot work here, as a sentence, or ``None`` when it can.
+
+    Unlike :func:`registration_blocker`, this never depends on an executable path -- :func:`unregister`
+    itself takes none, since it only removes fixed per-user files. Only the sandbox check applies:
+    inside Flatpak/Snap the app cannot touch the host's XDG directories at all, register or not.
+
+    :returns: the reason unregistering is refused, or ``None`` if nothing blocks it.
+    """
     sandbox = sandbox_name()
     if sandbox is not None:
         return SANDBOXED_BLOCKER.format(sandbox=sandbox)
-    if not is_running_from_executable(exe_path):
-        return NOT_AN_EXECUTABLE_BLOCKER.format(path=exe_path)
     return None
 
 

@@ -101,19 +101,27 @@ def main() -> int:
     # an elif chain would take this branch out of the report along with it.
     if sys.platform == "linux" and (args.register or args.unregister):
         # pylint: disable-next=import-outside-toplevel
+        from borco_pyside.logging import setup_console_logging
+
+        # pylint: disable-next=import-outside-toplevel
         from rehuco_agent import linux_registration
 
-        # not exe_path: inside an AppImage the launched file is $APPIMAGE, and sys.argv[0] points
-        # into a temporary mount that is gone by the time anyone double-clicks the entry
-        target = linux_registration.executable_path()
-        blocker = linux_registration.registration_blocker(target)
-        if blocker is not None:
-            print(blocker, file=sys.stderr)
-            return 1
-        if args.register:
-            linux_registration.register(target)
-        else:
+        setup_console_logging()  # so register()/unregister()'s own LOG.info reaches the console
+        if args.unregister:
+            blocker = linux_registration.unregistration_blocker()
+            if blocker is not None:
+                print(blocker, file=sys.stderr)
+                return 1
             linux_registration.unregister()
+        else:
+            # not exe_path: inside an AppImage the launched file is $APPIMAGE, and sys.argv[0]
+            # points into a temporary mount that is gone by the time anyone double-clicks the entry
+            target = linux_registration.executable_path()
+            blocker = linux_registration.registration_blocker(target)
+            if blocker is not None:
+                print(blocker, file=sys.stderr)
+                return 1
+            linux_registration.register(target)
         return 0
 
     # Imported here, not at module scope: rehuco_agent.app pulls in PySide6, QtAds, borco_pyside and

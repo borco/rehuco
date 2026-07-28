@@ -20,18 +20,24 @@ BLOCKER: Final = "Cannot register/unregister -- running inside Flatpak."
 
 
 def build_page(
-    qtbot: QtBot, mocker: MockerFixture, blocker: str | None = None
+    qtbot: QtBot,
+    mocker: MockerFixture,
+    register_blocker: str | None = None,
+    unregister_blocker: str | None = None,
 ) -> tuple[desktop_integration_page.DesktopIntegrationPage, Any]:
-    """Construct the page with its executable path and blocker mocked out.
+    """Construct the page with its executable path and both blockers mocked out.
 
     :param qtbot: pytest-qt fixture, given ownership of the widget.
     :param mocker: pytest-mock fixture.
-    :param blocker: what ``registration_blocker`` should report; ``None`` allows registration.
+    :param register_blocker: what ``registration_blocker`` should report; ``None`` allows registering.
+    :param unregister_blocker: what ``unregistration_blocker`` should report; ``None`` allows
+        unregistering/checking.
     :returns: the page and its generated ``Ui_`` object, which every assertion below reads --
         typed ``Any`` because that class lives in a gitignored, generated module.
     """
     mocker.patch(f"{LINUX_REGISTRATION}.executable_path", return_value=EXE_PATH)
-    mocker.patch(f"{LINUX_REGISTRATION}.registration_blocker", return_value=blocker)
+    mocker.patch(f"{LINUX_REGISTRATION}.registration_blocker", return_value=register_blocker)
+    mocker.patch(f"{LINUX_REGISTRATION}.unregistration_blocker", return_value=unregister_blocker)
 
     page = desktop_integration_page.DesktopIntegrationPage()
     qtbot.addWidget(page)
@@ -54,23 +60,41 @@ def test_status_starts_as_not_checked_when_registration_is_possible(qtbot: QtBot
     assert ui.check_button.isEnabled()
 
 
-def test_buttons_disabled_and_the_reason_shown_when_blocked(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """A sandbox (or a source checkout) disables every button and shows why.
+def test_all_buttons_disabled_and_the_reason_shown_when_sandboxed(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A sandbox disables every button and shows why -- the app can't touch the host's XDG
+    directories at all, register, unregister or check.
 
     The reason is `linux_registration`'s own sentence, not a copy -- a false "Registered." inside a
     sandbox would be worse than an honest refusal.
 
     **Test steps:**
 
-    * construct the page with a blocker
+    * construct the page with both blockers reporting the sandbox
     * verify the status label repeats it and every button is disabled
     """
-    _, ui = build_page(qtbot, mocker, blocker=BLOCKER)
+    _, ui = build_page(qtbot, mocker, register_blocker=BLOCKER, unregister_blocker=BLOCKER)
 
     assert ui.status_label.text() == BLOCKER
     assert not ui.register_button.isEnabled()
     assert not ui.unregister_button.isEnabled()
     assert not ui.check_button.isEnabled()
+
+
+def test_only_register_disabled_when_not_running_from_an_executable(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A source checkout disables only "Register" -- unregistering and checking status never
+    depend on ``exe_path`` being launchable, only actually registering does.
+
+    **Test steps:**
+
+    * construct the page with only ``registration_blocker`` reporting a reason
+    * verify the status label repeats it, "Register" is disabled, and the other two stay enabled
+    """
+    _, ui = build_page(qtbot, mocker, register_blocker=BLOCKER)
+
+    assert ui.status_label.text() == BLOCKER
+    assert not ui.register_button.isEnabled()
+    assert ui.unregister_button.isEnabled()
+    assert ui.check_button.isEnabled()
 
 
 def test_register_button_registers_and_updates_status(qtbot: QtBot, mocker: MockerFixture) -> None:

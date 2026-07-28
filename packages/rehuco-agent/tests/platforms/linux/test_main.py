@@ -87,25 +87,27 @@ def test_register_refuses_and_explains_when_blocked(
 
 
 def test_unregister_refuses_when_blocked(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
-    """``--unregister`` is refused on the same terms as ``--register``.
+    """``--unregister`` is refused by its own blocker (sandboxed), not ``registration_blocker``.
 
-    It doesn't actually need the executable path, but treating both flags identically avoids a
-    confusing "register refuses this but unregister silently accepts it" asymmetry.
+    Unregistering never depends on ``executable_path`` -- ``unregister()`` itself takes no
+    argument, since it only removes fixed per-user files -- so only a sandbox can block it.
 
     **Test steps:**
 
     * force ``sys.platform`` to Linux and set ``sys.argv`` to ``--unregister``
-    * mock ``registration_blocker`` to report a reason
-    * verify ``main()`` returns ``1`` and ``unregister`` was never called
+    * mock ``unregistration_blocker`` to report a reason
+    * verify ``main()`` returns ``1``, ``unregister`` was never called, and ``executable_path``
+      was never consulted
     """
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setattr("sys.argv", [FAKE_SHIM, "--unregister"])
-    mocker.patch(f"{MODULE}.executable_path", return_value=Path(FAKE_SHIM))
-    mocker.patch(f"{MODULE}.registration_blocker", return_value=BLOCKER)
+    executable_path = mocker.patch(f"{MODULE}.executable_path")
+    mocker.patch(f"{MODULE}.unregistration_blocker", return_value=BLOCKER)
     unregister = mocker.patch(f"{MODULE}.unregister")
 
     assert main() == 1
     unregister.assert_not_called()
+    executable_path.assert_not_called()
 
 
 def test_register_is_not_offered_on_macos(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:

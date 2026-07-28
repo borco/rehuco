@@ -58,13 +58,16 @@ class DesktopIntegrationPage(QWidget):
         self.__ui.setupUi(self)
 
         self.__exe_path: Final = linux_registration.executable_path()
-        blocker = linux_registration.registration_blocker(self.__exe_path)
-        can_register = blocker is None
+        register_blocker = linux_registration.registration_blocker(self.__exe_path)
+        # unregistering and checking status never depend on exe_path being launchable -- only
+        # actually registering does (a broken Exec= would be written); sandboxed is the one
+        # reason that blocks all three alike
+        unregister_blocker = linux_registration.unregistration_blocker()
 
-        self.__ui.status_label.setText(NOT_CHECKED_STATUS if can_register else blocker)
-        self.__ui.register_button.setEnabled(can_register)
-        self.__ui.unregister_button.setEnabled(can_register)
-        self.__ui.check_button.setEnabled(can_register)
+        self.__ui.status_label.setText(NOT_CHECKED_STATUS if register_blocker is None else register_blocker)
+        self.__ui.register_button.setEnabled(register_blocker is None)
+        self.__ui.unregister_button.setEnabled(unregister_blocker is None)
+        self.__ui.check_button.setEnabled(unregister_blocker is None)
 
         self.__ui.register_button.clicked.connect(self.__register)
         self.__ui.unregister_button.clicked.connect(self.__unregister)

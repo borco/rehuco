@@ -62,6 +62,51 @@ def test_executable_path_falls_back_to_argv0(monkeypatch: pytest.MonkeyPatch) ->
     assert linux_registration.executable_path() == Path(str(EXE_PATH)).resolve()
 
 
+def test_executable_path_upgrades_a_py_argv0_to_the_venv_shim(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """``python -m rehuco_agent`` (or running ``__main__.py`` directly) is upgraded to the venv's
+    own ``rehuco-agent`` console-script shim, when one sits next to the running interpreter --
+    ``uv sync``/``pip install -e .`` always installs it there, so it is never a guess.
+
+    **Test steps:**
+
+    * unset ``APPIMAGE``, point ``sys.argv[0]`` at a ``.py`` source path and ``sys.executable`` at
+      a fake venv interpreter
+    * report the sibling ``rehuco-agent`` as executable
+    * read ``executable_path``
+    * verify it is that sibling shim, not the source path
+    """
+    monkeypatch.delenv(linux_registration.APPIMAGE_VARIABLE, raising=False)
+    monkeypatch.setattr("sys.argv", [str(SOURCE_PATH)])
+    monkeypatch.setattr("sys.executable", "/fake/venv/bin/python3.14")
+    mocker.patch(f"{MODULE}.os.access", return_value=True)
+
+    assert linux_registration.executable_path() == Path("/fake/venv/bin/rehuco-agent")
+
+
+def test_executable_path_keeps_the_source_path_without_a_venv_shim(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture
+) -> None:
+    """With no venv shim next to the interpreter, the ``.py`` source path is kept as-is, for
+    :func:`registration_blocker` to refuse.
+
+    **Test steps:**
+
+    * unset ``APPIMAGE``, point ``sys.argv[0]`` at a ``.py`` source path and ``sys.executable`` at
+      a fake venv interpreter
+    * report the sibling ``rehuco-agent`` as not executable (missing)
+    * read ``executable_path``
+    * verify it is the source path, resolved
+    """
+    monkeypatch.delenv(linux_registration.APPIMAGE_VARIABLE, raising=False)
+    monkeypatch.setattr("sys.argv", [str(SOURCE_PATH)])
+    monkeypatch.setattr("sys.executable", "/fake/venv/bin/python3.14")
+    mocker.patch(f"{MODULE}.os.access", return_value=False)
+
+    assert linux_registration.executable_path() == SOURCE_PATH.resolve()
+
+
 def test_is_running_from_executable_accepts_an_executable(mocker: MockerFixture) -> None:
     """A non-``.py`` file the user may execute is something a desktop entry can launch.
 
@@ -194,6 +239,36 @@ def test_registration_blocker_is_none_when_registration_can_work(mocker: MockerF
     mocker.patch(f"{MODULE}.is_running_from_executable", return_value=True)
 
     assert linux_registration.registration_blocker(EXE_PATH) is None
+
+
+def test_unregistration_blocker_refuses_inside_a_sandbox(mocker: MockerFixture) -> None:
+    """Inside Flatpak/Snap unregistering is refused too -- the app can't touch the host's XDG
+    directories at all, register or not.
+
+    **Test steps:**
+
+    * report a Flatpak sandbox
+    * ask for the unregistration blocker
+    * verify it names the sandbox
+    """
+    mocker.patch(f"{MODULE}.sandbox_name", return_value="Flatpak")
+
+    assert linux_registration.unregistration_blocker() == linux_registration.SANDBOXED_BLOCKER.format(sandbox="Flatpak")
+
+
+def test_unregistration_blocker_is_none_outside_a_sandbox(mocker: MockerFixture) -> None:
+    """Unlike registration, an unsandboxed source checkout has nothing blocking unregistration --
+    it never depends on ``exe_path`` being launchable.
+
+    **Test steps:**
+
+    * report no sandbox
+    * ask for the unregistration blocker
+    * verify it is ``None``
+    """
+    mocker.patch(f"{MODULE}.sandbox_name", return_value=None)
+
+    assert linux_registration.unregistration_blocker() is None
 
 
 def test_launch_command_quotes_the_path_and_opens_local_files() -> None:
