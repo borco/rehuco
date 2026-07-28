@@ -7,6 +7,7 @@ about the work, and every input below is read from it.
 
     REGENERATE                uv run python tools/work_queue_gantt.py
     RECONCILE WITH GITHUB     uv run python tools/work_queue_gantt.py --check
+    PUSH TO THE PROJECT BOARD uv run python tools/work_queue_gantt.py --gh
     RECORD FINISHED WORK      tick a row's `Done` cell with a check, then --compact
     RE-PLAN                   --hours 7 / --start 2026-08-03 / --width 2600
 
@@ -65,6 +66,21 @@ THE .done FILE
     chart is drawn. Closing is a proxy for finishing, which holds where an issue closes when its branch
     merges.
 
+THE PROJECT BOARD, AS A FOURTH OUTPUT
+    ``--gh`` writes each scheduled row's planned day onto the two date fields a GitHub roadmap view
+    draws its bars between (:data:`DATE_FIELDS`), making the board a fourth rendering of this same
+    schedule rather than a second, hand-kept version of it. Without it the board is a snapshot: the
+    chart redraws on every run, the board does not, so ticking a row silently leaves stale bars behind.
+
+    **Start and target are the same day.** The schedule packs several issues into one working day and a
+    roadmap cannot draw anything finer than a day, so every bar is a one-day block and issues sharing a
+    day form a column. Widening the bars would make the board disagree with the chart, which is the one
+    thing this flag exists to prevent.
+
+    A row the plan no longer schedules has its dates *cleared*, so a bar cannot outlive the row that put
+    it there. Issues absent from the board are reported rather than added -- board membership is a
+    decision this tool does not make -- and are the one thing that makes ``--gh`` exit non-zero.
+
 WHY THE CLOCK TIMES ARE FAKE
     A worked day is drawn as the whole calendar day, so a 1h bar is 1/6 of a day rather than 1/24 of
     one -- otherwise every bar is an unreadable sliver. The dates are exact; the times are not.
@@ -95,6 +111,53 @@ BAND_RE: Final = re.compile(r"<!--\s*gantt:\s*band=(?P<band>\S+)\s+order=(?P<ord
 """The marker the queue document carries above each schedulable table."""
 
 ISSUE_RE: Final = re.compile(r"#\d+")
+
+PROJECT: Final = "borco/5"
+"""The user project ``--gh`` writes to, as ``owner/number``."""
+
+DATE_FIELDS: Final = ("Start date", "Target date")
+"""The project's two date fields, in the order a roadmap view draws a bar between them."""
+
+MUTATIONS_PER_REQUEST: Final = 25
+"""How many aliased field writes go in one GraphQL document -- 100 field values in four requests."""
+
+NODE_ID_RE: Final = re.compile(r"[A-Za-z0-9_-]+")
+"""What a GitHub node id may contain, checked before one is inlined into a mutation."""
+
+PROJECT_QUERY: Final = """
+query($owner: String!, $number: Int!) {
+  user(login: $owner) {
+    projectV2(number: $number) {
+      id
+      fields(first: 50) { nodes { ... on ProjectV2FieldCommon { id name } } }
+    }
+  }
+}
+"""
+
+ITEMS_QUERY: Final = """
+query($owner: String!, $number: Int!, $cursor: String) {
+  user(login: $owner) {
+    projectV2(number: $number) {
+      items(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          content { ... on Issue { number } }
+          fieldValues(first: 30) {
+            nodes {
+              ... on ProjectV2ItemFieldDateValue {
+                date
+                field { ... on ProjectV2FieldCommon { name } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
 
 WORKDAY_STARTS: Final = 9
 """The hour a working day is drawn as beginning. Presentation only -- the schedule counts hours, not
@@ -416,14 +479,14 @@ def render_markwhen(rows: list[dict[str, Any]], closed: dict[int, datetime.date]
     return "\n".join(lines) + "\n"
 
 
-def gh_json(*arguments: str) -> list[dict[str, Any]]:
+def gh_json(*arguments: str) -> Any:
     """Run ``gh`` and parse its JSON output.
 
     The executable is resolved with :func:`shutil.which` and invoked without a shell, so a Windows
     ``gh.cmd`` still runs and nothing is passed through a command interpreter.
 
     :param arguments: the arguments after ``gh``.
-    :returns: the decoded list.
+    :returns: the decoded JSON -- a list for the ``issue list`` calls, an object for GraphQL.
     :raises RuntimeError: if ``gh`` is missing or the call fails -- offline is a fine reason to skip a
         reconciliation rather than an error worth raising to the user.
     """
@@ -434,6 +497,195 @@ def gh_json(*arguments: str) -> list[dict[str, Any]]:
     if done.returncode != 0:
         raise RuntimeError(done.stderr.strip() or f"gh {' '.join(arguments)} failed")
     return json.loads(done.stdout)
+
+
+def gh_graphql(query: str, **variables: Any) -> dict[str, Any]:
+    """Run one GraphQL document through ``gh`` and return its ``data``.
+
+    :param query: the document; passed as a raw string, so nothing in it is reinterpreted.
+    :param variables: values for the variables it declares -- typed, so an ``Int!`` arrives as a number.
+        A variable left out stays null, which is how the first page of a cursor walk is asked for.
+    :returns: the ``data`` object.
+    :raises RuntimeError: propagated from :func:`gh_json`, which is also how a GraphQL-level error
+        arrives -- ``gh`` reports one as a non-zero exit.
+    """
+    arguments = ["api", "graphql", "-f", f"query={query}"]
+    for name, value in variables.items():
+        arguments += ["-F", f"{name}={value}"]
+    return gh_json(*arguments)["data"]
+
+
+def project_board(owner: str, number: int) -> dict[str, Any]:
+    """Read the project's id, its field ids, and every item's issue number and current dates.
+
+    :param owner: the user who owns the project.
+    :param number: the project number.
+    :returns: ``{"project": id, "fields": {name: id}, "items": {issue: id}, "dates": {issue: {name: day}}}``
+        -- ``dates`` carries only the items that have at least one date set.
+    :raises RuntimeError: propagated from :func:`gh_graphql`.
+    """
+    project = gh_graphql(PROJECT_QUERY, owner=owner, number=number)["user"]["projectV2"]
+    board: dict[str, Any] = {
+        "project": project["id"],
+        "fields": {node["name"]: node["id"] for node in project["fields"]["nodes"] if node},
+        "items": {},
+        "dates": {},
+    }
+    cursor = None
+    while True:
+        page = gh_graphql(ITEMS_QUERY, owner=owner, number=number, **({"cursor": cursor} if cursor else {}))
+        page = page["user"]["projectV2"]["items"]
+        for node in page["nodes"]:
+            issue = (node.get("content") or {}).get("number")
+            if issue is None:  # a draft item or a pull request: nothing this plan schedules
+                continue
+            board["items"][issue] = node["id"]
+            dates = {value["field"]["name"]: value["date"] for value in node["fieldValues"]["nodes"] if value}
+            if dates:
+                board["dates"][issue] = dates
+        if not page["pageInfo"]["hasNextPage"]:
+            return board
+        cursor = page["pageInfo"]["endCursor"]
+
+
+def date_mutation(alias: str, project: str, item: str, field: str, day: str) -> str:
+    """One aliased date write, as GraphQL source.
+
+    Values are inlined rather than bound as variables so that many writes fit in one document; each is
+    an opaque id GitHub just handed back or a date this script formatted, and :data:`NODE_ID_RE` refuses
+    anything that is not shaped like an id.
+
+    :param alias: the alias naming this write within its document; must be unique there.
+    :param project: the project's node id.
+    :param item: the item's node id.
+    :param field: the date field's node id.
+    :param day: the day to write, as ``YYYY-MM-DD``.
+    :returns: the mutation source line.
+    :raises SystemExit: if an id is not shaped like one.
+    """
+    for value in (project, item, field):
+        if not NODE_ID_RE.fullmatch(value):
+            raise SystemExit(f"refusing to build a mutation around {value!r}")
+    return (
+        f'  {alias}: updateProjectV2ItemFieldValue(input: {{projectId: "{project}", itemId: "{item}", '
+        f'fieldId: "{field}", value: {{date: "{day}"}}}}) {{ clientMutationId }}'
+    )
+
+
+def clear_mutation(alias: str, project: str, item: str, field: str) -> str:
+    """One aliased field clear, as GraphQL source.
+
+    :param alias: the alias naming this clear within its document; must be unique there.
+    :param project: the project's node id.
+    :param item: the item's node id.
+    :param field: the date field's node id.
+    :returns: the mutation source line.
+    :raises SystemExit: if an id is not shaped like one.
+    """
+    for value in (project, item, field):
+        if not NODE_ID_RE.fullmatch(value):
+            raise SystemExit(f"refusing to build a mutation around {value!r}")
+    return (
+        f'  {alias}: clearProjectV2ItemFieldValue(input: {{projectId: "{project}", itemId: "{item}", '
+        f'fieldId: "{field}"}}) {{ clientMutationId }}'
+    )
+
+
+def date_writes(board: dict[str, Any], planned: dict[int, str]) -> tuple[list[str], list[int]]:
+    """The writes that make the board agree with the plan.
+
+    An issue already carrying its planned day on both fields is skipped, so a re-run that changes
+    nothing sends nothing.
+
+    :param board: the output of :func:`project_board`.
+    :param planned: ``{issue: day}`` for every scheduled row.
+    :returns: the mutation source lines, and the scheduled issues that are not on the board at all.
+    """
+    calls: list[str] = []
+    absent: list[int] = []
+    for issue, day in planned.items():
+        item = board["items"].get(issue)
+        if item is None:
+            absent.append(issue)
+        elif not all(board["dates"].get(issue, {}).get(name) == day for name in DATE_FIELDS):
+            calls += [
+                date_mutation(f"w{len(calls) + index}", board["project"], item, board["fields"][name], day)
+                for index, name in enumerate(DATE_FIELDS)
+            ]
+    return calls, sorted(absent)
+
+
+def stale_clears(board: dict[str, Any], planned: dict[int, str]) -> tuple[list[str], list[int]]:
+    """The clears that strip dates from items the plan no longer schedules.
+
+    :param board: the output of :func:`project_board`.
+    :param planned: ``{issue: day}`` for every scheduled row.
+    :returns: the mutation source lines, and the issues they clear.
+    """
+    calls: list[str] = []
+    cleared: list[int] = []
+    for issue, current in sorted(board["dates"].items()):
+        stale = [name for name in DATE_FIELDS if name in current] if issue not in planned else []
+        if not stale:
+            continue
+        calls += [
+            clear_mutation(f"c{len(calls) + index}", board["project"], board["items"][issue], board["fields"][name])
+            for index, name in enumerate(stale)
+        ]
+        cleared.append(issue)
+    return calls, cleared
+
+
+def run_mutations(calls: list[str]) -> None:
+    """Send the writes in batches, so a hundred field values cost a handful of requests.
+
+    :param calls: aliased mutation source lines; aliases must be unique within each batch.
+    :raises RuntimeError: propagated from :func:`gh_graphql` -- a failure part-way leaves the earlier
+        batches applied, which is why the caller reports the board as half-written.
+    """
+    for offset in range(0, len(calls), MUTATIONS_PER_REQUEST):
+        gh_graphql("mutation {\n" + "\n".join(calls[offset : offset + MUTATIONS_PER_REQUEST]) + "\n}")
+
+
+def push(rows: list[dict[str, Any]], project: str) -> int:
+    """Write every scheduled row's planned day onto the project's two date fields.
+
+    :param rows: the output of :func:`schedule`.
+    :param project: the project to write to, as ``owner/number``.
+    :returns: a process exit code -- non-zero when a scheduled issue is not on the board, since the
+        board then draws less than the plan holds.
+    """
+    owner, _, number = project.partition("/")
+    if not number.isdigit():
+        print(f"--project wants owner/number, not {project!r}")
+        return 1
+    try:
+        board = project_board(owner, int(number))
+    except (RuntimeError, json.JSONDecodeError, KeyError, TypeError) as error:
+        print(f"cannot read the project, nothing written: {error}")
+        return 1
+    if missing := [name for name in DATE_FIELDS if name not in board["fields"]]:
+        print(f"the project has no {' and no '.join(repr(name) for name in missing)} field; add it and re-run")
+        return 1
+
+    planned = {row["issue"]: f"{row['begins']:%Y-%m-%d}" for row in rows}
+    writes, absent = date_writes(board, planned)
+    clears, cleared = stale_clears(board, planned)
+    try:
+        run_mutations(writes + clears)
+    except (RuntimeError, json.JSONDecodeError) as error:
+        print(f"the push failed part-way, so the board is half-written: {error}")
+        return 1
+    dated = len(writes) // len(DATE_FIELDS)
+    print(
+        f"{project}: {dated} issue(s) dated, {len(cleared)} cleared, "
+        f"{len(planned) - len(absent) - dated} already correct"
+    )
+    if cleared:
+        print(f"  no longer scheduled, dates removed: {' '.join(f'#{issue}' for issue in cleared)}")
+    if absent:
+        print(f"  scheduled but not on the board, so undrawn: {' '.join(f'#{issue}' for issue in absent)}")
+    return 1 if absent else 0
 
 
 def closed_dates() -> dict[int, datetime.date]:
@@ -600,6 +852,8 @@ def parse_arguments() -> argparse.Namespace:
         )
     parser.add_argument("--zoom", type=int, default=12, help="PlantUML daily print scale")
     parser.add_argument("--check", action="store_true", help="reconcile the queue against GitHub and exit")
+    parser.add_argument("--gh", action="store_true", help="also push the schedule onto the project board's date fields")
+    parser.add_argument("--project", default=PROJECT, help="the project --gh writes to, as owner/number")
     parser.add_argument("--compact", action="store_true", help="move ticked rows into the .done file")
     parser.add_argument("--start", type=datetime.date.fromisoformat, help="first working day (default: tomorrow)")
     parser.add_argument("--hours", type=float, default=HOURS_PER_DAY, help="agentic hours per day")
@@ -608,7 +862,7 @@ def parse_arguments() -> argparse.Namespace:
 
 
 def main() -> int:
-    """Compact, check, or regenerate, per the command line.
+    """Compact, check, or regenerate -- and optionally push -- per the command line.
 
     :returns: a process exit code.
     """
@@ -644,7 +898,8 @@ def main() -> int:
         f"  starting from {origin}; {finished} done, {len(unscheduled)} deliberately unscheduled, "
         f"L/XL rows carry {heavy / hours:.0%} of the hours"
     )
-    return 0
+    # pushed from the same computation that drew the files, so the board cannot disagree with them
+    return push(scheduled, args.project) if args.gh else 0
 
 
 if __name__ == "__main__":
