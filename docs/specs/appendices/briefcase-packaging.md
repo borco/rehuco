@@ -34,7 +34,12 @@ detail is still spike-proven rather than production-shipped, it says so.
   wider-distribution polish, deferred past the personal critical path ([[packaging-deployment#app-identity]], plan:
   deferred).
   `uv tool install` covers the author's own machines until then.
-- **Linux packaging, code-signing / notarization, auto-update** — not yet done ([[packaging-deployment#auto-update]],
+- **Linux packaging** — answered, and the answer is **none of Briefcase's backends**
+  ([[packaging-deployment#linux-format]]): Linux ships through `uv tool install` with the desktop entry written by the
+  app itself (#209), since that is the whole of Linux integration. What the backends do and
+  do not give is in [[appendices.briefcase-packaging#linux-backends]] — notably, none of them registers a file
+  association, so Briefcase's `document_type` config is macOS/Windows-only in effect.
+- **Code-signing / notarization, auto-update** — not yet done ([[packaging-deployment#auto-update]],
   [[appendices.open-questions#still-open]]).
 
 ## 2. The Briefcase config
@@ -245,3 +250,96 @@ Two behaviours are worth keeping in mind for the production wiring:
   forward still succeeds (the primary receives the path), so this is a harmless race in
   `ApplicationSingleton`'s write-then-disconnect teardown, not a functional bug — noted for
   whoever next touches that (kept, tested) class.
+
+## 8. Linux: what the backends actually do
+
+[[[appendices.briefcase-packaging#linux-backends]]]
+
+Read against **Briefcase 0.4.4** and its published cookiecutter templates on 2026-07-28, because the
+format decision ([[packaging-deployment#linux-format]]) turns on facts the feature tables do not
+state — and two of them contradict what a reader would assume from the macOS half of this appendix.
+
+| Backend | Exists | Interpreter | Emits a `.rehu` association | Verdict for this app |
+| --- | --- | --- | --- | --- |
+| `linux system` — `.deb`, `.rpm`, `.pkg.tar.zst` | yes | the target distro's `/usr/bin/python3` | no | usable only where the distro's `python3` is a version the dependency set has wheels for |
+| `linux appimage` | yes | bundled | no | ruled out — upstream discourages it and names PySide |
+| `linux flatpak` | yes | the Flatpak runtime's (freedesktop SDK 25.08: Python 3.13) | no | ruled out — sandboxed, and its runtime is below the app's floor |
+| `linux snap` | **no** | — | — | `briefcase/platforms/linux/snap.py` is one line: `# A Snap implementation would go here!` |
+
+**1. No Linux backend registers a file association.** The `.desktop` file each template generates
+carries `Type`/`Name`/`Exec`/`Icon`/`Comment` (plus `StartupWMClass` for system and AppImage) and
+**no `MimeType=` line**; none of the three template repositories contains a MIME package `.xml` at
+all. So the `document_type` table ([[appendices.briefcase-packaging#briefcase-config]]) — which on
+macOS generates both halves of the document-type declaration — produces *nothing* on Linux beyond a
+document-type icon. Registering `.rehu` there is the app's own job (#209), whatever the format.
+
+**2. The system backend takes the distro's interpreter, not a bundled one.** `platforms/linux/system.py`
+reads the target image's `python3` version, keeps it as `python_version_tag`, refuses a version below
+Briefcase's own floor, warns when it differs from the host's, and adds `libpython3.X` to the package's
+`Depends:`. The docs state it plainly — "*the app will use the system Python install, and the standard
+library provided by the system*", and "*It is therefore necessary to build a different system package
+for every distribution you want to target*", with Docker target images as the way to do that. Windows
+and macOS bundle a support-package interpreter; **Linux is the exception**, and that single fact is what
+makes the per-distro matrix appear.
+
+**3. Which distributions that leaves.** Only one floor applies, and it is **ours**: the agent declares
+`requires-python = ">=3.14"`. The Qt stack imposes none of its own — `PySide6` (`cp310-abi3`),
+`pyside6-qtads` (`cp310-abi3`) and `pyside6-scintilla` (`cp311-abi3` from 5.6.3.6) all publish
+limited-API wheels that any newer CPython accepts, for `manylinux_2_34_x86_64` **and**
+`manylinux_2_38_aarch64` — so **both architectures are packageable**, with the aarch64 wheels wanting
+glibc ≥ 2.38. A system package is therefore buildable wherever the target's `python3` is 3.14 or newer:
+
+| Target | system `python3` | Buildable |
+| --- | --- | --- |
+| Ubuntu 26.04 LTS (resolute) | 3.14.3 | yes |
+| Ubuntu 24.04 LTS (noble) | 3.12.3 | no |
+| Debian 13 (trixie) | 3.13.5 | no |
+| freedesktop SDK 25.08 (the Flatpak runtime) | 3.13.x | no |
+
+Versions read from `packages.ubuntu.com` / `packages.debian.org` and, for 24.04, from the machine in
+use, on 2026-07-28. Because the floor is the agent's own declaration rather than an upstream limit,
+lowering it is a lever this project holds — at the cost of the Python 3.14 semantics the code relies on
+([[appendices.code-conventions#python]]).
+
+**AppImage, in upstream's own words** — the warning banner `platforms/linux/appimage.py` prints on every
+build: "*Briefcase supports AppImage in a best-effort capacity. It has proven to be highly unreliable as
+a distribution platform. AppImages cannot use pre-compiled binary wheels, and has significant problems
+with most commonly used GUI toolkits (including GTK and PySide).*" The documentation matches it — "*we
+strongly discourage the use of AppImages for distribution*", and "*the core team does not consider
+addressing AppImage bugs a priority*". A PySide6 app is the case they are warning about, so the
+"universal fallback" AppImage looked like on paper is not one here.
+
+> [!NOTE]
+> Flatpak also cannot be built inside Docker or on an NFS-mounted drive (it builds in its own sandbox),
+> so it would constrain the release CI host as well as the runtime.
+
+### Building the AppImage without Briefcase
+
+Since the AppImage *format* is fine and only `linuxdeploy` is not
+([[packaging-deployment#linux-format]] point 5), the Linux artifact is built with
+[python-appimage](https://github.com/niess/python-appimage) instead: it extracts a relocatable CPython
+from a manylinux image and installs wheels into it untouched, so `auditwheel`'s work is never redone.
+A recipe is a folder holding `requirements.txt`, an `entrypoint.desktop` and an icon; the build must run
+where the wheels are installable (glibc ≥ 2.34 for x86_64, ≥ 2.38 for aarch64).
+
+What the runtime gives the app, read from `type2-runtime`'s `runtime.c` on 2026-07-28 — these are the
+facts the self-registration path (#209) depends on:
+
+| Variable | Meaning |
+| --- | --- |
+| `APPIMAGE` | absolute path of the `.AppImage` file the user launched — **the only correct `Exec=` target** |
+| `APPDIR` | the temporary mount (`/tmp/.mount_XXXXXX`), gone when the process exits |
+| `ARGV0` | the name the file was invoked as |
+| `OWD` | the working directory the launch happened in |
+
+- **`Exec=` must come from `APPIMAGE`**, never from `sys.executable` or `__file__` — both point inside
+  `APPDIR`, which is a mount that disappears, so an entry written from them is dead on the next boot.
+- **Own-namespace arguments only.** The runtime intercepts `--appimage-extract`,
+  `--appimage-extract-and-run`, `--appimage-mount`, `--appimage-offset`, `--appimage-portable-home`,
+  `--appimage-portable-config`, `--appimage-signature`, `--appimage-updateinfo[rmation]`,
+  `--appimage-version` and `--appimage-help`, and errors on any *other* `appimage-`-prefixed argument.
+  Everything else is forwarded verbatim, so `--register`, `--unregister` and a `.rehu` path arrive as
+  normal `argv`.
+- **System libraries are not bundled.** Python and the wheels are; Qt's X/Wayland/GL/font dependencies
+  are the host's problem, which is the one thing to verify in a bare container before calling the
+  artifact "download and run".
