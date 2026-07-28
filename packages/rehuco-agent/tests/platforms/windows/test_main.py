@@ -185,6 +185,67 @@ def test_register_not_offered_on_macos(monkeypatch: pytest.MonkeyPatch, mocker: 
 
 
 @mark.windows
+def test_info_reports_registered_at_the_running_exe(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` checks whether *this* exe path is the one registered -- Windows has no equivalent
+    of Linux's "registered, but to a different path" state, since an MSI install always registers
+    the location it installed to.
+
+    **Test steps:**
+
+    * set ``sys.argv`` so argv[0] is a fake ``.exe`` path, with ``--info``
+    * mock ``windows_registration.is_registered`` to report ``True``
+    * verify ``main()`` returns ``0`` and printed the resolved exe path as registered
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_EXE, "--info"])
+    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=True)
+
+    assert main() == 0
+    assert str(Path(FAKE_EXE).resolve()) in capsys.readouterr().out
+
+
+@mark.windows
+def test_info_reports_not_registered(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` with nothing registered prints a plain "not registered".
+
+    **Test steps:**
+
+    * set ``sys.argv`` to ``--info``
+    * mock ``windows_registration.is_registered`` to report ``False``
+    * verify ``main()`` returns ``0`` and printed "not registered"
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_EXE, "--info"])
+    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=False)
+
+    assert main() == 0
+    assert "not registered" in capsys.readouterr().out
+
+
+@mark.windows
+def test_version_and_info_skip_aumid_and_run(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
+    """``--version``/``--info`` alone return before the AUMID is set or the GUI is launched -- they
+    are CLI queries, not a GUI-launch flag (see ``main``'s docstring).
+
+    **Test steps:**
+
+    * set ``sys.argv`` to ``--version --info``, no ``--register``/``--unregister``
+    * mock ``windows_registration.is_registered``, the AUMID call, and ``run``
+    * verify ``main()`` returns ``0`` and neither the AUMID call nor ``run`` happened
+    """
+    monkeypatch.setattr("sys.argv", [FAKE_EXE, "--version", "--info"])
+    mocker.patch("rehuco_agent.windows_registration.is_registered", return_value=False)
+    set_aumid = mocker.patch("ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID")
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 0
+    set_aumid.assert_not_called()
+    run.assert_not_called()
+
+
+@mark.windows
 def test_no_flags_sets_aumid_and_delegates_to_run(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """With no ``--register``/``--unregister``, the AUMID is set and ``run`` is called with argv + paths.
 

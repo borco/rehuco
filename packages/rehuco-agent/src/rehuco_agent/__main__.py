@@ -1,4 +1,5 @@
-"""CLI entry point: ``rehuco-agent [--register|--unregister] [paths...]`` (register/unregister: Windows and Linux)."""
+"""CLI entry point: ``rehuco-agent [--version] [--info] [--register|--unregister] [paths...]``
+(register/unregister: Windows and Linux)."""
 
 import argparse
 import ctypes
@@ -6,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Final
 
+from rehuco_agent import __version__
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 
 REGISTRATION_PLATFORMS: Final = ("win32", "linux")
@@ -15,8 +17,50 @@ macOS is absent on purpose: there the association is the app bundle's own declar
 per-user registration to write ([[packaging-deployment#app-identity]])."""
 
 
+def print_registration_info(exe_path: Path) -> None:
+    """Print whether this app is registered as the ``.rehu``/``.tc`` handler, and where.
+
+    Read-only counterpart of ``--register``/``--unregister``, for ``--info``. Windows has no
+    equivalent of Linux's "registered, but to a different path" state -- ``is_registered`` only
+    answers "is *this* path the one registered", so that is what gets printed. Linux instead reads
+    the installed desktop entry's own ``Exec=`` value (:func:`linux_registration.registered_command`)
+    independent of ``exe_path`` -- the AppImage the user is running right now may not be the one
+    installed, which is the ordinary case there rather than an edge one
+    ([[packaging-deployment#linux-format]]).
+
+    :param exe_path: same resolution ``--register``/``--unregister`` use.
+    """
+    if sys.platform == "win32":
+        # pylint: disable-next=import-outside-toplevel
+        from rehuco_agent import windows_registration
+
+        if windows_registration.is_registered(exe_path, ARCHIVE_EXTENSIONS):
+            print(f"registered: {exe_path}")
+        else:
+            print("not registered")
+    elif sys.platform == "linux":
+        # pylint: disable-next=import-outside-toplevel
+        from rehuco_agent import linux_registration
+
+        command = linux_registration.registered_command()
+        if command is None:
+            print("not registered")
+        else:
+            print(f"registered: {command}")
+    else:
+        print("registration is declared by the app bundle on macOS; there is no runtime state to query")
+
+
+# pylint: disable-next=too-many-return-statements,too-many-branches
 def main() -> int:
-    """Register/unregister this app as the ``.rehu`` handler, or launch the GUI.
+    """Print version/registration info, register/unregister this app as the ``.rehu`` handler, or
+    launch the GUI.
+
+    ``--version`` and ``--info`` (:func:`print_registration_info`) are plain flags rather than
+    argparse's own ``action="version"`` specifically so they combine with each other and with
+    ``--register``/``--unregister`` on one command line -- ``rehuco-agent --info --register`` prints
+    the state *before* registering, then registers. Any of the four present at all means this call
+    is a CLI query/action, not a GUI launch: each returns before ``run()`` at the bottom, on every OS.
 
     ``--register``/``--unregister`` are defined only on the platforms that have something to
     register (:data:`REGISTRATION_PLATFORMS`), so ``rehuco-agent --register`` on macOS fails with
@@ -54,6 +98,19 @@ def main() -> int:
     exe_path = Path(sys.argv[0]).resolve()
 
     parser = argparse.ArgumentParser(prog="rehuco-agent")
+    # Plain store_true flags, not argparse's own `action="version"` -- that action prints and calls
+    # sys.exit() from inside parse_args() itself, which would make `--info --version --register` stop
+    # after printing the version and never reach --register. Combinable with each other and with
+    # --register/--unregister on one command line; on their own they still print-and-exit rather than
+    # falling through to a GUI launch (below). This is also the release workflow's per-platform smoke
+    # check for each packaged artifact ([[appendices.continuous-integration#release-agent]]).
+    parser.add_argument("-v", "--version", action="store_true", help="print the app version")
+    parser.add_argument(
+        "-i",
+        "--info",
+        action="store_true",
+        help="print whether this app is registered as the .rehu/.tc handler, and where",
+    )
     if sys.platform in REGISTRATION_PLATFORMS:
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
@@ -68,6 +125,14 @@ def main() -> int:
         )
     parser.add_argument("paths", nargs="*", help=".rehu files, resource directories, or archives to open")
     args = parser.parse_args()
+
+    # Printed before any --register/--unregister action below, so --info reports the *previous*
+    # state -- matching how `rehuco-agent --info --register` reads left to right.
+    if args.version:
+        print(f"version: {__version__}")
+    if args.info:
+        print_registration_info(exe_path)
+    queried = args.version or args.info
 
     # args.register/args.unregister don't exist at all off REGISTRATION_PLATFORMS (the parser never
     # defined them above), so every reference to them nests under one of the platform checks below.
@@ -95,7 +160,8 @@ def main() -> int:
                 windows_registration.unregister(ARCHIVE_EXTENSIONS)
             return 0
 
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(windows_registration.AUMID)
+        if not queried:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(windows_registration.AUMID)
 
     # A separate `if`, not an `elif`: with the win32 block above excluded from coverage off Windows,
     # an elif chain would take this branch out of the report along with it.
@@ -122,6 +188,9 @@ def main() -> int:
                 print(blocker, file=sys.stderr)
                 return 1
             linux_registration.register(target)
+        return 0
+
+    if queried:
         return 0
 
     # Imported here, not at module scope: rehuco_agent.app pulls in PySide6, QtAds, borco_pyside and
