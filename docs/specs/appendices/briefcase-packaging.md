@@ -30,10 +30,13 @@ detail is still spike-proven rather than production-shipped, it says so.
   and its hurdles live in [[appendices.windows-dev-launcher#overview]] (the C launcher). Briefcase is the confirmed
   end-user packager
   there too.
-- **Production Briefcase config in `packages/rehuco-agent/pyproject.toml`** — **not yet landed.** It is
-  wider-distribution polish, deferred past the personal critical path ([[packaging-deployment#app-identity]], plan:
-  deferred).
-  `uv tool install` covers the author's own machines until then.
+- **Production Briefcase config in `packages/rehuco-agent/pyproject.toml`** — **landed** (#206), for
+  Windows and macOS ([[appendices.briefcase-packaging#briefcase-config]]), driven by the `make agent-dist-build` /
+  `agent-dist-package` targets ([[appendices.briefcase-packaging#build-and-iterate]]). **Both halves are built and
+  verified**: Windows through a real install, with the association, `.tc` and all three shell verbs landing under one
+  identity ([[appendices.briefcase-packaging#windows]]); macOS on Apple silicon through the LaunchServices recipe below
+  — UTI claimed, `open` routed, a second open handled in the same instance. `uv tool install` stays the
+  developer channel either way ([[packaging-deployment#pypi-publishing]]).
 - **Linux packaging** — answered, and the answer is **none of Briefcase's backends**
   ([[packaging-deployment#linux-format]]): Linux ships through `uv tool install` with the desktop entry written by the
   app itself (#209), since that is the whole of Linux integration. What the backends do and
@@ -46,23 +49,40 @@ detail is still spike-proven rather than production-shipped, it says so.
 
 [[[appendices.briefcase-packaging#briefcase-config]]]
 
-Briefcase reads everything from `pyproject.toml`; no per-OS manifest is hand-maintained. The
-config below is what the #13 spike used and verified; the production version in `rehuco-agent`
-will differ only in names (`spike` → `rehuco-agent`, `.rehuspike` → `.rehu`, throwaway bundle ID →
-production bundle ID).
+Briefcase reads everything from `pyproject.toml`; no per-OS manifest is hand-maintained —
+**and 0.4.4 merges the `[project]` table into its own**, so version (resolved through hatchling even
+though it is `dynamic`), description, license, `license-files`, url, author and every `dependencies`
+entry are taken from there rather than restated. What `rehuco-agent`'s config adds is only what has
+no PEP 621 equivalent — condensed here, with the reasoning in the file's own comments:
 
 ```toml
-[tool.briefcase.app.spike.document_type.rehuspike]
-description = "Rehuco Spike File"
-extension = "rehuspike"
-icon = "rehuco-spike"
-url = "https://github.com/borco/rehuco"
-mime_type = "application/x-rehuco-spike"
+[tool.briefcase]
+project_name = "Rehuco"
+bundle = "io.github.borco"                 # + the app name -> bundle identifier, macOS UTI, Windows ProgID
 
-[tool.briefcase.app.spike.macOS]
+[tool.briefcase.app.rehuco-agent]
+formal_name = "Rehuco"                     # Rehuco.exe / Rehuco.app, Start-menu entry, install folder
+icon = "../../design/icons/rehuco-agent"   # basename only: .ico on Windows, .icns on macOS
+sources = ["src/rehuco_agent"]
+requires = ["../rehuco-core", "../borco-core", "../borco-pyside"]
+
+[tool.briefcase.app.rehuco-agent.macOS]
 requires = ["std-nslog~=2.0.0"]
 # PySide6's macOS wheel is macosx_13_0_universal2; Briefcase's 11.0 default is too low (see "Hurdles" below).
 min_os_version = "13.0"
+
+# Under macOS, not at app level: on Windows this would add a second, competing ProgID (see below).
+[tool.briefcase.app.rehuco-agent.macOS.document_type.rehu]
+description = "Rehuco Resource"            # matches the Windows FRIENDLY_NAME the app registers
+extension = "rehu"
+icon = "../../design/icons/rehuco-agent"   # no dedicated document icon in the design master yet
+url = "https://borco.github.io/rehuco/"
+mime_type = "application/x-rehuco"         # also what #209's Linux MIME package must register
+
+[tool.briefcase.app.rehuco-agent.windows]
+system_installer = false                   # per-user: no UAC, matching the app's own HKCU registration
+post_install_script  = "installer/post_install.bat"    # calls Rehuco.exe --register
+pre_uninstall_script = "installer/pre_uninstall.bat"   # calls Rehuco.exe --unregister
 ```
 
 From the `document_type` table Briefcase generates **both** halves of a macOS document-type
@@ -71,13 +91,21 @@ declaration, with no hand-edited `Info.plist`:
 - `CFBundleDocumentTypes` — so Finder / LaunchServices treat the extension as a document type
   owned by this app, with the right icon.
 - `UTExportedTypeDeclarations` — so `mdls`, Spotlight, and any UTI-aware API resolve the extension
-  to a concrete Uniform Type Identifier (`com.<bundle>.<app>.<ext>`).
+  to a concrete Uniform Type Identifier (`<bundle>.<app>.<ext>`, so `io.github.borco.rehuco-agent.rehu`).
 
-Local (not-yet-on-PyPI) workspace dependencies go into `requires` as **relative paths**, since
-Briefcase builds the bundle by pip-installing into it and cannot see the uv workspace:
+Windows gets its own half of the same table — a WiX `ProgId`/`Extension`/`Verb` triple in the MSI,
+[[appendices.briefcase-packaging#windows]].
+
+Workspace dependencies need one more line each. They arrive from `[project].dependencies` as bare
+names, but Briefcase builds the bundle by pip-installing into it and cannot see the uv workspace, so
+each also needs a **direct reference** — a path relative to the app's `pyproject.toml`, which
+Briefcase absolutizes. pip then resolves the bare name to that reference, which is what keeps
+`rehuco-core` off PyPI (where it is still a `0.0.0` stub) and lets the unpublished `borco-*` resolve
+at all:
 
 ```toml
-requires = ["PySide6>=6.9", "../../packages/borco-core", "../../packages/borco-pyside"]
+# in [tool.briefcase.app.rehuco-agent], alongside the bare names [project].dependencies contributes
+requires = ["../rehuco-core", "../borco-core", "../borco-pyside"]
 ```
 
 ## 3. The app-side wiring it relies on
@@ -125,42 +153,117 @@ singleton.other_instance_run.connect(open_forwarded)
 
 [[[appendices.briefcase-packaging#build-and-iterate]]]
 
-**Icon first.** Briefcase's `icon = "rehuco-spike"` config points at a basename; on macOS it needs
-a matching `.icns` next to `pyproject.toml`. macOS builds one from the `.svg` master with the
-platform tools (no third-party dependency). This is **not yet a Makefile target** — the Windows
-`.ico` rule already lives in the Makefile (`%.ico: %.svg` via `magick`); the `.icns` equivalent
-below should be wired in the same way when production packaging lands ([[packaging-deployment#app-identity]]), rather
-than run by
-hand:
+**Icons first, and `make icons` builds them** ([[packaging-deployment#design-resources]]): the `.ico` by
+downscaling the 1024-px PNG master with ImageMagick, and — **only on macOS** — the `.icns` through `sips`
+and `iconutil`, platform tools with no cross-platform equivalent that produces a real multi-resolution
+icon set (ImageMagick's ICNS writer emits one resolution, which Finder and the Dock then rescale badly).
+Both are gitignored, so a fresh checkout needs that target before any bundle can be built. The Briefcase
+targets depend on it, and on `make uis`: Briefcase copies `src/rehuco_agent` verbatim, so the generated
+`*_ui.py`/`*_rc.py` must already exist, or the bundle dies on its first import.
+
+**The build sequence — the same on Windows and macOS**, since Briefcase picks the host platform itself:
 
 ```sh
-magick -background none logo.svg -resize 1024x1024 rehuco-spike-1024.png
-mkdir icon.iconset
-for size in 16 32 64 128 256 512; do
-  sips -z $size $size rehuco-spike-1024.png --out "icon.iconset/icon_${size}x${size}.png"
-  double=$((size * 2))
-  sips -z $double $double rehuco-spike-1024.png --out "icon.iconset/icon_${size}x${size}@2x.png"
-done
-iconutil -c icns icon.iconset -o rehuco-spike.icns
-rm -rf icon.iconset rehuco-spike-1024.png
+# One-time per platform: create + build the bundle. Downloads a Python support package and
+# pip-installs the whole Qt stack into it -- minutes, and ~700 MB under packages/rehuco-agent/build/.
+make agent-dist-build    # -> build/rehuco-agent/windows/app/src/Rehuco.exe
+                         #    build/rehuco-agent/macos/app/Rehuco.app on macOS
+
+# Iterate on app code: re-syncs src/ into the existing bundle, seconds rather than minutes.
+make agent-dist-update
+
+# The shippable artifact. Downloads the WiX toolset on first use.
+make agent-dist-package  # -> packages/rehuco-agent/dist/Rehuco-<version>.msi
+                         #    on macOS a .dmg -- with `BRIEFCASE_ARGS=--adhoc-sign` until signing is filed
+make agent-dist-clean    # drop build/ and dist/
 ```
 
-**Then build:**
+Each target is one `uv run` around `briefcase`, and the two uv flags in it are both load-bearing:
 
 ```sh
-# One-time: build the .app (downloads Python + PySide6 into the bundle; a few minutes).
-briefcase build macOS
-# Output: build/<app>/macos/app/<Formal Name>.app
+uv run --group packaging --directory packages/rehuco-agent --project ../.. briefcase build
 
-# Iterate on app code (fast; re-syncs src/ into the existing bundle, seconds):
-briefcase update macOS
+# --directory: Briefcase reads the pyproject of the *current* directory, so it must run there.
+# --project:   uv must still resolve against the workspace root. Letting it discover the member
+#              instead syncs the shared .venv down to that member's own dependencies, evicting
+#              pytest/ruff/mkdocs. `packaging` is opt-in, so a later plain `uv sync` prunes it again.
 ```
 
-The spike ran this against a throwaway local venv (`uv venv`, then `uv pip install` of PySide6,
-the two `borco-*` editable packages, the app itself, and `briefcase`). In production this becomes
-a Makefile target against the workspace venv.
+Briefcase itself is **not** a workspace dependency of the agent: it lives in the root's opt-in
+`packaging` dependency group, so the ~30 packages it drags in (cookiecutter, GitPython, requests,
+rich) stay out of a plain `make sync`'s environment.
 
-## 5. Hurdles
+## 5. Windows: what the MSI registers, and what it does not
+
+[[[appendices.briefcase-packaging#windows]]]
+
+Read off real `make agent-dist-package` runs on 2026-07-28 — Briefcase 0.4.4, WiX 6, the Python 3.14.4
+embedded support package, PySide6 6.11.1. The first build produced a 215 MB `dist/Rehuco-0.0.1.msi` from a 699 MB
+bundle — of which **437 MB was `PySide6-Addons`**, measured from its own wheel `RECORD`, and nothing
+here imports a single module of it. Dropping it (#211) took the very same build to **80.6 MB from a
+264 MB bundle** — a 62% cut, and by far the largest change to the artifact in this issue. All that
+survives of QtWebEngine is three `.pyi` stubs totalling 96 KB, since Essentials ships type stubs for
+the whole API surface; there is not one WebEngine DLL ([[packaging-deployment#channels]]).
+
+**The launcher owns the window's process — the #1 finding, now confirmed on a packaged build.**
+`Rehuco.exe` is Briefcase's stub binary with the app's identity stamped into it by `rcedit`:
+
+| PE field | Value | Comes from |
+| --- | --- | --- |
+| `ProductName`, `FileDescription` | `Rehuco` | `formal_name` |
+| `CompanyName` | `Ioan Calin` | `[project].authors[0].name` |
+| `ProductVersion`, `FileVersion` | `0.0.1` | the `dynamic` `[project]` version |
+| `InternalName` | `rehuco_agent` | the module name |
+| icon | `design/icons/rehuco-agent.ico` | `icon` |
+
+Launched, it runs as a process named `Rehuco` that owns its own window — no `python.exe` subprocess —
+which is the precondition for the AUMID the app sets at startup to bind to the right HWND
+([[packaging-deployment#app-identity]]). One cosmetic gap: `LegalCopyright` still reads the stub's own
+`Copyright (C) 2022`, and Briefcase exposes no key for it.
+
+**The installer's chrome is ours, not WiX's.** Left unset, `installer_background` and
+`installer_banner` fall through to the WiX Toolset's own red bitmaps — someone else's branding on a
+shipped installer, and easy to miss because nothing warns about it. Both are generated by
+`make icons` from the same PNG master as the icons: a 493×312 background whose left 164 px (all WiX
+leaves uncovered) is the brand slate, and a 493×58 banner. The icon's own rounded square is exactly
+that slate, so it dissolves into the strip and only its three bars read. WiX accepts **only** BMP,
+with no alpha — hence `BMP3:` and `-alpha remove` in the rule.
+
+**The MSI does not register the file association — it asks the app to.** Declaring `document_type`
+here would emit a WiX `ProgId`/`Extension`/`Verb` component under
+`Id="io.github.borco.rehuco-agent.rehu"`, and that is a **different identity from the one the app
+uses**: `--register` writes `Rehuco.Document` covering `.rehu` *and* `.tc` plus the folder,
+folder-background and archive verbs (#43), where the generated component covers `.rehu` alone. Both
+are valid registrations of one extension, the later one wins, and the app's own Registry settings
+page (#47) — which looks for `Rehuco.Document` — reports **"Not registered" after every MSI install,
+forever**, because the two sets never intersect. Observed on the first packaged build, before the
+config changed.
+
+So `document_type` is declared under the **macOS** block only (verified: Windows then resolves
+`document_type = None`), and the MSI delegates instead — `post_install_script` runs
+`Rehuco.exe --register`, `pre_uninstall_script` runs `--unregister` while the exe still exists. One
+identity, `.tc` and the shell verbs included, and an uninstall that strands nothing. macOS keeps the
+declarative route because it has no `--register` equivalent: only the bundle can claim a UTI.
+
+Two contract details the scripts must respect, both from the generated `.wxs`: the custom actions are
+`Return="check"`, so **a non-zero exit rolls the whole install back** — the scripts end in `exit /b 0`
+so a failed association can never fail an installation; and they run from `[INSTALLFOLDER]\_installer\`,
+so the exe is one directory up. The generated `run_post_install.bat` sets `ALLUSERS`,
+`INSTALLER_PATH` and `INSTALLER_UNATTENDED` in the environment and passes **no** arguments.
+
+**Scope.** `system_installer = false` drops WiX's install-scope dialog from the UI flow, leaving the
+generated `WixAppFolder = WixPerUserFolder` to stand — so the install is per-user into
+`%LOCALAPPDATA%\Programs\<author>\<formal name>\` with no elevation, and the author name becomes a
+folder level because WiX uses `Manufacturer` that way. It does **not** narrow the package: the
+template hardcodes `Scope="perUserOrMachine"` regardless, so `msiexec ALLUSERS=1` can still install
+per-machine. Nothing in the UI offers it.
+
+**One cleanup the uninstall already got right**, checked on the first build: removing the app took
+its ProgID with it and left `.rehu` as an empty key rather than a handler pointing at a deleted
+`Rehuco.exe` — the failure #206 names. The delegated path has to hold that line too, which is what
+`pre_uninstall_script` is for.
+
+## 6. Hurdles
 
 [[[appendices.briefcase-packaging#hurdles]]]
 
@@ -179,6 +282,22 @@ no `13.0`-tagged wheel qualifies, so pip reports "no matching distribution."
 **Fix:** set `min_os_version = "13.0"` under `[tool.briefcase.app.<name>.macOS]`. Carry this into
 `rehuco-agent`'s production config; revisit only if PySide6 lowers its wheel floor.
 
+### A universal2 build needs an x86_64 wheel for *every* dependency
+
+**Symptom:** the arm64 pass installs cleanly, then `Installing binary app requirements for x86_64...
+errored` with `No matching distribution found for cbor2==6.1.3` — while that exact version installed
+seconds earlier.
+
+**Cause:** Briefcase's default macOS build is universal2, so it installs the dependency set twice,
+once per architecture, **pinned to the versions the first pass resolved** so the two halves match.
+`cbor2` publishes no x86_64 macOS wheel at 6.x (that platform stops at 5.9.0), so the pin is
+unsatisfiable. Any dependency that drops Intel macOS wheels does the same thing.
+
+**Fix:** `universal_build = false` under `[tool.briefcase.app.<name>.macOS]` — the app becomes
+Apple-silicon-only. Briefcase's own error message suggests it. The alternative, pinning the app down
+to `cbor2` 5.x to suit the packager, gets the dependency direction backwards. Revisit only if Intel
+Macs become a target, which would mean holding every dependency to an x86_64-capable version.
+
 ### `std-nslog` version tracks the template, not an old pin
 
 `[tool.briefcase.app.<name>.macOS].requires` needs `std-nslog` (Briefcase's macOS stdout/stderr →
@@ -192,7 +311,7 @@ build resolver complains.
 like `"MIT license"` — the latter fails validation with an "invalid override value" error. Minor,
 but wastes a scaffolding round-trip if hit.
 
-## 6. Verification recipe (terminal-driven, no GUI session)
+## 7. Verification recipe, macOS (terminal-driven, no GUI session)
 
 [[[appendices.briefcase-packaging#verification]]]
 
@@ -221,7 +340,7 @@ log stream --style compact --predicate 'process == "<Formal Name>"'
 "$LSREG" -u "build/<app>/macos/app/<Formal Name>.app"
 ```
 
-## 7. What the #13 spike confirmed
+## 8. What the #13 spike confirmed
 
 [[[appendices.briefcase-packaging#spike-confirmed]]]
 
@@ -251,7 +370,7 @@ Two behaviours are worth keeping in mind for the production wiring:
   `ApplicationSingleton`'s write-then-disconnect teardown, not a functional bug — noted for
   whoever next touches that (kept, tested) class.
 
-## 8. Linux: what the backends actually do
+## 9. Linux: what the backends actually do
 
 [[[appendices.briefcase-packaging#linux-backends]]]
 

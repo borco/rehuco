@@ -11,6 +11,7 @@ from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
 
+from .archives import ARCHIVE_EXTENSIONS
 from .dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
@@ -43,11 +44,6 @@ THEME_LIGHT_ICON: Final = ":/icons/theme_light.svg"
 THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
 """Shown for the dark theme mode (``Qt.ColorScheme.Dark``), same two consumers as
 :data:`THEME_DEFAULT_ICON`."""
-
-ARCHIVE_EXTENSIONS: Final = (".zip",)
-"""Archive file extensions (each including the leading dot) that get a file-scoped ``.rehu``
-companion ([[data-model#resource-scoping]]) via :meth:`MainWindow.open_archive`, instead of being
-opened directly like a bare ``.rehu`` file."""
 
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes

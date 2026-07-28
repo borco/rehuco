@@ -5,8 +5,7 @@ import ctypes
 import sys
 from pathlib import Path
 
-from rehuco_agent.app import run
-from rehuco_agent.main_window import ARCHIVE_EXTENSIONS
+from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 
 
 def main() -> int:
@@ -87,6 +86,14 @@ def main() -> int:
             return 0
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(windows_registration.AUMID)
+
+    # Imported here, not at module scope: rehuco_agent.app pulls in PySide6, QtAds, borco_pyside and
+    # the compiled Qt resources, which costs ~1s of process startup. The --register/--unregister
+    # branch above returns before this point and needs none of it -- and it is what the Windows
+    # installer runs from a post-install script, where that second is a console window the user
+    # watches ([[appendices.briefcase-packaging#windows]]).
+    # pylint: disable-next=import-outside-toplevel
+    from rehuco_agent.app import run
 
     return run([str(exe_path), *args.paths])
 

@@ -261,6 +261,9 @@ deleted and this issue closed).
 
 [[[packaging-deployment#app-identity]]]
 
+- [x] [#206: feat: Briefcase desktop build — installers with native app identity and file
+  association](https://github.com/borco/rehuco/issues/206)
+
 Distribution splits by audience, structurally (as the package split does, [[packaging-deployment#three-packages]]):
 
 - **`rehuco-core` and `rehuco-node` are pure PyPI** ([[packaging-deployment#pypi-publishing]]) — a library and a
@@ -300,6 +303,14 @@ file-association and single-instance mechanics it rests on were de-risked by a d
 build/iterate loop, the macOS UTI/`QFileOpenEvent` recipe, and per-OS gotchas — live in
 [[appendices.briefcase-packaging#overview]].** The Linux half of the question — *which package format* — is settled
 separately in [[packaging-deployment#linux-format]].
+
+**What that decision now ships (#206):** `rehuco-agent`'s `pyproject.toml` carries the Briefcase config, and
+`make agent-dist-build` / `make agent-dist-package` build the bundle and the installer on whichever of the two platforms they
+run. The Windows MSI is built and its app identity confirmed on a packaged binary rather than the dev launcher
+([[appendices.briefcase-packaging#windows]]); the macOS config carries #13's proven values but has not been rebuilt
+since the spike. One thing that decision did not anticipate: the MSI's generated ProgID and the app's own
+`Rehuco.Document` are **two registrations of the same extension**, and only one can be Explorer's default — the
+overlap and what it costs are in [[appendices.briefcase-packaging#windows]].
 
 ### §16.8.1 Two Linux channels: `uv tool install` and an AppImage, both self-registering
 

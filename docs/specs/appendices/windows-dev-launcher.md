@@ -109,7 +109,7 @@ Working `magick` invocation for a multi-resolution Windows icon:
 `magick -background none <svg> -define icon:auto-resize=16,32,48,256 <ico>` (`-background none`
 keeps it transparent rather than white-boxed).
 
-## 4. `make agent-build` re-runs `cmake` every time, even when nothing changed
+## 4. `make agent-dev-build` re-runs `cmake` every time, even when nothing changed
 
 [[[appendices.windows-dev-launcher#cmake-always-reruns]]]
 

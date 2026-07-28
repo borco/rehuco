@@ -38,7 +38,9 @@ def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.Monke
     # exist, so create=True can add it) rather than the deep shell32.<fn> path, whose intermediate
     # traversal would AttributeError before create=True ever reaches the leaf.
     windll = mocker.patch("ctypes.windll", create=True)
-    run = mocker.patch("rehuco_agent.__main__.run", return_value=0)
+    # patched at its source, not on __main__: `run` is imported inside main() rather than at module
+    # scope, so that --register/--unregister never pay for loading PySide6 (see __main__'s comment)
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
 
     assert main() == 0
     run.assert_called_once_with([str(Path(FAKE_ARGV0).resolve()), "a.rehu"])

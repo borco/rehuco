@@ -79,8 +79,11 @@ Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint
 catches broken links and pages missing from the nav; needs the PlantUML server on a cold diagram cache,
 which is why it is outside `qa`), `publish`, `uis`/`qrcs`/`icons`
 (regenerate the gitignored `*_ui.py`/`*_rc.py` and brand-icon exports — run `make uis` after a fresh
-checkout/sync), `setup-git`, and the Windows-only dev-launcher targets
-`agent-build`/`agent-build-clean`/`agent-register`/`agent-unregister`.
+checkout/sync), `setup-git`, the Briefcase end-user build targets
+`agent-dist-build`/`agent-dist-update`/`agent-dist-package`/`agent-dist-clean`
+(Windows and macOS; they need the opt-in `packaging` dependency group, which a later plain `uv sync` prunes again),
+and the Windows-only dev-launcher targets
+`agent-dev-build`/`agent-dev-clean`/`agent-dev-register`/`agent-dev-unregister`.
 
 ## Model strategy
 
