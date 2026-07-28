@@ -20,7 +20,10 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "PySide6>=6.9",
+    # Essentials, not the `PySide6` meta-package: that one exists only to require Essentials *and*
+    # Addons, so naming it pulls ~440-490 MB of QtWebEngine/Qt3D/QuickThreeD nothing here imports
+    # ([[packaging-deployment#channels]]). Essentials ships the same `PySide6` package directory.
+    "PySide6-Essentials>=6.9",
     "colorama>=0.4.6",
     "pyside6-qtads>=5.0.0",
 ]
