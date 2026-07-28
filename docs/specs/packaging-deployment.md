@@ -351,8 +351,8 @@ turn out to buy nothing ([[appendices.briefcase-packaging#linux-backends]], Brie
    lacks.
 5. **An AppImage is the second channel, for users who want one file and no toolchain** — hand-rolled over
    python-appimage's relocatable **Python 3.14.6** runtime (manylinux2014/2_28, x86_64 and aarch64) —
-   never Briefcase's backend, whose `linuxdeploy` step is the whole problem in point 2. Built in CI beside the other
-   platforms' artifacts, and cheap: the recipe is a `requirements.txt`, a `.desktop` and an icon. One file
+   never Briefcase's backend, whose `linuxdeploy` step is the whole problem in point 2. Built (#210) in CI beside the
+   other platforms' artifacts, and cheap: the recipe is a `requirements.txt`, a `.desktop` and an icon. One file
    for every distro, at the price of: FUSE (libfuse2 is not installed by default on Ubuntu 24.04+, so
    `--appimage-extract-and-run` or a fuse3 static runtime), a floor of glibc ≥ 2.34 on x86_64 and ≥ 2.38 on aarch64
    from the wheels, no uninstall, and #209 all the same — plus a full re-download per update, unless zsync update
@@ -415,7 +415,8 @@ key and no per-distro build behind it.
 which **~175 MB is `PySide6-Addons`** — which no code here imports (only QtWidgets, QtCore, QtGui, QtSvg, QtNetwork,
 all in `PySide6-Essentials`). It arrives because `pyside6-scintilla` requires the `pyside6` meta-package, where
 `pyside6-qtads` already requires `pyside6-essentials` directly. Loosening that one dependency would take ~175 MB off
-every artifact and every install, so it is worth doing before the AppImage's size is treated as fixed. Not yet filed.
+every artifact and every install, so it is worth doing before the AppImage's size is treated as fixed — #211 here, and
+[borco/pyside6-scintilla#14](https://github.com/borco/pyside6-scintilla/issues/14) for the dependency that causes it.
 
 ## §16.9 Auto-update
 
