@@ -10,7 +10,7 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 from pytest import mark  # noqa: E402  # pylint: disable=wrong-import-position
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.__main__ import main  # noqa: E402  # pylint: disable=wrong-import-position
-from rehuco_agent.main_window import ARCHIVE_EXTENSIONS  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.archives import ARCHIVE_EXTENSIONS  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.windows_registration import (  # noqa: E402  # pylint: disable=wrong-import-position
     ARCHIVE_MENU_TEXT,
     ARCHIVE_SUB_KEY,
@@ -197,7 +197,9 @@ def test_no_flags_sets_aumid_and_delegates_to_run(monkeypatch: pytest.MonkeyPatc
     """
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "a.rehu", "b.rehu"])
     set_aumid = mocker.patch("ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID")
-    run = mocker.patch("rehuco_agent.__main__.run", return_value=42)
+    # patched at its source, not on __main__: `run` is imported inside main() rather than at module
+    # scope, so that --register/--unregister never pay for loading PySide6 (see __main__'s comment)
+    run = mocker.patch("rehuco_agent.app.run", return_value=42)
 
     assert main() == 42
     set_aumid.assert_called_once_with(AUMID)

@@ -7,6 +7,9 @@
 
 # generated icons (make icons; built from the design/icons PNG master)
 *.ico
+*.icns
+# WiX installer chrome, derived from the same master (make icons)
+*.bmp
 
 # Python
 __pycache__/
@@ -19,6 +22,8 @@ __pycache__/
 .dist/
 /.build/
 build/
+# Briefcase writes packages/rehuco-agent/build/ (the bundle) and dist/ (the installer)
+dist/
 wheels/
 sdist/
 .eggs/

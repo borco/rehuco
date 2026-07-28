@@ -369,11 +369,11 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 - **Reference-image richness** (redaction, tag/semantic search, sketch slideshow, drawing critique) —
   [[plugins#refimages-plugin]].
 - **3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.**
-- **Native end-user installers + auto-update** — Briefcase-built installers with declarative file association / icon /
+- **Auto-update** (the installers themselves landed in #206, [[appendices.briefcase-packaging#status]]) — Briefcase-built installers with declarative file association / icon /
   AUMID, MSIX later, and self-update against a public release oracle
   ([[packaging-deployment#app-identity]]/[[packaging-deployment#auto-update]]). `uv tool install` covers the author's
-  own machines until then; the file-association *mechanics* are proven earlier by the Pre-work spike, but
-  packaging-for-distribution and update delivery (incl. code-signing/notarization) wait.
+  own machines regardless; the file-association *mechanics* are proven earlier by the Pre-work spike, but
+  *release* delivery — a published artifact (#208), update delivery, and code-signing/notarization — still waits.
 
 ## Sequencing gates (decide-before-you-start)
 
