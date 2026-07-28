@@ -258,10 +258,13 @@ folder level because WiX uses `Manufacturer` that way. It does **not** narrow th
 template hardcodes `Scope="perUserOrMachine"` regardless, so `msiexec ALLUSERS=1` can still install
 per-machine. Nothing in the UI offers it.
 
-**One cleanup the uninstall already got right**, checked on the first build: removing the app took
-its ProgID with it and left `.rehu` as an empty key rather than a handler pointing at a deleted
-`Rehuco.exe` — the failure #206 names. The delegated path has to hold that line too, which is what
-`pre_uninstall_script` is for.
+**The uninstall cleans up, and this was checked on the delegated path itself.** On the first build —
+before the scripts existed — the MSI removed its own generated ProgID and left `.rehu` as an empty
+key rather than a handler pointing at a deleted `Rehuco.exe` — the failure #206 names. The delegated
+path was then verified in its own right on 2026-07-28: uninstalling a build that carries
+`pre_uninstall_script` removed **all six** registrations — `Rehuco.Document`, the `.rehu` and `.tc`
+defaults, and the folder, folder-background and archive verbs — together with the files, the
+Start-menu entry and the ARP row, leaving nothing aimed at the deleted exe.
 
 ## 6. Hurdles
 
