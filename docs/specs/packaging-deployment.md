@@ -411,12 +411,26 @@ Homebrew tap with no extra build. And the Linux row is the one deliberately **no
 ([[packaging-deployment#linux-format]]): `uv tool install` is already the Linux channel, with no repository, no signing
 key and no per-distro build behind it.
 
-**One payload fact that cuts across every channel:** the Linux x86_64 Qt stack is ~258 MB of compressed wheels, of
-which **~175 MB is `PySide6-Addons`** — which no code here imports (only QtWidgets, QtCore, QtGui, QtSvg, QtNetwork,
-all in `PySide6-Essentials`). It arrives because `pyside6-scintilla` requires the `pyside6` meta-package, where
-`pyside6-qtads` already requires `pyside6-essentials` directly. Loosening that one dependency would take ~175 MB off
-every artifact and every install, so it is worth doing before the AppImage's size is treated as fixed — #211 here, and
-[borco/pyside6-scintilla#14](https://github.com/borco/pyside6-scintilla/issues/14) for the dependency that causes it.
+**One payload fact that cuts across every channel, and it is worse installed than the wheel sizes suggest.** Measured
+from each wheel's own `RECORD` inside the #206 bundles: **`PySide6-Addons` was 489 MB of the 818 MB macOS `.app` (60%)
+and 437 MB of the 699 MB Windows bundle (62%)** — against 182 MB / 202 MB for `PySide6-Essentials`. A single framework,
+`QtWebEngineCore`, accounts for 354 MB of the macOS figure: an entire Chromium, in an app that renders Markdown with
+`QTextBrowser`. The source imports exactly five PySide6 modules — `QtCore`, `QtGui`, `QtNetwork`, `QtSvg`, `QtWidgets`
+— every one of them in Essentials, and **no Addons module is referenced anywhere in the tree**. So the fix below was not
+a trim but the deletion of three-fifths of every artifact. In compressed-wheel terms the Linux x86_64 Qt stack is ~258 MB, of
+which **~175 MB was `PySide6-Addons`**.
+It arrived because `pyside6-scintilla` required the `pyside6` meta-package, where
+`pyside6-qtads` already required `pyside6-essentials` directly. **Resolved on 2026-07-28 (#211):** `pyside6-scintilla`
+5.6.3.7 now requires `PySide6-Essentials` alone, and `rehuco-agent` and `borco-pyside` both name `PySide6-Essentials`
+instead of the meta-package. The Windows MSI went from **215 MB to 80.6 MB** and its bundle from 699 MB to 264 MB; the
+macOS `.app` went from **818 MB to 327 MB**. Two
+traps found in the doing: the agent's floor was `pyside6-scintilla>=1.4.0`, a version that **never existed** — so every
+real release satisfied it, including the six that pull the meta-package — and uninstalling `PySide6-Addons` from an
+existing environment *breaks* `PySide6-Essentials`, because the two wheels share files in one `PySide6/` directory
+(`uv sync --reinstall-package pyside6-essentials` repairs it; a fresh venv never sees it). The upstream half of the fix is
+[borco/pyside6-scintilla#14](https://github.com/borco/pyside6-scintilla/issues/14), released as 5.6.3.7. The AppImage
+(#210) therefore inherits the smaller payload instead of baking the old one in, which is what made this worth doing
+first rather than treating the artifact size as fixed.
 
 ## §16.9 Auto-update
 

@@ -23,14 +23,17 @@ dependencies = [
     "rehuco-core",
     "borco-core",
     "borco-pyside",
-    "PySide6>=6.9",
+    # Essentials, not the `PySide6` meta-package -- see the note in borco-pyside's pyproject.toml.
+    "PySide6-Essentials>=6.9",
     "pyside6-qtads>=5.0.0",
     "cbor2>=6.1.3",
     "python-dateutil>=2.9.0",
     "humanize>=4.16.0",
     "unidecode>=1.4.0",
     "pathvalidate>=3.3.1",
-    "pyside6-scintilla>=1.4.0",
+    # >=5.6.3.7 is the floor that keeps Addons out: earlier releases require the `PySide6`
+    # meta-package, so an older resolve would drag Addons back in through this one dependency.
+    "pyside6-scintilla>=5.6.3.7",
     "markdown>=3.7",
     "mistletoe>=1.4.0",
     "pillow",

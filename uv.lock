@@ -101,7 +101,7 @@ name = "borco-pyside"
 source = { editable = "packages/borco-pyside" }
 dependencies = [
     { name = "colorama" },
-    { name = "pyside6" },
+    { name = "pyside6-essentials" },
     { name = "pyside6-qtads" },
 ]
 
@@ -113,7 +113,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
-    { name = "pyside6", specifier = ">=6.9" },
+    { name = "pyside6-essentials", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0" },
 ]
 
@@ -785,39 +785,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pyside6"
-version = "6.11.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyside6-addons" },
-    { name = "pyside6-essentials" },
-    { name = "shiboken6" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/da/a6/27ba5947ed48918f7b74b7c43a1e280aac069e36f25adeb4c9adfac835c4/pyside6-6.11.1-cp310-abi3-macosx_13_0_universal2.whl", hash = "sha256:537682c3b7530817203e667c1f5a2f00486b37bf52c52eeab438544c7a0917f6", size = 571921, upload-time = "2026-05-13T09:47:36.402Z" },
-    { url = "https://files.pythonhosted.org/packages/d8/de/af89d71410c83b10654d86ff9aff2a4f87c30163658f1cc145242e222526/pyside6-6.11.1-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:b1fc521ba2bb5109425ab8add06bddbdd524abcad06cfa012cc39a22a189feb2", size = 572102, upload-time = "2026-05-13T09:47:38.249Z" },
-    { url = "https://files.pythonhosted.org/packages/b6/0e/d583bd3f7bf5046a4497b36f3902cfb64aa29554489a5a25c18e6b4ac0ac/pyside6-6.11.1-cp310-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:75f0005c3eb95c07cfb65522ec50d0815ac007a96482c21dc3cb4b4c04895d84", size = 572098, upload-time = "2026-05-13T09:47:39.44Z" },
-    { url = "https://files.pythonhosted.org/packages/57/f2/d9d8ce1373dabb37e5919f63cd18446556079631d3f2eea3ada03c29f6b8/pyside6-6.11.1-cp310-abi3-win_amd64.whl", hash = "sha256:0968877ab1fb4ef3587a284da6fe05e8647ada56a6a3750b6395188e01f4aba6", size = 578377, upload-time = "2026-05-13T09:47:40.76Z" },
-    { url = "https://files.pythonhosted.org/packages/96/02/a6057d8bd2bdb1940820fff2d627fdf4013148c9c57adf69fa40d3452ac3/pyside6-6.11.1-cp310-abi3-win_arm64.whl", hash = "sha256:acee467cb5f256cc47ebb9d815a054c1d8416da380c191b247a76d164aa3f805", size = 561765, upload-time = "2026-05-13T09:47:41.9Z" },
-]
-
-[[package]]
-name = "pyside6-addons"
-version = "6.11.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pyside6-essentials" },
-    { name = "shiboken6" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/6b/8bc94aff48b63f788f2d84e5467c12362d68906ba742c0942f46cb04c879/pyside6_addons-6.11.1-cp310-abi3-macosx_13_0_universal2.whl", hash = "sha256:54733c77f789bef5f03c6aff4ad3bec8b2eff021f0cfcbc53d5e6c250ded24f9", size = 331714589, upload-time = "2026-05-13T09:39:12.36Z" },
-    { url = "https://files.pythonhosted.org/packages/dd/62/fb1428a523b2a4541e232aab50d9e789e6b4526f37fd9593452a7ea5b6b3/pyside6_addons-6.11.1-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:8e6c65fbd73a512d6f72cda8d8277444a85a34dc99dd1dae9c21d35b8671bb1f", size = 175063224, upload-time = "2026-05-13T09:39:34.185Z" },
-    { url = "https://files.pythonhosted.org/packages/ee/9b/2ccd52f66db55c06de65d0501170a1935d04d64d0a230c0d892284a02ce3/pyside6_addons-6.11.1-cp310-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:bf1c6c4e954e5eba3d2a7c661ad4b9689e8f09c7f4a16bdf29713371d11af993", size = 170553429, upload-time = "2026-05-13T09:39:54.424Z" },
-    { url = "https://files.pythonhosted.org/packages/9a/bd/8adc4d350b3b363f3dfc8fccdcf5bfed25f7e36c2fff30c64e106f4f1572/pyside6_addons-6.11.1-cp310-abi3-win_amd64.whl", hash = "sha256:0d13c4dfd671b050a48e4f8d8ddc724b7248f9c0437e7fc47fdf316278572923", size = 168816308, upload-time = "2026-05-13T09:40:13.541Z" },
-    { url = "https://files.pythonhosted.org/packages/65/b7/9a840d97f0f0f04e372a87e205dd30ee285b4e3b021b188459a917c9dc76/pyside6_addons-6.11.1-cp310-abi3-win_arm64.whl", hash = "sha256:3494f480dee92f415be2f2d989c0b3f4755ac332b28045cbf4ba0f5c5a22ba37", size = 35759347, upload-time = "2026-05-13T09:40:21.199Z" },
-]
-
-[[package]]
 name = "pyside6-essentials"
 version = "6.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -852,17 +819,18 @@ wheels = [
 
 [[package]]
 name = "pyside6-scintilla"
-version = "5.6.3.4"
+version = "5.6.3.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pyside6" },
+    { name = "pyside6-essentials" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/99/e9/29087dae57efb8773246c18edf8f56b26e601d4e10698a249cad36261571/pyside6_scintilla-5.6.3.4.tar.gz", hash = "sha256:c126e06f897838f09732b7a737a05a85aa9d457502b2dbe82b4e309a2fbb58e9", size = 2298951, upload-time = "2026-06-27T17:39:47.355Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a7/c1/6a7b1a2a214d4fa718424743d50fa55b150aff446baae7365b3b76c0d62d/pyside6_scintilla-5.6.3.7.tar.gz", hash = "sha256:1e29e06e2039378a3f9bd502505f6f0ab20f12ab8e5f2c919786a5d81cf30211", size = 2301156, upload-time = "2026-07-28T11:01:45.15Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/80/4ef2c57b2bb0de796879e0d1bf0c41f6ac9329af32a87e92a5c61844fae0/pyside6_scintilla-5.6.3.4-cp314-cp314-macosx_13_0_arm64.whl", hash = "sha256:19b0f3b1275853b888436e882715614d40dc951b680882f33614a2d28c209aa8", size = 2807573, upload-time = "2026-06-27T17:39:41.076Z" },
-    { url = "https://files.pythonhosted.org/packages/9f/83/0144cd827de9a414a50cd3316caa871122941e7f97dbba2ac6e3e14865ca/pyside6_scintilla-5.6.3.4-cp314-cp314-macosx_13_0_x86_64.whl", hash = "sha256:697365e09314f49b8b08c5fc6e71a32b09f29dd60d2716f5d23de21585659a62", size = 2862942, upload-time = "2026-06-27T17:39:42.576Z" },
-    { url = "https://files.pythonhosted.org/packages/e2/f4/e472fbc92d1a6e6498704cb22c25fcf83fefac23d284d004f1a7bc182eae/pyside6_scintilla-5.6.3.4-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:0d6d7b9d5abaf4e853b684722895c74529133ff8937513eea86fd07720bfcc4a", size = 1441923, upload-time = "2026-06-27T17:39:44.3Z" },
-    { url = "https://files.pythonhosted.org/packages/0f/e5/7fda83497df7b928b37cf8e386360b1f33998735045fd8bb09f07718aa40/pyside6_scintilla-5.6.3.4-cp314-cp314-win_amd64.whl", hash = "sha256:001c77bfbfd6f66f489afdaab507fff30c39dcc263b9cdf5c65cbd60b5aaf9fd", size = 1449530, upload-time = "2026-06-27T17:39:45.899Z" },
+    { url = "https://files.pythonhosted.org/packages/20/1e/449b29a531687a8aeeb121054a3d69ff36143fc395ac6b530474bf490653/pyside6_scintilla-5.6.3.7-cp311-abi3-macosx_13_0_arm64.whl", hash = "sha256:856d9f7d67e3795934bac111e75ca242189300eb6cec49eb88fbe98340846b16", size = 2782076, upload-time = "2026-07-28T11:01:37.167Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/11/5c50a90517cf0a8e5f2ec450e54ad1b416f75284a9d127a7e1e73172eb57/pyside6_scintilla-5.6.3.7-cp311-abi3-macosx_13_0_x86_64.whl", hash = "sha256:52c72012f8cc99f2e774a07dd3771502408775350f35a397093135c9a2bc52e2", size = 2836523, upload-time = "2026-07-28T11:01:39.204Z" },
+    { url = "https://files.pythonhosted.org/packages/39/59/bf5a394bfb5ac640d844fe07180de479727d222f995d325b664ce55dae82/pyside6_scintilla-5.6.3.7-cp311-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:a99dc97d15ddac3cc2502209bb3bc6f4c0712b99f2526559aa07b09af9904f4b", size = 1422804, upload-time = "2026-07-28T11:01:40.528Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/20/42512f6c9ffde689691ae5e6e03ca0a5365e42d6fd349bc1f7fec9f377ea/pyside6_scintilla-5.6.3.7-cp311-abi3-manylinux_2_38_aarch64.manylinux_2_39_aarch64.whl", hash = "sha256:0fe5ae9c760a678b2aae24e4bb31e699f021f2d013ab0d6e10dcab3334799eeb", size = 1348136, upload-time = "2026-07-28T11:01:41.841Z" },
+    { url = "https://files.pythonhosted.org/packages/de/98/f77f4bf8e74c9331d857b707d71ed556c4435498b83397c34713c7e63e5c/pyside6_scintilla-5.6.3.7-cp311-abi3-win_amd64.whl", hash = "sha256:8c15893362b1608d9dc26983477e327359a9a90b560e693be6076493fcc9f3c7", size = 1412228, upload-time = "2026-07-28T11:01:43.544Z" },
 ]
 
 [[package]]
@@ -1021,7 +989,7 @@ dependencies = [
     { name = "mistletoe" },
     { name = "pathvalidate" },
     { name = "pillow" },
-    { name = "pyside6" },
+    { name = "pyside6-essentials" },
     { name = "pyside6-qtads" },
     { name = "pyside6-scintilla" },
     { name = "python-dateutil" },
@@ -1039,9 +1007,9 @@ requires-dist = [
     { name = "mistletoe", specifier = ">=1.4.0" },
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pillow" },
-    { name = "pyside6", specifier = ">=6.9" },
+    { name = "pyside6-essentials", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0" },
-    { name = "pyside6-scintilla", specifier = ">=1.4.0" },
+    { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
     { name = "unidecode", specifier = ">=1.4.0" },
