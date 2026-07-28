@@ -32,6 +32,12 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # The site's favicon and logo are generated, not committed -- mkdocs-material resolves them
+      # relative to docs_dir and cannot read design/icons/, so they are copied in. Two `cp`s; the
+      # rest of `make icons` needs ImageMagick and is not wanted here.
+      - name: Generate the docs favicon and logo
+        run: make docs-icons
+
       - name: Configure git
         run: |
           git config --global user.name "github-actions[bot]"

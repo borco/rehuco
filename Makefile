@@ -1,4 +1,4 @@
-.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-serve docs-build publish setup-git \
+.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build publish setup-git \
 	uis qrcs icons agent-dev-build agent-dev-clean agent-dev-register agent-dev-unregister \
 	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean
 
@@ -55,6 +55,11 @@ uis: qrcs $(UI_FILES)
 qrcs: $(QRC_FILES)
 
 icons: $(ICON_FILES) $(DOCS_ICONS) $(INSTALLER_IMAGES)
+
+# The docs site's half of `icons`, on its own: two `cp`s and nothing else. Split out so a docs build
+# can depend on it without dragging in ImageMagick, which the rest of `icons` needs for the .ico and
+# the WiX bitmaps but the site does not ([[packaging-deployment#design-resources]]).
+docs-icons: $(DOCS_ICONS)
 
 %_ui.py: %.ui
 	uv run pyside6-uic $< --absolute-imports --python-paths "$(PYTHON_PATHS)" -o $@
@@ -147,14 +152,18 @@ check-slugs:
 
 qa: format check-slugs cov bandit pyright pylint
 
-docs-serve:
+# Both docs targets depend on docs-icons because the favicon and logo are generated, not committed:
+# mkdocs-material resolves theme.favicon/theme.logo relative to docs_dir and cannot read outside it,
+# so the design masters have to be copied in first. A bare `uv run mkdocs serve` on a fresh checkout
+# will render without them until this has run once.
+docs-serve: docs-icons
 	uv run mkdocs serve
 
 # --strict, so a broken internal link or a page missing from the nav fails instead of warning: both
 # are invisible in `docs-serve` (which happily renders an unreachable page) and only show up once
 # the site is published. Deliberately not part of `qa` -- mkdocs-puml renders diagrams through a
 # PlantUML server, so a cold cache makes this need the network, which `qa` must not.
-docs-build:
+docs-build: docs-icons
 	uv run mkdocs build --strict
 
 publish:

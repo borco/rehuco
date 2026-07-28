@@ -10,6 +10,11 @@
 *.icns
 # WiX installer chrome, derived from the same master (make icons)
 *.bmp
+# the docs site's favicon/logo -- copies of design/icons, made by `make docs-icons`, which
+# docs-build and docs-serve depend on. Named individually rather than *.svg, so a hand-authored
+# image can still be committed alongside them.
+docs/assets/images/favicon.svg
+docs/assets/images/logo.svg
 
 # Python
 __pycache__/
