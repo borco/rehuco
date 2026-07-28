@@ -488,18 +488,23 @@ consumer can reach `design/icons/`, and copy only where it cannot**:
   `design/icons/rehuco-agent.ico` in place; it is embedded into the exe's PE resources for the
   Explorer / taskbar / pin icon. No copy.
 - **Docs site.** mkdocs-material resolves `theme.favicon` / `theme.logo` **relative to `docs_dir`
-  and cannot read outside it**, so this is the one consumer that needs copies: `make icons` copies
+  and cannot read outside it**, so this is the one consumer that needs copies: `make docs-icons` copies
   `favicon.svg` → `docs/assets/images/favicon.svg` and `rehuco-agent.svg` →
   `docs/assets/images/logo.svg` (each a real make target, so it re-copies only when the source is
-  newer).
+  newer). Both copies are **generated and gitignored**, like every other derived asset here, so
+  `docs-build` and `docs-serve` depend on `docs-icons` and the publish workflow runs it before
+  deploying. The consequence to know: a bare `uv run mkdocs serve` on a fresh checkout renders
+  without them until `make` has produced them once.
 
 **Workflows that touch these assets:**
 
 - **`make icons`** — builds `rehuco-agent.ico` by **downscaling the 1024-px PNG master** to
   `16,24,32,48,64,128,256` (reliable; rasterizing the SVG via ImageMagick is not — the naive
-  per-SVG `.ico` pitfall is [[appendices.windows-dev-launcher#create-too-many-icons]]), then fan-out copies the docs
-  favicon/logo. The `.ico` is
-  generated, hence gitignored.
+  per-SVG `.ico` pitfall is [[appendices.windows-dev-launcher#create-too-many-icons]]), builds the
+  macOS `.icns` and the WiX installer bitmaps, and fans out the docs favicon/logo. **Everything it
+  produces is generated, hence gitignored** — `.ico`, `.icns`, `.bmp` and the two docs copies alike.
+- **`make docs-icons`** — the docs half of the above on its own: two `cp`s, no ImageMagick. Split out
+  so `docs-build`/`docs-serve` can depend on it without requiring a toolchain the site never needs.
 - **`make qrcs`** — `pyside6-rcc` compiles each `.qrc` into `<name>_rc.py`, embedding the aliased
   svg. It **no longer depends on `make icons`**: the qrc embeds only the svg (referenced from
   `design/icons/`), not the `.ico`, so a resource rebuild needs no ImageMagick.
