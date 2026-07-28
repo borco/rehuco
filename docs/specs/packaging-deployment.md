@@ -320,6 +320,9 @@ overlap and what it costs are in [[appendices.briefcase-packaging#windows]].
 
 - [x] [#207: decision: Linux distribution format for rehuco-agent — system packages (.deb/.rpm), AppImage, Flatpak
   and/or Snap](https://github.com/borco/rehuco/issues/207)
+- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+- [x] [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
+  Linux](https://github.com/borco/rehuco/issues/208)
 
 The question was *which package format*, and the answer is **neither a distro package nor a sandbox**: Linux ships
 `uv tool install` for anyone with uv, and a **single-file AppImage** for everyone else. Every reason Windows and macOS
@@ -388,6 +391,24 @@ has. Three things are specific to Linux rather than copied: `Exec=` comes from `
 "registered, but launching a different location" is separated from "registered, but out of date", because for an
 AppImage the first is the ordinary case and re-registering is the fix. Inside Flatpak or Snap it refuses and says so:
 the XDG directories are the package's, and a false "Registered." would be worse than an honest no.
+
+**What the AppImage and the release workflow now are (#210, #208).** The recipe and the local build
+(`make agent-appimage-build`) are detailed in [[appendices.briefcase-packaging#linux-backends]] — the
+short version is that it's built and its `--register`/`--info`/`--version`/`--unregister` all verified
+end to end, including `Exec=` resolving to the AppImage's own moved/renamed path exactly as designed.
+`--info` (print whether registered, and where) and `--version` were added to the CLI alongside this —
+plain flags rather than argparse's own exiting `action="version"`, so `rehuco-agent --info --register`
+reports the prior state and then acts, on one command line, and so a packaged build has a fast headless
+way to prove its interpreter and entry point work at all (`__main__.py`). `.github/workflows/release-agent.yml`
+builds all three platforms — the Windows MSI and macOS `.app`/`.dmg` via the existing `make agent-dist-package`
+(no new build logic, since Briefcase already produces both) alongside the AppImage — smoke-checks each with
+`--version` (and the AppImage additionally under `QT_QPA_PLATFORM=offscreen` in a bare `ubuntu:24.04`
+container, over a package floor found to be *larger* than qa.yml's own proven set —
+[[appendices.continuous-integration#release-agent]]), and attaches all three to a GitHub Release. It triggers on a `rehuco-agent-X.Y.Z` tag
+push — the one package with installers, tagged under the same `<package>-<version>` scheme #18 (PyPI
+publishing) already settled for the other four, so one tag push fires both workflows rather than the
+monorepo needing a second, repo-wide release concept. `workflow_dispatch` is the dry run: every build job
+still runs, nothing gets published. #18's OIDC/PyPI publishing itself stays a separate, unbuilt workflow.
 
 **Two things this decision corrects, both verified rather than argued:**
 
