@@ -10,10 +10,56 @@ from typing import Final
 
 import pytest
 from pytest_mock import MockerFixture
+from rehuco_agent import __version__
 from rehuco_agent.__main__ import main
 
 FAKE_ARGV0: Final = "/fake/rehuco-agent-dev"
 """No ``.exe``/drive-letter shape -- argv[0] isn't a Windows executable on this path."""
+
+
+def test_version_flag_prints_and_returns_without_launching_gui(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--version`` is a plain flag, not argparse's own ``action="version"`` -- it must combine with
+    ``--info``/``--register``/``--unregister`` on one command line rather than exiting from inside
+    ``parse_args()`` (see ``__main__``'s comment on the parser setup). This is also the smoke check
+    the release workflow runs against each packaged artifact
+    ([[appendices.continuous-integration#release-agent]]).
+
+    **Test steps:**
+
+    * force a non-registration platform (macOS) so the check is the shared final fallback, not either
+      platform-specific branch
+    * set ``sys.argv`` to argv[0] plus ``--version``
+    * mock ``run`` and verify ``main()`` returns ``0``, prints the version, and never reaches ``run()``
+    """
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--version"])
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 0
+    assert __version__ in capsys.readouterr().out
+    run.assert_not_called()
+
+
+def test_info_flag_on_macos_reports_no_runtime_state(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` on macOS has nothing to query -- registration there is the app bundle's own
+    declaration, with no ``--register`` equivalent (:data:`REGISTRATION_PLATFORMS`).
+
+    **Test steps:**
+
+    * force ``sys.platform`` to ``darwin``, set ``sys.argv`` to argv[0] plus ``--info``
+    * mock ``run`` and verify ``main()`` returns ``0`` without launching the GUI
+    """
+    monkeypatch.setattr("sys.platform", "darwin")
+    monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "--info"])
+    run = mocker.patch("rehuco_agent.app.run", return_value=0)
+
+    assert main() == 0
+    assert "no runtime state to query" in capsys.readouterr().out
+    run.assert_not_called()
 
 
 def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:

@@ -61,6 +61,72 @@ def test_unregister_calls_linux_registration(monkeypatch: pytest.MonkeyPatch, mo
     unregister.assert_called_once_with()
 
 
+def test_info_reports_the_installed_desktop_entrys_exec_value(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` reads the installed desktop entry, not ``exe_path`` -- the AppImage the user is
+    running right now may not be the one that's actually registered, which is the ordinary state
+    there rather than an edge case ([[packaging-deployment#linux-format]]).
+
+    **Test steps:**
+
+    * force ``sys.platform`` to Linux and set ``sys.argv`` to ``--info``
+    * mock ``registered_command`` to report an installed ``Exec=`` value
+    * verify ``main()`` returns ``0`` and printed that value, without consulting ``executable_path``
+    """
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.argv", [FAKE_SHIM, "--info"])
+    executable_path = mocker.patch(f"{MODULE}.executable_path")
+    mocker.patch(f"{MODULE}.registered_command", return_value=f'"{FAKE_APPIMAGE}" %F')
+
+    assert main() == 0
+    assert str(FAKE_APPIMAGE) in capsys.readouterr().out
+    executable_path.assert_not_called()
+
+
+def test_info_reports_not_registered(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info`` with nothing installed prints a plain "not registered", the same on every OS.
+
+    **Test steps:**
+
+    * force ``sys.platform`` to Linux and set ``sys.argv`` to ``--info``
+    * mock ``registered_command`` to report nothing installed
+    * verify ``main()`` returns ``0`` and printed "not registered"
+    """
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.argv", [FAKE_SHIM, "--info"])
+    mocker.patch(f"{MODULE}.registered_command", return_value=None)
+
+    assert main() == 0
+    assert "not registered" in capsys.readouterr().out
+
+
+def test_info_reports_before_register_acts(
+    monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--info --register`` on one command line: the printed state is the state *before*
+    registering, then registration happens -- matching how the flags read left to right, regardless
+    of the order they were typed in.
+
+    **Test steps:**
+
+    * set ``sys.argv`` to ``--info --register``, with nothing registered yet
+    * verify ``main()`` returns ``0``, printed "not registered", and then called ``register``
+    """
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.argv", [FAKE_SHIM, "--info", "--register"])
+    mocker.patch(f"{MODULE}.registered_command", return_value=None)
+    mocker.patch(f"{MODULE}.executable_path", return_value=Path(FAKE_SHIM))
+    mocker.patch(f"{MODULE}.registration_blocker", return_value=None)
+    register = mocker.patch(f"{MODULE}.register")
+
+    assert main() == 0
+    assert "not registered" in capsys.readouterr().out
+    register.assert_called_once_with(Path(FAKE_SHIM))
+
+
 def test_register_refuses_and_explains_when_blocked(
     monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
 ) -> None:

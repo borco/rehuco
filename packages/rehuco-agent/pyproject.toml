@@ -54,6 +54,19 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 path = "src/rehuco_agent/__init__.py"
 
+# hatchling's default file selection follows VCS tracking, so the gitignored *_ui.py/*_rc.py
+# pyside6-uic/-rcc generate (`make uis`) are silently dropped from both the sdist and the wheel --
+# confirmed with `uv build --package rehuco-agent` producing a wheel with no *_ui.py/*_rc.py at all,
+# which ImportErrors on main_rc the first time anything reads a Qt resource. Briefcase never hit this
+# (it copies src/rehuco_agent verbatim, no wheel build) and neither did a plain `uv sync` (editable
+# install, no file-selection step) -- python-appimage's real `pip install <path>` is what surfaced it
+# ([[packaging-deployment#linux-format]]). `artifacts` force-includes matching gitignored files.
+[tool.hatch.build]
+artifacts = [
+    "*_ui.py",
+    "*_rc.py",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rehuco_agent"]
 

@@ -1,0 +1,211 @@
+name: Release agent
+
+# Tag-triggered, not a repo-wide release: only rehuco-agent has installers, so this fires on its own
+# per-package tag (`<package>-<version>`, the scheme #18 already settled for PyPI publishing) rather
+# than on a repo-wide concept the monorepo has no other use for. Pushing rehuco-agent-X.Y.Z also
+# matches #18's generic `*-X.Y.Z` publish-packages.yml trigger, so one tag fires both workflows.
+#
+# workflow_dispatch is the dry run: every build job still runs and uploads its artifact, but the
+# `release` job's `if: startsWith(github.ref, 'refs/tags/')` keeps a manual run from ever creating or
+# touching a GitHub Release ([[appendices.continuous-integration#release-agent]]).
+on:
+  push:
+    tags:
+      - "rehuco-agent-*.*.*"
+  workflow_dispatch:
+
+# Least-privilege default; only the `release` job needs contents: write, and declares it itself.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # No `uv sync` here: rehuco_agent/__init__.py is just the version constant, nothing to import.
+  # Reading it directly is what #208 asks for -- the version comes from the package, never hand-typed.
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the package version, and verify it against the tag
+        id: version
+        run: |
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' packages/rehuco-agent/src/rehuco_agent/__init__.py)
+          if [ -z "$version" ]; then
+            echo "could not read __version__ from packages/rehuco-agent/src/rehuco_agent/__init__.py" >&2
+            exit 1
+          fi
+          echo "package version: $version"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag_version="${GITHUB_REF_NAME#rehuco-agent-}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "tag $GITHUB_REF_NAME (version $tag_version) does not match the package version $version" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # make agent-dist-package already depends on uis/icons via the Makefile's own graph
+  # ([[appendices.briefcase-packaging#build-and-iterate]]) -- so build-windows/build-macos below need
+  # no separate `make uis`/`make icons` step, just the same per-OS system packages qa.yml already
+  # installs for those targets.
+  build-windows:
+    name: Windows installer
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+
+      # windows-latest ships ImageMagick but not GNU Make; see qa.yml.
+      - name: Install make
+        run: choco install make --no-progress -y
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build the Windows installer
+        run: make agent-dist-package
+
+      # The built exe, not the installed one -- Briefcase's stub binary IS Rehuco.exe
+      # ([[appendices.briefcase-packaging#windows]]), no MSI install needed to smoke-check it.
+      - name: Smoke check -- the built exe starts and reports its version
+        run: ./packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rehuco-agent-windows-${{ needs.version.outputs.version }}
+          path: packages/rehuco-agent/dist/Rehuco-*.msi
+
+  build-macos:
+    name: macOS app
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+
+      # The runner image pre-taps aws/tap; see qa.yml for why it's dropped first.
+      - name: Install ImageMagick
+        run: |
+          brew untap aws/tap 2>/dev/null || true
+          brew install imagemagick
+
+      - name: Install dependencies
+        run: uv sync
+
+      # --adhoc-sign: signing/notarization is deliberately unfiled
+      # ([[appendices.open-questions#still-open]]) -- an unsigned build triggers Gatekeeper on first
+      # launch, a known and accepted cost, not a regression this workflow introduces.
+      - name: Build the macOS app
+        run: make agent-dist-package BRIEFCASE_ARGS=--adhoc-sign
+
+      # NOTE: CFBundleExecutable is assumed to match formal_name (Rehuco), same as the Windows exe --
+      # unverified on real hardware from this session (no macOS available); first real run confirms it.
+      - name: Smoke check -- the built app starts and reports its version
+        run: ./packages/rehuco-agent/build/rehuco-agent/macos/app/Rehuco.app/Contents/MacOS/Rehuco --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rehuco-agent-macos-${{ needs.version.outputs.version }}
+          path: packages/rehuco-agent/dist/Rehuco-*.dmg
+
+  build-linux-appimage:
+    name: Linux AppImage
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+
+      # Same set qa.yml installs for `make uis`/the test suite's headless Qt import
+      # ([[appendices.continuous-integration#missing-qt-libs]]) -- pyside6-uic needs QtGui loadable
+      # even without a QApplication.
+      - name: Install Linux system dependencies (ImageMagick, Qt runtime libs)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick libgl1 libegl1 libxkbcommon0
+          command -v magick || sudo ln -s "$(command -v convert)" /usr/local/bin/magick
+
+      - name: Install dependencies
+        run: uv sync --group appimage
+
+      - name: Build the AppImage
+        run: make agent-appimage-build
+
+      - name: Smoke check -- --version
+        run: ./.dist/appimage/rehuco-agent-x86_64.AppImage --appimage-extract-and-run --version
+
+      # The issue's real acceptance criterion: does PySide6 actually start under
+      # QT_QPA_PLATFORM=offscreen on a system carrying nothing but the proven headless-Qt baseline --
+      # not just this workflow's own already-primed ubuntu-latest runner.
+      - name: Smoke check -- starts under QT_QPA_PLATFORM=offscreen in a bare container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}/ci:/ci:ro" \
+            -v "${{ github.workspace }}/.dist/appimage/rehuco-agent-x86_64.AppImage:/artifact/rehuco-agent-x86_64.AppImage:ro" \
+            ubuntu:24.04 \
+            bash /ci/verify-agent-appimage.sh
+
+      # --register/--unregister exercise #209's Exec=$APPIMAGE resolution for real, the one thing
+      # unique to this distribution channel ([[packaging-deployment#linux-format]] point 5).
+      - name: Smoke check -- --register/--unregister
+        run: |
+          export HOME="$RUNNER_TEMP/appimage-home"
+          mkdir -p "$HOME"
+          appimage="$(readlink -f .dist/appimage/rehuco-agent-x86_64.AppImage)"
+          "$appimage" --appimage-extract-and-run --register
+          grep -qF "$appimage" "$HOME/.local/share/applications/io.github.borco.rehuco-agent.desktop"
+          "$appimage" --appimage-extract-and-run --unregister
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rehuco-agent-linux-${{ needs.version.outputs.version }}
+          path: .dist/appimage/rehuco-agent-x86_64.AppImage
+
+  # Skipped entirely on a workflow_dispatch dry run: the three build jobs above still run and upload
+  # their artifacts, so a maintainer can download and try them, but nothing gets published.
+  release:
+    name: Publish GitHub Release
+    needs: [version, build-windows, build-macos, build-linux-appimage]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # Idempotent: re-running the same tag updates the existing release's assets (--clobber) instead
+      # of failing on "already exists" -- the re-run-safety #208 asks for.
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" artifacts/* --repo "$GITHUB_REPOSITORY" \
+              --title "rehuco-agent ${{ needs.version.outputs.version }}"
+          fi

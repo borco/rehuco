@@ -175,3 +175,56 @@ tagged with `flags: ${{ matrix.flag }}` so Codecov keeps the three OS coverage n
 separate instead of blending them. It runs with `fail_ci_if_error: false` deliberately: this is
 new, unverified plumbing, and an upload hiccup on a reporting side-channel shouldn't fail the whole
 QA gate — worth revisiting once it's proven reliable across a few runs.
+
+## 9. `release-agent.yml`: tag-triggered, not `qa.yml`'s push+PR shape
+
+[[[appendices.continuous-integration#release-agent]]]
+
+- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+- [x] [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
+  Linux](https://github.com/borco/rehuco/issues/208)
+
+Separate workflow, separate trigger, deliberately: `qa.yml` runs on every push/PR because it is cheap
+(minutes) and gates merges; building three installers plus a Linux AppImage is neither — each downloads a
+Python support package or a manylinux runtime and pip-installs the whole Qt stack into it, minutes per
+platform. Building that on every push would make ordinary development wait on release-artifact
+compilation. `release-agent.yml` triggers on a `rehuco-agent-X.Y.Z` tag push (`<package>-<version>`, #18's
+already-decided per-package scheme, applied here to the one package with installers) plus
+`workflow_dispatch` for a dry run — the same shape `pyside6-scintilla`'s own `publish.yml` uses
+(`release: types: [published]` + `workflow_dispatch`), adapted to a tag rather than a GitHub Release event
+since this repo cuts the Release itself as the workflow's last step, not before it starts.
+
+**Four jobs:** `version` reads `__version__` straight from `rehuco_agent/__init__.py` (#208's "don't
+hand-type it" requirement) and, on a tag push, fails the whole run if the tag's version doesn't match the
+file's — the one guard rail keeping a stray tag from shipping the wrong artifact. `build-windows` and
+`build-macos` are each one `make agent-dist-package` call (uis/icons already come along via the Makefile's
+own prerequisite graph, [[appendices.briefcase-packaging#build-and-iterate]]) plus a `--version` smoke
+check against the *built* exe/app bundle, no installer step needed to prove it starts.
+`build-linux-appimage` is `make agent-appimage-build` plus three smoke checks: `--version` first (cheap,
+but proves only that the interpreter and entry point start — it returns before `rehuco_agent.app` is ever
+imported, so it says nothing about Qt), then the AppImage under `QT_QPA_PLATFORM=offscreen
+--appimage-extract-and-run` inside a bare `ubuntu:24.04` Docker container via `ci/verify-agent-appimage.sh`
+— the real acceptance criterion from #210, verified locally against a real build (both the failures and
+the eventual pass) before ever reaching CI. **The bare-container package floor turned out larger than
+qa.yml's own set**: `libgl1 libegl1 libxkbcommon0` ([[appendices.continuous-integration#missing-qt-libs]])
+is sufficient on `ubuntu-latest` only because that runner's much larger preinstalled image already carries
+`libglib2.0-0`/`libfontconfig1`/`libdbus-1-3`/`libgssapi-krb5-2` as some other package's transitive
+dependency; a genuinely bare `ubuntu:24.04` container does not, and each was missing one `ImportError` at a
+time (QtCore itself, then QtGui twice over, then `pyside6-qtads`) until all seven were listed. Then
+`--register`/`--unregister` with `HOME` redirected to a scratch directory, confirming `Exec=` resolves to
+the AppImage's own path per #209's design. All three upload their
+artifact regardless of trigger; only the final `release` job (`needs` all four, `if:
+startsWith(github.ref, 'refs/tags/')`) is skipped on a `workflow_dispatch` dry run, so a manual run proves
+every build without ever touching a GitHub Release. That job is idempotent by construction — `gh release
+view` decides between `gh release create` and `gh release upload --clobber`, so re-running the same tag
+updates the release's assets instead of failing on "already exists" (#208's re-run requirement).
+
+**Two things found only by actually running the build**, not by reading python-appimage's source: naming
+the recipe's desktop file `entrypoint.desktop` collided with the glob python-appimage uses for the
+*shell-script* half of the recipe (`entrypoint.*`), silently bundling the desktop file as `AppRun` instead
+of the real entry point — fixed by naming it `rehuco-agent.desktop` instead, any name being fine as long as
+it isn't that one. And hatchling's default VCS-based file selection was dropping `rehuco-agent`'s gitignored
+`*_ui.py`/`*_rc.py` from every wheel build — latent in the PyPI-publishable package all along, invisible
+until something actually built a wheel from source rather than copying files (Briefcase) or installing
+editable (`uv sync`); the AppImage recipe's real `pip install <path>` was the first thing to do that.
+Both are detailed in [[appendices.briefcase-packaging#linux-backends]].
