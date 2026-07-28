@@ -3,9 +3,10 @@
 from types import SimpleNamespace
 from typing import Final
 
-from PySide6.QtGui import QFileOpenEvent
+from PySide6.QtGui import QFileOpenEvent, QGuiApplication
 from pytest_mock import MockerFixture
 from rehuco_agent.app import Application, run
+from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
 
@@ -123,6 +124,28 @@ def test_run_opens_initial_paths_and_execs(mocker: MockerFixture) -> None:
     app_instance.open_path.assert_any_call("a.rehu")
     app_instance.open_path.assert_any_call("b.rehu")
     assert result == 42
+
+
+def test_run_declares_the_desktop_file_name(mocker: MockerFixture) -> None:
+    """``run`` names this process's desktop entry, which is what gives its windows an identity on
+    Linux -- the Wayland ``app_id`` and X11 ``StartupWMClass`` (#209).
+
+    Asserted against Qt's own state rather than a mocked setter: ``QGuiApplication``'s statics are
+    C++-backed and not patchable, and the value is process-global and idempotent anyway.
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton`` so no real Qt objects are involved
+    * call ``run``
+    * verify Qt now reports the desktop file id `linux_registration` registers under
+    """
+    mocker.patch("rehuco_agent.app.Application")
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton_cls.return_value.setup.return_value = False
+
+    run(["rehuco-agent"])
+
+    assert QGuiApplication.desktopFileName() == DESKTOP_FILE_NAME
 
 
 def test_run_wires_forwarded_opens(mocker: MockerFixture) -> None:

@@ -1,66 +1,76 @@
-"""CLI entry point: ``rehuco-agent [--register|--unregister] [paths...]`` (register/unregister: Windows only)."""
+"""CLI entry point: ``rehuco-agent [--register|--unregister] [paths...]`` (register/unregister: Windows and Linux)."""
 
 import argparse
 import ctypes
 import sys
 from pathlib import Path
+from typing import Final
 
 from rehuco_agent.archives import ARCHIVE_EXTENSIONS
 
+REGISTRATION_PLATFORMS: Final = ("win32", "linux")
+"""Platforms whose parser defines ``--register``/``--unregister``.
+
+macOS is absent on purpose: there the association is the app bundle's own declaration, with no
+per-user registration to write ([[packaging-deployment#app-identity]])."""
+
 
 def main() -> int:
-    """Register/unregister the Windows file association and context menus, or launch the GUI.
+    """Register/unregister this app as the ``.rehu`` handler, or launch the GUI.
 
-    ``--register``/``--unregister`` are Windows-only and not offered at all on other
-    platforms: the argument parser only defines them when ``sys.platform == "win32"``, so
-    ``rehuco-agent --register`` on macOS/Linux fails with argparse's own "unrecognized
-    arguments" rather than a custom runtime message -- there is nothing for it to do there
-    ([[packaging-deployment#app-identity]] is explicitly OS-specific; only the Windows half is built so far, issue #1).
-    ``rehuco_agent.windows_registration`` (which owns rehuco's own identity constants and the
-    register/unregister/is_registered orchestration, shared with the settings dialog's Registry
-    page, #47) is imported lazily, only once inside that Windows-only branch: it imports
+    ``--register``/``--unregister`` are defined only on the platforms that have something to
+    register (:data:`REGISTRATION_PLATFORMS`), so ``rehuco-agent --register`` on macOS fails with
+    argparse's own "unrecognized arguments" rather than a custom runtime message. Each platform's
+    flags drive its own module -- ``rehuco_agent.windows_registration`` (HKCU file association plus
+    the folder/archive shell verbs, #43) or ``rehuco_agent.linux_registration`` (the XDG desktop
+    entry, MIME package and icon, #209) -- and both are the same modules the settings dialog's
+    System Integration page uses, so the CLI and the GUI can never drift apart.
+
+    The Windows module is imported lazily, only inside its own platform branch: it imports
     ``borco_core.platforms.windows.*``, which do ``import winreg`` at module scope, so an
-    unconditional top-level import here would break this entry point on every other platform. The
-    folder/folder-background shell verbs and the archive-file shell verb (#43) both open the
-    resource's own ``.rehu`` if it exists, or start a new one if it doesn't
-    (``DocumentsDock.open_folder``/``DocumentsDock.open_archive``).
+    unconditional top-level import would break this entry point everywhere else. The Linux module
+    needs no such gate (it is ``pathlib``/``subprocess`` underneath), but is imported the same way
+    so that a plain GUI launch never pays for it.
 
-    Both flags register/unregister *this running exe* (``sys.argv[0]``), not a hardcoded
-    guess -- so the same code path works whether invoked as the real packaged
-    ``rehuco-agent.exe`` console-script entry point or as ``packages/rehuco-agent/launcher``'s
-    dev-only trampoline exe (which forwards argv here in-process, see launcher.c). Both also
-    refuse to run if ``sys.argv[0]`` isn't a real ``.exe`` -- invoking via
-    ``python -m rehuco_agent`` makes argv[0] the ``__main__.py`` source path, and while
-    ``unregister`` doesn't actually need the exe path, treating both flags identically avoids
-    a confusing "register refuses this but unregister silently accepts it" asymmetry.
+    Both flags act on *this running executable*, not a hardcoded guess -- so the same code path
+    works whether invoked as the real packaged ``rehuco-agent.exe`` console-script entry point, as
+    ``packages/rehuco-agent/launcher``'s dev-only trampoline exe (which forwards argv here
+    in-process, see launcher.c), as the ``uv tool install`` shim, or from inside an AppImage (where
+    the path comes from ``$APPIMAGE`` rather than ``sys.argv[0]``, see
+    ``linux_registration.executable_path``). Both also refuse to run when that path isn't something
+    the OS could launch -- ``python -m rehuco_agent`` makes argv[0] the ``__main__.py`` source path
+    -- and while ``unregister`` doesn't actually need the path, treating both flags identically
+    avoids a confusing "register refuses this but unregister silently accepts it" asymmetry.
 
     AUMID is set as the very first statement in the GUI-launch branch, before any
     ``QApplication`` or window exists -- Windows binds it to the process's first top-level HWND
     at creation time, so setting it later has no effect (carried from the file-association
-    spike, issue #1).
+    spike, issue #1). Its Linux counterpart, the desktop file name, is set in
+    ``rehuco_agent.app.run`` instead: unlike the AUMID it is a plain Qt call with no ``ctypes``
+    behind it, so it belongs beside the ``QApplication`` it names.
 
     :returns: process exit code.
     """
     exe_path = Path(sys.argv[0]).resolve()
 
     parser = argparse.ArgumentParser(prog="rehuco-agent")
-    if sys.platform == "win32":
+    if sys.platform in REGISTRATION_PLATFORMS:
         group = parser.add_mutually_exclusive_group()
         group.add_argument(
             "--register",
             action="store_true",
-            help="register the .rehu file association and folder/archive context menus",
+            help="register this app as the .rehu/.tc handler (Windows: plus the folder/archive context menus)",
         )
         group.add_argument(
             "--unregister",
             action="store_true",
-            help="remove the .rehu file association and folder/archive context menus",
+            help="remove this app's .rehu/.tc handler registration (Windows: plus the context menus)",
         )
     parser.add_argument("paths", nargs="*", help=".rehu files, resource directories, or archives to open")
     args = parser.parse_args()
 
-    # args.register/args.unregister don't exist at all on non-Windows (the parser never
-    # defined them above), so all Windows-only behavior nests under one platform check.
+    # args.register/args.unregister don't exist at all off REGISTRATION_PLATFORMS (the parser never
+    # defined them above), so every reference to them nests under one of the platform checks below.
     if sys.platform == "win32":
         # pylint: disable-next=import-outside-toplevel
         from rehuco_agent import windows_registration
@@ -87,9 +97,29 @@ def main() -> int:
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(windows_registration.AUMID)
 
+    # A separate `if`, not an `elif`: with the win32 block above excluded from coverage off Windows,
+    # an elif chain would take this branch out of the report along with it.
+    if sys.platform == "linux" and (args.register or args.unregister):
+        # pylint: disable-next=import-outside-toplevel
+        from rehuco_agent import linux_registration
+
+        # not exe_path: inside an AppImage the launched file is $APPIMAGE, and sys.argv[0] points
+        # into a temporary mount that is gone by the time anyone double-clicks the entry
+        target = linux_registration.executable_path()
+        blocker = linux_registration.registration_blocker(target)
+        if blocker is not None:
+            print(blocker, file=sys.stderr)
+            return 1
+        if args.register:
+            linux_registration.register(target)
+        else:
+            linux_registration.unregister()
+        return 0
+
     # Imported here, not at module scope: rehuco_agent.app pulls in PySide6, QtAds, borco_pyside and
     # the compiled Qt resources, which costs ~1s of process startup. The --register/--unregister
-    # branch above returns before this point and needs none of it -- and it is what the Windows
+    # branches above return before this point and need none of it (Linux's icon read reaches
+    # PySide6.QtCore/QtGui for the qrc, but never the dock shell) -- and on Windows it is what the
     # installer runs from a post-install script, where that second is a console window the user
     # watches ([[appendices.briefcase-packaging#windows]]).
     # pylint: disable-next=import-outside-toplevel

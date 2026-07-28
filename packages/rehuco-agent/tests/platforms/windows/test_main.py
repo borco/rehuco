@@ -161,21 +161,21 @@ def test_unregister_calls_file_association(monkeypatch: pytest.MonkeyPatch, mock
 
 
 @mark.windows
-def test_register_not_offered_on_non_windows(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
-    """``--register``/``--unregister`` aren't defined on the parser at all on non-Windows.
+def test_register_not_offered_on_macos(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
+    """``--register``/``--unregister`` aren't defined on the parser at all on macOS.
 
-    The parser only adds these flags when ``sys.platform == "win32"``, so elsewhere argparse
-    itself rejects ``--register`` as an unrecognized argument (exits via ``SystemExit``)
-    rather than this code making a runtime platform check.
+    The parser only adds these flags on the platforms with something to register (Windows and
+    Linux, #209), so on macOS argparse itself rejects ``--register`` as an unrecognized argument
+    (exits via ``SystemExit``) rather than this code making a runtime platform check.
 
     **Test steps:**
 
-    * force ``sys.platform`` to a non-Windows value
+    * force ``sys.platform`` to macOS
     * set ``sys.argv`` to ``--register``
     * verify ``main()`` raises ``SystemExit`` (argparse's own unrecognized-argument exit)
       without ever importing ``FileAssociation``
     """
-    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("sys.argv", [FAKE_EXE, "--register"])
     register = mocker.patch(FILE_ASSOCIATION_REGISTER)
 

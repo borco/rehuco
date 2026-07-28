@@ -286,11 +286,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Register every settings category page this platform supports (#47).
 
         Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
-        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76). The System
-        Integration page is top-level and Windows-only (it wraps
-        ``winreg``-backed HKCU registration) -- imported lazily, only here, mirroring the same gate
+        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76).
+
+        The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
+        wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
+        wrapping the XDG desktop entry / MIME type / icon (#209), and macOS neither -- there the
+        association comes from the app bundle itself ([[packaging-deployment#app-identity]]). Both
+        are imported lazily, only here: the Windows one *must* be, mirroring the gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
-        it wraps) already requires.
+        it wraps) already requires, and the Linux one follows for symmetry. Two separate ``if``s
+        rather than an ``if``/``elif`` chain: coverage excludes the whole construct when its first
+        guard line is excluded off Windows, which would silently drop the Linux branch from the
+        report there.
         """
         self.__settings_dialog.add_page(IdentityPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
@@ -300,6 +307,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from .settings.ui.registry_page import RegistryPage
 
             self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
+
+        if sys.platform == "linux":
+            # pylint: disable-next=import-outside-toplevel
+            from .settings.ui.desktop_integration_page import DesktopIntegrationPage
+
+            self.__settings_dialog.add_page(DesktopIntegrationPage())
 
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")

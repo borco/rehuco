@@ -19,11 +19,12 @@ FAKE_ARGV0: Final = "/fake/rehuco-agent-dev"
 def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
     """With no register/unregister flags, a non-Windows platform skips the whole win32 block.
 
-    Distinct from ``test_register_not_offered_on_non_windows`` (in the Windows-only test file):
+    Distinct from ``test_register_not_offered_on_macos`` (in the Windows-only test file):
     that one exercises argparse's own rejection of ``--register`` before the platform check is
     ever reached. This one has no flags at all, so parsing succeeds and
     ``if sys.platform == "win32":`` is actually evaluated and takes its ``False`` branch
-    straight to ``run()``.
+    straight to ``run()``. macOS, not Linux, so it stays about the win32 block alone -- the Linux
+    branch has its own file, ``tests/platforms/linux/test_main.py`` (#209).
 
     **Test steps:**
 
@@ -32,7 +33,7 @@ def test_paths_only_skips_windows_block_on_non_windows(monkeypatch: pytest.Monke
     * mock ``run`` and ``ctypes.windll`` (absent on non-Windows -- patched with ``create=True``)
     * verify ``run`` was called and the AUMID call was not (it's inside the win32 block)
     """
-    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setattr("sys.platform", "darwin")
     monkeypatch.setattr("sys.argv", [FAKE_ARGV0, "a.rehu"])
     # ctypes.windll does not exist off Windows; patch the whole attribute (its parent ctypes does
     # exist, so create=True can add it) rather than the deep shell32.<fn> path, whose intermediate
