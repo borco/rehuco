@@ -114,10 +114,14 @@ $(INSTALLER_DIR)/banner.bmp: $(ICON_DIR)/rehuco-agent.png
 
 # The docs site can't read outside docs_dir, so copy favicon + logo in. Real file targets give
 # the newer-than behaviour for free: make re-copies only when the design/icons source changed.
+# mkdir -p because these two are the only things in that directory and both are gitignored, so a
+# fresh checkout does not have it -- git tracks files, not directories.
 $(DOCS_IMAGES)/favicon.svg: $(ICON_DIR)/favicon.svg
+	mkdir -p $(@D)
 	cp $< $@
 
 $(DOCS_IMAGES)/logo.svg: $(ICON_DIR)/rehuco-agent.svg
+	mkdir -p $(@D)
 	cp $< $@
 
 setup-git:
