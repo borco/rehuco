@@ -281,6 +281,13 @@ A block that **was made active this session and then abandoned** (the user switc
 blocks (both kinds) remain **resurrectable from memory until the file is closed**, so switching type back and forth
 within a session is non-destructive until save.
 
+One thing a switch *does* write, deliberately: the newly-active block is **normalized on activation**, the same
+normalization the block a document opens at receives — a JSON `null` under a known optional scalar is dropped, since
+`null` is the on-disk spelling of absent and the active block must never carry one into a save
+([[field-schema#deferred-items]]). Normalizing earlier would edit payload the document has no standing over — activation
+is what gives it that standing, so the normalization attaches to the same moment as the claim. Nothing readable changes:
+the key read as `None` before and reads as `None` after, and revert re-reads the file.
+
 Worked example (type starts at `audiopack`, file also contains an untouched `reference_images` block):
 
 1. Switch to `tutorial`: `audiopack` hidden + kept in memory but **dropped on save** (former active type, abandoned);

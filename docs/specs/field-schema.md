@@ -818,7 +818,8 @@ migrated v1 file included. The §17.7 fixtures are shown in exactly this order; 
 - **`null` is accepted on read, never written** ([[field-schema#deferred-items]]): JSON `null` reads as `None`/absent,
   but setting a field to `None` **omits the key** rather than writing `null` — so a value that normalizes to `None` on
   load (an absent optional scalar, an emptied `hidden_images`) is simply gone from the next save, and no `.rehu` this
-  build writes ever contains `null`.
+  build writes ever contains `null`. A block made active *mid-session* is normalized on the switch rather than on load,
+  so this holds of every block a document writes, not only the one it opened at ([[plugins#plugin-blocks]]).
 
 Which blocks are written at all — the block persistence invariant, an inactive block dropped only once its type was
 claimed then abandoned this session — is decided by `RehuDocument` and passed in, so this layer stays a pure function of

@@ -1039,6 +1039,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         otherwise non-destructive -- the previously-active block is left in :attr:`data`, inactive and
         resurrectable, until the file closes, so switching back and forth is lossless until save.
 
+        The newly-active block **is normalized on the way in** (:meth:`__normalize_active_block_scalars`,
+        #167), exactly as construction normalizes the block a document opens at: a JSON ``null`` under a
+        known optional scalar is dropped, so the active block never carries one into a
+        :meth:`serialize` that forbids writing it ([[field-schema#deferred-items]]). This is a deliberate
+        write into payload that was foreign a line earlier, and it is the same act as the claim above --
+        activation is what gives this document standing over a block, so both the claim and the
+        normalization attach to it. Nothing readable is lost either way, because ``null`` *is* absent
+        under that mapping; what a later switch-back finds is a block missing a key that read as
+        ``None`` before, which is the shape a save would have left anyway. Revert
+        (:meth:`reload`) re-reads the file, so a dropped ``null`` returns whenever it is still on disk.
+
         The requested type is normalized to its plugin's declared main key
         (:meth:`~rehuco_core.plugins.PluginRegistry.main_key`), the same rewrite construction applies to a
         type read from disk (:meth:`__normalize`), so ``type`` and its block key stay one token and an
@@ -1060,6 +1071,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__core_or_create()["type"] = main_key
         if main_key:
             self.__claimed_keys.add(main_key)
+            self.__normalize_active_block_scalars()
 
     def __seed_initial_claim(self) -> None:
         """Claim the type the document opened at, at construction ([[plugins#plugin-blocks]]).
@@ -1443,6 +1455,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Drop a JSON ``null`` stored under any known optional scalar, in place, at construction
         ([[field-schema#deferred-items]]).
 
+        The whole-document pass: ``core`` plus whichever block is active at construction. A block that
+        becomes active *later* gets the block-scoped half on the switch itself
+        (:meth:`__normalize_active_block_scalars`), so the contract below holds of every block this
+        document ever writes, not only the one it opened at (#167).
+
         The absent-on-disk ↔ ``None``-in-code mapping's read half: ``null`` is *accepted* on disk but **is**
         the in-memory ``None``, and ``None`` is never written -- so a loaded ``null`` normalizes to absent
         here, matching what a cleared scalar leaves and letting :meth:`save` round-trip a ``null`` file to
@@ -1453,6 +1470,19 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         core = self.__data.get(CORE_BLOCK_KEY)
         if isinstance(core, dict):
             self.__drop_null_keys(core, (*OPTIONAL_INT_CORE_KEYS, *OPTIONAL_STR_CORE_KEYS))
+        self.__normalize_active_block_scalars()
+
+    def __normalize_active_block_scalars(self) -> None:
+        """Drop a JSON ``null`` stored under any known optional scalar of the **active** block, in place
+        -- the block-scoped half of :meth:`__normalize_optional_scalars`, run again by
+        :meth:`set_active_type` on whichever block a switch just made active (#167).
+
+        A block only earns this while it *is* the active one: an inactive block or another user's submap
+        is foreign payload, carried verbatim ([[plugins#plugin-blocks]], [[field-schema#per-user-shared]]).
+        Which is why the switch is where it re-runs -- normalizing a block ahead of its activation would
+        edit payload this document has no standing over, and normalizing it never would let the file the
+        switch saves carry a ``null`` the "``None`` is never written" contract forbids.
+        """
         block = self.__stored_active_block()
         if isinstance(block, dict):
             self.__drop_null_keys(block, OPTIONAL_INT_BLOCK_KEYS)
