@@ -21,6 +21,8 @@ for what's in progress.
 goes: a desktop editor for the `.rehu` sidecar that describes one resource. Tested on Windows, macOS,
 and Linux.
 
+![The rehuco-agent editor: fields on the left, rendered viewer on the right](https://raw.githubusercontent.com/borco/rehuco/master/docs/assets/images/rehuco-agent.png)
+
 - **Single-instance launcher** — double-click a `.rehu` file to open it in the running instance
 - **Viewer and editor** — common fields, a Markdown description, and the resource's screenshots as a
   thumbnail strip with a click-to-maximize lightbox

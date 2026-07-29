@@ -30,6 +30,8 @@ describes, one per resource. That's the whole storage model, and the name is its
 **[How it works](docs/specs/how-it-works.md)** is one page on the whole system as it stands: the file,
 the rules that keep it trustworthy, the app's panels, and what isn't built.
 
+![The rehuco-agent editor: fields on the left, rendered viewer on the right](docs/assets/images/rehuco-agent.png)
+
 ## What it does
 
 - **Edits a resource's details.** Open a `.rehu` from the file manager or from the app: title,
