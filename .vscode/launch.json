@@ -19,6 +19,18 @@
             "console": "integratedTerminal",
         },
         {
+            "name": "rehuco-agent (remote)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/packages/rehuco-agent/src/rehuco_agent/__main__.py",
+            "console": "integratedTerminal",
+            "env": {
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "WAYLAND_DISPLAY": "wayland-0",
+                "QT_QPA_PLATFORM": "wayland",
+            }
+        },
+        {
             "name": "windows | rehuco-agent-dev-launcher",
             "type": "cppvsdbg",
             "request": "launch",
