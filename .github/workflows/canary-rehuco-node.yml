@@ -2,6 +2,11 @@ name: "canary: rehuco-node glibc (manylinux2014 aarch64)"
 
 on:
   push:
+    # A `push` trigger that names only `paths` matches tag pushes too, and a tag is a new ref with no
+    # previous state to diff against -- so the path filter excludes nothing and this ran on every
+    # release tag, emulating aarch64 for a check that has nothing to do with releasing. qa.yml and
+    # publish-docs.yml escape it by naming `branches`, which is what excludes tags there.
+    tags-ignore: ["**"]
     paths:
       - ci/canary-rehuco-node.sh
       - .github/workflows/canary-rehuco-node.yml
