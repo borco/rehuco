@@ -8,12 +8,12 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
-from PySide6.QtWidgets import QDialog, QMainWindow, QMessageBox, QWidget
+from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
 from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, RehuDocument, RehuFormatError, load_tc
 
-from ..dialogs.unsaved_changes_dialog import UnsavedChangesDialog
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
+from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
 from .document_widget import DocumentWidget
 from .rehu_document_model import RehuDocumentModel
@@ -149,7 +149,7 @@ class DocumentsDock(QMainWindow):
 
     def close_all(self) -> None:
         """Close every open document at once, via the same batch confirmation as the whole-app
-        close guard (:class:`~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog`,
+        close guard (:func:`~rehuco_agent.documents.confirm_and_save_dirty.confirm_and_save_dirty`,
         #96) -- not the sequential per-document guard :meth:`__close_dock` uses for a single tab's
         own close button.
 
@@ -168,20 +168,15 @@ class DocumentsDock(QMainWindow):
             else:
                 self.__remove_dock(dock)
 
-        if not dirty_models:
+        # A refusal -- the dialog cancelled, or a checked document's save failed (an offline mount,
+        # [[mounts-and-storage#offline-mounts]]) and its retry/cancel dialog cancelled (#146) -- aborts
+        # the batch close before any dock is removed, so no document -- saved, unsaved, or
+        # unchecked-and-about-to-be-discarded -- is closed out from under a failed save. Every dirty
+        # dock stays open for the user to resolve. With no dirty document there is nothing to confirm
+        # and nothing left to remove either: the loop below runs over an already-empty mapping.
+        if not confirm_and_save_dirty(self, dirty_models):
             return
 
-        dialog = UnsavedChangesDialog(dirty_models, self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        # A checked document whose save fails (an offline mount, [[mounts-and-storage#offline-mounts]])
-        # raises a retry/cancel dialog (#146); cancelling it aborts the batch close before any dock is
-        # removed, so no document -- saved, unsaved, or unchecked-and-about-to-be-discarded -- is closed
-        # out from under a failed save. Every dirty dock stays open for the user to resolve.
-        for model in dialog.selected_models():
-            if not save_or_prompt_retry(self, model):
-                return
         for dock in list(self.__document_docks):
             self.__remove_dock(dock)
 
@@ -420,7 +415,8 @@ class DocumentsDock(QMainWindow):
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.
 
         Geometry (size/position) is not yet restored across runs -- deferred to #38. Unlike
-        :class:`UnsavedChangesDialog`, that's simple here: the static ``QMessageBox.warning()`` call
+        :class:`~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog`, that's simple
+        here: the static ``QMessageBox.warning()`` call
         already blocks until the box closes for any reason (a button, Escape, or the titlebar close
         button), so reading geometry right after it returns would cover every exit path -- no need
         for a `QDialog.done()`-style single hook.

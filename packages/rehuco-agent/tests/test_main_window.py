@@ -7,7 +7,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
@@ -23,6 +23,10 @@ from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+
+UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
+"""Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
+through (#176), not this module, so that is where these tests patch it."""
 
 
 @fixture(autouse=True)
@@ -54,7 +58,7 @@ def discard_unsaved_changes_on_close(mocker: MockerFixture) -> Any:
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = []
-    return mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    return mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
 
 
 @fixture
@@ -720,7 +724,7 @@ def test_save_all_action_saves_only_dirty_open_documents(mocker: MockerFixture, 
     qtbot.addWidget(window)
     dirty, clean = mocker.MagicMock(dirty=True), mocker.MagicMock(dirty=False)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty, clean])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
+    mocker.patch(UNSAVED_CHANGES_DIALOG)
 
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
@@ -744,7 +748,7 @@ def test_save_all_shows_a_critical_dialog_when_a_save_fails(mocker: MockerFixtur
     dirty = mocker.MagicMock(dirty=True, label="doc.rehu")
     dirty.save.side_effect = OSError("offline mount")
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
+    mocker.patch(UNSAVED_CHANGES_DIALOG)
     critical = mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
 
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -1050,7 +1054,7 @@ def test_close_event_accepts_immediately_with_no_dirty_documents(mocker: MockerF
     qtbot.addWidget(window)
     clean_model = mocker.MagicMock(dirty=False)
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[clean_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_class = mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog")
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG)
     event = QCloseEvent()
 
     window.closeEvent(event)
@@ -1076,7 +1080,7 @@ def test_close_event_saves_selected_documents_when_accepted(mocker: MockerFixtur
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [kept]
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
     event = QCloseEvent()
 
     window.closeEvent(event)
@@ -1102,7 +1106,7 @@ def test_close_event_ignores_the_close_when_dialog_is_cancelled(mocker: MockerFi
     mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Rejected
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
     event = QCloseEvent()
 
     window.closeEvent(event)
@@ -1141,7 +1145,7 @@ def test_close_event_still_persists_when_a_failing_save_is_retried(mocker: Mocke
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [model]
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
     mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Retry)
     save = mocker.patch.object(MainWindowSettings, "save")
     event = QCloseEvent()
@@ -1173,7 +1177,7 @@ def test_close_event_is_aborted_when_a_failing_save_is_cancelled(mocker: MockerF
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [model]
-    mocker.patch("rehuco_agent.main_window.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
     mocker.patch.object(QMessageBox, "critical", return_value=QMessageBox.StandardButton.Cancel)
     save = mocker.patch.object(MainWindowSettings, "save")
     event = QCloseEvent()
