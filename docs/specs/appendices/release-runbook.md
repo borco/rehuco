@@ -189,8 +189,17 @@ of the dependencies, so it has to be the primary index with real PyPI behind it:
 ```sh
 uv run --no-project --with rehuco-core==X.Y.Z \
   --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
+  --index-strategy unsafe-best-match \
   python -c "import rehuco_core"
 ```
+
+`--index-strategy unsafe-best-match` is not optional here, and the reason is worth knowing before it bites:
+by default uv considers only the versions on the *first* index that carries a package at all, so that a
+lower-priority index cannot answer for a name the primary one owns. Every package in this workspace exists on
+real PyPI already, at an older version, so the default lookup finds the name there, fails to find the version
+being tested, and stops -- `A compatible version may be available on a subsequent index`. The flag widens the
+search to both indexes. Its name is a fair warning in general, but this is a throwaway environment resolving
+one pinned version of a package published minutes earlier, which is the case it costs nothing in.
 
 ## 7. What a release does not include yet
 
