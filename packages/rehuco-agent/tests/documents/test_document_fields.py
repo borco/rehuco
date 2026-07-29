@@ -311,13 +311,33 @@ def test_a_reference_images_document_composes_no_duration_and_no_level() -> None
         assert present in names
 
 
+def test_a_reference_images_document_composes_images_count_as_an_int() -> None:
+    """``images_count`` renders on ReferenceImages, through the toolkit's plain ``int`` field
+    ([[field-schema#resource-types]], [[field-schema#field-types]], #196).
+
+    The type's one field of its own: declared on the view-model, coerced by core and round-tripped for
+    slices, while no `FieldSpec` named it -- so it appeared on neither surface. It maps to ``int``
+    rather than a bounded type because ``None`` must render empty and a genuine ``0`` must render
+    honestly, keeping an unscanned archive distinguishable from one holding no content images
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * compose the record fields for a ``reference_images`` document
+    * verify ``images_count`` is composed exactly once, as an ``int``
+    """
+    specs = [spec for spec in composed_field_specs(typed_model("reference_images")) if spec.name == "images_count"]
+
+    assert [spec.type for spec in specs] == ["int"]
+
+
 def test_a_tutorial_document_composes_no_images_count() -> None:
     """The other direction: a Tutorial does not compose the ReferenceImages-only ``images_count``
     ([[field-schema#resource-types]], #195).
 
-    Asserted over the whole declaration rather than the rendered rows, because ``images_count`` has no
-    toolkit type mapped to it yet (#196 surfaces it) -- this pins that when it gains one, it gains it on
-    ReferenceImages alone.
+    Asserted over the declaration as well as the composed names: #196 gave ``images_count`` its ``int``
+    field spec, and this pair of assertions is what pins that it gained it on
+    ReferenceImages alone rather than on the one shared list.
 
     **Test steps:**
 
