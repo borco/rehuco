@@ -238,10 +238,10 @@ Both are detailed in [[appendices.briefcase-packaging#linux-backends]].
 - [x] [#220: repo: delete make publish once publish-packages.yml has published for
   real](https://github.com/borco/rehuco/issues/220)
 
-The workflow this replaces was a two-line `make publish` target running `uv build --all-packages`
-followed by `uv publish` — which uploads *every* package whose local version is ahead of PyPI, from
-whatever a maintainer happened to have in their working tree, authenticated by a long-lived API token
-on that machine. One invocation could publish a package nobody meant to release, and a PyPI upload
+The workflow this replaces was a two-line `make publish` target that built every package in the
+workspace and uploaded each one whose local version was ahead of PyPI — from whatever a maintainer
+happened to have in their working tree, authenticated by a long-lived API token on that machine. One
+invocation could publish a package nobody meant to release, and a PyPI upload
 cannot be withdrawn. `publish-packages.yml` narrows all three: the tag names the single package, the
 tree is a clean checkout of the tagged commit, and the credential is a short-lived OIDC token minted
 per run. The target outlived the workflow by one release — it was the only way to publish anything
