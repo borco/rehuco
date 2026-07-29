@@ -264,6 +264,57 @@ def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture) -> None:
         load_tc(FAKE_PATH)
 
 
+def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture) -> None:
+    """A ``.tc`` is untrusted outside input, so a payload the parser cannot survive is **refused** rather
+    than escaping as whatever it raised ([[data-model#write-integrity]]).
+
+    An over-long integer literal trips CPython's integer-digit limit inside the ``int`` constructor the
+    YAML resolver calls, which raises a bare ``ValueError`` -- not the ``YAMLError`` one would expect
+    ``yaml.safe_load`` to be limited to. Left uncaught it surfaces as a crash in the agent instead of a
+    refused file, bypassing the locked-stub funnel that turns a bad file into a document.
+
+    Fed a real payload because that limit is a documented, platform-independent 4300 digits
+    (``sys.int_info.str_digits_check_threshold``) -- unlike the recursion case below.
+
+    Not a size defence -- the real sanity caps are #88.
+
+    **Test steps:**
+
+    * mock ``Path.read_text`` to return a number no ``int`` will accept
+    * verify it comes back as :class:`RehuFormatError`, chained from the ``ValueError``
+    """
+    mocker.patch.object(Path, "read_text", return_value="duration: " + "9" * 5000)
+
+    with pytest.raises(RehuFormatError) as exc_info:
+        load_tc(FAKE_PATH)
+
+    assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_load_refuses_a_payload_that_exhausts_the_parsers_stack(mocker: MockerFixture) -> None:
+    """A payload deep enough to exhaust the parser's stack is refused, not propagated as a
+    ``RecursionError`` ([[data-model#write-integrity]]).
+
+    **The error is injected rather than provoked with a deeply-nested payload, deliberately.** How deep
+    is "too deep" is a property of the *platform*, not of this code -- the threshold moves with the stack
+    the OS hands the interpreter, so a literal payload would assert one machine's limits. What this
+    module owes the caller is not "N levels raise" but "**whatever the parser raises, the file is
+    refused**", and that is what is checked here.
+
+    **Test steps:**
+
+    * make the parser raise ``RecursionError``, as an over-deep payload would on some platform
+    * verify it comes back as :class:`RehuFormatError`, chained from it
+    """
+    mocker.patch.object(Path, "read_text", return_value="title: Deep")
+    mocker.patch("rehuco_core.tc_document.yaml.safe_load", side_effect=RecursionError("maximum recursion depth"))
+
+    with pytest.raises(RehuFormatError) as exc_info:
+        load_tc(FAKE_PATH)
+
+    assert isinstance(exc_info.value.__cause__, RecursionError)
+
+
 def test_the_mapping_stamps_the_current_format_but_mints_no_resource_bookkeeping() -> None:
     """The mapped object is stamped with the current format, yet carries no ``id``/``created``/``updated``
     ([[acquisition-tooling#tc-to-rehu]], [[data-model#schema-version]]).
