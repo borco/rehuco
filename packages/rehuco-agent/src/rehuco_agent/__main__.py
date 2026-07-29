@@ -103,7 +103,9 @@ def main() -> int:
     # after printing the version and never reach --register. Combinable with each other and with
     # --register/--unregister on one command line; on their own they still print-and-exit rather than
     # falling through to a GUI launch (below). This is also the release workflow's per-platform smoke
-    # check for each packaged artifact ([[appendices.continuous-integration#release-agent]]).
+    # check for each packaged artifact ([[appendices.continuous-integration#release-agent]]) -- on Windows
+    # an exit-code check only, since a packaged GUI-subsystem build prints nowhere at all
+    # ([[appendices.release-runbook#windows-console]]).
     parser.add_argument("-v", "--version", action="store_true", help="print the app version")
     parser.add_argument(
         "-i",

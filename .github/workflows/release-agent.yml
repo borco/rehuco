@@ -79,7 +79,11 @@ jobs:
 
       # The built exe, not the installed one -- Briefcase's stub binary IS Rehuco.exe
       # ([[appendices.briefcase-packaging#windows]]), no MSI install needed to smoke-check it.
-      - name: Smoke check -- the built exe starts and reports its version
+      # Exit code only, deliberately: Rehuco.exe is a GUI-subsystem binary, so it prints nothing to a
+      # console, a pipe or a redirect ([[appendices.release-runbook#windows-console]]). A zero exit still
+      # proves the interpreter started, the entry point imported and argparse ran -- a broken bundle
+      # (failed import, missing *_ui.py) exits non-zero, and an unknown flag exits 2.
+      - name: Smoke check -- the built exe starts and parses its arguments
         run: ./packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe --version
 
       - uses: actions/upload-artifact@v7
@@ -191,13 +195,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Unlike the build jobs this one had nothing to check out until the release body came from the
+      # repository: tools/extract_changelog.py and the changelog itself both have to be present here.
+      - uses: actions/checkout@v7
+
       - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
 
+      # The body is the changelog's own section for this version, so the text ships from the repository
+      # rather than being typed at release time ([[appendices.release-runbook#release-notes]]). The step
+      # fails when that section is missing or empty, which is deliberate: a blank release body is
+      # indistinguishable from one nobody wrote, and is only noticed after publishing.
+      - name: Build the release notes from the changelog
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          python3 tools/extract_changelog.py \
+            packages/rehuco-agent/CHANGELOG.md "${{ needs.version.outputs.version }}" > notes.md
+          cat notes.md
+
       # Idempotent: re-running the same tag updates the existing release's assets (--clobber) instead
-      # of failing on "already exists" -- the re-run-safety #208 asks for.
+      # of failing on "already exists" -- the re-run-safety #208 asks for. The body is refreshed too, so
+      # correcting a changelog entry and re-running the tag actually updates what readers see.
       - name: Create or update the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -205,7 +226,9 @@ jobs:
           tag="$GITHUB_REF_NAME"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
           else
             gh release create "$tag" artifacts/* --repo "$GITHUB_REPOSITORY" \
-              --title "rehuco-agent ${{ needs.version.outputs.version }}"
+              --title "rehuco-agent ${{ needs.version.outputs.version }}" \
+              --notes-file notes.md
           fi
