@@ -10,6 +10,18 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-29
+
+The first release to reach PyPI, so `pip install rehuco-agent` and `uv tool install rehuco-agent` now get
+the application instead of the `0.0.1` name-reservation stub that had been sitting there. The application
+is byte-for-byte what `0.1.0` shipped — no fixes, no new behaviour, and the installers attached here are
+rebuilt from the same sources. What is new is the publishing path itself.
+
+### Changed
+
+- The PyPI project page now shows a screenshot of the editor, and describes the package's maturity
+  without naming a version series that goes stale at the next bump.
+
 ## [0.1.0] - 2026-07-29
 
 The first release built from this repository, and the first to ship a working application rather than a
