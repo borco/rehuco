@@ -41,6 +41,15 @@ OPTIONAL_STR_CORE_KEYS: Final = ("released",)
 """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
 non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
 
+INVALID_TYPE_MESSAGE: Final = (
+    "type: present but not a string -- the resource type names the active plugin block, so this "
+    "document reads as typeless ([[field-schema#resource-types]])"
+)
+"""The :attr:`~LockReasonKind.INVALID_FIELD` message for a present non-string ``core.type``. The most
+load-bearing core field there is: it selects the active block, seeds the session's claim set, and orders
+serialization, so a value the getter cannot read leaves *all three* wrong -- and unlike a malformed
+scalar, coercing it to a clean default (typeless) discards the one clue to what the file was."""
+
 INVALID_AUTHORS_MESSAGE: Final = (
     "authors: contains an entry this build cannot read -- each must be a name string or a "
     "{name, url} record ([[field-schema#authors]])"
@@ -109,10 +118,12 @@ def invalid_field_reasons(
     default back would quietly replace a malformed value the user may yet recover by hand. Each such
     field contributes one reason naming the key.
 
-    ``authors`` ([[field-schema#authors]], the seam #92 set up) and the optional scalars
-    ([[field-schema#deferred-items]]) are checked: ``authors``'s getter skips an entry that is neither a
+    ``type`` ([[field-schema#resource-types]]), ``authors`` ([[field-schema#authors]], the seam #92 set
+    up) and the optional scalars
+    ([[field-schema#deferred-items]]) are checked: a non-string ``type`` reads as *typeless*, so it
+    names no active block at all; ``authors``'s getter skips an entry that is neither a
     name string nor a ``{name, url}`` record, and a non-list value entirely; an optional scalar's getter
-    coerces a present-but-wrong-typed value to ``None`` (:func:`invalid_scalar_reasons`). Both are the
+    coerces a present-but-wrong-typed value to ``None`` (:func:`invalid_scalar_reasons`). All three are the
     "present but the getter had to coerce" condition. A merely *absent* scalar -- or a JSON ``null``,
     already normalized to absent at construction -- is a clean ``None`` and never locks. The
     ``format_version`` stamp deliberately never does (see
@@ -124,6 +135,8 @@ def invalid_field_reasons(
     :returns: the invalid-field reasons, in a stable order.
     """
     reasons: list[LockReason] = []
+    if "type" in core and not isinstance(core["type"], str):
+        reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_TYPE_MESSAGE))
     if "authors" in core:
         value = core["authors"]
         clean = isinstance(value, list) and all(isinstance(entry, str) or is_author_record(entry) for entry in value)

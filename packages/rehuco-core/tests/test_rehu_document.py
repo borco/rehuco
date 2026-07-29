@@ -2754,6 +2754,99 @@ def test_a_legacy_tc_document_locks_with_a_named_reason() -> None:
     assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.LEGACY_TC]
 
 
+MALFORMED_TYPES: Final = [
+    param(None, id="json-null"),
+    param(123, id="an-int"),
+    param(["tutorial"], id="a-list"),
+    param({"name": "tutorial"}, id="an-object"),
+    param(True, id="a-bool"),
+]
+"""Present ``core.type`` values that are not strings -- each read as typeless and locked (#164)."""
+
+
+def malformed_type_doc(resource_type: Any, path: Path | None = None) -> RehuDocument:
+    """Build a document whose ``core.type`` is ``resource_type``, beside a well-formed ``tutorial`` block
+    -- so a phantom active key would have a real block to be mistaken for.
+
+    :param resource_type: the raw on-disk ``type`` value.
+    :param path: the document's path, for the save tests; ``None`` for read-only checks.
+    :returns: the constructed document.
+    """
+    return RehuDocument({"core": {"type": resource_type}, "tutorial": {"format_version": 1}}, path)
+
+
+@mark.parametrize("resource_type", MALFORMED_TYPES)
+def test_a_present_non_string_type_reads_typeless_and_locks(resource_type: Any) -> None:
+    """A present ``core.type`` that is not a string reads as *typeless* rather than being stringified into
+    a type nothing on disk carries, and locks ``INVALID_FIELD`` ([[data-model#write-integrity]], #164).
+
+    ``str()`` used to make ``null`` the type ``"None"`` and ``123`` the type ``"123"``, each then naming an
+    active block key -- with no lock, while a malformed ``original_size`` beside it locked.
+
+    **Test steps:**
+
+    * construct a document whose ``core.type`` is present but not a string
+    * verify ``type`` and ``active_block_key`` are empty, and the active block is empty
+    * verify the sole lock reason is ``INVALID_FIELD`` and names ``type``
+    """
+    doc = malformed_type_doc(resource_type)
+    assert doc.type == ""
+    assert doc.active_block_key == ""
+    assert doc.active_block == {}
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert "type" in doc.lock_reasons[0].message
+
+
+@mark.parametrize("resource_type", MALFORMED_TYPES)
+def test_a_present_non_string_type_claims_no_block(resource_type: Any) -> None:
+    """A malformed type seeds **no** claim ([[plugins#plugin-blocks]], #164): the stringified reading used
+    to claim a phantom key like ``"None"``, which classified every real block foreign-and-carried while
+    recording a claim on a block that never existed.
+
+    **Test steps:**
+
+    * construct a document whose ``core.type`` is present but not a string
+    * verify nothing is claimed, and the real ``tutorial`` block classifies inactive and never-claimed
+    """
+    doc = malformed_type_doc(resource_type)
+    assert doc.claimed_block_keys == frozenset()
+    blocks = {block.key: block for block in doc.plugin_blocks()}
+    assert not blocks["tutorial"].active
+    assert not blocks["tutorial"].claimed
+
+
+@mark.parametrize("resource_type", MALFORMED_TYPES)
+def test_a_present_non_string_type_refuses_to_save(resource_type: Any, mocker: MockerFixture) -> None:
+    """The ``INVALID_FIELD`` lock makes ``save`` refuse, so the coerced typelessness never overwrites the
+    malformed-but-recoverable original ([[data-model#write-integrity]], #164).
+
+    **Test steps:**
+
+    * construct a document with a malformed ``core.type``, bound to a path
+    * mock ``atomic_write_text`` to prove it is never reached
+    * verify ``save`` raises and nothing was written
+    """
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc = malformed_type_doc(resource_type, FAKE_PATH)
+
+    with pytest.raises(ValueError, match="Refusing to save"):
+        doc.save()
+    write.assert_not_called()
+
+
+@mark.parametrize("core", [param({}, id="absent"), param({"type": ""}, id="empty-string")])
+def test_an_absent_or_empty_type_does_not_lock(core: dict[str, Any]) -> None:
+    """An absent -- or explicitly empty -- ``type`` is a genuinely typeless document, the state
+    :meth:`RehuDocument.new` starts in, and does **not** lock: only a *present non-string* does (#164).
+
+    **Test steps:**
+
+    * construct a document whose ``core`` has no ``type``, then one whose ``type`` is ``""``
+    * verify neither produces a lock reason
+    """
+    assert not RehuDocument({"core": core}).lock_reasons
+
+
 @mark.parametrize(
     "authors",
     [
