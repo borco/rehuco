@@ -877,8 +877,21 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def type(self) -> str:
-        """The resource type selector (``Tutorial`` / ``ReferenceImages`` / ``Collection``)."""
-        return str(self.core.get("type", ""))
+        """The resource type selector (``Tutorial`` / ``ReferenceImages`` / ``Collection``); empty when
+        the key is absent **or** present with a non-string value.
+
+        Read by type rather than stringified ([[data-model#write-integrity]]): ``str()`` would turn a JSON
+        ``null`` into the type ``"None"`` and a stray ``123`` into ``"123"``, each then naming an active
+        block key (:attr:`active_block_key`), seeding the session claim set (:meth:`__seed_initial_claim`)
+        and ordering serialization around a token no file ever carried. Reading such a value as *typeless*
+        instead matches what the raw-payload reader has always required
+        (:meth:`__raw_active_block_version`), and the document loads locked
+        (:attr:`~LockReasonKind.INVALID_FIELD`) so an edit cannot save that emptiness over the
+        malformed-but-recoverable original. An **empty string** is not malformed -- that is a genuinely
+        typeless document, the state :meth:`new` starts in.
+        """
+        resource_type = self.core.get("type")
+        return resource_type if isinstance(resource_type, str) else ""
 
     @property
     def plugins(self) -> PluginRegistry:
