@@ -368,9 +368,9 @@ class TcDocument:
         """Parse ``data[key]``: a plain int, or tc4's legacy human-readable string fallback
         (``Tutorial::durationFromYaml``).
 
-        :returns: the duration in seconds when the ``.tc`` carried the key (an explicit value imports, even
-            ``0``), or ``None`` when it was absent, so the caller omits it rather than fabricating a ``0``
-            ([[field-schema#deferred-items]], [[field-schema#ms-leak-history]]).
+        :returns: the duration in seconds when the ``.tc`` carried the key and it parsed (an explicit value
+            imports, even ``0``), or ``None`` when it was absent or unparseable, so the caller omits it rather
+            than fabricating a ``0`` ([[field-schema#deferred-items]], [[field-schema#ms-leak-history]]).
         """
         if key not in self.__data:
             return None
@@ -379,15 +379,16 @@ class TcDocument:
             return value
         return self.__parse_legacy_duration_string(value) if isinstance(value, str) else None
 
-    def __parse_legacy_duration_string(self, value: str) -> int:
+    def __parse_legacy_duration_string(self, value: str) -> int | None:
         """Parse a tc4 legacy duration string like ``"2h 15m"`` (``Tutorial::parsedDuration``).
 
         :param value: the human-readable duration string.
-        :returns: the total duration in seconds; an unrecognized token contributes ``0``.
+        :returns: the total duration in seconds of the recognized tokens, or ``None`` when no token was
+            recognized -- absent, same policy as :meth:`__parse_legacy_size_string`, not a fabricated ``0``.
         """
-        total = 0
+        total: int | None = None
         for token in value.split():
             suffix, magnitude = token[-1:], token[:-1]
             if suffix in self.__DURATION_UNIT_SECONDS and magnitude.isdigit():
-                total += int(magnitude) * self.__DURATION_UNIT_SECONDS[suffix]
+                total = (total or 0) + int(magnitude) * self.__DURATION_UNIT_SECONDS[suffix]
         return total

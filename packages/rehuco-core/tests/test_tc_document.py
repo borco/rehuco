@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -234,32 +235,41 @@ def test_empty_tc_maps_to_a_blank_default_document(mocker: MockerFixture) -> Non
     assert doc.active_block["collections"] == []
 
 
-def test_missing_or_unrecognized_type_defaults_to_tutorial(mocker: MockerFixture) -> None:
+@mark.parametrize(
+    "content",
+    [
+        param("title: No Type", id="no_type_key"),
+        param("type: SomethingElse\ntitle: Bad Type", id="unrecognized_type"),
+    ],
+)
+def test_missing_or_unrecognized_type_defaults_to_tutorial(mocker: MockerFixture, content: str) -> None:
     """A missing or unrecognized ``type`` defaults to ``Tutorial``, matching tc4's own lenient default.
 
     **Test steps:**
 
-    * load a ``.tc`` with no ``type`` key at all
-    * load a ``.tc`` with an unrecognized ``type`` value
-    * verify both default to the tutorial type rather than raising
+    * load a ``.tc`` with no ``type`` key at all, then one with an unrecognized ``type`` value
+    * verify each defaults to the tutorial type rather than raising
     """
-    assert load_tc_doc(mocker, "title: No Type").type == "tutorial"
-    assert load_tc_doc(mocker, "type: SomethingElse\ntitle: Bad Type").type == "tutorial"
+    assert load_tc_doc(mocker, content).type == "tutorial"
 
 
-def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture) -> None:
+@mark.parametrize(
+    "content",
+    [
+        param("tags: [unterminated", id="unparseable_yaml"),
+        param("just a string", id="non_mapping_top_level"),
+    ],
+)
+def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture, content: str) -> None:
     """Malformed YAML or a non-mapping top level raises ``RehuFormatError``, mirroring ``RehuDocument.load``.
 
     **Test steps:**
 
-    * load unparseable YAML (unterminated flow sequence) -> expect ``RehuFormatError``
-    * load a YAML scalar (not a mapping) -> expect ``RehuFormatError``
+    * load unparseable YAML (an unterminated flow sequence), then a YAML scalar (not a mapping)
+    * verify each raises :class:`RehuFormatError`
     """
-    mocker.patch.object(Path, "read_text", return_value="tags: [unterminated")
-    with pytest.raises(RehuFormatError):
-        load_tc(FAKE_PATH)
+    mocker.patch.object(Path, "read_text", return_value=content)
 
-    mocker.patch.object(Path, "read_text", return_value="just a string")
     with pytest.raises(RehuFormatError):
         load_tc(FAKE_PATH)
 
@@ -359,34 +369,60 @@ def test_legacy_size_and_duration_string_fallback() -> None:
     assert data["tutorial"]["original_duration"] == 2 * 3600 + 15 * 60
 
 
-def test_legacy_size_string_edge_cases() -> None:
+@mark.parametrize(
+    "value",
+    [
+        param("", id="blank"),
+        param("not-a-number GB", id="non_numeric_magnitude"),
+        param("5 XB", id="unrecognized_suffix"),
+        param("nan GB", id="nan"),
+        param("inf GB", id="inf"),
+        param("1e400 KB", id="overflows_to_inf"),
+    ],
+)
+def test_legacy_size_string_edge_cases(value: str) -> None:
     """A blank, non-numeric, or unrecognized-suffix size string is absent, not ``0``.
 
     **Test steps:**
 
-    * map ``.tc`` dicts with an empty string, a non-numeric magnitude, an unrecognized suffix, and the
+    * map a ``.tc`` dict with an empty string, a non-numeric magnitude, an unrecognized suffix, and the
       magnitudes ``float`` accepts but no real file size carries (``nan``, ``inf``, one overflowing to it)
-    * verify each is omitted from ``core`` rather than fabricated as ``0`` -- or crashing on ``int()``
+    * verify it is omitted from ``core`` rather than fabricated as ``0`` -- or crashing on ``int()``
       ([[field-schema#deferred-items]]), the same absent-not-zero policy as :meth:`__optional_int_field`
     """
-    assert "original_size" not in tc_to_rehu_data({"original_size": ""})["core"]
-    assert "original_size" not in tc_to_rehu_data({"original_size": "not-a-number GB"})["core"]
-    assert "original_size" not in tc_to_rehu_data({"original_size": "5 XB"})["core"]
-    assert "original_size" not in tc_to_rehu_data({"original_size": "nan GB"})["core"]
-    assert "original_size" not in tc_to_rehu_data({"original_size": "inf GB"})["core"]
-    assert "original_size" not in tc_to_rehu_data({"original_size": "1e400 KB"})["core"]
+    assert "original_size" not in tc_to_rehu_data({"original_size": value})["core"]
 
 
-def test_legacy_duration_string_edge_cases() -> None:
-    """An unrecognized token in a duration string contributes nothing to the total.
+@mark.parametrize(
+    ("value", "expected"),
+    [
+        param("1h junk", 3600, id="unrecognized_token_among_recognized"),
+        param("0h", 0, id="explicitly_zero"),
+        param("", None, id="blank"),
+        param("garbage words", None, id="all_unrecognized"),
+        param("90", None, id="unitless_number"),
+        param("5x", None, id="unrecognized_suffix"),
+    ],
+)
+def test_legacy_duration_string_edge_cases(value: str, expected: int | None) -> None:
+    """An unrecognized duration token adds nothing; an all-unrecognized string is absent, not ``0``.
 
     **Test steps:**
 
-    * map a ``.tc`` Tutorial dict whose ``duration`` mixes a recognized token with an unrecognized one
-    * verify only the recognized token's seconds are counted (``Tutorial::parsedDuration``)
+    * map a ``.tc`` Tutorial dict whose ``duration`` is a legacy string -- one mixing a recognized token
+      with an unrecognized one, an explicitly zero one, and ones no token of which is recognized (blank,
+      all-garbage, a bare number, an unknown suffix)
+    * verify only the recognized tokens' seconds are counted (``Tutorial::parsedDuration``), an explicit
+      ``0`` still imports, and a string that parsed nothing is omitted from the ``tutorial`` block rather
+      than fabricated as ``0`` ([[field-schema#deferred-items]]) -- the absent-not-zero policy the legacy
+      size string already follows
     """
-    data = tc_to_rehu_data({"type": "Tutorial", "duration": "1h junk"})
-    assert data["tutorial"]["original_duration"] == 3600
+    block = tc_to_rehu_data({"type": "Tutorial", "duration": value})["tutorial"]
+
+    if expected is None:
+        assert "original_duration" not in block
+    else:
+        assert block["original_duration"] == expected
 
 
 def test_tc_document_data_and_type_properties() -> None:
