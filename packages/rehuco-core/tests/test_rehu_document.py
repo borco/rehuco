@@ -12,6 +12,7 @@ from typing import Any, Final
 from uuid import UUID
 
 import pytest
+from freezegun import freeze_time
 from freezegun.api import FrozenDateTimeFactory
 from pytest import mark, param
 from pytest_mock import MockerFixture
@@ -490,6 +491,102 @@ def test_reload_rebases_the_updated_baseline(mocker: MockerFixture) -> None:
     doc.save()
 
     assert json.loads(mock_write.call_args[0][1])["core"]["updated"] == TUTORIAL["core"]["updated"]
+
+
+@freeze_time("2026-07-23T10:15:30Z")
+def test_a_new_documents_first_save_stamps_created_and_updated(mocker: MockerFixture) -> None:
+    """The first save of a document born in-app writes the record for the first time, so it stamps
+    ``created`` -- and, being a change, ``updated`` with the same moment
+    ([[field-schema#record-timestamps]], #168). No edit is needed: an untouched new document still
+    becomes a record the moment it is written.
+
+    **Test steps:**
+
+    * under frozen time, build a fresh document via ``new``, editing nothing
+    * save with the write mocked out
+    * verify both stamps are the frozen now, on disk and through the accessors
+    """
+    doc = RehuDocument.new(FAKE_PATH)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["created"] == "2026-07-23T10:15:30Z"
+    assert saved["core"]["updated"] == "2026-07-23T10:15:30Z"
+    assert doc.created == "2026-07-23T10:15:30Z"
+    assert doc.updated == "2026-07-23T10:15:30Z"
+
+
+def test_a_later_save_never_restamps_created(mocker: MockerFixture, freezer: FrozenDateTimeFactory) -> None:
+    """``created`` is minted once and then stands: a later edit refreshes ``updated`` alone, so the two
+    stamps diverge exactly as "first written" and "last edited" should (#168).
+
+    **Test steps:**
+
+    * freeze time, build a fresh document via ``new``, and save it -- both stamps take the frozen now
+    * move time forward, edit the title, and save again
+    * verify the second write keeps the original ``created`` while ``updated`` moved
+    """
+    freezer.move_to("2026-07-23T10:15:30Z")
+    doc = RehuDocument.new(FAKE_PATH)
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc.save()
+
+    freezer.move_to("2026-07-23T11:00:00Z")
+    doc.title = "Renamed Title"
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["created"] == "2026-07-23T10:15:30Z"
+    assert saved["core"]["updated"] == "2026-07-23T11:00:00Z"
+
+
+@freeze_time("2026-07-23T10:15:30Z")
+def test_a_seeded_created_survives_the_first_save(mocker: MockerFixture) -> None:
+    """A payload that already carries ``created`` -- what `.tc` import seeds from the file's own mtime
+    (:class:`~rehuco_core.tc_conversion.TcConverter`) -- keeps it through the save that first writes its
+    `.rehu`: the stamp only fills an *empty* field (#168). ``updated`` is untouched too, since seeding
+    happened before the baseline was captured, so the write carries no change.
+
+    **Test steps:**
+
+    * under frozen time, build a never-written document whose ``core`` carries seeded timestamps
+    * save with the write mocked out
+    * verify both seeded values reached disk rather than the frozen now
+    """
+    seeded = "2024-02-03T08:00:00Z"
+    doc = RehuDocument({"core": {"type": "tutorial", "created": seeded, "updated": seeded}})
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save(FAKE_PATH)
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert saved["core"]["created"] == seeded
+    assert saved["core"]["updated"] == seeded
+
+
+@freeze_time("2026-07-23T10:15:30Z")
+def test_saving_a_loaded_file_without_created_leaves_it_absent(mocker: MockerFixture) -> None:
+    """A file that exists but carries no ``created`` is left without one (#168): the record was first
+    written at some unknown earlier moment, and stamping now would claim it was created when someone
+    happened to re-save it. ``updated`` still refreshes -- the edit is real.
+
+    **Test steps:**
+
+    * under frozen time, load a payload carrying neither timestamp
+    * edit the title and save with the write mocked out
+    * verify the written ``core`` has no ``created`` key at all, yet ``updated`` is the frozen now
+    """
+    doc = load_doc(mocker, {"format_version": 2, "core": {"type": "tutorial", "sources": [{"title": "T"}]}})
+    mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.title = "Renamed Title"
+    doc.save()
+
+    saved = json.loads(mock_write.call_args[0][1])
+    assert "created" not in saved["core"]
+    assert saved["core"]["updated"] == "2026-07-23T10:15:30Z"
 
 
 def test_save_writes_a_canonical_key_order(mocker: MockerFixture) -> None:
