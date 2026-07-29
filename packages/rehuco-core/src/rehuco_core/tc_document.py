@@ -36,7 +36,8 @@ def load_tc(path: Path | str, *, username: str = DEFAULT_UNKNOWN_USERNAME) -> Re
         :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME` -- a flag carried in from a ``.tc`` was not
         set by *this* install's identity, so its real owner is unknown until a caller names one.
     :returns: a document mapped to the target ``.rehu`` shape, with :attr:`RehuDocument.legacy_tc` set.
-    :raises RehuFormatError: if the file's top-level YAML value is neither a mapping nor empty.
+    :raises RehuFormatError: if the file cannot be parsed, or its top-level YAML value is neither a
+        mapping nor empty.
     """
     return TcDocument.load(path).to_rehu_document(path, username=username)
 
@@ -102,14 +103,26 @@ class TcDocument:
         An empty file parses to an empty document (all defaults) rather than erroring -- tc4 itself
         can leave a genuinely empty ``info.tc`` on disk.
 
+        A ``.tc`` is untrusted outside input just as a ``.rehu`` is ([[data-model#write-integrity]]), so a
+        payload the parser cannot survive is **refused** rather than escaping as whatever it happened to
+        raise. ``yaml.safe_load`` raises more than ``YAMLError``: an over-long integer literal trips
+        CPython's integer-digit limit inside the ``int`` constructor (a bare ``ValueError``), and deep
+        nesting exhausts the interpreter stack (``RecursionError``). ``YAMLError`` is not a ``ValueError``,
+        so all three are needed.
+
+        This does **not** make parsing safe against a hostile file's *size* -- the sanity caps (total
+        bytes, nesting depth, entry counts) are not implemented, and the read below buys the whole file
+        into memory before ``yaml`` ever sees it (#88).
+
         :param path: path to the ``.tc`` file.
         :returns: a document backed by the parsed YAML mapping.
-        :raises RehuFormatError: if the file's top-level YAML value is neither a mapping nor empty.
+        :raises RehuFormatError: if the file cannot be parsed, or its top-level YAML value is neither a
+            mapping nor empty.
         """
         path = Path(path)
         try:
             data: object = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError as exc:
+        except (yaml.YAMLError, ValueError, RecursionError) as exc:
             raise RehuFormatError(f"Invalid YAML — {exc}.") from exc
         if data is None:
             data = {}
