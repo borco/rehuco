@@ -1047,6 +1047,11 @@ OPTIONAL_INT_SCALAR_SPECS: Final = (
 )
 OPTIONAL_INT_SCALARS: Final = [param(attr, location, id=attr) for attr, location in OPTIONAL_INT_SCALAR_SPECS]
 OPTIONAL_INT_ATTRS: Final = [param(attr, id=attr) for attr, _location in OPTIONAL_INT_SCALAR_SPECS]
+# The subset living inside a plugin block (its shared fields and this user's submap) rather than in
+# ``core`` -- the ones a *type switch* has to normalize, since they travel with the block it activates (#167).
+OPTIONAL_INT_BLOCK_SCALARS: Final = [
+    param(attr, location, id=attr) for attr, location in OPTIONAL_INT_SCALAR_SPECS if location != "core"
+]
 
 
 def scalar_doc(location: str, key: str, value: Any, path: Path | None = None) -> RehuDocument:
@@ -1154,6 +1159,89 @@ def test_optional_int_scalar_null_normalizes_away_on_save(attr: str, location: s
 
     saved = json.loads(write.call_args[0][1])
     assert attr not in scalar_container(saved, location)
+
+
+def dormant_block_scalar_doc(location: str, key: str, value: Any) -> RehuDocument:
+    """Build a ``collection``-typed document whose **inactive** ``tutorial`` block carries a raw ``value``
+    under ``key`` -- the mid-session-switch mirror of :func:`scalar_doc`, whose block is active from the
+    start (#167).
+
+    :param location: where in the dormant block to plant the value (``block`` / ``user``).
+    :param key: the scalar's key.
+    :param value: the raw on-disk value to store (``None`` for JSON ``null``).
+    :returns: the constructed document, still typed ``collection``.
+    """
+    block: dict[str, Any] = {"format_version": 1}
+    if location == "block":
+        block[key] = value
+    else:  # user
+        block["users"] = {"admin": {key: value}}
+    return RehuDocument({"core": {"type": "collection"}, "tutorial": block})
+
+
+@mark.parametrize(("attr", "location"), OPTIONAL_INT_BLOCK_SCALARS)
+def test_switching_type_normalizes_a_null_in_the_newly_active_block(attr: str, location: str) -> None:
+    """A block that becomes active *mid-session* is normalized on the switch, so the "``null`` is never
+    written" contract holds of every block a document writes, not only the one it opened at (#167).
+
+    Construction normalizes the opening type's block; a switch is the only other moment a block gains the
+    standing to be edited, so it is where the same normalization re-runs ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a ``collection``-typed document whose dormant ``tutorial`` block holds a ``null`` ``attr``
+    * switch the active type to ``tutorial``
+    * verify the key is gone from the backing data and from the text a save would write
+    """
+    doc = dormant_block_scalar_doc(location, attr, None)
+
+    doc.set_active_type("tutorial")
+
+    assert getattr(doc, attr) is None
+    assert attr not in scalar_container(doc.data, location)
+    assert attr not in scalar_container(json.loads(doc.serialize()), location)
+
+
+def test_switching_type_leaves_a_null_in_a_still_inactive_block_untouched() -> None:
+    """Only the *newly active* block is normalized -- a block that stays inactive is foreign payload,
+    carried verbatim, ``null`` included ([[plugins#plugin-blocks]], #167).
+
+    **Test steps:**
+
+    * construct a ``collection``-typed document carrying dormant ``tutorial`` and ``reference_images`` blocks,
+      each with a ``null`` optional scalar
+    * switch the active type to ``tutorial``
+    * verify only the activated block lost its ``null``; the untouched one keeps the key
+    """
+    doc = RehuDocument(
+        {
+            "core": {"type": "collection"},
+            "tutorial": {"format_version": 1, "original_duration": None},
+            "reference_images": {"format_version": 1, "images_count": None},
+        }
+    )
+
+    doc.set_active_type("tutorial")
+
+    assert "original_duration" not in doc.data["tutorial"]
+    assert doc.data["reference_images"]["images_count"] is None
+
+
+def test_switching_to_an_empty_type_normalizes_nothing() -> None:
+    """Clearing the type activates no block, so there is nothing to normalize and no crash reaching for one
+    -- an empty type names no block at all (#166, #167).
+
+    **Test steps:**
+
+    * construct a tutorial-typed document that also carries a ``""``-keyed top-level object with a ``null``
+    * clear the active type
+    * verify the ``""`` payload is untouched -- it is foreign payload, not this document's block
+    """
+    doc = RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"format_version": 1}, "": {"images_count": None}})
+
+    doc.set_active_type("")
+
+    assert doc.data[""] == {"images_count": None}
 
 
 @mark.parametrize(("attr", "location"), OPTIONAL_INT_SCALARS)
