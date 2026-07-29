@@ -9,10 +9,10 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
-from PySide6.QtWidgets import QDialog, QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
+from PySide6.QtWidgets import QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
 
 from .archives import ARCHIVE_EXTENSIONS
-from .dialogs.unsaved_changes_dialog import UnsavedChangesDialog
+from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
@@ -359,28 +359,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def closeEvent(self, event: QCloseEvent) -> None:
         """Guard the app close: prompt for dirty documents, saving the checked ones.
 
-        Cancelling the prompt aborts the app close; nothing closes. Unchecked dirty documents are
-        left unsaved -- their edits are discarded along with the close.
-
-        A checked document whose save fails (an offline mount, [[mounts-and-storage#offline-mounts]])
-        raises a retry/cancel dialog (:func:`~rehuco_agent.documents.save_or_prompt_retry.save_or_prompt_retry`,
-        #146) rather than a traceback: cancelling it aborts the whole close, so the window stays open
-        with its edits and the session intact. Crucially, this keeps the failure from escaping mid-loop
-        and skipping the persistence steps below (window state, session, recents, theme) while the
-        window closes anyway -- once every selected save has landed, they always run.
+        The prompt itself, and the guarded save of each checked document, are the shared batch guard
+        (:func:`~rehuco_agent.documents.confirm_and_save_dirty.confirm_and_save_dirty`, #176) --
+        the same one :meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.close_all` uses. What
+        is specific here is the follow-on: a refusal (the prompt cancelled, or a failed save's
+        retry/cancel dialog cancelled, #146) aborts the app close, so the window stays open with its
+        edits and the session intact. Crucially, that keeps a failure from skipping the persistence
+        steps below (window state, session, recents, theme) while the window closes anyway -- once the
+        guard has passed, they always run.
 
         :param event: the close event to accept or ignore.
         """
         dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
-        if dirty_models:
-            dialog = UnsavedChangesDialog(dirty_models, self)
-            if dialog.exec() != QDialog.DialogCode.Accepted:
-                event.ignore()
-                return
-            for model in dialog.selected_models():
-                if not save_or_prompt_retry(self, model):
-                    event.ignore()
-                    return
+        if not confirm_and_save_dirty(self, dirty_models):
+            event.ignore()
+            return
 
         # must run before __save_window_state captures the outer CDockManager's saveState(), or a
         # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on

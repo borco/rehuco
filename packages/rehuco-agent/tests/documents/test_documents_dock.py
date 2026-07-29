@@ -32,6 +32,10 @@ FAKE_ARCHIVE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting.zip"
 """An archive whose ``.rehu`` companion (#43) is ``FAKE_ARCHIVE_PATH.with_suffix(".rehu")``."""
 FAKE_ARCHIVE_INFO_PATH: Final = FAKE_ARCHIVE_PATH.with_suffix(".rehu")
 
+UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
+"""Where ``close_all``'s batch dialog is looked up -- the shared seam it reaches the dialog through
+(#176), not this module, so that is where these tests patch it."""
+
 TUTORIAL: Final = {
     "format_version": 1,
     "type": "Tutorial",
@@ -489,7 +493,7 @@ def test_close_all_closes_every_clean_dock_without_a_dialog(mocker: MockerFixtur
     qtbot.addWidget(dock)
     dock.open_document(FAKE_PATH)
     dock.open_document(OTHER_PATH)
-    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog")
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG)
 
     dock.close_all()
 
@@ -524,7 +528,7 @@ def test_close_all_closes_clean_docks_first_then_shows_one_batch_dialog_for_the_
     third.model.title = "Changed"
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Rejected
-    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
 
     dock.close_all()
 
@@ -560,7 +564,7 @@ def test_close_all_saves_checked_documents_then_closes_every_open_document(mocke
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [first.model]
-    dialog_class = mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
 
     dock.close_all()
 
@@ -597,7 +601,7 @@ def test_close_all_keeps_every_document_open_when_a_selected_save_fails(mocker: 
     dialog = mocker.MagicMock()
     dialog.exec.return_value = QDialog.DialogCode.Accepted
     dialog.selected_models.return_value = [first.model, second.model]
-    mocker.patch("rehuco_agent.documents.documents_dock.UnsavedChangesDialog", return_value=dialog)
+    mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
 
     dock.close_all()
 
