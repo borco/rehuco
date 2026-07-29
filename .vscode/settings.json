@@ -13,7 +13,6 @@
         "tag:yaml.org,2002:python/name:material.extensions.emoji.to_svg scalar"
     ],
     "flake8.enabled": false,
-    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "pylint.enabled": true,
     "pylint.importStrategy": "fromEnvironment",
     "mypy-type-checker.enabled": false,

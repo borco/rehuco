@@ -17,13 +17,27 @@
             "request": "launch",
             "program": "${workspaceFolder}/packages/rehuco-agent/src/rehuco_agent/__main__.py",
             "console": "integratedTerminal",
+            // The venv layout differs per OS (bin/python vs Scripts/python.exe), and this repo is
+            // opened both natively on Windows and over Remote-SSH on Linux.
+            "linux": {
+                "python": "${workspaceFolder}/.venv/bin/python"
+            },
+            "osx": {
+                "python": "${workspaceFolder}/.venv/bin/python"
+            },
+            "windows": {
+                "python": "${workspaceFolder}/.venv/Scripts/python.exe"
+            }
         },
         {
+            // Linux-only: renders on the host's GNOME Wayland session (visible in the Hyper-V
+            // console), since a Remote-SSH shell inherits no display environment of its own.
             "name": "rehuco-agent (remote)",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/packages/rehuco-agent/src/rehuco_agent/__main__.py",
             "console": "integratedTerminal",
+            "python": "${workspaceFolder}/.venv/bin/python",
             "env": {
                 "XDG_RUNTIME_DIR": "/run/user/1000",
                 "WAYLAND_DISPLAY": "wayland-0",
