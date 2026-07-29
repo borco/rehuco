@@ -8,9 +8,9 @@ functions of the payload** -- no session state, no ``self`` -- so the byte-for-b
 built documents share (a converted ``.tc`` and a migrated v1 file) is decided in one readable place.
 
 The block persistence invariant ([[plugins#plugin-blocks]]) reaches this layer only as its *result*: the
-caller passes in which blocks are dropped (``RehuDocument`` computes that from session state, its single
-:meth:`~rehuco_core.rehu_document.RehuDocument._RehuDocument__dropped_block_keys` predicate), so the
-serialization never re-derives it and the logged discard can never diverge from what is written.
+caller passes in which blocks are dropped (``RehuDocument`` computes that from session state, in its
+single ``__dropped_block_keys`` predicate), so the serialization never re-derives it and the logged
+discard can never diverge from what is written.
 """
 
 from collections.abc import Iterable, Sequence

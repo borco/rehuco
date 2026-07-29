@@ -52,7 +52,7 @@ from .rehu_locks import (
     coerced_str,
     coerced_str_list,
     invalid_field_reasons,
-    is_author_record,
+    is_author_entry,
     newer_block_format_reason,
     optional_int,
     optional_str,
@@ -398,7 +398,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           version: migrations never lower a stamp, since such a file still carries fields from a schema
           this build has never seen ([[data-model#schema-version]]'s preserve-unknown-fields rule) and
           relabelling it would mislead the build that *can* read them.
-        - The **block persistence invariant** decides which blocks are written (:meth:`__ordered_for_file`,
+        - The **block persistence invariant** decides which blocks are written
+          (:meth:`__dropped_block_keys` and :func:`~rehuco_core.rehu_serialization.ordered_for_file`,
           [[plugins#plugin-blocks]]): the active block, plus every inactive block **never claimed** this
           session (foreign payload, carried verbatim with its alias key already normalized to its main
           spelling, :meth:`__normalize`). An inactive block **claimed then abandoned** this session is
@@ -423,13 +424,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           already carries the migrated layout), a save-as copy -- leaves it alone: writing is not
           editing, and "record last edited" must not decay into "record last written".
 
-        **Key order is imposed here, and only here** (:meth:`__ordered_for_file`). It cannot be
+        **Key order is imposed on the way out, and only there**: the text this writes comes from
+        :meth:`serialize`, which lays the keys out with
+        :func:`~rehuco_core.rehu_serialization.ordered_for_file` (#143 moved that out of the document
+        itself, so a read-only preview renders the same bytes a save would). Order cannot be
         maintained in ``__data`` -- every setter appends -- and it does not need to be: JSON objects are
         unordered, so order is purely how the file reads to a human, which makes it a property of the
-        write rather than of the document. Doing it at the one boundary that produces a file is also what
-        keeps two documents with the same fields byte-identical regardless of how each was built -- a
-        converted `.tc` and a migrated v1 file otherwise serialize their common fields in completely
-        different orders.
+        rendering rather than of the document. Doing it at the one boundary that produces the file's text
+        is also what keeps two documents with the same fields byte-identical regardless of how each was
+        built -- a converted `.tc` and a migrated v1 file otherwise serialize their common fields in
+        completely different orders.
 
         :param path: destination; defaults to the path the document was loaded from.
         :raises ValueError: if no path is given and the document has no loaded path, or if a
@@ -444,7 +448,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         blocking = next((reason for reason in self.lock_reasons if reason.kind in SAVE_BLOCKING_LOCK_KINDS), None)
         if blocking is not None:
-            raise ValueError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}.")
+            # no trailing "." of its own: a lock message is a sentence its emitter already punctuated
+            # (`rehu_locks`), or a parser's / OS error's own text (INVALID_FILE, MISSING), which is quoted
+            # here as-is rather than re-terminated
+            raise ValueError(f"Refusing to save a locked document ({blocking.kind}): {blocking.message}")
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")
@@ -1291,11 +1298,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :param default: value to return when the block, the ``users`` map, this user, or the key is absent.
         :returns: the stored value, or ``default`` when absent.
         """
-        users = self.active_block.get(USERS_KEY)
-        if not isinstance(users, dict):
-            return default
-        user = users.get(self.__username)
-        return user.get(key, default) if isinstance(user, dict) else default
+        return self.__active_user_map().get(key, default)
 
     def set_active_user_field(self, key: str, value: Any) -> None:
         """Write a **per-user** value into the active block's ``users`` map, under this document's own
@@ -1334,9 +1337,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """This document's per-user submap **as stored** ([[field-schema#per-user-shared]]), or an empty
         dict when the block, the ``users`` map, or this user is absent or malformed.
 
-        A read-only peek for validation (:func:`~rehuco_core.rehu_locks.invalid_scalar_reasons`), distinct from
-        :meth:`__active_user_or_create`: it never installs a submap, so merely inspecting a document's
-        per-user scalars cannot make it dirty."""
+        The **non-creating** half of the pair, distinct from :meth:`__active_user_or_create`: it never
+        installs a submap, so merely reading a per-user field, validating one
+        (:func:`~rehuco_core.rehu_locks.invalid_scalar_reasons`), or removing one cannot make a document
+        dirty by touching payload it was only asked to inspect. Every path that resolves this user's
+        submap without writing goes through here -- :meth:`active_user_field`,
+        :meth:`remove_active_user_field`, and :attr:`lock_reasons` -- so the "absent block, absent map,
+        absent user, malformed anything" walk is written once rather than three times.
+
+        A **present** submap is returned by reference (the empty stand-in is not, which is exactly why
+        it stands in for nothing): deleting through it edits the document, while deleting through the
+        stand-in is the no-op the absent case wants."""
         users = self.active_block.get(USERS_KEY)
         user = users.get(self.__username) if isinstance(users, dict) else None
         return user if isinstance(user, dict) else {}
@@ -1350,10 +1361,8 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: ``True`` if the key was present and removed, ``False`` if the block, the ``users`` map,
             this user, or the key was absent.
         """
-        block = self.__stored_active_block()
-        users = block.get(USERS_KEY) if isinstance(block, dict) else None
-        user = users.get(self.__username) if isinstance(users, dict) else None
-        if isinstance(user, dict) and key in user:
+        user = self.__active_user_map()
+        if key in user:
             del user[key]
             return True
         return False
@@ -1536,12 +1545,15 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         ([[data-model#write-integrity]]). A present ``authors`` the getter has to coerce this way is
         exactly what :attr:`lock_reasons` reports as an :attr:`~LockReasonKind.INVALID_FIELD`, so the
         coerced reading is safe to display but the document loads **locked** rather than letting an edit
-        save the coerced list over the original.
+        save the coerced list over the original. Which entries count is asked of one predicate,
+        :func:`~rehuco_core.rehu_locks.is_author_entry`, by both this getter and that check: split, the
+        two could disagree about a single entry, and the disagreement's shape decides whether the
+        document merely locks for nothing or saves a shortened list unlocked.
         """
         authors = self.core.get("authors", [])
         if not isinstance(authors, list):
             return []
-        return [entry for entry in authors if isinstance(entry, str) or is_author_record(entry)]
+        return [entry for entry in authors if is_author_entry(entry)]
 
     @authors.setter
     def authors(self, value: Sequence[AuthorEntry]) -> None:

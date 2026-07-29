@@ -62,7 +62,7 @@ to the lists whose entries are bare strings."""
 
 INVALID_TYPE_MESSAGE: Final = (
     "type: present but not a string -- the resource type names the active plugin block, so this "
-    "document reads as typeless ([[field-schema#resource-types]])"
+    "document reads as typeless ([[field-schema#resource-types]])."
 )
 """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present non-string ``core.type``. The most
 load-bearing core field there is: it selects the active block, seeds the session's claim set, and orders
@@ -71,7 +71,7 @@ scalar, coercing it to a clean default (typeless) discards the one clue to what 
 
 INVALID_SOURCES_MESSAGE: Final = (
     "sources: present but not a list -- the primary source's title/publisher/url are read from its "
-    "entries, so this document reads as source-less ([[field-schema#sources]])"
+    "entries, so this document reads as source-less ([[field-schema#sources]])."
 )
 """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present non-list ``sources``. Only the
 *container's* type is checked: a non-dict **entry** is skipped by primary resolution but survives every
@@ -81,7 +81,7 @@ strings at once while a title edit would try to append to it."""
 
 INVALID_AUTHORS_MESSAGE: Final = (
     "authors: contains an entry this build cannot read -- each must be a name string or a "
-    "{name, url} record ([[field-schema#authors]])"
+    "{name, url} record ([[field-schema#authors]])."
 )
 """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present ``authors`` the getter cannot read
 cleanly -- a non-list, or a list with an entry it would skip ([[field-schema#authors]])."""
@@ -128,6 +128,20 @@ def coerced_str_list(value: Any) -> list[str]:
 def is_author_record(entry: Any) -> bool:
     """Whether ``entry`` is a valid author record: a dict with a string ``name`` ([[field-schema#authors]])."""
     return isinstance(entry, dict) and isinstance(entry.get("name"), str)
+
+
+def is_author_entry(entry: Any) -> bool:
+    """Whether ``entry`` is one the ``authors`` getter can **read**: a plain name string, or a valid
+    author record ([[field-schema#authors]]).
+
+    One predicate for both halves, for the same reason the coercions above live here: skipping an entry
+    *is* the lossy read, so the getter
+    (:attr:`RehuDocument.authors <rehuco_core.RehuDocument.authors>`) and the
+    :attr:`~LockReasonKind.INVALID_FIELD` check (:func:`invalid_field_reasons`) must agree on which
+    entries count. Split, a document could read an entry the validator calls malformed -- or the
+    reverse, which would let an edit save the shortened list over the original
+    ([[data-model#write-integrity]])."""
+    return isinstance(entry, str) or is_author_record(entry)
 
 
 def newer_block_format_reason(active_key: str, block_version: int | None, plugins: PluginRegistry) -> LockReason | None:
@@ -200,7 +214,7 @@ def invalid_field_reasons(
         reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_TYPE_MESSAGE))
     if "authors" in core:
         value = core["authors"]
-        clean = isinstance(value, list) and all(isinstance(entry, str) or is_author_record(entry) for entry in value)
+        clean = isinstance(value, list) and all(is_author_entry(entry) for entry in value)
         if not clean:
             reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_AUTHORS_MESSAGE))
     if "sources" in core and not isinstance(core["sources"], list):
