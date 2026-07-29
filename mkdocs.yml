@@ -116,6 +116,7 @@ nav:
           - Post-Mortem: specs/appendices/post-mortem.md
           - Project Management: specs/appendices/project-management.md
           - QtAds: specs/appendices/qt-ads.md
+          - Release Runbook: specs/appendices/release-runbook.md
           - Settings Pages: specs/appendices/settings-pages.md
           - Testing: specs/appendices/testing.md
           - Theming & Styling: specs/appendices/theming_and_styling.md

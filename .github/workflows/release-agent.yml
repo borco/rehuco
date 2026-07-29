@@ -79,7 +79,11 @@ jobs:
 
       # The built exe, not the installed one -- Briefcase's stub binary IS Rehuco.exe
       # ([[appendices.briefcase-packaging#windows]]), no MSI install needed to smoke-check it.
-      - name: Smoke check -- the built exe starts and reports its version
+      # Exit code only, deliberately: Rehuco.exe is a GUI-subsystem binary, so it prints nothing to a
+      # console, a pipe or a redirect ([[appendices.release-runbook#windows-console]]). A zero exit still
+      # proves the interpreter started, the entry point imported and argparse ran -- a broken bundle
+      # (failed import, missing *_ui.py) exits non-zero, and an unknown flag exits 2.
+      - name: Smoke check -- the built exe starts and parses its arguments
         run: ./packages/rehuco-agent/build/rehuco-agent/windows/app/src/Rehuco.exe --version
 
       - uses: actions/upload-artifact@v7
