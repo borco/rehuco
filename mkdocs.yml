@@ -74,8 +74,8 @@ markdown_extensions:
       alternate_style: true
   - pymdownx.highlight
   - pymdownx.inlinehilite
-  # Lets the site include the per-package CHANGELOG.md files verbatim instead of keeping a second
-  # copy under docs/ that would drift. base_path is the repo root, so paths are as written there.
+  # Lets the site include the per-package CHANGELOG.md files and the LICENSE verbatim instead of keeping
+  # a second copy under docs/ that would drift. base_path is the repo root, so paths are as written there.
   - pymdownx.snippets:
       base_path:
         - .
@@ -91,13 +91,6 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Changelog:
-      - Overview: changelog/index.md
-      - rehuco-agent: changelog/rehuco-agent.md
-      - rehuco-core: changelog/rehuco-core.md
-      - rehuco-node: changelog/rehuco-node.md
-      - borco-core: changelog/borco-core.md
-      - borco-pyside: changelog/borco-pyside.md
   - Design Specs:
       - How It Works: specs/how-it-works.md
       - Document Map: specs/README.md
@@ -148,3 +141,11 @@ nav:
           - Daz3D Personal Database: specs/history/daz3d-personal-database.md
           - pyside-ibo (shared library): specs/history/pyside-ibo.md
   - Implementation Plan: specs/implementation-plan.md
+  - Changelog:
+      - Overview: changelog/index.md
+      - rehuco-agent: changelog/rehuco-agent.md
+      - rehuco-core: changelog/rehuco-core.md
+      - rehuco-node: changelog/rehuco-node.md
+      - borco-core: changelog/borco-core.md
+      - borco-pyside: changelog/borco-pyside.md
+  - License: license.md
