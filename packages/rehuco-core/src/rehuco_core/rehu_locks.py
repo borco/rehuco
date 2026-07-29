@@ -41,6 +41,25 @@ OPTIONAL_STR_CORE_KEYS: Final = ("released",)
 """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
 non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
 
+REQUIRED_STR_CORE_KEYS: Final = ("id", "description", "created", "updated")
+"""Common-core **required** string fields ([[field-schema#field-types]]): absent reads as ``""``; a
+present non-string -- JSON ``null`` included -- reads as ``""`` **and** locks, the same
+present-but-uncoercible rule ``type`` follows. ``type`` is checked apart from this roster only because
+its role earns its own message (:data:`INVALID_TYPE_MESSAGE`); ``released`` is *optional*, so it reads
+``None`` rather than ``""`` (:data:`OPTIONAL_STR_CORE_KEYS`)."""
+
+REQUIRED_STR_SOURCE_KEYS: Final = ("title", "publisher", "url")
+"""The **primary** source's required string fields ([[field-schema#sources]]), same contract as
+:data:`REQUIRED_STR_CORE_KEYS`. Only the primary entry is checked because only the primary entry is
+read: a non-primary source's fields reach no getter, so nothing coerces them and no edit can write a
+coerced default over them."""
+
+STR_LIST_CORE_KEYS: Final = ("advertised_tags", "extra_tags", "hidden_images")
+"""Common-core plain-string lists ([[field-schema#field-types]], [[data-model#image-meanings]]): absent
+reads as ``[]``; a non-list, or a list carrying an entry that is not a string, reads as its string
+entries alone and locks -- ``authors``'s skip-the-entry-and-lock rule ([[field-schema#authors]]) applied
+to the lists whose entries are bare strings."""
+
 INVALID_TYPE_MESSAGE: Final = (
     "type: present but not a string -- the resource type names the active plugin block, so this "
     "document reads as typeless ([[field-schema#resource-types]])"
@@ -49,6 +68,16 @@ INVALID_TYPE_MESSAGE: Final = (
 load-bearing core field there is: it selects the active block, seeds the session's claim set, and orders
 serialization, so a value the getter cannot read leaves *all three* wrong -- and unlike a malformed
 scalar, coercing it to a clean default (typeless) discards the one clue to what the file was."""
+
+INVALID_SOURCES_MESSAGE: Final = (
+    "sources: present but not a list -- the primary source's title/publisher/url are read from its "
+    "entries, so this document reads as source-less ([[field-schema#sources]])"
+)
+"""The :attr:`~LockReasonKind.INVALID_FIELD` message for a present non-list ``sources``. Only the
+*container's* type is checked: a non-dict **entry** is skipped by primary resolution but survives every
+save verbatim (the setters append beside it, never over it), so no coerced default can replace it and
+the write-integrity rule has nothing to guard -- whereas a non-list container unhooks all three primary
+strings at once while a title edit would try to append to it."""
 
 INVALID_AUTHORS_MESSAGE: Final = (
     "authors: contains an entry this build cannot read -- each must be a name string or a "
@@ -71,6 +100,29 @@ def optional_str(value: Any) -> str | None:
     JSON ``null``, or a malformed non-string (which also locks). Unlike an integer field there is
     nothing further to coerce -- a stored string is already its own value."""
     return value if isinstance(value, str) else None
+
+
+def coerced_str(value: Any) -> str:
+    """One **required** string field's read value ([[field-schema#field-types]]): the stored string, or
+    ``""`` when the key is absent, JSON ``null``, or any other non-string.
+
+    The required-string sibling of :func:`optional_str`, and the reason neither getter may say
+    ``str(...)``: stringifying reads a ``null`` as the four characters ``None`` and a stray ``123`` as
+    ``"123"`` -- text no file carries, which an edit would then save over the malformed-but-recoverable
+    original ([[data-model#write-integrity]]). Absent and malformed read alike; only *malformed*
+    additionally locks (:func:`invalid_string_reasons`)."""
+    return value if isinstance(value, str) else ""
+
+
+def coerced_str_list(value: Any) -> list[str]:
+    """One plain-string list's read value ([[field-schema#field-types]]): the stored list's string
+    entries, in order, or ``[]`` when the key is absent or holds a non-list.
+
+    A malformed entry is **skipped** rather than stringified, matching how the ``authors`` getter reads
+    a list it cannot fully understand ([[field-schema#authors]]) -- a tag reading ``"None"`` or ``"7"``
+    is a value the user never typed, and offering it for editing invites saving it. Skipping (like the
+    coercion above) locks the document, so the entry stays recoverable by hand."""
+    return [entry for entry in value if isinstance(entry, str)] if isinstance(value, list) else []
 
 
 def is_author_record(entry: Any) -> bool:
@@ -108,7 +160,10 @@ def newer_block_format_reason(active_key: str, block_version: int | None, plugin
 
 
 def invalid_field_reasons(
-    core: dict[str, Any], active_block: dict[str, Any], active_user_map: dict[str, Any]
+    core: dict[str, Any],
+    active_block: dict[str, Any],
+    active_user_map: dict[str, Any],
+    primary_source: dict[str, Any] | None,
 ) -> list[LockReason]:
     """The :attr:`~LockReasonKind.INVALID_FIELD` reasons for owned fields present-but-uncoercible
     ([[data-model#write-integrity]]).
@@ -119,11 +174,15 @@ def invalid_field_reasons(
     field contributes one reason naming the key.
 
     ``type`` ([[field-schema#resource-types]]), ``authors`` ([[field-schema#authors]], the seam #92 set
-    up) and the optional scalars
+    up), the ``sources`` container ([[field-schema#sources]]), the required strings and string lists
+    (:func:`invalid_string_reasons`) and the optional scalars
     ([[field-schema#deferred-items]]) are checked: a non-string ``type`` reads as *typeless*, so it
     names no active block at all; ``authors``'s getter skips an entry that is neither a
     name string nor a ``{name, url}`` record, and a non-list value entirely; an optional scalar's getter
-    coerces a present-but-wrong-typed value to ``None`` (:func:`invalid_scalar_reasons`). All three are the
+    coerces a present-but-wrong-typed value to ``None`` (:func:`invalid_scalar_reasons`); a required string
+    or list reads its empty default, skipping the entries it cannot read; a non-list ``sources`` reads as
+    no sources at all, emptying title/publisher/url in one stroke
+    (:data:`INVALID_SOURCES_MESSAGE` -- which also says why its *entries* are not checked). All of them are the
     "present but the getter had to coerce" condition. A merely *absent* scalar -- or a JSON ``null``,
     already normalized to absent at construction -- is a clean ``None`` and never locks. The
     ``format_version`` stamp deliberately never does (see
@@ -132,6 +191,8 @@ def invalid_field_reasons(
     :param core: the core block's fields.
     :param active_block: the active plugin block's fields.
     :param active_user_map: this document's own per-user submap, as stored.
+    :param primary_source: the resolved primary source ([[field-schema#sources]]), whose strings the
+        title/publisher/url getters read; ``None`` when the document has no source at all.
     :returns: the invalid-field reasons, in a stable order.
     """
     reasons: list[LockReason] = []
@@ -142,8 +203,43 @@ def invalid_field_reasons(
         clean = isinstance(value, list) and all(isinstance(entry, str) or is_author_record(entry) for entry in value)
         if not clean:
             reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_AUTHORS_MESSAGE))
+    if "sources" in core and not isinstance(core["sources"], list):
+        reasons.append(LockReason(LockReasonKind.INVALID_FIELD, INVALID_SOURCES_MESSAGE))
+    reasons.extend(invalid_string_reasons(core, primary_source))
     reasons.extend(invalid_scalar_reasons(core, active_block, active_user_map))
     return reasons
+
+
+def invalid_string_reasons(core: dict[str, Any], primary_source: dict[str, Any] | None) -> list[LockReason]:
+    """One :attr:`~LockReasonKind.INVALID_FIELD` per **required** string or string list that is present
+    but not what its getter reads ([[field-schema#field-types]]).
+
+    The string half of :func:`invalid_scalar_reasons`, and the same rule: a field the getter must read
+    past -- a ``null`` title, a number among the tags -- locks, so an edit cannot save the coerced ``""``
+    (or the shortened list) over the malformed-but-recoverable original ([[data-model#write-integrity]]).
+    A ``null`` locks here where it does not for an optional scalar, because the two mean different
+    things: ``null`` *is* the absent spelling of a value that may be absent, while for a field whose
+    default is ``""`` it is a value nothing wrote deliberately.
+
+    :param core: the core block's fields.
+    :param primary_source: the resolved primary source, or ``None`` when there is none.
+    :returns: the invalid-string reasons, core scalars before the primary source's before the lists,
+        in key order.
+    """
+    reasons: list[LockReason] = []
+    for block, keys in ((core, REQUIRED_STR_CORE_KEYS), (primary_source or {}, REQUIRED_STR_SOURCE_KEYS)):
+        for key in keys:
+            if key in block and not isinstance(block[key], str):
+                reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_string_message(key, "a string")))
+    for key in STR_LIST_CORE_KEYS:
+        if key in core and coerced_str_list(core[key]) != core[key]:
+            reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_string_message(key, "a list of strings")))
+    return reasons
+
+
+def invalid_string_message(key: str, expected: str) -> str:
+    """The :attr:`~LockReasonKind.INVALID_FIELD` message for a present-but-malformed required string."""
+    return f"{key}: present but not {expected} ([[field-schema#field-types]])."
 
 
 def invalid_scalar_reasons(

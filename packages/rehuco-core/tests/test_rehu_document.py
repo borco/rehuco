@@ -1443,16 +1443,17 @@ def test_hidden_images_defaults_to_empty_when_absent_or_malformed() -> None:
     assert not RehuDocument({"hidden_images": "info00.jpg"}).hidden_images
 
 
-def test_hidden_images_reads_and_coerces_stored_names() -> None:
-    """``hidden_images`` reads the stored filename list, coercing entries to strings.
+def test_hidden_images_skips_entries_that_are_not_strings() -> None:
+    """``hidden_images`` reads the stored filename list, skipping any entry that is not a string (#165) --
+    stringifying one would name a file that cannot exist, hiding nothing while claiming to.
 
     **Test steps:**
 
     * construct a document with a mixed-type ``hidden_images`` list
-    * verify every entry is read back as a string
+    * verify the string entries are read back and the non-string one is gone
     """
     doc = RehuDocument({"hidden_images": ["info00.jpg", 7]})
-    assert doc.hidden_images == ["info00.jpg", "7"]
+    assert doc.hidden_images == ["info00.jpg"]
 
 
 def test_hidden_images_setter_replaces_the_list() -> None:
@@ -2902,6 +2903,187 @@ def test_an_absent_authors_field_does_not_lock() -> None:
     * verify no lock reason is produced
     """
     assert not RehuDocument({"core": {"type": "tutorial"}}).lock_reasons
+
+
+MALFORMED_STRINGS: Final = [
+    param(None, id="null"),
+    param(42, id="a-number"),
+    param(["text"], id="a-list"),
+    param({"value": "text"}, id="an-object"),
+    param(True, id="a-bool"),
+]
+"""Present values that are not strings -- each read as the empty default and locked (#165)."""
+
+
+@mark.parametrize("value", MALFORMED_STRINGS)
+@mark.parametrize("key", ["id", "description", "created", "updated"])
+def test_a_present_non_string_core_field_reads_empty_and_locks(key: str, value: Any) -> None:
+    """A required core string that is present but not a string reads ``""`` rather than being
+    stringified, and locks ``INVALID_FIELD`` ([[data-model#write-integrity]], #165).
+
+    ``.get(key, "")`` only defaults when the key is *absent*, so ``str()`` used to read a stored ``null``
+    as the four characters ``None`` -- text no file carries, and unlocked, so the next edit saved it over
+    the original.
+
+    **Test steps:**
+
+    * construct a document whose core field is present but not a string
+    * verify the getter reads ``""``
+    * verify the sole lock reason is ``INVALID_FIELD`` and names the key
+    """
+    doc = RehuDocument({"core": {key: value}})
+
+    assert getattr(doc, key) == ""
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert key in doc.lock_reasons[0].message
+
+
+@mark.parametrize("value", MALFORMED_STRINGS)
+@mark.parametrize("key", ["title", "publisher", "url"])
+def test_a_present_non_string_primary_source_field_reads_empty_and_locks(key: str, value: Any) -> None:
+    """The primary source's strings follow the same rule as the core's ([[field-schema#sources]], #165).
+
+    **Test steps:**
+
+    * construct a document whose primary source carries the field, present but not a string
+    * verify the getter reads ``""``
+    * verify the sole lock reason is ``INVALID_FIELD`` and names the key
+    """
+    doc = RehuDocument({"core": {"sources": [{key: value}]}})
+
+    assert getattr(doc, key) == ""
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert key in doc.lock_reasons[0].message
+
+
+@mark.parametrize(
+    "sources",
+    [
+        param(None, id="null"),
+        param("not-a-list", id="a-string"),
+        param({"title": "T"}, id="an-object"),
+        param(7, id="a-number"),
+    ],
+)
+def test_a_present_non_list_sources_reads_empty_and_locks(sources: Any) -> None:
+    """A present ``sources`` that is not a list reads as no sources at all and locks ``INVALID_FIELD``
+    ([[field-schema#sources]], #165) -- it empties title/publisher/url in one stroke, and the title
+    setter would otherwise try to append an entry to the non-list.
+
+    **Test steps:**
+
+    * construct a document whose ``sources`` is present but not a list
+    * verify ``sources`` reads ``[]`` and ``title`` reads ``""``
+    * verify the sole lock reason is ``INVALID_FIELD`` and names ``sources``
+    """
+    doc = RehuDocument({"core": {"sources": sources}})
+
+    assert doc.sources == []
+    assert doc.title == ""
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert "sources" in doc.lock_reasons[0].message
+
+
+def test_non_dict_sources_entries_do_not_lock_and_survive_a_save(mocker: MockerFixture) -> None:
+    """A non-dict ``sources`` **entry** does not lock (#165): primary resolution skips it, the setters
+    append beside it rather than over it, and every save carries it verbatim -- so no coerced default
+    can replace it and there is nothing for the lock to guard.
+
+    **Test steps:**
+
+    * construct a document whose ``sources`` mixes junk entries with a real primary, bound to a path
+    * verify nothing locks and an edited save writes the junk entries unchanged
+    """
+    doc = RehuDocument({"core": {"sources": [None, "junk", {"title": "Real", "primary": True}]}}, FAKE_PATH)
+    assert not doc.lock_reasons
+
+    doc.title = "Edited"
+    saved = saved_json(doc, mocker)
+    assert saved["core"]["sources"][:2] == [None, "junk"]
+    assert saved["core"]["sources"][2]["title"] == "Edited"
+
+
+def test_a_malformed_string_in_a_non_primary_source_does_not_lock() -> None:
+    """Only the **primary** source is validated, because only the primary source is read (#165): a
+    secondary entry's fields reach no getter, so no coerced default can be written over them.
+
+    **Test steps:**
+
+    * construct a document whose primary source is well-formed and whose second source has a ``null`` title
+    * verify the title reads from the primary and nothing locks
+    """
+    doc = RehuDocument({"core": {"sources": [{"title": "Real"}, {"title": None}]}})
+
+    assert doc.title == "Real"
+    assert not doc.lock_reasons
+
+
+@mark.parametrize("key", ["advertised_tags", "extra_tags", "hidden_images"])
+def test_a_string_list_skips_a_non_string_entry_and_locks(key: str) -> None:
+    """A string list holding an entry the getter cannot read yields its string entries alone and locks
+    ``INVALID_FIELD`` -- ``authors``'s skip-and-lock rule ([[field-schema#authors]], #165).
+
+    **Test steps:**
+
+    * construct a document whose list mixes a string with a number
+    * verify the getter drops the number rather than stringifying it
+    * verify the sole lock reason is ``INVALID_FIELD`` and names the key
+    """
+    doc = RehuDocument({"core": {key: ["kept", 7]}})
+
+    assert getattr(doc, key) == ["kept"]
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert key in doc.lock_reasons[0].message
+
+
+@mark.parametrize("key", ["advertised_tags", "extra_tags", "hidden_images"])
+def test_a_string_list_that_is_not_a_list_reads_empty_and_locks(key: str) -> None:
+    """A non-list value where a string list belongs reads ``[]`` and locks, the same as a non-list
+    ``authors`` does ([[data-model#write-integrity]], #165).
+
+    **Test steps:**
+
+    * construct a document whose list field holds a bare string
+    * verify the getter reads ``[]`` -- never the string's characters
+    * verify the sole lock reason is ``INVALID_FIELD`` and names the key
+    """
+    doc = RehuDocument({"core": {key: "one-tag"}})
+
+    assert getattr(doc, key) == []
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert key in doc.lock_reasons[0].message
+
+
+def test_a_malformed_required_string_refuses_to_save(mocker: MockerFixture) -> None:
+    """The ``INVALID_FIELD`` lock makes ``save`` refuse, so the coerced ``""`` never overwrites the
+    malformed-but-recoverable original ([[data-model#write-integrity]], #165).
+
+    **Test steps:**
+
+    * construct a document whose ``description`` is ``null``, bound to a path
+    * mock ``atomic_write_text`` to prove it is never reached
+    * verify ``save`` raises and nothing was written
+    """
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+    doc = RehuDocument({"core": {"description": None}}, FAKE_PATH)
+
+    with pytest.raises(ValueError, match="Refusing to save"):
+        doc.save()
+    write.assert_not_called()
+
+
+def test_absent_and_empty_required_strings_do_not_lock() -> None:
+    """Absent is a clean default, and ``""`` is a genuine value: neither locks -- only a *present
+    non-string* does (#165).
+
+    **Test steps:**
+
+    * verify a document with none of the required strings produces no lock reason
+    * verify a document whose strings and lists are all empty produces none either
+    """
+    assert not RehuDocument({"core": {}}).lock_reasons
+    empty = {"id": "", "description": "", "created": "", "sources": [{"title": ""}], "extra_tags": []}
+    assert not RehuDocument({"core": empty}).lock_reasons
 
 
 def test_open_or_locked_returns_a_missing_stub_for_a_vanished_file(mocker: MockerFixture) -> None:

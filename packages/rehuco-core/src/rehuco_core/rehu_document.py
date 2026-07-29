@@ -49,6 +49,8 @@ from .rehu_locks import (
     OPTIONAL_INT_CORE_KEYS,
     OPTIONAL_INT_USER_KEYS,
     OPTIONAL_STR_CORE_KEYS,
+    coerced_str,
+    coerced_str_list,
     invalid_field_reasons,
     is_author_record,
     newer_block_format_reason,
@@ -702,7 +704,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         )
         if block_reason is not None:
             reasons.append(block_reason)
-        reasons.extend(invalid_field_reasons(self.core, self.active_block, self.__active_user_map()))
+        reasons.extend(
+            invalid_field_reasons(self.core, self.active_block, self.__active_user_map(), self.primary_source)
+        )
         return reasons
 
     @property
@@ -890,8 +894,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         malformed-but-recoverable original. An **empty string** is not malformed -- that is a genuinely
         typeless document, the state :meth:`new` starts in.
         """
-        resource_type = self.core.get("type")
-        return resource_type if isinstance(resource_type, str) else ""
+        return coerced_str(self.core.get("type"))
 
     @property
     def plugins(self) -> PluginRegistry:
@@ -909,12 +912,19 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     def id(self) -> str:
         """The resource UUID ([[data-model#stable-identity]]); minted by :meth:`new` or `.tc` import
         (:func:`~rehuco_core.tc_conversion.convert_tc`) -- empty string only for a document neither
-        constructor built, e.g. a load-failure stub (:meth:`locked_stub_for_error`)."""
-        return str(self.core.get("id", ""))
+        constructor built, e.g. a load-failure stub (:meth:`locked_stub_for_error`), or one whose stored
+        ``id`` is not a string -- read empty and locked
+        (:func:`~rehuco_core.rehu_locks.invalid_string_reasons`), rather than stringified into ``"None"``
+        as this resource's stable identity."""
+        return coerced_str(self.core.get("id"))
 
     @property
     def sources(self) -> list[dict[str, Any]]:
-        """The ``sources`` list ([[field-schema#sources]]); empty when the key is absent."""
+        """The ``sources`` list ([[field-schema#sources]]); empty when the key is absent, or present with
+        a non-list value -- which locks (:data:`~rehuco_core.rehu_locks.INVALID_SOURCES_MESSAGE`), since
+        it empties :attr:`title`/:attr:`publisher`/:attr:`url` in one stroke and the title setter would
+        try to append an entry to it. Non-dict *entries* are tolerated unlocked: primary resolution skips
+        them and every save carries them verbatim, so nothing coerced can overwrite them."""
         sources = self.core.get("sources", [])
         return sources if isinstance(sources, list) else []
 
@@ -937,9 +947,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def title(self) -> str:
-        """The display title -- the primary source's ``title`` ([[field-schema#sources]]); empty if none."""
+        """The display title -- the primary source's ``title`` ([[field-schema#sources]]); empty if there
+        is no source, or its ``title`` is present but not a string (which locks,
+        :func:`~rehuco_core.rehu_locks.invalid_string_reasons`). Only the *primary* source is read, which
+        is why only its strings are validated."""
         primary = self.primary_source
-        return str(primary.get("title", "")) if primary else ""
+        return coerced_str(primary.get("title")) if primary else ""
 
     @title.setter
     def title(self, value: str) -> None:
@@ -947,9 +960,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def publisher(self) -> str:
-        """The primary source's ``publisher`` ([[field-schema#sources]]); empty if none."""
+        """The primary source's ``publisher`` ([[field-schema#sources]]); empty if there is no source, or
+        its ``publisher`` is present but not a string (which locks, as for :attr:`title`)."""
         primary = self.primary_source
-        return str(primary.get("publisher", "")) if primary else ""
+        return coerced_str(primary.get("publisher")) if primary else ""
 
     @publisher.setter
     def publisher(self, value: str) -> None:
@@ -957,9 +971,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def url(self) -> str:
-        """The primary source's ``url`` ([[field-schema#sources]]); empty if none."""
+        """The primary source's ``url`` ([[field-schema#sources]]); empty if there is no source, or its
+        ``url`` is present but not a string (which locks, as for :attr:`title`)."""
         primary = self.primary_source
-        return str(primary.get("url", "")) if primary else ""
+        return coerced_str(primary.get("url")) if primary else ""
 
     @url.setter
     def url(self, value: str) -> None:
@@ -1482,8 +1497,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def created(self) -> str:
-        """When this record was first written ([[field-schema#record-timestamps]]), as stored; empty if absent."""
-        return str(self.core.get("created", ""))
+        """When this record was first written ([[field-schema#record-timestamps]]), as stored; empty if
+        absent, or present with a non-string value -- which locks
+        (:func:`~rehuco_core.rehu_locks.invalid_string_reasons`), so a stamp nobody can read is not
+        replaced by an empty one."""
+        return coerced_str(self.core.get("created"))
 
     @created.setter
     def created(self, value: str) -> None:
@@ -1492,9 +1510,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @property
     def updated(self) -> str:
         """When this record was last edited ([[field-schema#record-timestamps]]), as stored; empty if
-        absent. Refreshed by :meth:`save` when the save actually changes the record (#142); the setter
+        absent, or present with a non-string value, which locks like :attr:`created`'s does -- and the
+        lock is what keeps :meth:`save`'s refresh from being the write that discards it.
+        Refreshed by :meth:`save` when the save actually changes the record (#142); the setter
         stays public for seeding paths that know better (`.tc` import writes the file's own mtime)."""
-        return str(self.core.get("updated", ""))
+        return coerced_str(self.core.get("updated"))
 
     @updated.setter
     def updated(self, value: str) -> None:
@@ -1612,9 +1632,12 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def advertised_tags(self) -> list[str]:
-        """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]]); empty when absent."""
-        tags = self.core.get("advertised_tags", [])
-        return [str(t) for t in tags] if isinstance(tags, list) else []
+        """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]]); empty when absent.
+
+        Entries that are not strings are **skipped**, not stringified -- a tag reading ``"None"`` or
+        ``"7"`` is a value nobody typed, and the list editor would save it back. A non-list value, or a
+        list holding any such entry, locks (:func:`~rehuco_core.rehu_locks.invalid_string_reasons`)."""
+        return coerced_str_list(self.core.get("advertised_tags"))
 
     @advertised_tags.setter
     def advertised_tags(self, value: list[str]) -> None:
@@ -1622,9 +1645,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def extra_tags(self) -> list[str]:
-        """The personal ``extra_tags`` list ([[field-schema#field-mapping]]); empty when absent."""
-        tags = self.core.get("extra_tags", [])
-        return [str(t) for t in tags] if isinstance(tags, list) else []
+        """The personal ``extra_tags`` list ([[field-schema#field-mapping]]); empty when absent, with the
+        same skip-and-lock reading as :attr:`advertised_tags`."""
+        return coerced_str_list(self.core.get("extra_tags"))
 
     @extra_tags.setter
     def extra_tags(self, value: list[str]) -> None:
@@ -1632,7 +1655,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
     @property
     def description(self) -> str:
-        """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent.
+        """The Markdown ``description`` ([[field-schema#field-types]]), as stored; empty when absent, or
+        when present with a non-string value -- which locks
+        (:func:`~rehuco_core.rehu_locks.invalid_string_reasons`), the longest free-text field in the file
+        being the last one an edit should be able to flatten to ``"None"``.
 
         Line endings are normalized to LF regardless of the source platform's convention (CRLF,
         bare CR, or already LF) -- editing should read the same no matter which platform wrote the
@@ -1640,7 +1666,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         dict, so a file whose description is never actually edited keeps its original on-disk line
         endings until something calls the setter.
         """
-        value = str(self.core.get("description", ""))
+        value = coerced_str(self.core.get("description"))
         return value.replace("\r\n", "\n").replace("\r", "\n")
 
     @description.setter
@@ -1653,10 +1679,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
 
         App-managed presentation metadata: the lightbox defaults to showing every ``<stem>NN`` sibling
         screenshot, so only the **hidden exceptions** are stored -- an empty/absent list means all are
-        shown. Filenames (basenames) only, never paths. Empty when the key is absent or malformed
-        ([[data-model#write-integrity]])."""
-        names = self.core.get("hidden_images", [])
-        return [str(name) for name in names] if isinstance(names, list) else []
+        shown. Filenames (basenames) only, never paths. Empty when the key is absent or malformed, with
+        the same skip-and-lock reading as :attr:`advertised_tags` ([[data-model#write-integrity]]) -- a
+        stringified entry here would name a file that cannot exist, hiding nothing while claiming to."""
+        return coerced_str_list(self.core.get("hidden_images"))
 
     @hidden_images.setter
     def hidden_images(self, value: list[str]) -> None:
