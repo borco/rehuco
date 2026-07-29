@@ -1,4 +1,4 @@
-.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build publish setup-git \
+.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build setup-git \
 	uis qrcs icons agent-dev-build agent-dev-clean agent-dev-register agent-dev-unregister \
 	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean \
 	agent-appimage-build agent-appimage-clean
@@ -170,15 +170,6 @@ docs-serve: docs-icons
 # PlantUML server, so a cold cache makes this need the network, which `qa` must not.
 docs-build: docs-icons
 	uv run mkdocs build --strict
-
-# Superseded by .github/workflows/publish-packages.yml, which publishes exactly the package a
-# `<package>-X.Y.Z` tag names, from a clean checkout, over OIDC. This one builds and uploads *every*
-# package whose local version is ahead of PyPI, from whatever is in the working tree -- kept only until
-# the tag-triggered publish has published something for real, so the repo is never left with no
-# publishing path ([[appendices.continuous-integration#publish-packages]]).
-publish:
-	uv build --all-packages --out-dir .dist
-	uv publish --check-url https://pypi.org/simple/ .dist/*
 
 # agent-dev-*: Windows-only, dev-only (packages/rehuco-agent/launcher) -- a local double-click/registration
 # target with correct app identity, running the live editable install. Requires VS2022 and

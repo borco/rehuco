@@ -208,11 +208,6 @@ one pinned version of a package published minutes earlier, which is the case it 
 - **Code-signing and notarization** are not done — an unpriced prerequisite
   ([[appendices.open-questions#still-open]]). Downloaders will meet SmartScreen on Windows and Gatekeeper on
   macOS, and have to override both by hand.
-- **`make publish` is still there**, and is the bulk-publish path `publish-packages.yml` exists to replace —
-  `uv build --all-packages` followed by `uv publish`, which uploads every package whose local version is
-  ahead of PyPI. It stays only until the tag-triggered publish has published something for real, so that the
-  repository is never left with no publishing path at all
-  ([[appendices.continuous-integration#publish-packages]]).
 - **No auto-update.** Each release is a fresh download and install.
 
 ## 8. Windows packaged builds print nothing
