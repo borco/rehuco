@@ -168,23 +168,26 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     * load via :func:`load_tc`
     * verify the leaked `duration` produced no ``original_duration``, ``images_count`` is omitted
       entirely (never derived from it, never fabricated as ``null``), and per-user flags nest under
-      ``users`` at block v1
+      ``users`` at the block's current version
+    * verify the tc4 ``viewed``/``todo`` values are **not** carried across
     """
     doc = load_tc_doc(mocker, REFERENCE_IMAGES_TC)
     assert doc.type == "reference_images"
     assert doc.active_block_key == "reference_images"
     block = doc.active_block
-    assert block["format_version"] == 2
+    assert block["format_version"] == 3
     assert block["complete"] is False
     assert block["collections"] == []
+    # tc4 stored all six booleans for every type; a reference-image pack has no notion of progress
+    # through timed material, so these two are dropped at the source rather than imported and then
+    # stripped by the block's v3 step -- an imported block is stamped current and never reaches it
+    # ([[field-schema#resource-types]], #195)
     assert block["users"] == {
         "unknown": {
             "favorite": False,
             "keep": True,
             "learning_paths": [],
             "rating": -5,
-            "todo": True,
-            "viewed": True,
         }
     }
     # ``images_count`` is shared, new, and empty on import -- *omitted*, filled later by scanning, never the

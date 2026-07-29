@@ -6,7 +6,73 @@ from typing import Final
 from ..rehu_format import CORE_BLOCK_KEY, RESERVED_KEYS
 from .plugin_spec import PluginSpec
 
-CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,))
+CORE_FIELD_NAMES: Final = (
+    "title",
+    "publisher",
+    "url",
+    "authors",
+    "released",
+    "description",
+    "hidden_images",
+    "advertised_tags",
+    "extra_tags",
+    "created",
+    "updated",
+    "original_size",
+    "current_size",
+)
+"""The **common core** tier ([[field-schema#resource-types]]): the fields every resource type has, whatever
+its plugin. Declared by :data:`CORE_PLUGIN`, so a surface composing a type's fields asks the core
+declaration and the type's own, and gets the union (#195).
+
+``title``/``publisher``/``url`` are the **primary source's** ([[field-schema#sources]]), which the core
+block stores under one ``sources`` list rather than three keys -- these name the *fields* a form composes
+and a browser column reads, which is not always the key a block stores them under
+(:attr:`~rehuco_core.PluginSpec.field_names`)."""
+
+RESOURCE_FIELD_NAMES: Final = (
+    "rating",
+    "complete",
+    "online",
+    "keep",
+    "favorite",
+    "collections",
+    "learning_paths",
+)
+"""The **resource** tier ([[field-schema#resource-types]]): the fields Tutorial and ReferenceImages share,
+spliced into both declarations below. A :data:`COLLECTION_PLUGIN` declares none of them -- a series node
+is not something rated, kept, or filed under a learning path.
+
+``complete`` is here rather than with the durations because it means *the item has all its parts* -- every
+video of a tutorial, every image of a reference pack ([[field-schema#boolean-flags]]) -- which both types
+have. ``viewed``/``todo`` are the ones that don't: see :data:`TUTORIAL_FIELD_NAMES`.
+
+Shared by being named in two declarations, not by a third tier the registry knows about: a tier is an
+observation about what the types happen to have in common ([[field-schema#resource-types]] draws it), and
+one plugin dropping a field must not be a change to another's schema."""
+
+TUTORIAL_FIELD_NAMES: Final = (
+    "viewed",
+    "todo",
+    "advertised_duration",
+    "original_duration",
+    "current_duration",
+    "level",
+)
+"""The **Tutorial-only** tier ([[field-schema#resource-types]]): the progress flags, the three durations
+([[field-schema#duration-size]]) and the multi-choice ``level``.
+
+``viewed`` and ``todo`` are progress through timed material -- watched it, queued to watch it -- which a
+reference-image pack has no notion of; you consult one, you don't get through it. They sat on both types
+until #195, and a ``reference_images`` block that still carries them is stripped by that chain's v3 step
+(:mod:`~rehuco_core.migrations.reference_images.v3_drop_progress_flags`)."""
+
+REFERENCE_IMAGES_FIELD_NAMES: Final = ("images_count",)
+"""The **ReferenceImages-only** tier ([[field-schema#resource-types]]): the image count. Deliberately
+**no** duration -- which is the point of declaring per type at all, since the value that leaked as `720`
+in tc4 now has nowhere to land."""
+
+CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,), field_names=CORE_FIELD_NAMES)
 """The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.
 
 The core's fields live in a block like any plugin's, which is what lets a ``.rehu`` be read as nothing but
@@ -15,22 +81,38 @@ The core's fields live in a block like any plugin's, which is what lets a ``.reh
 :data:`DEFAULT_PLUGIN_REGISTRY`, which :class:`PluginRegistry` refuses to build for *any* spec declaring a
 reserved key, this one included. So this constant's job is purely descriptive; it lives here (not in the
 grammar leaf) because it *is* a ``PluginSpec``, and the grammar leaf spells the core key without one to
-stay import-cycle-free."""
+stay import-cycle-free.
 
-TUTORIAL_PLUGIN: Final = PluginSpec(("tutorial", "Tutorial"), color="#1E88E5")
+Descriptive is not idle, though: it is where :data:`CORE_FIELD_NAMES` is declared from (#195), which is
+what lets "the fields this type shows" be one question -- the core's declaration plus the type's own --
+rather than a common list in one layer and a per-type list in another."""
+
+TUTORIAL_PLUGIN: Final = PluginSpec(
+    ("tutorial", "Tutorial"),
+    color="#1E88E5",
+    field_names=(*RESOURCE_FIELD_NAMES, *TUTORIAL_FIELD_NAMES),
+)
 """The tutorial plugin ([[plugins#tutorial-plugin]]); ``Tutorial`` is tc4's capitalized spelling
-([[acquisition-tooling#tc-to-rehu]]), carried as an alias. Badge color: Blue 600."""
+([[acquisition-tooling#tc-to-rehu]]), carried as an alias. Badge color: Blue 600. Declares the shared
+resource fields plus its own durations and ``level`` ([[field-schema#resource-types]])."""
 
-REFERENCE_IMAGES_PLUGIN: Final = PluginSpec(("reference_images", "ReferenceImages", "refimages"), color="#8E24AA")
+REFERENCE_IMAGES_PLUGIN: Final = PluginSpec(
+    ("reference_images", "ReferenceImages", "refimages"),
+    color="#8E24AA",
+    field_names=(*RESOURCE_FIELD_NAMES, *REFERENCE_IMAGES_FIELD_NAMES),
+)
 """The reference-images plugin ([[plugins#refimages-plugin]]); ``ReferenceImages`` is tc4's spelling and
 ``refimages`` an earlier shorthand this document's own examples once used -- both aliases now. Badge
-color: Purple 600."""
+color: Purple 600. Declares the shared resource fields plus ``images_count``, and no duration
+([[field-schema#resource-types]])."""
 
 COLLECTION_PLUGIN: Final = PluginSpec(("collection", "Collection"), color="#00897B")
 """The collection type ([[field-schema#resource-types]]). Declared for its identity alone: a Collection
-carries none of the resource fields, so its block is normally absent -- but its ``type`` still normalizes
-like any other, and a file that does carry a ``collection:`` block round-trips as a block rather than as
-a stray unknown key. Badge color: Teal 600."""
+carries none of the resource fields -- it declares **no** field names, so it composes the common core and
+nothing else -- and its block is normally absent. Its ``type`` still normalizes like any other, and a file
+that does carry a ``collection:`` block round-trips as a block rather than as a stray unknown key. Badge
+color: Teal 600. Which fields the type eventually gains is deferred until a real collection is in hand
+([[field-schema#deferred-items]]); an empty declaration is the honest statement of that, not a stub."""
 
 BUILTIN_PLUGINS: Final = (TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN, COLLECTION_PLUGIN)
 """The declarations this build ships. Deliberately **excludes** :data:`~rehuco_core.CORE_PLUGIN`: the core
@@ -108,6 +190,22 @@ class PluginRegistry:
         """
         spec = self.__index.get(name)
         return spec.key if spec is not None else name
+
+    def field_names(self, name: str) -> tuple[str, ...]:
+        """The field names a type declares ([[field-schema#resource-types]], #195).
+
+        The plugin's own :attr:`PluginSpec.field_names` when ``name`` names an installed plugin (a main key
+        or alias), else the **empty tuple** -- a type whose plugin isn't installed here declares nothing,
+        so a surface composing its fields composes only the common core and every key in its block reaches
+        the generic fallback ([[plugins#fallback-editor]]). That is the same answer an installed plugin
+        declaring no fields gives (a Collection), and deliberately so: both mean "this build knows of no
+        field of this type", and both leave the block's payload visible rather than silently unrendered.
+
+        :param name: a main key or alias, as spelled on disk.
+        :returns: the type's declared field names, or ``()`` when unclaimed.
+        """
+        spec = self.__index.get(name)
+        return spec.field_names if spec is not None else ()
 
     def color(self, name: str) -> str | None:
         """The badge **background** color a type declares ([[plugins#plugin-blocks]], #83).

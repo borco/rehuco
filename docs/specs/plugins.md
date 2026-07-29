@@ -144,8 +144,12 @@ that show and edit it:
   it builds, rebuilds included, and acts.
 
 The toolkit lives in the **agent** (`packages/rehuco-agent/…/fields/`); `rehuco-core` stays non-GUI.
-**Where each type's ordered field list is authored is not yet decided** — see the open question
-([[appendices.open-questions#still-open]]). For LocalEdit2.0 the tracer's field list is a hardcoded Python constant.
+**Which fields a type has is declared by its plugin** ([[field-schema#resource-types]], #195) — names only, so the
+declaration stays non-GUI and a node can read a block's shape from it; the agent maps each name to a toolkit type. A
+type whose plugin isn't installed here declares nothing, which is already the fallback path
+([[plugins#fallback-editor]]). **Where each type's *ordered* list is authored is still not decided** — see the open
+question ([[appendices.open-questions#still-open]]); the order is a hardcoded Python list spanning every type,
+filtered per type.
 
 **Content fields vs. the location control — two different categories.** Almost every field is a piece of
 **content**: a value stored *inside* the `.rehu` payload, bound bidirectionally to its editor. These

@@ -60,8 +60,8 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | `complete` | Complete | `complete` | bool | Tutorial, RefImages | scalar | keep — "all files present"; default `true` |
 | `online` | Online | `online` | bool | Tutorial, RefImages | scalar | keep — "source still available online" ([[field-schema#online-flag]]) |
 | `rating` | Rating | `rating` | rating (int) | Tutorial, RefImages | scalar | keep — **per-user**; may be negative |
-| `viewed` | Viewed | `viewed` | bool | Tutorial, RefImages | scalar | keep — **per-user** |
-| `todo` | To Do | `todo` | bool | Tutorial, RefImages | scalar | keep — **per-user** |
+| `viewed` | Viewed | `viewed` | bool | Tutorial | scalar | keep — **per-user**; Tutorial-only since #195 ([[field-schema#boolean-flags]]) |
+| `todo` | To Do | `todo` | bool | Tutorial | scalar | keep — **per-user**; Tutorial-only since #195 ([[field-schema#boolean-flags]]) |
 | `keep` | Keep | `keep` | bool | Tutorial, RefImages | scalar | keep — **per-user** |
 | — | *(new)* | `favorite` | bool | Tutorial, RefImages | scalar | **new** — **per-user**; separate UI ([[field-schema#boolean-flags]]) |
 | `collection` | Collection | `collections[].title` | text | Tutorial, RefImages | record³ | keep — see [[field-schema#sources]] |
@@ -94,6 +94,26 @@ disk scan (which in rehuco feed `current_duration` / `current_size` — see [[fi
 `type` selects one of three. Fields fall into tiers so "common" means *common to all types*
 only:
 
+> [!NOTE]
+> **Where a type's field list is authored: in the plugin declaration** (settled in
+> [#195](https://github.com/borco/rehuco/issues/195)). A plugin declares the field *names* it
+> contributes alongside its key list and badge colors ([[plugins#core-vs-plugin]]: schema extension is
+> plugin-owned), and the common core declares its own the same way. Names only, no widget types — a
+> node reads the same declaration to know a block's shape, and mapping a name to a toolkit widget is
+> the agent's job ([[plugins#field-toolkit]]). The alternative — a per-type map in the agent's
+> composition layer — was rejected as the layering inversion #151 had to undo once.
+>
+> Two consequences worth stating. **A type declares nothing when its plugin isn't installed here**, so
+> it composes the common core alone and every key in its block reaches the generic fallback
+> ([[plugins#fallback-editor]]) — narrowing what renders must never make a value invisible, so
+> *recognition* narrows with it. And **the tiers below are an observation, not a third thing the
+> registry knows**: Tutorial and ReferenceImages share the resource fields by both naming them, so one
+> dropping a field is not a change to the other's schema.
+>
+> Still open: where each type's **ordered** list is authored
+> ([[appendices.open-questions#still-open]]). Display order remains one hardcoded list spanning every
+> type, filtered per type — the declarations are sets.
+
 - **Common core (all types)** — `sources` (title/publisher/url), `authors`, `released`,
   `description`, `hidden_images` ([[data-model#image-meanings]]), `advertised_tags`, `extra_tags`, `created`,
   `updated`, and the measured
@@ -101,10 +121,16 @@ only:
   every file-backed type; a Collection leaves them empty (it may later fill them from member
   stats — see the Collection bullet below).
 - **Resource fields (Tutorial + ReferenceImages)** — `rating`, the boolean flags
-  (`complete`, `online`, `viewed`, `todo`, `keep`, `favorite`; [[field-schema#boolean-flags]]), and the `collections` /
+  `complete`, `online`, `keep` and `favorite` ([[field-schema#boolean-flags]]), and the `collections` /
   `learning_paths` memberships ([[field-schema#sources]]). A **Collection** declares none of these.
-- **Tutorial only** — `original_duration` / `current_duration` / `advertised_duration` and
-  `level`.
+  `complete` belongs here rather than with the durations because it means *the item has all its parts* —
+  every video of a tutorial, every image of a reference pack.
+- **Tutorial only** — `original_duration` / `current_duration` / `advertised_duration`,
+  `level`, and the progress flags `viewed` / `todo`. Progress through timed material is not something a
+  reference-image pack has: you consult one, you don't get through it. They sat on both types until
+  [#195](https://github.com/borco/rehuco/issues/195); a `reference_images` block that still carries them
+  is stripped by that chain's **v3** step ([[plugins#plugin-blocks]]), which is the first place the two
+  block chains diverge.
 - **ReferenceImages only** — `images_count`; declares **no** duration ([[field-schema#duration-size]]), so the value
   that leaked as `720` in tc4 has nowhere to land.
 - **Collection** — a series/grouping node; its **`title` is the series name** that members
@@ -364,7 +390,12 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
   UI.
 - **Scope.** `complete` and `online` are shared/objective; `viewed`, `todo`, `keep`, `favorite`
   are **per-user** ([[field-schema#per-user-shared]]) — stored under the block's `users` map, keyed by username
-  (block layout v1, [[field-schema#per-user-shared]]).
+  (block layout v1, [[field-schema#per-user-shared]]). Per-user is a *storage* question, and orthogonal to
+  which types have the field: `viewed` and `todo` are per-user **and** Tutorial-only
+  ([[field-schema#resource-types]]), while `keep` and `favorite` are per-user on both types.
+- **Which types.** `complete`, `online`, `keep` and `favorite` are on Tutorial and ReferenceImages;
+  `viewed` and `todo` are Tutorial-only. `complete` reads as *has all its parts* — every video, or every
+  image — so it is not a progress flag despite sitting near two.
 - **Deferred: a `default_tags` toggle set.** Folding the fixed-vocabulary bools
   (`complete`/`online`/`viewed`/`todo`/`keep`) into one list rendered as UI toggles, with a
   vocabulary from `.rehuco` or defaults, was considered and **deferred** ([[field-schema#deferred-items]]): its payoff
@@ -543,9 +574,11 @@ Field order, in the three groups the layout separates:
 - [x] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
 - [x] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
 
-- **Common/plugin boundary** — the [[field-schema#field-mapping]] tiers (common core / resource fields / per-type) are a
-  first cut; finalize when the field toolkit (LocalEdit2) and plugin blocks ([[plugins#overview]]) land. The generic
-  editor does not depend on it.
+- **Common/plugin boundary — settled (#195)** — the [[field-schema#field-mapping]] tiers (common core / resource fields
+  / per-type) were a first cut until the field toolkit and plugin blocks ([[plugins#overview]]) landed; they are now
+  the declarations themselves, each plugin naming its own fields and the core naming the common ones
+  ([[field-schema#resource-types]]). The generic editor still does not depend on it — an undeclared key falls back
+  ([[plugins#fallback-editor]]), which is what lets the boundary move without losing a value.
 - **Collection *type* — deferred** ([[field-schema#resource-types]]) — which fields a `type: Collection` record
   shows/edits, and whether it re-gains a **recomputed** member-stats cache. Decide when a real
   collection is in hand. *(The `collections` membership fields are settled, [[field-schema#sources]].)* Partially

@@ -173,16 +173,16 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   designed.
 - **Drawing comparison/critique pipeline** — exploratory ([[plugins#refimages-plugin]]); needs prototyping before being
   committed.
-- **Where a type's field-list/schema is declared** — the field toolkit ([[plugins#field-toolkit]]) is settled, but
-  *where
-  the ordered field list for a type is authored* is not. `.rehuco` already declares which plugins load
-per machine ([[mounts-and-storage#rehuco-scope]]) but says nothing about field lists. The original tc5/resource-hub idea
-was to
-  declare field lists **in `.rehuco` itself**, so different `.rehuco` files (spanning different root
-  folders) could define different field sets for the same type — one machine/root's "Tutorial" need not
-  match another's. For LocalEdit2.0 the field list is simply a **hardcoded Python constant**, parsed at app
-  start; moving it into `.rehuco` (or an `.ini`, edited via a future fields-editor view) is deferred
-  until it's actually needed, not designed now. Note this concerns **content** fields only: the `path`
+- **Where a type's *ordered* field list is authored** — narrowed, not closed. *Which* fields a type has is settled:
+  the **plugin declares them** beside its key list ([[field-schema#resource-types]], #195), which is the half that
+  decides what renders where. What is still open is where the **order** comes from — today one hardcoded Python list
+  spanning every type, filtered per type, since the declarations are sets. `.rehuco` already declares which plugins
+  load per machine ([[mounts-and-storage#rehuco-scope]]) but says nothing about field lists. The original
+  tc5/resource-hub idea was to declare field lists **in `.rehuco` itself**, so different `.rehuco` files (spanning
+  different root folders) could define different field sets for the same type — one machine/root's "Tutorial" need not
+  match another's. That idea now applies to the ordering (and to *overriding* a plugin's declaration per root, if that
+  is ever wanted); moving it into `.rehuco` (or an `.ini`, edited via a future fields-editor view) is deferred until
+  it's actually needed, not designed now. Note this concerns **content** fields only: the `path`
   field is a location control, not a payload value, and is authored out-of-band regardless of where
   content field lists end up living ([[plugins#field-toolkit]]'s content-vs-location distinction).
 - **Borrow automation** — manual vs. automated power-down of the source box is unresolved

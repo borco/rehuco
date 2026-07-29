@@ -33,10 +33,16 @@ from rehuco_core import (
 )
 
 from ..fields.field import Field, FieldBinding
+from ..fields.unknown_field import UnknownField
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
 
+# The three groups below are **coercion** groups: they say how a plugin-block value is read and written
+# back, not which type owns it. Which fields a type *has* is the plugin's own declaration in core
+# (`~rehuco_core.PluginSpec.field_names`, #195) -- so the model's SimpleProperty set stays whole and
+# type-blind, and a document carrying a field its type doesn't declare still round-trips it. The two meet
+# at :meth:`unknown_field_names`, which asks the declaration.
 TYPE_FIELD_BOOL_NAMES: Final = ("complete", "online", "viewed", "todo", "keep", "favorite")
 """The type-field boolean flags ([[field-schema#boolean-flags]]); each name's default lives on its own
 ``SimpleProperty`` declaration below, read back generically via ``SimpleProperty.default_value``."""
@@ -51,16 +57,6 @@ TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
 mutually-exclusive single value -- tc4 could tag more than one of beginner/intermediate/advanced/any
 at once. Defaults live on each ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
 
-TYPE_FIELD_RECORD_LIST_NAMES: Final = ("collections",)
-"""The type-field **record lists** stored inline in the block ([[field-schema#field-types]]): a list of
-small records, none of the scalar groups above. Read-only here -- the model projects them through the
-document's own resolving accessor and never writes them back, so they are absent from the write-through
-loops (:meth:`__init__`); editing them is the record-list machinery (#97). Listed all the same, because
-being a *known* field is what keeps ``collections`` out of the generic unknown-field fallback, which
-would otherwise flag a settled v1 field as coming from a newer version (:meth:`unknown_field_names`,
-#189). ``learning_paths`` is stored the same way but is not here: it lives under the block's ``users``
-map, which the fallback already excludes wholesale."""
-
 USER_FIELD_NAMES: Final = frozenset(("rating", "viewed", "todo", "keep", "favorite"))
 """The subset of the groups above that is **per-user** ([[field-schema#per-user-shared]], #99): these
 route through the document's per-user accessors (`RehuDocument.active_user_field` /
@@ -70,13 +66,6 @@ v1) instead of the shared inline ones. Mirrors the core importer's per-user set
 and one whose *visible* set spans several identities (this one's own entries, its subscriptions, and the
 reserved ``public`` scope), so it resolves through :attr:`~RehuDocument.learning_paths` rather than the
 single-identity accessors this set routes through."""
-
-KNOWN_TYPE_FIELD_NAMES: Final = frozenset(
-    TYPE_FIELD_BOOL_NAMES + TYPE_FIELD_INT_NAMES + TYPE_FIELD_STR_LIST_NAMES + TYPE_FIELD_RECORD_LIST_NAMES
-)
-"""Every plugin-block key the model reads as a known field ([[field-schema#resource-types]]); any other
-key in the active block is an **unknown field** surfaced through the generic fallback
-([[plugins#fallback-editor]], #28)."""
 
 COMMON_FIELD_NAMES: Final = (
     "title",
@@ -96,7 +85,11 @@ of the same name on edit ([[field-schema#field-mapping]]), wired generically in 
 to :meth:`__on_common_field_changed` -- the same shape :data:`TYPE_FIELD_BOOL_NAMES` et al. use for
 :meth:`__on_type_field_changed`. Excludes `resource_type`: a type switch
 (:meth:`__on_resource_type_changed`) claims a plugin block and reseeds the whole active block, not a
-plain write-through."""
+plain write-through.
+
+The **write-through** subset of the core block's own declaration
+(:data:`~rehuco_core.CORE_FIELD_NAMES`): ``created``/``updated`` are core fields too, but they are stamped
+by the document rather than edited, so they carry no `SimpleProperty` and no handler here."""
 
 
 UNTITLED_LABEL: Final = "Untitled"
@@ -606,26 +599,36 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :returns: the field's current value, its notify signal, and a setter.
         """
         name = field.name
-        try:
-            signal_name = SimpleProperty.notify_signal_name(type(self), name)
-        except KeyError:
-            # not a declared property -> a key carried verbatim and surfaced through the generic
-            # fallback ([[plugins#fallback-editor]]). Two different things reach here and they sit at
-            # different depths in the document: a whole **inactive block** is a top-level key, while an
-            # **unknown field** is a key inside the active block -- so which one this is has to be
-            # settled before reading a value, or an inactive block would read as an absent field.
-            inactive_block = self.__inactive_block_binding(name)
-            if inactive_block is not None:
-                return inactive_block
-            return FieldBinding(
-                value=self.__document.active_field(name),
-                changed=self.unknown_fields_changed,
-                set_value=lambda value: self.__document.set_active_field(name, value),
-            )
+        # an `UnknownField` never binds a property, even when its name collides with a declared one --
+        # possible since recognition went per-type (#195): a tutorial block's stray ``images_count`` is
+        # unknown *here* while still being a property of the model. The property read is coerced (and,
+        # for a per-user name, resolved through the ``users`` map rather than the stray inline key), so
+        # binding it would fabricate a value the file never carried -- where the fallback's whole
+        # contract is verbatim ([[plugins#fallback-editor]]).
+        if not isinstance(field, UnknownField):
+            try:
+                signal_name = SimpleProperty.notify_signal_name(type(self), name)
+            except KeyError:
+                pass
+            else:
+                return FieldBinding(
+                    value=getattr(self, name),
+                    changed=getattr(self, signal_name),
+                    set_value=lambda value: setattr(self, name, value),
+                )
+        # not a declared property (or deliberately not bound as one) -> a key carried verbatim and
+        # surfaced through the generic fallback ([[plugins#fallback-editor]]). Two different things
+        # reach here and they sit at different depths in the document: a whole **inactive block** is a
+        # top-level key, while an **unknown field** is a key inside the active block -- so which one
+        # this is has to be settled before reading a value, or an inactive block would read as an
+        # absent field.
+        inactive_block = self.__inactive_block_binding(name)
+        if inactive_block is not None:
+            return inactive_block
         return FieldBinding(
-            value=getattr(self, name),
-            changed=getattr(self, signal_name),
-            set_value=lambda value: setattr(self, name, value),
+            value=self.__document.active_field(name),
+            changed=self.unknown_fields_changed,
+            set_value=lambda value: self.__document.set_active_field(name, value),
         )
 
     def __inactive_block_binding(self, name: str) -> FieldBinding[Any] | None:
@@ -653,9 +656,16 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     def unknown_field_names(self) -> list[str]:
         """The active plugin block's keys the model doesn't recognize ([[plugins#fallback-editor]], #28).
 
-        Every key in the active block ([[plugins#plugin-blocks]]) that isn't a known field
-        (:data:`KNOWN_TYPE_FIELD_NAMES`) -- e.g. a field written by a newer plugin version than the one
-        installed here. Carried verbatim on round-trip unless explicitly dropped via
+        Every key in the active block ([[plugins#plugin-blocks]]) that the **active type** doesn't
+        declare (`~rehuco_core.PluginRegistry.field_names`, #195) -- e.g. a field written by a newer
+        plugin version than the one installed here. Recognition is per type, the same declaration the
+        form composes from (`composed_field_specs`), because the two must agree: a key no type declares
+        is a key no editor row renders, so anything short of surfacing it here would leave a value in the
+        file with nowhere on screen to see or drop it. A ``tutorial`` block carrying ``images_count``
+        therefore falls back rather than rendering an empty ReferenceImages row, and a type whose plugin
+        isn't installed here declares nothing, so its whole block reaches the fallback.
+
+        Carried verbatim on round-trip unless explicitly dropped via
         :meth:`remove_unknown_field`. The block's own ``format_version`` stamp (#81,
         [[plugins#plugin-blocks]]) is excluded -- it is block-management bookkeeping, not a resource
         field, the same way the file-wide stamp never shows up as an unknown *common* field either.
@@ -666,10 +676,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :returns: the unknown keys, sorted for a stable display order.
         """
+        declared = self.__document.plugins.field_names(self.__document.type)
         return sorted(
             key
             for key in self.__document.active_block
-            if key not in KNOWN_TYPE_FIELD_NAMES and key not in (FORMAT_VERSION_KEY, USERS_KEY)
+            if key not in declared and key not in (FORMAT_VERSION_KEY, USERS_KEY)
         )
 
     def inactive_block_keys(self) -> list[str]:

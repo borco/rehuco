@@ -1,11 +1,17 @@
-"""Tests for plugin identity: declared key lists and the registry that indexes them."""
+"""Tests for plugin identity and block schema: declared key lists, declared field names, and the registry
+that indexes them."""
 
 import pytest
 from rehuco_core import (
     BUILTIN_PLUGINS,
+    COLLECTION_PLUGIN,
+    CORE_FIELD_NAMES,
     CORE_PLUGIN,
     DEFAULT_PLUGIN_REGISTRY,
+    REFERENCE_IMAGES_FIELD_NAMES,
     REFERENCE_IMAGES_PLUGIN,
+    RESOURCE_FIELD_NAMES,
+    TUTORIAL_FIELD_NAMES,
     TUTORIAL_PLUGIN,
     PluginRegistry,
     PluginSpec,
@@ -80,6 +86,85 @@ def test_a_plugin_may_not_declare_the_same_key_twice() -> None:
     """
     with pytest.raises(ValueError, match="duplicate key"):
         PluginSpec(("tutorial", "tutorial"))
+
+
+def test_a_plugin_declares_no_field_names_by_default() -> None:
+    """Declaring fields is optional: a plugin that names none declares none
+    ([[field-schema#resource-types]], #195).
+
+    Identity comes first -- a type is declarable before its field set is decided, which is exactly
+    `~rehuco_core.COLLECTION_PLUGIN`'s position ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a spec declaring only keys
+    * verify its field names are empty
+    """
+    assert not PluginSpec(("audiopack",)).field_names
+
+
+def test_a_plugin_may_not_declare_an_empty_or_repeated_field_name() -> None:
+    """A field-name list gets the same two checks the key list gets: a blank name names nothing and a
+    repeat says nothing the first did not (#195).
+
+    **Test steps:**
+
+    * construct a spec whose declaration hides a ``""`` among its field names
+    * construct one repeating a field name
+    * verify both raise
+    """
+    with pytest.raises(ValueError, match="empty field name"):
+        PluginSpec(("tutorial",), field_names=("level", ""))
+    with pytest.raises(ValueError, match="duplicate field name"):
+        PluginSpec(("tutorial",), field_names=("level", "level"))
+
+
+def test_the_builtin_declarations_carry_the_specs_field_tiers() -> None:
+    """Each shipped plugin declares the tier the field schema assigns it
+    ([[field-schema#resource-types]], #195).
+
+    The decision this records: a type's field list is authored in its **plugin declaration**, beside the
+    identity it belongs to, rather than in whichever surface renders it -- schema extension is
+    plugin-owned ([[plugins#core-vs-plugin]]). The tiers themselves are only how the declarations are
+    composed: Tutorial and ReferenceImages share the resource fields by both naming them, so one
+    dropping a field is not a change to the other's schema.
+
+    **Test steps:**
+
+    * verify Tutorial declares the shared resource fields plus the durations and ``level``
+    * verify ReferenceImages declares the shared resource fields plus ``images_count`` and no duration
+    * verify Collection declares nothing, and the core declares the common tier
+    """
+    assert TUTORIAL_PLUGIN.field_names == (*RESOURCE_FIELD_NAMES, *TUTORIAL_FIELD_NAMES)
+    assert REFERENCE_IMAGES_PLUGIN.field_names == (*RESOURCE_FIELD_NAMES, *REFERENCE_IMAGES_FIELD_NAMES)
+    assert "images_count" not in TUTORIAL_PLUGIN.field_names
+    assert not [name for name in REFERENCE_IMAGES_PLUGIN.field_names if name.endswith("_duration")]
+    assert "level" not in REFERENCE_IMAGES_PLUGIN.field_names
+
+    assert not COLLECTION_PLUGIN.field_names
+    assert CORE_PLUGIN.field_names == CORE_FIELD_NAMES
+
+
+def test_field_names_resolves_a_types_declaration_and_is_empty_for_an_unclaimed_one() -> None:
+    """The registry answers "which fields does this type declare" for any spelling, and answers
+    **nothing** for a type whose plugin isn't installed here (#195).
+
+    The empty answer is the load-bearing one: it is what makes a not-installed type compose the common
+    core alone while every key in its block reaches the agent's generic fallback
+    ([[plugins#fallback-editor]]) rather than being silently unrendered.
+
+    **Test steps:**
+
+    * verify a main key and an alias both resolve to the plugin's declared fields
+    * verify an unclaimed name resolves to an empty tuple
+    """
+    registry = PluginRegistry([TUTORIAL_PLUGIN, REFERENCE_IMAGES_PLUGIN])
+
+    assert registry.field_names("tutorial") == TUTORIAL_PLUGIN.field_names
+    assert registry.field_names("Tutorial") == TUTORIAL_PLUGIN.field_names
+    assert registry.field_names("refimages") == REFERENCE_IMAGES_PLUGIN.field_names
+    assert registry.field_names("daz3d") == ()
+    assert registry.field_names("") == ()
 
 
 def test_resolve_finds_a_plugin_by_its_main_key_or_any_alias() -> None:

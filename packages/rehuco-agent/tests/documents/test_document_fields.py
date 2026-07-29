@@ -5,7 +5,13 @@ from typing import cast
 from PySide6.QtWidgets import QGridLayout, QLabel, QToolButton, QWidget
 from pytest import fixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB, build_document_form
+from rehuco_agent.documents.document_fields import (
+    EDITOR_MAIN_TAB,
+    MODEL_AGNOSTIC_FIELD_SPECS,
+    VIEWER_TAB,
+    build_document_form,
+    composed_field_specs,
+)
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import (
@@ -16,7 +22,7 @@ from rehuco_agent.fields import (
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, MISC_COLUMN
 from rehuco_agent.fields.widgets import SingleChoiceComboBox, TypeBadge
-from rehuco_core import TUTORIAL_PLUGIN, RehuDocument
+from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, RehuDocument
 
 
 # region fixtures
@@ -34,6 +40,25 @@ def model() -> RehuDocumentModel:
             }
         )
     )
+
+
+def typed_model(resource_type: str, blocks: dict[str, dict[str, object]] | None = None) -> RehuDocumentModel:
+    """A view-model over a document of ``resource_type``, carrying ``blocks`` verbatim.
+
+    :param resource_type: the document's ``type``, installed here or not.
+    :param blocks: the plugin blocks to seed the document with, keyed by block key.
+    :returns: the model to compose fields over.
+    """
+    return RehuDocumentModel(RehuDocument({"core": {"type": resource_type}, **(blocks or {})}))
+
+
+def composed_names(model: RehuDocumentModel) -> list[str]:
+    """The names of the record fields ``model``'s type composes, in composition order.
+
+    :param model: the model to compose fields over.
+    :returns: each composed spec's field name.
+    """
+    return [spec.name for spec in composed_field_specs(model)]
 
 
 def viewer_tooltips(qtbot: QtBot, model: RehuDocumentModel) -> dict[str, str]:
@@ -254,6 +279,165 @@ def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot:
 
     assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 2}"] == PROVENANCE_ABANDONED_TYPE
     assert tooltips["{'images_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
+
+
+# endregion
+
+
+# region composed_field_specs tests
+def test_a_reference_images_document_composes_no_duration_and_no_level() -> None:
+    """A ReferenceImages resource shows only the fields its own type declares
+    ([[field-schema#resource-types]], #195).
+
+    The bug this closes: composed from one flat list for every type, a ``reference_images`` document
+    rendered three durations and a ``Level`` -- all four Tutorial-only. It declares no duration at all,
+    which is why the value that leaked as `720` in tc4 has nowhere to land.
+
+    ``viewed``/``todo`` go with them: progress through timed material is not something a reference-image
+    pack has. ``complete`` stays, meaning *has all its parts* -- every image of the pack.
+
+    **Test steps:**
+
+    * compose the record fields for a ``reference_images`` document
+    * verify no duration, no ``level`` and neither progress flag is composed
+    * verify the fields it does share are still there
+    """
+    names = composed_names(typed_model("reference_images"))
+
+    assert not [name for name in names if name.endswith("_duration")]
+    for absent in ("level", "viewed", "todo"):
+        assert absent not in names
+    for present in ("rating", "collections", "complete", "online", "keep", "favorite"):
+        assert present in names
+
+
+def test_a_tutorial_document_composes_no_images_count() -> None:
+    """The other direction: a Tutorial does not compose the ReferenceImages-only ``images_count``
+    ([[field-schema#resource-types]], #195).
+
+    Asserted over the whole declaration rather than the rendered rows, because ``images_count`` has no
+    toolkit type mapped to it yet (#196 surfaces it) -- this pins that when it gains one, it gains it on
+    ReferenceImages alone.
+
+    **Test steps:**
+
+    * verify a Tutorial composes its own durations and ``level``
+    * verify neither the composed specs nor the Tutorial declaration names ``images_count``
+    """
+    names = composed_names(typed_model("tutorial"))
+
+    assert "advertised_duration" in names
+    assert "level" in names
+    assert "images_count" not in names
+    assert "images_count" not in TUTORIAL_PLUGIN.field_names
+
+
+def test_a_collection_composes_the_common_core_and_none_of_the_resource_fields() -> None:
+    """A Collection declares no fields of its own, so it composes the common core and stops
+    ([[field-schema#resource-types]], #195).
+
+    A series node is not something rated, marked viewed, or filed under a learning path -- so none of
+    the fields Tutorial and ReferenceImages share appear on it either. Which fields the type eventually
+    gains is deferred until a real collection is in hand ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * compose the record fields for a ``collection`` document
+    * verify every composed name is a common-core one
+    * verify the shared resource fields, the durations, and ``level`` are all absent
+    """
+    names = composed_names(typed_model("collection"))
+
+    assert names
+    assert all(name in CORE_FIELD_NAMES for name in names)
+    for absent in ("rating", "complete", "collections", "learning_paths", "level", "current_duration"):
+        assert absent not in names
+
+
+def test_a_not_installed_type_composes_the_common_core_and_falls_back_for_its_whole_block() -> None:
+    """A type with no plugin installed here keeps today's behavior: its block's keys reach the generic
+    fallback rows ([[plugins#fallback-editor]], #195).
+
+    The guard against a narrowed field list *swallowing* a value: a ``daz3d`` block's ``level`` renders
+    on no type, so recognition has to narrow with the composition -- the same declaration answers both,
+    and an undeclared key surfaces as an unknown field the user can read and drop.
+
+    **Test steps:**
+
+    * compose over a ``daz3d`` document whose block holds a Tutorial-only key and a foreign one
+    * verify only common-core fields compose
+    * verify **both** block keys reach the unknown-field fallback
+    """
+    model = typed_model("daz3d", {"daz3d": {"level": ["any"], "sku": "12345"}})
+
+    assert all(name in CORE_FIELD_NAMES for name in composed_names(model))
+    assert model.unknown_field_names() == ["level", "sku"]
+
+
+def test_a_stray_field_of_another_type_falls_back_rather_than_going_unrendered() -> None:
+    """A field its own type doesn't declare is surfaced through the fallback, not swallowed -- and is
+    carried verbatim either way (#195).
+
+    The model's `SimpleProperty` set stays whole, so it is the *composition* that is per-type, not the
+    view-model: a Tutorial carrying a stray ``images_count`` still round-trips it, and the block's own
+    keys are what the fallback reports.
+
+    **Test steps:**
+
+    * verify a Tutorial block's ``images_count`` reads as an unknown field
+    * verify a ReferenceImages block's ``level`` does the same, in the other direction
+    """
+    tutorial = typed_model("tutorial", {"tutorial": {"images_count": 3, "level": ["any"]}})
+    reference_images = typed_model("reference_images", {"reference_images": {"images_count": 3, "level": ["any"]}})
+
+    assert tutorial.unknown_field_names() == ["images_count"]
+    assert reference_images.unknown_field_names() == ["level"]
+
+
+def test_a_type_switch_recomposes_to_the_incoming_types_fields_and_back() -> None:
+    """Switching the type re-resolves the composition to the incoming type's declaration, both ways
+    ([[plugins#plugin-blocks]], #83, #195).
+
+    A type switch already drives a full rebuild through ``active_block_changed``; this extends *what*
+    gets rebuilt rather than adding a seam, so the durations leave on the way to ReferenceImages and
+    come back on the way home.
+
+    **Test steps:**
+
+    * compose over a Tutorial, then switch the type to ``reference_images`` and recompose
+    * verify the durations and ``level`` are gone
+    * switch back and verify they return
+    """
+    model = typed_model("tutorial")
+    assert "current_duration" in composed_names(model)
+
+    model.resource_type = "reference_images"
+
+    names = composed_names(model)
+    assert "current_duration" not in names
+    assert "level" not in names
+
+    model.resource_type = "tutorial"
+
+    assert "current_duration" in composed_names(model)
+    assert "level" in composed_names(model)
+
+
+def test_every_declared_field_spec_is_claimed_by_the_core_or_a_plugin() -> None:
+    """No entry in the toolkit-type map renders on **no** type ([[field-schema#resource-types]], #195).
+
+    Guards the hole this slice found: ``images_count`` was declared on the model and coerced by core
+    while no `FieldSpec` named it, so it rendered nowhere. This pins the reverse -- a spec whose name no
+    declaration claims is composed for no type at all, which is the same defect seen from the other end.
+
+    **Test steps:**
+
+    * collect every name the core and the shipped plugins declare
+    * verify each entry in the toolkit-type map is one of them
+    """
+    declared = {*CORE_FIELD_NAMES, *(name for plugin in BUILTIN_PLUGINS for name in plugin.field_names)}
+
+    assert {spec.name for spec in MODEL_AGNOSTIC_FIELD_SPECS} <= declared
 
 
 # endregion
