@@ -1659,6 +1659,35 @@ def test_setting_rating_to_none_removes_the_key_not_writes_null(
     assert "rating" not in document.data["tutorial"]["users"][document.username]
 
 
+def test_setting_images_count_round_trips_a_zero_and_clears_to_an_absent_key() -> None:
+    """``images_count`` writes a genuine ``0`` through as ``0``, and clearing it **removes** the key
+    rather than writing a JSON ``null`` ([[field-schema#deferred-items]], #196).
+
+    The distinction the field exists to keep: an archive scanned and found to hold no content images is
+    a stored ``0``, while one never scanned carries no key at all -- so the two are not told apart by a
+    falsy read, and the editor's clear must land on the second rather than collapsing into the first.
+    Inline in the block, not under ``users``: the count is a property of the resource, not of a reader
+    ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * over a ReferenceImages document, set ``images_count`` to ``0``
+    * verify the block stores the zero inline
+    * clear it to ``None`` and verify the key is gone from the block
+    """
+    document = RehuDocument({"type": "ReferenceImages"})
+    model = RehuDocumentModel(document)
+
+    model.images_count = 0
+
+    assert document.active_field("images_count") == 0
+    assert document.active_user_field("images_count") is None
+
+    model.images_count = None
+
+    assert "images_count" not in document.active_block
+
+
 def test_model_seeds_per_user_fields_from_the_users_map(document: RehuDocument) -> None:
     """The per-user fields seed from the active block's ``users`` map, not from inline block keys
     ([[field-schema#per-user-shared]], #99).

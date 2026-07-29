@@ -94,6 +94,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("duration", "original_duration"),
     FieldSpec("duration", "current_duration"),
+    FieldSpec("int", "images_count"),
     FieldSpec("size", "original_size"),
     FieldSpec("size", "current_size"),
     FieldSpec("bool", "complete"),
@@ -117,7 +118,9 @@ fields and before the `UnknownField` fallbacks, which is only how the form is as
 
 A name here that no declaration claims renders on **no** type -- which is exactly how ``images_count``
 went missing while being declared, coerced, and round-tripped (#195); ``test_plugins`` pins the two
-sides together so the next such hole fails a test instead of shipping.
+sides together so the next hole fails a test instead of shipping. #196 mapped ``images_count`` to ``int``,
+so it renders on ReferenceImages alone; the names left unmapped here are the ones a surface builds
+directly (``description``, ``hidden_images``) or never shows at all (``created``, ``updated``).
 
 **Registration order is not display order.** How fields are ordered and placed on screen is a
 presentation concern the viewer/editor own; that they currently render fields in this registration
@@ -128,14 +131,15 @@ row) -- but where the *ordered* list is authored is still open
 here, in one list spanning every type, rather than being split across the declarations.
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
-fields, the common-core original/current size pair, the shared resource-type scalar flags, rating, the
-Tutorial-only ``level`` tags, the tag lists, and the two read-only record lists
+fields, the ReferenceImages-only ``images_count``, the common-core original/current size pair, the
+shared resource-type scalar flags, rating, the Tutorial-only ``level`` tags, the tag lists, and the two
+read-only record lists
 ([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the
 record lists sit where tc4's viewer put them (``collections`` up in the header group beside the
 publisher, ``learning_paths`` last, after the tag lists, [[field-schema#tc4-viewer-layout]]), which
-costs nothing while registration order still happens to be display order. ``images_count`` is absent for
-a different reason than the rest: the ReferenceImages declaration names it, so the slot is there, but no
-toolkit type is mapped to it yet (#196). The Markdown ``description``
+costs nothing while registration order still happens to be display order. ``images_count`` sits with the
+durations rather than trailing them: it is what a reference pack has instead of one, answering the same
+*how much of it is there* (#196). The Markdown ``description``
 is model-aware too (it needs an
 `ImageScanner` to resolve embedded images, [[data-model#image-meanings]]) and so is constructed
 directly in :func:`build_document_form` alongside ``location``/images, not listed here. A hardcoded
