@@ -40,7 +40,7 @@ from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
 from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshot_files, scan_tc_screenshots
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"
 
 __all__ = [
     "BUILTIN_PLUGINS",

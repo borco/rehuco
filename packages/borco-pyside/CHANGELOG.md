@@ -9,6 +9,20 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+`ApplicationSingleton` was the whole package through `0.0.2`; everything below joined it since.
+
+### Added
+
+- Theming — a theme manager cycling follow-system/light/dark, a theme model and menu, an
+  application-palette-change notifier, glyph-based action icons, and SVG recolouring.
+- Dockable dialogs — `CDockWidget`-hosted dialog panels that can be restored on start, with their own
+  frame, manager and settings.
+- Widgets — elided label, flow layout, rating, rich-text view, message banner, unbounded spin box,
+  wrapping check box, horizontal line, line-edit clear action, and layout/dynamic-property helpers.
+- QtAds helpers — a focus tracker and widget wrappers.
+- `borco_pyside.core` — property helpers and a connection list.
+- Windows window activation.
+
 ## [0.0.2] - 2026-07-01
 
 ### Changed
