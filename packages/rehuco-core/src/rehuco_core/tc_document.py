@@ -264,15 +264,22 @@ class TcDocument:
         ``.tc`` carried it (an explicit value, even ``0``, imports; absent is not ``0``,
         [[field-schema#deferred-items]]).
 
+        ``viewed``/``todo`` import for a **Tutorial only** ([[field-schema#resource-types]], #195): tc4
+        wrote all six booleans for every type, but progress through timed material is not something a
+        reference-image pack has. Filtered at the source rather than left to the block's v3 step
+        (:mod:`~rehuco_core.migrations.reference_images.v3_drop_progress_flags`) to strip afterwards --
+        this builds the block already stamped current, so nothing would ever run that step over it.
+
         :returns: the per-user field map.
         """
         user: dict[str, Any] = {
             "favorite": False,
             "keep": self.__coerced_bool("keep", False),
             "learning_paths": self.__learning_paths(),
-            "todo": self.__coerced_bool("todo", False),
-            "viewed": self.__coerced_bool("viewed", False),
         }
+        if self.__type == "Tutorial":
+            user["todo"] = self.__coerced_bool("todo", False)
+            user["viewed"] = self.__coerced_bool("viewed", False)
         self.__put_optional(user, "rating", self.__optional_int_field("rating"))
         return user
 

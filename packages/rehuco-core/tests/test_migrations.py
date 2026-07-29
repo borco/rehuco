@@ -1,5 +1,10 @@
 """Tests for the read-time format migrations ([[data-model#schema-version]])."""
 
+# the module covers every chain -- file-wide and both block targets -- one region per version, and a
+# version's tests belong beside the ones for the version it builds on; one cohesive module reads better
+# than an arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 import json
 from pathlib import Path
 from typing import Any, Final
@@ -501,15 +506,18 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_tutorial_block() -> No
 
 def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block() -> None:
     """The reference-images plugin runs the **same** v0->v1 step over the **same** per-user subset -- the
-    "one type left inline" trap: the two plugins must not diverge ([[field-schema#per-user-shared]]).
+    "one type left inline" trap: the two plugins must not diverge there ([[field-schema#per-user-shared]]).
 
     ``images_count`` is the shared field unique to this type; it must stay inline, never treated as
-    per-user.
+    per-user. The walk runs the whole chain, so ``viewed``/``todo`` are relocated by v1 and then removed
+    by v3 (#195) -- the relocation is what puts them where v3 can find them, which is why v1 is left
+    alone rather than taught to skip them.
 
     **Test steps:**
 
     * migrate a v0 reference-images block carrying the per-user keys plus its shared ``images_count``
     * verify the per-user subset moved and ``images_count`` (and the other shared flags) stayed inline
+    * verify the two progress flags did not survive the rest of the chain
     """
     block: dict[str, Any] = {
         "rating": 0,
@@ -529,8 +537,6 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block
     assert block["users"] == {
         "admin": {
             "rating": 0,
-            "viewed": False,
-            "todo": False,
             "keep": False,
             "favorite": False,
             "learning_paths": [],
@@ -540,8 +546,10 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block
     assert block["online"] is False
     assert block["collections"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
     assert block["images_count"] is None
-    assert block["format_version"] == 2
+    assert block["format_version"] == 3
     assert "rating" not in block
+    assert "viewed" not in block["users"]["admin"]
+    assert "todo" not in block["users"]["admin"]
 
 
 def test_v0_to_v1_moves_only_present_keys_and_mints_no_favorite() -> None:
@@ -670,17 +678,21 @@ def test_two_usernames_file_into_distinct_sub_maps_with_no_cross_contamination()
 
 def test_current_block_version_is_the_chain_head_derived_not_declared() -> None:
     """ "What's current" is the highest target in a plugin's chain, not a number the plugin states about
-    itself ([[plugins#plugin-blocks]]) -- so the tutorial/reference-images chains (per-user map at v1,
-    learning-path ``ref``s at v2, [[field-schema#learning-path-ownership]]) read head ``2``, while a
-    plugin with no chain (Collection, or any unknown key) reads ``0``.
+    itself ([[plugins#plugin-blocks]]) -- so the tutorial chain (per-user map at v1, learning-path
+    ``ref``s at v2, [[field-schema#learning-path-ownership]]) reads head ``2`` while the reference-images
+    one reads ``3``, having taken a step the tutorial chain has no reason to (#195); a plugin with no
+    chain (Collection, or any unknown key) reads ``0``.
+
+    That the two now differ is the point of deriving the head per target rather than declaring one
+    version for "a plugin block".
 
     **Test steps:**
 
-    * verify each per-user type's head is ``2``
+    * verify the tutorial head is ``2`` and the reference-images one ``3``
     * verify a chainless builtin and an unknown key both read ``0``
     """
     assert current_block_version("tutorial") == 2
-    assert current_block_version("reference_images") == 2
+    assert current_block_version("reference_images") == 3
     assert current_block_version("collection") == 0
     assert current_block_version("audiopack") == 0
 
@@ -765,8 +777,9 @@ def test_v1_to_v2_leaves_a_block_with_no_learning_paths_untouched_but_stamped() 
 
 
 def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
-    """The reference-images plugin runs the **same** v1->v2 step -- the two plugins must not diverge, the
-    same trap the v0->v1 relocation guards against.
+    """The reference-images plugin runs the **same** v1->v2 step -- the two plugins must not diverge
+    *there*, the same trap the v0->v1 relocation guards against. (They do diverge at v3, deliberately;
+    the walk carries on to the chain's head, so this block ends stamped ``3``.)
 
     **Test steps:**
 
@@ -781,7 +794,7 @@ def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
     migrate_block_data(block, "reference_images", "admin")
 
     assert block["users"]["admin"]["learning_paths"] == [{"title": "P", "index": 0, "ref": 1}]
-    assert block["format_version"] == 2
+    assert block["format_version"] == 3
 
 
 def test_v1_to_v2_skips_a_malformed_entry_without_spending_a_ref() -> None:
@@ -838,6 +851,122 @@ def test_v1_to_v2_is_idempotent() -> None:
     migrate_block_data(block, "tutorial", "admin")
 
     assert block == once
+
+
+# endregion
+
+
+# region Reference-images block layout v3 (#195, [[field-schema#resource-types]])
+
+
+def test_v2_to_v3_drops_the_progress_flags_from_every_identity() -> None:
+    """The reference-images v2->v3 step removes ``viewed``/``todo`` from **every** user filed in the
+    block, leaving the rest of each entry untouched (#195).
+
+    Every identity, not just the caller's: the flags are per-user
+    ([[field-schema#per-user-shared]]), so another identity's copies would otherwise survive and
+    re-surface the moment that identity became current.
+
+    **Test steps:**
+
+    * migrate a v2 reference-images block whose ``users`` map holds two identities, both carrying the
+      progress flags
+    * verify both lost them and kept everything else
+    """
+    block: dict[str, Any] = {
+        "format_version": 2,
+        "complete": True,
+        "users": {
+            "admin": {"rating": 4, "viewed": True, "todo": False, "keep": True, "learning_paths": []},
+            "guest": {"viewed": False, "todo": True, "favorite": True},
+        },
+    }
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["users"] == {
+        "admin": {"rating": 4, "keep": True, "learning_paths": []},
+        "guest": {"favorite": True},
+    }
+    assert block["complete"] is True
+    assert block["format_version"] == 3
+
+
+def test_v2_to_v3_leaves_the_tutorial_chain_alone() -> None:
+    """Only the reference-images chain takes the step -- a tutorial keeps both flags (#195).
+
+    The first place the two chains genuinely diverge, and the reason each declares its own rather than
+    sharing one: ``viewed``/``todo`` are progress through timed material, which is exactly what a
+    tutorial is.
+
+    **Test steps:**
+
+    * migrate an equivalent v2 block as each type
+    * verify the tutorial keeps the flags and stops at head ``2``, while the reference-images one loses
+      them and reaches ``3``
+    """
+    fields = {"viewed": True, "todo": True}
+    tutorial: dict[str, Any] = {"format_version": 2, "users": {"admin": dict(fields)}}
+    reference_images: dict[str, Any] = {"format_version": 2, "users": {"admin": dict(fields)}}
+
+    migrate_block_data(tutorial, "tutorial", "admin")
+    migrate_block_data(reference_images, "reference_images", "admin")
+
+    assert tutorial["users"]["admin"] == fields
+    assert tutorial["format_version"] == 2
+    assert reference_images["users"]["admin"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
+    assert reference_images["format_version"] == 3
+
+
+def test_v2_to_v3_leaves_inline_flags_the_v1_step_declined_to_move() -> None:
+    """A flag left *inline* by the v0->v1 decline path stays put -- v3 reaches only into the ``users``
+    map (#195).
+
+    The v1 step declines a v0 block that already carries a ``users`` map, carrying its inline strays
+    verbatim rather than merging them over data already filed. Deleting them here would discard exactly
+    what that step chose to preserve; they surface through the generic fallback instead
+    ([[plugins#fallback-editor]]).
+
+    **Test steps:**
+
+    * migrate an unstamped reference-images block that already has a ``users`` map plus inline flags
+    * verify the inline pair survived and the filed pair did not
+    """
+    block: dict[str, Any] = {
+        "viewed": True,
+        "todo": True,
+        "users": {"admin": {"viewed": False, "todo": False, "keep": True}},
+    }
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["viewed"] is True
+    assert block["todo"] is True
+    assert block["users"]["admin"] == {"keep": True}
+
+
+def test_v2_to_v3_reads_a_malformed_users_map_without_crashing() -> None:
+    """A hostile or corrupt ``users`` value is left exactly as it is ([[data-model#write-integrity]]).
+
+    A migration reads untrusted input like every other accessor: it must neither crash on a stray value
+    nor silently rewrite it. Both shapes are covered -- a ``users`` that isn't a map at all, and a map
+    whose entry isn't one.
+
+    **Test steps:**
+
+    * migrate a block whose ``users`` is a string, and one whose single entry is a string
+    * verify each survives untouched and is stamped current
+    """
+    not_a_map: dict[str, Any] = {"format_version": 2, "users": "corrupt"}
+    entry_not_a_map: dict[str, Any] = {"format_version": 2, "users": {"admin": "corrupt"}}
+
+    migrate_block_data(not_a_map, "reference_images", "admin")
+    migrate_block_data(entry_not_a_map, "reference_images", "admin")
+
+    assert not_a_map["users"] == "corrupt"
+    assert entry_not_a_map["users"] == {"admin": "corrupt"}
+    assert not_a_map["format_version"] == 3
+    assert entry_not_a_map["format_version"] == 3
 
 
 # endregion

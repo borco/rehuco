@@ -108,7 +108,9 @@ or from the app — and it appears as a set of dockable panels you can rearrange
 
 The fields themselves come from a **field toolkit** — one small class per kind of value (text, date,
 rating, duration, size, tag list, path, …), each knowing how to display and edit it. A type's panels are
-composed from that toolkit rather than hand-built, and any field the toolkit has no entry for falls back
+composed from that toolkit rather than hand-built: each plugin declares the fields its type has, so a
+reference-images resource shows no tutorial duration and a collection shows the common fields alone. Any
+field the type doesn't declare — and any field the toolkit has no entry for — falls back
 to a generic row that carries the value verbatim. That fallback is what makes invariant 1 visible
 instead of theoretical.
 

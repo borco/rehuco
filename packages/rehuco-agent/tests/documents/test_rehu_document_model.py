@@ -15,6 +15,7 @@ from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
+from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     CollectionEntry,
@@ -1967,7 +1968,8 @@ def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: Rehu
 
 
 def test_unknown_field_names_excludes_the_collections_record_list(document: RehuDocument) -> None:
-    """``collections`` is a **known** field, so it never reaches the newer-version fallback (#189).
+    """``collections`` is a field the Tutorial plugin **declares**, so it never reaches the newer-version
+    fallback (#189).
 
     A settled v1 field rehuco's own importer writes -- flagged as *"comes from a newer version"* for as
     long as the model recognized only bools, ints and string lists.
@@ -1982,6 +1984,34 @@ def test_unknown_field_names_excludes_the_collections_record_list(document: Rehu
     model = RehuDocumentModel(document)
 
     assert model.unknown_field_names() == ["mystery"]
+
+
+def test_unknown_field_names_recognizes_by_the_active_types_declaration(document: RehuDocument) -> None:
+    """What counts as *known* is the **active type's** declaration, not one flat list spanning every type
+    ([[field-schema#resource-types]], #195).
+
+    This is what keeps the per-type field composition from swallowing a value: a field the active type
+    doesn't declare renders on no editor row, so the fallback has to report it or it would sit in the
+    file with nowhere to see or drop it. The same key therefore reads as known under one type and
+    unknown under another.
+
+    **Test steps:**
+
+    * seed a Tutorial block with a ``level`` (its own) and an ``images_count`` (ReferenceImages')
+    * verify only the undeclared one is reported
+    * switch the type to ``reference_images`` and verify the verdicts swap
+    """
+    document.set_active_field("level", ["any"])
+    document.set_active_field("images_count", 12)
+    model = RehuDocumentModel(document)
+
+    assert model.unknown_field_names() == ["images_count"]
+
+    model.resource_type = "reference_images"
+    model.document.set_active_field("level", ["any"])
+    model.document.set_active_field("images_count", 12)
+
+    assert model.unknown_field_names() == ["level"]
 
 
 def test_model_seeds_the_record_lists(document: RehuDocument) -> None:
@@ -2142,6 +2172,33 @@ def test_bind_resolves_an_unknown_field_to_its_verbatim_value(document: RehuDocu
 
     assert binding.value == [1, 2, 3]
     assert binding.changed is model.unknown_fields_changed
+
+
+def test_bind_never_gives_an_unknown_field_a_property_binding(document: RehuDocument) -> None:
+    """An `UnknownField` binds the block verbatim even when its name collides with a declared property
+    (#195).
+
+    Possible since recognition went per-type: a tutorial block's stray ``images_count`` is unknown
+    *here* while still being a `SimpleProperty` of the model. The property read is coerced (a malformed
+    value becomes the field's default), so binding it would show a value the file never carried -- the
+    fallback's whole contract is verbatim ([[plugins#fallback-editor]]) -- and its notify signal would
+    leave the row deaf to ``unknown_fields_changed``.
+
+    **Test steps:**
+
+    * seed the tutorial block with a malformed stray ``images_count`` the property would coerce away
+    * bind an `UnknownField` named after it
+    * verify the binding carries the raw value and the block-change signal, not the property's pair
+    """
+    document.set_active_field("images_count", "raw-junk")
+    model = RehuDocumentModel(document)
+    tab = FieldsTab("T", ":/icons/document_viewer.svg")
+
+    binding = model.bind(UnknownField("images_count", viewer_tab=tab, editor_tab=tab))
+
+    assert binding.value == "raw-junk"
+    assert binding.changed is model.unknown_fields_changed
+    assert model.images_count is None  # the property's own coerced read, untouched by the fallback
 
 
 def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) -> None:

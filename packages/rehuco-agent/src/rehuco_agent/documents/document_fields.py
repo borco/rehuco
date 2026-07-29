@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_core import PluginRegistry
+from rehuco_core import CORE_FIELD_NAMES, PluginRegistry
 
 from ..fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -109,16 +109,23 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("indexed_list", "learning_paths"),
 )
 """The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
-``(type, name)`` pair alone, with no runtime model wiring. This is a **model-layer** statement of
-*which* fields the document has and their toolkit type, not a layout: :func:`build_document_form`
-happens to emit them after the model-aware ``location``/images fields and before the `UnknownField`
-fallbacks, but that ordering is only how the form is assembled, not a meaningful grouping.
+``(type, name)`` pair alone, with no runtime model wiring. This is the **name-to-toolkit-type map**, not
+a per-type field list and not a layout: *which* of these a given resource shows is
+:func:`composed_field_specs`' answer, read off the plugin declarations in core (#195), and
+:func:`build_document_form` happens to emit the survivors after the model-aware ``location``/images
+fields and before the `UnknownField` fallbacks, which is only how the form is assembled.
+
+A name here that no declaration claims renders on **no** type -- which is exactly how ``images_count``
+went missing while being declared, coerced, and round-tripped (#195); ``test_plugins`` pins the two
+sides together so the next such hole fails a test instead of shipping.
 
 **Registration order is not display order.** How fields are ordered and placed on screen is a
 presentation concern the viewer/editor own; that they currently render fields in this registration
-order is incidental (the tracer's simplification) and expected to diverge -- per-type field lists and
-where the display order is authored are open questions
-([[field-schema#deferred-items]], [[appendices.open-questions#still-open]]).
+order is incidental (the tracer's simplification) and expected to diverge. **Where** each type's field
+list is authored is now settled -- the plugin declares it ([[plugins#core-vs-plugin]]'s schema-extension
+row) -- but where the *ordered* list is authored is still open
+([[field-schema#deferred-items]], [[appendices.open-questions#still-open]]), which is why the order stays
+here, in one list spanning every type, rather than being split across the declarations.
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
 fields, the common-core original/current size pair, the shared resource-type scalar flags, rating, the
@@ -126,11 +133,36 @@ Tutorial-only ``level`` tags, the tag lists, and the two read-only record lists
 ([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the
 record lists sit where tc4's viewer put them (``collections`` up in the header group beside the
 publisher, ``learning_paths`` last, after the tag lists, [[field-schema#tc4-viewer-layout]]), which
-costs nothing while registration order still happens to be display order. The Markdown ``description``
+costs nothing while registration order still happens to be display order. ``images_count`` is absent for
+a different reason than the rest: the ReferenceImages declaration names it, so the slot is there, but no
+toolkit type is mapped to it yet (#196). The Markdown ``description``
 is model-aware too (it needs an
 `ImageScanner` to resolve embedded images, [[data-model#image-meanings]]) and so is constructed
 directly in :func:`build_document_form` alongside ``location``/images, not listed here. A hardcoded
 constant for now."""
+
+
+def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
+    """The :data:`MODEL_AGNOSTIC_FIELD_SPECS` entries this document's **type** declares
+    ([[field-schema#resource-types]], #195).
+
+    The common core plus the active type's own fields, both read off the declarations in core
+    (:data:`~rehuco_core.CORE_FIELD_NAMES` and the plugin's `~rehuco_core.PluginSpec.field_names`), so a
+    ReferenceImages resource stops showing the three Tutorial durations and ``level``, and a Collection
+    shows the common core alone. The composition is a **filter over one ordered list**, not a per-type
+    list assembled from the declarations: the declarations are sets, and where the ordered list is
+    authored is still open (:data:`MODEL_AGNOSTIC_FIELD_SPECS`).
+
+    A type whose plugin isn't installed here declares nothing, so it composes the common core alone --
+    and every key in its block reaches the generic fallback instead
+    (`RehuDocumentModel.unknown_field_names`, [[plugins#fallback-editor]]), which is what keeps a
+    narrowed field list from *swallowing* a value rather than merely not rendering it.
+
+    :param model: the document whose active type selects the fields.
+    :returns: the declared specs, in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order.
+    """
+    declared = frozenset(CORE_FIELD_NAMES) | frozenset(model.document.plugins.field_names(model.resource_type))
+    return tuple(spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name in declared)
 
 
 def build_document_form(
@@ -142,11 +174,16 @@ def build_document_form(
 
     The whole field composition lives here, in one place: the model-aware **leading** fields (the
     ``location`` `PathField`, the images strip/selector, and the Markdown ``description``, whose
-    runtime callbacks the registry can't build generically), then the declarative record fields in
-    :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, then one generic `UnknownField` fallback per
+    runtime callbacks the registry can't build generically), then the declarative record fields the
+    document's **type** declares (:func:`composed_field_specs`, in
+    :data:`MODEL_AGNOSTIC_FIELD_SPECS` order), then one generic `UnknownField` fallback per
     unrecognized key in the active block, and finally one per **inactive block**
     ([[plugins#fallback-editor]], #28, #80). All of it is driven from ``model`` alone, so
     `DocumentWidget` only hosts the resulting docks.
+
+    The leading fields and ``description`` are **not** filtered by type: they are common core
+    ([[field-schema#resource-types]]) except ``location``, which is a location control rather than a
+    payload value and so is authored out-of-band regardless ([[plugins#field-toolkit]]).
 
     :param model: the reactive view-model the fields bind to and read their runtime state from.
     :param name_suggestions: the rename-suggestion `NameSuggestionModel` the ``location`` field pulls
@@ -233,7 +270,7 @@ def build_document_form(
     # viewer still leads the viewer surface. Location follows so its editor sits right under the type;
     # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
     fields: list[Field[Any]] = [type_field, location_field, images_field]
-    for spec in MODEL_AGNOSTIC_FIELD_SPECS:
+    for spec in composed_field_specs(model):
         fields.append(
             registry.create(spec.type, spec.name, viewer_tab=spec.viewer_tab, editor_tab=spec.editor_tab, **spec.kwargs)
         )

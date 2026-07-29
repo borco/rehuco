@@ -11,7 +11,8 @@ vocabulary, because a migration is a frozen historical record).
 - :mod:`~rehuco_core.migrations.tutorial`, :mod:`~rehuco_core.migrations.reference_images` -- the plugin
   block chains, each adopting the shared
   :func:`~rehuco_core.migrations.shared.migrate_user_fields.migrate_user_fields` mechanism at its own
-  version (both v1 today, free to differ).
+  version (both v1 today, free to differ -- and they do differ from v3, where only the reference-images
+  chain drops the ``viewed``/``todo`` progress flags).
 
 The direction is one-way: migrations know which plugin a chain belongs to (by key -- :data:`BLOCK_TARGETS`);
 a plugin knows nothing about its own history. Every chain is validated at import (:func:`validate_all_chains`).
