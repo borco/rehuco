@@ -372,6 +372,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         a document from nothing -- :meth:`~rehuco_agent.documents.rehu_document_model.RehuDocumentModel.create_new`
         included -- gets one for free by coming through here instead of constructing ``RehuDocument`` directly.
 
+        ``created`` is deliberately **not** stamped here (#168): it records when the record was first
+        *written* ([[field-schema#record-timestamps]]), which is its first save -- a document started
+        here and abandoned before any save never became a record at all.
+
         :param path: destination this document will eventually save to; see :class:`RehuDocument`. Defaults
             to ``None`` -- no destination decided yet.
         :param plugins: the plugins installed here; see :class:`RehuDocument`.
@@ -405,6 +409,13 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
           (:meth:`__log_discarded_blocks`, #86) once the write succeeds, so the *fact* of a claimed
           block's discard stays traceable even though its values are gone ([[sync#overview]]).
 
+        - **``created`` is stamped by the record's first write** ([[field-schema#record-timestamps]],
+          #168): a document with no file behind it yet (:attr:`on_disk_format_version` is ``None`` --
+          born in-app through :meth:`new`, or mapped from a `.tc`) gets the save's own UTC time, because
+          that write *is* when the record was first written. A non-empty value is never overwritten (the
+          `.tc` import's mtime seed), and a loaded file that simply carries none keeps none: stamping
+          there would claim the record was created the moment someone happened to re-save it.
+
         - **``updated`` refreshes on a changed save** ([[field-schema#record-timestamps]], #142): when
           the canonical text differs from the load/last-save baseline (:attr:`__saved_serialization`),
           the record was actually edited, and ``updated`` is stamped with the save's own UTC time before
@@ -437,6 +448,17 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         target = Path(path) if path is not None else self.__path
         if target is None:
             raise ValueError("No path given and document was not loaded from a file.")
+        core_writable = isinstance(self.__data.get(CORE_BLOCK_KEY, {}), dict)
+        if self.__on_disk_format_version is None and core_writable and not self.created:
+            # no file was ever written for this record, so this write *is* the first: stamp `created`
+            # ([[field-schema#record-timestamps]], #168). Ahead of the changed-check below, so a new
+            # document saved without a single edit carries one too -- and the stamp is itself a change,
+            # so that save stamps `updated` as well, leaving the two equal on a record written once and
+            # never edited since. A value that is already there stands (the `.tc` import's mtime seed),
+            # and a *malformed* `core` is left alone entirely: writing into it would install a fresh
+            # block over the file's own content, and a save must never be what discards it
+            # ([[data-model#schema-version]]).
+            self.created = self.__utc_now_timestamp()
         text = self.serialize()
         if text != self.__saved_serialization:
             # the record's content changed since load/last save, so this save is an *edit* landing on
@@ -462,10 +484,11 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         The one place the file's *bytes* are produced -- ordered
         (:func:`~rehuco_core.rehu_serialization.ordered_for_file`), ``indent=2``, ``ensure_ascii=False``,
         trailing newline -- so any read-only view of "what would be written" (the agent's source dock,
-        #111) shows byte-for-byte what a save would, without reaching into the ordering. One field can lag
+        #111) shows byte-for-byte what a save would, without reaching into the ordering. Two fields can lag
         by design: a save that detects a changed
-        record stamps a fresh ``updated`` just before writing (#142), so a preview rendered ahead of
-        that save shows the *stored* value, not the stamp the save will mint -- a future timestamp is
+        record stamps a fresh ``updated`` just before writing (#142), and a first-ever write stamps
+        ``created`` (#168), so a preview rendered ahead of that save shows the *stored* values (an empty
+        ``created`` on a never-written record), not the stamps the save will mint -- a future timestamp is
         exactly the one thing a preview cannot know. Unlike :meth:`save`, this never checks the lock
         state and never touches disk: a locked or legacy ``.tc``-backed document still has a live
         in-memory payload worth showing, even though saving it is refused.
@@ -1556,7 +1579,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """When this record was first written ([[field-schema#record-timestamps]]), as stored; empty if
         absent, or present with a non-string value -- which locks
         (:func:`~rehuco_core.rehu_locks.invalid_string_reasons`), so a stamp nobody can read is not
-        replaced by an empty one."""
+        replaced by an empty one.
+
+        Stamped by :meth:`save` on the write that first creates the record's file (#168); the setter
+        stays public for the same reason :attr:`updated`'s does."""
         return coerced_str(self.core.get("created"))
 
     @created.setter

@@ -333,6 +333,11 @@ is the *content's* publication date): when the `.rehu` record was first written 
 edited. tc4 stored neither; on import they seed from the file's timestamps. Both are stored as
 second-precision UTC ISO-8601 (`2026-01-15T09:30:00Z` — the example files' format).
 
+`created` is stamped by the **save that first writes the record's file** — a document born in the app,
+or mapped from a `.tc` that has no `.rehu` yet, has never been written until then. A value already
+there is never overwritten (import seeds it from the `.tc`'s mtime), and a `.rehu` that simply carries
+none keeps none: stamping on a later re-save would claim the record was created at that moment.
+
 `updated` refreshes when a **save actually changes the record**: `save()` compares the canonical
 serialization against the load/last-save baseline and stamps the save's own UTC time only when they
 differ. A save that rewrites an *unchanged* record — a format-upgrade restamp, a save-as copy —
@@ -841,9 +846,9 @@ and render monospaced, mouse-selectable text.
   place a `.rehu`'s bytes are made, applying exactly the canonical order and formatting of [[field-schema#canonical-order]]
   — which `save()` itself also calls (`save()` *is* `serialize()` plus an atomic write), so the preview can never drift
   from what a save produces. The seam deliberately **never checks the lock state and never touches disk**, so even a
-  locked or legacy-`.tc` document still previews what its save *would* emit. One field lags by design: a save stamps a
-  fresh `updated` just before writing ([[field-schema#record-timestamps]]), so the preview shows the *stored* value, not
-  the yet-to-be-minted stamp.
+  locked or legacy-`.tc` document still previews what its save *would* emit. Two fields lag by design: a save stamps a
+  fresh `updated` just before writing, and a first-ever write stamps `created`
+  ([[field-schema#record-timestamps]]), so the preview shows the *stored* values, not the yet-to-be-minted stamps.
 - **On Disk** — the **verbatim file bytes**, read straight off the document's path, unparsed. For a legacy `.tc`-backed
   document the path is the `.tc` itself, so this shows the original source; a never-saved draft shows a placeholder
   instead of a file.
