@@ -1008,9 +1008,26 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
     @property
     def active_block(self) -> dict[str, Any]:
         """The active plugin block's own fields ([[plugins#plugin-blocks]]); an empty dict when the block
-        is absent or malformed (not an object)."""
-        block = self.__data.get(self.active_block_key)
+        is absent or malformed (not an object), or the document is typeless
+        (:meth:`__stored_active_block`)."""
+        block = self.__stored_active_block()
         return block if isinstance(block, dict) else {}
+
+    def __stored_active_block(self) -> Any:
+        """The value stored under :attr:`active_block_key`, exactly as :attr:`data` holds it -- and
+        ``None`` on a **typeless** document, whatever a ``""`` key happens to carry (#166).
+
+        The one place "an empty type names no block" is decided, for every path that resolves the active
+        block by key. An empty ``type`` is a genuinely typeless document (:attr:`type`), and a ``""``-keyed
+        top level is not a block any plugin or reader would ever resolve (#136, which is why
+        :meth:`__active_block_or_create` refuses to create one) -- so it is foreign payload like any other
+        unrecognized top-level key: enumerated **inactive** (:meth:`plugin_blocks`) and carried verbatim on
+        save, never read, written or normalized as though it were this document's own block.
+
+        :returns: the stored value -- possibly malformed, which each caller reads defensively
+            ([[data-model#write-integrity]]) -- or ``None`` when there is no active block key.
+        """
+        return self.__data.get(self.active_block_key) if self.active_block_key else None
 
     def set_active_type(self, resource_type: str) -> None:
         """Switch the document's active type, **claiming** the newly-active block ([[plugins#plugin-blocks]]).
@@ -1073,9 +1090,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         of :meth:`__coerced_version` ([[plugins#plugin-blocks]]).
 
         :returns: the stamped version (``0`` if absent or malformed), or ``None`` when there is no
-            active block at all -- the key is not present in :attr:`data`.
+            active block at all -- the document is typeless, or the key is not present in :attr:`data`.
         """
-        if self.active_block_key not in self.__data:
+        if not self.active_block_key or self.active_block_key not in self.__data:
             return None
         stamp = stamped_version(self.active_block)
         return stamp if stamp is not None else 0
@@ -1089,12 +1106,16 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         the top level, no list of their names is consulted, and a common field this build has never heard
         of can never be mistaken for a block.
 
-        Exactly one block is active: the one :attr:`active_block_key` names, **regardless of whether a
+        At most one block is active: the one :attr:`active_block_key` names, **regardless of whether a
         matching plugin is installed**. Every other block is inactive even when its own plugin *is*
         installed -- a ``reference_images:`` block inside an ``audiopack``-typed file is inactive, and
         treated as unknown, because the file's type isn't reference-images. Installed-ness only decides
         whether the *active* block renders richly or falls back to the generic editor
         ([[plugins#fallback-editor]]); it never promotes an inactive block to active.
+
+        A **typeless** document has no active block at all, and a ``""``-keyed top level does not become
+        one (#166, :meth:`__stored_active_block`): it is enumerated here like any other foreign block,
+        inactive and carried, rather than resolving as the block an empty ``type`` names.
 
         Each block also carries whether it was **claimed** this session
         (:attr:`PluginBlock.claimed`) -- active at some point since the document opened -- which is what
@@ -1105,7 +1126,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         active_key = self.active_block_key
         return [
-            PluginBlock(key=key, fields=value, active=key == active_key, claimed=key in self.__claimed_keys)
+            PluginBlock(
+                key=key, fields=value, active=bool(active_key) and key == active_key, claimed=key in self.__claimed_keys
+            )
             for key, value in self.__data.items()
             if key not in RESERVED_KEYS and isinstance(value, dict)
         ]
@@ -1155,9 +1178,10 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         verbatim on round-trip.
 
         :param key: the key to delete inside the block.
-        :returns: ``True`` if the key was present and removed, ``False`` if the block or key was absent.
+        :returns: ``True`` if the key was present and removed, ``False`` if the key was absent, or there is
+            no active block to remove it from -- a typeless document included (#166).
         """
-        block = self.__data.get(self.active_block_key)
+        block = self.__stored_active_block()
         if isinstance(block, dict) and key in block:
             del block[key]
             return True
@@ -1171,7 +1195,9 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         the explicit *drop* half of the fallback editor's carry-vs-drop choice, for a foreign block the
         user does not want carried. The active block is never droppable this way (a file always keeps the
         block its own ``type`` names), nor is a reserved key (``core``/``format_version`` are not blocks),
-        so either is refused rather than deleted.
+        so either is refused rather than deleted. A **typeless** document has no active block to protect,
+        so its ``""``-keyed payload, if any, is droppable like the foreign block it is (#166,
+        :meth:`__stored_active_block`) -- the refusal guards a real active block, not an empty key.
 
         A plain deletion of the top-level key, marking nothing on its own: the caller
         (`RehuDocumentModel.drop_inactive_block`) is what dirties the model, and a :meth:`reload`/revert
@@ -1181,7 +1207,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: ``True`` if an inactive block by that key was present and removed, ``False`` if ``key``
             names the active block, a reserved key, an absent key, or a non-object value (not a block).
         """
-        if key == self.active_block_key or key in RESERVED_KEYS:
+        if key in RESERVED_KEYS or (self.active_block_key and key == self.active_block_key):
             return False
         if isinstance(self.__data.get(key), dict):
             del self.__data[key]
@@ -1289,7 +1315,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: ``True`` if the key was present and removed, ``False`` if the block, the ``users`` map,
             this user, or the key was absent.
         """
-        block = self.__data.get(self.active_block_key)
+        block = self.__stored_active_block()
         users = block.get(USERS_KEY) if isinstance(block, dict) else None
         user = users.get(self.__username) if isinstance(users, dict) else None
         if isinstance(user, dict) and key in user:
@@ -1427,7 +1453,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         core = self.__data.get(CORE_BLOCK_KEY)
         if isinstance(core, dict):
             self.__drop_null_keys(core, (*OPTIONAL_INT_CORE_KEYS, *OPTIONAL_STR_CORE_KEYS))
-        block = self.__data.get(self.active_block_key)
+        block = self.__stored_active_block()
         if isinstance(block, dict):
             self.__drop_null_keys(block, OPTIONAL_INT_BLOCK_KEYS)
             users = block.get(USERS_KEY)

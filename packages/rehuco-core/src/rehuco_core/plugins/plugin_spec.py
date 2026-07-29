@@ -33,7 +33,9 @@ class PluginSpec:
         theme's selection background.
     :param text_color: the plugin's fixed badge text color (a hex string), or ``None`` to use the
         theme's selection text color.
-    :raises ValueError: if ``keys`` is empty or holds a duplicate.
+    :raises ValueError: if ``keys`` is empty, holds a duplicate, or holds an empty string -- an empty
+        ``type`` means *typeless*, a document with no active block at all (#166), so ``""`` is not a
+        spelling any plugin can claim.
     """
 
     keys: tuple[str, ...]
@@ -43,6 +45,8 @@ class PluginSpec:
     def __post_init__(self) -> None:
         if not self.keys:
             raise ValueError("a plugin must declare at least one key")
+        if not all(self.keys):
+            raise ValueError(f"empty key in plugin declaration: {self.keys}")
         if len(set(self.keys)) != len(self.keys):
             raise ValueError(f"duplicate key in plugin declaration: {self.keys}")
 

@@ -1658,6 +1658,106 @@ def test_set_active_user_field_refuses_a_typeless_document() -> None:
     assert "" not in doc.data
 
 
+def empty_keyed_doc(fields: dict[str, Any]) -> RehuDocument:
+    """A **typeless** document carrying a ``""``-keyed top level beside a real foreign block (#166).
+
+    The reproduction shape: an empty ``core.type`` names no block at all, so the ``""`` key is foreign
+    payload the file is merely custodian of -- exactly what :meth:`RehuDocument.set_active_field` refuses
+    to *create* (#136), read back.
+
+    :param fields: the ``""`` key's own contents.
+    :returns: the constructed document.
+    """
+    return RehuDocument({"core": {"type": ""}, "": fields, "audiopack": {"bitrate": 320}})
+
+
+def test_an_empty_keyed_top_level_is_never_the_active_block() -> None:
+    """An empty ``type`` names **no** block, so a ``""``-keyed top level classifies foreign rather than
+    active ([[plugins#plugin-blocks]], #166).
+
+    It used to resolve as the active block on every read path -- enumerated ``active=True``, its fields
+    served by ``active_field``, and its malformed scalars locking the document as though they were this
+    resource's own -- which is the same ``""``-keyed top level the write guard calls "not a block any
+    plugin or reader would ever resolve" (#136).
+
+    **Test steps:**
+
+    * construct a typeless document whose ``""`` key holds a field and a malformed block scalar
+    * verify both top levels enumerate inactive and unclaimed, and the active block is empty
+    * verify ``active_field`` reads the default rather than the ``""`` key's value
+    * verify the document is unlocked -- a foreign block's scalars are not this document's to validate
+    """
+    doc = empty_keyed_doc({"sneaky": 1, "images_count": "lots"})
+    assert [(block.key, block.active, block.claimed) for block in doc.plugin_blocks()] == [
+        ("", False, False),
+        ("audiopack", False, False),
+    ]
+    assert [block.key for block in doc.inactive_blocks()] == ["", "audiopack"]
+    assert doc.active_block == {}
+    assert doc.active_field("sneaky", 0) == 0
+    assert not doc.lock_reasons
+
+
+def test_an_empty_keyed_top_level_is_carried_verbatim_on_save() -> None:
+    """A ``""``-keyed top level is written like any other foreign block: **verbatim**, sorted among the
+    rest rather than promoted into the active-block slot ([[plugins#plugin-blocks]], #166).
+
+    Two things the active slot would have done to payload this document does not understand: reorder its
+    keys into the canonical block layout, and normalize a ``null`` optional scalar away -- both churn on
+    fields no reader here can claim ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a typeless document whose ``""`` key holds unsorted keys and a ``null``
+    * verify the written layout is ``format_version``, ``core``, then the blocks alphabetically
+    * verify the ``""`` block round-trips byte-identically -- key order and the ``null`` untouched
+    """
+    doc = empty_keyed_doc({"zeta": 1, "alpha": None, "format_version": 9})
+    written = json.loads(doc.serialize())
+    assert list(written) == ["format_version", "core", "", "audiopack"]
+    assert list(written[""]) == ["zeta", "alpha", "format_version"]
+    assert written[""] == {"zeta": 1, "alpha": None, "format_version": 9}
+
+
+def test_an_empty_keyed_top_level_is_never_written_through_the_active_block_editors() -> None:
+    """The active-block editors reach into no ``""`` key: a typeless document has nothing to edit, so
+    each reports "absent" rather than mutating foreign payload ([[plugins#plugin-blocks]], #166).
+
+    The read-side mirror of the #136 write guard -- ``set_active_field`` already refuses outright
+    (:meth:`test_set_active_field_refuses_a_typeless_document`), while the removers used to delete
+    straight out of the ``""`` key.
+
+    **Test steps:**
+
+    * construct a typeless document whose ``""`` key holds a field and a per-user submap
+    * remove the field, and the per-user key, through the active-block editors
+    * verify both report ``False`` and the ``""`` key is untouched
+    """
+    doc = empty_keyed_doc({"sneaky": 1, "users": {"admin": {"rating": 5}}})
+    assert doc.remove_active_field("sneaky") is False
+    assert doc.remove_active_user_field("rating") is False
+    assert doc.data[""] == {"sneaky": 1, "users": {"admin": {"rating": 5}}}
+
+
+def test_an_empty_keyed_top_level_is_droppable_like_any_foreign_block() -> None:
+    """``remove_block`` drops a ``""``-keyed top level ([[plugins#fallback-editor]], #166): the refusal
+    protects a document's *real* active block, and a typeless document has none.
+
+    Without this the fallback editor would list the block as droppable foreign payload and then silently
+    refuse the drop, having mistaken the empty key for the active identity.
+
+    **Test steps:**
+
+    * construct a typeless document carrying a ``""`` key and a foreign ``audiopack`` block
+    * drop the ``""`` block
+    * verify it reports ``True``, the key is gone, and the other foreign block is untouched
+    """
+    doc = empty_keyed_doc({"sneaky": 1})
+    assert doc.remove_block("") is True
+    assert "" not in doc.data
+    assert doc.data["audiopack"] == {"bitrate": 320}
+
+
 def test_a_mid_session_type_switch_round_trips_with_the_block_stamped_and_users_intact(
     mocker: MockerFixture,
 ) -> None:

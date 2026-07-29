@@ -51,6 +51,25 @@ def test_a_plugin_must_declare_at_least_one_key() -> None:
         PluginSpec(())
 
 
+def test_a_plugin_may_not_declare_an_empty_key() -> None:
+    """A ``""`` key -- main or alias -- is rejected at construction: an empty ``type`` means *typeless*,
+    a document with no active block at all (#166), so no plugin can claim that spelling.
+
+    Left declarable, a ``""``-keyed plugin would make ``resolve("")`` succeed and re-open the read paths
+    the empty-active-key guards close -- migrating a typeless document's ``""`` payload as though it were
+    the plugin's own block.
+
+    **Test steps:**
+
+    * construct a spec whose main key is empty, and one hiding ``""`` among its aliases
+    * verify both raise
+    """
+    with pytest.raises(ValueError, match="empty key"):
+        PluginSpec(("",))
+    with pytest.raises(ValueError, match="empty key"):
+        PluginSpec(("tutorial", ""))
+
+
 def test_a_plugin_may_not_declare_the_same_key_twice() -> None:
     """A duplicate inside one declaration is a typo, not an alias.
 

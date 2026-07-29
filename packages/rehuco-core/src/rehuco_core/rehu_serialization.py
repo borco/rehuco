@@ -61,7 +61,9 @@ def ordered_for_file(data: dict[str, Any], active_key: str, dropped_keys: Iterab
     the round-trip rule forbids ([[data-model#schema-version]]).
 
     :param data: the backing payload; left untouched, since its own key order is not meaningful.
-    :param active_key: the key of the block the document's ``type`` names, empty when typeless.
+    :param active_key: the key of the block the document's ``type`` names, empty when typeless -- in which
+        case no block leads, and a ``""``-keyed top level sorts among the rest as the foreign payload it is,
+        carried verbatim rather than reordered into the active slot (#166).
     :param dropped_keys: the block keys the persistence invariant drops on this save.
     :returns: a fresh dict in canonical order.
     """
@@ -70,12 +72,15 @@ def ordered_for_file(data: dict[str, Any], active_key: str, dropped_keys: Iterab
     ordered: dict[str, Any] = {FORMAT_VERSION_KEY: data[FORMAT_VERSION_KEY]}
     if CORE_BLOCK_KEY in data:
         ordered[CORE_BLOCK_KEY] = ordered_block(data[CORE_BLOCK_KEY], CORE_LEADING_KEYS)
-    if active_key in data:
+    # an empty active key names no block (#166): a ``""`` top level is foreign payload, so it neither
+    # leads the blocks here nor drops out of the sorted rest below
+    leading_key = active_key if active_key and active_key in data else None
+    if leading_key is not None:
         # the active block leads the plugin blocks, right after the core it belongs to -- its own
         # format_version first, then the rest of its keys ordered ([[plugins#plugin-blocks]])
-        ordered[active_key] = ordered_block(data[active_key], (FORMAT_VERSION_KEY,))
+        ordered[leading_key] = ordered_block(data[leading_key], (FORMAT_VERSION_KEY,))
     dropped = set(dropped_keys)
-    for key in sorted(key for key in data if key not in RESERVED_KEYS and key != active_key):
+    for key in sorted(key for key in data if key not in RESERVED_KEYS and key != leading_key):
         if key in dropped:
             # claimed-then-abandoned: made active this session and left, so the user asserted the file
             # is no longer this type -- dropped on save ([[plugins#plugin-blocks]]).
