@@ -10,6 +10,8 @@ released becomes the body of the GitHub Release, so each entry is written to be 
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-29
+
 The first release built from this repository, and the first to ship a working application rather than a
 stub — published to exercise the release plumbing end to end rather than because the app is ready to be
 depended on. It starts a new minor series because `0.0.0` and `0.0.1` were spent on PyPI name-reservation

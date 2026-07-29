@@ -149,7 +149,7 @@ This is specific to the packaged build. From a source checkout the same flags pr
 `rehuco-agent` console script is a console-subsystem executable:
 
 ```sh
-uv run rehuco-agent --version   # -> version: 0.0.1
+uv run rehuco-agent --version   # -> version: 0.1.0
 ```
 
 So on Windows, a packaged build's `--version`/`--info` tell you only whether the app started successfully (exit
