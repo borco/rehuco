@@ -130,9 +130,10 @@ tc4 stored size and duration as human-readable strings; the reader parses them b
   unparseable magnitude, or a non-finite result yields **`None`** — omitted, never fabricated as `0`
   ([[field-schema#deferred-items]]).
 - **Duration** — additive `h` / `m` / `s` tokens (`"1h 23m"` → `1×3600 + 23×60` = `4980` s); each token's magnitude must
-  be an **integer** digit run (a non-numeric token contributes nothing). A plain integer passes through; absent →
-  `None`. The single tc4 `duration` maps into the `original_duration` slot and stays **advisory until a real scan
-  overwrites it** — the untrusted-legacy-duration rule, with **no** "divide by 1000 if it looks too big" heuristic
+  be an **integer** digit run (a non-numeric token contributes nothing). A plain integer passes through; absent, or a
+  string in which **no** token was recognized, yields `None` — omitted, never fabricated as `0`. The single tc4
+  `duration` maps into the `original_duration` slot and stays **advisory until a real scan overwrites it** — the
+  untrusted-legacy-duration rule, with **no** "divide by 1000 if it looks too big" heuristic
   ([[field-schema#ms-leak-history]]).
 
 ## §15.4 Deferral
