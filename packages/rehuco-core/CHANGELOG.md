@@ -9,6 +9,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-29
+
 The first version carrying the library itself: `0.0.0` and `0.0.1` were name-reservation stubs built
 outside this repository, so everything below is new rather than changed.
 

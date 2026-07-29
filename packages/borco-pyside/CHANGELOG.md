@@ -9,6 +9,8 @@ Changelogs are per package in this monorepo, matching the per-package release ta
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-29
+
 `ApplicationSingleton` was the whole package through `0.0.2`; everything below joined it since.
 
 ### Added
