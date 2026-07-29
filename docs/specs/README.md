@@ -47,7 +47,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | | `appendices.post-mortem` | Post-Mortem — Abandoned and Replaced Approaches | [appendices/post-mortem.md](appendices/post-mortem.md) |
 | | `appendices.project-management` | Project Management — Issue Labels and Sizing | [appendices/project-management.md](appendices/project-management.md) |
 | | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
-| | `appendices.release-runbook` | Release Runbook — Cutting a `rehuco-agent` Release | [appendices/release-runbook.md](appendices/release-runbook.md) |
+| | `appendices.release-runbook` | Release Runbook — Cutting a Release | [appendices/release-runbook.md](appendices/release-runbook.md) |
 | | `appendices.settings-pages` | Settings Pages — Managing App-Wide Configuration | [appendices/settings-pages.md](appendices/settings-pages.md) |
 | | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
 | | `appendices.theming_and_styling` | Theming and Styling | [appendices/theming_and_styling.md](appendices/theming_and_styling.md) |

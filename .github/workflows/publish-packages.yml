@@ -1,0 +1,203 @@
+name: Publish packages
+
+# One tag, one package: the tag *is* the instruction -- `<package>-<version>` names which of the five
+# workspace packages to publish and at which version, so a run can never upload something nobody meant
+# to release (the failure mode `make publish`'s `--all-packages` had, #18). `rehuco-agent-X.Y.Z` also
+# matches release-agent.yml's narrower trigger, so that one tag builds the installers and publishes the
+# wheel; the other four packages fire this workflow alone.
+#
+# workflow_dispatch is the dry run, and stops at TestPyPI: the real-PyPI job is gated on the ref being a
+# tag, so a manual run exercises the whole pipeline -- build, OIDC, upload -- without touching pypi.org
+# ([[appendices.continuous-integration#publish-packages]]).
+on:
+  push:
+    tags:
+      - "*-[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Package to publish to TestPyPI (dry run -- real PyPI is never touched)"
+        required: true
+        type: choice
+        options:
+          - borco-core
+          - borco-pyside
+          - rehuco-core
+          - rehuco-node
+          - rehuco-agent
+
+# Least-privilege default; the two publish jobs each declare the id-token: write that trusted
+# publishing needs, and nothing here ever writes to the repository.
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: Determine package and version
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.package.outputs.name }}
+      version: ${{ steps.package.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The version is read from the package, never taken from the tag: on a tag push the two are
+      # compared and a mismatch fails the run before anything is built -- the same guard rail
+      # release-agent.yml applies to rehuco-agent, generalized to whichever package the tag names.
+      - name: Resolve the package from the tag, and its version from the package
+        id: package
+        env:
+          # Empty on a tag push, so it doubles as the "which trigger is this" test below.
+          DISPATCH_PACKAGE: ${{ inputs.package }}
+        run: |
+          if [ -n "$DISPATCH_PACKAGE" ]; then
+            name="$DISPATCH_PACKAGE"
+          else
+            name="${GITHUB_REF_NAME%-*}"
+          fi
+          init="packages/$name/src/${name//-/_}/__init__.py"
+          if [ ! -f "$init" ]; then
+            echo "no workspace package named '$name' -- expected $init" >&2
+            exit 1
+          fi
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$init")
+          if [ -z "$version" ]; then
+            echo "could not read __version__ from $init" >&2
+            exit 1
+          fi
+          echo "package: $name, version: $version"
+          if [ -z "$DISPATCH_PACKAGE" ]; then
+            tag_version="${GITHUB_REF_NAME##*-}"
+            if [ "$tag_version" != "$version" ]; then
+              echo "tag $GITHUB_REF_NAME (version $tag_version) does not match $version in $init" >&2
+              exit 1
+            fi
+          fi
+          {
+            echo "name=$name"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ needs.package.outputs.name }}
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+
+      # pyside6-uic/-rcc need QtGui loadable even with no QApplication; same package set as qa.yml
+      # ([[appendices.continuous-integration#missing-qt-libs]]), minus ImageMagick -- `make uis` no
+      # longer pulls in `icons`, and no wheel carries a generated .ico.
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libegl1 libxkbcommon0
+
+      - name: Install dependencies
+        run: uv sync
+
+      # Unconditional, for every package, even though only rehuco-agent has .ui/.qrc sources today:
+      # a per-package condition would be a second place to remember, and the cost of getting it wrong
+      # is silent -- hatchling force-includes these gitignored files, so a build without them produces
+      # a wheel that looks fine and ImportErrors on first use ([[packaging-deployment#linux-format]]).
+      - name: Generate Qt build artifacts (uic/rcc)
+        run: make uis
+
+      - name: Build the sdist and wheel
+        run: uv build --package "${{ needs.package.outputs.name }}" --out-dir dist
+
+      # The check for exactly that silent failure: every generated module present in the source tree
+      # has to be present in the wheel too. Written against the tree rather than a hardcoded list, so
+      # a package that gains its first .ui file is covered without anyone editing this.
+      - name: Verify the generated modules made it into the wheel
+        run: |
+          python3 - "${{ needs.package.outputs.name }}" <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          src = pathlib.Path("packages", sys.argv[1], "src")
+          expected = sorted(
+              p.relative_to(src).as_posix()
+              for pattern in ("*_ui.py", "*_rc.py")
+              for p in src.rglob(pattern)
+          )
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          shipped = set(zipfile.ZipFile(wheel).namelist())
+          missing = [name for name in expected if name not in shipped]
+          print(f"{wheel.name}: {len(expected) - len(missing)}/{len(expected)} generated modules present")
+          if missing:
+              print("missing from the wheel: " + ", ".join(missing), file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ needs.package.outputs.name }}-${{ needs.package.outputs.version }}
+          path: dist/*
+
+  # Every run publishes here first, including a real tag: TestPyPI is where the trusted-publishing
+  # wiring gets exercised, and gating the real upload on it means a broken pipeline is discovered
+  # against a throwaway index rather than against pypi.org, where an upload cannot be taken back.
+  # Needs a trusted publisher on test.pypi.org per package, pointing at this workflow file and the
+  # `testpypi` environment ([[appendices.release-runbook#pypi-setup]]).
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [package, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/${{ needs.package.outputs.name }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Pinned to a release rather than PyPA's recommended floating `release/v1`: this is the one job
+      # holding an OIDC token, and a floating tag is repointable by anyone who takes over the action
+      # -- the same reasoning that pinned setup-uv ([[appendices.continuous-integration#fix-node20-warning]]).
+      - uses: pypa/gh-action-pypi-publish@v1.14.1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # A tag re-run uploads a version the dry run already put here; identical files are not an
+          # error worth failing on, and TestPyPI holds nothing anyone depends on. Deliberately *not*
+          # set on the real-PyPI job below.
+          skip-existing: true
+
+  # Only a tag reaches pypi.org -- a workflow_dispatch dry run stops above, so a manual run can never
+  # publish. Needs a trusted publisher on pypi.org per package, pointing at this workflow file and the
+  # `pypi` environment ([[appendices.release-runbook#pypi-setup]]).
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [package, publish-testpypi]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/${{ needs.package.outputs.name }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # No skip-existing here, unlike TestPyPI: PyPI refusing a version it already holds is the only
+      # thing that catches a tag cut against a spent version number -- the tag/version check compares
+      # the tag to the source file and knows nothing about what is already published
+      # ([[appendices.release-runbook#version-source]]). Failing loudly beats a green run that
+      # uploaded nothing.
+      - uses: pypa/gh-action-pypi-publish@v1.14.1

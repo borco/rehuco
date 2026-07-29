@@ -408,7 +408,9 @@ container, over a package floor found to be *larger* than qa.yml's own proven se
 push — the one package with installers, tagged under the same `<package>-<version>` scheme #18 (PyPI
 publishing) already settled for the other four, so one tag push fires both workflows rather than the
 monorepo needing a second, repo-wide release concept. `workflow_dispatch` is the dry run: every build job
-still runs, nothing gets published. #18's OIDC/PyPI publishing itself stays a separate, unbuilt workflow.
+still runs, nothing gets published. PyPI publishing stays a separate workflow, `publish-packages.yml`: the
+same tag scheme, OIDC trusted publishing, TestPyPI ahead of PyPI
+([[appendices.continuous-integration#publish-packages]]).
 
 **Two things this decision corrects, both verified rather than argued:**
 
@@ -442,7 +444,7 @@ unfiled rather than promised.
 
 | Channel | OS | What it needs from us | Gatekeeping |
 | --- | --- | --- | --- |
-| PyPI, via `uv tool install` / `uvx` | all three | nothing beyond publishing (#18) | none |
+| PyPI, via `uv tool install` / `uvx` | all three | nothing beyond publishing, which `publish-packages.yml` does on a tag | none |
 | GitHub Release download | all three | just the artifact | none |
 | **AppImage** on a Release | Linux | a python-appimage recipe and a CI job ([[packaging-deployment#linux-format]]) | none |
 | **Scoop**, own bucket | Windows | a bucket repo of JSON manifests pointing at a release URL; a plain zip suffices | none — it is our repo |

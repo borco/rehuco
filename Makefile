@@ -171,6 +171,11 @@ docs-serve: docs-icons
 docs-build: docs-icons
 	uv run mkdocs build --strict
 
+# Superseded by .github/workflows/publish-packages.yml, which publishes exactly the package a
+# `<package>-X.Y.Z` tag names, from a clean checkout, over OIDC. This one builds and uploads *every*
+# package whose local version is ahead of PyPI, from whatever is in the working tree -- kept only until
+# the tag-triggered publish has published something for real, so the repo is never left with no
+# publishing path ([[appendices.continuous-integration#publish-packages]]).
 publish:
 	uv build --all-packages --out-dir .dist
 	uv publish --check-url https://pypi.org/simple/ .dist/*

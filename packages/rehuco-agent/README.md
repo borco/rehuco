@@ -10,8 +10,8 @@
 
 ## Status
 
-**Early — `0.0.x`.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
-The `.rehu` format is still moving and there is no upgrade guarantee between `0.0.x` releases yet, so
+**Early.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
+The `.rehu` format is still moving and there is no upgrade guarantee between releases yet, so
 keep backups of anything you point it at. See [GitHub Issues](https://github.com/borco/rehuco/issues)
 for what's in progress.
 
@@ -20,6 +20,8 @@ for what's in progress.
 `rehuco-agent` is [rehuco](https://borco.github.io/rehuco/) itself, as far as anything you can run
 goes: a desktop editor for the `.rehu` sidecar that describes one resource. Tested on Windows, macOS,
 and Linux.
+
+![The rehuco-agent editor: fields on the left, rendered viewer on the right](https://raw.githubusercontent.com/borco/rehuco/master/docs/assets/images/rehuco-agent.png)
 
 - **Single-instance launcher** — double-click a `.rehu` file to open it in the running instance
 - **Viewer and editor** — common fields, a Markdown description, and the resource's screenshots as a

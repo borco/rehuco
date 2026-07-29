@@ -17,6 +17,8 @@ describes, one per resource. That's the whole storage model, and the name is its
 **[How it works](specs/how-it-works.md)** is one page on the whole system as it stands: the file, the
 rules that keep it trustworthy, the app's panels, and what isn't built.
 
+![The rehuco-agent editor: fields on the left, rendered viewer on the right](assets/images/rehuco-agent.png)
+
 ## What it does
 
 - **Edits a resource's details.** Open a `.rehu` from the file manager or from the app: title,
@@ -54,7 +56,7 @@ found during the N-th codebase audit.
 
 ## rehuco packages
 
-rehuco is published as three separate packages on PyPI, all at an early `0.0.x` — published so the
+rehuco is published as three separate packages on PyPI, all at an early stage — published so the
 names are taken and the release plumbing is exercised, not because they are ready to depend on.
 
 | Package | Description | PyPI | Downloads | Python |

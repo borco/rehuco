@@ -15,7 +15,7 @@
 | [borco-core](https://pypi.org/project/borco-core/) | [![PyPI](https://img.shields.io/pypi/v/borco-core)](https://pypi.org/project/borco-core/) | [![Downloads](https://static.pepy.tech/badge/borco-core)](https://pepy.tech/project/borco-core) | [![Python](https://img.shields.io/pypi/pyversions/borco-core)](https://pypi.org/project/borco-core/) | [changelog](packages/borco-core/CHANGELOG.md) |
 | [borco-pyside](https://pypi.org/project/borco-pyside/) | [![PyPI](https://img.shields.io/pypi/v/borco-pyside)](https://pypi.org/project/borco-pyside/) | [![Downloads](https://static.pepy.tech/badge/borco-pyside)](https://pepy.tech/project/borco-pyside) | [![Python](https://img.shields.io/pypi/pyversions/borco-pyside)](https://pypi.org/project/borco-pyside/) | [changelog](packages/borco-pyside/CHANGELOG.md) |
 
-Every package is at an early `0.0.x` — published so the names are taken and the release plumbing is
+Every package is at an early stage — published so the names are taken and the release plumbing is
 exercised, not because they are ready to depend on.
 
 ## What it is
@@ -29,6 +29,8 @@ describes, one per resource. That's the whole storage model, and the name is its
 
 **[How it works](docs/specs/how-it-works.md)** is one page on the whole system as it stands: the file,
 the rules that keep it trustworthy, the app's panels, and what isn't built.
+
+![The rehuco-agent editor: fields on the left, rendered viewer on the right](docs/assets/images/rehuco-agent.png)
 
 ## What it does
 

@@ -1,4 +1,4 @@
-# Release Runbook — Cutting a `rehuco-agent` Release
+# Release Runbook — Cutting a Release
 
 [[[appendices.release-runbook]]]
 
@@ -6,39 +6,51 @@
 
 [[[appendices.release-runbook#overview]]]
 
-The step-by-step for shipping a `rehuco-agent` release, written to be followed rather than reasoned about.
-Why the workflow has the shape it does — tag-triggered rather than push/PR, version read rather than
-hand-typed, build jobs split per platform — is in [[appendices.continuous-integration#release-agent]]; the
-artifact formats themselves are in [[appendices.briefcase-packaging#linux-backends]].
+The step-by-step for shipping a release, written to be followed rather than reasoned about. One tag does it:
+`<package>-X.Y.Z` publishes that package to PyPI (`publish-packages.yml`), and for `rehuco-agent` — the one
+package with installers — the same tag additionally builds the Windows, macOS and Linux artifacts and
+attaches them to a GitHub Release (`release-agent.yml`).
+
+Why the workflows have the shape they do — tag-triggered rather than push/PR, version read rather than
+hand-typed, build jobs split per platform, TestPyPI ahead of PyPI — is in
+[[appendices.continuous-integration#release-agent]] and
+[[appendices.continuous-integration#publish-packages]]; the artifact formats themselves are in
+[[appendices.briefcase-packaging#linux-backends]].
 
 > [!NOTE]
-> No release has been cut from this repository yet. `release-agent.yml` has so far only been exercised
-> through `workflow_dispatch` dry runs, which build every artifact but publish nothing. The `0.0.0` and
-> `0.0.1` versions already on PyPI predate the packages themselves — see section 1.
+> One release has been cut so far: `rehuco-agent-0.1.0` on 2026-07-29, which ran `release-agent.yml` to a
+> GitHub Release carrying all three installers. `publish-packages.yml` has published nothing yet — it
+> arrived after that tag — so what sits on PyPI is still the `0.0.x` name-reservation stubs described in
+> section 1.
 
-`rehuco-agent` is the only package with installers, so it is the only one with a release workflow. The other
-four packages release through PyPI publishing (#18), which is a separate, not-yet-built workflow.
+Both workflows read the same tag, so releasing a package is one push either way; the difference is only how
+much a tag produces. `rehuco-agent` is the only package with installers and the only one whose changelog
+becomes a GitHub Release body. The other four are PyPI-only: their tags run `publish-packages.yml` alone.
 
 ## 1. The version lives in exactly one file
 
 [[[appendices.release-runbook#version-source]]]
 
-`__version__` in `packages/rehuco-agent/src/rehuco_agent/__init__.py`. Nothing else carries it: the workflow
-reads that constant, and every artifact name is derived from what it read.
+`__version__` in the package's own `packages/<package>/src/<module>/__init__.py` — for the agent, that is
+`packages/rehuco-agent/src/rehuco_agent/__init__.py`. Nothing else carries it: `pyproject.toml` declares the
+version `dynamic` and points hatchling at that file, both workflows read the same constant, and every
+artifact name is derived from what they read.
 
-On a tag push the `version` job strips the `rehuco-agent-` prefix off the tag name and **fails the whole run**
-if the remainder isn't equal to that constant. That guard is the reason for the step ordering below — the bump
-has to be committed *before* the tag is pushed, because the tag is checked against the committed file.
+On a tag push each workflow strips the version off the tag name and **fails the whole run** if the remainder
+isn't equal to that constant. That guard is the reason for the step ordering below — the bump has to be
+committed *before* the tag is pushed, because the tag is checked against the committed file.
 
 > [!IMPORTANT]
 > That check compares the tag against `__version__` and nothing else — it does not know what PyPI already
 > holds. `rehuco-core`, `rehuco-node` and `rehuco-agent` each published `0.0.0` and `0.0.1` stubs in June
 > 2026 to reserve their names, before this repository had any Python packages in it, so those two versions
-> are spent. Reusing one would pass the tag check, publish a GitHub Release that disagrees with the PyPI
-> release of the same number, and — once #18 lands and publishes from the same tag — fail outright, because
-> PyPI refuses to re-upload a version that exists.
+> are spent, as are `borco-core`'s and `borco-pyside`'s `0.0.1` and `0.0.2`. Reusing one passes the tag
+> check, publishes a GitHub Release that disagrees with the PyPI release of the same number, and then fails
+> outright at the upload, because PyPI refuses to re-upload a version that exists. Nothing is silently
+> replaced — but the GitHub half is public by then, so the answer is always a new version, never a reused
+> one ([[appendices.release-runbook#tagged-run]]).
 
-## 2. Dry-run the workflow first
+## 2. Dry-run the workflows first
 
 [[[appendices.release-runbook#dry-run]]]
 
@@ -63,6 +75,13 @@ by hand before committing to a version number.
 > [!NOTE]
 > The Windows smoke check asserts the process exit code, not its output. A packaged Windows build produces no
 > console output at all — see [[appendices.release-runbook#windows-console]].
+
+Actions → **Publish packages** → **Run workflow** is the same idea for publishing, and it takes the package
+name as an input because there is no tag to read it from. It builds that package's sdist and wheel, verifies
+the generated Qt modules are inside the wheel, and uploads to **TestPyPI only**: `Publish to PyPI` is gated on
+the ref being a tag, so a manual run cannot reach pypi.org. Worth doing for a package whose PyPI publishing
+has never run — the trusted-publisher wiring is the part that fails on its first real use, and this is where
+that failure is free ([[appendices.release-runbook#pypi-setup]]).
 
 ## 3. The release body comes from the changelog
 
@@ -89,6 +108,8 @@ Two consequences worth knowing before tagging:
 
 [[[appendices.release-runbook#cut-the-release]]]
 
+The steps are the same for any of the five packages; `rehuco-agent` is used throughout as the example.
+
 1. In `packages/rehuco-agent/CHANGELOG.md`, turn the `## [Unreleased]` entries into a dated section for
    the new version — `## [X.Y.Z] - YYYY-MM-DD` — and leave a fresh empty `## [Unreleased]` above it.
 2. Bump `__version__` in `packages/rehuco-agent/src/rehuco_agent/__init__.py`.
@@ -101,18 +122,26 @@ git tag rehuco-agent-0.1.0
 git push origin rehuco-agent-0.1.0
 ```
 
-The tag must be `rehuco-agent-X.Y.Z` — the workflow's trigger is `rehuco-agent-*.*.*`, and the same
-`<package>-<version>` scheme is what #18 settled for all five packages, so one day this single push is meant to
-fire both the installer workflow and PyPI publishing.
+The tag must be `<package>-X.Y.Z`. `publish-packages.yml` triggers on `*-[0-9]+.[0-9]+.[0-9]+` and reads the
+package name out of the tag, so that one form covers all five; `release-agent.yml` triggers on the narrower
+`rehuco-agent-*.*.*`, which is why an agent tag fires both workflows and any other package's fires only the
+publish.
 
 ## 5. What the tagged run does, and how to redo it
 
 [[[appendices.release-runbook#tagged-run]]]
 
-The same four build jobs run, and then `release` publishes: it downloads every artifact and either creates the
-GitHub Release — body included, from the changelog ([[appendices.release-runbook#release-notes]]) — or, if one
-already exists for that tag, uploads over it with `--clobber` and rewrites the body. Re-running the same
-tag is therefore safe and simply refreshes the assets rather than failing on "already exists".
+In `publish-packages.yml`: the package is resolved and checked against the tag, its sdist and wheel are built,
+and both are uploaded to TestPyPI and then to PyPI. In `release-agent.yml`, for an agent tag: the same four
+build jobs as a dry run, and then `release` publishes — it downloads every artifact and either creates the
+GitHub Release, body included from the changelog ([[appendices.release-runbook#release-notes]]), or, if one
+already exists for that tag, uploads over it with `--clobber` and rewrites the body.
+
+**Re-running an agent tag is safe on the GitHub side and fails on the PyPI side**, by design: the Release is
+refreshed rather than duplicated, while PyPI refuses a version it already holds, so the `Publish to PyPI` job
+ends red. That is the intended asymmetry — a red job is how a spent version number announces itself
+([[appendices.release-runbook#version-source]]) — and nothing is left half-done by it: the packages either
+went up on the first run or never did.
 
 To redo a release whose *content* was wrong, move the tag rather than inventing a version:
 
@@ -125,18 +154,59 @@ git push origin :refs/tags/rehuco-agent-0.1.0
 If the run failed because the tag and `__version__` disagreed, nothing was published — the `version` job fails
 before any build starts.
 
-## 6. What a release does not include yet
+## 6. PyPI publishing, and the one-time setup it needs
+
+[[[appendices.release-runbook#pypi-setup]]]
+
+`publish-packages.yml` authenticates by **trusted publishing**: the job asks GitHub for a short-lived OIDC
+token and PyPI trades it for an upload, so there is no API token in a repository secret or on a maintainer's
+machine to rotate or leak. What makes that work is configuration held outside git, in two places, and a tag
+whose package has none of it fails at the upload step with an authentication error.
+
+**In this repository** — Settings → Environments → New environment — two environments, named `testpypi` and
+`pypi`. No protection rules are needed; they exist so a trusted publisher can be bound to one specific job
+rather than to the repository as a whole.
+
+**On each index** — <https://test.pypi.org/manage/account/publishing/> and
+<https://pypi.org/manage/account/publishing/> — one publisher per package per index, ten in all:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `borco-core`, `borco-pyside`, `rehuco-core`, `rehuco-node` or `rehuco-agent` |
+| Owner | `borco` |
+| Repository name | `rehuco` |
+| Workflow filename | `publish-packages.yml` |
+| Environment name | `testpypi` on TestPyPI, `pypi` on PyPI |
+
+All five projects already exist on pypi.org, so their publishers are added under each project's **Settings →
+Publishing** rather than through the pending-publisher form. On TestPyPI they may not exist at all — its
+namespace is entirely separate from pypi.org's, and a name held on one is not reserved on the other — so
+those go in as *pending* publishers, which create the project on the first successful upload.
+
+Once a package has published, the install is worth a check from a throwaway environment. TestPyPI hosts none
+of the dependencies, so it has to be the primary index with real PyPI behind it:
+
+```sh
+uv run --no-project --with rehuco-core==X.Y.Z \
+  --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ \
+  python -c "import rehuco_core"
+```
+
+## 7. What a release does not include yet
 
 [[[appendices.release-runbook#gaps]]]
 
 - **Code-signing and notarization** are not done — an unpriced prerequisite
   ([[appendices.open-questions#still-open]]). Downloaders will meet SmartScreen on Windows and Gatekeeper on
   macOS, and have to override both by hand.
-- **PyPI publishing** (#18) is a separate workflow that does not exist yet, so a tag today ships installers
-  only.
+- **`make publish` is still there**, and is the bulk-publish path `publish-packages.yml` exists to replace —
+  `uv build --all-packages` followed by `uv publish`, which uploads every package whose local version is
+  ahead of PyPI. It stays only until the tag-triggered publish has published something for real, so that the
+  repository is never left with no publishing path at all
+  ([[appendices.continuous-integration#publish-packages]]).
 - **No auto-update.** Each release is a fresh download and install.
 
-## 7. Windows packaged builds print nothing
+## 8. Windows packaged builds print nothing
 
 [[[appendices.release-runbook#windows-console]]]
 

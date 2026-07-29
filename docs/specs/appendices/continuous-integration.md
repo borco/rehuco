@@ -228,3 +228,72 @@ it isn't that one. And hatchling's default VCS-based file selection was dropping
 until something actually built a wheel from source rather than copying files (Briefcase) or installing
 editable (`uv sync`); the AppImage recipe's real `pip install <path>` was the first thing to do that.
 Both are detailed in [[appendices.briefcase-packaging#linux-backends]].
+
+## 10. `publish-packages.yml`: one tag, one package, TestPyPI before PyPI
+
+[[[appendices.continuous-integration#publish-packages]]]
+
+- [x] [#18: feat: publishing CI — automate PyPI releases via trusted
+  publishing](https://github.com/borco/rehuco/issues/18)
+
+The workflow this replaces was a two-line `make publish` target running `uv build --all-packages`
+followed by `uv publish` — which uploads *every* package whose local version is ahead of PyPI, from
+whatever a maintainer happened to have in their working tree, authenticated by a long-lived API token
+on that machine. One invocation could publish a package nobody meant to release, and a PyPI upload
+cannot be withdrawn. `publish-packages.yml` narrows all three: the tag names the single package, the
+tree is a clean checkout of the tagged commit, and the credential is a short-lived OIDC token minted
+per run.
+
+**The tag is the instruction.** `*-[0-9]+.[0-9]+.[0-9]+` matches the `<package>-<version>` scheme
+already in use, so `borco-core-0.1.0` publishes `borco-core` at `0.1.0` and nothing else. The `package`
+job strips the version off the tag, resolves `packages/<name>/src/<module>/__init__.py`, and fails if
+that file does not exist (a typo'd package name) or if its `__version__` disagrees with the tag — the
+generalized form of the guard `release-agent.yml` applies to `rehuco-agent`
+([[appendices.continuous-integration#release-agent]]). A `rehuco-agent-X.Y.Z` tag matches both
+workflows' triggers, which is the intended arrangement: one push builds the installers and publishes
+the wheel, and the monorepo never needs a repo-wide release concept.
+
+**The build job syncs and runs `make uis` for every package**, not only for `rehuco-agent`, the one
+with `.ui`/`.qrc` sources today. Both a per-package condition and the unconditional step cost about the
+same to write; only one of them can rot. What makes it worth spending the minute on `borco-core` is the
+failure it prevents: hatchling force-includes the gitignored `*_ui.py`/`*_rc.py`
+([[packaging-deployment#linux-format]]), so a build that runs before they are generated produces a
+wheel that looks complete and `ImportError`s on first use — the bug #210 found only because
+python-appimage was the first thing to install from a real wheel. A verification step closes it for
+good: every `*_ui.py`/`*_rc.py` in the package's source tree must appear in the built wheel's namelist.
+It reads the tree rather than a hardcoded list, so the first `.ui` file added to another package is
+covered without anyone remembering this file exists.
+
+**TestPyPI is a gate, not a rehearsal that gets skipped later.** Every run publishes to TestPyPI first
+and `publish-pypi` `needs` it, so broken trusted-publishing wiring surfaces against a throwaway index
+rather than against pypi.org. A `workflow_dispatch` run — which takes the package name as a `choice`
+input, since there is no tag to read it from — stops there: `publish-pypi` is gated on
+`startsWith(github.ref, 'refs/tags/')`, so a manual run exercises build, OIDC and upload end to end and
+cannot touch real PyPI. That is the same dry-run shape `release-agent.yml` uses, and it is what made a
+temporary branch-scoped `push:` trigger unnecessary here, unlike the tracer procedure in
+`pyside6-scintilla`'s `docs/testpypi.md` this workflow otherwise follows.
+
+**`skip-existing` is set for TestPyPI and deliberately not for PyPI.** TestPyPI already holds whatever
+the dry run uploaded, so a tag re-run would otherwise fail on identical files, and nothing depends on
+what sits there. On real PyPI the refusal is the point: the tag/version check compares the tag against
+the source file and knows nothing about what is already published, so PyPI rejecting a spent version
+number is the only thing standing between a mis-cut tag and a green run that silently uploaded nothing
+([[appendices.release-runbook#version-source]]). The cost is that re-running an already-published tag
+ends red on its last job; that is documented rather than smoothed over
+([[appendices.release-runbook#tagged-run]]).
+
+**`pypa/gh-action-pypi-publish` is pinned to `@v1.14.1`**, not the floating `release/v1` the PyPA docs
+recommend and `pyside6-scintilla` uses. This is the one job holding an OIDC token, and a floating tag
+can be repointed by whoever comes to control the action — the same reasoning that pinned `setup-uv`
+([[appendices.continuous-integration#fix-node20-warning]]). The accepted cost is that security fixes
+arrive by a deliberate bump rather than automatically.
+
+**What is not git-tracked**: the `testpypi` and `pypi` GitHub Environments, and a trusted publisher per
+package on each index — ten registrations, all naming this workflow file. The step-by-step is in
+[[appendices.release-runbook#pypi-setup]]; until a package's publisher exists, its tag fails at the
+upload step with an authentication error rather than doing anything partial.
+
+**`make publish` outlives this workflow by one release.** It is the only publishing path that exists
+until `publish-packages.yml` has actually published something, so deleting it in the same change would
+leave a window with no way to publish at all if the new plumbing turns out broken. It goes as soon as
+the first CI publish lands, tracked as cleanup rather than left to judgment (#18).
