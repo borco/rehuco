@@ -67,8 +67,14 @@ package and of the old standalone PySide utility library. The first piece to lan
 [[[packaging-deployment#pypi-publishing]]]
 
 - Each member has its own `pyproject.toml` (name, version, build backend) and **publishes to PyPI independently** —
-  `uv build --package rehuco-core && uv publish`. The monorepo structure is invisible to PyPI; it just sees a normal
-  wheel.
+  a `<package>-X.Y.Z` tag push builds and publishes exactly the package it names, and nothing else. The monorepo
+  structure is invisible to PyPI; it just sees a normal wheel.
+- **A tag is the only way to publish, and this document deliberately describes no other.** There is no local
+  build-and-upload path, and no command here to copy: a hand-run upload publishes an unreviewed working tree over a
+  long-lived token, and a PyPI release cannot be withdrawn once it exists. The steps that actually run are
+  `.github/workflows/publish-packages.yml` — read the workflow, which is the only place they are written down. Why
+  it is shaped that way is [[appendices.continuous-integration#publish-packages]]; how to cut a release is
+  [[appendices.release-runbook#cut-the-release]].
 - The node and agent are installable as tools: **`uv tool install rehuco-node`** (ideal — headless service, console
   entry point) and **`uv tool install rehuco-agent`** (works for the GUI; native installers / file-association
   registration are a later polish for wider distribution ([[packaging-deployment#app-identity]]), not needed for the

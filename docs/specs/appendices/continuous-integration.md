@@ -235,14 +235,17 @@ Both are detailed in [[appendices.briefcase-packaging#linux-backends]].
 
 - [x] [#18: feat: publishing CI — automate PyPI releases via trusted
   publishing](https://github.com/borco/rehuco/issues/18)
+- [x] [#220: repo: delete make publish once publish-packages.yml has published for
+  real](https://github.com/borco/rehuco/issues/220)
 
-The workflow this replaces was a two-line `make publish` target running `uv build --all-packages`
-followed by `uv publish` — which uploads *every* package whose local version is ahead of PyPI, from
-whatever a maintainer happened to have in their working tree, authenticated by a long-lived API token
-on that machine. One invocation could publish a package nobody meant to release, and a PyPI upload
+The workflow this replaces was a two-line `make publish` target that built every package in the
+workspace and uploaded each one whose local version was ahead of PyPI — from whatever a maintainer
+happened to have in their working tree, authenticated by a long-lived API token on that machine. One
+invocation could publish a package nobody meant to release, and a PyPI upload
 cannot be withdrawn. `publish-packages.yml` narrows all three: the tag names the single package, the
 tree is a clean checkout of the tagged commit, and the credential is a short-lived OIDC token minted
-per run.
+per run. The target outlived the workflow by one release — it was the only way to publish anything
+until this one had, so it came out only once the first CI publish had actually landed (#220).
 
 **The tag is the instruction.** `*-[0-9]+.[0-9]+.[0-9]+` matches the `<package>-<version>` scheme
 already in use, so `borco-core-0.1.0` publishes `borco-core` at `0.1.0` and nothing else. The `package`
@@ -292,8 +295,3 @@ arrive by a deliberate bump rather than automatically.
 package on each index — ten registrations, all naming this workflow file. The step-by-step is in
 [[appendices.release-runbook#pypi-setup]]; until a package's publisher exists, its tag fails at the
 upload step with an authentication error rather than doing anything partial.
-
-**`make publish` outlives this workflow by one release.** It is the only publishing path that exists
-until `publish-packages.yml` has actually published something, so deleting it in the same change would
-leave a window with no way to publish at all if the new plumbing turns out broken. It goes as soon as
-the first CI publish lands, tracked as cleanup rather than left to judgment (#18).

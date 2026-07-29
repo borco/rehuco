@@ -79,7 +79,7 @@ Makefile targets: `sync`, `tests`, `cov`, `format`, `bandit`, `pyright`, `pylint
 favicon/logo — both docs targets depend on it, so a bare `mkdocs serve` on a fresh checkout lacks
 them), `docs-serve`, `docs-build` (strict —
 catches broken links and pages missing from the nav; needs the PlantUML server on a cold diagram cache,
-which is why it is outside `qa`), `publish`, `uis`/`qrcs`/`icons`
+which is why it is outside `qa`), `uis`/`qrcs`/`icons`
 (regenerate the gitignored `*_ui.py`/`*_rc.py` and brand-icon exports — run `make uis` after a fresh
 checkout/sync), `setup-git`, the Briefcase end-user build targets
 `agent-dist-build`/`agent-dist-update`/`agent-dist-package`/`agent-dist-clean`
