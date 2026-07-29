@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..documents.rehu_document_model import RehuDocumentModel
+from ..documents.rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 from ..settings.persistent_settings import persistent_settings
 from ..settings.unsaved_changes_dialog_settings import UnsavedChangesDialogSettings
 from .unsaved_changes_dialog_ui import Ui_UnsavedChangesDialog
@@ -68,7 +68,7 @@ class UnsavedChangesDialog(QDialog):
 
         self.__list_model: Final = QStandardItemModel(self)
         for model in models:
-            label = str(model.path) if model.path else "Untitled"
+            label = str(model.path) if model.path else UNTITLED_LABEL
             item = QStandardItem(label)
             item.setEditable(False)
             item.setCheckable(True)

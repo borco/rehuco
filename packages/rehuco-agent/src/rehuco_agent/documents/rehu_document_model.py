@@ -99,6 +99,11 @@ to :meth:`__on_common_field_changed` -- the same shape :data:`TYPE_FIELD_BOOL_NA
 plain write-through."""
 
 
+UNTITLED_LABEL: Final = "Untitled"
+"""Stand-in display label for a document with no path yet -- :attr:`RehuDocumentModel.label` is empty
+for one, and every dialog that names a document falls back to this, so the wording lives in one place."""
+
+
 def path_label(path: Path) -> str:
     """The `info.rehu`-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
     directory's name, trailing-slashed, for `info.rehu`; the bare filename otherwise. Shared by

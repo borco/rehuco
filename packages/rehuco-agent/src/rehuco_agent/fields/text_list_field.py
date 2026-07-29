@@ -14,7 +14,10 @@ from .text_list_string import TextListString
 class TextListField(Field[list[str]]):
     """A ``text list`` field ([[plugins#field-toolkit]], [[field-schema#field-types]]): a comma-joined,
     deduplicated label viewer + a comma-separated ``QLineEdit`` tag-entry editor, live-bound to the
-    binding. Covers ``authors``, ``advertised_tags``, ``extra_tags`` ([[field-schema#field-mapping]]).
+    binding. Covers ``advertised_tags``, ``extra_tags`` ([[field-schema#field-mapping]]) -- ``authors``
+    is not one of them: its lossless-guard editor lives in
+    :class:`~rehuco_agent.fields.authors_field.AuthorsField`, because a plain comma editor drops the
+    link an author may carry, and cannot round-trip a comma inside a name.
 
     The echo guard compares the editor's own *parsed* text against the incoming value, not the raw
     text, so the editor is only overwritten when they actually differ -- a keystroke that round-trips
