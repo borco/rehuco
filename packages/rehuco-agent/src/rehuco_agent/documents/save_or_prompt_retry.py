@@ -4,7 +4,7 @@ from typing import Final
 
 from PySide6.QtWidgets import QMessageBox, QWidget
 
-from .rehu_document_model import RehuDocumentModel
+from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 
 SAVE_FAILED_TITLE: Final = "Save Failed"
 """Title of the dialog shown when a save raises ``OSError`` (#146)."""
@@ -38,7 +38,7 @@ def save_or_prompt_retry(parent: QWidget, model: RehuDocumentModel) -> bool:
             model.save()
             return True
         except OSError as exc:
-            label = model.label or "Untitled"
+            label = model.label or UNTITLED_LABEL
             answer = QMessageBox.critical(
                 parent,
                 SAVE_FAILED_TITLE,

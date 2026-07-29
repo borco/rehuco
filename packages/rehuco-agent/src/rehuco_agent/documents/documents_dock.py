@@ -16,7 +16,7 @@ from ..settings.identity_settings import shared_identity_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
 from .document_widget import DocumentWidget
-from .rehu_document_model import RehuDocumentModel
+from .rehu_document_model import UNTITLED_LABEL, RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 
 LOG: Final = logging.getLogger(__name__)
@@ -414,6 +414,10 @@ class DocumentsDock(QMainWindow):
     def __confirm_close(self, model: RehuDocumentModel) -> bool:
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.
 
+        The prompt names the document by :attr:`~RehuDocumentModel.label`, not the bare filename: every
+        folder resource is an `info.rehu` ([[data-model#resource-scoping]]), so two of them open at once
+        would otherwise raise two identical prompts naming neither (#177).
+
         Geometry (size/position) is not yet restored across runs -- deferred to #38. Unlike
         :class:`~rehuco_agent.dialogs.unsaved_changes_dialog.UnsavedChangesDialog`, that's simple
         here: the static ``QMessageBox.warning()`` call
@@ -428,7 +432,7 @@ class DocumentsDock(QMainWindow):
             under its unsaved edits.
         """
         buttons = QMessageBox.StandardButton
-        name = model.path.name if model.path else "Untitled"
+        name = model.label or UNTITLED_LABEL
         answer = QMessageBox.warning(
             self,
             "Unsaved Changes",

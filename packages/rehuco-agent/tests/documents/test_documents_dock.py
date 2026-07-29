@@ -454,6 +454,33 @@ def test_closing_a_dirty_dock_whose_save_fails_leaves_it_open(mocker: MockerFixt
     assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_close_prompt_names_the_document_by_its_label(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The close prompt names the document by its label, not the bare filename -- every folder resource
+    is an ``info.rehu``, so filenames name none of them apart (#177).
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Discard
+    * request the dock's close
+    * verify the prompt's text carries the label, not ``info.rehu``
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    cdock = dock_for(dock, widget)
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Discard)
+
+    cdock.requestCloseDockWidget()
+
+    message = warning.call_args.args[2]
+    assert FAKE_LABEL in message
+    assert FAKE_PATH.name not in message
+
+
 def test_closing_a_clean_dock_does_not_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Closing a clean (non-dirty) dock closes it immediately, with no confirmation prompt.
 
