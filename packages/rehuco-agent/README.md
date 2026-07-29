@@ -10,8 +10,8 @@
 
 ## Status
 
-**Early — `0.0.x`.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
-The `.rehu` format is still moving and there is no upgrade guarantee between `0.0.x` releases yet, so
+**Early.** The editor works: it opens a `.rehu`, shows and edits its fields, and saves.
+The `.rehu` format is still moving and there is no upgrade guarantee between releases yet, so
 keep backups of anything you point it at. See [GitHub Issues](https://github.com/borco/rehuco/issues)
 for what's in progress.
 

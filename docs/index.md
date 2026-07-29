@@ -56,7 +56,7 @@ found during the N-th codebase audit.
 
 ## rehuco packages
 
-rehuco is published as three separate packages on PyPI, all at an early `0.0.x` — published so the
+rehuco is published as three separate packages on PyPI, all at an early stage — published so the
 names are taken and the release plumbing is exercised, not because they are ready to depend on.
 
 | Package | Description | PyPI | Downloads | Python |

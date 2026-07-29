@@ -10,7 +10,7 @@
 
 ## Status
 
-**Early — `0.0.x`.** It does real work: it is what the desktop editor reads and writes files with. But
+**Early.** It does real work: it is what the desktop editor reads and writes files with. But
 it is developed for that one consumer, the `.rehu` format is still moving, and the API changes without
 notice. See [GitHub Issues](https://github.com/borco/rehuco/issues) for what's in progress.
 
