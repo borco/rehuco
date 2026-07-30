@@ -74,6 +74,8 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 
 [[[data-model#resource-scoping]]]
 
+- [ ] [#197: feat: enumerate a reference-images resource's content images (.zip/.cbz entries, injected extension set)](https://github.com/borco/rehuco/issues/197)
+
 Two patterns for what a `.rehu` describes:
 
 - **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif/webp` images and an `info.sfv`/`.md5`/`.sha256` checksum
@@ -81,13 +83,28 @@ Two patterns for what a `.rehu` describes:
   everything in the directory **except** `info.rehu` and the `infoXX.*` images, so description/images stay freely
   editable without invalidating integrity checks.
 - **File-scoped**: `foo.rehu` + `foo00.jpg`, `foo01.jpg`, ... + `foo.sfv`/`foo.md5`, describing a single file like
-  `foo.zip`. This needs to extend to **multiple files** treated as one logical resource (e.g. `foo.zip` + `bar.zip`
-  together) — naming convention alone can't express that, so the `.rehu` must carry an explicit manifest block listing
-  which file(s) it describes.
+  `foo.zip`. Whether this must extend to **multiple files** treated as one logical resource via an explicit manifest
+  block in the `.rehu` is a Daz3D-milestone question ([[daz3d-personal-database#multi-part]]), and its only remaining
+  caller: reference-images resources are decided *not* to need it (#197, below), and DAZ multi-part archives share a
+  stem and differ by index — a shape a naming convention may already express, unlike the `foo.zip` + `bar.zip` example
+  this block was originally justified by.
 - **Coexistence**: a directory may end up containing both a directory-scoped `info.rehu` and one or more file-scoped
   `*.rehu` entries (normally this shouldn't happen — it's meant to be one or the other). Rather than forbid this
   outright, the app caches and displays all such entries and flags the situation with a warning, leaving resolution to
   the user.
+
+What a **reference-images** resource's content *is* was settled by #197: content lives inside archives — `.zip` or
+`.cbz`, a comic-book zip being the same container under another name — never as loose image files beside the `.rehu`.
+
+- File-scoped `foo.rehu` → the single same-stem archive (`foo.zip`/`foo.cbz`) **and nothing else**. Siblings in the
+  same directory belong to other resources or to none, and are never opened — a whitelist of one, not a directory walk
+  with filters.
+- Directory-scoped `info.rehu` of type `reference_images` → **every** archive under its directory, root and
+  subdirectories, recursively. A nested `info.rehu` is not a boundary: a subdirectory carrying its own document is
+  just another resource, handled per its own type, while the parent's recursive sum still includes that subdirectory's
+  archives. The overlap is accepted, not resolved.
+- **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
+  block contemplated above is not needed here.
 
 ## §4.5 Checksums
 
