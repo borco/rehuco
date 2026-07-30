@@ -27,9 +27,29 @@ registered and opened everywhere a ``.zip`` is: the shell verb and ``RegistryPag
 (:mod:`rehuco_agent.archives`, #43) and the content-image enumeration
 (:mod:`rehuco_core.rehu_content_images`). One constant serves both uses deliberately."""
 
+CHECKSUM_MANIFEST_EXTENSIONS: Final = (".sfv", ".md5", ".sha256")
+"""A checksum manifest's file extensions, case-insensitively ([[data-model#resource-scoping]]) -- the
+``<record>.sfv``/``.md5``/``.sha256`` sibling that records a resource's content hashes. Recognized here
+so :mod:`rehuco_core.rehu_content_files` can keep a manifest out of the content it describes; which one
+is *written*, and in what format, is the checksum feature's own decision."""
+
 CONTENT_IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 """Default image extensions to recognize inside a reference-images resource's archive(s), case-insensitively
 ([[data-model#image-meanings]]) -- distinct from :data:`IMAGE_EXTENSIONS`, since a content image is a
 monolithic, checksummed archive member, never a screenshot. What
 :func:`~rehuco_core.rehu_content_images.enumerate_content_images` falls back to when no set is given; the
 agent's ``ReferenceImagesSettings`` (#222) is what makes the set the user's to change."""
+
+EXCLUDED_FILE_PATTERNS: Final = ("Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store", "._*")
+"""Default filename globs to leave out of a directory-scoped resource's content, matched
+case-insensitively against the *file name* ([[data-model#checksums]], #226) -- what the OS and other
+tools leave behind, none of it content, all of it changing a size and a checksum without anyone touching
+the resource. ``Thumbs.db`` earns its place because Windows still writes per-folder thumbnail caches on
+network shares, and this catalog lives on one ([[packaging-deployment#ts230-as-nas]]); ``._*`` is the
+macOS AppleDouble residue that appears for the same reason.
+
+What :func:`~rehuco_core.rehu_content_files.enumerate_content_files` falls back to when no set is given;
+the agent's ``ExcludedFilesSettings`` (#226) is what makes the set the user's to change. The *structural*
+exclusions -- the record, its screenshots, its checksum manifest -- are not listed here and are not the
+user's: :mod:`rehuco_core.rehu_content_files` derives them from *every* record it finds while scanning --
+the resource's own and any nested or neighboring one's -- and applies them whatever this set says."""

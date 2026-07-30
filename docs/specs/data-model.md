@@ -122,12 +122,49 @@ What a **reference-images** resource's content *is* was settled by #197: content
 
 [[[data-model#checksums]]]
 
+- [#226: feat: excluded-files settings page — one pattern list shared by the size scan and checksums](https://github.com/borco/rehuco/issues/226)
+
 - Algorithm in use today: CRC32 (SFV). Subject to change pending benchmarking (CPU-accelerated CRC32 vs. alternatives
   like xxHash or hardware-accelerated SHA). The checksum manifest format should record **which algorithm was used** per
   entry, so a future algorithm switch doesn't invalidate or require migrating existing checksums, and different
   resources can use different algorithms if needed.
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the
   `infoXX.*` images, which are designed to be freely editable.
+- **What a resource's content *is* is computed once and shared** (#226) — `rehuco_core.rehu_content_files` resolves it
+  from the `.rehu` path, and both the size-on-disk scan and checksum generate/verify read that one answer. A file
+  summed by one and skipped by the other is a bug with no honest resolution: a verify would report an
+  *unexpected new file* the size the user was shown already counted.
+- **Two tiers of exclusion, and only one is the user's.** **Structural** — **every** `.rehu` a scan meets, at any
+  depth, together with the files that belong to it: its `<record>NN` screenshots (`<record>NN` plus an image
+  extension, the same shape [[data-model#image-meanings]] defines, so a numbered *video* stays content) and its
+  `<record>.sfv`/`.md5`/`.sha256` manifest. Not only the scanning resource's own — a nested `bar/info.rehu` and a
+  file-scoped `baz.rehu` in the tree bring their own bookkeeping, and all of it is skipped. **Find the records
+  first, drop what each one claims, and count what is left** — with two conditions that fall out of that order.
+  A record claims **only its own directory**, since screenshots and a manifest are its siblings: a root
+  `info.rehu` does not reach down and claim a `bar/info00.jpg` that has no `bar/info.rehu`, while a
+  `baz/info00.jpg` beside `baz/info.rehu` is skipped. And **the record has to exist** — a name is bookkeeping
+  because a record claims it, never because of its shape, so `xxx00.jpg` with no `xxx.rehu` and `yyy.sfv` with no
+  `yyy.rehu` are ordinary files that merely look like bookkeeping. It is deliberately not
+  editable, and the reason is mutability rather than ownership: a record, its screenshots and its manifest can
+  change at any moment, so a size or a manifest that counted them would need recomputing every time anyone edited a
+  description or added a screenshot. Excluding them is what lets a measurement stay valid until the *content*
+  changes. A nested record's real content still counts — a nested resource is not a boundary
+  ([[data-model#resource-scoping]]), only its bookkeeping is skipped. **Junk** — `Thumbs.db`,
+  `ehthumbs.db`, `desktop.ini`, `.DS_Store`, `._*` by default — is the tier the `Excluded Files` settings page
+  (#226) edits, as filename globs matched case-insensitively. `Thumbs.db` earns its place because Windows still
+  writes per-folder thumbnail caches on network shares ([[packaging-deployment#ts230-as-nas]]), and `._*` is the
+  macOS AppleDouble residue that appears for the same reason; neither is content, and both change a size and a
+  checksum without anyone touching the resource.
+- **The junk list falls back to the shipped defaults when it names nothing** — empty, absent or unreadable. Falling
+  back to *no exclusions* instead would silently start counting every share's `Thumbs.db`, which is the churn the
+  list exists to prevent.
+- **Exclusions govern the directory-scoped case only.** A file-scoped `foo.rehu`'s content is its same-stem siblings
+  — a whitelist named by the `.rehu` itself ([[data-model#resource-scoping]]) — so a neighboring `info.rehu`,
+  `bar00.jpg` or `bar.zip` is out of scope *before* any pattern is consulted, and emptying the list cannot change
+  that.
+- **This makes a verify result depend on a setting** — a manifest generated under one junk list and verified under
+  another can report spurious *unexpected new file* entries. Whether the manifest should record the list it was
+  generated under is the checksum feature's own question.
 - The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue
   ([[architecture-design#components]]), and multi-selecting many resources serializes the work rather than running it
   all at once.

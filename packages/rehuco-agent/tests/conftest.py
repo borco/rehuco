@@ -6,11 +6,13 @@ from typing import Any
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.settings import (
+    excluded_files_settings,
     identity_settings,
     image_viewer_settings,
     markdown_rendering_settings,
     reference_images_settings,
 )
+from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
@@ -115,6 +117,24 @@ def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_reference_images_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_excluded_files_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ExcludedFilesSettings` singleton (#226).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds an
+    `ExcludedFilesPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from the
+    developer's real on-disk settings for the rest of the session -- and decide, from that file, which
+    files every later test's size scan and checksum run leave out.
+
+    Tests that specifically exercise the excluded-files settings patch ``persistent_settings``
+    themselves.
+    """
+    shared_excluded_files_settings.cache_clear()
+    mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_excluded_files_settings.cache_clear()
 
 
 @fixture(autouse=True)

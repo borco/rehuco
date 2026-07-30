@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ExcludedFilesPage</class>
+ <widget class="QWidget" name="ExcludedFilesPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="structural_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="structural_frame_layout">
+      <item>
+       <widget class="QLabel" name="structural_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Always excluded</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="structural_patterns_label">
+        <property name="textInteractionFlags">
+         <set>Qt::TextInteractionFlag::TextSelectableByMouse|Qt::TextInteractionFlag::TextSelectableByKeyboard</set>
+        </property>
+        <property name="toolTip">
+         <string>Derived from each record's own name, wherever it is found — these cannot be changed.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="structural_note_label">
+        <property name="text">
+         <string>These change whenever a resource is edited, so counting them would mean recomputing after every edit. Every record found while scanning is treated this way, nested ones included — their content still counts. A file is skipped only when a record of that name sits beside it.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="patterns_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QGridLayout" name="patterns_frame_layout">
+      <item row="0" column="0" colspan="2">
+       <widget class="QLabel" name="patterns_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Excluded file patterns</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0" rowspan="4">
+       <widget class="QListWidget" name="patterns_list">
+        <property name="toolTip">
+         <string>Files whose name matches one of these are left out of size scans and checksums. Double-click an entry to edit it.</string>
+        </property>
+        <property name="alternatingRowColors">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QToolButton" name="edit_button">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>Edit</string>
+        </property>
+        <property name="toolTip">
+         <string>Rename the selected pattern.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QToolButton" name="remove_button">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>Remove</string>
+        </property>
+        <property name="toolTip">
+         <string>Drop the selected pattern from the list.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QToolButton" name="restore_defaults_button">
+        <property name="text">
+         <string>Restore Defaults</string>
+        </property>
+        <property name="toolTip">
+         <string>Replace the list with the patterns the app ships with.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="4" column="1">
+       <spacer name="buttons_spacer">
+        <property name="orientation">
+         <enum>Qt::Orientation::Vertical</enum>
+        </property>
+       </spacer>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLineEdit" name="new_pattern_edit">
+        <property name="placeholderText">
+         <string>e.g. *.tmp</string>
+        </property>
+        <property name="toolTip">
+         <string>Type a pattern and press Enter, or click Add. * and ? match any characters; case is ignored.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="1">
+       <widget class="QToolButton" name="add_button">
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="text">
+         <string>Add</string>
+        </property>
+        <property name="toolTip">
+         <string>Add the typed pattern to the list.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="6" column="0" colspan="2">
+       <widget class="QLabel" name="patterns_note_label">
+        <property name="text">
+         <string>Matched against the file name only, so a pattern can never exclude a whole folder. An empty list falls back to the shipped patterns. Sizes and checksums already computed are not recalculated by a change here.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

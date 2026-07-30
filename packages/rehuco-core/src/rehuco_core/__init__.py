@@ -1,7 +1,15 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
 from .collection_entries import CollectionEntry, collection_entries
-from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS, IMAGE_EXTENSIONS, INFO_REHU_FILENAME
+from .constants import (
+    ARCHIVE_EXTENSIONS,
+    CHECKSUM_MANIFEST_EXTENSIONS,
+    CONTENT_IMAGE_EXTENSIONS,
+    EXCLUDED_FILE_PATTERNS,
+    IMAGE_EXTENSIONS,
+    INFO_REHU_FILENAME,
+    REHU_SUFFIX,
+)
 from .learning_path_entries import LearningPathEntry, visible_learning_paths
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
@@ -28,6 +36,7 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
+from .rehu_content_files import enumerate_content_files
 from .rehu_content_images import ContentImageEntry, enumerate_content_images
 from .rehu_document import (
     AuthorEntry,
@@ -53,6 +62,7 @@ __all__ = [
     "ARCHIVE_EXTENSIONS",
     "AuthorEntry",
     "BUILTIN_PLUGINS",
+    "CHECKSUM_MANIFEST_EXTENSIONS",
     "COLLECTION_PLUGIN",
     "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
@@ -64,6 +74,7 @@ __all__ = [
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
+    "EXCLUDED_FILE_PATTERNS",
     "FORMAT_VERSION_KEY",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
@@ -77,6 +88,7 @@ __all__ = [
     "PluginSpec",
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
+    "REHU_SUFFIX",
     "RESERVED_KEYS",
     "RESOURCE_FIELD_NAMES",
     "RehuDocument",
@@ -96,6 +108,7 @@ __all__ = [
     "collection_entries",
     "convert_tc",
     "current_block_version",
+    "enumerate_content_files",
     "enumerate_content_images",
     "load_tc",
     "migrate_block_data",
