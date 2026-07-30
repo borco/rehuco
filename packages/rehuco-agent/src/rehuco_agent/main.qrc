@@ -1,5 +1,7 @@
 <RCC>
     <qresource prefix="/">
+        <file alias="fonts/Phosphor-Bold.ttf">../../../../design/fonts/Phosphor-Bold.ttf</file>
+        <file alias="fonts/Phosphor-Fill.ttf">../../../../design/fonts/Phosphor-Fill.ttf</file>
         <file alias="icons/app_settings.svg">../../../../design/icons/app_settings.svg</file>
         <file alias="icons/banner_error.svg">../../../../design/icons/banner_error.svg</file>
         <file alias="icons/banner_info.svg">../../../../design/icons/banner_info.svg</file>
@@ -10,23 +12,25 @@
         <file alias="icons/document_on_disk.svg">../../../../design/icons/document_on_disk.svg</file>
         <file alias="icons/document_remove_unknown_field.svg">../../../../design/icons/document_remove_unknown_field.svg</file>
         <file alias="icons/document_revert.svg">../../../../design/icons/document_revert.svg</file>
-        <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_save_preview.svg">../../../../design/icons/document_save_preview.svg</file>
+        <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer.svg">../../../../design/icons/document_viewer.svg</file>
-        <file alias="icons/expand_off.svg">../../../../design/icons/expand_off.svg</file>
-        <file alias="icons/expand_on.svg">../../../../design/icons/expand_on.svg</file>
+        <file alias="icons/expand_minus.svg">../../../../design/icons/expand_minus.svg</file>
+        <file alias="icons/expand_plus.svg">../../../../design/icons/expand_plus.svg</file>
         <file alias="icons/lightbox_list.svg">../../../../design/icons/lightbox_list.svg</file>
         <file alias="icons/lightbox_next.svg">../../../../design/icons/lightbox_next.svg</file>
         <file alias="icons/lightbox_prev.svg">../../../../design/icons/lightbox_prev.svg</file>
         <file alias="icons/lock_on.svg">../../../../design/icons/lock_on.svg</file>
+        <file alias="icons/measure_apply.svg">../../../../design/icons/measure_apply.svg</file>
+        <file alias="icons/measure_duration.svg">../../../../design/icons/measure_duration.svg</file>
+        <file alias="icons/measure_image_count.svg">../../../../design/icons/measure_image_count.svg</file>
+        <file alias="icons/measure_size_on_disk.svg">../../../../design/icons/measure_size_on_disk.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
-        <file alias="icons/tc_convert.svg">../../../../design/icons/tc_convert.svg</file>
         <file alias="icons/tc_convert_with_backup.svg">../../../../design/icons/tc_convert_with_backup.svg</file>
+        <file alias="icons/tc_convert.svg">../../../../design/icons/tc_convert.svg</file>
         <file alias="icons/theme_auto.svg">../../../../design/icons/theme_auto.svg</file>
         <file alias="icons/theme_dark.svg">../../../../design/icons/theme_dark.svg</file>
         <file alias="icons/theme_light.svg">../../../../design/icons/theme_light.svg</file>
-        <file alias="fonts/Phosphor-Bold.ttf">../../../../design/fonts/Phosphor-Bold.ttf</file>
-        <file alias="fonts/Phosphor-Fill.ttf">../../../../design/fonts/Phosphor-Fill.ttf</file>
     </qresource>
 </RCC>

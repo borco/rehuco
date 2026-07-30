@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import cast
 
-from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QToolButton, QWidget
+from PySide6.QtWidgets import QGridLayout, QLabel, QToolButton, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -24,7 +24,7 @@ from rehuco_agent.fields import (
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, MISC_COLUMN
 from rehuco_agent.fields.widgets import ContentCountEdit, SingleChoiceComboBox, TypeBadge
-from rehuco_agent.fields.widgets.content_count_edit import APPLY_TEXT, COMPUTE_TEXT
+from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, RehuDocument
 
@@ -313,13 +313,15 @@ def content_count_editor(grid: QWidget) -> ContentCountEdit:
     return editor
 
 
-def press(editor: ContentCountEdit, text: str) -> None:
-    """Press the content count row's button labeled ``text``.
+def press(editor: ContentCountEdit, tooltip: str) -> None:
+    """Press the content count row's button whose action carries ``tooltip``.
+
+    Both buttons are icon-only, so the tooltip is what names them apart on this surface.
 
     :param editor: the composite editor holding the buttons.
-    :param text: the button's label, :data:`COMPUTE_TEXT` or :data:`APPLY_TEXT`.
+    :param tooltip: the action's tooltip, :data:`COMPUTE_TOOLTIP` or :data:`APPLY_TOOLTIP`.
     """
-    button = next(button for button in editor.findChildren(QPushButton) if button.text() == text)
+    button = next(button for button in editor.findChildren(QToolButton) if button.toolTip() == tooltip)
     button.click()
 
 
@@ -347,7 +349,7 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TEXT)
+    press(editor, COMPUTE_TOOLTIP)
 
     enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"))
     assert editor.computed == 2
@@ -369,7 +371,7 @@ def test_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mock
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TEXT)
+    press(editor, COMPUTE_TOOLTIP)
 
     enumerate_content_images.assert_not_called()
     assert editor.computed is None
@@ -403,12 +405,12 @@ def test_applying_the_measured_count_writes_it_to_the_document(qtbot: QtBot, moc
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TEXT)
+    press(editor, COMPUTE_TOOLTIP)
 
     assert model.document.active_field("current_count") == 1
     assert model.dirty is False
 
-    press(editor, APPLY_TEXT)
+    press(editor, APPLY_TOOLTIP)
 
     assert model.document.active_field("current_count") == 3
     assert model.dirty is True

@@ -5,15 +5,23 @@ explicit apply that moves one into the other ([[plugins#field-toolkit]], #198).
 from typing import Final
 
 from borco_pyside.core import SimpleProperty
+from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import UnboundedSpinBox
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QWidget
 
-APPLY_TEXT: Final = "Apply"
-"""The button that stores the measured count."""
+APPLY_ICON_RESOURCE: Final = ":/icons/measure_apply.svg"
+"""The action that stores the measured count -- an arrow moving it into the stored slot."""
 
-COMPUTE_TEXT: Final = "Compute"
-"""The button that asks for a fresh measurement."""
+COMPUTE_ICON_RESOURCE: Final = ":/icons/measure_image_count.svg"
+"""The action that counts a reference-images resource's content images afresh."""
+
+APPLY_TOOLTIP: Final = "Store the computed count"
+"""Names the apply action; also how a test tells the row's two buttons apart, since both are icon-only."""
+
+COMPUTE_TOOLTIP: Final = "Count the images inside this resource's archive(s)"
+"""Names the compute action; see :data:`APPLY_TOOLTIP`."""
 
 
 class ContentCountEdit(QWidget):
@@ -51,12 +59,15 @@ class ContentCountEdit(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__spin_box: Final = UnboundedSpinBox(value=None, parent=self)
-        self.__apply_button: Final = QPushButton(APPLY_TEXT, self)
         self.__computed_label: Final = QLabel(self)
-        self.__compute_button: Final = QPushButton(COMPUTE_TEXT, self)
-
-        self.__apply_button.setToolTip("Store the computed count")
-        self.__compute_button.setToolTip("Count the images inside this resource's archive(s)")
+        # the enabled state lives on the *action*, not the button: a QToolButton showing a default action
+        # mirrors it, so disabling the button alone would be undone by the next action-driven refresh
+        self.__apply_action: Final = QAction(self)
+        self.__apply_button: Final = self.__make_action_button(self.__apply_action, APPLY_ICON_RESOURCE, APPLY_TOOLTIP)
+        self.__compute_action: Final = QAction(self)
+        self.__compute_button: Final = self.__make_action_button(
+            self.__compute_action, COMPUTE_ICON_RESOURCE, COMPUTE_TOOLTIP
+        )
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -70,10 +81,29 @@ class ContentCountEdit(QWidget):
         self.__spin_box.value_changed.connect(self.set_value)  # type: ignore[attr-defined]
         self.value_changed.connect(self.__on_value_changed)  # type: ignore[attr-defined]
         self.computed_changed.connect(self.__on_computed_changed)  # type: ignore[attr-defined]
-        self.__apply_button.clicked.connect(self.__apply)
-        self.__compute_button.clicked.connect(self.compute_requested.emit)
+        self.__apply_action.triggered.connect(self.__apply)
+        self.__compute_action.triggered.connect(self.compute_requested.emit)
 
         self.__render_apply()
+
+    def __make_action_button(self, action: QAction, icon: str, tooltip: str) -> QToolButton:
+        """Build one icon-only tool button driven by ``action``, kept theme-recolored.
+
+        The same shape every other themed control in the toolkit takes -- a ``QAction`` set as the
+        button's default action, its icon repainted by an
+        :class:`~borco_pyside.theming.ActionIconThemeHandler` (#104) -- rather than a labeled button, so
+        the row reads as two actions on a value instead of a sentence.
+
+        :param action: the action to drive the button, parented here.
+        :param icon: the action's themed SVG resource path.
+        :param tooltip: what the action does, in words -- the button is icon-only.
+        :returns: the button, parented to this widget.
+        """
+        action.setToolTip(tooltip)
+        ActionIconThemeHandler(action, icon)
+        button = QToolButton(self)
+        button.setDefaultAction(action)
+        return button
 
     def __on_value_changed(self, value: int | None) -> None:
         """Echo a stored-count change into the spin box and re-render ``Apply``.
@@ -102,4 +132,4 @@ class ContentCountEdit(QWidget):
 
     def __render_apply(self) -> None:
         """Enable ``Apply`` only while a measurement exists and genuinely differs from the stored count."""
-        self.__apply_button.setEnabled(self.computed is not None and self.computed != self.value)
+        self.__apply_action.setEnabled(self.computed is not None and self.computed != self.value)

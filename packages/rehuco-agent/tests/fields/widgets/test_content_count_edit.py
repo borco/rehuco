@@ -1,7 +1,7 @@
 """Tests for ContentCountEdit: the stored spin box, the computed label, and the explicit apply between them."""
 
 from borco_pyside.widgets import UnboundedSpinBox
-from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtWidgets import QLabel, QToolButton
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.content_count_edit import ContentCountEdit
 
@@ -24,20 +24,20 @@ def internal_computed_label(edit: ContentCountEdit) -> QLabel:
     return edit._ContentCountEdit__computed_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def internal_apply_button(edit: ContentCountEdit) -> QPushButton:
+def internal_apply_button(edit: ContentCountEdit) -> QToolButton:
     """Return the widget's private apply button -- ``ContentCountEdit`` exposes no accessor.
 
     :param edit: the widget to inspect.
-    :returns: the internal ``QPushButton``.
+    :returns: the internal ``QToolButton``.
     """
     return edit._ContentCountEdit__apply_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-def internal_compute_button(edit: ContentCountEdit) -> QPushButton:
+def internal_compute_button(edit: ContentCountEdit) -> QToolButton:
     """Return the widget's private compute button -- ``ContentCountEdit`` exposes no accessor.
 
     :param edit: the widget to inspect.
-    :returns: the internal ``QPushButton``.
+    :returns: the internal ``QToolButton``.
     """
     return edit._ContentCountEdit__compute_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
