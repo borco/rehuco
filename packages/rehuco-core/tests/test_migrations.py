@@ -511,12 +511,13 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block
     ``images_count`` is the shared field unique to this type; it must stay inline, never treated as
     per-user. The walk runs the whole chain, so ``viewed``/``todo`` are relocated by v1 and then removed
     by v3 (#195) -- the relocation is what puts them where v3 can find them, which is why v1 is left
-    alone rather than taught to skip them.
+    alone rather than taught to skip them -- and the count is renamed to ``current_count`` by v4 (#198),
+    still inline.
 
     **Test steps:**
 
     * migrate a v0 reference-images block carrying the per-user keys plus its shared ``images_count``
-    * verify the per-user subset moved and ``images_count`` (and the other shared flags) stayed inline
+    * verify the per-user subset moved and the count (and the other shared flags) stayed inline
     * verify the two progress flags did not survive the rest of the chain
     """
     block: dict[str, Any] = {
@@ -545,8 +546,8 @@ def test_v0_to_v1_moves_exactly_the_per_user_subset_for_a_reference_images_block
     assert block["complete"] is True
     assert block["online"] is False
     assert block["collections"] == []  # pylint: disable=use-implicit-booleaness-not-comparison
-    assert block["images_count"] is None
-    assert block["format_version"] == 3
+    assert block["current_count"] is None
+    assert block["format_version"] == 4
     assert "rating" not in block
     assert "viewed" not in block["users"]["admin"]
     assert "todo" not in block["users"]["admin"]
@@ -680,7 +681,7 @@ def test_current_block_version_is_the_chain_head_derived_not_declared() -> None:
     """ "What's current" is the highest target in a plugin's chain, not a number the plugin states about
     itself ([[plugins#plugin-blocks]]) -- so the tutorial chain (per-user map at v1, learning-path
     ``ref``s at v2, [[field-schema#learning-path-ownership]]) reads head ``2`` while the reference-images
-    one reads ``3``, having taken a step the tutorial chain has no reason to (#195); a plugin with no
+    one reads ``4``, having taken two steps the tutorial chain has no reason to (#195, #198); a plugin with no
     chain (Collection, or any unknown key) reads ``0``.
 
     That the two now differ is the point of deriving the head per target rather than declaring one
@@ -688,11 +689,11 @@ def test_current_block_version_is_the_chain_head_derived_not_declared() -> None:
 
     **Test steps:**
 
-    * verify the tutorial head is ``2`` and the reference-images one ``3``
+    * verify the tutorial head is ``2`` and the reference-images one ``4``
     * verify a chainless builtin and an unknown key both read ``0``
     """
     assert current_block_version("tutorial") == 2
-    assert current_block_version("reference_images") == 3
+    assert current_block_version("reference_images") == 4
     assert current_block_version("collection") == 0
     assert current_block_version("audiopack") == 0
 
@@ -778,8 +779,8 @@ def test_v1_to_v2_leaves_a_block_with_no_learning_paths_untouched_but_stamped() 
 
 def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
     """The reference-images plugin runs the **same** v1->v2 step -- the two plugins must not diverge
-    *there*, the same trap the v0->v1 relocation guards against. (They do diverge at v3, deliberately;
-    the walk carries on to the chain's head, so this block ends stamped ``3``.)
+    *there*, the same trap the v0->v1 relocation guards against. (They do diverge from v3 on, deliberately;
+    the walk carries on to the chain's head, so this block ends stamped ``4``.)
 
     **Test steps:**
 
@@ -794,7 +795,7 @@ def test_v1_to_v2_runs_the_same_for_a_reference_images_block() -> None:
     migrate_block_data(block, "reference_images", "admin")
 
     assert block["users"]["admin"]["learning_paths"] == [{"title": "P", "index": 0, "ref": 1}]
-    assert block["format_version"] == 3
+    assert block["format_version"] == 4
 
 
 def test_v1_to_v2_skips_a_malformed_entry_without_spending_a_ref() -> None:
@@ -889,7 +890,7 @@ def test_v2_to_v3_drops_the_progress_flags_from_every_identity() -> None:
         "guest": {"favorite": True},
     }
     assert block["complete"] is True
-    assert block["format_version"] == 3
+    assert block["format_version"] == 4
 
 
 def test_v2_to_v3_leaves_the_tutorial_chain_alone() -> None:
@@ -903,7 +904,7 @@ def test_v2_to_v3_leaves_the_tutorial_chain_alone() -> None:
 
     * migrate an equivalent v2 block as each type
     * verify the tutorial keeps the flags and stops at head ``2``, while the reference-images one loses
-      them and reaches ``3``
+      them and reaches its own head
     """
     fields = {"viewed": True, "todo": True}
     tutorial: dict[str, Any] = {"format_version": 2, "users": {"admin": dict(fields)}}
@@ -915,7 +916,7 @@ def test_v2_to_v3_leaves_the_tutorial_chain_alone() -> None:
     assert tutorial["users"]["admin"] == fields
     assert tutorial["format_version"] == 2
     assert reference_images["users"]["admin"] == {}  # pylint: disable=use-implicit-booleaness-not-comparison
-    assert reference_images["format_version"] == 3
+    assert reference_images["format_version"] == 4
 
 
 def test_v2_to_v3_leaves_inline_flags_the_v1_step_declined_to_move() -> None:
@@ -965,8 +966,107 @@ def test_v2_to_v3_reads_a_malformed_users_map_without_crashing() -> None:
 
     assert not_a_map["users"] == "corrupt"
     assert entry_not_a_map["users"] == {"admin": "corrupt"}
-    assert not_a_map["format_version"] == 3
-    assert entry_not_a_map["format_version"] == 3
+    assert not_a_map["format_version"] == 4
+    assert entry_not_a_map["format_version"] == 4
+
+
+# endregion
+
+
+# region Reference-images block layout v4 (#198, [[field-schema#field-mapping]])
+
+
+def test_v3_to_v4_renames_the_count_to_current_count() -> None:
+    """``images_count`` becomes ``current_count`` on load -- an old-field-to-known-field rename applied by
+    the migration chain, like ``author`` -> ``authors`` before it ([[data-model#schema-version]], #198).
+
+    **Test steps:**
+
+    * migrate a v3 reference-images block carrying ``images_count``
+    * verify the value moved to ``current_count`` and the old key is gone
+    """
+    block: dict[str, Any] = {"format_version": 3, "images_count": 420, "complete": True}
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["current_count"] == 420
+    assert "images_count" not in block
+    assert block["complete"] is True
+    assert block["format_version"] == 4
+
+
+def test_v3_to_v4_carries_a_malformed_count_verbatim() -> None:
+    """The value moves as it is, malformed included -- coercing here would discard exactly what the
+    ``INVALID_FIELD`` lock keeps recoverable ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * migrate a v3 block whose ``images_count`` is a string
+    * verify the string arrived under ``current_count`` unchanged
+    """
+    block: dict[str, Any] = {"format_version": 3, "images_count": "lots"}
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["current_count"] == "lots"
+
+
+def test_v3_to_v4_never_overwrites_an_existing_current_count() -> None:
+    """A block already carrying ``current_count`` is left alone, stray old key and all (#198).
+
+    Two counts written by two builds are not something the step can reconcile; the stray one surfaces
+    through the generic fallback with a drop button ([[plugins#fallback-editor]]) rather than silently
+    replacing the value the newer build wrote.
+
+    **Test steps:**
+
+    * migrate a v3 block carrying both keys
+    * verify ``current_count`` kept its own value and ``images_count`` was neither moved nor removed
+    """
+    block: dict[str, Any] = {"format_version": 3, "images_count": 420, "current_count": 7}
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert block["current_count"] == 7
+    assert block["images_count"] == 420
+
+
+def test_v3_to_v4_leaves_a_block_without_the_old_key_alone() -> None:
+    """A block that never carried ``images_count`` gains no ``current_count`` -- absent stays absent, and
+    is not minted as ``null`` ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * migrate a v3 block with neither key
+    * verify neither key exists afterwards and only the stamp moved
+    """
+    block: dict[str, Any] = {"format_version": 3, "complete": True}
+
+    migrate_block_data(block, "reference_images", "admin")
+
+    assert "current_count" not in block
+    assert "images_count" not in block
+    assert block["format_version"] == 4
+
+
+def test_v3_to_v4_leaves_the_tutorial_chain_alone() -> None:
+    """Only the reference-images chain renames: a tutorial block carrying a stray ``images_count`` keeps
+    it, unrecognized, for the generic fallback to surface (#195, #198).
+
+    **Test steps:**
+
+    * migrate an equivalent block as each type
+    * verify only the reference-images one was renamed
+    """
+    tutorial: dict[str, Any] = {"format_version": 2, "images_count": 420}
+    reference_images: dict[str, Any] = {"format_version": 3, "images_count": 420}
+
+    migrate_block_data(tutorial, "tutorial", "admin")
+    migrate_block_data(reference_images, "reference_images", "admin")
+
+    assert tutorial["images_count"] == 420
+    assert "current_count" not in tutorial
+    assert reference_images["current_count"] == 420
 
 
 # endregion

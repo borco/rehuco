@@ -35,6 +35,10 @@ tc4 actually stored.
 
 [[[field-schema#field-mapping]]]
 
+- [#196: feat: surface images_count as a ReferenceImages-only field](https://github.com/borco/rehuco/issues/196)
+- [#198: feat: compute the content-image count — advertised_count / current_count with a measure/apply
+  row](https://github.com/borco/rehuco/issues/198)
+
 Every key a tc4 `.tc` carries, with its rehuco disposition. "Group" is the common/plugin split
 ([[data-model#rehu-format]], [[plugins#overview]]) and says **where the field lives on disk**: `common` in the reserved
 `core` block, everything else under the type's plugin block ([[field-schema#resource-types]]). The boundary can be
@@ -69,7 +73,8 @@ generic editor ([[plugins#fallback-editor]]) does not depend on it.
 | `learning_paths` | Learning Paths | `learning_paths[].title` (+ `.index`) | record | Tutorial, RefImages | multi, user-defined⁴ | keep — see [[field-schema#sources]] |
 | `duration` | Duration | `original_duration` (+ `current_duration`, `advertised_duration`) | duration (seconds) | Tutorial | scalar | keep, split — see [[field-schema#duration-size]] |
 | `level` | Level | `level` | multi-choice | Tutorial | multi | keep — beginner / intermediate / advanced / any |
-| — | *(none in tc4)* | `images_count` | int | ReferenceImages | scalar | **new** — empty on import (not from `duration`), filled by scanning ([[field-schema#deferred-items]]) |
+| — | *(none in tc4)* | `current_count` | int | ReferenceImages | scalar | **new** — empty on import (not from `duration`), filled by scanning ([[field-schema#deferred-items]]); spelled `images_count` until [#198](https://github.com/borco/rehuco/issues/198), renamed on load by the block chain's v4 step |
+| — | *(none in tc4)* | `advertised_count` | count claim (text) | ReferenceImages | scalar | **new** — what the pack claims of itself; text, so an open-ended `500+` stays weaker than `500` ([[field-schema#field-types]]) |
 
 ¹ `sources` is a list; each item is `{ title, publisher, url, primary? }`. The item with
 `primary: true` (or the first item if none is flagged) is canonical — its **title** is the
@@ -131,7 +136,9 @@ only:
   [#195](https://github.com/borco/rehuco/issues/195); a `reference_images` block that still carries them
   is stripped by that chain's **v3** step ([[plugins#plugin-blocks]]), which is the first place the two
   block chains diverge.
-- **ReferenceImages only** — `images_count`; declares **no** duration ([[field-schema#duration-size]]), so the value
+- **ReferenceImages only** — the count pair `advertised_count` / `current_count` (what the pack claims,
+  and what counting its archives finds — [[data-model#resource-scoping]]); declares **no** duration
+  ([[field-schema#duration-size]]), so the value
   that leaked as `720` in tc4 has nowhere to land.
 - **Collection** — a series/grouping node; its **`title` is the series name** that members
   reference via `collections[].title`. **Which fields it shows/edits is deferred** until a real
@@ -472,8 +479,8 @@ deleting files.
 
 `duration` does not apply to **ReferenceImages** — for that type it is an unknown field, not a
 blank one, so it is simply not declared (which is what should have hidden the leaked value in
-tc4's shared viewer). The leaked `720` is **not** reinterpreted as `images_count`: on import of
-a reference-images `.tc` the old `duration` is dropped and `images_count` is left **empty**,
+tc4's shared viewer). The leaked `720` is **not** reinterpreted as an image count: on import of
+a reference-images `.tc` the old `duration` is dropped and `current_count` is left **empty**,
 to be filled later by scanning ([[field-schema#deferred-items]]) rather than by guessing it was ever an image count.
 
 ### §17.3.1 Canonical unit and the millisecond-leak history
@@ -538,7 +545,8 @@ The distinct value types the viewer must handle:
 | bool | yes/no; `complete` shows a warning color when false |
 | multi-choice | fixed value set; `level` ∈ {beginner, intermediate, advanced, any} |
 | Markdown | rich text; resolves embedded image paths relative to the file's folder |
-| int | plain integer; `collection_index`, `images_count` |
+| int | plain integer; `collection_index`, `current_count` (which adds a measure/apply row, [[data-model#resource-scoping]]) |
+| count claim | a whole number, optionally suffixed `+` (`500`, `500+`); stored as **text**, never coerced to an integer — `advertised_count` |
 | record list | list of small records; `sources`, `collections`, `learning_paths` ([[field-schema#sources]]) |
 
 **Line endings in `description` are normalized on read, stored verbatim on write.** The `description` getter returns
@@ -590,10 +598,11 @@ Field order, in the three groups the layout separates:
   credited name until then, and per-document `{name, url}` entries ([[field-schema#authors]]) fold into the entity
   when it lands.
 - **Optional scalars read as `None` — done (#100 core, #101 display)** — absent is not `0`: the measured/claimed
-  numerics (`original_size` / `current_size`, the three durations, `images_count`), `rating` (it may be negative, so
+  numerics (`original_size` / `current_size`, the three durations, `current_count`), `rating` (it may be negative, so
   `0` is a real rating and unrated must be `None`), and `released` read as `None` when absent; strings, lists, and the
   boolean flags keep their coercion defaults. Absent-on-disk ↔ `None`-in-code: JSON `null` is accepted on read but
-  never written — setting `None` omits the key (the fixtures' `images_count: null` normalizes away on save). Display
+  never written — setting `None` omits the key (the fixtures' `images_count: null`, renamed to `current_count` by the
+  block chain's v4 step, normalizes away on save). Display
   follows: `None` renders empty, so a genuine `0` renders honestly (revises [[field-schema#duration-format]]'s old
   "`0` renders empty" rule).
 - **Membership by identity** — `collections[].title` links to a series by name today; move to
@@ -616,9 +625,11 @@ Field order, in the three groups the layout separates:
   fixed-vocabulary bools (`complete`/`online`/`viewed`/`todo`/`keep`) into one toggle-set list
   with a vocabulary from `.rehuco` (scope, labels/icons), migrated via a plugin-block
   `format_version` bump ([[data-model#schema-version]]). `favorite` stays separate. v1 keeps individual bools.
-- **`images_count` on import** — left **empty** for a reference-images `.tc` (the old `duration`
-  is not assumed to be a count); fill later by scanning the sibling `infoXX.*` set or the
-  content zip.
+- **The image count on import — resolved (#198)** — a reference-images `.tc` imports with **neither** count
+  written (the old `duration` is not assumed to be one). `current_count` is filled by counting the content
+  zips' entries ([[data-model#resource-scoping]]), on an explicit action that fills a label beside the stored
+  value rather than overwriting it: a stored count disagreeing with the archive is evidence of a refreshed
+  zip, not a stale number to correct silently. `advertised_count` is hand-entered — nothing measures a claim.
 - **`created` / `updated` seeding — resolved** — both seed from the `.tc` file's **mtime** on import (ctime is
   unreliable cross-platform, and tc4 tracked no separate creation history) ([[field-schema#record-timestamps]]).
 - **Description image resolution** — confirm sibling-relative path handling matches [[data-model#image-meanings]]'s
@@ -742,7 +753,7 @@ parser/schema validation fixtures.
 }
 ```
 
-### ReferenceImages — absent `images_count`, no duration, full date, unrated
+### ReferenceImages — absent counts, no duration, full date, unrated
 
 ```json
 {

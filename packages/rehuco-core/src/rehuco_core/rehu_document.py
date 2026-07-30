@@ -48,6 +48,7 @@ from .rehu_locks import (
     OPTIONAL_INT_BLOCK_KEYS,
     OPTIONAL_INT_CORE_KEYS,
     OPTIONAL_INT_USER_KEYS,
+    OPTIONAL_STR_BLOCK_KEYS,
     OPTIONAL_STR_CORE_KEYS,
     coerced_str,
     coerced_str_list,
@@ -1517,7 +1518,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """
         block = self.__stored_active_block()
         if isinstance(block, dict):
-            self.__drop_null_keys(block, OPTIONAL_INT_BLOCK_KEYS)
+            self.__drop_null_keys(block, (*OPTIONAL_INT_BLOCK_KEYS, *OPTIONAL_STR_BLOCK_KEYS))
             users = block.get(USERS_KEY)
             user = users.get(self.__username) if isinstance(users, dict) else None
             if isinstance(user, dict):
@@ -1699,15 +1700,31 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         self.__set_active_or_remove("advertised_duration", value)
 
     @property
-    def images_count(self) -> int | None:
-        """The reference-images count ([[field-schema#field-types]]); a shared field on the active plugin
-        block, filled by scanning rather than fabricated on import ([[field-schema#deferred-items]]).
-        ``None`` when absent or JSON ``null``; a present non-int coerces to ``None`` and locks."""
-        return optional_int(self.active_field("images_count"))
+    def current_count(self) -> int | None:
+        """The **measured** content-image count ([[field-schema#field-types]]) -- how many images the
+        resource's archive(s) actually hold ([[data-model#resource-scoping]]); a shared field on the active
+        plugin block, filled by scanning rather than fabricated on import
+        ([[field-schema#deferred-items]]). ``None`` when absent or JSON ``null``; a present non-int coerces
+        to ``None`` and locks. Spelled ``images_count`` before the count split in two (#198), renamed on
+        load by the ``reference_images`` chain's v4 step ([[data-model#schema-version]])."""
+        return optional_int(self.active_field("current_count"))
 
-    @images_count.setter
-    def images_count(self, value: int | None) -> None:
-        self.__set_active_or_remove("images_count", value)
+    @current_count.setter
+    def current_count(self, value: int | None) -> None:
+        self.__set_active_or_remove("current_count", value)
+
+    @property
+    def advertised_count(self) -> str | None:
+        """The pack's **own claim** about how many images it holds ([[field-schema#field-types]]); a shared
+        field on the active plugin block, stored as text so an open-ended ``500+`` survives as the weaker
+        claim it is. ``None`` when absent or JSON ``null`` -- absent is not ``""``
+        ([[field-schema#deferred-items]]); a present non-string coerces to ``None`` and locks. Nothing
+        measures it: its counterpart :attr:`current_count` is what a scan fills."""
+        return optional_str(self.active_field("advertised_count"))
+
+    @advertised_count.setter
+    def advertised_count(self, value: str | None) -> None:
+        self.__set_active_or_remove("advertised_count", value)
 
     @property
     def rating(self) -> int | None:

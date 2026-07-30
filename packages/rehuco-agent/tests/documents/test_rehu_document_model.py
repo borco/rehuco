@@ -1564,14 +1564,14 @@ def test_model_seeds_type_field_defaults_when_block_is_absent(model: RehuDocumen
     **Test steps:**
 
     * construct a model over a document with no ``tutorial`` block
-    * verify ``complete`` defaults true, the other flags false, rating/images_count ``None``
+    * verify ``complete`` defaults true, the other flags false, rating/current_count ``None``
       (absent, not a coerced zero -- [[field-schema#deferred-items]]), level empty, and it is clean
     """
     assert model.complete is True
     assert model.online is False
     assert model.favorite is False
     assert model.rating is None
-    assert model.images_count is None
+    assert model.current_count is None
     assert model.level == []
     assert model.dirty is False
 
@@ -1599,14 +1599,14 @@ def test_model_coerces_malformed_type_field_values_to_defaults() -> None:
 
     **Test steps:**
 
-    * construct a model over a document whose block holds a non-int rating and a null images_count
+    * construct a model over a document whose block holds a non-int rating and a null current_count
     * verify both coerce to ``None``
     """
-    document = RehuDocument({"type": "ReferenceImages", "reference_images": {"rating": "junk", "images_count": None}})
+    document = RehuDocument({"type": "ReferenceImages", "reference_images": {"rating": "junk", "current_count": None}})
     model = RehuDocumentModel(document)
 
     assert model.rating is None
-    assert model.images_count is None
+    assert model.current_count is None
 
 
 def test_setting_a_type_field_flag_writes_through_and_dirties(model: RehuDocumentModel, document: RehuDocument) -> None:
@@ -1659,8 +1659,8 @@ def test_setting_rating_to_none_removes_the_key_not_writes_null(
     assert "rating" not in document.data["tutorial"]["users"][document.username]
 
 
-def test_setting_images_count_round_trips_a_zero_and_clears_to_an_absent_key() -> None:
-    """``images_count`` writes a genuine ``0`` through as ``0``, and clearing it **removes** the key
+def test_setting_current_count_round_trips_a_zero_and_clears_to_an_absent_key() -> None:
+    """``current_count`` writes a genuine ``0`` through as ``0``, and clearing it **removes** the key
     rather than writing a JSON ``null`` ([[field-schema#deferred-items]], #196).
 
     The distinction the field exists to keep: an archive scanned and found to hold no content images is
@@ -1671,21 +1671,82 @@ def test_setting_images_count_round_trips_a_zero_and_clears_to_an_absent_key() -
 
     **Test steps:**
 
-    * over a ReferenceImages document, set ``images_count`` to ``0``
+    * over a ReferenceImages document, set ``current_count`` to ``0``
     * verify the block stores the zero inline
     * clear it to ``None`` and verify the key is gone from the block
     """
     document = RehuDocument({"type": "ReferenceImages"})
     model = RehuDocumentModel(document)
 
-    model.images_count = 0
+    model.current_count = 0
 
-    assert document.active_field("images_count") == 0
-    assert document.active_user_field("images_count") is None
+    assert document.active_field("current_count") == 0
+    assert document.active_user_field("current_count") is None
 
-    model.images_count = None
+    model.current_count = None
 
-    assert "images_count" not in document.active_block
+    assert "current_count" not in document.active_block
+
+
+def test_model_seeds_the_advertised_count_as_the_text_it_is() -> None:
+    """``advertised_count`` seeds from the block as the string it is stored as -- an open-ended ``500+``
+    reaches the editor intact rather than as a number ([[field-schema#field-types]], #198).
+
+    **Test steps:**
+
+    * construct a model over a ReferenceImages document claiming ``500+``
+    * verify the model reads exactly that, and is clean
+    """
+    document = RehuDocument({"type": "ReferenceImages", "reference_images": {"advertised_count": "500+"}})
+    model = RehuDocumentModel(document)
+
+    assert model.advertised_count == "500+"
+    assert model.dirty is False
+
+
+def test_model_coerces_a_non_string_advertised_count_to_none() -> None:
+    """A claim stored as anything but text reads as unset, the same absent-or-malformed treatment the
+    optional integers get ([[field-schema#deferred-items]], [[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * construct a model over a block whose ``advertised_count`` is a number, and one where it is absent
+    * verify both read ``None``
+    """
+    malformed = RehuDocumentModel(
+        RehuDocument({"type": "ReferenceImages", "reference_images": {"advertised_count": 500}})
+    )
+    absent = RehuDocumentModel(RehuDocument({"type": "ReferenceImages"}))
+
+    assert malformed.advertised_count is None
+    assert absent.advertised_count is None
+
+
+def test_setting_the_advertised_count_writes_through_and_clears_to_an_absent_key() -> None:
+    """A claim writes through inline to the block, and clearing it **removes** the key rather than
+    storing an empty string ([[field-schema#deferred-items]], #198).
+
+    Inline, not under ``users``: what a pack claims about itself is a property of the resource, not of
+    whoever read the listing ([[field-schema#per-user-shared]]).
+
+    **Test steps:**
+
+    * over a ReferenceImages document, set ``advertised_count`` to ``500+``
+    * verify the block stores the text inline and the model went dirty
+    * clear it to ``None`` and verify the key is gone from the block
+    """
+    document = RehuDocument({"type": "ReferenceImages"})
+    model = RehuDocumentModel(document)
+
+    model.advertised_count = "500+"
+
+    assert document.active_field("advertised_count") == "500+"
+    assert document.active_user_field("advertised_count") is None
+    assert model.dirty is True
+
+    model.advertised_count = None
+
+    assert "advertised_count" not in document.active_block
 
 
 def test_model_seeds_per_user_fields_from_the_users_map(document: RehuDocument) -> None:
@@ -2026,19 +2087,19 @@ def test_unknown_field_names_recognizes_by_the_active_types_declaration(document
 
     **Test steps:**
 
-    * seed a Tutorial block with a ``level`` (its own) and an ``images_count`` (ReferenceImages')
+    * seed a Tutorial block with a ``level`` (its own) and an ``current_count`` (ReferenceImages')
     * verify only the undeclared one is reported
     * switch the type to ``reference_images`` and verify the verdicts swap
     """
     document.set_active_field("level", ["any"])
-    document.set_active_field("images_count", 12)
+    document.set_active_field("current_count", 12)
     model = RehuDocumentModel(document)
 
-    assert model.unknown_field_names() == ["images_count"]
+    assert model.unknown_field_names() == ["current_count"]
 
     model.resource_type = "reference_images"
     model.document.set_active_field("level", ["any"])
-    model.document.set_active_field("images_count", 12)
+    model.document.set_active_field("current_count", 12)
 
     assert model.unknown_field_names() == ["level"]
 
@@ -2132,7 +2193,7 @@ def test_inactive_block_keys_lists_every_block_the_type_does_not_name(document: 
     * verify both come back **sorted alphabetically** (not in insertion order), and the active block is
       not among them
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     document.data["daz3d"] = {"sku": "12345"}
     document.set_active_field("rating", 5)
     model = RehuDocumentModel(document)
@@ -2152,12 +2213,12 @@ def test_bind_resolves_an_inactive_block_to_its_verbatim_contents(document: Rehu
     * add an inactive block and bind a field named after it
     * verify the binding carries the block's contents verbatim
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     model = RehuDocumentModel(document)
 
     binding = model.bind(Field("reference_images"))
 
-    assert binding.value == {"images_count": 12}
+    assert binding.value == {"current_count": 12}
     assert binding.changed is model.unknown_fields_changed
 
 
@@ -2173,14 +2234,14 @@ def test_an_inactive_blocks_binding_refuses_to_write(caplog: pytest.LogCaptureFi
     * bind an inactive block and call its setter
     * verify the block is untouched, the model is still clean, and the refusal was logged
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     model = RehuDocumentModel(document)
     binding = model.bind(Field("reference_images"))
 
     with caplog.at_level(logging.ERROR):
-        binding.set_value({"images_count": 99})
+        binding.set_value({"current_count": 99})
 
-    assert document.data["reference_images"] == {"images_count": 12}
+    assert document.data["reference_images"] == {"current_count": 12}
     assert model.dirty is False
     assert "Refusing to edit inactive block" in caplog.text
 
@@ -2207,7 +2268,7 @@ def test_bind_never_gives_an_unknown_field_a_property_binding(document: RehuDocu
     """An `UnknownField` binds the block verbatim even when its name collides with a declared property
     (#195).
 
-    Possible since recognition went per-type: a tutorial block's stray ``images_count`` is unknown
+    Possible since recognition went per-type: a tutorial block's stray ``current_count`` is unknown
     *here* while still being a `SimpleProperty` of the model. The property read is coerced (a malformed
     value becomes the field's default), so binding it would show a value the file never carried -- the
     fallback's whole contract is verbatim ([[plugins#fallback-editor]]) -- and its notify signal would
@@ -2215,19 +2276,19 @@ def test_bind_never_gives_an_unknown_field_a_property_binding(document: RehuDocu
 
     **Test steps:**
 
-    * seed the tutorial block with a malformed stray ``images_count`` the property would coerce away
+    * seed the tutorial block with a malformed stray ``current_count`` the property would coerce away
     * bind an `UnknownField` named after it
     * verify the binding carries the raw value and the block-change signal, not the property's pair
     """
-    document.set_active_field("images_count", "raw-junk")
+    document.set_active_field("current_count", "raw-junk")
     model = RehuDocumentModel(document)
     tab = FieldsTab("T", ":/icons/document_viewer.svg")
 
-    binding = model.bind(UnknownField("images_count", viewer_tab=tab, editor_tab=tab))
+    binding = model.bind(UnknownField("current_count", viewer_tab=tab, editor_tab=tab))
 
     assert binding.value == "raw-junk"
     assert binding.changed is model.unknown_fields_changed
-    assert model.images_count is None  # the property's own coerced read, untouched by the fallback
+    assert model.current_count is None  # the property's own coerced read, untouched by the fallback
 
 
 def test_remove_unknown_field_drops_the_key_and_dirties(document: RehuDocument) -> None:
@@ -2262,7 +2323,7 @@ def test_drop_inactive_block_removes_the_block_emits_and_dirties(document: RehuD
     * add a foreign ``reference_images`` block and record ``unknown_fields_changed`` emissions
     * drop it and verify the block is gone, the signal fired, and the model is dirty
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     model = RehuDocumentModel(document)
     fired: list[None] = []
     model.unknown_fields_changed.connect(lambda: fired.append(None))
@@ -2581,12 +2642,12 @@ def test_switching_type_claims_the_new_block_reseeds_it_and_dirties(document: Re
 
     **Test steps:**
 
-    * seed a ``reference_images`` block with an ``images_count`` beside the tutorial document's own
+    * seed a ``reference_images`` block with an ``current_count`` beside the tutorial document's own
     * record ``active_block_changed`` emissions, then switch the type to it
-    * verify the document's active type followed, the known ``images_count`` re-seeded from the new
+    * verify the document's active type followed, the known ``current_count`` re-seeded from the new
       block, the model dirtied, and the composition-change signal fired
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     model = RehuDocumentModel(document)
     fired: list[None] = []
     model.active_block_changed.connect(lambda: fired.append(None))
@@ -2594,7 +2655,7 @@ def test_switching_type_claims_the_new_block_reseeds_it_and_dirties(document: Re
     model.resource_type = "reference_images"
 
     assert model.document.type == "reference_images"
-    assert model.images_count == 12
+    assert model.current_count == 12
     assert model.dirty is True
     assert fired == [None]
 
@@ -2661,16 +2722,16 @@ def test_switching_type_away_and_back_revives_the_block_from_memory(document: Re
     **Test steps:**
 
     * seed a ``reference_images`` block, switch to it, then away to tutorial, then back
-    * verify the revived block's ``images_count`` re-seeds unchanged
+    * verify the revived block's ``current_count`` re-seeds unchanged
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     model = RehuDocumentModel(document)
 
     model.resource_type = "reference_images"
     model.resource_type = "tutorial"
     model.resource_type = "reference_images"
 
-    assert model.images_count == 12
+    assert model.current_count == 12
 
 
 def test_switching_to_a_type_with_no_block_starts_empty(document: RehuDocument) -> None:
@@ -2680,14 +2741,14 @@ def test_switching_to_a_type_with_no_block_starts_empty(document: RehuDocument) 
     **Test steps:**
 
     * seed the tutorial block with a rating, then switch to a never-before-used ``reference_images`` type
-    * verify the ``images_count`` reads its absent default (``None``) rather than leaking the old block
+    * verify the ``current_count`` reads its absent default (``None``) rather than leaking the old block
     """
     document.set_active_field("rating", 5)
     model = RehuDocumentModel(document)
 
     model.resource_type = "reference_images"
 
-    assert model.images_count is None
+    assert model.current_count is None
     assert model.rating is None
 
 
@@ -2701,7 +2762,7 @@ def test_inactive_block_fates_splits_abandoned_from_foreign(document: RehuDocume
     * switch to a **third** type (``collection``), so both earlier blocks are now inactive
     * verify the abandoned ``tutorial`` block is flagged dropped and the never-claimed foreign one carried
     """
-    document.data["reference_images"] = {"images_count": 12}
+    document.data["reference_images"] = {"current_count": 12}
     document.set_active_field("rating", 4)  # give the tutorial block substance to abandon
     model = RehuDocumentModel(document)
 
@@ -2817,7 +2878,7 @@ def test_reverting_a_type_round_trip_restores_a_foreign_blocks_carry_or_drop(moc
             {
                 "format_version": CURRENT_FORMAT_VERSION,
                 "core": {"type": "Tutorial"},
-                "reference_images": {"images_count": 12},
+                "reference_images": {"current_count": 12},
             }
         ),
     )

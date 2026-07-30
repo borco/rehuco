@@ -166,8 +166,8 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
 
     * mock ``Path.read_text`` to return :data:`REFERENCE_IMAGES_TC`
     * load via :func:`load_tc`
-    * verify the leaked `duration` produced no ``original_duration``, ``images_count`` is omitted
-      entirely (never derived from it, never fabricated as ``null``), and per-user flags nest under
+    * verify the leaked `duration` produced no ``original_duration``, neither count is written at all
+      (never derived from it, never fabricated as ``null``), and per-user flags nest under
       ``users`` at the block's current version
     * verify the tc4 ``viewed``/``todo`` values are **not** carried across
     """
@@ -175,7 +175,7 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
     assert doc.type == "reference_images"
     assert doc.active_block_key == "reference_images"
     block = doc.active_block
-    assert block["format_version"] == 3
+    assert block["format_version"] == current_block_version("reference_images")
     assert block["complete"] is False
     assert block["collections"] == []
     # tc4 stored all six booleans for every type; a reference-image pack has no notion of progress
@@ -190,10 +190,12 @@ def test_reference_images_mapping_drops_leaked_duration(mocker: MockerFixture) -
             "rating": -5,
         }
     }
-    # ``images_count`` is shared, new, and empty on import -- *omitted*, filled later by scanning, never the
+    # the count pair is shared, new, and empty on import -- *omitted*, ``current_count`` filled later by
+    # scanning and ``advertised_count`` left to whoever reads the listing, never the
     # leaked tc4 `duration` and never fabricated as ``null`` ([[field-schema#duration-size]],
     # [[field-schema#deferred-items]])
-    assert "images_count" not in block
+    assert "current_count" not in block
+    assert "advertised_count" not in block
     assert "original_duration" not in block
     assert "level" not in block
     assert "rating" not in block  # moved under ``users``, not left inline

@@ -1,9 +1,11 @@
 """Tests for the document's field composition ([[plugins#field-toolkit]])."""
 
+from pathlib import Path
 from typing import cast
 
-from PySide6.QtWidgets import QGridLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QGridLayout, QLabel, QPushButton, QToolButton, QWidget
 from pytest import fixture
+from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_MAIN_TAB,
@@ -21,8 +23,14 @@ from rehuco_agent.fields import (
     PROVENANCE_PLUGIN_ABSENT,
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, MISC_COLUMN
-from rehuco_agent.fields.widgets import SingleChoiceComboBox, TypeBadge
+from rehuco_agent.fields.widgets import ContentCountEdit, SingleChoiceComboBox, TypeBadge
+from rehuco_agent.fields.widgets.content_count_edit import APPLY_TEXT, COMPUTE_TEXT
+from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, RehuDocument
+
+PACK_PATH = Path("/library/anatomy-pack.rehu")
+"""Stand-in path for a saved, file-scoped reference-images resource -- never touched on disk: the
+enumeration that would read it is mocked wherever it matters."""
 
 
 # region fixtures
@@ -35,7 +43,7 @@ def model() -> RehuDocumentModel:
             {
                 "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
                 "tutorial": {"rating": 4, "mystery": 42},
-                "reference_images": {"images_count": 12},
+                "reference_images": {"current_count": 12},
                 "daz3d": {"sku": "12345"},
             }
         )
@@ -133,7 +141,7 @@ def test_the_form_flags_each_inactive_block_by_whether_its_plugin_is_installed(
     """
     tooltips = viewer_tooltips(qtbot, model)
 
-    assert tooltips["{'images_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
+    assert tooltips["{'current_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
     assert tooltips["{'sku': '12345'}"] == PROVENANCE_PLUGIN_ABSENT
 
 
@@ -152,8 +160,8 @@ def test_a_foreign_block_can_be_dropped_from_the_editor(qtbot: QtBot, model: Reh
     """
     editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(editor)
-    value = next(label for label in editor.findChildren(QLabel) if label.text() == "{'images_count': 12}")
-    drop = drop_button_for(editor, "{'images_count': 12}")
+    value = next(label for label in editor.findChildren(QLabel) if label.text() == "{'current_count': 12}")
+    drop = drop_button_for(editor, "{'current_count': 12}")
     assert drop is not None
 
     drop.click()
@@ -182,7 +190,7 @@ def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
             {
                 "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
                 "tutorial": {"rating": 4},
-                "reference_images": {"images_count": 12},
+                "reference_images": {"current_count": 12},
             }
         )
     )
@@ -191,7 +199,7 @@ def test_an_abandoned_block_has_no_drop_button(qtbot: QtBot) -> None:
     qtbot.addWidget(editor)
 
     assert drop_button_for(editor, "{'users': {'admin': {'rating': 4}}, 'format_version': 2}") is None
-    assert drop_button_for(editor, "{'images_count': 12}") is not None
+    assert drop_button_for(editor, "{'current_count': 12}") is not None
 
 
 def test_an_unknown_field_in_the_active_block_keeps_its_own_provenance(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -269,7 +277,7 @@ def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot:
             {
                 "core": {"type": "tutorial", "sources": [{"title": "Foo", "primary": True}]},
                 "tutorial": {"rating": 4},
-                "reference_images": {"images_count": 12},
+                "reference_images": {"current_count": 12},
             }
         )
     )
@@ -278,7 +286,148 @@ def test_a_type_switch_flags_the_abandoned_block_apart_from_a_foreign_one(qtbot:
     tooltips = viewer_tooltips(qtbot, model)
 
     assert tooltips["{'users': {'admin': {'rating': 4}}, 'format_version': 2}"] == PROVENANCE_ABANDONED_TYPE
-    assert tooltips["{'images_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
+    assert tooltips["{'current_count': 12}"] == PROVENANCE_NOT_CURRENT_TYPE
+
+
+def main_editor(qtbot: QtBot, model: RehuDocumentModel) -> QWidget:
+    """Build ``model``'s main editor surface.
+
+    :param qtbot: the Qt fixture owning the built widgets.
+    :param model: the model to build the form over.
+    :returns: the Main Editor grid; the caller keeps it referenced for as long as it inspects it, since
+        ``qtbot`` tracks it only weakly.
+    """
+    editor = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    qtbot.addWidget(editor)
+    return editor
+
+
+def content_count_editor(grid: QWidget) -> ContentCountEdit:
+    """Find the content count's composite editor on an already-built editor grid.
+
+    :param grid: the editor surface to search.
+    :returns: the ``current_count`` row's editor.
+    """
+    editor = grid.findChild(ContentCountEdit)
+    assert isinstance(editor, ContentCountEdit)
+    return editor
+
+
+def press(editor: ContentCountEdit, text: str) -> None:
+    """Press the content count row's button labeled ``text``.
+
+    :param editor: the composite editor holding the buttons.
+    :param text: the button's label, :data:`COMPUTE_TEXT` or :data:`APPLY_TEXT`.
+    """
+    button = next(button for button in editor.findChildren(QPushButton) if button.text() == text)
+    button.click()
+
+
+def test_compute_counts_the_resources_content_images_with_the_configured_extensions(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The count row's Compute action enumerates *this* document's archives, with the extension set the
+    user configured -- the wiring the toolkit cannot build for itself (#197, #222, #198).
+
+    **Test steps:**
+
+    * select a custom extension list in the shared reference-images settings
+    * build a reference-images document's editor, with the enumeration mocked to find two entries
+    * press Compute and verify the enumeration was handed the document's own path and that set
+    * verify the measured count reached the row, without touching the stored one
+    """
+    settings = shared_reference_images_settings()
+    settings.use_custom_extensions = True
+    settings.custom_extensions = "bmp, tif"
+    enumerate_content_images = mocker.patch(
+        "rehuco_agent.documents.document_fields.enumerate_content_images",
+        return_value=[object(), object()],
+    )
+    model = RehuDocumentModel(RehuDocument({"core": {"type": "reference_images"}}, PACK_PATH))
+    grid = main_editor(qtbot, model)
+    editor = content_count_editor(grid)
+
+    press(editor, COMPUTE_TEXT)
+
+    enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"))
+    assert editor.computed == 2
+    assert model.current_count is None
+
+
+def test_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A document that has never been saved has nothing on disk to count, so the enumeration is not even
+    reached -- and no count of ``0`` is reported for it (#198).
+
+    **Test steps:**
+
+    * build the editor over a path-less reference-images document, with the enumeration mocked
+    * press Compute
+    * verify the enumeration was never called and nothing was computed
+    """
+    enumerate_content_images = mocker.patch("rehuco_agent.documents.document_fields.enumerate_content_images")
+    model = typed_model("reference_images")
+    grid = main_editor(qtbot, model)
+    editor = content_count_editor(grid)
+
+    press(editor, COMPUTE_TEXT)
+
+    enumerate_content_images.assert_not_called()
+    assert editor.computed is None
+
+
+def test_applying_the_measured_count_writes_it_to_the_document(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Compute then Apply is the whole path from the archives to the stored field -- and only the second
+    half of it changes the document (#198).
+
+    **Test steps:**
+
+    * build the editor over a document whose stored count is stale beside a claimed ``500+``, with the
+      enumeration finding three
+    * press Compute and verify the document is untouched and still clean
+    * press Apply and verify the block now holds the measured count, and the model went dirty
+    * verify ``advertised_count`` was written by neither press -- nobody can measure a claim
+    """
+    mocker.patch(
+        "rehuco_agent.documents.document_fields.enumerate_content_images",
+        return_value=[object(), object(), object()],
+    )
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "core": {"type": "reference_images"},
+                "reference_images": {"current_count": 1, "advertised_count": "500+"},
+            },
+            PACK_PATH,
+        )
+    )
+    grid = main_editor(qtbot, model)
+    editor = content_count_editor(grid)
+
+    press(editor, COMPUTE_TEXT)
+
+    assert model.document.active_field("current_count") == 1
+    assert model.dirty is False
+
+    press(editor, APPLY_TEXT)
+
+    assert model.document.active_field("current_count") == 3
+    assert model.dirty is True
+    assert model.document.active_field("advertised_count") == "500+"
+
+
+def test_a_tutorial_has_no_content_count_row_to_compute(qtbot: QtBot) -> None:
+    """The measure wiring follows the declaration: a Tutorial composes no content count, so its editor
+    has no such row at all ([[field-schema#resource-types]], #195).
+
+    **Test steps:**
+
+    * build a tutorial document's main editor
+    * verify it holds no content-count editor
+    """
+    model = typed_model("tutorial")
+    grid = main_editor(qtbot, model)
+
+    assert grid.findChild(ContentCountEdit) is None
 
 
 # endregion
@@ -311,45 +460,50 @@ def test_a_reference_images_document_composes_no_duration_and_no_level() -> None
         assert present in names
 
 
-def test_a_reference_images_document_composes_images_count_as_an_int() -> None:
-    """``images_count`` renders on ReferenceImages, through the toolkit's plain ``int`` field
-    ([[field-schema#resource-types]], [[field-schema#field-types]], #196).
+def test_a_reference_images_document_composes_the_count_pair() -> None:
+    """The claimed/measured count pair renders on ReferenceImages, each through its own toolkit type
+    ([[field-schema#resource-types]], [[field-schema#field-types]], #196, #198).
 
-    The type's one field of its own: declared on the view-model, coerced by core and round-tripped for
-    slices, while no `FieldSpec` named it -- so it appeared on neither surface. It maps to ``int``
-    rather than a bounded type because ``None`` must render empty and a genuine ``0`` must render
-    honestly, keeping an unscanned archive distinguishable from one holding no content images
-    ([[field-schema#deferred-items]]).
+    The type's fields of its own: one count was declared on the view-model, coerced by core and
+    round-tripped for slices, while no `FieldSpec` named it -- so it appeared on neither surface. The two
+    take different types deliberately: ``advertised_count`` is text, because the claim it carries may be
+    open-ended (``500+``), while ``current_count`` is the measured integer whose ``None`` renders empty
+    and whose genuine ``0`` renders honestly, keeping an unscanned archive distinguishable from one
+    holding no content images ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
     * compose the record fields for a ``reference_images`` document
-    * verify ``images_count`` is composed exactly once, as an ``int``
+    * verify each count is composed exactly once, under its own field type
     """
-    specs = [spec for spec in composed_field_specs(typed_model("reference_images")) if spec.name == "images_count"]
+    specs = [spec for spec in composed_field_specs(typed_model("reference_images")) if spec.name.endswith("_count")]
 
-    assert [spec.type for spec in specs] == ["int"]
+    assert [(spec.name, spec.type) for spec in specs] == [
+        ("advertised_count", "count_claim"),
+        ("current_count", "content_count"),
+    ]
 
 
-def test_a_tutorial_document_composes_no_images_count() -> None:
-    """The other direction: a Tutorial does not compose the ReferenceImages-only ``images_count``
-    ([[field-schema#resource-types]], #195).
+def test_a_tutorial_document_composes_neither_count() -> None:
+    """The other direction: a Tutorial composes neither half of the ReferenceImages-only count pair
+    ([[field-schema#resource-types]], #195, #198).
 
-    Asserted over the declaration as well as the composed names: #196 gave ``images_count`` its ``int``
-    field spec, and this pair of assertions is what pins that it gained it on
+    Asserted over the declaration as well as the composed names: #196 gave the count a field spec and
+    #198 split it in two, and this pair of assertions is what pins that both landed on
     ReferenceImages alone rather than on the one shared list.
 
     **Test steps:**
 
     * verify a Tutorial composes its own durations and ``level``
-    * verify neither the composed specs nor the Tutorial declaration names ``images_count``
+    * verify neither the composed specs nor the Tutorial declaration names either count
     """
     names = composed_names(typed_model("tutorial"))
 
     assert "advertised_duration" in names
     assert "level" in names
-    assert "images_count" not in names
-    assert "images_count" not in TUTORIAL_PLUGIN.field_names
+    for absent in ("advertised_count", "current_count"):
+        assert absent not in names
+        assert absent not in TUTORIAL_PLUGIN.field_names
 
 
 def test_a_collection_composes_the_common_core_and_none_of_the_resource_fields() -> None:
@@ -399,18 +553,18 @@ def test_a_stray_field_of_another_type_falls_back_rather_than_going_unrendered()
     carried verbatim either way (#195).
 
     The model's `SimpleProperty` set stays whole, so it is the *composition* that is per-type, not the
-    view-model: a Tutorial carrying a stray ``images_count`` still round-trips it, and the block's own
+    view-model: a Tutorial carrying a stray ``current_count`` still round-trips it, and the block's own
     keys are what the fallback reports.
 
     **Test steps:**
 
-    * verify a Tutorial block's ``images_count`` reads as an unknown field
+    * verify a Tutorial block's ``current_count`` reads as an unknown field
     * verify a ReferenceImages block's ``level`` does the same, in the other direction
     """
-    tutorial = typed_model("tutorial", {"tutorial": {"images_count": 3, "level": ["any"]}})
-    reference_images = typed_model("reference_images", {"reference_images": {"images_count": 3, "level": ["any"]}})
+    tutorial = typed_model("tutorial", {"tutorial": {"current_count": 3, "level": ["any"]}})
+    reference_images = typed_model("reference_images", {"reference_images": {"current_count": 3, "level": ["any"]}})
 
-    assert tutorial.unknown_field_names() == ["images_count"]
+    assert tutorial.unknown_field_names() == ["current_count"]
     assert reference_images.unknown_field_names() == ["level"]
 
 
@@ -446,7 +600,7 @@ def test_a_type_switch_recomposes_to_the_incoming_types_fields_and_back() -> Non
 def test_every_declared_field_spec_is_claimed_by_the_core_or_a_plugin() -> None:
     """No entry in the toolkit-type map renders on **no** type ([[field-schema#resource-types]], #195).
 
-    Guards the hole this slice found: ``images_count`` was declared on the model and coerced by core
+    Guards the hole this slice found: ``current_count`` was declared on the model and coerced by core
     while no `FieldSpec` named it, so it rendered nowhere. This pins the reverse -- a spec whose name no
     declaration claims is composed for no type at all, which is the same defect seen from the other end.
 

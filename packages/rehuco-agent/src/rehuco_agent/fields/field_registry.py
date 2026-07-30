@@ -4,6 +4,8 @@ from typing import Any, Final
 
 from .authors_field import AuthorsField
 from .boolean_field import BooleanField
+from .content_count_field import ContentCountField
+from .count_claim_field import CountClaimField
 from .date_field import DateField
 from .description_field import DescriptionField
 from .duration_field import DurationField
@@ -33,6 +35,8 @@ class FieldRegistry:
             BooleanField,
             RatingField,
             IntField,
+            ContentCountField,
+            CountClaimField,
             TextListField,
             IndexedListField,
             UrlField,

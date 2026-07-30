@@ -29,7 +29,7 @@ OPTIONAL_INT_CORE_KEYS: Final = ("original_size", "current_size")
 reads as ``None``, a present non-int coerces to ``None`` for display **and** locks the document
 (:attr:`~LockReasonKind.INVALID_FIELD`) -- absent is not ``0``."""
 
-OPTIONAL_INT_BLOCK_KEYS: Final = ("original_duration", "current_duration", "advertised_duration", "images_count")
+OPTIONAL_INT_BLOCK_KEYS: Final = ("original_duration", "current_duration", "advertised_duration", "current_count")
 """The active plugin block's shared optional integer scalars, same absent/malformed contract as
 :data:`OPTIONAL_INT_CORE_KEYS`."""
 
@@ -40,6 +40,14 @@ a genuine rating (ratings may be negative), so *unrated* must read as ``None``, 
 OPTIONAL_STR_CORE_KEYS: Final = ("released",)
 """Common-core optional string scalars: absent (or JSON ``null``) reads as ``None``; a present
 non-string is malformed -> ``None`` and locks ([[field-schema#deferred-items]])."""
+
+OPTIONAL_STR_BLOCK_KEYS: Final = ("advertised_count",)
+"""The active plugin block's shared optional string scalars, same absent/malformed contract as
+:data:`OPTIONAL_STR_CORE_KEYS`.
+
+``advertised_count`` is a **string** where its measured counterpart ``current_count`` is an integer: the
+pack's own claim may be open-ended (``500+``), and a listing saying "500+ images" claims less than one
+saying "500", so storing it as a number would silently strengthen it ([[field-schema#field-types]])."""
 
 REQUIRED_STR_CORE_KEYS: Final = ("id", "description", "created", "updated")
 """Common-core **required** string fields ([[field-schema#field-types]]): absent reads as ``""``; a
@@ -270,7 +278,8 @@ def invalid_scalar_reasons(
     :param core: the core block's fields.
     :param active_block: the active plugin block's fields.
     :param active_user_map: this document's own per-user submap, as stored.
-    :returns: the invalid-scalar reasons, core before shared-block before per-user, in key order.
+    :returns: the invalid-scalar reasons, the integers first (core before shared-block before per-user)
+        then the strings (core before shared-block), in key order.
     """
     reasons: list[LockReason] = []
     int_sources = (
@@ -283,10 +292,17 @@ def invalid_scalar_reasons(
             value = block.get(key)
             if value is not None and optional_int(value) is None:
                 reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_scalar_message(key, "a whole number")))
-    for key in OPTIONAL_STR_CORE_KEYS:
-        value = core.get(key)
-        if value is not None and not isinstance(value, str):
-            reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_scalar_message(key, "a date string")))
+    # each string group names what its keys should have been, since a malformed ``released`` and a
+    # malformed ``advertised_count`` are wrong in different ways and the message says which
+    str_sources = (
+        (core, OPTIONAL_STR_CORE_KEYS, "a date string"),
+        (active_block, OPTIONAL_STR_BLOCK_KEYS, "a count string"),
+    )
+    for block, keys, expected in str_sources:
+        for key in keys:
+            value = block.get(key)
+            if value is not None and not isinstance(value, str):
+                reasons.append(LockReason(LockReasonKind.INVALID_FIELD, invalid_scalar_message(key, expected)))
     return reasons
 
 

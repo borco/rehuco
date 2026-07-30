@@ -76,6 +76,8 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 
 - [#197: feat: enumerate a reference-images resource's content images (.zip/.cbz entries, injected extension set)](https://github.com/borco/rehuco/issues/197)
 - [#222: feat: Plugin > Reference Images settings page — configurable content-image extension list](https://github.com/borco/rehuco/issues/222)
+- [#198: feat: compute the content-image count — advertised_count / current_count with a measure/apply
+  row](https://github.com/borco/rehuco/issues/198)
 
 Two patterns for what a `.rehu` describes:
 
@@ -111,6 +113,10 @@ What a **reference-images** resource's content *is* was settled by #197: content
   between `jpg, jpeg, png, webp, avif` and the user's own comma-separated list, with the custom list kept even
   while the default is in effect ([[appendices.settings-pages#category-groups]]). A pack in a format the default set
   omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
+- **Counting them fills `current_count`, and only when asked** (#198) — the editor shows the measured count beside
+  the stored one and stores it on an explicit apply, never on open. The two disagreeing is *information*: the archive
+  was refreshed behind the app's back ([[data-model#image-meanings]]), which an automatic fill would erase before
+  anyone saw it. What the pack itself claims lives separately, in `advertised_count` ([[field-schema#field-types]]).
 
 ## §4.5 Checksums
 

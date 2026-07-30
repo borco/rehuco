@@ -11,6 +11,8 @@ from typing import Any
 
 from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
+from rehuco_agent.fields.content_count_field import ContentCountField
+from rehuco_agent.fields.count_claim_field import CountClaimField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
@@ -105,6 +107,21 @@ class FileSizeFieldTester(FileSizeField):
 
 class IntFieldTester(IntField):
     """`IntField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class ContentCountFieldTester(ContentCountField):
+    """`ContentCountField` with fixed test tabs and a measurement that finds nothing by default."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("measure", lambda: None)
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class CountClaimFieldTester(CountClaimField):
+    """`CountClaimField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

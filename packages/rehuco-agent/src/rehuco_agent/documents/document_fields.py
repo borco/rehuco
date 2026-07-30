@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_core import CORE_FIELD_NAMES, PluginRegistry
+from rehuco_core import CORE_FIELD_NAMES, PluginRegistry, enumerate_content_images
 
 from ..fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -29,6 +29,7 @@ from ..fields import (
 )
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
+from ..settings.reference_images_settings import shared_reference_images_settings
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 
@@ -38,6 +39,11 @@ its active plugin block ([[plugins#plugin-blocks]], #83)."""
 
 LOCATION_FIELD_NAME: Final = "location"
 """The special `path` field's model name -- the resource's file location ([[field-schema#field-mapping]])."""
+
+CURRENT_COUNT_FIELD_NAME: Final = "current_count"
+"""The measured content-image count's model name ([[field-schema#field-mapping]]) -- the one record field
+whose editor takes a runtime callback ([[plugins#field-toolkit]], #198), named here so
+:func:`build_document_form` can hand it one."""
 
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
@@ -94,7 +100,8 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("duration", "original_duration"),
     FieldSpec("duration", "current_duration"),
-    FieldSpec("int", "images_count"),
+    FieldSpec("count_claim", "advertised_count"),
+    FieldSpec("content_count", "current_count"),
     FieldSpec("size", "original_size"),
     FieldSpec("size", "current_size"),
     FieldSpec("bool", "complete"),
@@ -110,7 +117,8 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("indexed_list", "learning_paths"),
 )
 """The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
-``(type, name)`` pair alone, with no runtime model wiring. This is the **name-to-toolkit-type map**, not
+``(type, name)`` pair alone, bar the one runtime callback :func:`build_document_form` hands
+``current_count``'s editor (#198). This is the **name-to-toolkit-type map**, not
 a per-type field list and not a layout: *which* of these a given resource shows is
 :func:`composed_field_specs`' answer, read off the plugin declarations in core (#195), and
 :func:`build_document_form` happens to emit the survivors after the model-aware ``location``/images
@@ -118,8 +126,9 @@ fields and before the `UnknownField` fallbacks, which is only how the form is as
 
 A name here that no declaration claims renders on **no** type -- which is exactly how ``images_count``
 went missing while being declared, coerced, and round-tripped (#195); ``test_plugins`` pins the two
-sides together so the next hole fails a test instead of shipping. #196 mapped ``images_count`` to ``int``,
-so it renders on ReferenceImages alone; the names left unmapped here are the ones a surface builds
+sides together so the next hole fails a test instead of shipping. #196 mapped that count to ``int``, and
+#198 split it into the ``advertised_count``/``current_count`` pair ReferenceImages declares today, which
+is why two rows render there and none elsewhere; the names left unmapped here are the ones a surface builds
 directly (``description``, ``hidden_images``) or never shows at all (``created``, ``updated``).
 
 **Registration order is not display order.** How fields are ordered and placed on screen is a
@@ -131,15 +140,15 @@ row) -- but where the *ordered* list is authored is still open
 here, in one list spanning every type, rather than being split across the declarations.
 
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
-fields, the ReferenceImages-only ``images_count``, the common-core original/current size pair, the
+fields, the ReferenceImages-only count pair, the common-core original/current size pair, the
 shared resource-type scalar flags, rating, the Tutorial-only ``level`` tags, the tag lists, and the two
 read-only record lists
 ([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the
 record lists sit where tc4's viewer put them (``collections`` up in the header group beside the
 publisher, ``learning_paths`` last, after the tag lists, [[field-schema#tc4-viewer-layout]]), which
-costs nothing while registration order still happens to be display order. ``images_count`` sits with the
+costs nothing while registration order still happens to be display order. The count pair sits with the
 durations rather than trailing them: it is what a reference pack has instead of one, answering the same
-*how much of it is there* (#196). The Markdown ``description``
+*how much of it is there* (#196), the claim before the measurement (#198). The Markdown ``description``
 is model-aware too (it needs an
 `ImageScanner` to resolve embedded images, [[data-model#image-meanings]]) and so is constructed
 directly in :func:`build_document_form` alongside ``location``/images, not listed here. A hardcoded
@@ -169,6 +178,10 @@ def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
     return tuple(spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name in declared)
 
 
+# the local count is what "the whole field composition lives here, in one place" costs: each model-aware
+# field is one construction plus its runtime callbacks, and splitting them out to satisfy a threshold
+# would scatter the composition this function exists to keep together
+# pylint: disable-next=too-many-locals
 def build_document_form(
     model: RehuDocumentModel,
     name_suggestions: NameSuggestionModel,
@@ -180,7 +193,8 @@ def build_document_form(
     ``location`` `PathField`, the images strip/selector, and the Markdown ``description``, whose
     runtime callbacks the registry can't build generically), then the declarative record fields the
     document's **type** declares (:func:`composed_field_specs`, in
-    :data:`MODEL_AGNOSTIC_FIELD_SPECS` order), then one generic `UnknownField` fallback per
+    :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, one of which -- the content count -- is handed a runtime
+    measure callback the same way), then one generic `UnknownField` fallback per
     unrecognized key in the active block, and finally one per **inactive block**
     ([[plugins#fallback-editor]], #28, #80). All of it is driven from ``model`` alone, so
     `DocumentWidget` only hosts the resulting docks.
@@ -259,6 +273,23 @@ def build_document_form(
         strip_wrap=shared_image_viewer_settings().preview_wrap,
         strip_wrap_changed=shared_image_viewer_settings().preview_wrap_changed,  # type: ignore[attr-defined]
     )
+
+    def measure_content_images() -> int | None:
+        """Count the images inside this resource's archive(s) afresh ([[data-model#resource-scoping]]).
+
+        The enumeration takes its recognized extension set as an argument rather than reading a setting
+        (#197), so this is where the user's choice is read (#222) -- at every measurement, so a list edited
+        in Settings takes effect on the next Compute without rebuilding the form.
+
+        :returns: the count, or ``None`` when the document has no path yet -- there is nothing on disk to
+            count, which is not the same as counting zero.
+        """
+        path = model.path
+        if path is None:
+            return None
+        extensions = shared_reference_images_settings().content_image_extensions
+        return len(enumerate_content_images(path, extensions))
+
     description_field = DescriptionField(
         "description",
         image_scanner=model.image_scanner,
@@ -274,9 +305,21 @@ def build_document_form(
     # viewer still leads the viewer surface. Location follows so its editor sits right under the type;
     # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
     fields: list[Field[Any]] = [type_field, location_field, images_field]
+    # a record field resolves from its (type, name) pair alone, except where its editor needs a runtime
+    # callback the registry cannot build generically: the content count's measure action reaches both the
+    # filesystem and the user's recognized-extension setting, neither of which the toolkit knows about, so
+    # it is supplied here the same way the images strip's scanner is (#198)
+    runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
     for spec in composed_field_specs(model):
         fields.append(
-            registry.create(spec.type, spec.name, viewer_tab=spec.viewer_tab, editor_tab=spec.editor_tab, **spec.kwargs)
+            registry.create(
+                spec.type,
+                spec.name,
+                viewer_tab=spec.viewer_tab,
+                editor_tab=spec.editor_tab,
+                **spec.kwargs,
+                **runtime_kwargs.get(spec.name, {}),
+            )
         )
     # description trails the record fields, preserving today's viewer stacking order, even though
     # it's now constructed directly above rather than resolved out of MODEL_AGNOSTIC_FIELD_SPECS
