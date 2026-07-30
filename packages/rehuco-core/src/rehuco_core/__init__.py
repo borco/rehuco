@@ -1,7 +1,7 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
 from .collection_entries import CollectionEntry, collection_entries
-from .constants import IMAGE_EXTENSIONS, INFO_REHU_FILENAME
+from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS, IMAGE_EXTENSIONS, INFO_REHU_FILENAME
 from .learning_path_entries import LearningPathEntry, visible_learning_paths
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
@@ -28,6 +28,7 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
+from .rehu_content_images import ContentImageEntry, enumerate_content_images
 from .rehu_document import (
     AuthorEntry,
     PluginBlock,
@@ -49,14 +50,17 @@ __version__ = "0.1.0"
 # plain `sorted()` order -- uppercase names, then `__version__`, then the lowercase ones -- so a new
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)
 __all__ = [
+    "ARCHIVE_EXTENSIONS",
     "AuthorEntry",
     "BUILTIN_PLUGINS",
     "COLLECTION_PLUGIN",
+    "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
     "CORE_FIELD_NAMES",
     "CORE_PLUGIN",
     "CURRENT_FORMAT_VERSION",
     "CollectionEntry",
+    "ContentImageEntry",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
@@ -92,6 +96,7 @@ __all__ = [
     "collection_entries",
     "convert_tc",
     "current_block_version",
+    "enumerate_content_images",
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
