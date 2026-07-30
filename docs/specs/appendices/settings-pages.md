@@ -59,7 +59,8 @@ The category tree is **two levels deep at most**: `add_page(page, group="Editors
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
 top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, "Images"
 (`ImagesPage`) sits under **Viewers**, "Reference Images" (`ReferenceImagesPage`, #222) sits under
-**Plugins**, and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group
+**Plugins** alongside "Excluded Files" (`ExcludedFilesPage`, #226), and "System Integration"
+(`RegistryPage`) is top-level. Group names are plural — a group
 holds pages, and **Plugins** is where a resource type's own settings go, one page per plugin.
 
 A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
@@ -113,7 +114,7 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
-  `ReferenceImagesPage`, "Reference Images") — edits live in
+  `ReferenceImagesPage`, "Reference Images"; `ExcludedFilesPage`, "Excluded Files") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
   `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
@@ -153,6 +154,13 @@ follow for a new staged-edit page:
    `MarkdownRenderingSettings` singleton (§5 below).
 3. `settings.save(persistent_settings())` writes the now-current values to the on-disk `QSettings`
    ini.
+
+`ExcludedFilesPage` adds a fourth step to that flow, because saving can *change* what it saved: blank and
+duplicate patterns are dropped, and an emptied list resolves back to the shipped defaults
+([[data-model#checksums]]). It therefore reloads itself from the saved set afterwards — a page still
+showing what was typed would disagree with what every scan actually reads, which is the same
+one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
+the normalized result on screen.
 
 `RegistryPage` has no local settings dataclass at all: Register/Unregister write straight to the
 Windows registry via `rehuco_agent.windows_registration` when clicked, so there is nothing left for
@@ -217,7 +225,8 @@ settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fiel
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
 value on every use. Not every page needs this at all — `ReferenceImagesPage`'s extension list is read
-only when an enumeration runs, so a plain dataclass carries it and there is nothing to watch it change;
+only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
+run does, so a plain dataclass carries each and there is nothing to watch either change;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
 told a save happened.
 
@@ -227,5 +236,6 @@ autouse `isolate_shared_markdown_rendering_settings` fixture in
 `packages/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
 around every test. A new page with its own shared settings object needs the equivalent, reactive or
 not — `isolate_shared_image_viewer_settings` is the second reactive one, and
-`isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` the plain-dataclass
+`isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` /
+`isolate_shared_excluded_files_settings` the plain-dataclass
 counterparts, all sitting right beside it.

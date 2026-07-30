@@ -21,6 +21,7 @@ from rehuco_agent.settings.document_session_settings import DocumentSessionSetti
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
+from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.reference_images_page import ReferenceImagesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
@@ -242,6 +243,32 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
+def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot) -> None:
+    """The Excluded Files page (#226) is registered under the "Plugins" category group, beside #222's.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds an ``ExcludedFilesPage``
+    * verify the "Plugins" group lists it alongside "Reference Images"
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, ExcludedFilesPage) for page in pages)
+
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
+    assert len(groups) == 1
+    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == [
+        "Excluded Files",
+        "Reference Images",
+    ]
+
+
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     """The Descriptions settings page (#26, #47) is registered into the settings dialog,
     on every platform (unlike the Windows-only System Integration page).
@@ -298,7 +325,7 @@ def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBo
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
     assert len(groups) == 1
-    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Reference Images"]
+    assert "Reference Images" in [groups[0].child(row).text() for row in range(groups[0].rowCount())]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
