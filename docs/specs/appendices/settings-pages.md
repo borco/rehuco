@@ -58,7 +58,9 @@ page becomes current.
 The category tree is **two levels deep at most**: `add_page(page, group="Editors")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
 top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, "Images"
-(`ImagesPage`) sits under **Viewers**, and "System Integration" (`RegistryPage`) is top-level.
+(`ImagesPage`) sits under **Viewers**, "Reference Images" (`ReferenceImagesPage`, #222) sits under
+**Plugins**, and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group
+holds pages, and **Plugins** is where a resource type's own settings go, one page per plugin.
 
 A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
 filtering) exactly as it was, rather than blanking the stack. Everything that walks pages
@@ -110,7 +112,8 @@ The dialog shell dispatches, it never interprets:
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
-- **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images") — edits live in
+- **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
+  `ReferenceImagesPage`, "Reference Images") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
   `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
@@ -213,8 +216,10 @@ live-update wiring instead lives on the settings *data* side:
 settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fields and matching
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
-value on every use. Not every page needs this at all — `RegistryPage`'s actions land directly on the
-OS, so there is no other part of the app that needs to be told a save happened.
+value on every use. Not every page needs this at all — `ReferenceImagesPage`'s extension list is read
+only when an enumeration runs, so a plain dataclass carries it and there is nothing to watch it change;
+`RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
+told a save happened.
 
 **Testing note:** the `lru_cache`d singleton persists across test functions within one process, and
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the
@@ -222,4 +227,5 @@ autouse `isolate_shared_markdown_rendering_settings` fixture in
 `packages/rehuco-agent/tests/conftest.py`, which clears the cache and mocks `persistent_settings()`
 around every test. A new page with its own shared settings object needs the equivalent, reactive or
 not — `isolate_shared_image_viewer_settings` is the second reactive one, and
-`isolate_shared_identity_settings` the plain-dataclass counterpart, both sitting right beside it.
+`isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` the plain-dataclass
+counterparts, all sitting right beside it.

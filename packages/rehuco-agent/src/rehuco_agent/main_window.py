@@ -27,6 +27,7 @@ from .settings.theme_settings import ThemeSettings
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
+from .settings.ui.reference_images_page import ReferenceImagesPage
 from .settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
@@ -289,7 +290,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Register every settings category page this platform supports (#47).
 
         Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
-        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76).
+        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76);
+        Images nests under "Viewers", and Reference Images -- the first plugin's own page (#222) -- under
+        "Plugins".
 
         The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
         wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
@@ -305,6 +308,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(IdentityPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
         self.__settings_dialog.add_page(ImagesPage(), group="Viewers")
+        self.__settings_dialog.add_page(ReferenceImagesPage(), group="Plugins")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage
