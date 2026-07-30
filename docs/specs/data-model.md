@@ -75,6 +75,7 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 [[[data-model#resource-scoping]]]
 
 - [#197: feat: enumerate a reference-images resource's content images (.zip/.cbz entries, injected extension set)](https://github.com/borco/rehuco/issues/197)
+- [#222: feat: Plugin > Reference Images settings page — configurable content-image extension list](https://github.com/borco/rehuco/issues/222)
 
 Two patterns for what a `.rehu` describes:
 
@@ -105,6 +106,11 @@ What a **reference-images** resource's content *is* was settled by #197: content
   archives. The overlap is accepted, not resolved.
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
+- **Which archive entries count as images is the user's to set** — the enumeration takes the recognized extension set
+  as a parameter, and the `Plugins > Reference Images` settings page (#222) supplies it — a Default/Custom choice
+  between `jpg, jpeg, png, webp, avif` and the user's own comma-separated list, with the custom list kept even
+  while the default is in effect ([[appendices.settings-pages#category-groups]]). A pack in a format the default set
+  omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
 
 ## §4.5 Checksums
 

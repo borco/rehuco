@@ -22,6 +22,7 @@ from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
+from rehuco_agent.settings.ui.reference_images_page import ReferenceImagesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
@@ -275,6 +276,29 @@ def test_registers_the_descriptions_page_under_the_editors_group(qtbot: QtBot) -
     groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Editors"]
     assert len(groups) == 1
     assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Descriptions"]
+
+
+def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBot) -> None:
+    """The Reference Images settings page (#222) is registered under the "Plugins" category group.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``ReferenceImagesPage``
+    * verify the category tree holds a "Plugins" row with "Reference Images" under it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    assert any(isinstance(page, ReferenceImagesPage) for page in pages)
+
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
+    assert len(groups) == 1
+    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Reference Images"]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(

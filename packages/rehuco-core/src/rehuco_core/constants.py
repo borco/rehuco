@@ -32,4 +32,4 @@ CONTENT_IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 ([[data-model#image-meanings]]) -- distinct from :data:`IMAGE_EXTENSIONS`, since a content image is a
 monolithic, checksummed archive member, never a screenshot. What
 :func:`~rehuco_core.rehu_content_images.enumerate_content_images` falls back to when no set is given; the
-settings page (#222) is what actually makes the set configurable."""
+agent's ``ReferenceImagesSettings`` (#222) is what makes the set the user's to change."""
