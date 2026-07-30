@@ -31,7 +31,7 @@ shared Qt-era stack) that's acceptable and even desirable.
 
 [[[packaging-deployment#three-packages]]]
 
-- [x] [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
+- [#12: Add borco-core and borco-pyside generic packages; move ApplicationSingleton to borco-pyside](https://github.com/borco/rehuco/issues/12)
 
 The packaging boundary mirrors the architecture's node/agent split ([[nodes#two-roles]]):
 
@@ -156,7 +156,7 @@ has been **suspended** as it guards a deployment model that is no longer in use.
 
 [[[packaging-deployment#initial-canary]]]
 
-- [x] [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
+- [#5: spike: QNAP/glibc dependency canary](https://github.com/borco/rehuco/issues/5)
 
 Tested on the physical TS-230: glibc 2.23, aarch64, Python 3.14.6 (uv-managed).
 All target packages installed from PyPI wheels (`manylinux2014_aarch64`) and imported successfully.
@@ -181,7 +181,7 @@ Cold-import time on TS-230 ARM hardware is ~3.3 s — expected, not a compatibil
 
 [[[packaging-deployment#auto-canary]]]
 
-- [x] [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
+- [#9: feat: container canary + CI workflow for node glibc compatibility](https://github.com/borco/rehuco/issues/9)
 
 The canary runs at three tiers, ordered fastest → most authoritative:
 
@@ -241,7 +241,7 @@ Concrete consequence for **docking**:
 
 [[[packaging-deployment#qml-regression]]]
 
-- [x] [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
+- [#4: spike: pyqtads + QML integration regression check](https://github.com/borco/rehuco/issues/4)
 
 Spike #4 re-verified the QML-in-`pyqtads` approach on **PySide6 6.11.1 + pyside6-qtads 5.0.0** (a
 major bump from `resource-hub`'s 4.5.0.4). All three parts hold:
@@ -267,9 +267,9 @@ deleted and this issue closed).
 
 [[[packaging-deployment#app-identity]]]
 
-- [x] [#206: feat: Briefcase desktop build — installers with native app identity and file
+- [#206: feat: Briefcase desktop build — installers with native app identity and file
   association](https://github.com/borco/rehuco/issues/206)
-- [x] [#209: feat: Linux desktop integration page — register the .rehu association from the app, like the
+- [#209: feat: Linux desktop integration page — register the .rehu association from the app, like the
   Windows one](https://github.com/borco/rehuco/issues/209)
 
 Distribution splits by audience, structurally (as the package split does, [[packaging-deployment#three-packages]]):
@@ -324,10 +324,10 @@ overlap and what it costs are in [[appendices.briefcase-packaging#windows]].
 
 [[[packaging-deployment#linux-format]]]
 
-- [x] [#207: decision: Linux distribution format for rehuco-agent — system packages (.deb/.rpm), AppImage, Flatpak
+- [#207: decision: Linux distribution format for rehuco-agent — system packages (.deb/.rpm), AppImage, Flatpak
   and/or Snap](https://github.com/borco/rehuco/issues/207)
-- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
-- [x] [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
+- [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+- [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
   Linux](https://github.com/borco/rehuco/issues/208)
 
 The question was *which package format*, and the answer is **neither a distro package nor a sandbox**: Linux ships
@@ -508,7 +508,7 @@ end-user polish on the same track as [[packaging-deployment#app-identity]], defe
 
 [[[packaging-deployment#design-resources]]]
 
-- [x] [#29: single icon master in top-level design/icons](https://github.com/borco/rehuco/issues/29)
+- [#29: single icon master in top-level design/icons](https://github.com/borco/rehuco/issues/29)
 
 Brand icons come from a **single Affinity Designer master**, `design/icons/icons.afdesign`, in a
 **top-level `design/icons/`** folder — discoverable, and deliberately outside both `src/` (which

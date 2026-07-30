@@ -437,7 +437,7 @@ addressing AppImage bugs a priority*". A PySide6 app is the case they are warnin
 
 ### Building the AppImage without Briefcase
 
-- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+- [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
 
 Since the AppImage *format* is fine and only `linuxdeploy` is not
 ([[packaging-deployment#linux-format]] point 5), the Linux artifact is built with

@@ -109,7 +109,7 @@ brand palette: a badge names *which resource type* this is, not the product.
 
 [[[plugins#toolkit-surfaces]]]
 
-- [x] [#20: feat: LocalEdit2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
+- [#20: feat: LocalEdit2.0 tracer — field toolkit + viewer/editor/both dock shell (text-field spine)](https://github.com/borco/rehuco/issues/20)
 
 The field toolkit named in [[plugins#core-vs-plugin]] is a shared, non-plugin library the agent owns; plugins (and
 declarative types) compose their viewer/editor from it. This section is its architecture and the
@@ -386,10 +386,10 @@ filter://publishers?name=Example%20Publisher
 
 [[[plugins#tutorial-plugin]]]
 
-- [x] [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
-- [x] [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
-- [x] [#70: feat: wrapped vs. single-row layout for a document's image strip](https://github.com/borco/rehuco/issues/70)
-- [x] [#162: feat: LocalEdit5.2 — folder-rename-from-suggestions renames on disk](https://github.com/borco/rehuco/issues/162)
+- [#160: feat: LocalEdit5.0 tracer — image lightbox spine (click-to-maximize, ESC)](https://github.com/borco/rehuco/issues/160)
+- [#161: feat: LocalEdit5.1 — lightbox navigation (prev/next, hideable strip, live curated set)](https://github.com/borco/rehuco/issues/161)
+- [#70: feat: wrapped vs. single-row layout for a document's image strip](https://github.com/borco/rehuco/issues/70)
+- [#162: feat: LocalEdit5.2 — folder-rename-from-suggestions renames on disk](https://github.com/borco/rehuco/issues/162)
 
 The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
 

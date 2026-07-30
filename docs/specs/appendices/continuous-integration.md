@@ -180,8 +180,8 @@ QA gate — worth revisiting once it's proven reliable across a few runs.
 
 [[[appendices.continuous-integration#release-agent]]]
 
-- [x] [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
-- [x] [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
+- [#210: feat: build the Linux AppImage for rehuco-agent with python-appimage](https://github.com/borco/rehuco/issues/210)
+- [#208: feat: release CI — build the rehuco-agent installers for Windows, macOS and
   Linux](https://github.com/borco/rehuco/issues/208)
 
 Separate workflow, separate trigger, deliberately: `qa.yml` runs on every push/PR because it is cheap
@@ -233,9 +233,9 @@ Both are detailed in [[appendices.briefcase-packaging#linux-backends]].
 
 [[[appendices.continuous-integration#publish-packages]]]
 
-- [x] [#18: feat: publishing CI — automate PyPI releases via trusted
+- [#18: feat: publishing CI — automate PyPI releases via trusted
   publishing](https://github.com/borco/rehuco/issues/18)
-- [x] [#220: repo: delete make publish once publish-packages.yml has published for
+- [#220: repo: delete make publish once publish-packages.yml has published for
   real](https://github.com/borco/rehuco/issues/220)
 
 The workflow this replaces was a two-line `make publish` target that built every package in the

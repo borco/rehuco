@@ -81,10 +81,11 @@ Docs under `docs/` are markdownlint-checked (`.markdownlint.json`; MD013 line le
   not a truly blank line.
 - Spaced table delimiter rows — `| --- | --- |` — and single-space-padded cells.
 - No emphasis-as-heading (MD036) — use real `###` headings.
-- Under a spec section heading, list its GitHub issue(s) as task-list items — `- [x] [#N: title](url)` —
-  checked when the issue is closed, unchecked while it is open. You may check the box in the same
-  change that closes the issue (i.e. tick `- [x]` just before running `gh issue close`), rather than
-  waiting for a separate follow-up.
+- Under a spec section heading, list its GitHub issue(s) as plain list items — `- [#N: title](url)` —
+  regardless of whether the issue is open or closed. Deliberately **not** a `- [ ]`/`- [x]` task list:
+  a checkbox has to be ticked in a commit every time an issue closes, which is churn in the specs for
+  state GitHub already tracks authoritatively. The link records *which* issues a section belongs to;
+  their status is read on GitHub.
 - **Cross-renderer link rendering.** Docs are read both on GitHub (blob view, PRs) and the published
   mkdocs site, which render some references differently:
   - A bare `#123` issue/PR reference autolinks natively on GitHub already; `pymdownx.magiclink`

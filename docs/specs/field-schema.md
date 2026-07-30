@@ -6,7 +6,7 @@
 
 [[[field-schema#overview]]]
 
-- [x] [#6: decision: tutorial and reference-image field lists](https://github.com/borco/rehuco/issues/6)
+- [#6: decision: tutorial and reference-image field lists](https://github.com/borco/rehuco/issues/6)
 
 The concrete starting field set for rehuco, derived from the fields a real tutcatalog4 (tc4)
 `.tc` file carries. [[data-model#rehu-format]] settles the *scope* of the `.rehu` schema and defers the detail here.
@@ -155,9 +155,9 @@ fixtures.
 
 [[[field-schema#per-user-shared]]]
 
-- [x] [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
-- [x] [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
-- [x] [#109: feat: current + unknown identities — .tc imports file per-user state under "unknown", UI edits under the current user](https://github.com/borco/rehuco/issues/109)
+- [#98: feat: per-user state under the plugin block's users map (block layout v1 + identity setting)](https://github.com/borco/rehuco/issues/98)
+- [#99: feat: identity setting + per-user model plumbing over the users map](https://github.com/borco/rehuco/issues/99)
+- [#109: feat: current + unknown identities — .tc imports file per-user state under "unknown", UI edits under the current user](https://github.com/borco/rehuco/issues/109)
 
 `rating`, the per-user boolean flags (`viewed`, `todo`, `keep`, `favorite`), and **all**
 `learning_paths` are **per-user** state, not properties of the resource. v1 is single-user/local
@@ -287,8 +287,8 @@ membership fields above are the reference mechanism that design builds on and ar
 
 [[[field-schema#learning-path-ownership]]]
 
-- [x] [#188: feat: import learning paths as owned entries — index 0, no visibility, minted ref](https://github.com/borco/rehuco/issues/188)
-- [x] [#189: fix: surface collections and learning paths — stop calling a v1 field a future one](https://github.com/borco/rehuco/issues/189)
+- [#188: feat: import learning paths as owned entries — index 0, no visibility, minted ref](https://github.com/borco/rehuco/issues/188)
+- [#189: fix: surface collections and learning paths — stop calling a v1 field a future one](https://github.com/borco/rehuco/issues/189)
 
 A collection is publisher-defined and belongs to nobody, so its entries sit inline in the plugin block.
 A **learning path is somebody's** — one person curates its order — so its entries live in the block's
@@ -407,9 +407,9 @@ to the same-named bool); `favorite`, absent from tc4, defaults to `false`.
 
 [[[field-schema#authors]]]
 
-- [x] [#92: feat: tolerant authors entries — string or {name, url} record](https://github.com/borco/rehuco/issues/92)
-- [x] [#95: feat: authors viewer links (url, tooltip, status tip) + comma-editor lossless guard](https://github.com/borco/rehuco/issues/95)
-- [ ] [#97: feat: record-list editor machinery + simple/advanced authors editor](https://github.com/borco/rehuco/issues/97)
+- [#92: feat: tolerant authors entries — string or {name, url} record](https://github.com/borco/rehuco/issues/92)
+- [#95: feat: authors viewer links (url, tooltip, status tip) + comma-editor lossless guard](https://github.com/borco/rehuco/issues/95)
+- [#97: feat: record-list editor machinery + simple/advanced authors editor](https://github.com/borco/rehuco/issues/97)
 
 `authors` entries are tolerantly **string-or-record**: a plain string is the common case, and an entry that carries an
 author-page URL is a `{ "name": …, "url": … }` record instead. Decided with
@@ -571,8 +571,8 @@ Field order, in the three groups the layout separates:
 
 [[[field-schema#deferred-items]]]
 
-- [x] [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
-- [x] [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
+- [#100: feat: optional scalars read as None — absent is not 0 (core)](https://github.com/borco/rehuco/issues/100)
+- [#101: feat: None-aware widgets and display for optional scalars (agent)](https://github.com/borco/rehuco/issues/101)
 
 - **Common/plugin boundary — settled (#195)** — the [[field-schema#field-mapping]] tiers (common core / resource fields
   / per-type) were a first cut until the field toolkit and plugin blocks ([[plugins#overview]]) landed; they are now
@@ -867,7 +867,7 @@ the payload ([[plugins#plugin-blocks]]).
 
 [[[field-schema#source-inspection-docks]]]
 
-- [x] [#111: feat: source viewer dock — read-only raw `.rehu` JSON, hidden by default](https://github.com/borco/rehuco/issues/111)
+- [#111: feat: source viewer dock — read-only raw `.rehu` JSON, hidden by default](https://github.com/borco/rehuco/issues/111)
 
 Two read-only inspection docks let a developer (or a curious user) see the serialization boundary directly. Both are
 hidden by default, live in the document's own dock shell ([[plugins#dock-shell]]) alongside the viewer/editor surfaces,
