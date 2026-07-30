@@ -132,12 +132,12 @@ def test_the_builtin_declarations_carry_the_specs_field_tiers() -> None:
     **Test steps:**
 
     * verify Tutorial declares the shared resource fields plus the durations and ``level``
-    * verify ReferenceImages declares the shared resource fields plus ``images_count`` and no duration
+    * verify ReferenceImages declares the shared resource fields plus its count pair and no duration
     * verify Collection declares nothing, and the core declares the common tier
     """
     assert TUTORIAL_PLUGIN.field_names == (*RESOURCE_FIELD_NAMES, *TUTORIAL_FIELD_NAMES)
     assert REFERENCE_IMAGES_PLUGIN.field_names == (*RESOURCE_FIELD_NAMES, *REFERENCE_IMAGES_FIELD_NAMES)
-    assert "images_count" not in TUTORIAL_PLUGIN.field_names
+    assert not [name for name in TUTORIAL_PLUGIN.field_names if name.endswith("_count")]
     assert not [name for name in REFERENCE_IMAGES_PLUGIN.field_names if name.endswith("_duration")]
     assert "level" not in REFERENCE_IMAGES_PLUGIN.field_names
 

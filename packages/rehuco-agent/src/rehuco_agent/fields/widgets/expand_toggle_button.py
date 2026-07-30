@@ -8,10 +8,10 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QToolButton, QWidget
 
-EXPAND_ICON_RESOURCE: Final = ":/icons/expand_on.svg"
+EXPAND_ICON_RESOURCE: Final = ":/icons/expand_plus.svg"
 """Shown unchecked (collapsed) -- the action available next is to expand."""
 
-COLLAPSE_ICON_RESOURCE: Final = ":/icons/expand_off.svg"
+COLLAPSE_ICON_RESOURCE: Final = ":/icons/expand_minus.svg"
 """Shown checked (expanded) -- the action available next is to collapse."""
 
 

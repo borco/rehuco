@@ -67,10 +67,14 @@ reference-image pack has no notion of; you consult one, you don't get through it
 until #195, and a ``reference_images`` block that still carries them is stripped by that chain's v3 step
 (:mod:`~rehuco_core.migrations.reference_images.v3_drop_progress_flags`)."""
 
-REFERENCE_IMAGES_FIELD_NAMES: Final = ("images_count",)
-"""The **ReferenceImages-only** tier ([[field-schema#resource-types]]): the image count. Deliberately
-**no** duration -- which is the point of declaring per type at all, since the value that leaked as `720`
-in tc4 now has nowhere to land."""
+REFERENCE_IMAGES_FIELD_NAMES: Final = ("advertised_count", "current_count")
+"""The **ReferenceImages-only** tier ([[field-schema#resource-types]]): the image count, as the claimed/
+measured pair it splits into (#198) -- what the pack says it holds, and what counting its archives finds
+([[data-model#resource-scoping]]). Deliberately **no** duration -- which is the point of declaring per type
+at all, since the value that leaked as `720` in tc4 now has nowhere to land.
+
+There is no ``original_count`` third: the durations split three ways because a tutorial shrinks as it is
+watched, while a reference pack does not lose images ([[field-schema#duration-size]])."""
 
 CORE_PLUGIN: Final = PluginSpec((CORE_BLOCK_KEY,), field_names=CORE_FIELD_NAMES)
 """The common core's own identity ([[data-model#rehu-format]]) -- descriptive only, **never registered**.
@@ -103,8 +107,8 @@ REFERENCE_IMAGES_PLUGIN: Final = PluginSpec(
 )
 """The reference-images plugin ([[plugins#refimages-plugin]]); ``ReferenceImages`` is tc4's spelling and
 ``refimages`` an earlier shorthand this document's own examples once used -- both aliases now. Badge
-color: Purple 600. Declares the shared resource fields plus ``images_count``, and no duration
-([[field-schema#resource-types]])."""
+color: Purple 600. Declares the shared resource fields plus the ``advertised_count``/``current_count``
+pair, and no duration ([[field-schema#resource-types]])."""
 
 COLLECTION_PLUGIN: Final = PluginSpec(("collection", "Collection"), color="#00897B")
 """The collection type ([[field-schema#resource-types]]). Declared for its identity alone: a Collection

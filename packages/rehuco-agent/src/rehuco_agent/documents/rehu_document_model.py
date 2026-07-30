@@ -47,10 +47,22 @@ TYPE_FIELD_BOOL_NAMES: Final = ("complete", "online", "viewed", "todo", "keep", 
 """The type-field boolean flags ([[field-schema#boolean-flags]]); each name's default lives on its own
 ``SimpleProperty`` declaration below, read back generically via ``SimpleProperty.default_value``."""
 
-TYPE_FIELD_INT_NAMES: Final = ("rating", "images_count", "original_duration", "current_duration", "advertised_duration")
+TYPE_FIELD_INT_NAMES: Final = (
+    "rating",
+    "current_count",
+    "original_duration",
+    "current_duration",
+    "advertised_duration",
+)
 """The type-field integer fields ([[field-schema#field-types]]); ``rating`` may be negative, the
 ``*_duration`` fields are whole seconds ([[field-schema#ms-leak-history]]). Defaults live on each
 ``SimpleProperty`` declaration below, same as :data:`TYPE_FIELD_BOOL_NAMES`."""
+
+TYPE_FIELD_STR_NAMES: Final = ("advertised_count",)
+"""The type-field **optional string** fields ([[field-schema#field-types]]): absent reads as ``None``, not
+``""``, and writing ``None`` removes the key, exactly as the optional integers above behave
+([[field-schema#deferred-items]]). ``advertised_count`` is text rather than a number because the claim it
+carries may be open-ended (``500+``, #198)."""
 
 TYPE_FIELD_STR_LIST_NAMES: Final = ("level",)
 """The type-field string-list fields ([[field-schema#field-types]]); ``level`` is multi-choice, not a
@@ -231,9 +243,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """The per-user rating ([[field-schema#per-user-shared]]); may be negative
     ([[field-schema#field-types]]), or ``None`` for unrated ([[field-schema#deferred-items]])."""
 
-    images_count = SimpleProperty[int | None](None)
-    """The ReferenceImages image count ([[field-schema#field-types]]), or ``None`` when not yet
-    scanned ([[field-schema#deferred-items]])."""
+    current_count = SimpleProperty[int | None](None)
+    """The **measured** ReferenceImages content-image count ([[field-schema#field-types]]) -- what counting
+    the resource's archives finds ([[data-model#resource-scoping]]) -- or ``None`` when not yet scanned
+    ([[field-schema#deferred-items]]). Filled only by an explicit measure-and-apply
+    (:class:`~rehuco_agent.fields.content_count_field.ContentCountField`), never on open: a stored count
+    disagreeing with the archive is evidence of a refreshed zip, which silently overwriting would
+    destroy ([[data-model#image-meanings]], #198)."""
+
+    advertised_count = SimpleProperty[str | None](None)
+    """The pack's **own claim** about its image count ([[field-schema#field-types]]), as text so an
+    open-ended ``500+`` stays the weaker claim it is, or ``None`` when absent
+    ([[field-schema#deferred-items]]). Nothing measures it -- :attr:`current_count` is the measured half."""
 
     level = SimpleProperty[list[str]](default_factory=list)
     """The Tutorial-only multi-choice level tags ([[field-schema#field-types]]); beginner /
@@ -356,7 +377,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in COMMON_FIELD_NAMES:
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_common_field_changed(key, value))
-        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
+        for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
 
@@ -600,7 +621,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         name = field.name
         # an `UnknownField` never binds a property, even when its name collides with a declared one --
-        # possible since recognition went per-type (#195): a tutorial block's stray ``images_count`` is
+        # possible since recognition went per-type (#195): a tutorial block's stray ``current_count`` is
         # unknown *here* while still being a property of the model. The property read is coerced (and,
         # for a per-user name, resolved through the ``users`` map rather than the stray inline key), so
         # binding it would fabricate a value the file never carried -- where the fallback's whole
@@ -661,7 +682,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         plugin version than the one installed here. Recognition is per type, the same declaration the
         form composes from (`composed_field_specs`), because the two must agree: a key no type declares
         is a key no editor row renders, so anything short of surfacing it here would leave a value in the
-        file with nowhere on screen to see or drop it. A ``tutorial`` block carrying ``images_count``
+        file with nowhere on screen to see or drop it. A ``tutorial`` block carrying ``current_count``
         therefore falls back rather than rendering an empty ReferenceImages row, and a type whose plugin
         isn't installed here declares nothing, so its whole block reaches the fallback.
 
@@ -835,7 +856,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         fallback -- its declared default for bool/str-list, ``None`` for the optional-scalar ints,
         matching core's own absent-vs-malformed treatment, [[data-model#write-integrity]]). The
         bool/str-list fallback comes from each field's own `SimpleProperty` declaration -- not a second,
-        hand-duplicated literal here -- so there is exactly one place per field to change its default.
+        hand-duplicated literal here -- so there is exactly one place per field to change its default. The
+        optional strings (:data:`TYPE_FIELD_STR_NAMES`) fall back to ``None`` for the same reason the ints
+        do: absent is not ``""`` any more than it is ``0``.
         """
         for name in TYPE_FIELD_BOOL_NAMES:
             default = SimpleProperty.default_value(type(self), name)
@@ -843,6 +866,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in TYPE_FIELD_INT_NAMES:
             value = self.__read_field(name, None)
             setattr(self, name, value if isinstance(value, int) and not isinstance(value, bool) else None)
+        for name in TYPE_FIELD_STR_NAMES:
+            value = self.__read_field(name, None)
+            setattr(self, name, value if isinstance(value, str) else None)
         for name in TYPE_FIELD_STR_LIST_NAMES:
             default = SimpleProperty.default_value(type(self), name)
             value = self.__read_field(name, default)
@@ -1013,9 +1039,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         A per-user key (:data:`USER_FIELD_NAMES`) lands in the block's ``users`` map under this
         document's own username, the rest inline in the block ([[field-schema#per-user-shared]],
         #99) -- the write half of :meth:`__read_field`'s split. ``None`` (only ever reachable for the
-        optional-scalar members of :data:`TYPE_FIELD_INT_NAMES` -- the bool/str-list fields never hold
-        it) **removes** the key rather than writing a JSON ``null`` -- ``set_active_field``/
-        ``set_active_user_field`` are generic value writers with no such rule of their own, unlike
+        optional-scalar members of :data:`TYPE_FIELD_INT_NAMES` and :data:`TYPE_FIELD_STR_NAMES` -- the
+        bool/str-list fields never hold it) **removes** the key rather than writing a JSON ``null`` --
+        ``set_active_field``/``set_active_user_field`` are generic value writers with no such rule of their own, unlike
         `RehuDocument`'s typed scalar properties ([[field-schema#deferred-items]]). No-op while the
         model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the comment there.
 

@@ -11,7 +11,9 @@ from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldView
 class IntField(Field[int | None]):
     """A plain integer field ([[plugins#field-toolkit]], [[field-schema#field-types]]): a label viewer + an
     ``UnboundedSpinBox`` editor, live-bound to the binding -- ``None`` (unset) renders/edits as empty,
-    distinct from a genuine ``0``. Covers ``images_count`` and ``collection_index``.
+    distinct from a genuine ``0``. Covers ``collection_index``; the measured content-image count takes the
+    ``content_count`` type instead (:class:`~rehuco_agent.fields.content_count_field.ContentCountField`),
+    which is this editor plus the row that measures it (#198).
 
     No default range -- the schema calls ``int`` a *plain* integer ([[field-schema#field-types]]) with no
     stated ceiling, and ``UnboundedSpinBox`` (#40) has none of ``QSpinBox``'s int32 cap to box into

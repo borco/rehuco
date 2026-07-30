@@ -3,6 +3,8 @@
 from pytest import raises
 from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
+from rehuco_agent.fields.content_count_field import ContentCountField
+from rehuco_agent.fields.count_claim_field import CountClaimField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field_registry import FieldRegistry
@@ -50,6 +52,33 @@ def test_registry_resolves_the_scalar_field_types() -> None:
     assert registry.types["bool"] is BooleanField
     assert registry.types["rating"] is RatingField
     assert registry.types["int"] is IntField
+
+
+def test_registry_resolves_the_count_field_types() -> None:
+    """The registry maps the ``count_claim`` / ``content_count`` types to their classes (#198).
+
+    The two halves of a reference pack's image count take different types on purpose: a claim is text,
+    because it may be open-ended, while the measured count is an integer with a compute row over it.
+
+    **Test steps:**
+
+    * build a default registry
+    * verify each count type resolves to its ``Field`` subclass
+    * verify the measured one is constructible through the registry, given its runtime measure callback
+    """
+    registry = FieldRegistry()
+
+    assert registry.types["count_claim"] is CountClaimField
+    assert registry.types["content_count"] is ContentCountField
+
+    field = registry.create(
+        "content_count",
+        "current_count",
+        measure=lambda: 9,
+        viewer_tab=TEST_VIEWER_TAB,
+        editor_tab=TEST_EDITOR_TAB,
+    )
+    assert isinstance(field, ContentCountField)
 
 
 def test_registry_resolves_the_list_and_url_field_types() -> None:

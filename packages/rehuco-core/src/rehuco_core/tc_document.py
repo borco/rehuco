@@ -235,8 +235,10 @@ class TcDocument:
         ``favorite`` is minted ``False`` -- it is new to rehuco with no tc4 source key
         ([[field-schema#per-user-shared]]). The optional scalars ``rating``/``original_duration`` are
         *omitted* unless the ``.tc`` carried them (an explicit ``0`` imports; a missing field is not
-        fabricated, [[field-schema#deferred-items]]), and ``images_count`` is always omitted -- filled later
-        by scanning, never reinterpreted from tc4's leaked ``duration`` ([[field-schema#duration-size]]).
+        fabricated, [[field-schema#deferred-items]]), and the reference-images count pair
+        (``advertised_count``/``current_count``) is always omitted -- tc4 recorded neither, and
+        ``current_count`` is filled later by scanning, never reinterpreted from tc4's leaked ``duration``
+        ([[field-schema#duration-size]]).
 
         :param resource_type: the normalized block key, used to stamp the block's current version.
         :param username: the identity the per-user subset is filed under.
@@ -254,7 +256,7 @@ class TcDocument:
             self.__put_optional(block, "original_duration", self.__parsed_duration("duration"))
             block["level"] = self.__str_list("level")
         # ReferenceImages (the only other type built here, see __TYPES_WITH_BLOCK) carries no extra shared
-        # scalar: images_count is omitted on import, not written as null.
+        # scalar: neither half of the count pair is written on import, not even as null.
         return block
 
     def __user_fields(self) -> dict[str, Any]:

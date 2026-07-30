@@ -7,6 +7,8 @@ surfaces, and how its form is assembled live in the ``documents`` layer
 
 from .authors_field import AuthorsField
 from .boolean_field import BooleanField
+from .content_count_field import ContentCountField
+from .count_claim_field import CountClaimField
 from .date_field import DateField
 from .description_field import DescriptionField
 from .duration_field import DurationField
@@ -57,6 +59,8 @@ __all__ = [
     "BooleanField",
     "RatingField",
     "IntField",
+    "ContentCountField",
+    "CountClaimField",
     "TextListField",
     "IndexedListField",
     "IndexedEntry",

@@ -19,6 +19,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
+    FORMAT_VERSION_KEY,
     RESERVED_KEYS,
     TUTORIAL_PLUGIN,
     LockReasonKind,
@@ -1139,7 +1140,7 @@ OPTIONAL_INT_SCALAR_SPECS: Final = (
     ("original_duration", "block"),
     ("current_duration", "block"),
     ("advertised_duration", "block"),
-    ("images_count", "block"),
+    ("current_count", "block"),
     ("rating", "user"),
 )
 OPTIONAL_INT_SCALARS: Final = [param(attr, location, id=attr) for attr, location in OPTIONAL_INT_SCALAR_SPECS]
@@ -1524,6 +1525,126 @@ def test_setting_released_none_deletes_the_key() -> None:
     doc.released = None
     assert doc.released is None
     assert "released" not in doc.data["core"]
+
+
+def reference_images_doc(fields: dict[str, Any], path: Path | None = None) -> RehuDocument:
+    """Build a ReferenceImages document whose active block carries ``fields``.
+
+    :param fields: the block's own fields, as stored.
+    :param path: the path to bind the document to, for the tests that save.
+    :returns: the document.
+    """
+    return RehuDocument({"core": {"type": "reference_images"}, "reference_images": fields}, path)
+
+
+def test_a_legacy_images_count_loads_as_current_count() -> None:
+    """A pre-#198 active block's ``images_count`` reads as :attr:`current_count` after construction --
+    the chain's v4 rename applied on load, end to end, not just as an isolated step
+    ([[data-model#schema-version]]).
+
+    **Test steps:**
+
+    * construct a ReferenceImages document whose active block still spells the count ``images_count``
+    * verify ``current_count`` reads the value, the old key is gone, and the block is stamped current
+    """
+    doc = reference_images_doc({"images_count": 7})
+
+    assert doc.current_count == 7
+    assert "images_count" not in doc.active_block
+    assert doc.active_block[FORMAT_VERSION_KEY] == current_block_version("reference_images")
+
+
+def test_advertised_count_reads_none_when_absent() -> None:
+    """``advertised_count`` reads ``None`` when absent -- absent is not ``""``
+    ([[field-schema#deferred-items]])."""
+    assert reference_images_doc({}).advertised_count is None
+
+
+@mark.parametrize("stored", [param("500", id="exact"), param("500+", id="open-ended")])
+def test_advertised_count_reads_the_stored_claim_verbatim(stored: str) -> None:
+    """A claimed count reads back exactly as stored -- an open-ended ``500+`` included, which is the whole
+    reason it is text rather than an integer ([[field-schema#field-types]], #198).
+
+    :param stored: the claim as stored in the block.
+    """
+    assert reference_images_doc({"advertised_count": stored}).advertised_count == stored
+
+
+def test_advertised_count_null_reads_none_and_does_not_lock() -> None:
+    """JSON ``null`` for ``advertised_count`` reads as ``None`` and does not lock
+    ([[field-schema#deferred-items]])."""
+    doc = reference_images_doc({"advertised_count": None})
+    assert doc.advertised_count is None
+    assert not doc.lock_reasons
+
+
+def test_advertised_count_null_normalizes_away_on_save(mocker: MockerFixture) -> None:
+    """A ``null`` ``advertised_count`` on disk saves without the key -- the block-scalar half of the
+    "``None`` is never written" rule ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a ReferenceImages document whose ``advertised_count`` is JSON ``null``, bound to a path
+    * mock ``atomic_write_text`` and save
+    * verify the saved block has no ``advertised_count`` key
+    """
+    doc = reference_images_doc({"advertised_count": None}, FAKE_PATH)
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    assert "advertised_count" not in json.loads(write.call_args[0][1])["reference_images"]
+
+
+def test_advertised_count_stored_as_a_number_reads_none_and_locks() -> None:
+    """A present non-string ``advertised_count`` -- a bare number, the very shape the field exists to
+    avoid -- coerces to ``None`` for display and locks ``INVALID_FIELD`` ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * store the integer ``500`` under ``advertised_count``
+    * verify it reads ``None`` and the sole lock reason is ``INVALID_FIELD`` naming the key
+    """
+    doc = reference_images_doc({"advertised_count": 500})
+    assert doc.advertised_count is None
+    assert [reason.kind for reason in doc.lock_reasons] == [LockReasonKind.INVALID_FIELD]
+    assert "advertised_count" in doc.lock_reasons[0].message
+
+
+def test_setting_advertised_count_none_deletes_the_key() -> None:
+    """Setting ``advertised_count`` to ``None`` deletes the key rather than writing ``null``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * construct a document with a stored claim
+    * assign ``None``
+    * verify it reads ``None`` and the key is gone
+    """
+    doc = reference_images_doc({"advertised_count": "500+"})
+    doc.advertised_count = None
+    assert doc.advertised_count is None
+    assert "advertised_count" not in doc.active_block
+
+
+def test_an_open_ended_advertised_count_survives_a_save_and_load(mocker: MockerFixture) -> None:
+    """``500+`` round-trips through a save and a fresh load, still a string -- nothing on the way coerces
+    it to the exact ``500`` it deliberately is not (#198).
+
+    **Test steps:**
+
+    * save a ReferenceImages document claiming ``500+``
+    * load the written JSON back into a fresh document
+    * verify the claim reads back identical, and the measured count is untouched by it
+    """
+    doc = reference_images_doc({"advertised_count": "500+"}, FAKE_PATH)
+    write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
+
+    doc.save()
+
+    reloaded = RehuDocument(json.loads(write.call_args[0][1]))
+    assert reloaded.advertised_count == "500+"
+    assert reloaded.current_count is None
 
 
 # endregion
@@ -2149,12 +2270,12 @@ def test_alias_type_and_block_key_normalize_to_the_declared_main_key() -> None:
     * verify the block's contents survived the rename, and that no sibling block was disturbed
     """
     doc = RehuDocument(
-        {"core": {"type": "ReferenceImages"}, "refimages": {"images_count": 12}, "tutorial": {"rating": 1}}
+        {"core": {"type": "ReferenceImages"}, "refimages": {"current_count": 12}, "tutorial": {"rating": 1}}
     )
     assert doc.core["type"] == "reference_images"
     assert doc.active_block_key == "reference_images"
     assert doc.active_block == {
-        "images_count": 12,
+        "current_count": 12,
         "format_version": current_block_version("reference_images"),
         "users": {"admin": {}},
     }
@@ -2177,16 +2298,16 @@ def test_normalization_leaves_an_alias_block_alone_when_the_main_key_is_taken() 
     doc = RehuDocument(
         {
             "type": "reference_images",
-            "reference_images": {"images_count": 12},
-            "refimages": {"images_count": 99},
+            "reference_images": {"current_count": 12},
+            "refimages": {"current_count": 99},
         }
     )
     assert doc.active_block == {
-        "images_count": 12,
+        "current_count": 12,
         "format_version": current_block_version("reference_images"),
         "users": {"admin": {}},
     }
-    assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"images_count": 99})]
+    assert [(block.key, block.fields) for block in doc.inactive_blocks()] == [("refimages", {"current_count": 99})]
 
 
 def test_alias_type_keeps_its_block_when_the_main_key_is_taken() -> None:
@@ -2231,10 +2352,10 @@ def test_alias_type_normalizes_when_no_block_sits_under_the_alias_spelling() -> 
       ``reference_images`` main key
     * verify the type normalized and names the main-keyed block
     """
-    doc = RehuDocument({"core": {"type": "refimages"}, "reference_images": {"images_count": 12}})
+    doc = RehuDocument({"core": {"type": "refimages"}, "reference_images": {"current_count": 12}})
     assert doc.core["type"] == "reference_images"
     assert doc.active_block_key == "reference_images"
-    assert doc.active_block["images_count"] == 12
+    assert doc.active_block["current_count"] == 12
 
 
 def test_save_writes_the_active_block_and_every_inactive_block_verbatim(mocker: MockerFixture) -> None:
@@ -3777,7 +3898,7 @@ def test_with_two_alias_mate_blocks_the_first_in_document_order_wins(mocker: Moc
         },
     )
     assert doc.active_block_key == "reference_images"
-    assert doc.active_block == {"format_version": 3}
+    assert doc.active_block == {"format_version": current_block_version("reference_images")}
     assert doc.data["refimages"] == {"format_version": 7}
     assert doc.on_disk_active_block_format_version == 3
 
@@ -3801,7 +3922,7 @@ def test_a_block_spelled_exactly_as_the_type_beats_an_alias_mate(mocker: MockerF
             "reference_images": {"format_version": 3},
         },
     )
-    assert doc.active_block == {"format_version": 3}
+    assert doc.active_block == {"format_version": current_block_version("reference_images")}
     assert doc.data["refimages"] == {"format_version": 7}
     assert doc.on_disk_active_block_format_version == 3
 
