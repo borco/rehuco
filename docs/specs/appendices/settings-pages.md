@@ -47,6 +47,15 @@ Either way, a page still appears in the tree on a title *or* frame match. The di
 current page's frame filter whenever the filter text or the toggle changes, and whenever a different
 page becomes current.
 
+**Only the pages scroll (#229).** `add_page` wraps each page in a widget-resizable `QScrollArea` of its
+own and stacks *that*, so a tall page scrolls while a short one sits still. **One per page, not one
+around the stack**: a `QStackedWidget` reports its tallest page's height as its own, so a shared scroll
+area would scroll a two-row page by the longest page's length. Everything around the stack — the
+toolbar, the filter box, both toggles and the category tree — is chrome that stays put however small the
+dialog gets, since a control the user cannot reach is a setting they cannot change. The tree is not
+wrapped either: a `QTreeView` already is a scroll area, and nesting them gives two sets of scrollbars
+and a tree that can be scrolled out of its own viewport.
+
 `MainWindow.__register_settings_pages` constructs each page and calls
 `SettingsDialog.add_page(page)`; the dialog itself lives inside a floating-first, dockable
 `DockableDialog` on the outer `CDockManager` (#47's dockable-dialog framework — out of scope here).
@@ -193,7 +202,16 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   control that should grow (e.g. `DescriptionsPage`'s CSS editor), stretch that frame's layout
   item so it — not the spacer — takes the slack when shown, while the spacer keeps a lone remaining
   frame top-aligned. Set that stretch in the controller after `setupUi()` (`main_layout.setStretch`),
-  not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property.
+  not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property. A page adds
+  no scroll area of its own — `add_page` already gives it one, handing it the viewport's width and as
+  much height as it asks for (§Overview).
+- Use `ContentSizedListWidget` (`borco_pyside.widgets`) for a list, not a plain `QListWidget`. A list
+  that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to
+  scroll *to* before they can scroll *in*; this one is sized to its rows (one row as the floor) and lets
+  the page's scroll area do the scrolling (#229).
+- Use `WrappingLabel` (`borco_pyside.widgets`) for a paragraph of explanatory text, not a `QLabel` with
+  `wordWrap` on. A plain wrapping `QLabel` hints as though its text were one wide line, and the frame
+  around it is sized from that hint — so the paragraph paints past the border (#226, fixed in #229).
 
 ## 5. Making the rest of the app react to a saved change
 

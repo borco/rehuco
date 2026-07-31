@@ -55,7 +55,7 @@
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="structural_note_label">
+       <widget class="WrappingLabel" name="structural_note_label">
         <property name="text">
          <string>These change whenever a resource is edited, so counting them would mean recomputing after every edit. Every record found while scanning is treated this way, nested ones included — their content still counts. A file is skipped only when a record of that name sits beside it.</string>
         </property>
@@ -89,7 +89,7 @@
        </widget>
       </item>
       <item row="1" column="0" rowspan="4">
-       <widget class="QListWidget" name="patterns_list">
+       <widget class="ContentSizedListWidget" name="patterns_list">
         <property name="toolTip">
          <string>Files whose name matches one of these are left out of size scans and checksums. Double-click an entry to edit it.</string>
         </property>
@@ -165,7 +165,7 @@
        </widget>
       </item>
       <item row="6" column="0" colspan="2">
-       <widget class="QLabel" name="patterns_note_label">
+       <widget class="WrappingLabel" name="patterns_note_label">
         <property name="text">
          <string>Matched against the file name only, so a pattern can never exclude a whole folder. An empty list falls back to the shipped patterns. Sizes and checksums already computed are not recalculated by a change here.</string>
         </property>
@@ -186,6 +186,18 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ContentSizedListWidget</class>
+   <extends>QListWidget</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

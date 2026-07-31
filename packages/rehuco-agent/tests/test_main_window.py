@@ -196,7 +196,8 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
@@ -222,7 +223,8 @@ def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: M
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
 
 
@@ -239,7 +241,8 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
@@ -257,7 +260,8 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -283,7 +287,8 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
@@ -319,7 +324,8 @@ def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBo
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    pages = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, ReferenceImagesPage) for page in pages)
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
