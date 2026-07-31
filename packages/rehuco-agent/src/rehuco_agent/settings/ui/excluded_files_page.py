@@ -5,7 +5,7 @@ from typing import Final
 
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QResizeEvent
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QListWidgetItem, QToolButton, QWidget
 from rehuco_core import CHECKSUM_MANIFEST_EXTENSIONS, EXCLUDED_FILE_PATTERNS, IMAGE_EXTENSIONS, REHU_SUFFIX
 
@@ -70,9 +70,12 @@ class ExcludedFilesPage(QWidget):
         self.__ui: Final = Ui_ExcludedFilesPage()
         self.__ui.setupUi(self)
         self.__ui.structural_patterns_label.setText(self.__structural_summary())
-        # the pattern list is what should take the slack when the page is tall, not the spacer
-        self.__ui.main_layout.setStretch(1, 1)
-        self.__declare_wrapped_heights()
+        # the list is sized to its rows (#229), so it is shorter than the button column it shares its
+        # grid span with -- and a layout centres a short item in its span, leaving a one-entry list
+        # floating in the middle of the frame with white space above it. Set here rather than in the
+        # ``.ui``: Qt Designer exposes no per-item alignment, the same reason a frame's stretch is
+        # ([[appendices.settings-pages#adding-a-page]]).
+        self.__ui.patterns_frame_layout.setAlignment(self.__ui.patterns_list, Qt.AlignmentFlag.AlignTop)
 
         # the enabled state lives on the *action*, not the button: a QToolButton showing a default action
         # mirrors it, so disabling the button alone would be undone by the next action-driven refresh
@@ -138,39 +141,6 @@ class ExcludedFilesPage(QWidget):
         action.triggered.connect(slot)
         button.setDefaultAction(action)
         return action
-
-    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802  (Qt override)
-        """Re-declare the wrapping notes' heights whenever the page's width changes.
-
-        :param event: the Qt resize event.
-        """
-        super().resizeEvent(event)
-        self.__declare_wrapped_heights()
-
-    def __declare_wrapped_heights(self) -> None:
-        """Give each wrapping note the minimum height its text actually needs at its current width.
-
-        A word-wrapping `QLabel` knows its height only once it knows its width, and its ``sizeHint`` is
-        computed as though it were laid out on one wide line -- so a frame sized from that hint is too
-        short and the note paints past its border, which is what this page did. Setting
-        ``heightForWidth`` on the size policy is the documented route and does not survive the trip
-        through the enclosing frame here, so the height is **declared** instead: the same lesson #70 left
-        behind, where a size hint never reached the dock and the fix was to state the height outright.
-
-        The width is derived from the *page's* width, never read off the label or its frame: those are
-        outputs of the very layout pass this feeds, so measuring them either ratchets the height upward
-        forever or reads a width from before the resize. The page's width is an input -- the frames span
-        it (the page layout has no margins), so the label's width is that less the frame's border and its
-        layout's margins, and this settles in one pass.
-        """
-        for label, frame, layout in (
-            (self.__ui.structural_note_label, self.__ui.structural_frame, self.__ui.structural_frame_layout),
-            (self.__ui.patterns_note_label, self.__ui.patterns_frame, self.__ui.patterns_frame_layout),
-        ):
-            margins = layout.contentsMargins()
-            width = self.width() - 2 * frame.frameWidth() - margins.left() - margins.right()
-            if width > 0:
-                label.setFixedHeight(label.heightForWidth(width))
 
     def __structural_summary(self) -> str:
         """Describe the three structural exclusions, written from the constants rather than restated.

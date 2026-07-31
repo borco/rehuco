@@ -11,7 +11,7 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QFrame, QScrollArea, QWidget
 
 from ..persistent_settings import persistent_settings
 from ..settings_dialog_settings import SettingsDialogSettings
@@ -49,6 +49,7 @@ class SettingsDialog(QWidget):
 
         self.__model: Final = QStandardItemModel(self)
         self.__groups: Final[dict[str, QStandardItem]] = {}
+        self.__scroll_areas: Final[dict[QWidget, QScrollArea]] = {}
         self.__proxy: Final = self.CategoryFilterProxyModel(self)
         self.__proxy.setSourceModel(self.__model)
         self.__ui.category_tree.setModel(self.__proxy)
@@ -88,7 +89,9 @@ class SettingsDialog(QWidget):
     def add_page(self, page: SettingsPage, group: str | None = None) -> None:
         """Register ``page`` as a new category: adds its tree row and stacked page.
 
-        The first page added becomes the initially-selected one.
+        The first page added becomes the initially-selected one. The page is shown through a scroll
+        area of its own (:meth:`__scroll_area_for`), so it is the stack -- and nothing around it -- that
+        runs out of room when the dialog is small.
 
         :param page: the page to add -- a ``QWidget`` that also satisfies `SettingsPage`.
         :param group: the group to nest this page's row under, creating that group's row on first
@@ -101,7 +104,7 @@ class SettingsDialog(QWidget):
         item.setEditable(False)
         parent = self.__model if group is None else self.__group_item(group)
         parent.appendRow(item)
-        self.__ui.page_stack.addWidget(widget)
+        self.__ui.page_stack.addWidget(self.__scroll_area_for(widget))
         # A group row is judged by its pages, so the one just appended can flip its parent's verdict:
         # the group was rejected on insertion, when it still had no pages to accept it (Qt re-tests
         # only the inserted row itself, never its parent). Matters whenever pages are registered
@@ -124,6 +127,28 @@ class SettingsDialog(QWidget):
         self.__settings.show_full_page_on_title_match = self.__ui.show_full_page_check_box.is_checked()
         self.__settings.show_full_group_on_title_match = self.__ui.show_full_group_check_box.is_checked()
         self.__settings.save(persistent_settings())
+
+    def __scroll_area_for(self, widget: QWidget) -> QScrollArea:
+        """Wrap ``widget`` in the scroll area it is shown through, and remember which is whose (#229).
+
+        **One scroll area per page, not one around the stack.** A ``QStackedWidget`` reports its
+        *tallest* page's height as its own, so a single scroll area around the stack would scroll every
+        page by the longest one -- a two-row page would get a scrollbar and a page's worth of blank
+        space below it. Wrapping each page instead lets a short one sit still while a long one scrolls.
+
+        ``setWidgetResizable`` is what hands the page the viewport's width, which is what a wrapping
+        paragraph needs before it can say how tall it is; the frame is dropped because the splitter
+        already separates this side from the tree.
+
+        :param widget: the page to wrap.
+        :returns: that page's scroll area, to be added to the stack.
+        """
+        area = QScrollArea(self)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QFrame.Shape.NoFrame)
+        area.setWidget(widget)
+        self.__scroll_areas[widget] = area  # pylint: disable=unsupported-assignment-operation
+        return area
 
     def __group_item(self, group: str) -> QStandardItem:
         """The row for the group titled ``group``, appended to the tree on first use.
@@ -179,7 +204,7 @@ class SettingsDialog(QWidget):
         del current, previous
         page = self.__current_page()
         if page is not None:
-            self.__ui.page_stack.setCurrentWidget(cast(QWidget, page))
+            self.__ui.page_stack.setCurrentWidget(self.__scroll_areas[cast(QWidget, page)])
             self.__apply_filter_to_current_page()
 
     def __apply_filter_to_current_page(self, *_args: object) -> None:

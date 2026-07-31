@@ -493,48 +493,83 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None
     """Each note gets the height its text needs at the width it is given, and gives it back on widening.
 
     Guards the defect this page shipped with: the frames were sized from a ``sizeHint`` computed as
-    though a wrapping label were one wide line, so the note painted past its frame's border. Narrow
-    first and widen after, because the naive fix -- measuring the label's own width -- only ratchets
-    upward and would pass a widening-only check.
+    though a wrapping label were one wide line, so the note painted past its frame's border. The notes
+    are `WrappingLabel`s now and the page computes nothing (#229). Giving the height *back* is asserted
+    too, not just never-clipped: `WrappingLabel` measures its own width -- the very move #229 warns
+    ratchets a hand-declared height upward forever -- and a ratcheted label is too tall, which
+    never-clipped alone would wave through. So a revisited width must reproduce its first visit's
+    heights exactly.
 
     **Test steps:**
 
     * build the page and resize it through a range of widths, narrow and wide, then back
     * verify at every step that each note is at least as tall as its text needs
+    * verify a width seen before gets exactly the heights it got the first time
     """
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
     ui = page_ui(page)
     page.show()
 
-    for width in (320, 900, 420, 640, 320):
+    first_seen: dict[int, tuple[int, ...]] = {}
+    for width in (320, 900, 420, 640, 320, 900):
         page.setGeometry(0, 0, width, 700)
         page_ui(page).main_layout.activate()
         for label in (ui.structural_note_label, ui.patterns_note_label):
             assert label.height() >= label.heightForWidth(label.width()), (
                 f"{label.objectName()} clipped at page width {width}"
             )
+        heights = (ui.structural_note_label.height(), ui.patterns_note_label.height())
+        assert first_seen.setdefault(width, heights) == heights, f"heights ratcheted at page width {width}"
 
 
-def test_a_degenerate_width_leaves_the_notes_alone(qtbot: QtBot) -> None:
-    """A zero-width page is measured before it is laid out, and must not crash or set a silly height.
+def test_the_pattern_list_grows_with_its_rows_instead_of_scrolling_them(qtbot: QtBot) -> None:
+    """The list is sized to its patterns, so the page scrolls rather than the list inside it (#229).
+
+    A list that scrolls inside a page that scrolls is two vertical scrollbars, and a list the user has
+    to scroll *to* before they can scroll *in*.
 
     **Test steps:**
 
-    * build the page, note its current wrapping heights, and pin it to a width narrower than the
-      frame's own borders and margins
-    * verify nothing was raised and the heights were left as they were
+    * build the page and add twenty patterns to its list
+    * verify the list asked for more height and never grew a scrollbar of its own
+    """
+    page = ExcludedFilesPage()
+    qtbot.addWidget(page)
+    listing = page_ui(page).patterns_list
+    before = listing.sizeHint().height()
+
+    for index in range(20):
+        listing.addItem(f"*.extra{index}")
+
+    assert listing.sizeHint().height() > before
+    assert listing.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+
+
+def test_the_pattern_list_stays_at_the_top_of_its_frame_however_short_it_is(qtbot: QtBot) -> None:
+    """A short list sits under its title, not floating in the middle of the frame (#229).
+
+    The list is sized to its rows, so it is shorter than the button column it shares its grid span
+    with -- and a layout centres a short item in its span unless told otherwise.
+
+    **Test steps:**
+
+    * show the page, then empty the list and refill it
+    * verify its top edge lines up with the first tool button's at both lengths
     """
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
     ui = page_ui(page)
+    page.resize(600, 700)
     page.show()
-    before = ui.structural_note_label.height()
 
-    page.setFixedWidth(1)
-    page_ui(page).main_layout.activate()
-
-    assert ui.structural_note_label.height() == before
+    for patterns in ((), ("*.tmp", "*.bak", "*.log")):
+        ui.patterns_list.clear()
+        ui.patterns_list.addItems(patterns)
+        ui.main_layout.activate()
+        assert ui.patterns_list.geometry().top() == ui.edit_button.geometry().top(), (
+            f"list not top-aligned with {len(patterns)} patterns"
+        )
 
 
 def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:

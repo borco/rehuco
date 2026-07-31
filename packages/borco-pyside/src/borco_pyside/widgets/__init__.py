@@ -1,5 +1,6 @@
 """Generic reusable PySide6 widgets."""
 
+from .content_sized_list_widget import ContentSizedListWidget
 from .dynamic_properties_helpers import toggle_dynamic_property
 from .elided_label import ElidedLabel
 from .flow_layout import FlowLayout
@@ -17,8 +18,10 @@ from .rating import Rating
 from .rich_text_view import RichTextView
 from .unbounded_spin_box import UnboundedSpinBox
 from .wrapping_check_box import WrappingCheckBox
+from .wrapping_label import WrappingLabel
 
 __all__ = [
+    "ContentSizedListWidget",
     "ElidedLabel",
     "FlowLayout",
     "HorizontalLine",
@@ -31,6 +34,7 @@ __all__ = [
     "RichTextView",
     "UnboundedSpinBox",
     "WrappingCheckBox",
+    "WrappingLabel",
     "equal_width_row",
     "resync_line_edit",
     "toggle_dynamic_property",

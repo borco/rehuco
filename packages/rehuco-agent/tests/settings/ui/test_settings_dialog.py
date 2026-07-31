@@ -3,7 +3,7 @@
 from typing import Any
 
 from PySide6.QtCore import QModelIndex
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -110,6 +110,42 @@ def dialog_ui(dialog: SettingsDialog) -> object:
     return dialog._SettingsDialog__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
+def stacked_pages(dialog: SettingsDialog) -> list[QWidget]:
+    """Every registered page, in stack order, read out of the scroll area it is shown through (#229).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: the pages themselves, not the scroll areas holding them.
+    """
+    stack = dialog_ui(dialog).page_stack  # type: ignore[attr-defined]
+    return [stack.widget(index).widget() for index in range(stack.count())]
+
+
+def current_page(dialog: SettingsDialog) -> QWidget | None:
+    """The page currently shown, read out of the scroll area it is shown through (#229).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: the shown page, or ``None`` while the stack is empty.
+    """
+    area = dialog_ui(dialog).page_stack.currentWidget()  # type: ignore[attr-defined]
+    return None if area is None else area.widget()
+
+
+def enclosing_scroll_areas(widget: QWidget, stop: QWidget) -> list[QAbstractScrollArea]:
+    """Every scroll area between ``widget`` and ``stop``, innermost first (#229).
+
+    :param widget: the widget to walk up from; itself included if it is a scroll area.
+    :param stop: the ancestor to stop at, excluded from the walk.
+    :returns: the scroll areas found, in the order met going up.
+    """
+    areas: list[QAbstractScrollArea] = []
+    current: QWidget | None = widget
+    while current is not None and current is not stop:
+        if isinstance(current, QAbstractScrollArea):
+            areas.append(current)
+        current = current.parentWidget()
+    return areas
+
+
 def visible_index(dialog: SettingsDialog, title: str) -> QModelIndex:
     """The visible tree index of the row titled ``title``, searching groups' children too (#76).
 
@@ -184,7 +220,7 @@ def test_add_page_creates_a_tree_row_and_stacked_page(qtbot: QtBot) -> None:
     assert model.rowCount() == 1
     assert model.data(model.index(0, 0)) == "Registry"
     assert ui.page_stack.count() == 1  # type: ignore[attr-defined]
-    assert ui.page_stack.widget(0) is page  # type: ignore[attr-defined]
+    assert stacked_pages(dialog) == [page]
 
 
 def test_first_added_page_becomes_the_initially_selected_one(qtbot: QtBot) -> None:
@@ -201,7 +237,7 @@ def test_first_added_page_becomes_the_initially_selected_one(qtbot: QtBot) -> No
 
     dialog.add_page(page)
 
-    assert dialog_ui(dialog).page_stack.currentWidget() is page  # type: ignore[attr-defined]
+    assert current_page(dialog) is page
 
 
 def test_selecting_a_tree_row_switches_the_stacked_page(qtbot: QtBot) -> None:
@@ -222,7 +258,7 @@ def test_selecting_a_tree_row_switches_the_stacked_page(qtbot: QtBot) -> None:
 
     select_page(dialog, "Markdown Rendering")
 
-    assert dialog_ui(dialog).page_stack.currentWidget() is second  # type: ignore[attr-defined]
+    assert current_page(dialog) is second
 
 
 def test_empty_filter_shows_every_page(qtbot: QtBot) -> None:
@@ -406,7 +442,7 @@ def test_clearing_the_tree_selection_leaves_the_stack_untouched(qtbot: QtBot) ->
 
     dialog_ui(dialog).category_tree.setCurrentIndex(QModelIndex())  # type: ignore[attr-defined]
 
-    assert dialog_ui(dialog).page_stack.currentWidget() is page  # type: ignore[attr-defined]
+    assert current_page(dialog) is page
 
 
 def test_actions_are_no_ops_with_no_pages_registered(qtbot: QtBot) -> None:
@@ -554,7 +590,7 @@ def test_selecting_a_grouped_page_switches_the_stacked_page(qtbot: QtBot) -> Non
 
     select_page(dialog, "Descriptions")
 
-    assert dialog_ui(dialog).page_stack.currentWidget() is grouped  # type: ignore[attr-defined]
+    assert current_page(dialog) is grouped
 
 
 def test_selecting_a_group_row_leaves_the_shown_page_untouched(qtbot: QtBot) -> None:
@@ -574,7 +610,7 @@ def test_selecting_a_group_row_leaves_the_shown_page_untouched(qtbot: QtBot) -> 
 
     dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, "Editors"))  # type: ignore[attr-defined]
 
-    assert dialog_ui(dialog).page_stack.currentWidget() is page  # type: ignore[attr-defined]
+    assert current_page(dialog) is page
     assert page.frames[1].isVisibleTo(page) is False
 
 
@@ -972,3 +1008,112 @@ def test_filtering_with_no_pages_registered_does_nothing(qtbot: QtBot) -> None:
     dialog_ui(dialog).filter_edit.setText("anything")  # type: ignore[attr-defined]
     dialog_ui(dialog).show_full_page_check_box.set_checked(True)  # type: ignore[attr-defined]
     dialog_ui(dialog).show_full_group_check_box.set_checked(True)  # type: ignore[attr-defined]
+
+
+def test_each_page_is_shown_through_a_widget_resizable_scroll_area_of_its_own(qtbot: QtBot) -> None:
+    """A page scrolls, and it scrolls by its own height rather than the tallest page's (#229).
+
+    One scroll area per page, not one around the stack: a ``QStackedWidget`` reports its tallest page's
+    height as its own, so a shared one would scroll a two-row page by a long page's length.
+
+    **Test steps:**
+
+    * add two pages
+    * verify each is held by its own widget-resizable scroll area inside the stack
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Registry")
+    second = FakePage("Markdown Rendering")
+
+    dialog.add_page(first)
+    dialog.add_page(second)
+
+    stack = dialog_ui(dialog).page_stack  # type: ignore[attr-defined]
+    areas = [stack.widget(index) for index in range(stack.count())]
+    assert [area.widget() for area in areas] == [first, second]
+    assert all(area.widgetResizable() for area in areas)
+
+
+def test_the_chrome_around_the_pages_is_not_inside_a_scroll_area(qtbot: QtBot) -> None:
+    """The toolbar and the filter box always stay reachable: a control the user cannot reach is a
+    setting they cannot change (#229).
+
+    **Test steps:**
+
+    * build a dialog
+    * verify neither the toolbar nor the filter edit reaches the dialog through a scroll area
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    ui = dialog_ui(dialog)
+
+    for chrome in (ui.toolbar, ui.filter_edit):  # type: ignore[attr-defined]
+        assert enclosing_scroll_areas(chrome, dialog) == []
+
+
+def test_the_category_tree_is_not_nested_inside_another_scroll_area(qtbot: QtBot) -> None:
+    """A ``QTreeView`` scrolls natively, so wrapping one gives two scrollbars and a tree that can be
+    scrolled out of its own viewport (#229).
+
+    **Test steps:**
+
+    * build a dialog
+    * verify exactly one scroll area sits between the tree's viewport and the splitter -- the tree
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    ui = dialog_ui(dialog)
+
+    tree = ui.category_tree  # type: ignore[attr-defined]
+    assert enclosing_scroll_areas(tree.viewport(), ui.splitter) == [tree]  # type: ignore[attr-defined]
+
+
+def test_a_tall_page_leaves_the_dialog_free_to_shrink(qtbot: QtBot) -> None:
+    """A page taller than the dialog no longer sets the dialog's minimum height (#229).
+
+    Guards the defect this shell shipped with: the stack's minimum was the tallest page's, so the
+    whole dialog refused to shrink and its host's own chrome -- the dock frame's "Restore on start"
+    check box -- was pushed out of the visible rectangle rather than staying put.
+
+    **Test steps:**
+
+    * add a page whose minimum height is far beyond any reasonable dialog size
+    * verify the dialog's minimum height stays well under it
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    page.setMinimumHeight(2000)
+
+    dialog.add_page(page)
+
+    assert dialog.minimumSizeHint().height() < 400
+
+
+def test_shrinking_the_dialog_scrolls_the_tall_page_and_moves_nothing_else(qtbot: QtBot) -> None:
+    """Squeezed below its content's height, the dialog scrolls the page and nothing else (#229).
+
+    **Test steps:**
+
+    * add a very tall page and a short one, then shrink the dialog well below the tall one
+    * verify the toolbar and the splitter are still wholly within the dialog, that the tall page has
+      somewhere to scroll to, and that the short one has none
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    tall = FakePage("Registry")
+    tall.setMinimumHeight(2000)
+    dialog.add_page(tall)
+    dialog.add_page(FakePage("Markdown Rendering"))
+    ui = dialog_ui(dialog)
+    dialog.show()
+
+    dialog.resize(500, 300)
+    ui.main_layout.activate()  # type: ignore[attr-defined]
+
+    stack = ui.page_stack  # type: ignore[attr-defined]
+    assert ui.toolbar.geometry().bottom() <= dialog.height()  # type: ignore[attr-defined]
+    assert ui.splitter.geometry().bottom() <= dialog.height()  # type: ignore[attr-defined]
+    assert stack.widget(0).verticalScrollBar().maximum() > 0
+    assert stack.widget(1).verticalScrollBar().maximum() == 0
