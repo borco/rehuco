@@ -77,6 +77,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__settings_dialog: Final = SettingsDialog()
         self.__register_settings_pages()
+        # after registration, not folded into SettingsDialog.__init__: add_page's own "first page
+        # added becomes current" side effect needs every page registered first, or there'd be nothing
+        # yet to correct (#228)
+        self.__settings_dialog.restore_selected_page()
 
         self.__documents_dock: Final = DocumentsDock(self)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)

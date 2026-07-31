@@ -116,16 +116,45 @@ class SettingsDialog(QWidget):
             index = self.__proxy.mapFromSource(item.index())
             self.__ui.category_tree.setCurrentIndex(index)
 
+    def restore_selected_page(self) -> None:
+        """Show the page saved by the last :meth:`save_filter_state` call, if it is still registered (#228).
+
+        Called once by `MainWindow`, after every settings page has been registered -- `add_page`'s own
+        "first page added becomes current" side effect has already picked a page by then, so this is
+        what corrects that guess. A title matching nothing registered on this platform (e.g. one saved
+        under a different OS's page), or no title at all (nothing was ever saved), leaves that first
+        page selected instead.
+
+        The stack and the tree are separate (#76): a page currently filtered out of the tree by the
+        restored filter text is still the one shown here, just with no tree row to reflect it as current.
+        """
+        if not self.__settings.selected_page_title:
+            return
+        if (item := self.__item_for_title(self.__settings.selected_page_title)) is None:
+            return
+        self.__ui.page_stack.setCurrentWidget(self.__scroll_areas[cast(QWidget, item.data(PAGE_ROLE))])
+        self.__apply_filter(item)
+        proxy_index = self.__proxy.mapFromSource(item.index())
+        if proxy_index.isValid():
+            self.__ui.category_tree.setCurrentIndex(proxy_index)
+
     def save_filter_state(self) -> None:
-        """Persist the filter text and both "show full ... if title matches" toggles (#76).
+        """Persist the filter text, both "show full ... if title matches" toggles, and the currently
+        shown page's title (#76, #228).
 
         Called from ``MainWindow.closeEvent``, alongside the app's other at-shutdown saves -- this
         dialog lives in a dock, so it has no close/done path of its own to save from the way
-        `UnsavedChangesDialog` (a real ``QDialog``) does from ``done()``.
+        `UnsavedChangesDialog` (a real ``QDialog``) does from ``done()``. The page title is read off
+        the stack (:meth:`__shown_page`), not the tree's selected row: the two diverge when a group
+        row is selected (it carries no page, [[appendices.settings-pages#category-groups]]) and when
+        the shown page's row is hidden by the live filter -- and what the next launch restores is
+        what was *shown* (#228).
         """
         self.__settings.filter_text = self.__ui.filter_edit.text()
         self.__settings.show_full_page_on_title_match = self.__ui.show_full_page_check_box.is_checked()
         self.__settings.show_full_group_on_title_match = self.__ui.show_full_group_check_box.is_checked()
+        if (page := self.__shown_page()) is not None:
+            self.__settings.selected_page_title = page.title
         self.__settings.save(persistent_settings())
 
     def __scroll_area_for(self, widget: QWidget) -> QScrollArea:
@@ -163,6 +192,29 @@ class SettingsDialog(QWidget):
             self.__groups[group] = item  # pylint: disable=unsupported-assignment-operation
         return item
 
+    def __item_for_title(self, title: str) -> QStandardItem | None:
+        """The tree item for the page titled ``title``, or ``None`` if no registered page matches (#228).
+
+        Only page rows are matched, never a group's -- a group carries no page of its own, so its
+        title is never what `SettingsDialogSettings.selected_page_title` stores.
+
+        :param title: the page title to look for.
+        :returns: that page's row, or ``None``.
+        """
+        for row in range(self.__model.rowCount()):
+            item = self.__model.item(row)
+            if item is None:  # pragma: no cover  (a row within rowCount() always has an item)
+                continue
+            if item.data(PAGE_ROLE) is not None:
+                if item.text() == title:
+                    return item
+                continue
+            for child_row in range(item.rowCount()):  # a page-less row is a group: its children are pages
+                child = item.child(child_row)
+                if child.text() == title:
+                    return child
+        return None
+
     def __pages(self) -> list[SettingsPage]:
         """Every registered page, in tree order (a group's pages together, at the group's position)."""
         pages: list[SettingsPage] = []
@@ -194,6 +246,17 @@ class SettingsDialog(QWidget):
             return None
         return cast(SettingsPage | None, item.data(PAGE_ROLE))
 
+    def __shown_page(self) -> SettingsPage | None:
+        """The page the stack is currently showing, or ``None`` while no page is registered.
+
+        Distinct from :meth:`__current_page` (the tree's selected row): the two diverge when a group
+        row is selected, and when the shown page's row is hidden by the live filter (#228).
+        """
+        area = self.__ui.page_stack.currentWidget()
+        if area is None:
+            return None
+        return cast(SettingsPage, cast(QScrollArea, area).widget())
+
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Show the newly-selected row's page in the stack.
 
@@ -218,8 +281,15 @@ class SettingsDialog(QWidget):
             current values are read straight off the widgets.
         """
         del _args
-        if (item := self.__current_item()) is None:
-            return
+        if (item := self.__current_item()) is not None:
+            self.__apply_filter(item)
+
+    def __apply_filter(self, item: QStandardItem) -> None:
+        """Re-run the frame-level filter on ``item``'s page, if it has one.
+
+        :param item: the tree row whose page to filter -- a group row carries no `FILTER_ROLE`, so
+            filtering it is a no-op.
+        """
         frame_filter = cast(SettingsFrameFilter | None, item.data(FILTER_ROLE))
         if frame_filter is not None:
             frame_filter.apply(self.__ui.filter_edit.text(), self.__ui.show_full_page_check_box.is_checked())
