@@ -1093,6 +1093,34 @@ def test_restore_selected_page_finds_a_grouped_pages_title_too(
     assert current_page(dialog) is grouped
 
 
+def test_restore_selected_page_walks_past_a_group_whose_pages_all_miss(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A group is searched through and left behind, not read as the end of the search (#228).
+
+    The mirror of the test above: there the first grouped page was the match, so nothing exercised
+    passing over a grouped page, nor carrying on to the rows after the group.
+
+    **Test steps:**
+
+    * save a top-level page's title, then build a dialog registering a two-page group *first*
+    * call ``restore_selected_page``
+    * verify both grouped pages were passed over and the top-level page is the one shown
+    """
+    saved_settings = SettingsDialogSettings(selected_page_title="System Integration")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    dialog.add_page(FakePage("Images"), group="Editors")
+    wanted = FakePage("System Integration")
+    dialog.add_page(wanted)
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is wanted
+
+
 def test_restore_selected_page_leaves_the_first_page_when_the_stored_title_matches_nothing(
     qtbot: QtBot, fake_persistent_settings: FakeSettings
 ) -> None:
