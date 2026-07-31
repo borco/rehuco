@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>340</width>
-    <height>180</height>
+    <height>260</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="main_layout">
@@ -25,20 +25,14 @@
    </property>
    <item>
     <widget class="QFrame" name="content_images_frame">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>
      </property>
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QGridLayout" name="content_images_frame_layout">
-      <item row="0" column="0" colspan="2">
+     <layout class="QVBoxLayout" name="content_images_frame_layout">
+      <item>
        <widget class="QLabel" name="content_images_frame_label">
         <property name="font">
          <font>
@@ -50,53 +44,17 @@
         </property>
        </widget>
       </item>
-      <item row="1" column="0">
-       <widget class="QRadioButton" name="default_radio_button">
+      <item>
+       <widget class="StringListEditor" name="extensions_editor">
+        <property name="toolTip">
+         <string>One format per entry, e.g. bmp. The leading dot is optional and case does not matter. Double-click an entry to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="note_label">
         <property name="text">
-         <string>Default</string>
-        </property>
-        <property name="toolTip">
-         <string>Count the formats listed beside this option.</string>
-        </property>
-        <property name="checked">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QLabel" name="default_extensions_label">
-        <property name="textInteractionFlags">
-         <set>Qt::TextInteractionFlag::TextSelectableByMouse|Qt::TextInteractionFlag::TextSelectableByKeyboard</set>
-        </property>
-        <property name="toolTip">
-         <string>Selectable — copy it into the custom list as a starting point.</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="0">
-       <widget class="QRadioButton" name="custom_radio_button">
-        <property name="text">
-         <string>Custom</string>
-        </property>
-        <property name="toolTip">
-         <string>Count your own comma-separated list of formats instead.</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QLineEdit" name="custom_extensions_edit">
-        <property name="enabled">
-         <bool>false</bool>
-        </property>
-        <property name="toolTip">
-         <string>Comma-separated, e.g. jpg, png, bmp. The leading dot is optional and case does not matter.</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0" colspan="2">
-       <widget class="QLabel" name="note_label">
-        <property name="text">
-         <string>Which files inside a reference-images resource's archives are counted as its images. A custom list naming nothing falls back to the default one. Counts already computed are not recalculated by a change here.</string>
+         <string>Which files inside a reference-images resource's archives are counted as its images. An empty list falls back to the shipped formats. Counts already computed are not recalculated by a change here.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -115,6 +73,18 @@
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>StringListEditor</class>
+   <extends>QWidget</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

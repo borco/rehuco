@@ -15,7 +15,6 @@ A plain ``@dataclass``, like `ReferenceImagesSettings` and for the same reason: 
 a scan runs, so nothing on screen changes when it does and there is nothing to watch it change.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Final
@@ -23,7 +22,7 @@ from typing import Final
 from PySide6.QtCore import QSettings
 from rehuco_core import EXCLUDED_FILE_PATTERNS
 
-from .persistent_settings import persistent_settings
+from .persistent_settings import persistent_settings, read_stored_strings
 
 GROUP: Final = "excluded_files"
 PATTERNS_KEY: Final = "patterns"
@@ -39,23 +38,16 @@ def normalize_patterns(value: object) -> tuple[str, ...]:
     would silently start counting every share's ``Thumbs.db``, churning sizes and checksums on resources
     nobody touched, which is the failure this list exists to prevent.
 
-    A bare ``str`` is read as a one-element list, not as garbage: the ``QSettings`` ini backend writes a
-    single-element list as a plain string and hands it back that way.
+    Reading the stored shape at all -- including the ini backend's habit of handing a single-element
+    list back as a bare string -- is
+    :func:`~rehuco_agent.settings.persistent_settings.read_stored_strings`'s job; what is left here is
+    the policy this list applies on top of it.
 
     :param value: the raw stored value, or the patterns as edited.
     :returns: the usable patterns in the order first seen, or the shipped defaults when there are none.
     """
-    entries: Sequence[object]
-    if isinstance(value, str):
-        entries = [value]
-    elif isinstance(value, list | tuple):
-        entries = value
-    else:
-        return EXCLUDED_FILE_PATTERNS
     patterns: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, str):
-            continue
+    for entry in read_stored_strings(value):
         pattern = entry.strip()
         if pattern and pattern not in patterns:
             patterns.append(pattern)

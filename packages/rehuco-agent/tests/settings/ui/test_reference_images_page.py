@@ -1,12 +1,13 @@
-"""Tests for ReferenceImagesPage: the Reference Images settings category page (#222)."""
+"""Tests for ReferenceImagesPage: the Reference Images settings category page (#222, #231)."""
 
 from collections.abc import Iterator
 from typing import Any
 
-from PySide6.QtCore import Qt
+from borco_pyside.widgets import StringListEditor
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.settings import reference_images_settings
 from rehuco_agent.settings.reference_images_settings import ReferenceImagesSettings, shared_reference_images_settings
 from rehuco_agent.settings.ui import reference_images_page
@@ -16,8 +17,8 @@ from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
 
 # region fixtures
-# Mirrors test_identity_page.py's (and conftest.py's) FakeSettings exactly -- kept as a separate copy
-# rather than a shared import, matching this codebase's settings-test convention.
+# Mirrors test_reference_images_settings.py's FakeSettings exactly -- kept as a separate copy rather
+# than a shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
     """A minimal in-memory stand-in for the ``QSettings`` group/value API (see
@@ -76,234 +77,222 @@ def page_ui(page: ReferenceImagesPage) -> Any:
     return page._ReferenceImagesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
+def extensions_editor(page: ReferenceImagesPage) -> StringListEditor:
+    """The page's extension list editor.
+
+    :param page: the page to reach into.
+    :returns: the `StringListEditor` holding the recognized formats.
+    """
+    return page_ui(page).extensions_editor
+
+
+def listed_extensions(page: ReferenceImagesPage) -> tuple[str, ...]:
+    """The formats the page currently shows, in order.
+
+    :param page: the page to read.
+    :returns: every entry's text.
+    """
+    return extensions_editor(page).values
+
+
 # endregion
 
+# region what the page shows
 
-def test_starts_on_the_default_choice_on_a_fresh_install(qtbot: QtBot) -> None:
-    """With nothing persisted, the page starts on Default: custom unchecked and its edit disabled.
+
+def test_starts_on_the_shipped_formats_on_a_fresh_install(qtbot: QtBot) -> None:
+    """With nothing persisted, the list shows the formats actually in force -- not an empty list (#231).
+
+    The page carries no Default/Custom pair any more, so showing the effective set is what tells the
+    user which formats are counted.
 
     **Test steps:**
 
     * build the page against empty persistent storage
-    * verify the Default radio is checked, the custom radio isn't, and the custom edit is disabled
-      and empty
+    * verify it lists core's shipped set and is clean
     """
     page = ReferenceImagesPage()
     qtbot.addWidget(page)
 
-    ui = page_ui(page)
-    assert ui.default_radio_button.isChecked() is True
-    assert ui.custom_radio_button.isChecked() is False
-    assert ui.custom_extensions_edit.isEnabled() is False
-    assert ui.custom_extensions_edit.text() == ""
-
-
-def test_the_default_label_shows_cores_set_and_is_selectable(qtbot: QtBot) -> None:
-    """The label beside Default shows core's set -- written from the constant, not restated in the
-    ``.ui`` -- and is text-selectable so it can be copied into the custom list (#222).
-
-    **Test steps:**
-
-    * build the page
-    * verify the label's text is the formatted default set
-    * verify its interaction flags allow selecting the text by mouse
-    """
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-
-    label = page_ui(page).default_extensions_label
-    assert label.text() == ".jpg, .jpeg, .png, .webp, .avif"
-    assert label.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
-
-
-def test_restores_the_saved_custom_choice(qtbot: QtBot) -> None:
-    """A freshly-built page reflects a saved Custom selection: radio checked, edit enabled and filled.
-
-    **Test steps:**
-
-    * seed the shared settings with the custom choice and a known list
-    * build the page
-    * verify the Custom radio is checked and the edit is enabled and holds the list
-    """
-    shared_reference_images_settings().use_custom_extensions = True
-    shared_reference_images_settings().custom_extensions = "bmp, tif"
-
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-
-    ui = page_ui(page)
-    assert ui.custom_radio_button.isChecked() is True
-    assert ui.custom_extensions_edit.isEnabled() is True
-    assert ui.custom_extensions_edit.text() == "bmp, tif"
-
-
-def test_restores_the_custom_text_even_while_default_is_selected(qtbot: QtBot) -> None:
-    """A saved custom list comes back into the (disabled) edit even when Default is the saved choice --
-    the list survives without being the selected source (#222).
-
-    **Test steps:**
-
-    * seed the shared settings with the default choice but a filled custom list
-    * build the page
-    * verify Default is checked while the disabled custom edit still holds the list
-    """
-    shared_reference_images_settings().custom_extensions = "bmp, tif"
-
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-
-    ui = page_ui(page)
-    assert ui.default_radio_button.isChecked() is True
-    assert ui.custom_extensions_edit.isEnabled() is False
-    assert ui.custom_extensions_edit.text() == "bmp, tif"
-
-
-def test_checking_custom_enables_the_edit_and_default_disables_it(qtbot: QtBot) -> None:
-    """The custom edit is live exactly while Custom is the selected choice.
-
-    **Test steps:**
-
-    * build the page and check the Custom radio
-    * verify the edit enables
-    * check the Default radio back
-    * verify the edit disables
-    """
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-
-    ui.custom_radio_button.setChecked(True)
-    assert ui.custom_extensions_edit.isEnabled() is True
-
-    ui.default_radio_button.setChecked(True)
-    assert ui.custom_extensions_edit.isEnabled() is False
-
-
-def test_is_dirty_is_false_right_after_construction(qtbot: QtBot) -> None:
-    """A freshly-built page (nothing edited yet) is not dirty.
-
-    **Test steps:**
-
-    * build the page
-    * verify ``is_dirty`` is ``False``
-    """
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-
+    assert listed_extensions(page) == CONTENT_IMAGE_EXTENSIONS
     assert page.is_dirty() is False
 
 
-def test_is_dirty_is_true_after_switching_the_choice(qtbot: QtBot) -> None:
-    """Switching the radio choice makes the page dirty.
+def test_restores_the_saved_formats(qtbot: QtBot) -> None:
+    """A freshly-built page reflects what was saved, in order.
 
     **Test steps:**
 
-    * build the page and check the Custom radio
-    * verify ``is_dirty`` is ``True``
+    * seed the shared settings with two formats of the user's own
+    * build the page
+    * verify it lists exactly those two and is clean
+    """
+    shared_reference_images_settings().extensions = (".bmp", ".tif")
+    page = ReferenceImagesPage()
+    qtbot.addWidget(page)
+
+    assert listed_extensions(page) == (".bmp", ".tif")
+    assert page.is_dirty() is False
+
+
+# endregion
+
+# region the list editor
+
+
+def test_the_editors_reset_fills_the_list_with_the_shipped_formats(qtbot: QtBot) -> None:
+    """Reset is what the Default radio used to be: the shipped set, on request (#231).
+
+    **Test steps:**
+
+    * seed the shared settings with one format of the user's own and build the page
+    * fire the editor's Reset action
+    * verify the shipped set is listed
+    """
+    shared_reference_images_settings().extensions = (".bmp",)
+    page = ReferenceImagesPage()
+    qtbot.addWidget(page)
+
+    extensions_editor(page).item_actions.reset_action.trigger()
+
+    assert listed_extensions(page) == CONTENT_IMAGE_EXTENSIONS
+
+
+def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
+    """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
+
+    **Test steps:**
+
+    * build the page
+    * verify all eight of the editor's actions carry an icon
+    """
+    page = ReferenceImagesPage()
+    qtbot.addWidget(page)
+    editor = extensions_editor(page)
+
+    actions = (
+        editor.item_actions.insert_action,
+        editor.item_actions.edit_action,
+        editor.item_actions.delete_action,
+        editor.item_actions.reset_action,
+        editor.ordering_actions.move_to_top_action,
+        editor.ordering_actions.move_up_action,
+        editor.ordering_actions.move_down_action,
+        editor.ordering_actions.move_to_bottom_action,
+    )
+    assert [action.icon().isNull() for action in actions] == [False] * 8
+
+
+def test_editing_the_list_makes_the_page_dirty(qtbot: QtBot) -> None:
+    """Whatever the editor holds is what Save would write, so a change to it is a change to the page.
+
+    **Test steps:**
+
+    * build the page and drop a format out of the editor
+    * verify the page went dirty
     """
     page = ReferenceImagesPage()
     qtbot.addWidget(page)
 
-    page_ui(page).custom_radio_button.setChecked(True)
+    extensions_editor(page).values = CONTENT_IMAGE_EXTENSIONS[1:]
 
     assert page.is_dirty() is True
 
 
-def test_is_dirty_is_true_after_editing_the_custom_list(qtbot: QtBot) -> None:
-    """Editing the custom list makes the page dirty, whichever choice is selected -- the text is part
-    of what Save persists either way.
+# endregion
+
+# region save and drop
+
+
+def test_save_pushes_the_staged_formats_and_persists_them(qtbot: QtBot, fake_persistent_settings: FakeSettings) -> None:
+    """``save_changes`` writes the staged list into the shared settings and to storage.
 
     **Test steps:**
 
-    * build the page and change the custom edit while Default stays checked
-    * verify ``is_dirty`` is ``True``
-    """
-    page = ReferenceImagesPage()
-    qtbot.addWidget(page)
-
-    page_ui(page).custom_extensions_edit.setText("bmp")
-
-    assert page.is_dirty() is True
-
-
-def test_save_changes_updates_the_shared_settings_and_persists(
-    qtbot: QtBot, fake_persistent_settings: FakeSettings
-) -> None:
-    """``save_changes`` pushes the staged choice and custom text into the shared settings object and
-    persists them, custom text verbatim.
-
-    **Test steps:**
-
-    * build the page, check Custom, and type a messy list
+    * build the page and replace the shipped set with one format of the user's own
     * call ``save_changes``
-    * verify the shared settings hold both as staged, the page is clean, and a fresh load agrees
+    * verify the shared settings hold it, the page is clean, and a fresh load agrees
     """
     page = ReferenceImagesPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.custom_radio_button.setChecked(True)
-    ui.custom_extensions_edit.setText("BMP , tif,")
+    extensions_editor(page).values = (".bmp",)
 
     page.save_changes()
 
-    assert shared_reference_images_settings().use_custom_extensions is True
-    assert shared_reference_images_settings().custom_extensions == "BMP , tif,"
-    assert shared_reference_images_settings().content_image_extensions == (".bmp", ".tif")
+    assert shared_reference_images_settings().content_image_extensions == (".bmp",)
     assert page.is_dirty() is False
 
     reloaded = ReferenceImagesSettings()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
-    assert reloaded.use_custom_extensions is True
-    assert reloaded.custom_extensions == "BMP , tif,"
+    assert reloaded.extensions == (".bmp",)
 
 
-def test_saving_the_default_choice_keeps_the_typed_custom_list(qtbot: QtBot) -> None:
-    """Saving with Default selected still persists whatever sits in the custom edit -- so a later
-    switch to Custom finds the list where it was left (#222).
+def test_saving_normalizes_the_typing_on_screen(qtbot: QtBot) -> None:
+    """``BMP`` is stored as ``.bmp``, and the page is reloaded so it shows what is actually matched.
+
+    Normalizing is the settings object's, not the editor's -- the editor holds what was typed (#231).
 
     **Test steps:**
 
-    * build the page, type a custom list, switch back to Default, and save
-    * verify the shared settings keep the text while the effective set stays core's
+    * build the page and stage messily-typed formats, one blank and one duplicate among them
+    * call ``save_changes``
+    * verify what was saved and what is shown are the same normalized list
     """
     page = ReferenceImagesPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.custom_radio_button.setChecked(True)
-    ui.custom_extensions_edit.setText("bmp")
-    ui.default_radio_button.setChecked(True)
+    extensions_editor(page).values = ("BMP ", "", ".bmp", "tif")
 
     page.save_changes()
 
-    assert shared_reference_images_settings().use_custom_extensions is False
-    assert shared_reference_images_settings().custom_extensions == "bmp"
-    assert shared_reference_images_settings().content_image_extensions == CONTENT_IMAGE_EXTENSIONS
+    assert shared_reference_images_settings().extensions == (".bmp", ".tif")
+    assert listed_extensions(page) == (".bmp", ".tif")
+    assert page.is_dirty() is False
 
 
-def test_drop_changes_reverts_both_the_choice_and_the_custom_list(qtbot: QtBot) -> None:
-    """``drop_changes`` reverts the radio choice and the custom text back to the shared settings'.
+def test_saving_an_emptied_list_restores_the_shipped_formats_on_screen(qtbot: QtBot) -> None:
+    """Emptying the list means the shipped formats, and the page shows that rather than a lie.
 
     **Test steps:**
 
-    * seed the shared settings with the custom choice and a known list, build the page
-    * switch to Default and overtype the list
-    * call ``drop_changes``
-    * verify the Custom radio and the seeded list are back and the page is clean
+    * build the page and empty the editor
+    * call ``save_changes``
+    * verify the shipped set is both in force and back on screen, and the page is clean
     """
-    shared_reference_images_settings().use_custom_extensions = True
-    shared_reference_images_settings().custom_extensions = "bmp, tif"
     page = ReferenceImagesPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.default_radio_button.setChecked(True)
-    ui.custom_extensions_edit.setText("unsaved, psd")
+    extensions_editor(page).values = ()
+
+    page.save_changes()
+
+    assert shared_reference_images_settings().content_image_extensions == CONTENT_IMAGE_EXTENSIONS
+    assert listed_extensions(page) == CONTENT_IMAGE_EXTENSIONS
+    assert page.is_dirty() is False
+
+
+def test_drop_changes_reverts_the_staged_list(qtbot: QtBot) -> None:
+    """``drop_changes`` refills the editor from the shared settings -- a revert, not a no-op.
+
+    **Test steps:**
+
+    * seed the shared settings with two formats and build the page
+    * stage a different list entirely
+    * call ``drop_changes``
+    * verify the seeded pair is back and the page is clean
+    """
+    shared_reference_images_settings().extensions = (".bmp", ".tif")
+    page = ReferenceImagesPage()
+    qtbot.addWidget(page)
+    extensions_editor(page).values = (".psd",)
 
     page.drop_changes()
 
-    assert ui.custom_radio_button.isChecked() is True
-    assert ui.custom_extensions_edit.isEnabled() is True
-    assert ui.custom_extensions_edit.text() == "bmp, tif"
+    assert listed_extensions(page) == (".bmp", ".tif")
     assert page.is_dirty() is False
+
+
+# endregion
+
+# region the page shell
 
 
 def test_title_is_reference_images(qtbot: QtBot) -> None:
@@ -320,11 +309,36 @@ def test_title_is_reference_images(qtbot: QtBot) -> None:
     assert page.title == "Reference Images"
 
 
+def test_the_wrapping_note_is_never_clipped_at_any_width(qtbot: QtBot) -> None:
+    """The note gets the height its text needs at the width it is given, and gives it back on widening.
+
+    Same guard as `ExcludedFilesPage`'s: a plain wrapping `QLabel` hints as though its text were one wide
+    line, and the frame sized from that hint paints the paragraph past its border (#226, fixed in #229).
+
+    **Test steps:**
+
+    * build the page and resize it through a range of widths, narrow and wide, then back
+    * verify at every step that the note is at least as tall as its text needs
+    * verify a width seen before gets exactly the height it got the first time
+    """
+    page = ReferenceImagesPage()
+    qtbot.addWidget(page)
+    label = page_ui(page).note_label
+    page.show()
+
+    first_seen: dict[int, int] = {}
+    for width in (320, 900, 420, 640, 320, 900):
+        page.setGeometry(0, 0, width, 700)
+        page_ui(page).main_layout.activate()
+        assert label.height() >= label.heightForWidth(label.width()), f"note clipped at page width {width}"
+        assert first_seen.setdefault(width, label.height()) == label.height(), f"height ratcheted at {width}"
+
+
 def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> None:
     """A `SettingsFrameFilter` finds the page's labeled frame and filters it by its text (#67).
 
     Guards the page's ``.ui`` frame structure: the content-images frame must be a discoverable
-    top-level frame whose gathered caption text (the header and the radio captions) drives the filter.
+    top-level frame whose gathered caption text drives the filter.
 
     **Test steps:**
 
@@ -341,3 +355,6 @@ def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> No
 
     frame_filter.apply("no-such-term", show_full_on_title_match=False)
     assert ui.content_images_frame.isVisibleTo(page) is False
+
+
+# endregion

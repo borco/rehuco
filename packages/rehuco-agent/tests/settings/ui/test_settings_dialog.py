@@ -871,9 +871,10 @@ def test_starts_with_the_persisted_filter_state(qtbot: QtBot, fake_persistent_se
     * save filter text and both toggles checked, then build a dialog
     * verify the filter box and both check boxes come up as saved
     """
-    SettingsDialogSettings(
+    saved_settings = SettingsDialogSettings(
         filter_text="engine", show_full_page_on_title_match=True, show_full_group_on_title_match=True
-    ).save(fake_persistent_settings)  # type: ignore[arg-type]
+    )
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
 
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -1054,9 +1055,8 @@ def test_restore_selected_page_shows_the_page_matching_the_stored_title(
     * call ``restore_selected_page``
     * verify the stack now shows that page, and its tree row is the current one
     """
-    SettingsDialogSettings(  # type: ignore[arg-type]
-        selected_page_title="Markdown Rendering"
-    ).save(fake_persistent_settings)
+    saved_settings = SettingsDialogSettings(selected_page_title="Markdown Rendering")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
     dialog.add_page(FakePage("Registry"))
@@ -1091,6 +1091,34 @@ def test_restore_selected_page_finds_a_grouped_pages_title_too(
     dialog.restore_selected_page()
 
     assert current_page(dialog) is grouped
+
+
+def test_restore_selected_page_walks_past_a_group_whose_pages_all_miss(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A group is searched through and left behind, not read as the end of the search (#228).
+
+    The mirror of the test above: there the first grouped page was the match, so nothing exercised
+    passing over a grouped page, nor carrying on to the rows after the group.
+
+    **Test steps:**
+
+    * save a top-level page's title, then build a dialog registering a two-page group *first*
+    * call ``restore_selected_page``
+    * verify both grouped pages were passed over and the top-level page is the one shown
+    """
+    saved_settings = SettingsDialogSettings(selected_page_title="System Integration")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    dialog.add_page(FakePage("Images"), group="Editors")
+    wanted = FakePage("System Integration")
+    dialog.add_page(wanted)
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is wanted
 
 
 def test_restore_selected_page_leaves_the_first_page_when_the_stored_title_matches_nothing(
@@ -1149,9 +1177,8 @@ def test_restore_selected_page_shows_a_page_the_restored_filter_hides_from_the_t
     * call ``restore_selected_page``
     * verify the stack shows that page, even though its tree row stays hidden by the filter
     """
-    SettingsDialogSettings(  # type: ignore[arg-type]
-        selected_page_title="Markdown Rendering", filter_text="regist"
-    ).save(fake_persistent_settings)
+    saved_settings = SettingsDialogSettings(selected_page_title="Markdown Rendering", filter_text="regist")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
     dialog.add_page(FakePage("Registry", [["Register"]]))
@@ -1176,9 +1203,8 @@ def test_a_restored_page_hidden_by_the_filter_survives_the_next_save(
     * call ``save_filter_state`` without touching anything
     * verify the stored title is still the restored page's
     """
-    SettingsDialogSettings(  # type: ignore[arg-type]
-        selected_page_title="Markdown Rendering", filter_text="regist"
-    ).save(fake_persistent_settings)
+    saved_settings = SettingsDialogSettings(selected_page_title="Markdown Rendering", filter_text="regist")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
     dialog.add_page(FakePage("Registry", [["Register"]]))
