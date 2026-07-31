@@ -1,4 +1,4 @@
-"""Tests for ReferenceImagesSettings: the default-vs-custom content-image extension choice (#222).
+"""Tests for ReferenceImagesSettings: the recognized content-image extension list (#222, #231).
 
 Uses a hand-rolled in-memory stand-in for ``QSettings`` (see ``test_main_window_settings.py`` for
 the same rationale) rather than a real one or ``tmp_path``.
@@ -14,8 +14,8 @@ from pytest_mock import MockerFixture
 from rehuco_agent.settings import reference_images_settings
 from rehuco_agent.settings.reference_images_settings import (
     ReferenceImagesSettings,
-    format_extensions,
-    parse_extensions,
+    normalize_extensions,
+    read_extensions,
     shared_reference_images_settings,
 )
 from rehuco_core import CONTENT_IMAGE_EXTENSIONS, ContentImageEntry, enumerate_content_images
@@ -76,84 +76,131 @@ def clear_shared_instance_cache() -> Iterator[None]:
 # endregion
 
 
-# region parsing
+# region normalizing
 
 
-@mark.parametrize("text", ["jpg", ".jpg", "  .JPG  ", "JPG"])
-def test_parse_normalizes_dots_case_and_whitespace(text: str) -> None:
+@mark.parametrize("entry", ["jpg", ".jpg", "  .JPG  ", "JPG"])
+def test_normalize_handles_dots_case_and_whitespace(entry: str) -> None:
     """A leading dot is optional, case and surrounding whitespace are ignored -- every spelling of one
-    extension parses to the same lower-cased, dot-prefixed entry.
+    extension normalizes to the same lower-cased, dot-prefixed entry.
 
     **Test steps:**
 
-    * parse each spelling of ``jpg``
+    * normalize each spelling of ``jpg``
     * verify it comes back as the single entry ``".jpg"``
     """
-    assert parse_extensions(text) == (".jpg",)
+    assert normalize_extensions([entry]) == (".jpg",)
 
 
-def test_parse_splits_on_commas_keeping_the_order_typed() -> None:
-    """Entries are comma-separated and keep the order they were typed in.
+def test_normalize_keeps_the_order_the_entries_are_listed_in() -> None:
+    """Entries keep the order they sit in, so the list reads the way it was arranged.
 
     **Test steps:**
 
-    * parse a three-entry list
+    * normalize a three-entry list
     * verify all three come back, in that order
     """
-    assert parse_extensions("png, jpg, bmp") == (".png", ".jpg", ".bmp")
+    assert normalize_extensions(["png", "jpg", "bmp"]) == (".png", ".jpg", ".bmp")
 
 
-def test_parse_drops_duplicates_however_they_were_spelled() -> None:
+def test_normalize_drops_duplicates_however_they_were_spelled() -> None:
     """Duplicates are dropped rather than rejected, matched after normalization -- so ``JPG`` and
     ``.jpg`` collapse into one entry.
 
     **Test steps:**
 
-    * parse a list naming ``jpg`` three ways around a distinct entry
+    * normalize a list naming ``jpg`` three ways around a distinct entry
     * verify one ``.jpg`` entry survives, at the position it was first seen
     """
-    assert parse_extensions("jpg, .JPG, png,   jpg  ") == (".jpg", ".png")
+    assert normalize_extensions(["jpg", ".JPG", "png", "  jpg  "]) == (".jpg", ".png")
 
 
-def test_parse_drops_empty_entries_rather_than_rejecting_the_list() -> None:
-    """Empty entries are dropped, so a trailing comma or a doubled separator is not an error.
+def test_normalize_drops_blank_entries_rather_than_rejecting_the_list() -> None:
+    """A blank row is dropped, so an abandoned entry is not an error the user has to find and fix.
 
     **Test steps:**
 
-    * parse a list with a doubled separator, a trailing comma, and a whitespace-only entry
+    * normalize a list holding a blank and a whitespace-only entry between two real ones
     * verify only the two real entries come back
     """
-    assert parse_extensions("jpg,, ,png,") == (".jpg", ".png")
+    assert normalize_extensions(["jpg", "", "   ", "png"]) == (".jpg", ".png")
 
 
-@mark.parametrize("text", ["", "   ", ",,,", ". , ..", ",  ,"])
-def test_parse_falls_back_to_the_default_set_when_nothing_usable_is_named(text: str) -> None:
-    """Text naming no usable entry resolves to core's default set -- a custom list left empty must not
-    make every reference-images resource count zero images (#222).
+@mark.parametrize("values", [[], ["", "   "], [".", ".."]])
+def test_normalize_falls_back_to_the_shipped_set_when_nothing_usable_is_named(values: list[str]) -> None:
+    """A list naming no usable entry resolves to core's shipped set -- an emptied list must not make
+    every reference-images resource count zero images (#222).
 
     **Test steps:**
 
-    * parse each of empty, whitespace-only, separators-only, and bare-dot input
+    * normalize each of an empty, a whitespace-only, and a bare-dot list
     * verify each yields ``CONTENT_IMAGE_EXTENSIONS``
     """
-    assert parse_extensions(text) == CONTENT_IMAGE_EXTENSIONS
+    assert normalize_extensions(values) == CONTENT_IMAGE_EXTENSIONS
 
 
-def test_format_then_parse_round_trips_a_set_unchanged() -> None:
-    """Formatting a set and parsing it back reproduces it -- which is what lets the Default label's
-    text double as a copy-paste starting point for the custom list.
+# endregion
+
+# region reading what was stored
+
+
+def test_a_stored_list_is_read_as_it_stands() -> None:
+    """One entry per element, in order.
 
     **Test steps:**
 
-    * format a known set and parse the result
-    * verify the set came back unchanged, and the string is the comma-separated spelling
+    * read a stored list
+    * verify it comes back unchanged
     """
-    extensions = (".png", ".jpg", ".bmp")
+    assert read_extensions(["bmp", ".tif"]) == ("bmp", ".tif")
 
-    formatted = format_extensions(extensions)
 
-    assert formatted == ".png, .jpg, .bmp"
-    assert parse_extensions(formatted) == extensions
+def test_a_bare_string_is_read_as_the_one_element_list_it_was_saved_as() -> None:
+    """The ini backend writes a single-element list as a plain string and hands it back that way, so a
+    one-format list must not read as no list at all.
+
+    **Test steps:**
+
+    * read a bare string
+    * verify it came back as one entry
+    """
+    assert read_extensions("bmp") == ("bmp",)
+
+
+def test_blank_entries_are_dropped() -> None:
+    """A list editor shows one entry per row, so a blank row is nothing to carry.
+
+    **Test steps:**
+
+    * read a list holding a blank between two real entries
+    * verify only the real entries survive
+    """
+    assert read_extensions(["bmp", "", "tif"]) == ("bmp", "tif")
+
+
+@mark.parametrize("value", [None, 7, {"bmp": True}])
+def test_a_value_of_a_type_this_was_never_saved_as_reads_as_no_list(value: object) -> None:
+    """Absent, or of a type nothing ever wrote: either way there is no list, which resolves to the
+    shipped set rather than to no recognized formats at all.
+
+    **Test steps:**
+
+    * read each of an absent, numeric and mapping value
+    * verify each yields no entries
+    """
+    assert not read_extensions(value)
+
+
+def test_a_non_string_inside_a_stored_list_is_skipped_not_stringified() -> None:
+    """A number that found its way into the list is not an extension, and reading it as ``"7"`` would
+    make it one.
+
+    **Test steps:**
+
+    * read a list holding a number between two real entries
+    * verify only the two entries survive
+    """
+    assert read_extensions(["bmp", 7, "tif"]) == ("bmp", "tif")
 
 
 # endregion
@@ -162,59 +209,43 @@ def test_format_then_parse_round_trips_a_set_unchanged() -> None:
 
 
 def test_defaults_to_cores_content_image_extensions() -> None:
-    """A fresh instance selects the default choice, and its effective set is core's -- read, not
-    restated (#222).
+    """A fresh instance stores nothing, and its effective set is core's -- read, not restated (#222).
 
     **Test steps:**
 
     * construct the settings with no arguments
-    * verify the default choice is selected, the custom list is empty, and the effective set is
-      ``CONTENT_IMAGE_EXTENSIONS``
+    * verify the stored list is empty and the effective set is ``CONTENT_IMAGE_EXTENSIONS``
     """
     section = ReferenceImagesSettings()
 
-    assert section.use_custom_extensions is False
-    assert section.custom_extensions == ""
+    assert not section.extensions
     assert section.content_image_extensions == CONTENT_IMAGE_EXTENSIONS
 
 
-def test_a_selected_custom_list_is_the_effective_set_normalized() -> None:
-    """With Custom selected, the effective set is the custom list, parsed under the normal rules.
+def test_the_stored_list_is_the_effective_set_normalized() -> None:
+    """The effective set is the stored list under the normal rules.
 
     **Test steps:**
 
-    * select the custom choice with a messily-typed list
+    * store a messily-typed list
     * verify the effective set is its normalized form
     """
-    section = ReferenceImagesSettings(use_custom_extensions=True, custom_extensions="BMP , .bmp,tif ,")
+    section = ReferenceImagesSettings(extensions=("BMP ", ".bmp", "tif "))
 
     assert section.content_image_extensions == (".bmp", ".tif")
 
 
-def test_an_unselected_custom_list_does_not_leak_into_the_effective_set() -> None:
-    """With Default selected, the effective set is core's, whatever the custom list says.
+@mark.parametrize("values", [(), ("",), ("   ", ".")])
+def test_a_stored_list_naming_nothing_falls_back_to_the_shipped_set(values: tuple[str, ...]) -> None:
+    """A list naming no usable entry resolves to the shipped set rather than to none -- a broken
+    preference must not make every resource count zero images (#222).
 
     **Test steps:**
 
-    * keep the default choice while the custom list names something else
-    * verify the effective set is still ``CONTENT_IMAGE_EXTENSIONS``
-    """
-    section = ReferenceImagesSettings(use_custom_extensions=False, custom_extensions="bmp")
-
-    assert section.content_image_extensions == CONTENT_IMAGE_EXTENSIONS
-
-
-@mark.parametrize("text", ["", "   ", ",,,"])
-def test_a_selected_custom_list_naming_nothing_falls_back_to_the_default_set(text: str) -> None:
-    """A selected custom list naming no usable entry resolves to the default set rather than to none --
-    a broken preference must not make every resource count zero images (#222).
-
-    **Test steps:**
-
-    * select the custom choice with empty/whitespace/separators-only text
+    * store an empty, blank, or bare-dot list
     * verify the effective set fell back to ``CONTENT_IMAGE_EXTENSIONS``
     """
-    section = ReferenceImagesSettings(use_custom_extensions=True, custom_extensions=text)
+    section = ReferenceImagesSettings(extensions=values)
 
     assert section.content_image_extensions == CONTENT_IMAGE_EXTENSIONS
 
@@ -224,65 +255,64 @@ def test_a_selected_custom_list_naming_nothing_falls_back_to_the_default_set(tex
 # region persistence
 
 
-def test_save_then_load_round_trips_both_fields(settings: FakeSettings) -> None:
-    """Saving and reloading reproduces both the choice and the custom list.
+def test_save_then_load_round_trips_the_list(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the list, in order.
 
     **Test steps:**
 
-    * select the custom choice with a known list and save
+    * save a known list
     * load into a fresh instance from the same settings stand-in
-    * verify both fields came back unchanged and the effective set follows them
+    * verify it came back unchanged and the effective set follows it
     """
-    section = ReferenceImagesSettings(use_custom_extensions=True, custom_extensions="bmp, tif")
+    section = ReferenceImagesSettings(extensions=("bmp", "tif"))
 
     section.save(settings)  # type: ignore[arg-type]
 
     restored = ReferenceImagesSettings()
     restored.load(settings)  # type: ignore[arg-type]
 
-    assert restored.use_custom_extensions is True
-    assert restored.custom_extensions == "bmp, tif"
+    assert restored.extensions == ("bmp", "tif")
     assert restored.content_image_extensions == (".bmp", ".tif")
 
 
-def test_the_custom_list_round_trips_verbatim_even_while_default_is_selected(settings: FakeSettings) -> None:
-    """The custom list is persisted and restored exactly as typed even when it is not the selected
-    choice -- switching back to Default never costs a retyped list (#222).
+def test_an_entry_holding_a_comma_survives_the_round_trip(settings: FakeSettings) -> None:
+    """The list is stored as a list, so an entry is never split by what it contains -- the thing #222's
+    single comma-separated string could not do (#231).
 
     **Test steps:**
 
-    * save with the default choice selected but a custom list filled in, spelled messily
-    * load into a fresh instance
-    * verify the choice is default, the custom text is byte-identical, and the effective set is core's
+    * save a list whose entry contains a comma
+    * load it back and verify the entry is intact
     """
-    section = ReferenceImagesSettings(use_custom_extensions=False, custom_extensions="BMP , .tga,")
+    section = ReferenceImagesSettings(extensions=("we,ird", "bmp"))
 
     section.save(settings)  # type: ignore[arg-type]
 
     restored = ReferenceImagesSettings()
     restored.load(settings)  # type: ignore[arg-type]
 
-    assert restored.use_custom_extensions is False
-    assert restored.custom_extensions == "BMP , .tga,"
-    assert restored.content_image_extensions == CONTENT_IMAGE_EXTENSIONS
+    assert restored.extensions == ("we,ird", "bmp")
 
 
-def test_load_falls_back_to_the_default_state_when_nothing_was_saved(settings: FakeSettings) -> None:
-    """Loading from settings that never had the group saved yields the defaults-selected, empty-custom
-    state.
+def test_load_falls_back_to_the_shipped_set_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had the group saved yields an empty list, hence the shipped set.
 
     **Test steps:**
 
     * load into an instance holding other values, from an empty settings stand-in
-    * verify the default choice, an empty custom list, and core's effective set
+    * verify the stored list is empty and the effective set is core's
     """
-    section = ReferenceImagesSettings(use_custom_extensions=True, custom_extensions="bmp")
+    section = ReferenceImagesSettings(extensions=("bmp",))
 
     section.load(settings)  # type: ignore[arg-type]
 
-    assert section.use_custom_extensions is False
-    assert section.custom_extensions == ""
+    assert not section.extensions
     assert section.content_image_extensions == CONTENT_IMAGE_EXTENSIONS
+
+
+# endregion
+
+# region the shared instance
 
 
 def test_shared_instance_is_the_same_object_across_calls(mocker: MockerFixture) -> None:
@@ -310,16 +340,15 @@ def test_shared_instance_loads_from_persistent_settings_on_first_call(mocker: Mo
 
     * pre-populate a fake settings store and mock ``persistent_settings`` to return it
     * call the accessor
-    * verify the returned instance reflects the pre-populated choice and list
+    * verify the returned instance reflects the pre-populated list
     """
     fake = FakeSettings()
-    ReferenceImagesSettings(use_custom_extensions=True, custom_extensions="bmp").save(fake)  # type: ignore[arg-type]
+    ReferenceImagesSettings(extensions=("bmp",)).save(fake)  # type: ignore[arg-type]
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=fake)
 
     instance = shared_reference_images_settings()
 
-    assert instance.use_custom_extensions is True
-    assert instance.custom_extensions == "bmp"
+    assert instance.extensions == ("bmp",)
 
 
 # endregion
@@ -327,18 +356,17 @@ def test_shared_instance_loads_from_persistent_settings_on_first_call(mocker: Mo
 # region what the enumeration counts
 
 
-def test_the_saved_choice_is_what_the_content_image_enumeration_counts(
+def test_the_saved_list_is_what_the_content_image_enumeration_counts(
     settings: FakeSettings, mocker: MockerFixture
 ) -> None:
-    """The whole point of the page: a saved custom choice changes what #197's enumeration counts, so a
-    reference pack in a format the default set omits stops counting zero
-    ([[data-model#resource-scoping]]).
+    """The whole point of the page: a saved list changes what #197's enumeration counts, so a reference
+    pack in a format the shipped set omits stops counting zero ([[data-model#resource-scoping]]).
 
     **Test steps:**
 
     * mock ``foo.rehu``'s sibling archive to hold one ``.bmp`` and one ``.jpg``
-    * enumerate under a freshly-loaded (default) choice, and verify only the ``.jpg`` counts
-    * save a selected ``bmp``-only custom list, load it back, and enumerate under it
+    * enumerate under a freshly-loaded (empty) list, and verify only the ``.jpg`` counts
+    * save a ``bmp``-only list, load it back, and enumerate under it
     * verify only the ``.bmp`` counts
     """
     mocker.patch.object(Path, "iterdir", return_value=[ARCHIVE_PATH])
@@ -348,15 +376,14 @@ def test_the_saved_choice_is_what_the_content_image_enumeration_counts(
         zipfile.ZipInfo("page02.jpg"),
     ]
     mocker.patch("rehuco_core.rehu_content_images.zipfile.ZipFile", return_value=opened)
-    custom = ReferenceImagesSettings(use_custom_extensions=True, custom_extensions="bmp")
-    custom.save(settings)  # type: ignore[arg-type]
+    ReferenceImagesSettings(extensions=("bmp",)).save(settings)  # type: ignore[arg-type]
     section = ReferenceImagesSettings()
 
-    default_entries = enumerate_content_images(FILE_SCOPED_PATH, section.content_image_extensions)
+    shipped_entries = enumerate_content_images(FILE_SCOPED_PATH, section.content_image_extensions)
     section.load(settings)  # type: ignore[arg-type]
     configured_entries = enumerate_content_images(FILE_SCOPED_PATH, section.content_image_extensions)
 
-    assert default_entries == [ContentImageEntry(ARCHIVE_PATH, "page02.jpg")]
+    assert shipped_entries == [ContentImageEntry(ARCHIVE_PATH, "page02.jpg")]
     assert configured_entries == [ContentImageEntry(ARCHIVE_PATH, "page01.bmp")]
 
 

@@ -171,6 +171,18 @@ showing what was typed would disagree with what every scan actually reads, which
 one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
 the normalized result on screen.
 
+`ReferenceImagesPage` does the same, over the same `StringListEditor`, and the two are worth reading
+side by side because **what each of them normalizes is different**: a *pattern* is matched verbatim, so
+only blanks and duplicates go; a *format* also loses its leading dot and its casing, so `BMP` comes back
+`.bmp`. Both rules live on the settings object, never in the widget — the widget holds what was typed,
+which is what lets one editor serve two pages that disagree (#231).
+
+It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
+pair went because the empty-list fallback already draws that distinction — a list naming nothing *is*
+"whatever this app ships", and the editor's Reset fills the list with that set on request. The old keys
+are simply not read: an installation that had set a custom list gets the shipped formats back and sets it
+again, which was the cheaper trade than carrying a compatibility path for a preference two clicks deep.
+
 `RegistryPage` has no local settings dataclass at all: Register/Unregister write straight to the
 Windows registry via `rehuco_agent.windows_registration` when clicked, so there is nothing left for
 `save_changes()` to do.
@@ -205,7 +217,18 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property. A page adds
   no scroll area of its own — `add_page` already gives it one, handing it the viewport's width and as
   much height as it asks for (§Overview).
-- Use `ContentSizedListWidget` (`borco_pyside.widgets`) for a list, not a plain `QListWidget`. A list
+- Use `StringListEditor` (`borco_pyside.widgets`) to edit a list of strings, rather than building a list
+  and a column of buttons by hand — or, worse, a comma-separated `QLineEdit`, which cannot hold a value
+  containing the separator and makes changing one entry mean retyping the lot (#231). It is the list plus
+  two action columns: insert/edit/delete/reset and top/up/down/bottom, each with a key (`Ins`, `F2`,
+  `Del`, `Ctrl+Home`/`Up`/`Down`/`End`), armed on the view alone so an open in-place editor keeps its own
+  `Del`. `with_ordering=False` (or `set_ordering_visible`) hides the ordering half for a list whose order
+  carries nothing. It ships **no icons**: call `apply_string_list_editor_icons`
+  (`rehuco_agent/string_list_editor_icons.py`) to dress it in this app's set, and set its `defaults` to
+  whatever Reset should restore. It holds what was typed and normalizes nothing — that stays on the
+  settings object, where two pages can (and do) normalize differently (§3).
+- Use `ContentSizedListView` (`borco_pyside.widgets`) for any *other* list, not a plain `QListView`
+  (`StringListEditor` already uses one inside, over a `QStringListModel`). A list
   that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to
   scroll *to* before they can scroll *in*; this one is sized to its rows (one row as the floor) and lets
   the page's scroll area do the scrolling (#229).

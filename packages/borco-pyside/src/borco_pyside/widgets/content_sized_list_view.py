@@ -1,13 +1,13 @@
-"""A `QListWidget` that grows to fit its rows instead of scrolling them."""
+"""A `QListView` that grows to fit its rows instead of scrolling them."""
 
 from typing import override
 
-from PySide6.QtCore import QModelIndex, QSize, Qt
-from PySide6.QtWidgets import QListWidget, QSizePolicy, QWidget
+from PySide6.QtCore import QAbstractItemModel, QModelIndex, QSize, Qt
+from PySide6.QtWidgets import QListView, QSizePolicy, QWidget
 
 
-class ContentSizedListWidget(QListWidget):
-    """A `QListWidget` sized to the rows it holds, so an enclosing scroll area does the scrolling.
+class ContentSizedListView(QListView):
+    """A `QListView` sized to the rows its model holds, so an enclosing scroll area does the scrolling.
 
     A list inside a scrolling page is a scroll area inside a scroll area: two vertical scrollbars, and
     a list the user has to scroll *to* before they can scroll *in*. This reports its rows' total height
@@ -33,11 +33,23 @@ class ContentSizedListWidget(QListWidget):
         # one, which reads as the list having entries the user cannot see
         policy.setVerticalPolicy(QSizePolicy.Policy.Fixed)
         self.setSizePolicy(policy)
-        # the rows are what this widget's height is made of, so every change to them re-advertises it
-        model = self.model()
-        model.rowsInserted.connect(self.__on_rows_changed)
-        model.rowsRemoved.connect(self.__on_rows_changed)
-        model.modelReset.connect(self.updateGeometry)
+
+    @override
+    def setModel(self, model: QAbstractItemModel | None) -> None:  # noqa: N802  (Qt API name)
+        # the rows are what this widget's height is made of, so every change to them re-advertises it.
+        # Wired here rather than in __init__ because a view is handed its model afterwards -- and may be
+        # handed a second one, which is why the previous model is let go of first.
+        previous = self.model()
+        if previous is not None:
+            previous.rowsInserted.disconnect(self.__on_rows_changed)
+            previous.rowsRemoved.disconnect(self.__on_rows_changed)
+            previous.modelReset.disconnect(self.updateGeometry)
+        super().setModel(model)
+        if model is not None:
+            model.rowsInserted.connect(self.__on_rows_changed)
+            model.rowsRemoved.connect(self.__on_rows_changed)
+            model.modelReset.connect(self.updateGeometry)
+        self.updateGeometry()
 
     @override
     def sizeHint(self) -> QSize:  # noqa: N802  (Qt API name)
@@ -57,12 +69,20 @@ class ContentSizedListWidget(QListWidget):
         del parent, first, last
         self.updateGeometry()
 
+    def __row_count(self) -> int:
+        """How many rows there are to be sized by.
+
+        :returns: the model's row count, or zero while there is no model.
+        """
+        model = self.model()
+        return 0 if model is None else model.rowCount()
+
     def __rows_height(self) -> int:
         """The height this list needs to show every row it holds, with one row as the floor.
 
         :returns: the rows' total height plus the frame and any horizontal scrollbar.
         """
-        heights = [self.sizeHintForRow(row) for row in range(self.count())]
+        heights = [self.sizeHintForRow(row) for row in range(self.__row_count())]
         if heights:
             self.__row_height = heights[0]
         else:

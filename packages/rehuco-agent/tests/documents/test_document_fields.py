@@ -339,8 +339,7 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
     * verify the measured count reached the row, without touching the stored one
     """
     settings = shared_reference_images_settings()
-    settings.use_custom_extensions = True
-    settings.custom_extensions = "bmp, tif"
+    settings.extensions = ("bmp", "tif")
     enumerate_content_images = mocker.patch(
         "rehuco_agent.documents.document_fields.enumerate_content_images",
         return_value=[object(), object()],

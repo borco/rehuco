@@ -18,9 +18,13 @@
         <file alias="icons/expand_minus.svg">../../../../design/icons/expand_minus.svg</file>
         <file alias="icons/expand_plus.svg">../../../../design/icons/expand_plus.svg</file>
         <file alias="icons/items_add.svg">../../../../design/icons/items_add.svg</file>
+        <file alias="icons/items_bottom.svg">../../../../design/icons/items_bottom.svg</file>
         <file alias="icons/items_delete.svg">../../../../design/icons/items_delete.svg</file>
+        <file alias="icons/items_down.svg">../../../../design/icons/items_down.svg</file>
         <file alias="icons/items_edit.svg">../../../../design/icons/items_edit.svg</file>
         <file alias="icons/items_restore.svg">../../../../design/icons/items_restore.svg</file>
+        <file alias="icons/items_top.svg">../../../../design/icons/items_top.svg</file>
+        <file alias="icons/items_up.svg">../../../../design/icons/items_up.svg</file>
         <file alias="icons/lightbox_list.svg">../../../../design/icons/lightbox_list.svg</file>
         <file alias="icons/lightbox_next.svg">../../../../design/icons/lightbox_next.svg</file>
         <file alias="icons/lightbox_prev.svg">../../../../design/icons/lightbox_prev.svg</file>

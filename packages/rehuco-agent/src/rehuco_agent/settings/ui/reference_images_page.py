@@ -5,27 +5,31 @@ from typing import Final
 from PySide6.QtWidgets import QWidget
 from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
+from ...string_list_editor_icons import apply_string_list_editor_icons
 from ..persistent_settings import persistent_settings
-from ..reference_images_settings import format_extensions, shared_reference_images_settings
+from ..reference_images_settings import normalize_extensions, shared_reference_images_settings
 from .reference_images_page_ui import Ui_ReferenceImagesPage
 
 
 class ReferenceImagesPage(QWidget):
     """Choose the image extensions recognized inside a reference-images resource's archive(s) (#222).
 
-    A Default/Custom radio pair: **Default** shows core's set beside it -- written into the label from
-    :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS` rather than restated in the ``.ui``, and selectable so
-    it can be copied into the custom list as a starting point -- and **Custom** holds a comma-separated
-    list of the user's own, enabled only while it is the selected choice. Both halves are staged until
-    :meth:`save_changes` pushes them into the shared `ReferenceImagesSettings` and persists them; from
-    then on the pair's *effective* set (``content_image_extensions``) is what every subsequent
-    enumeration reads ([[data-model#resource-scoping]]). Nothing re-counts on its own -- a count is only
-    ever filled by an explicit action -- so this page has no live-update wiring to drive.
+    One `StringListEditor` and nothing else (#231). It replaced a Default/Custom radio pair, and the
+    reason the pair could go is that the empty-list fallback already says what Default said: a list naming
+    nothing resolves to :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`, and Reset fills the list with that
+    same set when the user wants it as a starting point. Two controls for one question, where one of them
+    only ever greyed the other out, is what the pair actually amounted to. The page is now shaped exactly
+    like its neighbour `ExcludedFilesPage`, which is the point of sharing the widget.
 
-    The custom text is kept verbatim, saved or dropped alongside the radio choice whether or not Custom
-    is selected -- switching back to Default never costs a retyped list. Normalization (dots optional,
-    case and whitespace ignored, empties and duplicates dropped, an empty list resolving to the default
-    set) happens where the effective set is read, not against the user's typing.
+    Edits are staged in the editor until :meth:`save_changes` pushes them into the shared
+    `ReferenceImagesSettings` and persists them; from then on that set is what every subsequent
+    enumeration reads ([[data-model#resource-scoping]]). Nothing re-counts on save -- a count is only ever
+    filled by an explicit action -- so this page has no live-update wiring to drive.
+
+    Saving normalizes: a leading dot is optional, case and surrounding whitespace are ignored, blanks and
+    duplicates are dropped, and an emptied list resolves to the shipped set. That rule lives in
+    `ReferenceImagesSettings`, not in the editor, which holds whatever was typed; the page reloads itself
+    from the saved result afterwards, so what it shows is always what an enumeration would actually match.
 
     :param parent: optional Qt parent.
     """
@@ -34,8 +38,8 @@ class ReferenceImagesPage(QWidget):
         super().__init__(parent)
         self.__ui: Final = Ui_ReferenceImagesPage()
         self.__ui.setupUi(self)
-        self.__ui.default_extensions_label.setText(format_extensions(CONTENT_IMAGE_EXTENSIONS))
-        self.__ui.custom_radio_button.toggled.connect(self.__ui.custom_extensions_edit.setEnabled)
+        self.__ui.extensions_editor.defaults = CONTENT_IMAGE_EXTENSIONS
+        apply_string_list_editor_icons(self.__ui.extensions_editor)
 
         self.drop_changes()
 
@@ -45,27 +49,22 @@ class ReferenceImagesPage(QWidget):
         return "Reference Images"
 
     def is_dirty(self) -> bool:
-        """Whether the staged choice or the staged custom text differs from the shared settings'."""
-        settings = shared_reference_images_settings()
-        return (
-            self.__ui.custom_radio_button.isChecked() != settings.use_custom_extensions
-            or self.__ui.custom_extensions_edit.text() != settings.custom_extensions
-        )
+        """Whether the staged list differs from the set the shared settings resolve to."""
+        return self.__ui.extensions_editor.values != shared_reference_images_settings().content_image_extensions
 
     def save_changes(self) -> None:
-        """Push the staged choice and custom text into the shared settings object and persist them."""
+        """Push the staged list into the shared settings object, persist it, and show the result.
+
+        The editor is refilled from the saved set afterwards rather than left as typed: normalization can
+        change it -- ``JPG`` becomes ``.jpg``, a blank or duplicated entry is dropped, and emptying the
+        list restores the shipped formats -- and a page still showing what was typed would disagree with
+        what every enumeration matches.
+        """
         settings = shared_reference_images_settings()
-        settings.use_custom_extensions = self.__ui.custom_radio_button.isChecked()
-        settings.custom_extensions = self.__ui.custom_extensions_edit.text()
+        settings.extensions = normalize_extensions(self.__ui.extensions_editor.values)
         settings.save(persistent_settings())
+        self.drop_changes()
 
     def drop_changes(self) -> None:
-        """Discard the staged edits, reverting both the radio choice and the custom text -- the custom
-        list is restored even while Default is the selected choice."""
-        settings = shared_reference_images_settings()
-        if settings.use_custom_extensions:
-            self.__ui.custom_radio_button.setChecked(True)
-        else:
-            self.__ui.default_radio_button.setChecked(True)
-        self.__ui.custom_extensions_edit.setText(settings.custom_extensions)
-        self.__ui.custom_extensions_edit.setEnabled(settings.use_custom_extensions)
+        """Discard the staged edits, refilling the editor from the shared settings' effective set."""
+        self.__ui.extensions_editor.values = shared_reference_images_settings().content_image_extensions

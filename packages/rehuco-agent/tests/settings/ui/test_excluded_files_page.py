@@ -3,8 +3,8 @@
 from collections.abc import Iterator
 from typing import Any
 
+from borco_pyside.widgets import StringListEditor
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QListWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -78,14 +78,22 @@ def page_ui(page: ExcludedFilesPage) -> Any:
     return page._ExcludedFilesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def listed_patterns(page: ExcludedFilesPage) -> list[str]:
+def patterns_editor(page: ExcludedFilesPage) -> StringListEditor:
+    """The page's pattern list editor.
+
+    :param page: the page to reach into.
+    :returns: the `StringListEditor` holding the junk-file globs.
+    """
+    return page_ui(page).patterns_editor
+
+
+def listed_patterns(page: ExcludedFilesPage) -> tuple[str, ...]:
     """The patterns the page currently shows, in order.
 
     :param page: the page to read.
-    :returns: every row's text.
+    :returns: every entry's text.
     """
-    widget = page_ui(page).patterns_list
-    return [widget.item(row).text() for row in range(widget.count())]
+    return patterns_editor(page).values
 
 
 # endregion
@@ -104,7 +112,7 @@ def test_starts_on_the_shipped_defaults_on_a_fresh_install(qtbot: QtBot) -> None
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
 
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS)
+    assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
     assert page.is_dirty() is False
 
 
@@ -158,214 +166,72 @@ def test_restores_the_saved_patterns(qtbot: QtBot) -> None:
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
 
-    assert listed_patterns(page) == ["*.tmp", "Thumbs.db"]
+    assert listed_patterns(page) == ("*.tmp", "Thumbs.db")
     assert page.is_dirty() is False
 
 
 # endregion
 
-# region add, edit, remove
+# region the list editor
 
 
-def test_add_appends_the_typed_pattern_and_clears_the_field(qtbot: QtBot) -> None:
-    """Add takes the typed pattern, appends it, and leaves the field ready for the next one.
-
-    **Test steps:**
-
-    * build the page, type ``*.tmp`` and click Add
-    * verify the pattern was appended, the field is empty, and the page is dirty
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.new_pattern_edit.setText("*.tmp")
-
-    ui.add_button.click()
-
-    assert listed_patterns(page) == [*EXCLUDED_FILE_PATTERNS, "*.tmp"]
-    assert ui.new_pattern_edit.text() == ""
-    assert page.is_dirty() is True
-
-
-def test_pressing_enter_in_the_field_adds_the_pattern(qtbot: QtBot) -> None:
-    """Typing and pressing Enter is the same gesture as clicking Add.
-
-    **Test steps:**
-
-    * build the page, type ``*.tmp`` into the field and press Enter
-    * verify the pattern was appended
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.new_pattern_edit.setText("*.tmp")
-
-    ui.new_pattern_edit.returnPressed.emit()
-
-    assert listed_patterns(page) == [*EXCLUDED_FILE_PATTERNS, "*.tmp"]
-
-
-def test_pressing_enter_with_nothing_typed_adds_nothing(qtbot: QtBot) -> None:
-    """Enter in an empty field is a gesture the field cannot refuse, so Add itself has to.
-
-    **Test steps:**
-
-    * build the page and press Enter with the field blank
-    * verify the list is unchanged and the page is still clean
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
-    page_ui(page).new_pattern_edit.returnPressed.emit()
-
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS)
-    assert page.is_dirty() is False
-
-
-def test_add_is_disabled_for_a_blank_or_duplicate_pattern(qtbot: QtBot) -> None:
-    """Nothing to add, or already listed under some casing, means the button is off.
-
-    **Test steps:**
-
-    * build the page and verify Add is disabled with the field empty
-    * type whitespace, then an existing pattern in another casing, and verify it stays disabled
-    * type a new pattern and verify it enables
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-
-    assert ui.add_button.isEnabled() is False
-
-    ui.new_pattern_edit.setText("   ")
-    assert ui.add_button.isEnabled() is False
-
-    ui.new_pattern_edit.setText("THUMBS.DB")
-    assert ui.add_button.isEnabled() is False
-
-    ui.new_pattern_edit.setText("*.tmp")
-    assert ui.add_button.isEnabled() is True
-
-
-def test_remove_drops_the_selected_pattern(qtbot: QtBot) -> None:
-    """Remove takes out the selected row and nothing else.
-
-    **Test steps:**
-
-    * build the page and select the first row
-    * click Remove
-    * verify that pattern is gone and the rest are untouched
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.patterns_list.setCurrentRow(0)
-
-    ui.remove_button.click()
-
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS[1:])
-
-
-def test_edit_opens_the_selected_row_for_editing(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Edit starts the same in-place edit a double-click does, on the selected row.
-
-    **Test steps:**
-
-    * build the page, select the second row and spy on the list's ``editItem``
-    * click Edit
-    * verify the selected item was the one handed to ``editItem``
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.patterns_list.setCurrentRow(1)
-    edit_item = mocker.patch.object(QListWidget, "editItem")
-
-    ui.edit_button.click()
-
-    edit_item.assert_called_once_with(ui.patterns_list.item(1))
-
-
-def test_edit_and_remove_do_nothing_without_a_selection(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Both act on a selected row, so a click arriving without one is a no-op rather than a crash.
-
-    **Test steps:**
-
-    * build the page and clear the selection
-    * fire both actions' ``triggered`` signals directly, past their disabled state
-    * verify no edit was started and the list is unchanged
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.patterns_list.setCurrentRow(-1)
-    edit_item = mocker.patch.object(QListWidget, "editItem")
-
-    ui.edit_button.defaultAction().triggered.emit()
-    ui.remove_button.defaultAction().triggered.emit()
-
-    edit_item.assert_not_called()
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS)
-
-
-def test_edit_and_remove_are_disabled_without_a_selection(qtbot: QtBot) -> None:
-    """Both act on the selected row, so both are off until there is one.
-
-    **Test steps:**
-
-    * build the page and verify Edit and Remove start disabled
-    * select a row and verify both enable
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-
-    assert ui.edit_button.isEnabled() is False
-    assert ui.remove_button.isEnabled() is False
-
-    ui.patterns_list.setCurrentRow(0)
-
-    assert ui.edit_button.isEnabled() is True
-    assert ui.remove_button.isEnabled() is True
-
-
-def test_patterns_are_editable_in_place(qtbot: QtBot) -> None:
-    """Editing is retyping a row, so every row carries the editable flag a double-click needs.
-
-    **Test steps:**
-
-    * build the page
-    * verify every row is flagged editable
-    * retype the first row and verify the page went dirty
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    widget = page_ui(page).patterns_list
-
-    assert all(widget.item(row).flags() & Qt.ItemFlag.ItemIsEditable for row in range(widget.count()))
-
-    widget.item(0).setText("*.partial")
-
-    assert listed_patterns(page)[0] == "*.partial"
-    assert page.is_dirty() is True
-
-
-def test_restore_defaults_brings_the_shipped_list_back(qtbot: QtBot) -> None:
-    """A user who emptied the list has no other way back, so the button is the way (#226).
+def test_the_editor_restores_the_shipped_patterns_not_an_empty_list(qtbot: QtBot) -> None:
+    """Reset is a user who emptied the list's only way back, so it restores what the app ships (#226).
 
     **Test steps:**
 
     * seed the shared settings with one pattern of the user's own and build the page
-    * click Restore Defaults
+    * fire the editor's Reset action
     * verify the shipped patterns are listed
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
 
-    page_ui(page).restore_defaults_button.click()
+    patterns_editor(page).item_actions.reset_action.trigger()
 
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS)
+    assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
+
+
+def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
+    """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
+
+    **Test steps:**
+
+    * build the page
+    * verify all eight of the editor's actions carry an icon
+    """
+    page = ExcludedFilesPage()
+    qtbot.addWidget(page)
+    editor = patterns_editor(page)
+
+    actions = (
+        editor.item_actions.insert_action,
+        editor.item_actions.edit_action,
+        editor.item_actions.delete_action,
+        editor.item_actions.reset_action,
+        editor.ordering_actions.move_to_top_action,
+        editor.ordering_actions.move_up_action,
+        editor.ordering_actions.move_down_action,
+        editor.ordering_actions.move_to_bottom_action,
+    )
+    assert [action.icon().isNull() for action in actions] == [False] * 8
+
+
+def test_editing_the_list_makes_the_page_dirty(qtbot: QtBot) -> None:
+    """Whatever the editor holds is what Save would write, so a change to it is a change to the page.
+
+    **Test steps:**
+
+    * build the page and drop a pattern out of the editor
+    * verify the page went dirty
+    """
+    page = ExcludedFilesPage()
+    qtbot.addWidget(page)
+
+    patterns_editor(page).values = EXCLUDED_FILE_PATTERNS[1:]
+
+    assert page.is_dirty() is True
 
 
 # endregion
@@ -380,16 +246,13 @@ def test_save_pushes_the_staged_patterns_and_persists_them(
 
     **Test steps:**
 
-    * build the page, remove every shipped pattern and add one of the user's own
+    * build the page and replace every shipped pattern with one of the user's own
     * call ``save_changes``
     * verify the shared settings hold it, the page is clean, and a fresh load agrees
     """
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.patterns_list.clear()
-    ui.new_pattern_edit.setText("*.tmp")
-    ui.add_button.click()
+    patterns_editor(page).values = ("*.tmp",)
 
     page.save_changes()
 
@@ -406,67 +269,62 @@ def test_saving_an_emptied_list_restores_the_defaults_on_screen(qtbot: QtBot) ->
 
     **Test steps:**
 
-    * build the page and clear every row
+    * build the page and empty the editor
     * call ``save_changes``
     * verify the shipped defaults are both in force and back on screen, and the page is clean
     """
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
-    page_ui(page).patterns_list.clear()
+    patterns_editor(page).values = ()
 
     page.save_changes()
 
     assert shared_excluded_files_settings().excluded_file_patterns == EXCLUDED_FILE_PATTERNS
-    assert listed_patterns(page) == list(EXCLUDED_FILE_PATTERNS)
+    assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
     assert page.is_dirty() is False
 
 
 def test_saving_normalizes_blanks_and_duplicates_on_screen(qtbot: QtBot) -> None:
-    """A blanked or duplicated row is dropped on save, and the page is reloaded so it shows that.
+    """A blanked or duplicated entry is dropped on save, and the page is reloaded so it shows that.
+
+    Normalizing is the settings object's, not the editor's -- the editor holds what was typed (#231).
 
     **Test steps:**
 
-    * build the page over a single pattern, blank one row and duplicate another
+    * build the page over a pair of patterns, then stage a blank and a duplicate
     * call ``save_changes``
     * verify what was saved and what is shown are the same de-duplicated list
     """
     shared_excluded_files_settings().patterns = ("*.tmp", "Thumbs.db")
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
-    widget = page_ui(page).patterns_list
-    widget.item(1).setText("")
-    widget.addItem("*.tmp")
+    patterns_editor(page).values = ("*.tmp", "", "*.tmp")
 
     page.save_changes()
 
     assert shared_excluded_files_settings().patterns == ("*.tmp",)
-    assert listed_patterns(page) == ["*.tmp"]
+    assert listed_patterns(page) == ("*.tmp",)
     assert page.is_dirty() is False
 
 
 def test_drop_changes_reverts_the_staged_list(qtbot: QtBot) -> None:
-    """``drop_changes`` refills the list from the shared settings -- a revert, not a no-op.
+    """``drop_changes`` refills the editor from the shared settings -- a revert, not a no-op.
 
     **Test steps:**
 
     * seed the shared settings with two patterns and build the page
-    * remove one, add another, and type into the entry field
+    * stage a different list entirely
     * call ``drop_changes``
-    * verify the seeded pair is back, the field is empty, and the page is clean
+    * verify the seeded pair is back and the page is clean
     """
     shared_excluded_files_settings().patterns = ("*.tmp", "Thumbs.db")
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
-    ui = page_ui(page)
-    ui.patterns_list.takeItem(0)
-    ui.new_pattern_edit.setText("*.partial")
-    ui.add_button.click()
-    ui.new_pattern_edit.setText("half-typed")
+    patterns_editor(page).values = ("*.partial",)
 
     page.drop_changes()
 
-    assert listed_patterns(page) == ["*.tmp", "Thumbs.db"]
-    assert ui.new_pattern_edit.text() == ""
+    assert listed_patterns(page) == ("*.tmp", "Thumbs.db")
     assert page.is_dirty() is False
 
 
@@ -521,55 +379,6 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None
             )
         heights = (ui.structural_note_label.height(), ui.patterns_note_label.height())
         assert first_seen.setdefault(width, heights) == heights, f"heights ratcheted at page width {width}"
-
-
-def test_the_pattern_list_grows_with_its_rows_instead_of_scrolling_them(qtbot: QtBot) -> None:
-    """The list is sized to its patterns, so the page scrolls rather than the list inside it (#229).
-
-    A list that scrolls inside a page that scrolls is two vertical scrollbars, and a list the user has
-    to scroll *to* before they can scroll *in*.
-
-    **Test steps:**
-
-    * build the page and add twenty patterns to its list
-    * verify the list asked for more height and never grew a scrollbar of its own
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    listing = page_ui(page).patterns_list
-    before = listing.sizeHint().height()
-
-    for index in range(20):
-        listing.addItem(f"*.extra{index}")
-
-    assert listing.sizeHint().height() > before
-    assert listing.verticalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-
-
-def test_the_pattern_list_stays_at_the_top_of_its_frame_however_short_it_is(qtbot: QtBot) -> None:
-    """A short list sits under its title, not floating in the middle of the frame (#229).
-
-    The list is sized to its rows, so it is shorter than the button column it shares its grid span
-    with -- and a layout centres a short item in its span unless told otherwise.
-
-    **Test steps:**
-
-    * show the page, then empty the list and refill it
-    * verify its top edge lines up with the first tool button's at both lengths
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    ui = page_ui(page)
-    page.resize(600, 700)
-    page.show()
-
-    for patterns in ((), ("*.tmp", "*.bak", "*.log")):
-        ui.patterns_list.clear()
-        ui.patterns_list.addItems(patterns)
-        ui.main_layout.activate()
-        assert ui.patterns_list.geometry().top() == ui.edit_button.geometry().top(), (
-            f"list not top-aligned with {len(patterns)} patterns"
-        )
 
 
 def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:

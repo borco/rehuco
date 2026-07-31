@@ -1,57 +1,50 @@
 """Which archive entries count as a reference-images resource's content ([[data-model#image-meanings]], #222).
 
 `rehuco_core.rehu_content_images.enumerate_content_images` takes the recognized image extensions as a
-parameter rather than reading a constant, so this is where that set comes from. The choice is a pair of
-radio buttons on the settings page: **Default** uses core's
-:data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS` (never restated here), **Custom** uses a user-typed
-comma-separated list -- a reference pack in a format the default set omits (``.bmp``, ``.tif``, ``.tga``,
-``.psd``) would otherwise count zero images with no recourse but a rebuild. Both halves of the choice
-persist: the custom text survives a switch back to Default, so trying the defaults again doesn't cost a
-retyped list. Readers ask :attr:`ReferenceImagesSettings.content_image_extensions` for the effective set
-and never look at the raw pair.
+parameter rather than reading a constant, so this is where that set comes from: one editable list, shown
+by the `Plugins > Reference Images` settings page. A pack in a format the shipped set omits (``.bmp``,
+``.tif``, ``.tga``, ``.psd``) is a preference change rather than a rebuild. Readers ask
+:attr:`ReferenceImagesSettings.content_image_extensions` and never read the stored list directly -- one
+naming nothing resolves to :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`, so a list left empty never makes
+every reference-images resource count zero images.
 
 A plain ``@dataclass``, unlike `ImageViewerSettings`: that one earns ``SimpleProperty`` because applying it
 visibly resizes strips already on screen, whereas this set is read only when an enumeration runs, so there
-is nothing to watch it change. Same shape as `IdentitySettings`, and for the same reason.
+is nothing to watch it change. Same shape as `ExcludedFilesSettings`, and for the same reason.
 """
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Final, cast
+from typing import Final
 
 from PySide6.QtCore import QSettings
 from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
-from .persistent_settings import persistent_settings
+from .persistent_settings import persistent_settings, read_stored_strings
 
 GROUP: Final = "reference_images"
-USE_CUSTOM_EXTENSIONS_KEY: Final = "use_custom_extensions"
-CUSTOM_EXTENSIONS_KEY: Final = "custom_extensions"
-
-SEPARATOR: Final = ","
-"""What separates one extension from the next, in the custom list as typed and as stored -- the list is
-edited as one comma-separated string, so it goes through :func:`parse_extensions` on every read and
-:func:`format_extensions` when a set is shown as text."""
+EXTENSIONS_KEY: Final = "extensions"
 
 
-def parse_extensions(text: str) -> tuple[str, ...]:
-    """Parse a comma-separated extension list into the form the enumeration matches against.
+def normalize_extensions(values: Sequence[str]) -> tuple[str, ...]:
+    """Normalize an extension list into the form the enumeration matches against.
 
     Surrounding whitespace is ignored and a leading dot is optional, so ``jpg``, ``.jpg`` and ``  JPG ``
     all mean the same entry: every entry normalizes to lower case with exactly one leading dot. Empty
-    entries and duplicates are dropped rather than rejected, keeping a trailing comma or a repeated
-    format from being an error the user has to fix.
+    entries and duplicates are dropped rather than rejected, keeping a blank row or a repeated format
+    from being an error the user has to fix.
 
-    Text holding no usable entry at all -- empty, whitespace, or nothing but separators -- falls back to
-    :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`: a custom list naming nothing must not silently make
-    every reference-images resource count zero images.
+    A list holding no usable entry at all -- empty, or nothing but whitespace and bare dots -- falls back
+    to :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`: a list left empty must not silently make every
+    reference-images resource count zero images.
 
-    :param text: the raw list as typed or as stored.
+    :param values: the entries as edited or as stored.
     :returns: the recognized extensions, lower-cased and dot-prefixed, in the order first seen, or the
-        default set when ``text`` names none.
+        shipped set when ``values`` names none.
     """
     extensions: list[str] = []
-    for entry in text.split(SEPARATOR):
+    for entry in values:
         stem = entry.strip().lstrip(".").lower()
         if not stem:
             continue
@@ -61,63 +54,59 @@ def parse_extensions(text: str) -> tuple[str, ...]:
     return tuple(extensions) or CONTENT_IMAGE_EXTENSIONS
 
 
-def format_extensions(extensions: tuple[str, ...]) -> str:
-    """Format an extension set the way a custom list is typed: comma-separated, dots kept.
+def read_extensions(value: object) -> tuple[str, ...]:
+    """Coerce the stored value into the entry list it was saved as.
 
-    :param extensions: the extensions to format, as :func:`parse_extensions` returns them.
-    :returns: e.g. ``".jpg, .jpeg, .png"`` -- what :func:`parse_extensions` reads back unchanged.
+    Reading the stored shape at all -- including the ini backend's habit of handing a single-element
+    list back as a bare string -- is
+    :func:`~rehuco_agent.settings.persistent_settings.read_stored_strings`'s job; all this adds is
+    dropping a blank entry, which is a row the editor would show as nothing.
+
+    :param value: the raw stored value.
+    :returns: the entries, otherwise as typed.
     """
-    return f"{SEPARATOR} ".join(extensions)
+    return tuple(entry for entry in read_stored_strings(value) if entry)
 
 
 @dataclass
 class ReferenceImagesSettings:
     """The reference-images plugin's own settings: today, which entries count as content images.
 
-    Both stored fields are raw: the choice between the default and the custom set, and the custom list
-    exactly as typed -- persisted verbatim, and even while Default is selected, so switching away and
-    back never loses it. What everything else consumes is :attr:`content_image_extensions`, the
-    effective set the pair resolves to.
+    One stored field, as the page left it; what everything else consumes is
+    :attr:`content_image_extensions`, the set it resolves to.
     """
 
-    use_custom_extensions: bool = False
-    """Whether the custom list is in effect. Off means core's default set, with nothing restated."""
-
-    custom_extensions: str = ""
-    """The custom comma-separated list, exactly as typed -- normalized only when read through
-    :attr:`content_image_extensions`, never in storage, so what the user typed is what they get back."""
+    extensions: tuple[str, ...] = field(default_factory=tuple)
+    """The recognized image extensions as stored -- empty on a fresh install, where the effective set is
+    the shipped one rather than nothing."""
 
     @property
     def content_image_extensions(self) -> tuple[str, ...]:
         """The effective extension set the content-image enumeration is handed
-        ([[data-model#resource-scoping]]): the parsed custom list when it is selected, core's
-        :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS` otherwise. A selected custom list naming nothing
-        usable also resolves to the default set (:func:`parse_extensions`'s fallback)."""
-        if self.use_custom_extensions:
-            return parse_extensions(self.custom_extensions)
-        return CONTENT_IMAGE_EXTENSIONS
+        ([[data-model#resource-scoping]]): :attr:`extensions` normalized, falling back to
+        :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS` when it names nothing usable
+        (:func:`normalize_extensions`)."""
+        return normalize_extensions(self.extensions)
 
     def load(self, settings: QSettings) -> None:
-        """Replace both stored fields with what's in persistent storage.
+        """Replace the stored list with what's in persistent storage.
 
-        Values that were never saved fall back to the defaults-selected, empty-custom-list state; a
-        stored custom list is restored verbatim whether or not it is the selected choice.
+        A never-saved, empty or unreadable value comes back as no entries, which resolves to the shipped
+        set rather than to no recognized formats at all (:func:`read_extensions`).
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
-        self.use_custom_extensions = cast(bool, settings.value(USE_CUSTOM_EXTENSIONS_KEY, False, type=bool))
-        self.custom_extensions = cast(str, settings.value(CUSTOM_EXTENSIONS_KEY, "", type=str))
+        self.extensions = read_extensions(settings.value(EXTENSIONS_KEY))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
-        """Save both stored fields to persistent storage -- the custom list verbatim, selected or not.
+        """Save the list to persistent storage, as a list the ini backend can round-trip.
 
         :param settings: the ``QSettings`` to write to.
         """
         settings.beginGroup(GROUP)
-        settings.setValue(USE_CUSTOM_EXTENSIONS_KEY, self.use_custom_extensions)
-        settings.setValue(CUSTOM_EXTENSIONS_KEY, self.custom_extensions)
+        settings.setValue(EXTENSIONS_KEY, list(self.extensions))
         settings.endGroup()
 
 

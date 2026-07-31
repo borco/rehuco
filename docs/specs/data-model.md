@@ -109,9 +109,9 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
 - **Which archive entries count as images is the user's to set** — the enumeration takes the recognized extension set
-  as a parameter, and the `Plugins > Reference Images` settings page (#222) supplies it — a Default/Custom choice
-  between `jpg, jpeg, png, webp, avif` and the user's own comma-separated list, with the custom list kept even
-  while the default is in effect ([[appendices.settings-pages#category-groups]]). A pack in a format the default set
+  as a parameter, and the `Plugins > Reference Images` settings page (#222) supplies it — one editable list, one
+  format per entry, starting from `jpg, jpeg, png, webp, avif` and resolving back to that shipped set whenever it names
+  nothing ([[appendices.settings-pages#category-groups]]). A pack in a format the shipped set
   omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.
 - **Counting them fills `current_count`, and only when asked** (#198) — the editor shows the measured count beside
   the stored one and stores it on an explicit apply, never on open. The two disagreeing is *information*: the archive
