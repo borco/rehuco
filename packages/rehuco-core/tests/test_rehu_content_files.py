@@ -54,9 +54,10 @@ class FakeScandir:
         return None
 
 
-def mock_tree(
+def mock_tree(  # pylint: disable=too-many-arguments
     mocker: MockerFixture,
     filenames: list[str],
+    *,
     directories: list[str] | None = None,
     unreadable: list[str] | None = None,
     irregular: list[str] | None = None,
