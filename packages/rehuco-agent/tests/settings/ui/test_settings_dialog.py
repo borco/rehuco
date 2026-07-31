@@ -993,6 +993,205 @@ def test_a_restored_show_full_page_toggle_filters_frames_from_the_start(
     assert page.frames[1].isVisibleTo(page) is True
 
 
+def test_save_filter_state_persists_the_selected_pages_title(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """:meth:`SettingsDialog.save_filter_state` stores the currently-shown page's title (#228).
+
+    **Test steps:**
+
+    * add two pages and select the second
+    * call ``save_filter_state``
+    * verify the second page's title comes back from a fresh `SettingsDialogSettings`
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry"))
+    dialog.add_page(FakePage("Markdown Rendering"))
+    select_page(dialog, "Markdown Rendering")
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.selected_page_title == "Markdown Rendering"
+
+
+def test_save_filter_state_with_a_group_row_selected_stores_the_shown_pages_title(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A group row carries no page, so what is stored is the page still *shown* in the stack -- not a
+    stale title from a previous run (#228).
+
+    **Test steps:**
+
+    * save a stale page title, then build a dialog with a grouped page (shown) and select the
+      group's own row
+    * call ``save_filter_state``
+    * verify the shown page's title is stored, replacing the stale one
+    """
+    SettingsDialogSettings(selected_page_title="Stale Page").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, "Editors"))  # type: ignore[attr-defined]
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.selected_page_title == "Descriptions"
+
+
+def test_restore_selected_page_shows_the_page_matching_the_stored_title(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored title matching a registered page selects it (#228).
+
+    **Test steps:**
+
+    * save a page title, then build a dialog and register that page second
+    * call ``restore_selected_page``
+    * verify the stack now shows that page, and its tree row is the current one
+    """
+    SettingsDialogSettings(  # type: ignore[arg-type]
+        selected_page_title="Markdown Rendering"
+    ).save(fake_persistent_settings)
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry"))
+    second = FakePage("Markdown Rendering")
+    dialog.add_page(second)
+
+    dialog.restore_selected_page()
+
+    tree = dialog_ui(dialog).category_tree  # type: ignore[attr-defined]
+    assert current_page(dialog) is second
+    assert tree.currentIndex() == visible_index(dialog, "Markdown Rendering")
+
+
+def test_restore_selected_page_finds_a_grouped_pages_title_too(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored title is found among grouped pages, not only top-level ones (#228).
+
+    **Test steps:**
+
+    * save a grouped page's title, then build a dialog registering an ungrouped page first
+    * call ``restore_selected_page``
+    * verify the stack shows the grouped page
+    """
+    SettingsDialogSettings(selected_page_title="Descriptions").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("System Integration"))
+    grouped = FakePage("Descriptions")
+    dialog.add_page(grouped, group="Editors")
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is grouped
+
+
+def test_restore_selected_page_leaves_the_first_page_when_the_stored_title_matches_nothing(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored title matching no registered page leaves the first-added page selected (#228).
+
+    **Test steps:**
+
+    * save a title naming no page this platform registers, then build a dialog with two pages
+    * call ``restore_selected_page``
+    * verify the first-added page is still shown
+    """
+    SettingsDialogSettings(selected_page_title="Registry").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Identity")
+    dialog.add_page(first)
+    dialog.add_page(FakePage("Markdown Rendering"))
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is first
+
+
+def test_restore_selected_page_leaves_the_first_page_when_nothing_was_ever_saved(qtbot: QtBot) -> None:
+    """With no stored title at all, restoring is a no-op and the first-added page stays shown (#228).
+
+    **Test steps:**
+
+    * build a dialog (nothing saved) with two pages
+    * call ``restore_selected_page``
+    * verify the first-added page is still shown
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Registry")
+    dialog.add_page(first)
+    dialog.add_page(FakePage("Markdown Rendering"))
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is first
+
+
+def test_restore_selected_page_shows_a_page_the_restored_filter_hides_from_the_tree(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored title whose page is filtered out by the restored filter text is still the page
+    shown -- the stack and the tree are separate (#228).
+
+    **Test steps:**
+
+    * save a page title together with filter text that page doesn't match
+    * build a dialog and register that page second (so it isn't the auto-selected first one)
+    * call ``restore_selected_page``
+    * verify the stack shows that page, even though its tree row stays hidden by the filter
+    """
+    SettingsDialogSettings(  # type: ignore[arg-type]
+        selected_page_title="Markdown Rendering", filter_text="regist"
+    ).save(fake_persistent_settings)
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry", [["Register"]]))
+    second = FakePage("Markdown Rendering", [["Engine"]])
+    dialog.add_page(second)
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is second
+    assert "Markdown Rendering" not in visible_titles(dialog)
+
+
+def test_a_restored_page_hidden_by_the_filter_survives_the_next_save(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """Closing right after a filtered-out restore saves the *shown* page's title, so the restored
+    selection is stable across restarts rather than decaying to whichever row the tree kept (#228).
+
+    **Test steps:**
+
+    * save a page title with filter text hiding that page's row, build a dialog, restore
+    * call ``save_filter_state`` without touching anything
+    * verify the stored title is still the restored page's
+    """
+    SettingsDialogSettings(  # type: ignore[arg-type]
+        selected_page_title="Markdown Rendering", filter_text="regist"
+    ).save(fake_persistent_settings)
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry", [["Register"]]))
+    dialog.add_page(FakePage("Markdown Rendering", [["Engine"]]))
+    dialog.restore_selected_page()
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.selected_page_title == "Markdown Rendering"
+
+
 def test_filtering_with_no_pages_registered_does_nothing(qtbot: QtBot) -> None:
     """Changing the filter or toggle with no pages registered is a no-op and doesn't raise (#67).
 

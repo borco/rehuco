@@ -89,4 +89,38 @@ def test_load_defaults_to_no_filter_and_unchecked_toggles_when_nothing_was_saved
     assert dialog_settings.show_full_group_on_title_match is False
 
 
+def test_save_then_load_round_trips_the_selected_page_title(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the selected page's title (#228).
+
+    **Test steps:**
+
+    * save a selected-page title
+    * load into a fresh instance from the same settings stand-in
+    * verify the title came back as it was saved
+    """
+    dialog_settings = SettingsDialogSettings(selected_page_title="Descriptions")
+
+    dialog_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = SettingsDialogSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.selected_page_title == "Descriptions"
+
+
+def test_load_defaults_to_no_selected_page_title_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had a selected page saved leaves the title empty (#228).
+
+    **Test steps:**
+
+    * load into a fresh (non-default) instance from an empty settings stand-in
+    * verify the selected-page title is empty
+    """
+    dialog_settings = SettingsDialogSettings(selected_page_title="Descriptions")
+
+    dialog_settings.load(settings)  # type: ignore[arg-type]
+
+    assert dialog_settings.selected_page_title == ""
+
+
 # pylint: enable=duplicate-code
