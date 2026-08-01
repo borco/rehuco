@@ -33,9 +33,12 @@ class DescriptionsPage(QWidget):
         self.__ui: Final = Ui_DescriptionsPage()
         self.__ui.setupUi(self)
 
-        # Stretch the engine frame so its CSS editor fills the page; the bottom spacer only expands
-        # when the engine frame is filtered out. Set here, not in the .ui: this pyside6-uic
-        # mistranslates a box-layout stretch property.
+        # Stretch the engine block so its CSS editor fills the page; the bottom spacer only expands
+        # when the engine block is filtered out. Set here, not in the .ui: this pyside6-uic
+        # mistranslates a box-layout stretch property. This is what "fills" means to `SettingsDialog`,
+        # which reads the stretch back at registration so it can restore it after a group column has
+        # borrowed the block ([[appendices.settings-pages#category-groups]]) -- a block taken out of a
+        # box layout leaves its stretch factor behind.
         self.__ui.main_layout.setStretch(0, 1)
 
         self.__markdown_css_draft = ""

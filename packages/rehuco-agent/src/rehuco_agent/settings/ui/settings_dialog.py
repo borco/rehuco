@@ -11,10 +11,11 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QBoxLayout, QFrame, QScrollArea, QWidget
 
 from ..persistent_settings import persistent_settings
 from ..settings_dialog_settings import SettingsDialogSettings
+from .settings_block_column import SettingsBlockColumn
 from .settings_dialog_ui import Ui_SettingsDialog
 from .settings_frame_filter import SettingsFrameFilter
 from .settings_page import SettingsPage
@@ -51,11 +52,18 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__model: Final = QStandardItemModel(self)
         self.__groups: Final[dict[str, QStandardItem]] = {}
         self.__scroll_areas: Final[dict[QWidget, QScrollArea]] = {}
-        self.__group_containers: Final[dict[str, QWidget]] = {}
+        self.__group_columns: Final[dict[str, SettingsBlockColumn]] = {}
         self.__group_scroll_areas: Final[dict[str, QScrollArea]] = {}
-        self.__pages_in_group: Final[dict[QWidget, str]] = {}
-        self.__group_headings: Final[dict[QWidget, QLabel]] = {}
-        self.__standalone_policies: Final[dict[QWidget, QSizePolicy]] = {}
+        # Where each page's blocks came from, so they can be put back exactly as the page declared
+        # them: the index each sits at in the page's own layout, and whether it is the one stretched
+        # to fill what the others leave (see __restore_blocks).
+        self.__page_blocks: Final[dict[QWidget, list[tuple[QFrame, int, bool]]]] = {}
+        self.__blank_page: Final = QWidget(self)
+        self.__ui.page_stack.addWidget(self.__blank_page)
+        # Which *source* row the stack is on. The tree's own currentIndex cannot answer this: it is a
+        # proxy index, and filtering a row out destroys it (Qt does not put it back when the row
+        # returns). The source model is never filtered, so a row taken from it stays valid throughout.
+        self.__shown_row: QStandardItem | None = None
         self.__proxy: Final = self.CategoryFilterProxyModel(self)
         self.__proxy.setSourceModel(self.__model)
         self.__ui.category_tree.setModel(self.__proxy)
@@ -86,6 +94,9 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.show_full_page_check_box.toggled.connect(self.__apply_filter_to_current_page)
         self.__ui.show_full_group_check_box.toggled.connect(self.__proxy.set_show_full_group)
         self.__ui.show_full_group_check_box.toggled.connect(self.__ui.category_tree.expandAll)
+        # last of each chain: both re-filter the tree above, and this reads the row count they leave
+        self.__ui.filter_edit.textChanged.connect(self.__sync_no_match_state)
+        self.__ui.show_full_group_check_box.toggled.connect(self.__sync_no_match_state)
 
         self.__ui.apply_all_action.triggered.connect(self.__apply_all)
         self.__ui.apply_current_page_action.triggered.connect(self.__apply_current_page)
@@ -106,8 +117,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         widget = cast(QWidget, page)
         item = QStandardItem(page.title)
         item.setData(widget, PAGE_ROLE)
-        item.setData(SettingsFrameFilter(widget, page.title), FILTER_ROLE)
+        frame_filter = SettingsFrameFilter(widget, page.title)
+        item.setData(frame_filter, FILTER_ROLE)
         item.setEditable(False)
+        self.__record_blocks(page, frame_filter)
         parent = self.__model if group is None else self.__group_item(group)
         parent.appendRow(item)
         self.__ui.page_stack.addWidget(self.__scroll_area_for(widget))
@@ -136,11 +149,28 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
 
         The stack and the tree are separate (#76): a page currently filtered out of the tree by the
         restored filter text is still the one shown here, just with no tree row to reflect it as current.
+        A restored filter matching *nothing* is the exception -- there is no tree left to be separate
+        from, so the blank page wins and this one is what comes back when the filter is loosened (#230).
         """
         if not self.__settings.selected_page_title:
             return
         if (item := self.__item_for_title(self.__settings.selected_page_title)) is None:
             return
+        self.__show_row(item)
+        self.__sync_no_match_state()
+
+    def __show_row(self, item: QStandardItem) -> None:
+        """Show ``item``'s page (or, for a group row, its stacked column) and select it in the tree.
+
+        **The one way the stack is ever driven**, so recording the row here is what makes
+        :attr:`__shown_row` true by construction rather than by everyone remembering to update it.
+
+        The tree selection is only set when the row is actually visible: a row the live filter hides
+        has no index to be current, which is the stack-and-tree separation #228 relies on.
+
+        :param item: the page or group row to show.
+        """
+        self.__shown_row = item
         if (page := item.data(PAGE_ROLE)) is not None:
             self.__show_standalone_page(cast(QWidget, page))
         else:
@@ -149,6 +179,55 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         proxy_index = self.__proxy.mapFromSource(item.index())
         if proxy_index.isValid():
             self.__ui.category_tree.setCurrentIndex(proxy_index)
+
+    def __sync_no_match_state(self, *_args: object) -> None:
+        """Show a blank page while the filter matches nothing, and put back what was showing once it
+        matches something again (#230).
+
+        A filter narrowed past its last match used to leave the previously-shown page standing beside
+        an empty tree, which reads as a page that survived a filter nothing survived. Going blank says
+        plainly that nothing matched.
+
+        Coming back has to be done by hand: Qt drops the tree's current row when the filter hides it
+        and **does not restore it** when the row reappears, so one stray keystroke would otherwise
+        leave the right-hand side empty until something was clicked. Nothing extra is remembered for
+        that -- blanking leaves :attr:`__shown_row` alone, and a *source* row survives any amount of
+        filtering, so the row to go back to is simply the one the stack was already on.
+
+        It goes back **only if the new filter still shows that row** -- a typo typed and deleted lands
+        back where it left off. Any other filter is a different question being asked, not a return to
+        the old one: pasting over ``imagesx`` with ``identity`` must not bring Images back, least of all
+        while the tree lists only Identity. In that case the first visible row is shown instead, so a
+        tree with rows in it is never left standing beside a blank page.
+
+        :param _args: the triggering signal's argument (filter text or toggle state); unused, the tree
+            is asked directly.
+        """
+        del _args
+        showing_blank = self.__ui.page_stack.currentWidget() is self.__blank_page
+        if self.__proxy.rowCount() == 0:
+            self.__ui.page_stack.setCurrentWidget(self.__blank_page)
+            return
+        if not showing_blank:
+            return
+        if self.__shown_row is not None and self.__proxy.mapFromSource(self.__shown_row.index()).isValid():
+            self.__show_row(self.__shown_row)
+            return
+        self.__show_first_visible_row()
+
+    def __show_first_visible_row(self) -> None:
+        """Show whichever row the filtered tree lists first, selecting it (#230).
+
+        The fallback for leaving a no-match filter with nowhere particular to return to. A group row
+        counts: shown, it stacks whichever of its pages the filter kept, which is as good an answer to
+        the new filter as any single page under it.
+        """
+        index = self.__proxy.index(0, 0)
+        if not index.isValid():  # pragma: no cover  (only reached with rows present)
+            return
+        item = self.__model.itemFromIndex(self.__proxy.mapToSource(index))
+        if item is not None:  # pragma: no branch  (a visible proxy row always maps to a source item)
+            self.__show_row(item)
 
     def save_filter_state(self) -> None:
         """Persist the filter text, both "show full ... if title matches" toggles, and the title of
@@ -205,127 +284,98 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         return item
 
     def __build_group_view(self, group: str) -> None:
-        """Build ``group``'s stacked-pages container and its scroll area, added to the page stack (#230).
+        """Build ``group``'s block column and its scroll area, added to the page stack (#230).
 
-        Created once, on the group's first page -- pages join the container later, when the group's row
-        becomes current (:meth:`__show_group`), the same lazy split ``__group_item``/``add_page``
-        already uses between a group's tree row and its pages.
+        Created once, on the group's first page -- the blocks themselves join it later, when the
+        group's row becomes current (:meth:`__show_group`), the same lazy split
+        ``__group_item``/``add_page`` already uses between a group's tree row and its pages.
 
         :param group: the group's title.
         """
-        container = QWidget(self)
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addStretch()
-        self.__group_containers[group] = container  # pylint: disable=unsupported-assignment-operation
+        column = SettingsBlockColumn(self)
+        self.__group_columns[group] = column  # pylint: disable=unsupported-assignment-operation
         area = QScrollArea(self)
         area.setWidgetResizable(True)
         area.setFrameShape(QFrame.Shape.NoFrame)
-        area.setWidget(container)
+        area.setWidget(column)
         self.__group_scroll_areas[group] = area  # pylint: disable=unsupported-assignment-operation
         self.__ui.page_stack.addWidget(area)
 
-    def __show_group(self, group_item: QStandardItem) -> None:
-        """Show every page under ``group_item``, stacked in tree order in one scrolling column (#230).
+    def __record_blocks(self, page: SettingsPage, frame_filter: SettingsFrameFilter) -> None:
+        """Note where ``page``'s blocks sit in its own layout, so they can be put back there (#230).
 
-        Rebuilds the whole column on every call -- every page is re-homed, not just the ones not
-        already there. Skipping already-homed pages here left them in place while a page rejoining
-        after its own leaf row was selected got appended after them regardless of its tree position,
-        so a middle or first page that had been viewed standalone came back at the *end* of the
-        column instead of its own spot. Re-homing every page keeps the column in tree order no
-        matter what was individually selected in between.
+        Read once, at registration, while the page is still exactly as its ``.ui`` built it. A block's
+        index is its position among the page's own layout items, and it *fills* when the page stretched
+        it -- the one block, if any, that takes the height the others leave (`DescriptionsPage`'s CSS
+        editor is the only one today). Both have to be captured before a group column ever borrows the
+        blocks, because taking a widget out of a box layout drops the stretch factor with it.
+
+        :param page: the page being registered.
+        :param frame_filter: that page's filter, which already discovered its blocks.
+        """
+        widget = cast(QWidget, page)
+        layout = widget.layout()
+        if not isinstance(layout, QBoxLayout):  # pragma: no cover  (every page's root is a box layout)
+            return
+        items = [layout.itemAt(index) for index in range(layout.count())]
+        indexes = {item.widget(): index for index, item in enumerate(items) if item is not None}
+        self.__page_blocks[widget] = [  # pylint: disable=unsupported-assignment-operation
+            (block, index, layout.stretch(index) > 0)
+            for block in frame_filter.blocks()
+            if (index := indexes.get(block)) is not None
+        ]
+
+    def __show_group(self, group_item: QStandardItem) -> None:
+        """Show the blocks of every page under ``group_item``, in tree order, in one column (#230).
+
+        The column takes each page's *blocks*, not the page widget: a page's own layout is written for
+        being shown alone, and stacking three of them let each one's trailing spacer claim a share of
+        the height (see `SettingsBlockColumn`).
+
+        Rebuilt on every showing, since a page shown on its own in between will have taken its blocks
+        back.
 
         :param group_item: the group's (page-less) tree row.
         """
         group = group_item.text()
+        sections: list[tuple[str, list[QFrame]]] = []
         for row in range(group_item.rowCount()):
-            self.__move_into_group(group_item.child(row), group)
+            page = cast(SettingsPage, group_item.child(row).data(PAGE_ROLE))
+            blocks = [block for block, _, _ in self.__page_blocks.get(cast(QWidget, page), [])]
+            sections.append((page.title, blocks))
+        self.__group_columns[group].set_sections(sections)
         self.__ui.page_stack.setCurrentWidget(self.__group_scroll_areas[group])
 
-    def __move_into_group(self, item: QStandardItem, group: str) -> None:
-        """Place ``item``'s page at the end of ``group``'s stacked column.
+    def __restore_blocks(self, widget: QWidget) -> None:
+        """Put ``widget``'s blocks back into its own layout, exactly where the page declared them (#230).
 
-        Detaches it first from wherever it currently is -- its own scroll area, or already this same
-        column from an earlier showing (:meth:`__ensure_standalone` handles both, the second case
-        being a no-op only when the page never left). Called for every page on every
-        :meth:`__show_group`, in tree order, so the column always ends up in tree order however it
-        got there. A heading label carrying the page's title is inserted right above it -- the tree
-        selection no longer names which page is which once several are stacked together. **A widget
-        can only have one parent**, so this is always detach-then-attach, never a second layout
-        holding the same widget alongside its own scroll area.
+        A no-op unless a group column currently holds them. Re-inserted in ascending index so each
+        lands at its own position, and the page's stretch is re-applied: a box layout keeps stretch by
+        item, so a block taken out and put back comes home with that forgotten -- which for
+        `DescriptionsPage` is the difference between a CSS editor that fills the page and one squeezed
+        to a couple of rows.
 
-        :param item: the tree row whose page to place.
-        :param group: ``item``'s group -- passed rather than re-derived, since the caller already has it.
+        :param widget: the page widget to restore.
         """
-        page = cast(SettingsPage, item.data(PAGE_ROLE))
-        widget = cast(QWidget, page)
-        self.__ensure_standalone(widget)
-        self.__scroll_areas[widget].takeWidget()
-        container = self.__group_containers[group]
-        heading = QLabel(page.title, container)
-        heading_font = heading.font()
-        heading_font.setBold(True)
-        heading.setFont(heading_font)
-        layout = cast(QVBoxLayout, container.layout())
-        # the trailing stretch (added once, in __build_group_view) is always the layout's last item --
-        # inserting each new heading/page pair just before it keeps pages in tree order and top-aligned.
-        layout.insertWidget(layout.count() - 1, heading)
-        layout.insertWidget(layout.count() - 1, widget)
-        self.__pages_in_group[widget] = group  # pylint: disable=unsupported-assignment-operation
-        self.__group_headings[widget] = heading  # pylint: disable=unsupported-assignment-operation
-        self.__stack_vertically(widget)
-
-    def __stack_vertically(self, widget: QWidget) -> None:
-        """Cap ``widget`` at the height it asks for, so the column packs from the top (#230).
-
-        A page is built to *fill* a scroll area on its own -- every one ends its layout with a vertical
-        spacer ([[appendices.settings-pages#adding-a-page]]) so its frames sit at the top of a viewport
-        taller than they are. Stacked, that same spacer is what spreads three pages down a column with
-        gaps between them: the pages keep the default ``Preferred``, which grows past the size hint, so
-        the surplus is shared out among them instead of all going to the column's trailing stretch.
-        ``Maximum`` is ``Preferred`` without the grow flag -- the page can still shrink, it just cannot
-        take more than it asked for.
-
-        The height is asked for **by width** (``setHeightForWidth``), not read off a plain size hint: a
-        page holding a wrapping paragraph has no one height, and hinting one is what painted a note past
-        its frame in #226 (fixed in #229 -- the same "declared, not hinted" lesson as #70). The original
-        policy is kept so :meth:`__ensure_standalone` can put the page back the way it was built.
-
-        :param widget: the page widget now living in a group column.
-        """
-        self.__standalone_policies[widget] = QSizePolicy(widget.sizePolicy())  # pylint: disable=unsupported-assignment-operation
-        stacked = QSizePolicy(widget.sizePolicy())
-        stacked.setVerticalPolicy(QSizePolicy.Policy.Maximum)
-        stacked.setHeightForWidth(True)
-        widget.setSizePolicy(stacked)
-
-    def __ensure_standalone(self, widget: QWidget) -> None:
-        """Re-parent ``widget`` back into its own scroll area, if a group view currently holds it (#230).
-
-        A no-op for a page that was never stacked into a group (the common case) -- `__pages_in_group`
-        only ever holds a page while its group's stacked view is the one last shown.
-
-        :param widget: the page widget to detach from its group, if any.
-        """
-        if (group := self.__pages_in_group.pop(widget, None)) is None:
+        layout = widget.layout()
+        if not isinstance(layout, QBoxLayout):  # pragma: no cover  (every page's root is a box layout)
             return
-        layout = cast(QVBoxLayout, self.__group_containers[group].layout())
-        heading = self.__group_headings.pop(widget)
-        layout.removeWidget(heading)
-        heading.deleteLater()
-        layout.removeWidget(widget)
-        widget.setSizePolicy(self.__standalone_policies.pop(widget))
-        # a page the filter emptied was hidden along with its heading (__apply_filter); shown on its
-        # own it is the only thing there, so it comes back visible however little it currently shows
-        widget.setVisible(True)
-        self.__scroll_areas[widget].setWidget(widget)
+        for block, index, fills in self.__page_blocks.get(widget, []):
+            if (owner := block.parentWidget()) is widget:
+                continue
+            # a borrowed block is always in a group column's layout -- nothing else ever holds one
+            if owner is not None and (owner_layout := owner.layout()) is not None:  # pragma: no branch
+                owner_layout.removeWidget(block)
+            layout.insertWidget(index, block)
+            if fills:
+                layout.setStretch(index, 1)
 
     def __show_standalone_page(self, widget: QWidget) -> None:
         """Show ``widget``'s own scroll area in the stack, pulling it out of a group view first if needed.
 
         :param widget: the page widget to show on its own.
         """
-        self.__ensure_standalone(widget)
+        self.__restore_blocks(widget)
         self.__ui.page_stack.setCurrentWidget(self.__scroll_areas[widget])
 
     def __item_for_title(self, title: str) -> QStandardItem | None:
@@ -389,16 +439,12 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """The title of the page or group the stack is currently showing, or ``None`` while nothing
         is registered (#228, #230).
 
-        Distinct from :meth:`__current_pages` (the tree's selected row): the two diverge when the
-        shown page's row is hidden by the live filter (#228).
+        Read off :attr:`__shown_row` rather than the widget in the stack, so it holds a title for the
+        blank page too: what that blank stands in for is the row it will return to, which is what the
+        next launch should restore (#230). Distinct from :meth:`__current_pages` (the tree's *selected*
+        row): the two diverge whenever the live filter hides the shown row (#228).
         """
-        area = self.__ui.page_stack.currentWidget()
-        if area is None:
-            return None
-        for group, group_area in self.__group_scroll_areas.items():
-            if area is group_area:
-                return group
-        return cast(SettingsPage, cast(QScrollArea, area).widget()).title
+        return None if self.__shown_row is None else self.__shown_row.text()
 
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Show the newly-selected row's page (or, for a group row, every page under it) in the stack.
@@ -408,13 +454,8 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         :param previous: the previously-current tree index; unused.
         """
         del current, previous
-        if (item := self.__current_item()) is None:
-            return
-        if (page := cast(SettingsPage | None, item.data(PAGE_ROLE))) is not None:
-            self.__show_standalone_page(cast(QWidget, page))
-        else:
-            self.__show_group(item)
-        self.__apply_filter_to_current_page()
+        if (item := self.__current_item()) is not None:
+            self.__show_row(item)
 
     def __apply_filter_to_current_page(self, *_args: object) -> None:
         """Re-run the frame-level filter on the currently-shown page(s).
@@ -445,14 +486,18 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             return
         for row in range(item.rowCount()):
             self.__apply_filter(item.child(row))
+        # which blocks survive is the filter's business; which headings that leaves standing is the
+        # column's, and it can only be asked once every page under the group has been filtered
+        self.__group_columns[item.text()].sync_headings()
 
     def __apply_filter(self, item: QStandardItem) -> None:
-        """Re-run the frame-level filter on ``item``'s page, and hide it entirely if that left nothing.
+        """Re-run the block-level filter on ``item``'s page.
 
-        The hiding is the *stacked* view's alone (#230): shown on its own a page is all there is, so an
-        empty one is simply an empty page, but stacked under a heading it would be a title standing
-        over a gap -- a promise of settings that filtered out. Hiding the page with it also reclaims
-        the space, since a page emptied of frames still asks for its own layout margins.
+        Showing and hiding blocks is all there is to it, wherever those blocks currently are: the page's
+        own view, or a group's column. Nothing has to be said here about headings or about a page
+        emptied of every block -- a column heading follows the blocks under it
+        (`SettingsBlockColumn.sync_headings`), and a page with nothing left to show contributes no
+        blocks, so there is nothing of it in the column to take up room (#230).
 
         :param item: a page row -- never a group's: :meth:`__apply_filter_to_row` calls this once per
             child instead of once on the group itself, so a group's own pageless row (with no
@@ -460,11 +505,6 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         frame_filter = cast(SettingsFrameFilter, item.data(FILTER_ROLE))
         frame_filter.apply(self.__ui.filter_edit.text(), self.__ui.show_full_page_check_box.is_checked())
-        widget = cast(QWidget, item.data(PAGE_ROLE))
-        if (heading := self.__group_headings.get(widget)) is not None:
-            shows_anything = frame_filter.shows_anything()
-            heading.setVisible(shows_anything)
-            widget.setVisible(shows_anything)
 
     def __apply_all(self) -> None:
         """Apply every registered page's changes."""

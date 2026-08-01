@@ -12,7 +12,7 @@ from typing import Any, Final
 from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QScrollArea, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -196,7 +196,8 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
@@ -223,7 +224,8 @@ def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: M
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
 
 
@@ -241,7 +243,8 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
@@ -259,7 +262,8 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
 
@@ -301,7 +305,8 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
@@ -319,8 +324,9 @@ def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
-    assert "Reference Images" not in [page.title for page in pages if hasattr(page, "title")]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert "Reference Images" not in [getattr(page, "title", None) for page in pages]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(

@@ -80,24 +80,34 @@ that list. Both were filed where the *code* owned them, so finding either meant 
 or settings object to look under, when what the reader had was the word "images". A page whose one
 block is a list is also a tree row that costs a click to learn it holds one thing.
 
-A group row **carries no page of its own** — it is a header. Selecting it shows every page under it
-at once, stacked vertically in one scrolling column, each preceded by its title as a heading — since
-the tree selection no longer names which page is which once several are shown together (#230). A
-group holding one page shows just that one. Selecting a leaf page directly, whether or not a group
-was shown before it, re-parents that page out of any group column and back into its own single-page
-view — a page has one parent, so this is a move, never a second copy. The live frame filter composes
-with this: a shown group filters every one of its pages' frames, not just one, which is a better
-answer to "where is that setting" than paging through children one by one. Everything that walks
-pages (Save all / Drop all, and now Save/Drop *current page* on a selected group row) recurses one
-level into groups, so a grouped page is never skipped.
+A group row **carries no page of its own** — it is a header. Selecting it shows everything under it at
+once, in one scrolling column, each page's contribution under its own title as a heading — since the
+tree selection no longer names what you are looking at once several pages are shown together (#230).
 
-Two rules keep that column readable, both of them consequences of stacking pages built to be shown one
-at a time. **A page the filter empties is hidden along with its heading** — on its own an empty page is
-just an empty page, but stacked it would be a title standing over a gap, promising settings that
-filtered out. **A stacked page is capped at the height it asks for**, by width rather than by a plain
-size hint: every page ends its layout with a vertical spacer so its frames sit at the top of a viewport
-taller than they are ([[appendices.settings-pages#adding-a-page]]), and left free to grow, that spacer
-spreads the pages down the column instead of letting the column's own trailing stretch hold the slack.
+**The column takes blocks, not pages** (`SettingsBlockColumn`, `settings/ui/settings_block_column.py`).
+The block — a page's top-level labelled `QFrame`, the same unit the filter shows and hides — is the
+row here, and a page is simply the view that shows its own blocks when its own row is selected. Two
+things fall out of that which the alternative had to be patched into:
+
+- **A heading follows its blocks.** A page the filter empties contributes nothing, so there is no
+  heading left standing over a gap promising settings that filtered out. `sync_headings` shows a
+  heading exactly while some block under it is visible.
+- **Nothing spreads.** A page's layout is written for being shown alone — zero margins, a trailing
+  spacer, and sometimes one block stretched to fill what is left ([[appendices.settings-pages#adding-a-page]]).
+  Carrying whole pages into the column brought all of that with them: each page's spacer claimed a share
+  of the height and pushed the pages apart, and the stretch had to be argued back down with a size
+  policy. Taking only the blocks leaves that layout where it is right — on the page's own view — and the
+  column supplies the single trailing stretch itself.
+
+So **a block fills when alone and packs when it isn't**, without either view knowing about the other:
+`DescriptionsPage` stretches its engine block so the CSS editor fills the page, and in a group column
+that same block takes its natural height. The dialog reads that stretch once at registration
+(`__record_blocks`) and re-applies it when the block comes home, because a box layout keeps stretch per
+item and a widget taken out leaves its factor behind.
+
+A block has one parent, so moving between the two views is always a move, never a copy. Everything
+that walks pages (Save all / Drop all, and Save/Drop *current page* on a selected group row) recurses
+one level into groups, so a grouped page is never skipped.
 
 A **second `WrappingCheckBox`, "Show full group if title matches"**, sits under the page-level one and
 makes the tree filter group-aware:
