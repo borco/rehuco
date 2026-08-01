@@ -64,17 +64,50 @@ and a tree that can be scrolled out of its own viewport.
 
 [[[appendices.settings-pages#category-groups]]]
 
-The category tree is **two levels deep at most**: `add_page(page, group="Editors")` nests the page's
+The category tree is **two levels deep at most**: `add_page(page, group="Plugins")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
-top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, "Images"
-(`ImagesPage`) sits under **Viewers**, "Reference Images" (`ReferenceImagesPage`, #222) sits under
-**Plugins** alongside "Excluded Files" (`ExcludedFilesPage`, #226), and "System Integration"
-(`RegistryPage`) is top-level. Group names are plural — a group
-holds pages, and **Plugins** is where a resource type's own settings go, one page per plugin.
+top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
+Files" (`ExcludedFilesPage`, #226) and "Images" (`ImagesPage`) — registered in that alphabetical
+order — and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group holds
+pages, and **Plugins** is where a resource type's own settings go.
 
-A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
-filtering) exactly as it was, rather than blanking the stack. Everything that walks pages
-(Save all / Drop all) recurses one level into groups, so a grouped page is never skipped.
+**One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
+owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
+embedded in a description (`MarkdownRenderingSettings`), and which archive entries a reference-images
+resource counts as its images (`ReferenceImagesSettings`, #222). The last two arrived from elsewhere —
+the cap was a block on Descriptions, the extension list a "Reference Images" page holding nothing but
+that list. Both were filed where the *code* owned them, so finding either meant knowing which plugin
+or settings object to look under, when what the reader had was the word "images". A page whose one
+block is a list is also a tree row that costs a click to learn it holds one thing.
+
+A group row **carries no page of its own** — it is a header. Selecting it shows everything under it at
+once, in one scrolling column, each page's contribution under its own title as a heading — since the
+tree selection no longer names what you are looking at once several pages are shown together (#230).
+
+**The column takes blocks, not pages** (`SettingsBlockColumn`, `settings/ui/settings_block_column.py`).
+The block — a page's top-level labelled `QFrame`, the same unit the filter shows and hides — is the
+row here, and a page is simply the view that shows its own blocks when its own row is selected. Two
+things fall out of that which the alternative had to be patched into:
+
+- **A heading follows its blocks.** A page the filter empties contributes nothing, so there is no
+  heading left standing over a gap promising settings that filtered out. `sync_headings` shows a
+  heading exactly while some block under it is visible.
+- **Nothing spreads.** A page's layout is written for being shown alone — zero margins, a trailing
+  spacer, and sometimes one block stretched to fill what is left ([[appendices.settings-pages#adding-a-page]]).
+  Carrying whole pages into the column brought all of that with them: each page's spacer claimed a share
+  of the height and pushed the pages apart, and the stretch had to be argued back down with a size
+  policy. Taking only the blocks leaves that layout where it is right — on the page's own view — and the
+  column supplies the single trailing stretch itself.
+
+So **a block fills when alone and packs when it isn't**, without either view knowing about the other:
+`DescriptionsPage` stretches its engine block so the CSS editor fills the page, and in a group column
+that same block takes its natural height. The dialog reads that stretch once at registration
+(`__record_blocks`) and re-applies it when the block comes home, because a box layout keeps stretch per
+item and a widget taken out leaves its factor behind.
+
+A block has one parent, so moving between the two views is always a move, never a copy. Everything
+that walks pages (Save all / Drop all, and Save/Drop *current page* on a selected group row) recurses
+one level into groups, so a grouped page is never skipped.
 
 A **second `WrappingCheckBox`, "Show full group if title matches"**, sits under the page-level one and
 makes the tree filter group-aware:
@@ -117,15 +150,20 @@ The dialog shell dispatches, it never interprets:
 
 - **Save all** / **Drop all** — call `save_changes()` / `drop_changes()` on every registered page,
   in tree order (a group's pages together, at the group's own position).
-- **Save current page** / **Drop current page** — call it on whichever page's tree row is currently
-  selected only.
+- **Save current page** / **Drop current page** — call it on the selected leaf page, or on every page
+  under a selected group row (#230) — the same one-level recursion Save all / Drop all already do,
+  now also driven by what the tree's current row is rather than always every page.
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
-  `ReferenceImagesPage`, "Reference Images"; `ExcludedFilesPage`, "Excluded Files") — edits live in
+  `ExcludedFilesPage`, "Excluded Files") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
+  `ImagesPage` is the one page writing **three** settings objects, one per block, each saved whole
+  because that is the unit its own `save()` takes. Writing `MarkdownRenderingSettings` there
+  re-persists the engine and CSS unchanged: what the shared object holds is already the last-saved
+  pair, so a `DescriptionsPage` edit still staged is neither picked up nor clobbered.
   `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
   it has to show its own effect on what is already on screen: every open document's image strip
   resizes and takes up the chosen layout — one row or wrapped ([[plugins#tutorial-plugin]]) — and
@@ -171,11 +209,11 @@ showing what was typed would disagree with what every scan actually reads, which
 one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
 the normalized result on screen.
 
-`ReferenceImagesPage` does the same, over the same `StringListEditor`, and the two are worth reading
-side by side because **what each of them normalizes is different**: a *pattern* is matched verbatim, so
-only blanks and duplicates go; a *format* also loses its leading dot and its casing, so `BMP` comes back
-`.bmp`. Both rules live on the settings object, never in the widget — the widget holds what was typed,
-which is what lets one editor serve two pages that disagree (#231).
+`ImagesPage`'s extension block does the same, over the same `StringListEditor`, and the two are worth
+reading side by side because **what each of them normalizes is different**: a *pattern* is matched
+verbatim, so only blanks and duplicates go; a *format* also loses its leading dot and its casing, so
+`BMP` comes back `.bmp`. Both rules live on the settings object, never in the widget — the widget holds
+what was typed, which is what lets one editor serve two blocks that disagree (#231).
 
 It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
 pair went because the empty-list fallback already draws that distinction — a list naming nothing *is*
@@ -265,7 +303,7 @@ live-update wiring instead lives on the settings *data* side:
 settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fields and matching
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
-value on every use. Not every page needs this at all — `ReferenceImagesPage`'s extension list is read
+value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
 only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
 run does, so a plain dataclass carries each and there is nothing to watch either change;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be

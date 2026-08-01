@@ -1,4 +1,5 @@
-"""The SettingsDialog's own filter state, persisted across restarts (#76), and its last-shown page (#228)."""
+"""The SettingsDialog's own filter state, persisted across restarts (#76), and its last-shown page or
+group (#228, #230)."""
 
 from dataclasses import dataclass, field
 from typing import Final, cast
@@ -15,7 +16,7 @@ SELECTED_PAGE_KEY: Final = "selected_page_title"
 @dataclass
 class SettingsDialogSettings:
     """The settings dialog's filter text, its two "show full ... if title matches" toggles, and the
-    title of the page it was last showing (#228)."""
+    title of the page or group it was last showing (#228, #230)."""
 
     filter_text: str = field(default="")
     """The text in the filter box, restored so a search survives a restart; empty shows every page."""
@@ -28,9 +29,11 @@ class SettingsDialogSettings:
     ([[appendices.settings-pages#category-groups]])."""
 
     selected_page_title: str = field(default="")
-    """The title of the page shown when the dialog was last closed. Stored by title rather than tree
-    position: the tree's rows differ per platform and shift whenever a page or group is added, so a
-    stored index would silently select a different page than the one that was showing (#228)."""
+    """The title of the page or group shown when the dialog was last closed -- a group's own title
+    when its stacked column was what was showing, not one of its pages' (#230). Stored by title
+    rather than tree position: the tree's rows differ per platform and shift whenever a page or
+    group is added, so a stored index would silently select a different row than the one that was
+    showing (#228)."""
 
     def load(self, settings: QSettings) -> None:
         """Replace the current filter text, toggle states and selected-page title with what's in

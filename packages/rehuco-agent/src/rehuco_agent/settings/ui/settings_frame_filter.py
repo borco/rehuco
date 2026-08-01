@@ -39,6 +39,16 @@ class SettingsFrameFilter:
         """Each frame's gathered caption text, for the category tree's own (page-level) filter."""
         return [text for _, text in self.__frames]
 
+    def blocks(self) -> list[QFrame]:
+        """This page's blocks -- its top-level frames, in the order the page declares them (#230).
+
+        The same frames this filter shows and hides, handed out so a group's `SettingsBlockColumn` can
+        show them without taking the whole page with them.
+
+        :returns: the page's blocks, in page order.
+        """
+        return [frame for frame, _ in self.__frames]
+
     def apply(self, text: str, show_full_on_title_match: bool) -> None:
         """Show only the frames matching ``text`` (case-insensitive substring), per the class rules.
 

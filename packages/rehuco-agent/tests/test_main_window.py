@@ -12,7 +12,7 @@ from typing import Any, Final
 from borco_pyside.dialogs import DockableDialogManager
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QScrollArea, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -23,7 +23,6 @@ from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
-from rehuco_agent.settings.ui.reference_images_page import ReferenceImagesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
@@ -197,7 +196,8 @@ def test_registers_the_registry_page_on_windows(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, RegistryPage) for page in pages)
 
 
@@ -224,7 +224,8 @@ def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: M
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
 
 
@@ -242,18 +243,18 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
 def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Excluded Files page (#226) is registered under the "Plugins" category group, beside #222's.
+    """The Excluded Files page (#226) is registered into the settings dialog, under "Plugins".
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * verify the settings dialog's page stack holds an ``ExcludedFilesPage``
-    * verify the "Plugins" group lists it alongside "Reference Images"
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -261,15 +262,31 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
+
+def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None:
+    """Descriptions, Images and Viewers folded into one "Plugins" group, sorted by title (#230).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's category tree holds a single "Plugins" row, its children in
+      alphabetical order -- Reference Images among them no longer, its list being a block on Images
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
     assert len(groups) == 1
     assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == [
+        "Descriptions",
         "Excluded Files",
-        "Reference Images",
+        "Images",
     ]
 
 
@@ -288,36 +305,18 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
-def test_registers_the_descriptions_page_under_the_editors_group(qtbot: QtBot) -> None:
-    """The Descriptions page is registered under the "Editors" category group (#76).
+def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
+    """The reference-images extension list is a block on Images, not a page (#222).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's category tree holds an "Editors" row with "Descriptions" under it
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Editors"]
-    assert len(groups) == 1
-    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Descriptions"]
-
-
-def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Reference Images settings page (#222) is registered under the "Plugins" category group.
-
-    **Test steps:**
-
-    * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``ReferenceImagesPage``
-    * verify the category tree holds a "Plugins" row with "Reference Images" under it
+    * verify no registered page is titled "Reference Images"
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -325,13 +324,9 @@ def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBo
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
-    pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
-    assert any(isinstance(page, ReferenceImagesPage) for page in pages)
-
-    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
-    assert len(groups) == 1
-    assert "Reference Images" in [groups[0].child(row).text() for row in range(groups[0].rowCount())]
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert "Reference Images" not in [getattr(page, "title", None) for page in pages]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(

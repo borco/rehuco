@@ -1,4 +1,4 @@
-"""Descriptions settings page: renderer engine choice, per-engine CSS, and image-width cap (#26, #47)."""
+"""Descriptions settings page: renderer engine choice and its per-engine CSS (#26, #47)."""
 
 from typing import Final
 
@@ -12,7 +12,12 @@ from .descriptions_page_ui import Ui_DescriptionsPage
 
 class DescriptionsPage(QWidget):
     """Configure how every document's description field renders (#26's constants, made
-    configurable): the Markdown engine, its per-engine CSS, and the image-width cap.
+    configurable): the Markdown engine and its per-engine CSS.
+
+    The width cap on an embedded image is `ImagesPage`'s, not this page's -- it shares
+    `MarkdownRenderingSettings` with the two fields here but answers a different question, and a
+    reader looking for it went to Images first. This page keeps what decides how a description
+    *renders*.
 
     Edits are staged locally (including a separate CSS draft per engine, swapped into the one
     ``css_edit`` box as the engine radio changes) until :meth:`save_changes` pushes them into the
@@ -28,9 +33,12 @@ class DescriptionsPage(QWidget):
         self.__ui: Final = Ui_DescriptionsPage()
         self.__ui.setupUi(self)
 
-        # Stretch the engine frame so its CSS editor fills the page; the bottom spacer only expands
-        # when the engine frame is filtered out (keeping a lone image frame at the top). Set here,
-        # not in the .ui: this pyside6-uic mistranslates a box-layout stretch property.
+        # Stretch the engine block so its CSS editor fills the page; the bottom spacer only expands
+        # when the engine block is filtered out. Set here, not in the .ui: this pyside6-uic
+        # mistranslates a box-layout stretch property. This is what "fills" means to `SettingsDialog`,
+        # which reads the stretch back at registration so it can restore it after a group column has
+        # borrowed the block ([[appendices.settings-pages#category-groups]]) -- a block taken out of a
+        # box layout leaves its stretch factor behind.
         self.__ui.main_layout.setStretch(0, 1)
 
         self.__markdown_css_draft = ""
@@ -53,7 +61,6 @@ class DescriptionsPage(QWidget):
             self.__current_engine() != settings.engine
             or self.__markdown_css_draft != settings.markdown_css
             or self.__mistletoe_css_draft != settings.mistletoe_css
-            or self.__ui.max_image_width_spin_box.value() != settings.max_image_width
         )
 
     def save_changes(self) -> None:
@@ -64,7 +71,6 @@ class DescriptionsPage(QWidget):
         settings.engine = self.__current_engine()
         settings.markdown_css = self.__markdown_css_draft
         settings.mistletoe_css = self.__mistletoe_css_draft
-        settings.max_image_width = self.__ui.max_image_width_spin_box.value()
         settings.save(persistent_settings())
 
     def drop_changes(self) -> None:
@@ -76,7 +82,6 @@ class DescriptionsPage(QWidget):
             self.__ui.mistletoe_engine_radio_button.setChecked(True)
         else:
             self.__ui.markdown_engine_radio_button.setChecked(True)
-        self.__ui.max_image_width_spin_box.setValue(settings.max_image_width)
         self.__show_current_css_draft()
 
     def __current_engine(self) -> str:
