@@ -10,7 +10,14 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_core import CORE_FIELD_NAMES, PluginRegistry, content_size_on_disk, enumerate_content_images
+from rehuco_core import (
+    CORE_FIELD_NAMES,
+    DurationProbeError,
+    PluginRegistry,
+    content_duration,
+    content_size_on_disk,
+    enumerate_content_images,
+)
 
 from ..fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -50,6 +57,12 @@ SIZE_FIELD_NAMES: Final = ("original_size", "current_size")
 """The measured size fields' model names ([[field-schema#field-mapping]]) -- both take the same runtime
 measure callback (#223), because both measure the same content and differ only in *when* they are
 pressed ([[field-schema#duration-size]])."""
+
+DURATION_FIELD_NAMES: Final = ("original_duration", "current_duration")
+"""The measured duration fields' model names ([[field-schema#field-mapping]]) -- both take the same
+runtime measure callback (#224), for the same reason the sizes do. ``advertised_duration`` is
+deliberately absent: it is the claim the measurement is checked *against*
+([[field-schema#duration-size]]), so it stays a plain duration with no measure row."""
 
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
@@ -104,8 +117,8 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("indexed_list", "collections"),
     FieldSpec("url", "url"),
     FieldSpec("duration", "advertised_duration"),
-    FieldSpec("duration", "original_duration"),
-    FieldSpec("duration", "current_duration"),
+    FieldSpec("measured_duration", "original_duration"),
+    FieldSpec("measured_duration", "current_duration"),
     FieldSpec("count_claim", "advertised_count"),
     FieldSpec("content_count", "current_count"),
     FieldSpec("size", "original_size"),
@@ -315,6 +328,29 @@ def build_document_form(
             return None
         return content_size_on_disk(path, shared_excluded_files_settings().excluded_file_patterns)
 
+    def measure_duration() -> int | None:
+        """Sum how long this resource's videos run ([[field-schema#duration-size]], #224).
+
+        Reads the same excluded-name list the size scan does, so the two measure one content set (#226).
+        The probe backend and the video-extension list are the Tutorial settings page's (#225); until it
+        exists, both are the shipped defaults, which is why neither is named here.
+
+        Runs on a worker thread (`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`), so
+        it touches nothing but plain Python state, the filesystem, and the probe.
+
+        :returns: the total in whole seconds, or ``None`` when there is nothing to measure -- a document
+            with no path yet, or a probe backend that cannot run here at all. The second case is
+            deliberately not a ``0``: core raises rather than totalling one, because a misconfigured
+            backend and a tutorial holding no video would otherwise be the same answer.
+        """
+        path = model.path
+        if path is None:
+            return None
+        try:
+            return content_duration(path, excluded_patterns=shared_excluded_files_settings().excluded_file_patterns)
+        except DurationProbeError:
+            return None
+
     description_field = DescriptionField(
         "description",
         image_scanner=model.image_scanner,
@@ -333,11 +369,13 @@ def build_document_form(
     # a record field resolves from its (type, name) pair alone, except where its editor needs a runtime
     # callback the registry cannot build generically: every measure action reaches both the filesystem and
     # a user setting -- the recognized extensions for the count (#198), the excluded names for the sizes
-    # (#223/#226) -- neither of which the toolkit knows about, so they are supplied here the same way the
-    # images strip's scanner is. Both sizes get the *same* callback: they measure the same content and
-    # differ only in when the user presses them ([[field-schema#duration-size]])
+    # and the durations (#224), and a probe backend for the durations besides
+    # (#223/#226) -- none of which the toolkit knows about, so they are supplied here the same way the
+    # images strip's scanner is. Both sizes get the *same* callback, and so do both durations: each pair
+    # measures the same content and differs only in when the user presses it ([[field-schema#duration-size]])
     runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
     runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})
+    runtime_kwargs.update({name: {"measure": measure_duration} for name in DURATION_FIELD_NAMES})
     for spec in composed_field_specs(model):
         fields.append(
             registry.create(

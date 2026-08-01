@@ -10,6 +10,7 @@ from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field_registry import FieldRegistry
 from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
+from rehuco_agent.fields.measured_duration_field import MeasuredDurationField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
@@ -122,7 +123,10 @@ def test_registry_resolves_the_authors_field_type() -> None:
 
 
 def test_registry_resolves_the_date_and_duration_field_types() -> None:
-    """The registry maps the ``date`` / ``duration`` types to their classes.
+    """The registry maps the ``date`` / ``duration`` / ``measured_duration`` types to their classes.
+
+    The two duration types are separate deliberately (#224): ``duration`` is the plain editor
+    ``advertised_duration`` keeps, and ``measured_duration`` is the one carrying a compute/apply row.
 
     **Test steps:**
 
@@ -133,6 +137,7 @@ def test_registry_resolves_the_date_and_duration_field_types() -> None:
 
     assert registry.types["date"] is DateField
     assert registry.types["duration"] is DurationField
+    assert registry.types["measured_duration"] is MeasuredDurationField
 
 
 def test_registry_resolves_the_multi_choice_and_path_field_types() -> None:

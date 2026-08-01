@@ -21,6 +21,7 @@ from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.images_field import ImagesField
 from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
+from rehuco_agent.fields.measured_duration_field import MeasuredDurationField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
@@ -100,6 +101,14 @@ class DurationFieldTester(DurationField):
 
 class FileSizeFieldTester(FileSizeField):
     """`FileSizeField` with fixed test tabs and a measurement that finds nothing by default."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("measure", lambda: None)
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class MeasuredDurationFieldTester(MeasuredDurationField):
+    """`MeasuredDurationField` with fixed test tabs and a measurement that finds nothing by default."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("measure", lambda: None)

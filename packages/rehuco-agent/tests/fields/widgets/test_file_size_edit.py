@@ -2,61 +2,32 @@
 busy state around the measurement.
 """
 
-# the row's measure/apply behaviour is the same contract ``ContentCountEdit``'s tests pin (#198), so the
-# two read alike where the two widgets behave alike; see that widget's own note on why they are still two
+# the measure/apply/busy contract is the one every measure row's tests pin, because all three rows are
+# one `MeasuredValueEdit`; each suite pins it through its own row, which is where a user meets it
 # pylint: disable=duplicate-code
 
 from borco_pyside.widgets import UnboundedSpinBox
-from PySide6.QtWidgets import QToolButton
 from pytest import mark, param
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.file_size_edit import COMPUTED_TOOLTIP, STORED_TOOLTIP, FileSizeEdit
 from rehuco_agent.fields.widgets.value_readout import ValueReadout
 
-
-def internal_stored_label(edit: FileSizeEdit) -> ValueReadout:
-    """Return the widget's private human-readable readout -- ``FileSizeEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``ValueReadout``.
-    """
-    return edit._FileSizeEdit__stored_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+from .measure_row_internals import (
+    internal_apply_button,
+    internal_compute_button,
+    internal_computed_label,
+    internal_editor,
+    internal_stored_label,
+)
 
 
 def internal_spin_box(edit: FileSizeEdit) -> UnboundedSpinBox:
-    """Return the widget's private stored-size spin box -- ``FileSizeEdit`` exposes no accessor.
+    """Return the row's stored-size spin box, named for what this row puts there.
 
     :param edit: the widget to inspect.
     :returns: the internal ``UnboundedSpinBox``.
     """
-    return edit._FileSizeEdit__spin_box  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_computed_label(edit: FileSizeEdit) -> ValueReadout:
-    """Return the widget's private computed-size readout -- ``FileSizeEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``ValueReadout``.
-    """
-    return edit._FileSizeEdit__computed_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_apply_button(edit: FileSizeEdit) -> QToolButton:
-    """Return the widget's private apply button -- ``FileSizeEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``QToolButton``.
-    """
-    return edit._FileSizeEdit__apply_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_compute_button(edit: FileSizeEdit) -> QToolButton:
-    """Return the widget's private compute button -- ``FileSizeEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``QToolButton``.
-    """
-    return edit._FileSizeEdit__compute_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return internal_editor(edit)
 
 
 # region format() tests

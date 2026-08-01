@@ -40,6 +40,26 @@ monolithic, checksummed archive member, never a screenshot. What
 :func:`~rehuco_core.rehu_content_images.enumerate_content_images` falls back to when no set is given; the
 agent's ``ReferenceImagesSettings`` (#222) is what makes the set the user's to change."""
 
+VIDEO_EXTENSIONS: Final = (
+    ".asf",
+    ".avi",
+    ".flv",
+    ".m4v",
+    ".mkv",
+    ".mov",
+    ".mp4",
+    ".mpeg",
+    ".mpg",
+    ".ts",
+    ".vob",
+)
+"""Default video file extensions to recognize inside a tutorial's content, case-insensitively
+([[field-schema#duration-size]], #224) -- the set tc4 measured durations over, carried across unchanged.
+What :func:`~rehuco_core.rehu_content_duration.content_duration` falls back to when no set is given; the
+agent's ``TutorialSettings`` (#225) is what makes the set the user's to change. A container this omits is
+skipped by the sum rather than probed and reported as zero, so adding one is a preference change rather
+than a rebuild."""
+
 EXCLUDED_FILE_PATTERNS: Final = ("Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store", "._*")
 """Default filename globs to leave out of a directory-scoped resource's content, matched
 case-insensitively against the *file name* ([[data-model#checksums]], #226) -- what the OS and other

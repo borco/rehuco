@@ -23,13 +23,23 @@ from rehuco_agent.fields import (
     PROVENANCE_PLUGIN_ABSENT,
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN
-from rehuco_agent.fields.widgets import ContentCountEdit, FileSizeEdit, SingleChoiceComboBox, TypeBadge
+from rehuco_agent.fields.widgets import (
+    ContentCountEdit,
+    DurationEdit,
+    FileSizeEdit,
+    MeasuredDurationEdit,
+    MeasuredValueEdit,
+    SingleChoiceComboBox,
+    TypeBadge,
+)
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
 from rehuco_agent.fields.widgets.file_size_edit import APPLY_TOOLTIP as SIZE_APPLY_TOOLTIP
 from rehuco_agent.fields.widgets.file_size_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
+from rehuco_agent.fields.widgets.measured_duration_edit import APPLY_TOOLTIP as DURATION_APPLY_TOOLTIP
+from rehuco_agent.fields.widgets.measured_duration_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
-from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, RehuDocument
+from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, DurationProbeError, RehuDocument
 
 PACK_PATH = Path("/library/anatomy-pack.rehu")
 """Stand-in path for a saved, file-scoped reference-images resource -- never touched on disk: the
@@ -316,16 +326,16 @@ def content_count_editor(grid: QWidget) -> ContentCountEdit:
     return editor
 
 
-def size_editor(grid: QWidget, label_text: str) -> FileSizeEdit:
-    """Find one of the two size rows' composite editors by its row label.
+def row_editor(grid: QWidget, label_text: str) -> QWidget:
+    """Find one row's composite editor by its row label.
 
-    Both size fields render the same widget type, so ``findChild`` alone cannot tell ``Original Size``
-    from ``Current Size`` -- this maps the row's label to the editor sharing its grid row, the same way
-    :func:`drop_button_for` maps a value to its button.
+    The two size rows -- and the two measured-duration rows -- render the same widget type each, so
+    ``findChild`` alone cannot tell ``Original Size`` from ``Current Size``. This maps the row's label to
+    the editor sharing its grid row, the same way :func:`drop_button_for` maps a value to its button.
 
     :param grid: the editor surface to search.
-    :param label_text: the row's label, ``"Original Size"`` or ``"Current Size"``.
-    :returns: that row's `FileSizeEdit`.
+    :param label_text: the row's label, e.g. ``"Original Size"`` or ``"Current Duration"``.
+    :returns: that row's editor widget; the caller asserts which kind it expected.
     """
     layout = grid.layout()
     assert isinstance(layout, QGridLayout)
@@ -336,9 +346,33 @@ def size_editor(grid: QWidget, label_text: str) -> FileSizeEdit:
         if isinstance(widget, QLabel) and widget.text() == label_text and column == LABEL_COLUMN:
             content = layout.itemAtPosition(row, CONTENT_COLUMN)
             editor = content.widget() if content is not None else None
-            assert isinstance(editor, FileSizeEdit)
+            assert editor is not None
             return editor
     raise AssertionError(f"no {label_text!r} row on this surface")
+
+
+def size_editor(grid: QWidget, label_text: str) -> FileSizeEdit:
+    """Find one of the two size rows' composite editors by its row label.
+
+    :param grid: the editor surface to search.
+    :param label_text: the row's label, ``"Original Size"`` or ``"Current Size"``.
+    :returns: that row's `FileSizeEdit`.
+    """
+    editor = row_editor(grid, label_text)
+    assert isinstance(editor, FileSizeEdit)
+    return editor
+
+
+def duration_editor(grid: QWidget, label_text: str) -> MeasuredDurationEdit:
+    """Find one of the two measured-duration rows' composite editors by its row label.
+
+    :param grid: the editor surface to search.
+    :param label_text: the row's label, ``"Original Duration"`` or ``"Current Duration"``.
+    :returns: that row's `MeasuredDurationEdit`.
+    """
+    editor = row_editor(grid, label_text)
+    assert isinstance(editor, MeasuredDurationEdit)
+    return editor
 
 
 def press(editor: QWidget, tooltip: str) -> None:
@@ -460,10 +494,10 @@ def test_a_tutorial_has_no_content_count_row_to_compute(qtbot: QtBot) -> None:
     assert grid.findChild(ContentCountEdit) is None
 
 
-def compute(qtbot: QtBot, editor: ContentCountEdit | FileSizeEdit, tooltip: str) -> None:
+def compute(qtbot: QtBot, editor: MeasuredValueEdit, tooltip: str) -> None:
     """Press a measure row's Compute and wait for the off-thread measurement to report back (#223).
 
-    Both kinds of row measure on a worker thread, so a click alone proves nothing: the assertion has to
+    Every kind of row measures on a worker thread, so a click alone proves nothing: the assertion has to
     wait for the row to leave its busy state.
 
     :param qtbot: the pytest-qt bot driving the event loop while the measurement runs.
@@ -548,6 +582,133 @@ def test_the_two_size_rows_apply_independently(qtbot: QtBot, mocker: MockerFixtu
     assert model.original_size == 8192
 
 
+def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusions(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """The duration row's Compute measures *this* document's videos, reading the same excluded-name list
+    the size scan does -- one content set, decided once (#224, #226).
+
+    **Test steps:**
+
+    * set a custom pattern list in the shared excluded-files settings
+    * build a tutorial's editor with the duration scan mocked to find 2h 15m
+    * press Compute on ``Original Duration`` and verify the scan was handed the document's own path and
+      that list
+    * verify the measured duration reached the row, without touching the stored one
+    """
+    shared_excluded_files_settings().patterns = ("*.tmp",)
+    content_duration = mocker.patch(
+        "rehuco_agent.documents.document_fields.content_duration",
+        return_value=8100,
+    )
+    model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial"}}, PACK_PATH))
+    grid = main_editor(qtbot, model)
+    editor = duration_editor(grid, "Original Duration")
+
+    compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
+
+    content_duration.assert_called_once_with(PACK_PATH, excluded_patterns=("*.tmp",))
+    assert editor.computed == 8100
+    assert model.original_duration is None
+
+
+def test_duration_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A document that has never been saved has no videos to measure, so the scan is not even reached --
+    and no duration of ``0`` is reported for it (#224).
+
+    **Test steps:**
+
+    * build the editor over a path-less tutorial, with the duration scan mocked
+    * press Compute on ``Current Duration``
+    * verify the scan was never called and nothing was computed
+    """
+    content_duration = mocker.patch("rehuco_agent.documents.document_fields.content_duration")
+    model = typed_model("tutorial")
+    grid = main_editor(qtbot, model)
+    editor = duration_editor(grid, "Current Duration")
+
+    compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
+
+    content_duration.assert_not_called()
+    assert editor.computed is None
+
+
+def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A backend that cannot run here reports *nothing measured*, never a duration of ``0``: a silent
+    zero is indistinguishable from a tutorial holding no video, and would be applied over a real
+    ``original_duration`` without anyone noticing (#224).
+
+    Making that visible *before* a scan is run is the settings page's job (#225); what this pins is that
+    it never reads as a measurement.
+
+    **Test steps:**
+
+    * build the editor over a tutorial whose duration scan raises ``DurationProbeError``
+    * press Compute
+    * verify nothing was computed, and the stored duration is untouched
+    """
+    mocker.patch(
+        "rehuco_agent.documents.document_fields.content_duration",
+        side_effect=DurationProbeError("ffprobe was not found on PATH, and no path is configured."),
+    )
+    model = RehuDocumentModel(
+        RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100}}, PACK_PATH)
+    )
+    grid = main_editor(qtbot, model)
+    editor = duration_editor(grid, "Original Duration")
+
+    compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
+
+    assert editor.computed is None
+    assert model.original_duration == 8100
+
+
+def test_the_two_duration_rows_apply_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Both rows measure the same videos and differ only in *when* they are pressed, so applying one must
+    leave the other alone: ``original_duration`` is the length when complete, the denominator for *how
+    much is left* ([[field-schema#duration-size]], #224).
+
+    **Test steps:**
+
+    * build the editor over a tutorial whose two durations disagree, with the scan finding a third number
+    * compute and apply on ``Current Duration``
+    * verify ``current_duration`` took the measurement and ``original_duration`` is untouched
+    """
+    mocker.patch("rehuco_agent.documents.document_fields.content_duration", return_value=4050)
+    model = RehuDocumentModel(
+        RehuDocument(
+            {"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100, "current_duration": 7000}},
+            PACK_PATH,
+        )
+    )
+    grid = main_editor(qtbot, model)
+    current = duration_editor(grid, "Current Duration")
+
+    compute(qtbot, current, DURATION_COMPUTE_TOOLTIP)
+    press(current, DURATION_APPLY_TOOLTIP)
+
+    assert model.current_duration == 4050
+    assert model.original_duration == 8100
+
+
+def test_the_advertised_duration_has_no_measure_row(qtbot: QtBot) -> None:
+    """The claim carries no Compute: ``advertised_duration`` exists so ``original_duration`` can be
+    checked against it -- *"did I get everything"* -- and measuring it would erase the comparison
+    ([[field-schema#duration-size]], #224).
+
+    **Test steps:**
+
+    * build a tutorial's editor
+    * verify the advertised row's editor is a plain `DurationEdit` and not a measure row
+    """
+    grid = main_editor(qtbot, typed_model("tutorial"))
+
+    editor = row_editor(grid, "Advertised Duration")
+
+    assert isinstance(editor, DurationEdit)
+    assert not isinstance(editor, MeasuredValueEdit)
+
+
 # endregion
 
 
@@ -622,6 +783,29 @@ def test_a_tutorial_document_composes_neither_count() -> None:
     for absent in ("advertised_count", "current_count"):
         assert absent not in names
         assert absent not in TUTORIAL_PLUGIN.field_names
+
+
+def test_a_tutorial_composes_the_two_measured_durations_apart_from_the_claim() -> None:
+    """The three durations do not all take the same toolkit type ([[field-schema#duration-size]], #224).
+
+    ``original_duration`` and ``current_duration`` are **measured**, so they compose as
+    ``measured_duration`` and carry a compute/apply row. ``advertised_duration`` is the coarse web claim
+    kept precisely so ``original_duration`` can be checked against it -- *"did I get everything"* -- so
+    it stays a plain ``duration``: a measure row on it would erase the comparison by inviting the two to
+    be made equal. The same split ``count_claim``/``content_count`` already draws on the count pair.
+
+    **Test steps:**
+
+    * compose the record fields for a Tutorial
+    * verify each duration is composed exactly once, under its own field type
+    """
+    specs = [spec for spec in composed_field_specs(typed_model("tutorial")) if spec.name.endswith("_duration")]
+
+    assert [(spec.name, spec.type) for spec in specs] == [
+        ("advertised_duration", "duration"),
+        ("original_duration", "measured_duration"),
+        ("current_duration", "measured_duration"),
+    ]
 
 
 def test_a_collection_composes_the_common_core_and_none_of_the_resource_fields() -> None:

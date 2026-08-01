@@ -1,45 +1,28 @@
 """Tests for ContentCountEdit: the stored spin box, the computed label, and the explicit apply between them."""
 
+# the measure/apply/busy contract is the one every measure row's tests pin, because all three rows are
+# one `MeasuredValueEdit`; each suite pins it through its own row, which is where a user meets it
+# pylint: disable=duplicate-code
+
 from borco_pyside.widgets import UnboundedSpinBox
-from PySide6.QtWidgets import QLabel, QToolButton
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.content_count_edit import ContentCountEdit
 
+from .measure_row_internals import (
+    internal_apply_button,
+    internal_compute_button,
+    internal_computed_label,
+    internal_editor,
+)
+
 
 def internal_spin_box(edit: ContentCountEdit) -> UnboundedSpinBox:
-    """Return the widget's private stored-count spin box -- ``ContentCountEdit`` exposes no accessor.
+    """Return the row's stored-count spin box, named for what this row puts there.
 
     :param edit: the widget to inspect.
     :returns: the internal ``UnboundedSpinBox``.
     """
-    return edit._ContentCountEdit__spin_box  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_computed_label(edit: ContentCountEdit) -> QLabel:
-    """Return the widget's private computed-count label -- ``ContentCountEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``QLabel``.
-    """
-    return edit._ContentCountEdit__computed_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_apply_button(edit: ContentCountEdit) -> QToolButton:
-    """Return the widget's private apply button -- ``ContentCountEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``QToolButton``.
-    """
-    return edit._ContentCountEdit__apply_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_compute_button(edit: ContentCountEdit) -> QToolButton:
-    """Return the widget's private compute button -- ``ContentCountEdit`` exposes no accessor.
-
-    :param edit: the widget to inspect.
-    :returns: the internal ``QToolButton``.
-    """
-    return edit._ContentCountEdit__compute_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return internal_editor(edit)
 
 
 def test_edit_starts_unset_with_nothing_computed(qtbot: QtBot) -> None:

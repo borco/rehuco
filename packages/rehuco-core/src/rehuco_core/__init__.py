@@ -9,6 +9,7 @@ from .constants import (
     IMAGE_EXTENSIONS,
     INFO_REHU_FILENAME,
     REHU_SUFFIX,
+    VIDEO_EXTENSIONS,
 )
 from .learning_path_entries import LearningPathEntry, visible_learning_paths
 from .lock_reasons import LockReason, LockReasonKind
@@ -35,6 +36,15 @@ from .plugins import (
     USERS_KEY,
     PluginRegistry,
     PluginSpec,
+)
+from .rehu_content_duration import (
+    DEFAULT_DURATION_PROBE,
+    DURATION_PROBES,
+    DurationProbe,
+    DurationProbeError,
+    FfprobeDurationProbe,
+    MediaInfoDurationProbe,
+    content_duration,
 )
 from .rehu_content_files import content_size_on_disk, enumerate_content_files
 from .rehu_content_images import ContentImageEntry, enumerate_content_images
@@ -72,15 +82,21 @@ __all__ = [
     "CollectionEntry",
     "ContentImageEntry",
     "DEFAULT_CURRENT_USERNAME",
+    "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
+    "DURATION_PROBES",
+    "DurationProbe",
+    "DurationProbeError",
     "EXCLUDED_FILE_PATTERNS",
     "FORMAT_VERSION_KEY",
+    "FfprobeDurationProbe",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
     "LearningPathEntry",
     "LockReason",
     "LockReasonKind",
+    "MediaInfoDurationProbe",
     "PUBLIC_USERNAME",
     "PartialRenameError",
     "PluginBlock",
@@ -102,10 +118,12 @@ __all__ = [
     "TcDocument",
     "TcScreenshotScanner",
     "USERS_KEY",
+    "VIDEO_EXTENSIONS",
     "__version__",
     "author_name",
     "authors_comma_editable",
     "collection_entries",
+    "content_duration",
     "content_size_on_disk",
     "convert_tc",
     "current_block_version",

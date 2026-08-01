@@ -21,6 +21,11 @@ requires-python = ">=3.14"
 dependencies = [
     "borco-core",
     "pillow",
+    # the bundled duration probe (#224). Its wheels carry libmediainfo itself for Windows, macOS and
+    # Linux, so the three installers gain a probe rather than a runtime dependency on an FFmpeg the
+    # user has to install first -- 3.3 MB on Windows, measured against PyAV's 67 MB, which is #211's
+    # lesson (unexamined payload rides along unnoticed) applied before rather than after the fact.
+    "pymediainfo",
     "pyyaml",
 ]
 

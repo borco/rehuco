@@ -12,6 +12,8 @@ from .image_strip import ImageStrip
 from .line_edit import LineEdit
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
+from .measured_duration_edit import MeasuredDurationEdit
+from .measured_value_edit import MeasuredValueEdit
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
@@ -32,6 +34,8 @@ __all__ = [
     "LineEdit",
     "MarkdownEdit",
     "MarkdownView",
+    "MeasuredDurationEdit",
+    "MeasuredValueEdit",
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",
