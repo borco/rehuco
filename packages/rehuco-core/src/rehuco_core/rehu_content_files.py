@@ -237,3 +237,35 @@ def enumerate_content_files(rehu_path: Path, excluded_patterns: tuple[str, ...] 
         raising -- a document-level condition, not a crash.
     """
     return ContentFileScanner(rehu_path, excluded_patterns).scan()
+
+
+def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> int:
+    """Sum the sizes of ``rehu_path``'s content files -- the resource's footprint on disk
+    ([[field-schema#duration-size]], #223).
+
+    A ``stat`` sum over :func:`enumerate_content_files`, deliberately not a walk of its own: the size a
+    user is shown and the files a checksum manifest covers must be the same set, and the one way to
+    guarantee that is to ask the same question (#226).
+
+    **The apparent size, not the allocated size.** ``st_size`` is what the file claims to be, which is
+    what a listing quotes and what a re-download has to fetch; block allocation and compression are
+    properties of the filesystem it happens to sit on, so the same content would measure differently per
+    host and the number would stop being comparable.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param excluded_patterns: filename globs to leave out of the directory-scoped walk, passed straight
+        through to :func:`enumerate_content_files`.
+    :returns: the total size in whole bytes; ``0`` when the resource has no content files at all, and
+        for a missing or unreadable directory -- the enumeration already reports that as *nothing found*
+        rather than raising, and a size scan has nothing to add to it.
+    """
+    total = 0
+    for path in enumerate_content_files(rehu_path, excluded_patterns):
+        try:
+            total += path.stat().st_size
+        except OSError:
+            # a file listed a moment ago and unreadable now -- deleted mid-scan, or a mount that went
+            # away ([[mounts-and-storage#offline-mounts]]). It costs its own bytes, not the whole
+            # measurement, the same way an unreadable directory costs only its own contents.
+            continue
+    return total

@@ -1,11 +1,19 @@
-"""Tests for content-file enumeration -- the set the size scan and the checksums share (#226)."""
+"""Tests for content-file enumeration -- the set the size scan and the checksums share (#226) -- and
+for the size-on-disk sum over it (#223).
+"""
 
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 
 from pytest_mock import MockerFixture
-from rehuco_core import EXCLUDED_FILE_PATTERNS, INFO_REHU_FILENAME, enumerate_content_files
+from rehuco_core import (
+    EXCLUDED_FILE_PATTERNS,
+    INFO_REHU_FILENAME,
+    content_size_on_disk,
+    enumerate_content_files,
+)
 
 DIRECTORY: Final = Path("/fake/resource")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
@@ -569,6 +577,159 @@ def test_an_unreadable_subdirectory_costs_only_its_own_contents(mocker: MockerFi
     )
 
     assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+# endregion
+
+
+# region size on disk
+
+
+def mock_sizes(mocker: MockerFixture, sizes: dict[str, int], *, unreadable: list[str] | None = None) -> None:
+    """Mock ``Path.stat`` so each fake path reports the size the test gave it.
+
+    :param mocker: pytest-mock fixture.
+    :param sizes: fake paths relative to :data:`DIRECTORY`, ``/``-separated, mapped to their byte size.
+    :param unreadable: fake paths whose ``stat`` should raise ``OSError`` -- a file listed a moment ago
+        and gone now, which the sum must survive.
+    """
+    gone = {DIRECTORY / name for name in unreadable or []}
+    sized = {DIRECTORY / name: size for name, size in sizes.items()}
+
+    def stat(path: Path, **_kwargs: object) -> SimpleNamespace:
+        if path in gone:
+            raise PermissionError(path)
+        return SimpleNamespace(st_size=sized[path])
+
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=stat)
+
+
+def test_the_size_is_the_sum_of_every_content_file(mocker: MockerFixture) -> None:
+    """The footprint is what the content weighs, summed over the same set the checksums will cover (#226).
+
+    **Test steps:**
+
+    * mock a tree holding two videos, one of them nested, and give each a size
+    * measure ``info.rehu``'s size on disk
+    * verify the total is both files' bytes
+    """
+    mock_tree(mocker, ["info.rehu", "intro.mp4", "part1/lesson.mp4"], directories=["part1"])
+    mock_sizes(mocker, {"intro.mp4": 1024, "part1/lesson.mp4": 2048})
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 3072
+
+
+def test_the_resources_own_bookkeeping_weighs_nothing(mocker: MockerFixture) -> None:
+    """The record, its screenshots and its manifest are excluded structurally, so editing a description
+    or adding a screenshot never changes the measured size ([[data-model#checksums]]).
+
+    **Test steps:**
+
+    * mock a tree holding one video beside the record, a screenshot and a checksum manifest
+    * measure ``info.rehu``'s size on disk
+    * verify only the video counted
+    """
+    mock_tree(mocker, ["info.rehu", "info00.jpg", "info.sfv", "video.mp4"])
+    mock_sizes(mocker, {"video.mp4": 4096})
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 4096
+
+
+def test_junk_files_weigh_nothing_whatever_their_casing(mocker: MockerFixture) -> None:
+    """A share's ``Thumbs.db`` is not content, and must not survive the scan by spelling -- SMB and
+    macOS both hand back casings Windows never wrote (#226).
+
+    **Test steps:**
+
+    * mock a tree holding a video beside ``THUMBS.DB`` and a macOS AppleDouble file
+    * measure ``info.rehu``'s size on disk
+    * verify only the video counted
+    """
+    mock_tree(mocker, ["info.rehu", "video.mp4", "THUMBS.DB", "._video.mp4"])
+    mock_sizes(mocker, {"video.mp4": 512})
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 512
+
+
+def test_the_measured_size_follows_the_exclusion_list_it_is_handed(mocker: MockerFixture) -> None:
+    """The set is injected, not read from a setting: the same tree measures differently under a
+    different list, which is what lets the size scan and the checksums be handed one answer (#226).
+
+    **Test steps:**
+
+    * mock a tree holding a video beside a ``.tmp`` file
+    * measure with the shipped defaults, and again with a list that excludes ``*.tmp``
+    * verify the second measurement is smaller by the temporary file's bytes
+    """
+    mock_tree(mocker, ["info.rehu", "video.mp4", "scratch.tmp"])
+    mock_sizes(mocker, {"video.mp4": 512, "scratch.tmp": 8})
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH, EXCLUDED_FILE_PATTERNS) == 520
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH, ("*.tmp",)) == 512
+
+
+def test_a_file_scoped_resource_weighs_its_own_archive_alone(mocker: MockerFixture) -> None:
+    """A file-scoped ``foo.rehu`` measures ``foo.zip`` and nothing else -- its neighbours are out of
+    scope before any exclusion is consulted, so emptying the pattern list cannot reach them (#226).
+
+    **Test steps:**
+
+    * mock a directory holding ``foo.zip`` beside a whole other resource's files
+    * measure ``foo.rehu``'s size on disk with the defaults, and again with no exclusions at all
+    * verify both are ``foo.zip``'s bytes alone
+    """
+    mock_siblings(mocker, ["foo.zip", "info.rehu", "info00.jpg", "bar00.jpg", "bar.zip"])
+    mock_sizes(mocker, {"foo.zip": 256})
+
+    assert content_size_on_disk(FILE_SCOPED_PATH) == 256
+    assert content_size_on_disk(FILE_SCOPED_PATH, ()) == 256
+
+
+def test_an_unreadable_directory_measures_zero_without_raising(mocker: MockerFixture) -> None:
+    """An offline mount is a document-level condition, not a crash: the enumeration already reports it as
+    *nothing found* ([[mounts-and-storage#offline-mounts]]), and the sum has nothing to add.
+
+    **Test steps:**
+
+    * mock ``os.scandir`` to raise
+    * measure ``info.rehu``'s size on disk
+    * verify it is ``0`` and nothing was raised
+    """
+    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 0
+
+
+def test_a_file_that_vanishes_mid_scan_costs_only_its_own_bytes(mocker: MockerFixture) -> None:
+    """A file listed a moment ago and unreadable now -- deleted mid-scan, or a mount that went away --
+    drops out of the total rather than taking the whole measurement down.
+
+    **Test steps:**
+
+    * mock a tree of two videos, one of which raises on ``stat``
+    * measure ``info.rehu``'s size on disk
+    * verify the readable one's bytes came back and nothing was raised
+    """
+    mock_tree(mocker, ["info.rehu", "here.mp4", "gone.mp4"])
+    mock_sizes(mocker, {"here.mp4": 64, "gone.mp4": 1024}, unreadable=["gone.mp4"])
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 64
+
+
+def test_a_resource_with_no_content_weighs_zero(mocker: MockerFixture) -> None:
+    """A directory holding only the resource's own bookkeeping measures ``0`` -- there is content and
+    there is none of it, which is a different answer from an unreadable mount only in how it got here.
+
+    **Test steps:**
+
+    * mock a tree holding just the record and its screenshot
+    * measure ``info.rehu``'s size on disk
+    * verify it is ``0``
+    """
+    mock_tree(mocker, ["info.rehu", "info00.jpg"])
+    mock_sizes(mocker, {})
+
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 0
 
 
 # endregion

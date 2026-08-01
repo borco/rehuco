@@ -16,6 +16,7 @@ from .path_editor import PathEditor
 from .rating_slider import RatingSlider
 from .single_choice_combo_box import SingleChoiceComboBox
 from .type_badge import TypeBadge
+from .value_readout import ValueReadout
 
 __all__ = [
     "ChoiceCheckBoxes",
@@ -35,4 +36,5 @@ __all__ = [
     "RatingSlider",
     "SingleChoiceComboBox",
     "TypeBadge",
+    "ValueReadout",
 ]

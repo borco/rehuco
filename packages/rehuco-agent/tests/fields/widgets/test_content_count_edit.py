@@ -209,3 +209,66 @@ def test_an_unmeasurable_count_shows_nothing_and_applies_nothing(qtbot: QtBot) -
 
     assert internal_computed_label(edit).text() == ""
     assert not internal_apply_button(edit).isEnabled()
+
+
+def test_compute_enters_the_busy_state_and_disables_both_actions(qtbot: QtBot) -> None:
+    """A count in flight disables the buttons: opening every archive a pack holds takes time, and
+    neither a second count nor an apply of a half-finished answer may be pressed meanwhile (#198, #223).
+
+    **Test steps:**
+
+    * build the widget over a stored count with a stale measurement already showing, so apply is offered
+    * press ``Compute``
+    * verify the widget is busy and both buttons are disabled
+    """
+    edit = ContentCountEdit()
+    qtbot.addWidget(edit)
+    edit.set_value(7)  # type: ignore[attr-defined]
+    edit.computed = 9
+    assert internal_apply_button(edit).isEnabled()
+
+    internal_compute_button(edit).click()
+
+    assert edit.busy is True
+    assert not internal_compute_button(edit).isEnabled()
+    assert not internal_apply_button(edit).isEnabled()
+
+
+def test_showing_a_measurement_leaves_the_busy_state(qtbot: QtBot) -> None:
+    """The owner's answer is what ends the count: the buttons come back and the result is on screen.
+
+    **Test steps:**
+
+    * press ``Compute``, then hand the widget a result
+    * verify it is no longer busy, the readout shows the result, and both buttons are offered again
+    """
+    edit = ContentCountEdit()
+    qtbot.addWidget(edit)
+    internal_compute_button(edit).click()
+
+    edit.show_measurement(9)
+
+    assert edit.busy is False
+    assert edit.computed == 9
+    assert internal_computed_label(edit).text() == "9"
+    assert internal_compute_button(edit).isEnabled()
+    assert internal_apply_button(edit).isEnabled()
+
+
+def test_a_failed_measurement_still_leaves_the_busy_state(qtbot: QtBot) -> None:
+    """A count that measured nothing still hands back an answer, so the row never strands itself busy
+    with a permanently dead ``Compute``.
+
+    **Test steps:**
+
+    * press ``Compute``, then hand the widget ``None``
+    * verify it is no longer busy and compute is offered again
+    """
+    edit = ContentCountEdit()
+    qtbot.addWidget(edit)
+    internal_compute_button(edit).click()
+
+    edit.show_measurement(None)
+
+    assert edit.busy is False
+    assert internal_compute_button(edit).isEnabled()

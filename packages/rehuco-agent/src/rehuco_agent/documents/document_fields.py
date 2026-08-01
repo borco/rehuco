@@ -10,7 +10,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any, Final, NamedTuple
 
-from rehuco_core import CORE_FIELD_NAMES, PluginRegistry, enumerate_content_images
+from rehuco_core import CORE_FIELD_NAMES, PluginRegistry, content_size_on_disk, enumerate_content_images
 
 from ..fields import (
     PROVENANCE_ABANDONED_TYPE,
@@ -27,6 +27,7 @@ from ..fields import (
     TypeField,
     UnknownField,
 )
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -44,6 +45,11 @@ CURRENT_COUNT_FIELD_NAME: Final = "current_count"
 """The measured content-image count's model name ([[field-schema#field-mapping]]) -- the one record field
 whose editor takes a runtime callback ([[plugins#field-toolkit]], #198), named here so
 :func:`build_document_form` can hand it one."""
+
+SIZE_FIELD_NAMES: Final = ("original_size", "current_size")
+"""The measured size fields' model names ([[field-schema#field-mapping]]) -- both take the same runtime
+measure callback (#223), because both measure the same content and differ only in *when* they are
+pressed ([[field-schema#duration-size]])."""
 
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
@@ -290,6 +296,25 @@ def build_document_form(
         extensions = shared_reference_images_settings().content_image_extensions
         return len(enumerate_content_images(path, extensions))
 
+    def measure_size_on_disk() -> int | None:
+        """Sum what this resource's content occupies on disk ([[data-model#resource-scoping]], #223).
+
+        The walk takes its excluded-name globs as an argument rather than reading a setting (#226), so
+        this is where the user's list is read -- at every measurement, so a list edited in Settings takes
+        effect on the next Compute without rebuilding the form. It is the *same* list the checksums will
+        take (#203): a file summed here and skipped there is the bug the one shared set exists to prevent.
+
+        Runs on a worker thread (`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`), so
+        it touches nothing but plain Python state and the filesystem.
+
+        :returns: the total size in bytes, or ``None`` when the document has no path yet -- there is
+            nothing on disk to measure, which is not the same as measuring zero.
+        """
+        path = model.path
+        if path is None:
+            return None
+        return content_size_on_disk(path, shared_excluded_files_settings().excluded_file_patterns)
+
     description_field = DescriptionField(
         "description",
         image_scanner=model.image_scanner,
@@ -306,10 +331,13 @@ def build_document_form(
     # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
     fields: list[Field[Any]] = [type_field, location_field, images_field]
     # a record field resolves from its (type, name) pair alone, except where its editor needs a runtime
-    # callback the registry cannot build generically: the content count's measure action reaches both the
-    # filesystem and the user's recognized-extension setting, neither of which the toolkit knows about, so
-    # it is supplied here the same way the images strip's scanner is (#198)
+    # callback the registry cannot build generically: every measure action reaches both the filesystem and
+    # a user setting -- the recognized extensions for the count (#198), the excluded names for the sizes
+    # (#223/#226) -- neither of which the toolkit knows about, so they are supplied here the same way the
+    # images strip's scanner is. Both sizes get the *same* callback: they measure the same content and
+    # differ only in when the user presses them ([[field-schema#duration-size]])
     runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
+    runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})
     for spec in composed_field_specs(model):
         fields.append(
             registry.create(

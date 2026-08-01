@@ -22,9 +22,12 @@ from rehuco_agent.fields import (
     PROVENANCE_NOT_CURRENT_TYPE,
     PROVENANCE_PLUGIN_ABSENT,
 )
-from rehuco_agent.fields.fields_form import CONTENT_COLUMN, MISC_COLUMN
-from rehuco_agent.fields.widgets import ContentCountEdit, SingleChoiceComboBox, TypeBadge
+from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN
+from rehuco_agent.fields.widgets import ContentCountEdit, FileSizeEdit, SingleChoiceComboBox, TypeBadge
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
+from rehuco_agent.fields.widgets.file_size_edit import APPLY_TOOLTIP as SIZE_APPLY_TOOLTIP
+from rehuco_agent.fields.widgets.file_size_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
+from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, RehuDocument
 
@@ -313,13 +316,39 @@ def content_count_editor(grid: QWidget) -> ContentCountEdit:
     return editor
 
 
-def press(editor: ContentCountEdit, tooltip: str) -> None:
-    """Press the content count row's button whose action carries ``tooltip``.
+def size_editor(grid: QWidget, label_text: str) -> FileSizeEdit:
+    """Find one of the two size rows' composite editors by its row label.
 
-    Both buttons are icon-only, so the tooltip is what names them apart on this surface.
+    Both size fields render the same widget type, so ``findChild`` alone cannot tell ``Original Size``
+    from ``Current Size`` -- this maps the row's label to the editor sharing its grid row, the same way
+    :func:`drop_button_for` maps a value to its button.
+
+    :param grid: the editor surface to search.
+    :param label_text: the row's label, ``"Original Size"`` or ``"Current Size"``.
+    :returns: that row's `FileSizeEdit`.
+    """
+    layout = grid.layout()
+    assert isinstance(layout, QGridLayout)
+    for i in range(layout.count()):
+        item = layout.itemAt(i)
+        widget = item.widget() if item is not None else None
+        row, column, _, _ = cast(tuple[int, int, int, int], layout.getItemPosition(i))
+        if isinstance(widget, QLabel) and widget.text() == label_text and column == LABEL_COLUMN:
+            content = layout.itemAtPosition(row, CONTENT_COLUMN)
+            editor = content.widget() if content is not None else None
+            assert isinstance(editor, FileSizeEdit)
+            return editor
+    raise AssertionError(f"no {label_text!r} row on this surface")
+
+
+def press(editor: QWidget, tooltip: str) -> None:
+    """Press the measure row's button whose action carries ``tooltip``.
+
+    Both buttons are icon-only, so the tooltip is what names them apart within one row -- and the search
+    is scoped to the row, since the two size rows carry identical tooltips.
 
     :param editor: the composite editor holding the buttons.
-    :param tooltip: the action's tooltip, :data:`COMPUTE_TOOLTIP` or :data:`APPLY_TOOLTIP`.
+    :param tooltip: the action's tooltip, the row's own ``COMPUTE_TOOLTIP`` or ``APPLY_TOOLTIP``.
     """
     button = next(button for button in editor.findChildren(QToolButton) if button.toolTip() == tooltip)
     button.click()
@@ -348,7 +377,7 @@ def test_compute_counts_the_resources_content_images_with_the_configured_extensi
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TOOLTIP)
+    compute(qtbot, editor, COMPUTE_TOOLTIP)
 
     enumerate_content_images.assert_called_once_with(PACK_PATH, (".bmp", ".tif"))
     assert editor.computed == 2
@@ -370,7 +399,7 @@ def test_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mock
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TOOLTIP)
+    compute(qtbot, editor, COMPUTE_TOOLTIP)
 
     enumerate_content_images.assert_not_called()
     assert editor.computed is None
@@ -404,7 +433,7 @@ def test_applying_the_measured_count_writes_it_to_the_document(qtbot: QtBot, moc
     grid = main_editor(qtbot, model)
     editor = content_count_editor(grid)
 
-    press(editor, COMPUTE_TOOLTIP)
+    compute(qtbot, editor, COMPUTE_TOOLTIP)
 
     assert model.document.active_field("current_count") == 1
     assert model.dirty is False
@@ -429,6 +458,94 @@ def test_a_tutorial_has_no_content_count_row_to_compute(qtbot: QtBot) -> None:
     grid = main_editor(qtbot, model)
 
     assert grid.findChild(ContentCountEdit) is None
+
+
+def compute(qtbot: QtBot, editor: ContentCountEdit | FileSizeEdit, tooltip: str) -> None:
+    """Press a measure row's Compute and wait for the off-thread measurement to report back (#223).
+
+    Both kinds of row measure on a worker thread, so a click alone proves nothing: the assertion has to
+    wait for the row to leave its busy state.
+
+    :param qtbot: the pytest-qt bot driving the event loop while the measurement runs.
+    :param editor: the measure row to compute on.
+    :param tooltip: that row's own compute tooltip.
+    """
+    press(editor, tooltip)
+    qtbot.waitUntil(lambda: not editor.busy)
+
+
+def test_compute_sums_the_resources_content_with_the_configured_exclusions(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The size row's Compute measures *this* document's content, with the excluded-name list the user
+    configured -- the wiring the toolkit cannot build for itself (#223, #226).
+
+    **Test steps:**
+
+    * set a custom pattern list in the shared excluded-files settings
+    * build a document's editor with the size scan mocked to find a gigabyte
+    * press Compute on ``Original Size`` and verify the scan was handed the document's own path and that
+      list
+    * verify the measured size reached the row, without touching the stored one
+    """
+    shared_excluded_files_settings().patterns = ("*.tmp",)
+    content_size_on_disk = mocker.patch(
+        "rehuco_agent.documents.document_fields.content_size_on_disk",
+        return_value=1073741824,
+    )
+    model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial"}}, PACK_PATH))
+    grid = main_editor(qtbot, model)
+    editor = size_editor(grid, "Original Size")
+
+    compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
+
+    content_size_on_disk.assert_called_once_with(PACK_PATH, ("*.tmp",))
+    assert editor.computed == 1073741824
+    assert model.original_size is None
+
+
+def test_size_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A document that has never been saved has nothing on disk to measure, so the scan is not even
+    reached -- and no size of ``0`` is reported for it (#223).
+
+    **Test steps:**
+
+    * build the editor over a path-less document, with the size scan mocked
+    * press Compute on ``Current Size``
+    * verify the scan was never called and nothing was computed
+    """
+    content_size_on_disk = mocker.patch("rehuco_agent.documents.document_fields.content_size_on_disk")
+    model = typed_model("tutorial")
+    grid = main_editor(qtbot, model)
+    editor = size_editor(grid, "Current Size")
+
+    compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
+
+    content_size_on_disk.assert_not_called()
+    assert editor.computed is None
+
+
+def test_the_two_size_rows_apply_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Both rows measure the same content and differ only in *when* they are pressed, so applying one
+    must leave the other alone: ``original_size`` is the footprint when complete, the denominator for
+    *how much is left* ([[field-schema#duration-size]], #223).
+
+    **Test steps:**
+
+    * build the editor over a document whose two sizes disagree, with the scan finding a third number
+    * compute and apply on ``Current Size``
+    * verify ``current_size`` took the measurement and ``original_size`` is untouched
+    """
+    mocker.patch("rehuco_agent.documents.document_fields.content_size_on_disk", return_value=4096)
+    model = RehuDocumentModel(
+        RehuDocument({"core": {"type": "tutorial", "original_size": 8192, "current_size": 1024}}, PACK_PATH)
+    )
+    grid = main_editor(qtbot, model)
+    current = size_editor(grid, "Current Size")
+
+    compute(qtbot, current, SIZE_COMPUTE_TOOLTIP)
+    press(current, SIZE_APPLY_TOOLTIP)
+
+    assert model.current_size == 4096
+    assert model.original_size == 8192
 
 
 # endregion
