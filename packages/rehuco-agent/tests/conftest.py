@@ -11,6 +11,7 @@ from rehuco_agent.settings import (
     image_viewer_settings,
     markdown_rendering_settings,
     reference_images_settings,
+    videos_settings,
 )
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
@@ -18,6 +19,7 @@ from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_sett
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.ui import settings_dialog
+from rehuco_agent.settings.videos_settings import shared_videos_settings
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
@@ -135,6 +137,23 @@ def isolate_shared_excluded_files_settings(mocker: MockerFixture) -> Iterator[No
     mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_excluded_files_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_videos_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `VideosSettings` singleton (#225).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds a
+    `VideosPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from the
+    developer's real on-disk settings for the rest of the session -- and decide, from that file, which
+    backend every later test's duration scan would probe with.
+
+    Tests that specifically exercise the videos settings patch ``persistent_settings`` themselves.
+    """
+    shared_videos_settings.cache_clear()
+    mocker.patch.object(videos_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_videos_settings.cache_clear()
 
 
 @fixture(autouse=True)

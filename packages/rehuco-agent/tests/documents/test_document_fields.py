@@ -39,7 +39,15 @@ from rehuco_agent.fields.widgets.measured_duration_edit import APPLY_TOOLTIP as 
 from rehuco_agent.fields.widgets.measured_duration_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
-from rehuco_core import BUILTIN_PLUGINS, CORE_FIELD_NAMES, TUTORIAL_PLUGIN, DurationProbeError, RehuDocument
+from rehuco_agent.settings.videos_settings import shared_videos_settings
+from rehuco_core import (
+    BUILTIN_PLUGINS,
+    CORE_FIELD_NAMES,
+    TUTORIAL_PLUGIN,
+    DurationProbeError,
+    MediaInfoDurationProbe,
+    RehuDocument,
+)
 
 PACK_PATH = Path("/library/anatomy-pack.rehu")
 """Stand-in path for a saved, file-scoped reference-images resource -- never touched on disk: the
@@ -586,17 +594,20 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     qtbot: QtBot, mocker: MockerFixture
 ) -> None:
     """The duration row's Compute measures *this* document's videos, reading the same excluded-name list
-    the size scan does -- one content set, decided once (#224, #226).
+    the size scan does -- one content set, decided once (#224, #226) -- under the backend and the video
+    formats the Videos settings page holds (#225).
 
     **Test steps:**
 
-    * set a custom pattern list in the shared excluded-files settings
+    * set a custom pattern list in the shared excluded-files settings, and a custom video format in the
+      shared videos settings
     * build a tutorial's editor with the duration scan mocked to find 2h 15m
-    * press Compute on ``Original Duration`` and verify the scan was handed the document's own path and
-      that list
+    * press Compute on ``Original Duration`` and verify the scan was handed the document's own path,
+      that list, the configured formats and a probe built from the selected backend
     * verify the measured duration reached the row, without touching the stored one
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
+    shared_videos_settings().extensions = ("mkv",)
     content_duration = mocker.patch(
         "rehuco_agent.documents.document_fields.content_duration",
         return_value=8100,
@@ -607,7 +618,10 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
-    content_duration.assert_called_once_with(PACK_PATH, excluded_patterns=("*.tmp",))
+    path, probe = content_duration.call_args.args
+    assert path == PACK_PATH
+    assert isinstance(probe, MediaInfoDurationProbe)
+    assert content_duration.call_args.kwargs == {"video_extensions": (".mkv",), "excluded_patterns": ("*.tmp",)}
     assert editor.computed == 8100
     assert model.original_duration is None
 

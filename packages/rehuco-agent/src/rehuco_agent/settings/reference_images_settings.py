@@ -13,7 +13,6 @@ visibly resizes strips already on screen, whereas this set is read only when an 
 is nothing to watch it change. Same shape as `ExcludedFilesSettings`, and for the same reason.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Final
@@ -21,37 +20,26 @@ from typing import Final
 from PySide6.QtCore import QSettings
 from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
+from .extension_lists import normalize_extensions as normalize_extension_list
 from .persistent_settings import persistent_settings, read_stored_strings
 
 GROUP: Final = "reference_images"
 EXTENSIONS_KEY: Final = "extensions"
 
 
-def normalize_extensions(values: Sequence[str]) -> tuple[str, ...]:
+def normalize_extensions(values: object) -> tuple[str, ...]:
     """Normalize an extension list into the form the enumeration matches against.
 
-    Surrounding whitespace is ignored and a leading dot is optional, so ``jpg``, ``.jpg`` and ``  JPG ``
-    all mean the same entry: every entry normalizes to lower case with exactly one leading dot. Empty
-    entries and duplicates are dropped rather than rejected, keeping a blank row or a repeated format
-    from being an error the user has to fix.
-
-    A list holding no usable entry at all -- empty, or nothing but whitespace and bare dots -- falls back
-    to :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`: a list left empty must not silently make every
+    The shared extension-list rule (:func:`~rehuco_agent.settings.extension_lists.normalize_extensions`)
+    under this section's own fallback: a list holding no usable entry at all resolves to
+    :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`, since a list left empty must not silently make every
     reference-images resource count zero images.
 
     :param values: the entries as edited or as stored.
     :returns: the recognized extensions, lower-cased and dot-prefixed, in the order first seen, or the
         shipped set when ``values`` names none.
     """
-    extensions: list[str] = []
-    for entry in values:
-        stem = entry.strip().lstrip(".").lower()
-        if not stem:
-            continue
-        extension = f".{stem}"
-        if extension not in extensions:
-            extensions.append(extension)
-    return tuple(extensions) or CONTENT_IMAGE_EXTENSIONS
+    return normalize_extension_list(values, CONTENT_IMAGE_EXTENSIONS)
 
 
 def read_extensions(value: object) -> tuple[str, ...]:

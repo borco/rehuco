@@ -24,6 +24,7 @@ from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.videos_page import VideosPage
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
@@ -267,6 +268,25 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
 
+def test_registers_the_videos_page_under_the_plugins_group(qtbot: QtBot) -> None:
+    """The Videos page (#225) is registered into the settings dialog, under "Plugins".
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``VideosPage``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, VideosPage) for page in pages)
+
+
 def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None:
     """Descriptions, Images and Viewers folded into one "Plugins" group, sorted by title (#230).
 
@@ -287,6 +307,7 @@ def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None
         "Descriptions",
         "Excluded Files",
         "Images",
+        "Videos",
     ]
 
 

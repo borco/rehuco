@@ -651,7 +651,7 @@ Field order, in the three groups the layout separates:
   against ([[field-schema#duration-size]]), and measuring it would erase the comparison.
   Reading a container is delegated to a **probe backend**, of which two ship, selected by an `engine`
   name the way the Markdown renderer's is
-  ([#225](https://github.com/borco/rehuco/issues/225) is the page that selects one): **MediaInfo**, whose
+  (`Plugins > Videos` is the page that selects one, #225): **MediaInfo**, whose
   library is bundled with the app and is therefore the default, and **ffprobe**, an executable the user
   points at. A backend that cannot run *reports that* rather than measuring `0` — a silent zero is
   indistinguishable from a tutorial holding no video. The recognized video extensions are a list, not a
