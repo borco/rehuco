@@ -64,17 +64,24 @@ and a tree that can be scrolled out of its own viewport.
 
 [[[appendices.settings-pages#category-groups]]]
 
-The category tree is **two levels deep at most**: `add_page(page, group="Editors")` nests the page's
+The category tree is **two levels deep at most**: `add_page(page, group="Plugins")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
-top-level row of its own. Today "Descriptions" (`DescriptionsPage`) sits under **Editors**, "Images"
-(`ImagesPage`) sits under **Viewers**, "Reference Images" (`ReferenceImagesPage`, #222) sits under
-**Plugins** alongside "Excluded Files" (`ExcludedFilesPage`, #226), and "System Integration"
-(`RegistryPage`) is top-level. Group names are plural — a group
-holds pages, and **Plugins** is where a resource type's own settings go, one page per plugin.
+top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
+Files" (`ExcludedFilesPage`, #226), "Images" (`ImagesPage`) and "Reference Images"
+(`ReferenceImagesPage`, #222) — registered in that alphabetical order — and "System Integration"
+(`RegistryPage`) is top-level. Group names are plural — a group holds pages, and **Plugins** is where
+a resource type's own settings go, one page per plugin.
 
-A group row **carries no page** — it is a header, so selecting it leaves the shown page (and its frame
-filtering) exactly as it was, rather than blanking the stack. Everything that walks pages
-(Save all / Drop all) recurses one level into groups, so a grouped page is never skipped.
+A group row **carries no page of its own** — it is a header. Selecting it shows every page under it
+at once, stacked vertically in one scrolling column, each preceded by its title as a heading — since
+the tree selection no longer names which page is which once several are shown together (#230). A
+group holding one page shows just that one. Selecting a leaf page directly, whether or not a group
+was shown before it, re-parents that page out of any group column and back into its own single-page
+view — a page has one parent, so this is a move, never a second copy. The live frame filter composes
+with this: a shown group filters every one of its pages' frames, not just one, which is a better
+answer to "where is that setting" than paging through children one by one. Everything that walks
+pages (Save all / Drop all, and now Save/Drop *current page* on a selected group row) recurses one
+level into groups, so a grouped page is never skipped.
 
 A **second `WrappingCheckBox`, "Show full group if title matches"**, sits under the page-level one and
 makes the tree filter group-aware:
@@ -117,8 +124,9 @@ The dialog shell dispatches, it never interprets:
 
 - **Save all** / **Drop all** — call `save_changes()` / `drop_changes()` on every registered page,
   in tree order (a group's pages together, at the group's own position).
-- **Save current page** / **Drop current page** — call it on whichever page's tree row is currently
-  selected only.
+- **Save current page** / **Drop current page** — call it on the selected leaf page, or on every page
+  under a selected group row (#230) — the same one-level recursion Save all / Drop all already do,
+  now also driven by what the tree's current row is rather than always every page.
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 

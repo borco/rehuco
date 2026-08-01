@@ -295,9 +295,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Register every settings category page this platform supports (#47).
 
         Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
-        dialog initially shows. Descriptions is cross-platform, and nests under the "Editors" group (#76);
-        Images nests under "Viewers", and "Plugins" holds Excluded Files (#226) and Reference Images
-        (#222), in that order.
+        dialog initially shows. Every other cross-platform page nests under one "Plugins" group (#76,
+        #230), registered alphabetically by title: Descriptions, Excluded Files (#226), Images,
+        Reference Images (#222).
 
         The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
         wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
@@ -311,9 +311,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         report there.
         """
         self.__settings_dialog.add_page(IdentityPage())
-        self.__settings_dialog.add_page(DescriptionsPage(), group="Editors")
-        self.__settings_dialog.add_page(ImagesPage(), group="Viewers")
+        self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
+        self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
         self.__settings_dialog.add_page(ReferenceImagesPage(), group="Plugins")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel

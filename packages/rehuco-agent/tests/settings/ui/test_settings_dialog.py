@@ -201,6 +201,50 @@ def select_page(dialog: SettingsDialog, title: str) -> None:
     tree.setCurrentIndex(visible_index(dialog, title))
 
 
+def select_group(dialog: SettingsDialog, title: str) -> None:
+    """Select the tree row for the group titled ``title`` (#230).
+
+    :param dialog: the dialog whose tree to select in.
+    :param title: the group's title, as passed to :meth:`SettingsDialog.add_page`'s ``group``.
+    """
+    dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, title))  # type: ignore[attr-defined]
+
+
+def shown_group_container(dialog: SettingsDialog) -> QWidget:
+    """The container widget of whichever group's stacked column the page stack is currently showing (#230).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: the currently-shown scroll area's content widget.
+    """
+    area = dialog_ui(dialog).page_stack.currentWidget()  # type: ignore[attr-defined]
+    return area.widget()
+
+
+def stacked_group_pages(dialog: SettingsDialog) -> list[QWidget]:
+    """The pages stacked inside the currently-shown group's column, in order (#230).
+
+    Headings (plain ``QLabel``s, :meth:`stacked_group_headings`) are filtered out, keeping just the
+    page widgets themselves.
+
+    :param dialog: the dialog whose stack to read.
+    :returns: the pages, in the order they appear in the column.
+    """
+    layout = shown_group_container(dialog).layout()
+    widgets = [layout.itemAt(index).widget() for index in range(layout.count())]
+    return [widget for widget in widgets if widget is not None and not isinstance(widget, QLabel)]
+
+
+def stacked_group_headings(dialog: SettingsDialog) -> list[str]:
+    """The heading labels' text inside the currently-shown group's column, in order (#230).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: each heading's text, in the order it appears in the column.
+    """
+    layout = shown_group_container(dialog).layout()
+    widgets = [layout.itemAt(index).widget() for index in range(layout.count())]
+    return [widget.text() for widget in widgets if isinstance(widget, QLabel)]
+
+
 def test_add_page_creates_a_tree_row_and_stacked_page(qtbot: QtBot) -> None:
     """Adding a page gives it both a category-tree row and a page in the stacked widget.
 
@@ -236,6 +280,24 @@ def test_first_added_page_becomes_the_initially_selected_one(qtbot: QtBot) -> No
     page = FakePage("Registry")
 
     dialog.add_page(page)
+
+    assert current_page(dialog) is page
+
+
+def test_the_first_added_page_is_selected_even_when_grouped(qtbot: QtBot) -> None:
+    """A grouped first page is still auto-selected -- its group's own stacked-view scroll area (#230)
+    also occupies a page-stack slot, so "first page" can't be told from ``page_stack.count() == 1``.
+
+    **Test steps:**
+
+    * add a page under a group, as the very first page registered
+    * verify the stack's current widget is that page, not the group's (empty-of-selection) column
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Descriptions")
+
+    dialog.add_page(page, group="Editors")
 
     assert current_page(dialog) is page
 
@@ -593,14 +655,13 @@ def test_selecting_a_grouped_page_switches_the_stacked_page(qtbot: QtBot) -> Non
     assert current_page(dialog) is grouped
 
 
-def test_selecting_a_group_row_leaves_the_shown_page_untouched(qtbot: QtBot) -> None:
-    """A group row is a header carrying no page, so selecting it changes nothing (#76).
+def test_selecting_a_group_with_one_page_shows_that_pages_frames(qtbot: QtBot) -> None:
+    """Selecting a group holding a single page shows that page, frames included (#230).
 
     **Test steps:**
 
-    * add a grouped page (auto-selected) with a frame the live filter hides
-    * select the group's own row
-    * verify the stack still shows the page and its frame filtering is unchanged
+    * add one grouped page with a frame the live filter hides, then filter and select the group
+    * verify the page is the one (and only) page stacked in the group's column, filtered as normal
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -608,31 +669,205 @@ def test_selecting_a_group_row_leaves_the_shown_page_untouched(qtbot: QtBot) -> 
     dialog.add_page(page, group="Editors")
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
 
-    dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, "Editors"))  # type: ignore[attr-defined]
+    select_group(dialog, "Editors")
 
-    assert current_page(dialog) is page
+    assert stacked_group_pages(dialog) == [page]
     assert page.frames[1].isVisibleTo(page) is False
 
 
-def test_typing_filter_text_with_a_group_row_selected_does_nothing(qtbot: QtBot) -> None:
-    """Filtering while a group header is the current row is a no-op: it has no frames of its own to
-    show or hide, and there is no page under it to reach from here (#76).
+def test_selecting_a_group_with_several_pages_stacks_them_in_tree_order(qtbot: QtBot) -> None:
+    """Selecting a group with several pages shows all of them together, in tree order (#230).
 
     **Test steps:**
 
-    * add a grouped page, then select the group's own row
-    * type filter text
-    * verify it doesn't raise, and the page's frames are left as they were (untouched, not hidden)
+    * add two pages under one group
+    * select the group's own row
+    * verify both pages are stacked, in the order they were added, each with its title as a heading
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Images"]])
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+
+    select_group(dialog, "Editors")
+
+    assert stacked_group_pages(dialog) == [first, second]
+    assert stacked_group_headings(dialog) == ["Descriptions", "Tags"]
+
+
+def test_reselecting_an_already_shown_group_does_not_duplicate_its_pages(qtbot: QtBot) -> None:
+    """Navigating away from a shown group and back rebuilds its column without leaving any page
+    doubled up -- each rejoins by detach-then-attach, never a second copy (#230).
+
+    **Test steps:**
+
+    * add two pages under one group and an unrelated top-level page, then select the group
+    * select the top-level page, then select the group again
+    * verify the group's column still holds each page exactly once, in the same order
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    other = FakePage("System Integration")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+    dialog.add_page(other)
+    select_group(dialog, "Editors")
+
+    select_page(dialog, "System Integration")
+    select_group(dialog, "Editors")
+
+    assert stacked_group_pages(dialog) == [first, second]
+    assert stacked_group_headings(dialog) == ["Descriptions", "Tags"]
+
+
+def test_reselecting_a_group_after_visiting_one_of_its_leaves_keeps_tree_order(qtbot: QtBot) -> None:
+    """A page pulled out of a group by selecting its own leaf row rejoins at its tree position when
+    the group is reselected, not always at the end.
+
+    Guards the defect this view shipped with: skipping already-homed pages when rebuilding the
+    column left them in place while the rejoining page was appended after them regardless of its
+    tree position, so selecting the *first* page's leaf row and then the group again pushed that
+    page to the bottom of the column instead of back to the top (#230).
+
+    **Test steps:**
+
+    * add three pages under one group and select the group (stacking all three)
+    * select the first page's own leaf row, then select the group again
+    * verify the column is back in tree order, not with the first page pushed to the end
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Excluded Files")
+    third = FakePage("Images")
+    dialog.add_page(first, group="Plugins")
+    dialog.add_page(second, group="Plugins")
+    dialog.add_page(third, group="Plugins")
+    select_group(dialog, "Plugins")
+
+    select_page(dialog, "Descriptions")
+    select_group(dialog, "Plugins")
+
+    assert stacked_group_pages(dialog) == [first, second, third]
+    assert stacked_group_headings(dialog) == ["Descriptions", "Excluded Files", "Images"]
+
+
+def test_selecting_a_leaf_page_after_a_group_shows_it_alone_with_no_group_leftovers(qtbot: QtBot) -> None:
+    """Selecting a leaf page after its group was shown displays only that page (#230).
+
+    **Test steps:**
+
+    * add two pages under one group, then select the group (stacking both)
+    * select one page's own leaf row
+    * verify the stack shows only that page -- not the group's stacked column
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+    select_group(dialog, "Editors")
+
+    select_page(dialog, "Descriptions")
+
+    assert current_page(dialog) is first
+
+
+def test_a_pages_state_survives_moving_from_a_group_view_to_a_leaf_view(qtbot: QtBot) -> None:
+    """A page is re-parented between the group view and its own, never duplicated (#230).
+
+    **Test steps:**
+
+    * add a page under a group, select the group, then stand in for an in-progress edit on the page
+    * select the page's own leaf row
+    * verify the same page instance -- with that state intact -- is what's shown, not a copy
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Descriptions")
     dialog.add_page(page, group="Editors")
-    dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, "Editors"))  # type: ignore[attr-defined]
+    select_group(dialog, "Editors")
+    page.save_calls = 5  # stands in for an in-progress edit: state that must survive re-parenting
+
+    select_page(dialog, "Descriptions")
+
+    assert current_page(dialog) is page
+    assert page.save_calls == 5
+
+
+def test_apply_current_page_on_a_group_row_saves_every_page_under_it(qtbot: QtBot) -> None:
+    """ "Apply" on a selected group row saves every page under it, not just one (#230).
+
+    **Test steps:**
+
+    * add two pages under one group and select the group's own row
+    * trigger ``apply_current_page_action``
+    * verify both pages' ``save_changes`` were called
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+    select_group(dialog, "Editors")
+
+    dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
+
+    assert first.save_calls == 1
+    assert second.save_calls == 1
+
+
+def test_reset_current_page_on_a_group_row_drops_every_page_under_it(qtbot: QtBot) -> None:
+    """ "Reset" on a selected group row drops every page under it, not just one (#230).
+
+    **Test steps:**
+
+    * add two pages under one group and select the group's own row
+    * trigger ``reset_current_page_action``
+    * verify both pages' ``drop_changes`` were called
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+    select_group(dialog, "Editors")
+
+    dialog_ui(dialog).reset_current_page_action.trigger()  # type: ignore[attr-defined]
+
+    assert first.drop_calls == 1
+    assert second.drop_calls == 1
+
+
+def test_typing_filter_text_with_a_group_row_selected_filters_every_pages_frames(qtbot: QtBot) -> None:
+    """Filtering while a group is the current row filters every one of its stacked pages' frames, not
+    just one -- a filtered group view composes with the per-page frame filter (#230).
+
+    **Test steps:**
+
+    * add two pages, each with a frame matching only one, under one group; select the group
+    * type filter text matching only the first page's frame
+    * verify the first page's frame stays shown and the second's is hidden
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions", [["Engine"]])
+    second = FakePage("Tags", [["Separator"]])
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+    select_group(dialog, "Editors")
 
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
 
-    assert [frame.isVisibleTo(page) for frame in page.frames] == [True, True]
+    assert first.frames[0].isVisibleTo(first) is True
+    assert second.frames[0].isVisibleTo(second) is False
 
 
 def test_apply_all_action_saves_grouped_pages_too(qtbot: QtBot) -> None:
@@ -1018,30 +1253,30 @@ def test_save_filter_state_persists_the_selected_pages_title(
     assert saved.selected_page_title == "Markdown Rendering"
 
 
-def test_save_filter_state_with_a_group_row_selected_stores_the_shown_pages_title(
+def test_save_filter_state_with_a_group_row_selected_stores_the_groups_own_title(
     qtbot: QtBot, fake_persistent_settings: FakeSettings
 ) -> None:
-    """A group row carries no page, so what is stored is the page still *shown* in the stack -- not a
-    stale title from a previous run (#228).
+    """A group row shows several pages at once (#230), so what's stored is the *group's* own title --
+    not one of its pages', and not the previously-stored title left stale. Otherwise, restarting after
+    selecting a group brought back whatever leaf page had been viewed before it, not the group.
 
     **Test steps:**
 
-    * save a stale page title, then build a dialog with a grouped page (shown) and select the
-      group's own row
+    * save a stale page title, then build a dialog with a grouped page and select the group's own row
     * call ``save_filter_state``
-    * verify the shown page's title is stored, replacing the stale one
+    * verify the group's own title is stored, replacing the stale one
     """
     SettingsDialogSettings(selected_page_title="Stale Page").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
     dialog.add_page(FakePage("Descriptions"), group="Editors")
-    dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, "Editors"))  # type: ignore[attr-defined]
+    select_group(dialog, "Editors")
 
     dialog.save_filter_state()
 
     saved = SettingsDialogSettings()
     saved.load(fake_persistent_settings)  # type: ignore[arg-type]
-    assert saved.selected_page_title == "Descriptions"
+    assert saved.selected_page_title == "Editors"
 
 
 def test_restore_selected_page_shows_the_page_matching_the_stored_title(
@@ -1068,6 +1303,58 @@ def test_restore_selected_page_shows_the_page_matching_the_stored_title(
     tree = dialog_ui(dialog).category_tree  # type: ignore[attr-defined]
     assert current_page(dialog) is second
     assert tree.currentIndex() == visible_index(dialog, "Markdown Rendering")
+
+
+def test_restore_selected_page_shows_the_group_matching_the_stored_title(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored title matching a *group's* own title restores its stacked column, not one page (#230).
+
+    **Test steps:**
+
+    * save a group's title, then build a dialog with two pages under that group
+    * call ``restore_selected_page``
+    * verify the stack shows both pages stacked, and the group's tree row is the current one
+    """
+    saved_settings = SettingsDialogSettings(selected_page_title="Editors")
+    saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions")
+    second = FakePage("Tags")
+    dialog.add_page(first, group="Editors")
+    dialog.add_page(second, group="Editors")
+
+    dialog.restore_selected_page()
+
+    tree = dialog_ui(dialog).category_tree  # type: ignore[attr-defined]
+    assert stacked_group_pages(dialog) == [first, second]
+    assert tree.currentIndex() == visible_index(dialog, "Editors")
+
+
+def test_a_restored_group_selection_survives_the_next_save(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """Restoring a group and immediately saving again keeps storing the group's title, not a leaf's
+    left over from before the restore (#230).
+
+    **Test steps:**
+
+    * save a group's title, build a dialog with a grouped page, and restore
+    * call ``save_filter_state`` without touching anything
+    * verify the stored title is still the group's
+    """
+    SettingsDialogSettings(selected_page_title="Editors").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    dialog.restore_selected_page()
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.selected_page_title == "Editors"
 
 
 def test_restore_selected_page_finds_a_grouped_pages_title_too(

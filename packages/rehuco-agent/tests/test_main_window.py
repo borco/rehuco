@@ -247,13 +247,12 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
 
 
 def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Excluded Files page (#226) is registered under the "Plugins" category group, beside #222's.
+    """The Excluded Files page (#226) is registered into the settings dialog, under "Plugins".
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * verify the settings dialog's page stack holds an ``ExcludedFilesPage``
-    * verify the "Plugins" group lists it alongside "Reference Images"
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -264,11 +263,27 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
     pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
+
+def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None:
+    """Descriptions, Images and Viewers folded into one "Plugins" group, sorted by title (#230).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's category tree holds a single "Plugins" row, its children in
+      alphabetical order
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
     assert len(groups) == 1
     assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == [
+        "Descriptions",
         "Excluded Files",
+        "Images",
         "Reference Images",
     ]
 
@@ -292,32 +307,13 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
-def test_registers_the_descriptions_page_under_the_editors_group(qtbot: QtBot) -> None:
-    """The Descriptions page is registered under the "Editors" category group (#76).
-
-    **Test steps:**
-
-    * construct a real ``MainWindow``
-    * verify the settings dialog's category tree holds an "Editors" row with "Descriptions" under it
-    """
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Editors"]
-    assert len(groups) == 1
-    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == ["Descriptions"]
-
-
 def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Reference Images settings page (#222) is registered under the "Plugins" category group.
+    """The Reference Images settings page (#222) is registered into the settings dialog, under "Plugins".
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * verify the settings dialog's page stack holds a ``ReferenceImagesPage``
-    * verify the category tree holds a "Plugins" row with "Reference Images" under it
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -327,11 +323,6 @@ def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBo
     # each page is shown through a scroll area of its own (#229), so read it back out of one
     pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
     assert any(isinstance(page, ReferenceImagesPage) for page in pages)
-
-    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
-    assert len(groups) == 1
-    assert "Reference Images" in [groups[0].child(row).text() for row in range(groups[0].rowCount())]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
