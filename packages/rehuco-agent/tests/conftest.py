@@ -106,7 +106,7 @@ def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[
     """Isolate every test from the process-wide `ReferenceImagesSettings` singleton (#222).
 
     Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds a
-    `ReferenceImagesPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from
+    `ImagesPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from
     the developer's real on-disk settings for the rest of the session -- and decide, from that file, which
     archive entries every later test's enumeration counts.
 

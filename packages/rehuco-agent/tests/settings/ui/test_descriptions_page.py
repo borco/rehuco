@@ -81,7 +81,6 @@ def test_starts_with_the_shared_settings_current_values(qtbot: QtBot) -> None:
     settings.engine = "mistletoe"
     settings.markdown_css = "markdown-css"
     settings.mistletoe_css = "mistletoe-css"
-    settings.max_image_width = 500
 
     page = DescriptionsPage()
     qtbot.addWidget(page)
@@ -89,7 +88,6 @@ def test_starts_with_the_shared_settings_current_values(qtbot: QtBot) -> None:
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.mistletoe_engine_radio_button.isChecked()
     assert ui.css_edit.toPlainText() == "mistletoe-css"
-    assert ui.max_image_width_spin_box.value() == 500
 
 
 def test_switching_engine_shows_the_other_engines_css_draft(qtbot: QtBot) -> None:
@@ -159,14 +157,14 @@ def test_is_dirty_is_true_after_an_edit(qtbot: QtBot) -> None:
 
     **Test steps:**
 
-    * build the page and change the image-width spin box
+    * build the page and switch the engine radio
     * verify ``is_dirty`` is ``True``
     """
     page = DescriptionsPage()
     qtbot.addWidget(page)
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
-    ui.max_image_width_spin_box.setValue(999)
+    ui.mistletoe_engine_radio_button.setChecked(True)
 
     assert page.is_dirty() is True
 
@@ -178,7 +176,7 @@ def test_save_changes_updates_the_shared_settings_and_persists(
 
     **Test steps:**
 
-    * build the page, switch engine, edit CSS, change the width cap
+    * build the page, switch engine, edit CSS
     * call ``save_changes``
     * verify the shared settings object reflects every change
     * verify a fresh load from the persisted store reflects them too
@@ -188,20 +186,17 @@ def test_save_changes_updates_the_shared_settings_and_persists(
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.mistletoe_engine_radio_button.setChecked(True)
     ui.css_edit.setPlainText("new-mistletoe-css")
-    ui.max_image_width_spin_box.setValue(777)
 
     page.save_changes()
 
     settings = shared_markdown_rendering_settings()
     assert settings.engine == "mistletoe"
     assert settings.mistletoe_css == "new-mistletoe-css"
-    assert settings.max_image_width == 777
 
     reloaded = type(settings)()
     reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
     assert reloaded.engine == "mistletoe"
     assert reloaded.mistletoe_css == "new-mistletoe-css"
-    assert reloaded.max_image_width == 777
 
 
 def test_save_changes_clears_dirty(qtbot: QtBot) -> None:
@@ -215,7 +210,7 @@ def test_save_changes_clears_dirty(qtbot: QtBot) -> None:
     page = DescriptionsPage()
     qtbot.addWidget(page)
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    ui.max_image_width_spin_box.setValue(999)
+    ui.mistletoe_engine_radio_button.setChecked(True)
 
     page.save_changes()
 
@@ -236,13 +231,11 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.mistletoe_engine_radio_button.setChecked(True)
     ui.css_edit.setPlainText("unsaved-css")
-    ui.max_image_width_spin_box.setValue(999)
 
     page.drop_changes()
 
     assert ui.markdown_engine_radio_button.isChecked()
     assert ui.css_edit.toPlainText() == ""
-    assert ui.max_image_width_spin_box.value() == shared_markdown_rendering_settings().max_image_width
     assert page.is_dirty() is False
 
 
@@ -263,20 +256,25 @@ def test_title_is_descriptions(qtbot: QtBot) -> None:
 def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) -> None:
     """A `SettingsFrameFilter` finds the page's labeled frames and filters them by their text (#67).
 
-    Guards the page's ``.ui`` frame structure: the engine and images frames must be discoverable
-    top-level frames whose gathered caption text drives the filter.
+    Guards the page's ``.ui`` frame structure: the engine frame must be a discoverable top-level
+    frame whose gathered caption text drives the filter.
 
     **Test steps:**
 
     * build a frame filter over the page, then filter by an engine-only term
-    * verify the engine frame stays shown and the images frame is hidden
+    * verify the engine frame stays shown
+    * filter by a term the page holds nowhere
+    * verify the engine frame is hidden
     """
     page = DescriptionsPage()
     qtbot.addWidget(page)
     frame_filter = SettingsFrameFilter(page, page.title)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     frame_filter.apply("engine", show_full_on_title_match=False)
 
-    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.engine_frame.isVisibleTo(page) is True
-    assert ui.image_frame.isVisibleTo(page) is False
+
+    frame_filter.apply("thumbnail", show_full_on_title_match=False)
+
+    assert ui.engine_frame.isVisibleTo(page) is False

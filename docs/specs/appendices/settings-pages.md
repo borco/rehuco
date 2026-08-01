@@ -67,10 +67,18 @@ and a tree that can be scrolled out of its own viewport.
 The category tree is **two levels deep at most**: `add_page(page, group="Plugins")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
 top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
-Files" (`ExcludedFilesPage`, #226), "Images" (`ImagesPage`) and "Reference Images"
-(`ReferenceImagesPage`, #222) — registered in that alphabetical order — and "System Integration"
-(`RegistryPage`) is top-level. Group names are plural — a group holds pages, and **Plugins** is where
-a resource type's own settings go, one page per plugin.
+Files" (`ExcludedFilesPage`, #226) and "Images" (`ImagesPage`) — registered in that alphabetical
+order — and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group holds
+pages, and **Plugins** is where a resource type's own settings go.
+
+**One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
+owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
+embedded in a description (`MarkdownRenderingSettings`), and which archive entries a reference-images
+resource counts as its images (`ReferenceImagesSettings`, #222). The last two arrived from elsewhere —
+the cap was a block on Descriptions, the extension list a "Reference Images" page holding nothing but
+that list. Both were filed where the *code* owned them, so finding either meant knowing which plugin
+or settings object to look under, when what the reader had was the word "images". A page whose one
+block is a list is also a tree row that costs a click to learn it holds one thing.
 
 A group row **carries no page of its own** — it is a header. Selecting it shows every page under it
 at once, stacked vertically in one scrolling column, each preceded by its title as a heading — since
@@ -131,9 +139,13 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
-  `ReferenceImagesPage`, "Reference Images"; `ExcludedFilesPage`, "Excluded Files") — edits live in
+  `ExcludedFilesPage`, "Excluded Files") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
+  `ImagesPage` is the one page writing **three** settings objects, one per block, each saved whole
+  because that is the unit its own `save()` takes. Writing `MarkdownRenderingSettings` there
+  re-persists the engine and CSS unchanged: what the shared object holds is already the last-saved
+  pair, so a `DescriptionsPage` edit still staged is neither picked up nor clobbered.
   `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
   it has to show its own effect on what is already on screen: every open document's image strip
   resizes and takes up the chosen layout — one row or wrapped ([[plugins#tutorial-plugin]]) — and
@@ -179,11 +191,11 @@ showing what was typed would disagree with what every scan actually reads, which
 one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
 the normalized result on screen.
 
-`ReferenceImagesPage` does the same, over the same `StringListEditor`, and the two are worth reading
-side by side because **what each of them normalizes is different**: a *pattern* is matched verbatim, so
-only blanks and duplicates go; a *format* also loses its leading dot and its casing, so `BMP` comes back
-`.bmp`. Both rules live on the settings object, never in the widget — the widget holds what was typed,
-which is what lets one editor serve two pages that disagree (#231).
+`ImagesPage`'s extension block does the same, over the same `StringListEditor`, and the two are worth
+reading side by side because **what each of them normalizes is different**: a *pattern* is matched
+verbatim, so only blanks and duplicates go; a *format* also loses its leading dot and its casing, so
+`BMP` comes back `.bmp`. Both rules live on the settings object, never in the widget — the widget holds
+what was typed, which is what lets one editor serve two blocks that disagree (#231).
 
 It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
 pair went because the empty-list fallback already draws that distinction — a list naming nothing *is*
@@ -273,7 +285,7 @@ live-update wiring instead lives on the settings *data* side:
 settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fields and matching
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
-value on every use. Not every page needs this at all — `ReferenceImagesPage`'s extension list is read
+value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
 only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
 run does, so a plain dataclass carries each and there is nothing to watch either change;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be

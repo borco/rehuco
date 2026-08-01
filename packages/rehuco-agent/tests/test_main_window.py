@@ -23,7 +23,6 @@ from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
-from rehuco_agent.settings.ui.reference_images_page import ReferenceImagesPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
@@ -271,7 +270,7 @@ def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None
 
     * construct a real ``MainWindow``
     * verify the settings dialog's category tree holds a single "Plugins" row, its children in
-      alphabetical order
+      alphabetical order -- Reference Images among them no longer, its list being a block on Images
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -284,7 +283,6 @@ def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None
         "Descriptions",
         "Excluded Files",
         "Images",
-        "Reference Images",
     ]
 
 
@@ -307,13 +305,13 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, DescriptionsPage) for page in pages)
 
 
-def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Reference Images settings page (#222) is registered into the settings dialog, under "Plugins".
+def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
+    """The reference-images extension list is a block on Images, not a page (#222).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``ReferenceImagesPage``
+    * verify no registered page is titled "Reference Images"
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -322,7 +320,7 @@ def test_registers_the_reference_images_page_under_the_plugins_group(qtbot: QtBo
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     # each page is shown through a scroll area of its own (#229), so read it back out of one
     pages = [dialog_ui.page_stack.widget(index).widget() for index in range(dialog_ui.page_stack.count())]
-    assert any(isinstance(page, ReferenceImagesPage) for page in pages)
+    assert "Reference Images" not in [page.title for page in pages if hasattr(page, "title")]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(

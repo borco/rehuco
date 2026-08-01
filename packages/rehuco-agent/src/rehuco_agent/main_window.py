@@ -28,7 +28,6 @@ from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
-from .settings.ui.reference_images_page import ReferenceImagesPage
 from .settings.ui.settings_dialog import SettingsDialog
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
@@ -296,8 +295,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
         dialog initially shows. Every other cross-platform page nests under one "Plugins" group (#76,
-        #230), registered alphabetically by title: Descriptions, Excluded Files (#226), Images,
-        Reference Images (#222).
+        #230), registered alphabetically by title: Descriptions, Excluded Files (#226), Images. The
+        reference-images extension list is a block on Images rather than a page of its own (#222): a
+        page holding one list, whose subject was images, is what a reader looking for images had to
+        know a plugin name to find.
 
         The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
         wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
@@ -314,7 +315,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
-        self.__settings_dialog.add_page(ReferenceImagesPage(), group="Plugins")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage
