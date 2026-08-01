@@ -91,6 +91,14 @@ answer to "where is that setting" than paging through children one by one. Every
 pages (Save all / Drop all, and now Save/Drop *current page* on a selected group row) recurses one
 level into groups, so a grouped page is never skipped.
 
+Two rules keep that column readable, both of them consequences of stacking pages built to be shown one
+at a time. **A page the filter empties is hidden along with its heading** — on its own an empty page is
+just an empty page, but stacked it would be a title standing over a gap, promising settings that
+filtered out. **A stacked page is capped at the height it asks for**, by width rather than by a plain
+size hint: every page ends its layout with a vertical spacer so its frames sit at the top of a viewport
+taller than they are ([[appendices.settings-pages#adding-a-page]]), and left free to grow, that spacer
+spreads the pages down the column instead of letting the column's own trailing stretch hold the slack.
+
 A **second `WrappingCheckBox`, "Show full group if title matches"**, sits under the page-level one and
 makes the tree filter group-aware:
 

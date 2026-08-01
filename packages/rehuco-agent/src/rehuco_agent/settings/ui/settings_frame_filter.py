@@ -34,10 +34,23 @@ class SettingsFrameFilter:
         self.__title_lower = title.lower()
         frames = [child for child in page.findChildren(QFrame) if self.__is_group_frame(child, page)]
         self.__frames = [(frame, self.__frame_text(frame)) for frame in frames]
+        self.__shows_anything = True
 
     def field_labels(self) -> list[str]:
         """Each frame's gathered caption text, for the category tree's own (page-level) filter."""
         return [text for _, text in self.__frames]
+
+    def shows_anything(self) -> bool:
+        """Whether the last :meth:`apply` left this page with any frame shown (#230).
+
+        Answered from what that call decided rather than by re-reading the frames' visibility, which a
+        hidden *page* would report as hidden regardless. What it is for is the stacked group view: a
+        page filtered down to nothing must take its heading with it, instead of leaving a title
+        standing over an empty gap.
+
+        :returns: whether anything is on show.
+        """
+        return self.__shows_anything
 
     def apply(self, text: str, show_full_on_title_match: bool) -> None:
         """Show only the frames matching ``text`` (case-insensitive substring), per the class rules.
@@ -53,8 +66,12 @@ class SettingsFrameFilter:
         if show_full_on_title_match and needle in self.__title_lower:
             self.__set_all_visible(True)
             return
+        shown = False
         for frame, frame_text in self.__frames:
-            frame.setVisible(needle in frame_text)
+            matches = needle in frame_text
+            frame.setVisible(matches)
+            shown = shown or matches
+        self.__shows_anything = shown
 
     def __set_all_visible(self, visible: bool) -> None:
         """Set every frame's visibility to ``visible``.
@@ -63,6 +80,7 @@ class SettingsFrameFilter:
         """
         for frame, _ in self.__frames:
             frame.setVisible(visible)
+        self.__shows_anything = visible
 
     @staticmethod
     def __is_group_frame(widget: QFrame, page: QWidget) -> bool:

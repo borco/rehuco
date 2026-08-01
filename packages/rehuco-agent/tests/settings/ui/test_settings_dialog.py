@@ -220,6 +220,18 @@ def shown_group_container(dialog: SettingsDialog) -> QWidget:
     return area.widget()
 
 
+def stacked_group_widgets(dialog: SettingsDialog) -> list[QWidget]:
+    """Every widget in the currently-shown group's column, in order -- headings and pages alike (#230).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: the column's widgets, the trailing stretch (no widget of its own) left out.
+    """
+    layout = shown_group_container(dialog).layout()
+    assert layout is not None
+    widgets = [layout.itemAt(index) for index in range(layout.count())]
+    return [widget for item in widgets if item is not None and (widget := item.widget()) is not None]
+
+
 def stacked_group_pages(dialog: SettingsDialog) -> list[QWidget]:
     """The pages stacked inside the currently-shown group's column, in order (#230).
 
@@ -229,9 +241,16 @@ def stacked_group_pages(dialog: SettingsDialog) -> list[QWidget]:
     :param dialog: the dialog whose stack to read.
     :returns: the pages, in the order they appear in the column.
     """
-    layout = shown_group_container(dialog).layout()
-    widgets = [layout.itemAt(index).widget() for index in range(layout.count())]
-    return [widget for widget in widgets if widget is not None and not isinstance(widget, QLabel)]
+    return [widget for widget in stacked_group_widgets(dialog) if not isinstance(widget, QLabel)]
+
+
+def group_headings_by_text(dialog: SettingsDialog) -> dict[str, QLabel]:
+    """The currently-shown group column's heading labels, keyed by their text (#230).
+
+    :param dialog: the dialog whose stack to read.
+    :returns: each heading label, by the page title it carries.
+    """
+    return {widget.text(): widget for widget in stacked_group_widgets(dialog) if isinstance(widget, QLabel)}
 
 
 def stacked_group_headings(dialog: SettingsDialog) -> list[str]:
@@ -240,9 +259,7 @@ def stacked_group_headings(dialog: SettingsDialog) -> list[str]:
     :param dialog: the dialog whose stack to read.
     :returns: each heading's text, in the order it appears in the column.
     """
-    layout = shown_group_container(dialog).layout()
-    widgets = [layout.itemAt(index).widget() for index in range(layout.count())]
-    return [widget.text() for widget in widgets if isinstance(widget, QLabel)]
+    return [widget.text() for widget in stacked_group_widgets(dialog) if isinstance(widget, QLabel)]
 
 
 def test_add_page_creates_a_tree_row_and_stacked_page(qtbot: QtBot) -> None:
@@ -1629,3 +1646,137 @@ def test_shrinking_the_dialog_scrolls_the_tall_page_and_moves_nothing_else(qtbot
     assert ui.splitter.geometry().bottom() <= dialog.height()  # type: ignore[attr-defined]
     assert stack.widget(0).verticalScrollBar().maximum() > 0
     assert stack.widget(1).verticalScrollBar().maximum() == 0
+
+
+def test_a_group_page_the_filter_empties_takes_its_heading_with_it(qtbot: QtBot) -> None:
+    """A stacked page filtered down to no frames is hidden, heading and all (#230).
+
+    Guards what the stacked view shipped with: the heading was inserted beside the page but never
+    filtered with it, so a group filtered to one page still showed the others' titles standing over
+    empty gaps -- a promise of settings that had filtered out.
+
+    **Test steps:**
+
+    * add two pages under one group, each with a frame only one filter term matches, and select it
+    * filter to a term only the second page's frame carries
+    * verify the first page and its heading are both hidden, and the second's are both shown
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions", [["Engine"]])
+    second = FakePage("Images", [["Thumbnail"]])
+    dialog.add_page(first, group="Plugins")
+    dialog.add_page(second, group="Plugins")
+    select_group(dialog, "Plugins")
+
+    dialog_ui(dialog).filter_edit.setText("thumbnail")  # type: ignore[attr-defined]
+
+    headings = group_headings_by_text(dialog)
+    assert first.isVisibleTo(shown_group_container(dialog)) is False
+    assert headings["Descriptions"].isVisibleTo(shown_group_container(dialog)) is False
+    assert second.isVisibleTo(shown_group_container(dialog)) is True
+    assert headings["Images"].isVisibleTo(shown_group_container(dialog)) is True
+
+
+def test_clearing_the_filter_brings_an_emptied_group_page_back(qtbot: QtBot) -> None:
+    """Hiding an emptied page is the filter's doing, so clearing the filter undoes it (#230).
+
+    **Test steps:**
+
+    * select a group, filter until one page is hidden, then clear the filter
+    * verify both pages and both headings are shown again
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions", [["Engine"]])
+    second = FakePage("Images", [["Thumbnail"]])
+    dialog.add_page(first, group="Plugins")
+    dialog.add_page(second, group="Plugins")
+    select_group(dialog, "Plugins")
+    dialog_ui(dialog).filter_edit.setText("thumbnail")  # type: ignore[attr-defined]
+
+    dialog_ui(dialog).filter_edit.setText("")  # type: ignore[attr-defined]
+
+    container = shown_group_container(dialog)
+    headings = group_headings_by_text(dialog)
+    assert first.isVisibleTo(container) is True
+    assert headings["Descriptions"].isVisibleTo(container) is True
+
+
+def test_a_page_hidden_in_a_group_is_shown_again_on_its_own_leaf_row(qtbot: QtBot) -> None:
+    """A page the group view hid is all there is on its own row, so it comes back visible (#230).
+
+    **Test steps:**
+
+    * select a group and filter until one page is hidden inside it
+    * select that page's own leaf row
+    * verify it is shown, rather than staying hidden from the group view
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions", [["Engine"]])
+    dialog.add_page(first, group="Plugins")
+    dialog.add_page(FakePage("Images", [["Thumbnail"]]), group="Plugins")
+    select_group(dialog, "Plugins")
+    dialog_ui(dialog).show_full_page_check_box.set_checked(False)  # type: ignore[attr-defined]
+    dialog_ui(dialog).filter_edit.setText("thumbnail")  # type: ignore[attr-defined]
+    assert first.isVisibleTo(shown_group_container(dialog)) is False
+
+    dialog_ui(dialog).filter_edit.setText("")  # type: ignore[attr-defined]
+    select_page(dialog, "Descriptions")
+
+    assert current_page(dialog) is first
+    assert first.isVisibleTo(dialog) is True
+
+
+def test_a_stacked_page_is_capped_at_the_height_it_asks_for(qtbot: QtBot) -> None:
+    """Stacked pages pack from the top: each takes its own height and the trailing stretch keeps the
+    rest, rather than the surplus being shared out among them (#230).
+
+    Guards the gaps the stacked view shipped with: a page is built to *fill* a scroll area, ending its
+    layout with a spacer, and left on the default ``Preferred`` it grew past its hint inside the column
+    -- so a group shorter than the viewport spread its pages down the page instead of stacking them.
+
+    **Test steps:**
+
+    * add two short pages under one group, select it, and give the dialog far more height than they need
+    * verify neither page is taller than it asked for, and they sit one directly after the other
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Descriptions", [["Engine"]])
+    second = FakePage("Images", [["Thumbnail"]])
+    dialog.add_page(first, group="Plugins")
+    dialog.add_page(second, group="Plugins")
+    select_group(dialog, "Plugins")
+    dialog.resize(600, 1200)
+    dialog.show()
+    dialog_ui(dialog).main_layout.activate()  # type: ignore[attr-defined]
+
+    container = shown_group_container(dialog)
+    assert first.height() <= first.sizeHint().height()
+    assert second.height() <= second.sizeHint().height()
+    # the stretch, not the pages, holds the slack: everything ends well above the container's bottom
+    assert second.geometry().bottom() < container.height()
+
+
+def test_a_stacked_page_taller_than_the_viewport_still_scrolls(qtbot: QtBot) -> None:
+    """Capping a stacked page at its own height must not cost the column its scrolling (#230).
+
+    **Test steps:**
+
+    * add a page far taller than the dialog under a group, and select the group
+    * verify the group's scroll area has somewhere to scroll to
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    tall = FakePage("Descriptions", [["Engine"]])
+    tall.setMinimumHeight(3000)
+    dialog.add_page(tall, group="Plugins")
+    select_group(dialog, "Plugins")
+    dialog.resize(600, 400)
+    dialog.show()
+    dialog_ui(dialog).main_layout.activate()  # type: ignore[attr-defined]
+
+    area = dialog_ui(dialog).page_stack.currentWidget()  # type: ignore[attr-defined]
+    assert area.verticalScrollBar().maximum() > 0

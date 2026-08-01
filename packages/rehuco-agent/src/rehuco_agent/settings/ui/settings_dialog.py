@@ -11,7 +11,7 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from ..persistent_settings import persistent_settings
 from ..settings_dialog_settings import SettingsDialogSettings
@@ -55,6 +55,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__group_scroll_areas: Final[dict[str, QScrollArea]] = {}
         self.__pages_in_group: Final[dict[QWidget, str]] = {}
         self.__group_headings: Final[dict[QWidget, QLabel]] = {}
+        self.__standalone_policies: Final[dict[QWidget, QSizePolicy]] = {}
         self.__proxy: Final = self.CategoryFilterProxyModel(self)
         self.__proxy.setSourceModel(self.__model)
         self.__ui.category_tree.setModel(self.__proxy)
@@ -272,6 +273,31 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         layout.insertWidget(layout.count() - 1, widget)
         self.__pages_in_group[widget] = group  # pylint: disable=unsupported-assignment-operation
         self.__group_headings[widget] = heading  # pylint: disable=unsupported-assignment-operation
+        self.__stack_vertically(widget)
+
+    def __stack_vertically(self, widget: QWidget) -> None:
+        """Cap ``widget`` at the height it asks for, so the column packs from the top (#230).
+
+        A page is built to *fill* a scroll area on its own -- every one ends its layout with a vertical
+        spacer ([[appendices.settings-pages#adding-a-page]]) so its frames sit at the top of a viewport
+        taller than they are. Stacked, that same spacer is what spreads three pages down a column with
+        gaps between them: the pages keep the default ``Preferred``, which grows past the size hint, so
+        the surplus is shared out among them instead of all going to the column's trailing stretch.
+        ``Maximum`` is ``Preferred`` without the grow flag -- the page can still shrink, it just cannot
+        take more than it asked for.
+
+        The height is asked for **by width** (``setHeightForWidth``), not read off a plain size hint: a
+        page holding a wrapping paragraph has no one height, and hinting one is what painted a note past
+        its frame in #226 (fixed in #229 -- the same "declared, not hinted" lesson as #70). The original
+        policy is kept so :meth:`__ensure_standalone` can put the page back the way it was built.
+
+        :param widget: the page widget now living in a group column.
+        """
+        self.__standalone_policies[widget] = QSizePolicy(widget.sizePolicy())  # pylint: disable=unsupported-assignment-operation
+        stacked = QSizePolicy(widget.sizePolicy())
+        stacked.setVerticalPolicy(QSizePolicy.Policy.Maximum)
+        stacked.setHeightForWidth(True)
+        widget.setSizePolicy(stacked)
 
     def __ensure_standalone(self, widget: QWidget) -> None:
         """Re-parent ``widget`` back into its own scroll area, if a group view currently holds it (#230).
@@ -288,6 +314,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         layout.removeWidget(heading)
         heading.deleteLater()
         layout.removeWidget(widget)
+        widget.setSizePolicy(self.__standalone_policies.pop(widget))
+        # a page the filter emptied was hidden along with its heading (__apply_filter); shown on its
+        # own it is the only thing there, so it comes back visible however little it currently shows
+        widget.setVisible(True)
         self.__scroll_areas[widget].setWidget(widget)
 
     def __show_standalone_page(self, widget: QWidget) -> None:
@@ -417,14 +447,24 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             self.__apply_filter(item.child(row))
 
     def __apply_filter(self, item: QStandardItem) -> None:
-        """Re-run the frame-level filter on ``item``'s page.
+        """Re-run the frame-level filter on ``item``'s page, and hide it entirely if that left nothing.
 
-        :param item: a page row -- never a group's: :meth:`__apply_filter_to_current_page` calls this
-            once per child instead of once on the group itself, so a group's own pageless row (with
-            no `FILTER_ROLE` of its own) never reaches here (#230).
+        The hiding is the *stacked* view's alone (#230): shown on its own a page is all there is, so an
+        empty one is simply an empty page, but stacked under a heading it would be a title standing
+        over a gap -- a promise of settings that filtered out. Hiding the page with it also reclaims
+        the space, since a page emptied of frames still asks for its own layout margins.
+
+        :param item: a page row -- never a group's: :meth:`__apply_filter_to_row` calls this once per
+            child instead of once on the group itself, so a group's own pageless row (with no
+            `FILTER_ROLE` of its own) never reaches here (#230).
         """
         frame_filter = cast(SettingsFrameFilter, item.data(FILTER_ROLE))
         frame_filter.apply(self.__ui.filter_edit.text(), self.__ui.show_full_page_check_box.is_checked())
+        widget = cast(QWidget, item.data(PAGE_ROLE))
+        if (heading := self.__group_headings.get(widget)) is not None:
+            shows_anything = frame_filter.shows_anything()
+            heading.setVisible(shows_anything)
+            widget.setVisible(shows_anything)
 
     def __apply_all(self) -> None:
         """Apply every registered page's changes."""
