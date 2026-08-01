@@ -108,13 +108,14 @@ class FileSizeEdit(QWidget):  # pylint: disable=too-many-instance-attributes
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        # the three value widgets share the row's content column evenly and the two icon buttons take
-        # their natural width, so the stored size reads across the same span every other editor on the
-        # form does and each readout sits beside what it reads
+        # the two byte figures get twice the human reading's width -- it holds a handful of characters
+        # (``1.4G``) where they carry ten digits or more; the two icon buttons take their natural width,
+        # so the row still spans the same content column every other editor on the form does and each
+        # readout sits beside what it reads
         layout.addWidget(self.__stored_label, 1)
-        layout.addWidget(self.__spin_box, 1)
+        layout.addWidget(self.__spin_box, 2)
         layout.addWidget(self.__apply_button)
-        layout.addWidget(self.__computed_label, 1)
+        layout.addWidget(self.__computed_label, 2)
         layout.addWidget(self.__compute_button)
 
         self.__spin_box.value_changed.connect(self.set_value)  # type: ignore[attr-defined]
