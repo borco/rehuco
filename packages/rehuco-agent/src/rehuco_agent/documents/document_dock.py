@@ -7,6 +7,7 @@ from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_label
+from PySide6.QtWidgets import QWidget
 
 from .document_widget import DocumentWidget
 from .rehu_document_model import RehuDocumentModel
@@ -44,13 +45,21 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
 
     :param dock_manager: the area's dock manager this dock registers with.
     :param model: the view-model to wrap; created parentless by the area and adopted here.
+    :param stylesheet_host: passed straight through to this document's :class:`DocumentWidget` -- the
+        widget carrying the dock styling for the whole nest (see
+        :class:`~rehuco_agent.documents.documents_dock.DocumentsDock`).
     """
 
-    def __init__(self, dock_manager: QtAds.CDockManager, model: RehuDocumentModel) -> None:
+    def __init__(
+        self,
+        dock_manager: QtAds.CDockManager,
+        model: RehuDocumentModel,
+        stylesheet_host: QWidget | None = None,
+    ) -> None:
         super().__init__(dock_manager, "")
         model.setParent(self)
         self.__model: Final = model
-        self.__widget: Final = DocumentWidget(model, self)
+        self.__widget: Final = DocumentWidget(model, self, stylesheet_host=stylesheet_host)
 
         self.setObjectName(self.__object_name(model.path))
         dock_features = QtAds.CDockWidget.DockWidgetFeature

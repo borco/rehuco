@@ -181,7 +181,10 @@ bundled `default.css`): the close button's icon comes from the default styleshee
 rule, which **wins over both** the C++ `internal::setButtonIcon` *and*
 `CDockManager.iconProvider().registerCustomIcon(TabCloseIcon, …)` at polish time — so neither
 code path can change the icon in the installed build, and a `url()` SVG icon ignores QSS `color:`
-regardless. What *does* follow the palette is **text**: render the close mark as the button's
+regardless — and all four of 5.0's sheets carry that rule, so the workaround holds whichever is live
+(but see [[appendices.qt-ads#stylesheet-reload]]: QtAds *replaces* the sheet when the palette flips,
+so the override has to be re-applied, not merely applied once).
+What *does* follow the palette is **text**: render the close mark as the button's
 **text** (a glyph — ideally from a bundled icon font, e.g. Phosphor, loaded via
 `QFontDatabase.addApplicationFont`, since a system-font glyph's metrics vary per platform), color
 it with `color: palette(...)`, and hide the real icon with `qproperty-iconSize: 0px`. Two timing
@@ -191,6 +194,35 @@ activation and would re-apply the 16px size otherwise; (2) set the glyph's font/
 button *after* emitting `dockWidgetAdded` (and after a restore) for the tab it then makes active,
 overwriting an eager restyle. `TabCloseButtonIsToolButton` aside, the button is a `QPushButton`
 named `tabCloseButton`, reachable via `dock.tabWidget().findChild(QAbstractButton, "tabCloseButton")`.
+
+### 4.1 Why the override is allowed to win: specificity first, source order only as the tiebreak
+
+[[[appendices.qt-ads#qss-cascade]]]
+
+The zeroing rule beats QtAds' `16px` for one reason and one reason only: **it is appended after it**.
+Both are plain `#tabCloseButton` id selectors, so they tie on specificity, and Qt implements CSS2.1
+cascading — a tie is broken by source order, last one wins. Verified directly rather than taken from
+the docs, since the whole workaround rests on it:
+
+| Stylesheet | Wins |
+| --- | --- |
+| `#target { red }` then `#target { green }` | green — **last** |
+| `#target { green }` then `#target { red }` | red — last, symmetric |
+| `#target { green }` then `QLabel { red }` | green — **the id, despite being first** |
+| `QLabel { red }` then `#target { green }` | green — the id again |
+| `#tabCloseButton { 16px }` then `#tabCloseButton { 0px }` | `iconSize == 0` |
+
+The middle two matter as much as the rest: order never *overrides* specificity, it only settles ties.
+So the append order in `QtAdsFocusTracker` is load-bearing, not cosmetic — read QtAds' sheet,
+concatenate ours **after** it. Prepending would silently hand the last word back to `16px` and
+restore the doubled close mark, which is also why the re-append following every
+`setColorSchemeMode` reload has to put the block at the end again
+([[appendices.qt-ads#stylesheet-reload]]).
+
+The `tracked_focus` highlight is not in this position: `ads--CDockWidgetTab[tracked_focus="true"]`
+adds an attribute selector on top of the type selector, outranking QtAds' plain
+`ads--CDockWidgetTab` rules on specificity, so it would win in either order. Only the close-button
+override depends on being last.
 
 ## 5. A fully custom tab widget crashes when routed through `CDockComponentsFactory`
 
@@ -341,3 +373,98 @@ one on the real startup path.
 Filed upstream: [mborgerson/pyside6_qtads#123](https://github.com/mborgerson/pyside6_qtads/issues/123).
 If upstream stops vendoring `libxkbcommon`, this ordering requirement goes away too, but there's no
 harm in leaving `app.py`'s import order as-is.
+
+## 8. Every `CDockManager` carries QtAds' default stylesheet — nesting pays for it per level
+
+[[[appendices.qt-ads#per-manager-stylesheet]]]
+
+**Symptom:** switching between open document tabs is visibly slow, on every switch and not just the
+first — 77.8 ms in rehuco-agent's dock-in-dock-in-dock shell with three documents open, measured
+offscreen (#234).
+
+**Root cause:** `CDockManager`'s constructor applies QtAds' bundled `default.css` (9 359 characters)
+to *itself*, so an app that nests managers — one outer, one per open document — holds one copy per
+level, and Qt re-evaluates all of them against the whole subtree on every repolish, which a tab
+activation triggers. What costs is each additional stylesheet-carrying **ancestor**, near enough
+regardless of what that sheet contains (see the table below).
+
+**Fix:** let exactly one widget in the nest carry the QSS. QSS cascades, so an ancestor's sheet
+already styles every nested manager's chrome, and a nested manager's own copy buys nothing —
+`setStyleSheet("")` on it is visually free (verified: full-window grabs before and after are
+**pixel-identical in both light and dark themes**) and halves the switch: 77.8 ms → 40.7 ms.
+`QtAdsFocusTracker`'s `stylesheet_host` parameter is the seam — given a host, the tracker appends its
+tracked-focus rules there (once, however many trackers share it) and clears its own manager's sheet.
+
+Measured alternatives, each a fresh process over the same three documents:
+
+| Where the styling lives | Sheet | Switch |
+| --- | --- | --- |
+| One copy per manager, five managers | 9 852 × 5 | 77.8 ms |
+| The outermost manager only — **the fix** | 9 852 | 40.7 ms |
+| Outermost manager, QtAds' `default.css` only (no focus rules) | 9 359 | 36.2 ms |
+| Outermost manager, the focus rules only (no `default.css`) | 492 | 36.2 ms |
+| The whole sheet hoisted to `QApplication` instead | 9 852 | 52.7 ms |
+| No stylesheet anywhere (chrome unstyled — not shippable) | 0 | 11.4 ms |
+
+Three things worth keeping from that table. **The cost is a step, not a slope**: 492 characters and
+9 359 characters on one manager both measure 36.2 ms against 11.4 ms for nothing at all, so ~25 ms is
+the price of that subtree having *any* stylesheet-carrying ancestor, and only the last ~4 ms scales
+with what is in it. That is why hoisting is worth 37 ms and trimming the surviving sheet is worth
+almost nothing. **`QApplication` is not the same fix**: an application sheet is evaluated against
+every widget in the process, where a manager's reaches only its own subtree. And **what the surviving
+sheet buys** is the current-tab highlight, the close-button glyph
+([[appendices.qt-ads#tab-close-button]]) and the dock borders — dropping it entirely is the 11.4 ms
+row, and would mean marking the current tab without QSS at all.
+
+A floated dock keeps its chrome: a stylesheet reaches a child widget even when that child is a
+top-level window (verified with a `Qt.Tool` `QLabel` parented to a styled widget — it renders
+styled), and QtAds parents its floating containers to the manager they came from.
+
+## 9. QtAds **replaces** its own stylesheet at runtime — pin the colour scheme to own the timing
+
+[[[appendices.qt-ads#stylesheet-reload]]]
+
+**Symptom:** after a light↔dark switch, no tab reads as current any more and every tab shows QtAds'
+`[x]` icon **and** the glyph drawn as the button's text — two close marks per tab
+(#227, surfaced by #234).
+
+**Root cause:** ADS 5.0 added dark-mode support with `CDockManager::ColorSchemeMode::FollowPalette`
+as the **default**, and re-runs its own `loadStylesheet()` from `CDockManager::eventFilter` on an
+`ApplicationPaletteChange` — calling `setStyleSheet(...)`, which **replaces**. Everything appended to
+that sheet is gone, including [[appendices.qt-ads#current-changed-alternative]]'s `tracked_focus`
+highlight and §4's `qproperty-iconSize: 0px`. Measured in a real window (light → dark):
+
+| | manager stylesheet | appended rules |
+| --- | --- | --- |
+| before the flip | 9 852 | present |
+| after the flip | **9 478** | **gone** |
+
+Four sheets ship, not one — `default.css` (9 359), `default_dark.css` (9 478), and the two
+`default_linux*` variants — which is why the length changes rather than merely the content.
+
+**Re-appending afterwards cannot be timed against it.** Qt fires `ApplicationPaletteChange` several
+times per switch and QtAds reloads off a *later* one than a coalescing notifier
+(`ApplicationPaletteChangeNotifier`) emits for, so a re-append from that signal is simply overwritten
+again — confirmed: the rules were still gone afterwards. Reacting to the carrier's own `StyleChange`
+does work, but an event filter on a dock manager was rejected as too costly.
+
+**Fix: pin the mode.** `setColorSchemeMode(Light|Dark)` stops the event-driven reload entirely, and
+reloads once, synchronously, at the call — so the re-append that follows it is deterministic.
+`QtAdsFocusTracker` pins on construction and re-pins on every palette change, choosing by
+`CDockManager.isApplicationPaletteDark()` (QtAds' own test), then re-applies its rules. Verified in a
+real window: after the flip the manager carries the **dark** sheet plus the appended rules (9 971),
+the current tab is still highlighted, and every close button still reports a zeroed icon size.
+
+Two traps worth keeping. `setColorSchemeMode` reloads exactly when the call **changes the effective
+dark-ness** (verified: re-pinning the same scheme leaves an appended marker untouched; pinning the
+other one wipes it) — but since the caller can't cheaply know whether a given call flips it, the
+re-append follows every call unconditionally (it no-ops when the rules survived), and it must land
+**at the end** of the reloaded sheet ([[appendices.qt-ads#qss-cascade]]).
+And the reload hands a **nested** manager back a full default sheet, undoing the one-sheet-per-nest
+arrangement of [[appendices.qt-ads#per-manager-stylesheet]]; re-clearing it belongs in the same step.
+
+`eConfigFlag.DisableStylesheet` would be the blunter lever — QtAds applies no sheet at all and the
+app owns styling outright. It exists in upstream ADS 5.0 but is **not bound in the installed wheel**
+(`pyside6-qtads` 5.0.0): `dir(CDockManager.eConfigFlag)` does not list it, which is the
+[[appendices.qt-ads#verify-bindings-live]] check applied to a flag an issue body had recorded as
+available.

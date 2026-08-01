@@ -33,6 +33,12 @@ class DocumentsDock(QMainWindow):
     :class:`DocumentWidget` uses for its own viewer/editor surfaces.
 
     :param parent: optional Qt parent.
+    :param stylesheet_host: the widget carrying the dock styling for this whole nest -- normally the
+        window's outermost ``CDockManager``, an ancestor of every manager below it. Handed on to this
+        dock's own manager and to each :class:`DocumentWidget`'s, so QtAds' default stylesheet is
+        evaluated once per repolish instead of once per manager ([[appendices.qt-ads#per-manager-stylesheet]],
+        #234, and see
+        :class:`~borco_pyside.qtads.QtAdsFocusTracker`). ``None`` leaves every manager styling itself.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -52,11 +58,14 @@ class DocumentsDock(QMainWindow):
     it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
     ``MainWindow`` hop."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, stylesheet_host: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.__stylesheet_host: Final = stylesheet_host
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
-        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        self.__tracker: Final = QtAdsFocusTracker(
+            self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
+        )
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
 
     def open_document(self, path: Path) -> DocumentWidget:
@@ -320,7 +329,7 @@ class DocumentsDock(QMainWindow):
         # document is freed when the dock closes rather than leaking for the session (#148). The dock
         # also owns its own title/identity upkeep; the area only wires the two seams that cross back to
         # it: the field status-message relay and the close request.
-        dock = DocumentDock(self.__dock_manager, model)
+        dock = DocumentDock(self.__dock_manager, model, stylesheet_host=self.__stylesheet_host)
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)
         dock.document_widget.status_message.connect(self.status_message)

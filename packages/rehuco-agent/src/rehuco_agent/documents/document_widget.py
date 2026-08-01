@@ -119,6 +119,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
     :param model: the reactive view-model this document's docks bind to.
     :param parent: optional Qt parent.
+    :param stylesheet_host: the widget carrying the dock styling for the whole nest -- normally the
+        window's outermost ``CDockManager``. Given one, this document's manager sets no stylesheet of
+        its own at all, since the host's already cascades over it: one document per manager means one
+        redundant copy of QtAds' ~10 KB default sheet per open document, re-evaluated on every tab
+        switch ([[appendices.qt-ads#per-manager-stylesheet]], #234, and see
+        :class:`~borco_pyside.qtads.QtAdsFocusTracker`).
     """
 
     status_message: Signal = Signal(str)
@@ -129,7 +135,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     would lazily create a stray bar that swallows the message); it bubbles up to ``DocumentsDock`` and on
     to the genuine top-level window instead."""
 
-    def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:  # pylint: disable=too-many-statements
+    def __init__(  # pylint: disable=too-many-statements
+        self, model: RehuDocumentModel, parent: QWidget | None = None, stylesheet_host: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self.__model: Final = model
 
@@ -173,7 +181,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         central_layout.addWidget(self.__dock_manager)
         self.setCentralWidget(central)
 
-        self.__tracker: Final = QtAdsFocusTracker(self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH)
+        self.__tracker: Final = QtAdsFocusTracker(
+            self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
+        )
         self.__stashed_sizes: Final[dict[str, list[int]]] = {}
         self.__restoring_layout = False
 

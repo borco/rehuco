@@ -12,7 +12,7 @@ from typing import Any, Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_label
-from PySide6.QtWidgets import QDialog, QMessageBox
+from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents import documents_dock
@@ -74,6 +74,24 @@ def dock_for(dock: DocumentsDock, widget: object) -> QtAds.CDockWidget:
     return next(d for d, w in docks.items() if w is widget)
 
 
+def managers_of(dock: DocumentsDock) -> list[QtAds.CDockManager]:
+    """Return every ``CDockManager`` in ``dock``'s nest: its own, then one per open document.
+
+    Reaches into the private managers by design (neither the area nor a document widget exposes
+    one), and walks the open documents rather than ``findChildren`` -- with two documents open, a
+    widget-tree search was observed to return only two of the three managers.
+
+    :param dock: the documents dock to collect from.
+    :returns: the area's own manager first, then each open document's.
+    """
+    own = dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    documents = [
+        widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        for widget in dock.open_document_widgets()
+    ]
+    return [own, *documents]
+
+
 def test_opening_a_path_adds_one_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a path creates exactly one document dock.
 
@@ -128,6 +146,52 @@ def test_opening_a_different_path_adds_a_second_dock(mocker: MockerFixture, qtbo
 
     assert first is not second
     assert len(dock._DocumentsDock__document_docks) == 2  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_a_stylesheet_host_leaves_every_nested_manager_unstyled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Given a host, neither this dock's manager nor any document's carries a stylesheet (#234).
+
+    Pins the *shape*, not a wall-clock number: QtAds sets its ~10 KB default sheet on every
+    ``CDockManager``, so one per open document means the same rules are re-evaluated once per level on
+    every tab switch. Exactly one widget in the nest -- the host -- may carry them.
+
+    **Test steps:**
+
+    * build the dock over a host widget and open two documents
+    * verify this dock's manager and both documents' report an empty stylesheet, and the host carries
+      the tracked-focus rules
+    """
+    load_document(mocker)
+    host = QWidget()
+    qtbot.addWidget(host)
+    dock = DocumentsDock(stylesheet_host=host)
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    dock.open_document(OTHER_PATH)
+
+    assert [m.styleSheet() for m in managers_of(dock)] == ["", "", ""]
+    assert '[tracked_focus="true"]' in host.styleSheet()
+
+
+def test_without_a_stylesheet_host_every_manager_styles_itself(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With no host, each manager keeps QtAds' default sheet and its own tracker rules (#234).
+
+    The default for a standalone :class:`DocumentsDock` -- nothing above it to inherit chrome styling
+    from, so giving up its own sheet would leave the docks unstyled.
+
+    **Test steps:**
+
+    * build the dock with no host and open a document
+    * verify both its manager and the document's carry the tracked-focus rules
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+
+    assert all('[tracked_focus="true"]' in m.styleSheet() for m in managers_of(dock))
 
 
 def test_dock_title_reflects_the_dirty_flag(mocker: MockerFixture, qtbot: QtBot) -> None:
