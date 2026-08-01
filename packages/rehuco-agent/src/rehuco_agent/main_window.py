@@ -29,6 +29,7 @@ from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
 from .settings.ui.settings_dialog import SettingsDialog
+from .settings.ui.videos_page import VideosPage
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
@@ -315,6 +316,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
+        self.__settings_dialog.add_page(VideosPage(), group="Plugins")
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage

@@ -56,7 +56,7 @@ VIDEO_EXTENSIONS: Final = (
 """Default video file extensions to recognize inside a tutorial's content, case-insensitively
 ([[field-schema#duration-size]], #224) -- the set tc4 measured durations over, carried across unchanged.
 What :func:`~rehuco_core.rehu_content_duration.content_duration` falls back to when no set is given; the
-agent's ``TutorialSettings`` (#225) is what makes the set the user's to change. A container this omits is
+agent's ``VideosSettings`` (#225) is what makes the set the user's to change. A container this omits is
 skipped by the sum rather than probed and reported as zero, so adding one is a preference change rather
 than a rebuild."""
 

@@ -38,6 +38,7 @@ from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
+from ..settings.videos_settings import shared_videos_settings
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 
@@ -332,8 +333,9 @@ def build_document_form(
         """Sum how long this resource's videos run ([[field-schema#duration-size]], #224).
 
         Reads the same excluded-name list the size scan does, so the two measure one content set (#226).
-        The probe backend and the video-extension list are the Tutorial settings page's (#225); until it
-        exists, both are the shipped defaults, which is why neither is named here.
+        The probe backend and the video-extension list are the Videos settings page's (#225), read here
+        at every measurement, so either edited in Settings takes effect on the next Compute without
+        rebuilding the form.
 
         Runs on a worker thread (`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`), so
         it touches nothing but plain Python state, the filesystem, and the probe.
@@ -347,7 +349,13 @@ def build_document_form(
         if path is None:
             return None
         try:
-            return content_duration(path, excluded_patterns=shared_excluded_files_settings().excluded_file_patterns)
+            videos = shared_videos_settings()
+            return content_duration(
+                path,
+                videos.create_probe(),
+                video_extensions=videos.video_extensions,
+                excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+            )
         except DurationProbeError:
             return None
 

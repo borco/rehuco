@@ -67,7 +67,8 @@ and a tree that can be scrolled out of its own viewport.
 The category tree is **two levels deep at most**: `add_page(page, group="Plugins")` nests the page's
 row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
 top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
-Files" (`ExcludedFilesPage`, #226) and "Images" (`ImagesPage`) — registered in that alphabetical
+Files" (`ExcludedFilesPage`, #226), "Images" (`ImagesPage`) and "Videos" (`VideosPage`, #225) —
+registered in that alphabetical
 order — and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group holds
 pages, and **Plugins** is where a resource type's own settings go.
 
@@ -157,7 +158,7 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
-  `ExcludedFilesPage`, "Excluded Files") — edits live in
+  `ExcludedFilesPage`, "Excluded Files"; `VideosPage`, "Videos") — edits live in
   local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
   discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
   `ImagesPage` is the one page writing **three** settings objects, one per block, each saved whole
@@ -220,6 +221,22 @@ pair went because the empty-list fallback already draws that distinction — a l
 "whatever this app ships", and the editor's Reset fills the list with that set on request. The old keys
 are simply not read: an installation that had set a custom list gets the shipped formats back and sets it
 again, which was the cheaper trade than carrying a compatibility path for a preference two clicks deep.
+
+`VideosPage` reloads itself after saving for the same reason, over the same rule: its video-extension
+list normalizes exactly as the reference-images one does, and the two share it
+(`settings/extension_lists.py`) rather than each restating a rule that differs only in which set an
+emptied list falls back to. Its other block is the **duration probe** ([[field-schema#duration-size]]),
+which adds two things neither list page needs. First, **each backend's own settings are stored side by
+side** — an `engine` key naming a registry member, and `ffprobe_executable` kept whether or not ffprobe
+is the selected backend — so switching to MediaInfo and back does not lose a path that was typed; that is
+the `markdown_css`/`mistletoe_css` arrangement, and the page keeps both halves too, disabling the path
+row under the other backend rather than hiding or clearing it. An `engine` naming a backend this build
+does not have (an `.ini` written by a newer version) selects the default rather than raising, the way
+`ImageViewerSettings` already treats an unrecognized `mode`. Second, **the page reports whether the
+selected backend can actually run**, asking the probe itself (`unavailable_reason`) about the *staged*
+choice as it is typed: a scan under an unusable backend raises rather than measuring `0`
+([[field-schema#duration-size]]), so an ffprobe path pointing at nothing has to be visible here rather
+than surfacing as a row that refuses to compute.
 
 `RegistryPage` has no local settings dataclass at all: Register/Unregister write straight to the
 Windows registry via `rehuco_agent.windows_registration` when clicked, so there is nothing left for
@@ -316,5 +333,5 @@ autouse `isolate_shared_markdown_rendering_settings` fixture in
 around every test. A new page with its own shared settings object needs the equivalent, reactive or
 not — `isolate_shared_image_viewer_settings` is the second reactive one, and
 `isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` /
-`isolate_shared_excluded_files_settings` the plain-dataclass
+`isolate_shared_excluded_files_settings` / `isolate_shared_videos_settings` the plain-dataclass
 counterparts, all sitting right beside it.
