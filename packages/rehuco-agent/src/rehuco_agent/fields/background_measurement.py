@@ -71,10 +71,10 @@ class MeasureRow(Protocol):
     """What a measure row offers a field that wants to measure for it ([[plugins#field-toolkit]]).
 
     Deliberately just the two members :func:`measure_in_background` touches -- a request going out and an
-    answer coming back -- so the wiring is written once for every row shape that has them
-    (:class:`~rehuco_agent.fields.widgets.FileSizeEdit`,
-    :class:`~rehuco_agent.fields.widgets.ContentCountEdit`, and whatever #224's duration row turns out to
-    be) rather than per field.
+    answer coming back -- so the wiring is written once rather than per field. Every row that has them is
+    a :class:`~rehuco_agent.fields.widgets.MeasuredValueEdit` today (#224), which this deliberately does
+    **not** name: what the wiring needs is the two members, not that one class, and a plugin's own row
+    satisfying them is wired by the same call.
     """
 
     @property

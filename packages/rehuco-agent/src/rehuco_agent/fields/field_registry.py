@@ -13,6 +13,7 @@ from .field import Field, FieldsTab
 from .file_size_field import FileSizeField
 from .indexed_list_field import IndexedListField
 from .int_field import IntField
+from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
@@ -43,6 +44,7 @@ class FieldRegistry:
             AuthorsField,
             DateField,
             DurationField,
+            MeasuredDurationField,
             FileSizeField,
             MultipleChoiceField,
             PathField,

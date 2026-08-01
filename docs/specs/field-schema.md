@@ -500,7 +500,10 @@ to be filled later by scanning ([[field-schema#deferred-items]]) rather than by 
 - **Legacy `.tc` durations are untrusted.** On import, map the single `duration` into the
   `original_duration` slot (what tc4 displayed) and treat it as advisory until a real scan
   overwrites it. No "if it looks too big, divide by 1000" heuristic — that would corrupt
-  genuinely long collections.
+  genuinely long collections. **That scan exists since
+  [#224](https://github.com/borco/rehuco/issues/224)**, as a compute/apply row on each measured
+  duration — so an imported value stays advisory only until someone presses it, and is replaced by an
+  explicit click rather than silently on open.
 
 ### §17.3.2 Human-readable duration format
 
@@ -640,8 +643,21 @@ Field order, in the three groups the layout separates:
   let a re-downloaded resource have its original refreshed on purpose, and the alternative (tc4's rule,
   where only `current_size` computes and seeds `original_size` when empty) cannot express it. Still no
   `advertised_size` ([[field-schema#duration-size]]) — nothing publishes one.
-- **Measuring runs off the GUI thread — resolved (#223)** — every measure row (both sizes, and the content
-  count) hands its measurement to a worker and is *busy* until it answers, so a multi-gigabyte tree on an
+- **Duration on disk — resolved ([#224](https://github.com/borco/rehuco/issues/224))** — `original_duration`
+  and `current_duration` are measured, each by its own compute/apply row over the same content-file set
+  and exclusion list the sizes use, so a video the size scan counted is a video the duration sums. The
+  same *when you press it* caveat as the sizes applies, and is accepted for the same reason.
+  `advertised_duration` deliberately keeps **no** row: it is the claim `original_duration` is checked
+  against ([[field-schema#duration-size]]), and measuring it would erase the comparison.
+  Reading a container is delegated to a **probe backend**, of which two ship, selected by an `engine`
+  name the way the Markdown renderer's is
+  ([#225](https://github.com/borco/rehuco/issues/225) is the page that selects one): **MediaInfo**, whose
+  library is bundled with the app and is therefore the default, and **ffprobe**, an executable the user
+  points at. A backend that cannot run *reports that* rather than measuring `0` — a silent zero is
+  indistinguishable from a tutorial holding no video. The recognized video extensions are a list, not a
+  constant, defaulting to tc4's set.
+- **Measuring runs off the GUI thread — resolved (#223)** — every measure row (both sizes, both
+  durations, and the content count) hands its measurement to a worker and is *busy* until it answers, so a multi-gigabyte tree on an
   SMB mount cannot freeze the window and a scan already running cannot be started again or half-applied.
   This is interim ownership: the task queue ([#201](https://github.com/borco/rehuco/issues/201)) and its
   dock ([#202](https://github.com/borco/rehuco/issues/202)) are where these belong, as jobs that can be

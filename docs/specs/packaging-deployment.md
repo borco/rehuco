@@ -486,6 +486,29 @@ existing environment *breaks* `PySide6-Essentials`, because the two wheels share
 (#210) therefore inherits the smaller payload instead of baking the old one in, which is what made this worth doing
 first rather than treating the artifact size as fixed.
 
+**The same measurement, applied before the fact: the video-duration probe (#224).** Nothing in the tree could read a
+video container, and the candidates differ by more than an order of magnitude in what they add to every artifact —
+measured by installing each into an empty target on Windows and summing it:
+
+| Candidate | Installed | What it bundles | Reads `.ts` / `.vob` |
+| --- | --- | --- | --- |
+| **`pymediainfo` 7.0.1** | **8 MB** (3.3 MB wheel) | `libmediainfo`, in the wheel | yes |
+| `hachoir` 3.3.0 | 3 MB | nothing — pure Python | **no** (answers nothing for either) |
+| `av` (PyAV) 18.0.0 | 67 MB | 25 FFmpeg DLLs | yes |
+| `imageio-ffmpeg` 0.6.0 | 84 MB | one 87 MB `ffmpeg.exe` | yes |
+| `ffmpeg-binaries` 1.1.0 | 244 MB | FFmpeg, plus `requests` and `patool` | yes |
+| `ffprobe` on `PATH` | 0 MB | nothing — the user's own install | yes |
+
+All of them agreed on duration to the millisecond over the same nine containers, so **correctness did not decide it and
+payload did**. `pymediainfo` publishes `py3-none-<platform>` wheels carrying the library for all three targets
+(`win_amd64`, `macosx_10_10_universal2`, `manylinux_2_27_x86_64`) — no compilation, no CPython ABI tag, and a glibc
+floor **below** the one the Qt stack already imposes ([[appendices.briefcase-packaging#linux-backends]]), so it adds no
+constraint to any of the three installers. It is therefore the **default** backend, with `ffprobe` the deliberate
+alternative for a machine that already has FFmpeg rather than the fallback for one that has neither. `hachoir` is the
+cautionary entry: it is the smallest and the only one needing no binary at all, and it silently answers *no duration*
+for MPEG-TS and VOB — two containers on tc4's own extension list — which is exactly the silent-zero failure the probe
+contract refuses.
+
 ## §16.9 Auto-update
 
 [[[packaging-deployment#auto-update]]]

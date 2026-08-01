@@ -28,6 +28,7 @@ from .file_size_field import FileSizeField
 from .images_field import ImagesField
 from .indexed_list_field import IndexedEntry, IndexedListField
 from .int_field import IntField
+from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
@@ -67,6 +68,7 @@ __all__ = [
     "UrlField",
     "DateField",
     "DurationField",
+    "MeasuredDurationField",
     "FileSizeField",
     "MultipleChoiceField",
     "PathField",

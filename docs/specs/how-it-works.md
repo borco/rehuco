@@ -114,6 +114,13 @@ field the type doesn't declare — and any field the toolkit has no entry for �
 to a generic row that carries the value verbatim. That fallback is what makes invariant 1 visible
 instead of theoretical.
 
+Four of those rows can **measure themselves**: the two sizes sum the resource's files, the two durations
+add up how long its videos run, and a reference pack's image count opens its archives. Each shows what it
+found *beside* the stored value rather than instead of it, so a disagreement — content deleted as it was
+watched, an archive refreshed behind the app's back — is something you read before deciding, and a second
+click is what stores it. Reading a video's length needs a media library the app carries, or an `ffprobe`
+you already have; which one is a setting.
+
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
 resource and restored when you open it again.
 
