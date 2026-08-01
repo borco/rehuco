@@ -6,11 +6,15 @@ import PySide6QtAds as QtAds
 from PySide6.QtCore import QObject, QSize, QTimer, Signal
 from PySide6.QtWidgets import QApplication, QWidget
 
-from ..theming import Glyph
+from ..theming import ApplicationPaletteChangeNotifier, Glyph
 from .qtads_widgets import tab_close_button, tab_label
 
 
-class QtAdsFocusTracker(QObject):
+# the tracker holds three cohesive pieces of state that happen to be counted separately: what it
+# tracks (manager, current dock, tracked docks and areas), how it draws the close glyph, and where its
+# stylesheet lives -- none is separable into its own object without splitting a seam that is one
+# concern, so the attribute cap is lifted rather than shuffling the state around to satisfy it.
+class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attributes
     """Tracks which dock in one `CDockManager` counts as "current" (selected/focused).
 
     Combines every signal actually needed to catch a tab switch, confirmed empirically not to be
@@ -40,12 +44,16 @@ class QtAdsFocusTracker(QObject):
     stylesheet *appended* to ``dock_manager``'s existing stylesheet at construction
     (:meth:`tracked_focus_dock_stylesheet`) -- appended, not replacing, so QtAds' own default styling
     (and any the consumer set) survives; its ``#tabCloseButton`` rule then merely overrides the default.
+    A nested manager can hand that job to an ancestor instead (``stylesheet_host``), keeping one copy
+    of the rules for the whole nest rather than one per level.
     This is the ``FocusHighlighting``-free equivalent of QtAds' own ``focused`` property styling.
     Also renders every tab's close button as :data:`DEFAULT_CLOSE_GLYPH`'s text (not an icon) so the
     same stylesheet can recolour it to stay legible against the current tab's highlight.
-    Note the stylesheet's ``palette(...)`` colours are frozen to the theme active when it was
-    applied; to follow a theme switch, rebuild it and re-apply on
-    :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier`'s ``palette_changed`` signal.
+    Theme switches are survived by the tracker itself: QtAds *replaces* a manager's stylesheet on a
+    palette flip (ADS 5.0 re-runs its own ``loadStylesheet()``), which would drop the appended block
+    -- so the tracker pins the manager's colour-scheme mode and re-applies everything on
+    :class:`~borco_pyside.theming.ApplicationPaletteChangeNotifier`'s ``palette_changed`` signal
+    (#227, and see :meth:`__apply_stylesheet`).
 
     A ``QObject``, parented to ``dock_manager`` by default -- ``QtAdsFocusTracker(dock_manager)``
     alone is enough, with nothing to hold onto: Qt destroys it along with ``dock_manager``.
@@ -62,6 +70,12 @@ class QtAdsFocusTracker(QObject):
         dock is shown.
     :param close_glyph_size: pixel size the close-button glyph is rendered at. Defaults to
         :data:`DEFAULT_CLOSE_GLYPH_SIZE`.
+    :param stylesheet_host: an ancestor widget to carry this tracker's stylesheet *instead of*
+        ``dock_manager`` -- which then gives up its own sheet entirely, QtAds' default included, since
+        the host's cascades over the same chrome. For a manager nested inside another one, where
+        re-evaluating a second copy of QtAds' ~10 KB default sheet at every level is most of what a tab
+        activation costs. Several trackers can share one host: the stylesheet is appended once, not
+        once per tracker. Defaults to ``None`` -- the manager keeps and extends its own sheet.
     :param parent: optional Qt parent; defaults to ``dock_manager`` itself.
     """
 
@@ -99,6 +113,7 @@ class QtAdsFocusTracker(QObject):
         title_bar: str = "palette(highlight)",
         close_glyph: Glyph = DEFAULT_CLOSE_GLYPH,
         close_glyph_size: int = DEFAULT_CLOSE_GLYPH_SIZE,
+        stylesheet_host: QWidget | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent if parent is not None else dock_manager)
@@ -109,9 +124,9 @@ class QtAdsFocusTracker(QObject):
         self.__tracked_docks: Final[set[QtAds.CDockWidget]] = set()
         self.__areas_tracking_current_tab: Final[set[QtAds.CDockAreaWidget]] = set()
 
-        existing = dock_manager.styleSheet()
-        addition = self.tracked_focus_dock_stylesheet(highlight, label, title_bar)
-        dock_manager.setStyleSheet(f"{existing}\n{addition}" if existing else addition)
+        self.__stylesheet_host: Final = stylesheet_host
+        self.__stylesheet_addition: Final = self.tracked_focus_dock_stylesheet(highlight, label, title_bar)
+        self.__apply_stylesheet()
         dock_manager.dockWidgetAdded.connect(self.__on_dock_widget_added)
         dock_manager.dockWidgetRemoved.connect(self.__on_dock_widget_removed)
         dock_manager.stateRestored.connect(self.__on_state_restored)
@@ -119,6 +134,8 @@ class QtAdsFocusTracker(QObject):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             app.focusChanged.connect(self.__on_application_focus_changed)
+            notifier = ApplicationPaletteChangeNotifier.for_application(app)
+            notifier.palette_changed.connect(self.__on_palette_changed)
 
     @property
     def current_dock(self) -> QtAds.CDockWidget | None:
@@ -216,6 +233,68 @@ ads--CDockWidget[{prop}="true"] {{
 }}
 """
 
+    def __carrier(self) -> QWidget:
+        """The widget carrying this tracker's rules: the ``stylesheet_host`` if one was given, else
+        the manager itself.
+
+        :returns: the stylesheet carrier.
+        """
+        return self.__stylesheet_host if self.__stylesheet_host is not None else self.__dock_manager
+
+    def __apply_stylesheet(self) -> None:
+        """Take QtAds' stylesheet reload into our own hands, then put this tracker's rules on top.
+
+        **QtAds replaces a manager's stylesheet wholesale**, dropping anything a consumer appended:
+        ADS 5.0's default ``ColorSchemeMode.FollowPalette`` re-runs its own ``loadStylesheet()`` from
+        ``CDockManager::eventFilter`` on an ``ApplicationPaletteChange``, swapping in its light or
+        dark sheet -- so a theme switch takes the highlight rule and the close button's
+        ``qproperty-iconSize: 0px`` with it, leaving no tab marked current and every tab showing
+        QtAds' own 16px close icon *and* the glyph drawn as text (#227). Re-appending afterwards
+        cannot be timed against that: Qt fires several palette events per switch and QtAds reloads
+        off a later one than a coalescing notifier sees.
+
+        So the mode is **pinned** to whichever sheet the palette calls for instead. Pinning stops the
+        event-driven reload entirely (verified in a real window: with the mode pinned, a light->dark
+        flip left an appended block untouched, where unpinned it was gone) and reloads once,
+        synchronously, right here -- which makes the re-append below deterministic rather than a race.
+
+        With a ``stylesheet_host``, this also re-clears the manager's own sheet, since that reload
+        hands a nested manager back the full default sheet the host exists to avoid paying for twice
+        -- QtAds sets its ~10 KB default on **every** manager, and a nested copy buys nothing (QSS
+        cascades from the host), worth roughly half the tab-switch cost of a three-level nest
+        (measured: 77.8 ms -> 40.7 ms).
+        """
+        carrier = self.__carrier()
+        mode = QtAds.CDockManager.ColorSchemeMode
+        pinned = mode.Dark if QtAds.CDockManager.isApplicationPaletteDark() else mode.Light
+        self.__dock_manager.setColorSchemeMode(pinned)
+        if isinstance(carrier, QtAds.CDockManager):
+            carrier.setColorSchemeMode(pinned)
+        if self.__stylesheet_host is not None:
+            self.__dock_manager.setStyleSheet("")
+        # appended, never prepended: the close-button override ties QtAds' own #tabCloseButton rule on
+        # specificity, so it wins only by coming last (QSS breaks a tie by source order -- verified,
+        # [[appendices.qt-ads#qss-cascade]]). Reordering this puts the doubled close mark back.
+        existing = carrier.styleSheet()
+        if self.__stylesheet_addition not in existing:
+            carrier.setStyleSheet(
+                f"{existing}\n{self.__stylesheet_addition}" if existing else self.__stylesheet_addition
+            )
+
+    def __on_palette_changed(self) -> None:
+        """Re-pin the colour scheme to the new palette, and put this tracker's marks back on top.
+
+        Re-pinning is what swaps QtAds' light sheet for its dark one (and back): pinned, it no longer
+        does that itself (:meth:`__apply_stylesheet`). The reload that follows is a full replacement,
+        so the appended rules go back on in the same call, and the per-dock marks -- the glyph close
+        button and the ``tracked_focus`` property -- are re-asserted after it on the usual deferred
+        tick, since QtAds re-polishes the chrome underneath them.
+        """
+        self.__apply_stylesheet()
+        for dock in self.__tracked_docks:
+            self.__defer_close_button_style(dock)
+            self.__defer_dock_style(dock)
+
     def __on_dock_widget_added(self, dock: QtAds.CDockWidget) -> None:
         """Start tracking a dock QtAds just added: its tab-label click and its area's tab switches.
 
@@ -303,6 +382,7 @@ ads--CDockWidget[{prop}="true"] {{
         """
         for dock in self.__tracked_docks:
             self.__defer_close_button_style(dock)
+            self.__defer_dock_style(dock)
             if area := dock.dockAreaWidget():
                 self.__track_area(area)
         if self.__current_dock is not None:
@@ -410,6 +490,21 @@ ads--CDockWidget[{prop}="true"] {{
         :param dock: the dock whose close button to restyle once QtAds has finished with it.
         """
         QTimer.singleShot(0, lambda: self.__style_close_button(dock))
+
+    def __defer_dock_style(self, dock: QtAds.CDockWidget) -> None:
+        """Schedule :meth:`__style_dock` for ``dock` on the next event-loop tick, reading current-ness
+        as it stands *then* -- so a restore that also moves current-ness styles the final answer.
+
+        A layout restore rebuilds every tab, and a rebuilt tab does not re-evaluate a
+        property-matched rule (``[tracked_focus="true"]``) on its own: whichever dock was current
+        comes back unhighlighted. Deferred for the same reason
+        :meth:`__defer_close_button_style` is -- QtAds keeps re-polishing the rebuilt tabs after
+        ``stateRestored``, and an eager repolish is simply undone (confirmed empirically: immediate,
+        the restored tab still came back unhighlighted).
+
+        :param dock: the dock to restyle once QtAds has finished rebuilding its tab.
+        """
+        QTimer.singleShot(0, lambda: self.__style_dock(dock, dock is self.__current_dock))
 
     def __style_close_button(self, dock: QtAds.CDockWidget) -> None:
         """Render ``dock``'s tab close button as the close glyph's text rather than an icon.

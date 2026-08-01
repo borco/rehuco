@@ -249,8 +249,36 @@ class CDockManager(QWidget):
     DockAreaHasTabsMenuButton: eConfigFlag
     MiddleMouseButtonClosesTab: eConfigFlag
 
+    class ColorSchemeMode:
+        """Which of QtAds' four bundled stylesheets a manager applies to itself (ADS 5.0)."""
+
+        Light: CDockManager.ColorSchemeMode
+        """Always the light sheet."""
+
+        Dark: CDockManager.ColorSchemeMode
+        """Always the dark sheet."""
+
+        FollowPalette: CDockManager.ColorSchemeMode
+        """The default: pick by the application palette's dark-ness, **and re-pick at runtime** --
+        which re-runs QtAds' own `loadStylesheet()` on an `ApplicationPaletteChange`, *replacing*
+        the manager's whole stylesheet ([[appendices.qt-ads#stylesheet-reload]])."""
+
     def __init__(self, parent: QWidget | None = None) -> None:
         """Construct an empty dock manager with no docks yet."""
+
+    def setColorSchemeMode(self, mode: CDockManager.ColorSchemeMode) -> None:
+        """Pick which bundled stylesheet this manager applies, and reload it right now.
+
+        Reloading *replaces* the manager's stylesheet, dropping anything appended to it -- so any
+        appended rules have to go back on afterwards. Pinning `Light`/`Dark` (rather than leaving
+        `FollowPalette`) also stops the runtime reload on palette changes, which is what makes that
+        re-append survivable: the timing becomes the caller's
+        ([[appendices.qt-ads#stylesheet-reload]])."""
+
+    @staticmethod
+    def isApplicationPaletteDark() -> bool:
+        """Whether QtAds reads the current application palette as a dark one -- the same test its
+        own `FollowPalette` mode uses to choose between the light and dark sheets."""
 
     @staticmethod
     def setConfigFlags(flags: eConfigFlag) -> None:

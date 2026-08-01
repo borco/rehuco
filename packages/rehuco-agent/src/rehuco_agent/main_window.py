@@ -82,7 +82,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # yet to correct (#228)
         self.__settings_dialog.restore_selected_page()
 
-        self.__documents_dock: Final = DocumentsDock(self)
+        # the window's outermost manager styles the whole dock nest: every manager below it -- this
+        # dock's own, and one per open document -- would otherwise carry its own copy of QtAds'
+        # ~10 KB default stylesheet, re-evaluated per level on every tab switch
+        # ([[appendices.qt-ads#per-manager-stylesheet]], #234)
+        self.__documents_dock: Final = DocumentsDock(self, stylesheet_host=self.__dock_manager)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__setup_docking_system()

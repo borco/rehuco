@@ -137,6 +137,31 @@ def test_settings_dock_is_placed_floating_by_default(qtbot: QtBot) -> None:
     assert settings_dock.isFloating()
 
 
+def test_the_outer_manager_alone_carries_the_dock_stylesheet(qtbot: QtBot) -> None:
+    """The window's outer manager styles the whole dock nest; the documents dock's carries nothing (#234).
+
+    Pins the shape, not a wall-clock number: QtAds sets its ~10 KB default sheet on every
+    ``CDockManager``, and this window nests one inside another (inside one more per open document).
+    Since QSS cascades, every copy below the outermost is re-evaluated for nothing -- which is roughly
+    half of what activating a document tab used to cost.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and reach both its own manager and the documents dock's
+    * verify the outer one carries QtAds' default sheet *and* the tracked-focus rules, and the nested
+      one carries nothing at all
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    outer = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    nested = documents_dock._DocumentsDock__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert "ads--CDockWidgetTab" in outer.styleSheet()
+    assert '[tracked_focus="true"]' in outer.styleSheet()
+    assert nested.styleSheet() == ""
+
+
 def test_a_documents_dock_status_message_shows_on_the_status_bar(qtbot: QtBot) -> None:
     """A field's status message, relayed up by ``DocumentsDock``, lands on this window's real status
     bar; an empty message clears it. This is the genuine top-level window -- the one place safely wired

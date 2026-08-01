@@ -1,13 +1,19 @@
 """Tests for QtAdsFocusTracker: tracking (and marking) the current dock within a CDockManager."""
 
+# the tracker covers a broad surface (the four signals a tab switch can arrive on, current-dock
+# marking and re-marking, save/restore round-trips, close-button styling, and where its stylesheet
+# lives across QtAds' own reloads); its suite is correspondingly long -- one cohesive module reads
+# better than an arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
+# pylint: disable=too-many-lines
+
 from collections.abc import Iterator
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads.qtads_focus_tracker import QtAdsFocusTracker
 from borco_pyside.qtads.qtads_widgets import tab_close_button
-from borco_pyside.theming import Glyph
+from borco_pyside.theming import ApplicationPaletteChangeNotifier, Glyph
 from PySide6.QtCore import QByteArray
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -459,6 +465,106 @@ def test_state_restore_retracks_areas_so_tab_switches_still_work(manager: QtAds.
     assert tracker.current_dock is first
 
 
+def test_state_restore_re_marks_the_current_dock_it_rebuilt(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """After a restore rebuilds the tabs, the current dock's tab is re-marked and re-polished.
+
+    ``restoreState`` rebuilds every tab, and a rebuilt tab does not re-evaluate the
+    ``[tracked_focus="true"]`` rule on its own -- the current dock comes back unhighlighted (visibly
+    so when the rule is inherited from an ancestor rather than set on this manager). The re-mark is
+    deferred, like the close-button restyle beside it, because QtAds keeps re-polishing the rebuilt
+    tabs after ``stateRestored``.
+
+    **Test steps:**
+
+    * add a dock (making it current) and save the layout
+    * clear the tracked-focus property off its tab by hand, standing in for the rebuild
+    * restore the layout and let the deferred restyle run
+    * verify the tab carries the tracked-focus property again
+    """
+    tracker = QtAdsFocusTracker(manager)
+    dock = add_dock(manager, "one")
+    state = bytes(manager.saveState().data())
+    assert tracker.current_dock is dock
+    dock.tabWidget().setProperty(QtAdsFocusTracker.TRACKED_FOCUS_PROPERTY, False)
+
+    assert manager.restoreState(QByteArray(state))
+    qtbot.wait(50)
+
+    assert dock.tabWidget().property(QtAdsFocusTracker.TRACKED_FOCUS_PROPERTY) is True
+
+
+def test_construction_pins_the_colour_scheme_to_the_current_palette(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """The tracker pins the manager's colour-scheme mode instead of leaving QtAds' ``FollowPalette``.
+
+    Pinning is what stops QtAds reloading (and so *replacing*) the manager's stylesheet on a palette
+    change, which would drop the tracker's appended rules -- see
+    ``QtAdsFocusTracker.__apply_stylesheet``.
+
+    **Test steps:**
+
+    * report the application palette as light, and watch ``setColorSchemeMode``
+    * build a tracker
+    * verify it pinned the light sheet rather than leaving the mode to follow the palette
+    """
+    mocker.patch.object(QtAds.CDockManager, "isApplicationPaletteDark", return_value=False)
+    pin = mocker.patch.object(QtAds.CDockManager, "setColorSchemeMode")
+
+    QtAdsFocusTracker(manager)
+
+    pin.assert_called_with(QtAds.CDockManager.ColorSchemeMode.Light)
+
+
+def test_a_palette_change_repins_and_puts_the_stylesheet_back(
+    manager: QtAds.CDockManager, mocker: MockerFixture
+) -> None:
+    """A theme switch re-pins to the new sheet and re-appends the rules that reload replaces (#227).
+
+    **Test steps:**
+
+    * build a tracker, then wipe the manager's stylesheet -- what QtAds' own reload does to it
+    * report the palette as dark and emit the shared palette-change notifier
+    * verify the tracker re-pinned to the dark sheet and the tracked-focus rules are back
+    """
+    QtAdsFocusTracker(manager)
+    manager.setStyleSheet("")
+    mocker.patch.object(QtAds.CDockManager, "isApplicationPaletteDark", return_value=True)
+    pin = mocker.patch.object(QtAds.CDockManager, "setColorSchemeMode")
+
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    ApplicationPaletteChangeNotifier.for_application(app).palette_changed.emit()
+
+    pin.assert_called_with(QtAds.CDockManager.ColorSchemeMode.Dark)
+    assert '[tracked_focus="true"]' in manager.styleSheet()
+
+
+def test_a_palette_change_leaves_a_hosted_manager_carrying_nothing(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """A hosted manager stays unstyled across a theme switch, however QtAds reloads it (#234).
+
+    QtAds' reload hands a nested manager back the full default sheet the host exists to avoid paying
+    for twice, so re-clearing it is part of re-applying.
+
+    **Test steps:**
+
+    * build a tracker over a host, then hand the manager a stylesheet -- what that reload does
+    * emit the shared palette-change notifier
+    * verify the manager carries nothing again and the host still carries the rules
+    """
+    host = QWidget()
+    qtbot.addWidget(host)
+    QtAdsFocusTracker(manager, stylesheet_host=host)
+    manager.setStyleSheet("ads--CDockWidgetTab { /* what QtAds' reload puts back */ }")
+
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    ApplicationPaletteChangeNotifier.for_application(app).palette_changed.emit()
+
+    assert manager.styleSheet() == ""
+    assert '[tracked_focus="true"]' in host.styleSheet()
+
+
 def test_repeated_state_restore_does_not_grow_the_tracked_area_set(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
     """Repeated save/restore cycles don't leak dead ``CDockAreaWidget``s into the tracked-area set.
 
@@ -645,6 +751,68 @@ def test_construction_appends_to_the_existing_stylesheet(manager: QtAds.CDockMan
     qss = manager.styleSheet()
     assert "/* sentinel */" in qss
     assert '[tracked_focus="true"]' in qss
+
+
+def test_a_stylesheet_host_carries_the_qss_and_the_manager_carries_none(
+    qtbot: QtBot, manager: QtAds.CDockManager
+) -> None:
+    """Given a host, the tracker styles the host and strips the manager's own sheet entirely.
+
+    QtAds sets its default stylesheet on every ``CDockManager``, so a nested manager pays to
+    re-evaluate rules an ancestor's sheet already applies -- the whole point of the host is that
+    exactly one widget in the nest carries them.
+
+    **Test steps:**
+
+    * set a sentinel stylesheet on the manager (standing in for QtAds' default) and build a tracker
+      over it, hosted on an unrelated widget
+    * verify the manager carries nothing at all and the host carries the tracked-focus selector
+    """
+    host = QWidget()
+    qtbot.addWidget(host)
+    manager.setStyleSheet("QWidget { /* sentinel */ }")
+
+    QtAdsFocusTracker(manager, stylesheet_host=host)
+
+    assert manager.styleSheet() == ""
+    assert '[tracked_focus="true"]' in host.styleSheet()
+
+
+def test_a_shared_stylesheet_host_collects_the_qss_once(qtbot: QtBot, manager: QtAds.CDockManager) -> None:
+    """Several trackers on one host append the same rules once, not once per tracker.
+
+    **Test steps:**
+
+    * build two trackers over two managers, both hosted on the same widget
+    * verify the host's stylesheet carries the tracked-focus selector exactly once
+    """
+    host = QWidget()
+    qtbot.addWidget(host)
+    other = QtAds.CDockManager()
+    qtbot.addWidget(other)
+
+    QtAdsFocusTracker(manager, stylesheet_host=host)
+    QtAdsFocusTracker(other, stylesheet_host=host)
+
+    assert host.styleSheet().count('ads--CDockWidget[tracked_focus="true"]') == 1
+
+
+def test_a_stylesheet_host_keeps_what_it_already_carries(qtbot: QtBot, manager: QtAds.CDockManager) -> None:
+    """The host's own stylesheet survives the tracker's addition, same as a manager's would.
+
+    **Test steps:**
+
+    * set a sentinel stylesheet on the host, then build a tracker hosted on it
+    * verify the host carries both the sentinel and the tracked-focus selector
+    """
+    host = QWidget()
+    qtbot.addWidget(host)
+    host.setStyleSheet("QWidget { /* sentinel */ }")
+
+    QtAdsFocusTracker(manager, stylesheet_host=host)
+
+    assert "/* sentinel */" in host.styleSheet()
+    assert '[tracked_focus="true"]' in host.styleSheet()
 
 
 def test_close_button_uses_a_custom_glyph_font_and_size(manager: QtAds.CDockManager) -> None:
