@@ -1,9 +1,12 @@
-"""Tests for ContentCountField: the measured count's viewer, and the compute/apply row over its editor."""
+"""Tests for ContentCountField: the measured count's viewer, the compute/apply row over its editor,
+and the off-thread measurement behind it.
+"""
+
+from threading import Event, get_ident
 
 # the viewer is deliberately the plain-integer one ``IntField`` gives (a measured count *is* a plain
 # number to look at), so its test reads like that field's -- the row below it is where the two differ
 # pylint: disable=duplicate-code
-
 from PySide6.QtWidgets import QLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -16,6 +19,19 @@ from fields.widgets.test_content_count_edit import (
     internal_computed_label,
     internal_spin_box,
 )
+
+
+def compute(qtbot: QtBot, editor: ContentCountEdit) -> None:
+    """Press ``Compute`` and wait for the count to report back.
+
+    The measurement runs on a worker thread (#198, #223), so the result is not on screen when the click
+    returns -- every test that presses Compute goes through here rather than each spelling the wait.
+
+    :param qtbot: the pytest-qt bot driving the event loop while the count runs.
+    :param editor: the row to compute on.
+    """
+    internal_compute_button(editor).click()
+    qtbot.waitUntil(lambda: not editor.busy)
 
 
 def test_content_count_viewer_shows_and_tracks_the_value(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -94,7 +110,7 @@ def test_compute_fills_the_label_without_touching_the_value_or_dirtying(qtbot: Q
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
 
     assert internal_computed_label(editor).text() == "9"
     assert model.current_count == 7
@@ -116,10 +132,10 @@ def test_compute_measures_afresh_on_every_press(qtbot: QtBot, model: RehuDocumen
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
     assert internal_computed_label(editor).text() == "9"
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
     assert internal_computed_label(editor).text() == "11"
 
 
@@ -161,7 +177,7 @@ def test_computing_zero_content_images_shows_zero(qtbot: QtBot, model: RehuDocum
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
 
     assert internal_computed_label(editor).text() == "0"
     assert internal_apply_button(editor).isEnabled()
@@ -181,7 +197,7 @@ def test_apply_is_offered_only_when_the_measurement_disagrees(qtbot: QtBot, mode
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
 
     assert not internal_apply_button(editor).isEnabled()
 
@@ -200,7 +216,7 @@ def test_apply_stores_the_measured_count_and_dirties(qtbot: QtBot, model: RehuDo
     editor = field.make_editor(model.bind(field)).editor
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
 
     internal_apply_button(editor).click()
 
@@ -226,7 +242,7 @@ def test_a_stale_stored_count_stays_until_apply(qtbot: QtBot, model: RehuDocumen
     qtbot.addWidget(editor)
     assert model.current_count == 7
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
     assert model.current_count == 7
 
     internal_apply_button(editor).click()
@@ -248,7 +264,7 @@ def test_an_unmeasurable_document_computes_nothing(qtbot: QtBot, model: RehuDocu
     assert isinstance(editor, ContentCountEdit)
     qtbot.addWidget(editor)
 
-    internal_compute_button(editor).click()
+    compute(qtbot, editor)
 
     assert internal_computed_label(editor).text() == ""
     assert not internal_apply_button(editor).isEnabled()
@@ -271,3 +287,92 @@ def test_content_count_editor_follows_an_external_model_change(qtbot: QtBot, mod
     model.current_count = 13
 
     assert internal_spin_box(editor).value == 13
+
+
+def test_the_count_runs_off_the_gui_thread(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The measurement runs on a worker thread: opening every archive a pack holds, over an SMB mount,
+    takes long enough that the window must stay responsive for it (#223).
+
+    **Test steps:**
+
+    * build the editor over a measurement that records the thread it ran on
+    * press Compute and wait for the result
+    * verify it did not run on the thread the test (and the GUI) is on
+    """
+    gui_thread = get_ident()
+    count_threads: list[int] = []
+
+    def measure() -> int:
+        count_threads.append(get_ident())
+        return 9
+
+    field = ContentCountField("current_count", measure=measure)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, ContentCountEdit)
+    qtbot.addWidget(editor)
+
+    compute(qtbot, editor)
+
+    assert count_threads and gui_thread not in count_threads
+    assert editor.computed == 9
+
+
+def test_compute_is_disabled_while_a_count_is_in_flight(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A count already running cannot be started again, nor its half-finished answer applied (#223).
+
+    **Test steps:**
+
+    * build the editor over a measurement that blocks until the test releases it
+    * press Compute and verify the row is busy with both buttons disabled while it hangs
+    * release the measurement and verify the row comes back with the result
+    """
+    release = Event()
+
+    def measure() -> int:
+        release.wait(timeout=5)
+        return 9
+
+    field = ContentCountField("current_count", measure=measure)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, ContentCountEdit)
+    qtbot.addWidget(editor)
+
+    try:
+        internal_compute_button(editor).click()
+
+        assert editor.busy is True
+        assert not internal_compute_button(editor).isEnabled()
+        assert not internal_apply_button(editor).isEnabled()
+    finally:
+        release.set()
+
+    qtbot.waitUntil(lambda: not editor.busy)
+    assert editor.computed == 9
+    assert internal_compute_button(editor).isEnabled()
+
+
+def test_a_count_that_raises_gives_the_row_back(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A measurement that blows up -- a corrupt archive, a mount that went away -- reports *nothing
+    counted* rather than stranding the row busy with a Compute that can never be pressed again (#223).
+
+    **Test steps:**
+
+    * build the editor over a measurement that raises
+    * press Compute and wait
+    * verify nothing was computed, the stored count is untouched, and Compute is offered again
+    """
+    model.current_count = 7
+
+    def measure() -> int:
+        raise OSError("the mount went away mid-count")
+
+    field = ContentCountField("current_count", measure=measure)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, ContentCountEdit)
+    qtbot.addWidget(editor)
+
+    compute(qtbot, editor)
+
+    assert editor.computed is None
+    assert model.current_count == 7
+    assert internal_compute_button(editor).isEnabled()

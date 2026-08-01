@@ -7,6 +7,7 @@ from typing import Final, override
 
 from PySide6.QtWidgets import QLabel
 
+from .background_measurement import measure_in_background
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .widgets import ContentCountEdit
 
@@ -23,6 +24,11 @@ class ContentCountField(Field[int | None]):
     that composes the form (`~rehuco_agent.documents.document_fields.build_document_form`) supplies it --
     the same inversion the images strip's scanner takes.
 
+    **The count runs off the GUI thread** (:class:`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`):
+    it opens every archive the resource holds, over an SMB mount, and the window must not freeze while it
+    does. The editor is busy for the duration, which is what keeps a second Compute -- or an Apply of a
+    half-finished answer -- from being pressed.
+
     **Measuring is explicit and never writes.** Compute fills the label beside the stored value and stops
     there; only ``Apply`` writes, and only while the two differ. Nothing measures on open, because a stored
     count that disagrees with the archive is evidence of a refreshed zip and overwriting it would destroy
@@ -31,7 +37,8 @@ class ContentCountField(Field[int | None]):
     :param name: the field's identifier on its model.
     :param label: display label; derived from ``name`` when omitted.
     :param measure: counts the resource's content images afresh, returning ``None`` when there is nothing
-        to measure (a document with no path yet). Called on every ``Compute``, never on construction.
+        to measure (a document with no path yet). **Called on a worker thread**, so it must touch no
+        widget and no ``QObject``. Called on every ``Compute``, never on construction.
     :param viewer_tab: the surface this field's viewer belongs to.
     :param editor_tab: the surface this field's editor belongs to.
     """
@@ -70,5 +77,8 @@ class ContentCountField(Field[int | None]):
     def make_editor(self, binding: FieldBinding[int | None]) -> FieldEditorWidgets:
         editor = ContentCountEdit()
         self.bind_value_widget(editor, binding)  # type: ignore[arg-type]  # set_value is a synthesized slot
-        editor.compute_requested.connect(lambda: editor.set_computed(self.__measure()))  # type: ignore[attr-defined]
+        # the ignore is the same one bind_value_widget above needs, for the same reason: PySide types a
+        # class-level ``Signal`` as ``Signal``, not as the ``SignalInstance`` an *instance* actually
+        # exposes, so no widget declaring one ever satisfies a protocol naming it statically
+        measure_in_background(editor, self.__measure)  # type: ignore[arg-type]
         return FieldEditorWidgets(self.editor_tab, self.make_label(), editor)

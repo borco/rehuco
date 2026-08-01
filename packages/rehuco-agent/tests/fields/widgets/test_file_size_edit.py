@@ -1,25 +1,30 @@
-"""Tests for FileSizeEdit: GNU-style size text parsing and the live line-edit + spin-box sync."""
+"""Tests for FileSizeEdit: the stored spin box between its two readouts, and the explicit apply and
+busy state around the measurement.
+"""
 
-from collections.abc import Callable
+# the row's measure/apply behaviour is the same contract ``ContentCountEdit``'s tests pin (#198), so the
+# two read alike where the two widgets behave alike; see that widget's own note on why they are still two
+# pylint: disable=duplicate-code
 
 from borco_pyside.widgets import UnboundedSpinBox
-from PySide6.QtWidgets import QLineEdit
+from PySide6.QtWidgets import QToolButton
 from pytest import mark, param
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.file_size_edit import FileSizeEdit
+from rehuco_agent.fields.widgets.file_size_edit import COMPUTED_TOOLTIP, STORED_TOOLTIP, FileSizeEdit
+from rehuco_agent.fields.widgets.value_readout import ValueReadout
 
 
-def internal_line_edit(edit: FileSizeEdit) -> QLineEdit:
-    """Return the widget's private internal line edit -- ``FileSizeEdit`` exposes no accessor of its own.
+def internal_stored_label(edit: FileSizeEdit) -> ValueReadout:
+    """Return the widget's private human-readable readout -- ``FileSizeEdit`` exposes no accessor.
 
     :param edit: the widget to inspect.
-    :returns: the internal ``QLineEdit``.
+    :returns: the internal ``ValueReadout``.
     """
-    return edit._FileSizeEdit__line_edit  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return edit._FileSizeEdit__stored_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def internal_spin_box(edit: FileSizeEdit) -> UnboundedSpinBox:
-    """Return the widget's private internal spin box -- ``FileSizeEdit`` exposes no accessor of its own.
+    """Return the widget's private stored-size spin box -- ``FileSizeEdit`` exposes no accessor.
 
     :param edit: the widget to inspect.
     :returns: the internal ``UnboundedSpinBox``.
@@ -27,41 +32,31 @@ def internal_spin_box(edit: FileSizeEdit) -> UnboundedSpinBox:
     return edit._FileSizeEdit__spin_box  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-# region parse() tests
-@mark.parametrize(
-    ("text", "expected"),
-    [
-        param("42", 42, id="bare-number-is-bytes"),
-        param("0B", 0, id="zero-bytes"),
-        param("1B", 1, id="one-byte"),
-        param("300B", 300, id="sub-kilo-with-byte-suffix"),
-        param("1K", 1024, id="one-kilo"),
-        param("1.4G", 1503238554, id="fractional-giga"),
-        param("5.0G", 5368709120, id="five-giga"),
-        param("1P", 2**50, id="one-peta"),
-        param("1k", 1024, id="lowercase-unit"),
-        param("  1G  ", 2**30, id="surrounding-whitespace-is-stripped"),
-        param("", None, id="empty-is-unparseable"),
-        param("   ", None, id="whitespace-only-is-unparseable"),
-        param("not a size", None, id="garbage-text"),
-        param("1 G", 2**30, id="space-between-number-and-unit-is-tolerated"),
-        param("-5G", None, id="negative-is-rejected"),
-        param("1X", None, id="unrecognized-unit-letter"),
-    ],
-)
-def test_parse(text: str, expected: int | None) -> None:
-    """``parse`` recognizes GNU-style ``<number><unit>`` text, a unitless bare number, and rejects
-    everything else.
+def internal_computed_label(edit: FileSizeEdit) -> ValueReadout:
+    """Return the widget's private computed-size readout -- ``FileSizeEdit`` exposes no accessor.
 
-    **Test steps:**
-
-    * parse each ``text``
-    * verify it matches ``expected`` (the total bytes, or ``None`` when unparseable)
+    :param edit: the widget to inspect.
+    :returns: the internal ``ValueReadout``.
     """
-    assert FileSizeEdit.parse(text) == expected
+    return edit._FileSizeEdit__computed_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
-# endregion
+def internal_apply_button(edit: FileSizeEdit) -> QToolButton:
+    """Return the widget's private apply button -- ``FileSizeEdit`` exposes no accessor.
+
+    :param edit: the widget to inspect.
+    :returns: the internal ``QToolButton``.
+    """
+    return edit._FileSizeEdit__apply_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def internal_compute_button(edit: FileSizeEdit) -> QToolButton:
+    """Return the widget's private compute button -- ``FileSizeEdit`` exposes no accessor.
+
+    :param edit: the widget to inspect.
+    :returns: the internal ``QToolButton``.
+    """
+    return edit._FileSizeEdit__compute_button  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 # region format() tests
@@ -93,25 +88,29 @@ def test_format(size: int | None, expected: str) -> None:
 
 
 # region widget tests
-def test_file_size_edit_starts_unmeasured_by_default(qtbot: QtBot) -> None:
-    """A freshly built ``FileSizeEdit`` starts unmeasured (``None``): an empty line edit and a zero
-    spin box, the spin box's own empty-state stand-in ([[field-schema#deferred-items]]).
+def test_edit_starts_unmeasured_with_nothing_computed(qtbot: QtBot) -> None:
+    """A fresh row holds no stored size, shows no measured one, and offers nothing to apply.
 
     **Test steps:**
 
-    * build a default ``FileSizeEdit``
-    * verify its value is ``None`` and both internal widgets match
+    * build the widget
+    * verify both values are unset, both readouts are empty, apply is disabled and compute is offered
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
 
     assert edit.value is None
-    assert internal_line_edit(edit).text() == ""
-    assert internal_spin_box(edit).value == 0
+    assert edit.computed is None
+    assert edit.busy is False
+    assert internal_stored_label(edit).text() == ""
+    assert internal_computed_label(edit).text() == ""
+    assert not internal_apply_button(edit).isEnabled()
+    assert internal_compute_button(edit).isEnabled()
 
 
-def test_file_size_edit_spin_box_has_no_upper_bound(qtbot: QtBot) -> None:
-    """The internal spin box has a zero minimum (sizes are never negative) and no maximum.
+def test_edit_spin_box_has_no_upper_bound(qtbot: QtBot) -> None:
+    """The internal spin box has a zero minimum (sizes are never negative) and no maximum -- a
+    multi-terabyte resource overflows the C++ int32 ceiling by orders of magnitude (#40).
 
     **Test steps:**
 
@@ -126,224 +125,288 @@ def test_file_size_edit_spin_box_has_no_upper_bound(qtbot: QtBot) -> None:
     assert spin_box.maximum() is None
 
 
-def test_file_size_edit_typing_a_valid_size_updates_value_and_spin_box(qtbot: QtBot) -> None:
-    """Typing a valid GNU-style size updates ``value`` and the spin box.
+@mark.parametrize(
+    "readout",
+    [
+        param(internal_stored_label, id="human-readable-readout"),
+        param(internal_computed_label, id="computed-readout"),
+    ],
+)
+def test_both_readouts_are_the_shared_read_only_readout(qtbot: QtBot, readout: object) -> None:
+    """Both readouts are the row-agnostic `ValueReadout` -- framed, selectable, read-only -- rather than
+    something this row styles for itself, so the count row beside it cannot end up looking different.
+    What that widget guarantees is pinned by its own tests.
 
     **Test steps:**
 
     * build the widget
-    * type a size into the internal line edit
-    * verify ``value`` and the spin box both follow
+    * verify the readout is a ``ValueReadout`` and names what it shows
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
 
-    internal_line_edit(edit).setText("5.0G")
+    label = readout(edit)  # type: ignore[operator]  # a parametrized accessor from this module
+
+    assert isinstance(label, ValueReadout)
+    assert label.toolTip() in (STORED_TOOLTIP, COMPUTED_TOOLTIP)
+
+
+def test_editing_the_spin_box_writes_the_value_through(qtbot: QtBot) -> None:
+    """The spin box is the field's value: typing in it moves ``value``.
+
+    **Test steps:**
+
+    * build the widget and set the spin box's value
+    * verify ``value`` followed
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+
+    internal_spin_box(edit).setValue(5368709120)
 
     assert edit.value == 5368709120
+
+
+def test_setting_the_value_echoes_into_the_spin_box_and_its_human_reading(qtbot: QtBot) -> None:
+    """A value set from outside (the model, or apply) shows up in the spin box and in the readout
+    beside it, with no feedback loop.
+
+    **Test steps:**
+
+    * build the widget and set ``value`` directly, as a bound model change would
+    * verify the spin box holds the bytes, the readout shows them formatted, and the value survived
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+
+    edit.set_value(5368709120)  # type: ignore[attr-defined]  # the slot SimpleProperty synthesizes
+
     assert internal_spin_box(edit).value == 5368709120
+    assert internal_stored_label(edit).text() == "5.0G"
+    assert edit.value == 5368709120
 
 
-def test_file_size_edit_typing_a_valid_size_updates_the_spin_boxs_displayed_text(qtbot: QtBot) -> None:
-    """Typing a valid size updates the spin box's own *displayed* text, not just its ``value``
-    attribute -- distinct from the attribute, since ``UnboundedSpinBox`` syncs its internal line edit
-    by listening to its own ``value_changed``, which a naive blanket signal-blocker around the
-    programmatic sync would also silence (confirmed empirically: ``value`` updated but the displayed
-    text stayed stale).
-
-    **Test steps:**
-
-    * build the widget
-    * type a size into the internal line edit
-    * verify the spin box's own internal line edit shows the new number
-    """
-    edit = FileSizeEdit()
-    qtbot.addWidget(edit)
-
-    internal_line_edit(edit).setText("5.0G")
-
-    assert internal_spin_box(edit).lineEdit().text() == "5368709120"
-
-
-def test_file_size_edit_typing_a_value_beyond_int32_updates_value_exactly(qtbot: QtBot) -> None:
-    """Typing a size far past the C++ int32 ceiling updates ``value`` exactly (the point of #40).
-
-    **Test steps:**
-
-    * build the widget
-    * type a size beyond int32 into the internal line edit
-    * verify ``value`` holds it exactly
-    """
-    edit = FileSizeEdit()
-    qtbot.addWidget(edit)
-
-    internal_line_edit(edit).setText("1P")
-
-    assert edit.value == 2**50
-
-
-def test_file_size_edit_typing_a_bare_zero_writes_a_genuine_zero_not_none(qtbot: QtBot) -> None:
-    """Typing ``"0"`` writes a genuine ``0``, distinct from clearing the line edit (which writes
-    ``None``) -- both are non-blank-vs-blank on the same text-changed path
+def test_a_stored_zero_reads_honestly_where_unmeasured_reads_empty(qtbot: QtBot) -> None:
+    """The human readout keeps the absent/zero distinction the value itself carries
     ([[field-schema#deferred-items]]).
 
     **Test steps:**
 
-    * build the widget starting unmeasured
-    * type ``"0"`` into the line edit
-    * verify ``value`` is ``0``, not ``None``
+    * set a genuine ``0`` and verify the readout shows ``"0B"``
+    * set ``None`` and verify it goes blank
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
 
-    internal_line_edit(edit).setText("0")
+    edit.set_value(0)  # type: ignore[attr-defined]
+    assert internal_stored_label(edit).text() == "0B"
 
-    assert edit.value == 0
+    edit.set_value(None)  # type: ignore[attr-defined]
+    assert internal_stored_label(edit).text() == ""
 
 
-def test_file_size_edit_typing_unparseable_text_does_not_change_value(qtbot: QtBot) -> None:
-    """Text that doesn't parse (yet, or ever) leaves ``value`` untouched.
+def test_a_value_beyond_int32_is_held_exactly(qtbot: QtBot) -> None:
+    """A size far past the C++ int32 ceiling round-trips exactly through the spin box (the point of #40).
 
     **Test steps:**
 
-    * build the widget with a valid starting value
-    * type garbage text into the line edit
-    * verify ``value`` is unchanged
+    * set a petabyte-scale value
+    * verify the value and the spin box hold it exactly, and the readout formats it
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
-    edit.value = 1024
 
-    internal_line_edit(edit).setText("1X")
+    edit.set_value(2**50)  # type: ignore[attr-defined]
 
-    assert edit.value == 1024
+    assert edit.value == 2**50
+    assert internal_spin_box(edit).value == 2**50
+    assert internal_stored_label(edit).text() == "1.0P"
 
 
-@mark.parametrize(
-    ("text", "expected_warning"),
-    [
-        param("", False, id="blank-is-not-a-warning"),
-        param("5G", False, id="valid-text-is-not-a-warning"),
-        param("1X", True, id="unparseable-non-blank-text-is-a-warning"),
-    ],
-)
-def test_file_size_edit_line_edit_warns_only_for_non_blank_unparseable_text(
-    qtbot: QtBot, text: str, expected_warning: bool
-) -> None:
-    """The line edit's ``warning`` dynamic property (driving :attr:`FileSizeEdit.WARNING_STYLESHEET`)
-    is set exactly when the typed text is non-blank and unparseable.
+def test_compute_asks_the_owner_rather_than_measuring(qtbot: QtBot) -> None:
+    """Pressing ``Compute`` only emits -- the widget knows nothing about files, paths, or settings.
 
     **Test steps:**
 
-    * build the widget, seed the line edit with placeholder text, then set it to ``text`` (so a
-      blank ``text`` case genuinely fires ``textChanged``, rather than a no-op ``setText("")`` on an
-      already-empty line edit)
-    * verify the internal line edit's ``warning`` property matches ``expected_warning``
+    * build the widget and press ``Compute``
+    * verify ``compute_requested`` fired and neither value changed
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
-    line_edit = internal_line_edit(edit)
-    line_edit.setText("seed")
 
-    line_edit.setText(text)
+    with qtbot.waitSignal(edit.compute_requested):
+        internal_compute_button(edit).click()
 
-    assert line_edit.property("warning") is expected_warning
-
-
-def test_file_size_edit_line_edit_warning_clears_once_text_becomes_valid(qtbot: QtBot) -> None:
-    """The warning property clears once unparseable text is completed into valid text.
-
-    **Test steps:**
-
-    * type unparseable text, then correct it into valid text
-    * verify the ``warning`` property clears
-    """
-    edit = FileSizeEdit()
-    qtbot.addWidget(edit)
-    line_edit = internal_line_edit(edit)
-    line_edit.setText("1X")
-    assert line_edit.property("warning") is True
-
-    line_edit.setText("1G")
-
-    assert line_edit.property("warning") is False
-
-
-def test_file_size_edit_clearing_the_line_edit_resets_value_to_none(qtbot: QtBot) -> None:
-    """Emptying the line edit resets ``value`` to ``None`` (unmeasured), with the spin box falling
-    back to its empty-state stand-in, zero, and the line edit itself staying blank
-    (:meth:`FileSizeEdit.format` renders ``None`` as ``""``, [[field-schema#deferred-items]]).
-
-    A blank line edit is an explicit reset, not "incomplete typing" -- unlike genuinely unparseable
-    non-empty text, which leaves ``value`` untouched (mirrors
-    :class:`~rehuco_agent.fields.widgets.DurationEdit`'s own guard).
-
-    **Test steps:**
-
-    * build the widget with a nonzero value
-    * clear the internal line edit's text
-    * verify ``value`` is ``None``, the spin box shows zero, and the line edit stays blank
-    """
-    edit = FileSizeEdit()
-    qtbot.addWidget(edit)
-    edit.value = 1024
-
-    internal_line_edit(edit).clear()
-
+    assert edit.computed is None
     assert edit.value is None
-    assert internal_spin_box(edit).value == 0
-    assert internal_line_edit(edit).text() == ""
 
 
-@mark.parametrize(
-    "set_value",
-    [
-        param(lambda edit: internal_spin_box(edit).setValue(5368709120), id="via-spin-box"),
-        param(lambda edit: setattr(edit, "value", 5368709120), id="via-value-property"),
-        param(lambda edit: edit.set_value(5368709120), id="via-set-value-slot"),  # type: ignore[attr-defined]
-    ],
-)
-def test_file_size_edit_setting_the_value_any_way_syncs_both_widgets(
-    qtbot: QtBot, set_value: Callable[[FileSizeEdit], None]
-) -> None:
-    """However ``value`` gets set -- the spin box, the property, or the synthesized slot -- both
-    internal widgets end up in sync with it.
+def test_compute_enters_the_busy_state_and_disables_both_actions(qtbot: QtBot) -> None:
+    """A scan in flight disables the buttons: a multi-gigabyte tree takes seconds, and neither a second
+    scan nor an apply of a half-finished answer may be pressed meanwhile (#223).
 
     **Test steps:**
 
-    * build the widget
-    * set the value via ``set_value``
-    * verify ``value``, the line edit (formatted), and the spin box all agree
+    * build the widget over a stored size with a stale measurement already showing, so apply is offered
+    * press ``Compute``
+    * verify the widget is busy and both buttons are disabled
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    edit.set_value(1024)  # type: ignore[attr-defined]
+    edit.computed = 2048
+    assert internal_apply_button(edit).isEnabled()
+
+    internal_compute_button(edit).click()
+
+    assert edit.busy is True
+    assert not internal_compute_button(edit).isEnabled()
+    assert not internal_apply_button(edit).isEnabled()
+
+
+def test_showing_a_measurement_leaves_the_busy_state(qtbot: QtBot) -> None:
+    """The owner's answer is what ends the scan: the buttons come back and the result is on screen.
+
+    **Test steps:**
+
+    * press ``Compute``, then hand the widget a result
+    * verify it is no longer busy, the readout shows the result, and both buttons are offered again
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    internal_compute_button(edit).click()
+
+    edit.show_measurement(2048)
+
+    assert edit.busy is False
+    assert edit.computed == 2048
+    assert internal_computed_label(edit).text() == "2048"
+    assert internal_compute_button(edit).isEnabled()
+    assert internal_apply_button(edit).isEnabled()
+
+
+def test_a_failed_measurement_still_leaves_the_busy_state(qtbot: QtBot) -> None:
+    """A scan that measured nothing still hands back an answer, so the row never strands itself busy
+    with a permanently dead ``Compute``.
+
+    **Test steps:**
+
+    * press ``Compute``, then hand the widget ``None``
+    * verify it is no longer busy and compute is offered again
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    internal_compute_button(edit).click()
+
+    edit.show_measurement(None)
+
+    assert edit.busy is False
+    assert internal_compute_button(edit).isEnabled()
+
+
+def test_a_computed_size_is_shown_exactly_without_touching_the_value(qtbot: QtBot) -> None:
+    """A measurement fills the readout beside the stored size and leaves the stored size alone -- the
+    disagreement is information, not something to silently resolve (#223).
+
+    It is shown as an **exact byte count**, so it can be compared against the spin box digit for digit
+    rather than through a rounded ``1.4G`` two different sizes would share.
+
+    **Test steps:**
+
+    * build the widget over a stored ``1024`` and hand it a computed ``5368709120``
+    * verify the readout shows the exact bytes while the value and spin box still read ``1024``
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    edit.set_value(1024)  # type: ignore[attr-defined]
+
+    edit.computed = 5368709120
+
+    assert internal_computed_label(edit).text() == "5368709120"
+    assert edit.value == 1024
+    assert internal_spin_box(edit).value == 1024
+
+
+def test_a_computed_zero_shows_as_zero_not_as_nothing(qtbot: QtBot) -> None:
+    """A measured ``0`` renders honestly, distinct from the empty "never measured" readout
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * hand the widget a computed ``0``
+    * verify the readout reads ``"0"``
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
 
-    set_value(edit)
+    edit.computed = 0
 
-    assert edit.value == 5368709120
-    assert internal_line_edit(edit).text() == "5.0G"
-    assert internal_spin_box(edit).value == 5368709120
+    assert internal_computed_label(edit).text() == "0"
 
 
-def test_file_size_edit_line_edit_keeps_typed_text_once_it_matches_value(qtbot: QtBot) -> None:
-    """Typed text that already parses to the current value is left displayed as typed.
-
-    The echo guard compares *parsed* text, not raw text -- so e.g. ``"5G"`` isn't silently
-    reformatted to ``"5.0G"`` the moment it round-trips through ``value``.
+def test_apply_is_offered_only_while_the_two_sizes_differ(qtbot: QtBot) -> None:
+    """``Apply`` enables exactly when there is a measurement that disagrees with the stored size.
 
     **Test steps:**
 
-    * build the widget
-    * type a size with no decimal point
-    * verify it's still displayed exactly as typed
+    * verify apply stays disabled while a measurement matches the stored size
+    * verify it enables once they differ, and disables again once the stored size catches up
     """
     edit = FileSizeEdit()
     qtbot.addWidget(edit)
+    edit.set_value(1024)  # type: ignore[attr-defined]
 
-    internal_line_edit(edit).setText("5G")
+    edit.computed = 1024
+    assert not internal_apply_button(edit).isEnabled()
 
-    assert edit.value == 5368709120
-    assert internal_line_edit(edit).text() == "5G"
+    edit.computed = 2048
+    assert internal_apply_button(edit).isEnabled()
+
+    edit.set_value(2048)  # type: ignore[attr-defined]
+    assert not internal_apply_button(edit).isEnabled()
+
+
+def test_apply_stores_the_computed_size(qtbot: QtBot) -> None:
+    """``Apply`` is the one action here that changes the value -- and it reports it as a value change.
+
+    **Test steps:**
+
+    * build the widget over a stored ``1024`` with a computed ``2048``
+    * press apply and verify ``value_changed`` fired with the measured size
+    * verify the spin box and the human readout followed, and apply went back to disabled
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    edit.set_value(1024)  # type: ignore[attr-defined]
+    edit.computed = 2048
+
+    with qtbot.waitSignal(edit.value_changed) as blocker:  # type: ignore[attr-defined]
+        internal_apply_button(edit).click()
+
+    assert blocker.args == [2048]
+    assert edit.value == 2048
+    assert internal_spin_box(edit).value == 2048
+    assert internal_stored_label(edit).text() == "2.0K"
+    assert not internal_apply_button(edit).isEnabled()
+
+
+def test_an_unmeasurable_size_shows_nothing_and_applies_nothing(qtbot: QtBot) -> None:
+    """A measurement that could not run (``None`` -- e.g. a document with no path yet) leaves the
+    readout empty and apply disabled, rather than offering to store "no size".
+
+    **Test steps:**
+
+    * build the widget over a stored ``1024`` and hand it a computed ``None``
+    * verify the readout is empty and apply is disabled
+    """
+    edit = FileSizeEdit()
+    qtbot.addWidget(edit)
+    edit.set_value(1024)  # type: ignore[attr-defined]
+
+    edit.computed = None
+
+    assert internal_computed_label(edit).text() == ""
+    assert not internal_apply_button(edit).isEnabled()
 
 
 # endregion

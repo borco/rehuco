@@ -36,7 +36,7 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
-from .rehu_content_files import enumerate_content_files
+from .rehu_content_files import content_size_on_disk, enumerate_content_files
 from .rehu_content_images import ContentImageEntry, enumerate_content_images
 from .rehu_document import (
     AuthorEntry,
@@ -106,6 +106,7 @@ __all__ = [
     "author_name",
     "authors_comma_editable",
     "collection_entries",
+    "content_size_on_disk",
     "convert_tc",
     "current_block_version",
     "enumerate_content_files",

@@ -99,9 +99,10 @@ class DurationFieldTester(DurationField):
 
 
 class FileSizeFieldTester(FileSizeField):
-    """`FileSizeField` with fixed test tabs."""
+    """`FileSizeField` with fixed test tabs and a measurement that finds nothing by default."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("measure", lambda: None)
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 
