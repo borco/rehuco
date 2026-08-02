@@ -296,6 +296,7 @@ membership fields above are the reference mechanism that design builds on and ar
 
 - [#188: feat: import learning paths as owned entries — index 0, no visibility, minted ref](https://github.com/borco/rehuco/issues/188)
 - [#189: fix: surface collections and learning paths — stop calling a v1 field a future one](https://github.com/borco/rehuco/issues/189)
+- [#235: feat: memberships table editor — collections and learning paths](https://github.com/borco/rehuco/issues/235)
 
 A collection is publisher-defined and belongs to nobody, so its entries sit inline in the plugin block.
 A **learning path is somebody's** — one person curates its order — so its entries live in the block's

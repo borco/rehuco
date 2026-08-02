@@ -14,7 +14,10 @@ from rehuco_agent.documents.document_fields import (
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.fields_form import LABEL_COLUMN
-from rehuco_core import RehuDocument
+from rehuco_agent.fields.widgets.learning_paths_table_model import LearningPathsTableModel
+from rehuco_agent.fields.widgets.memberships_editor import LearningPathsEditor
+from rehuco_agent.settings.identity_settings import shared_identity_settings
+from rehuco_core import RehuDocument, current_block_version
 
 
 def form_labels(widget: QWidget) -> list[str]:
@@ -61,6 +64,7 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
         "Authors",
         "Released",
         "Publisher",
+        "Collections",
         "Url",
         "Advertised Duration",
         "Original Duration",
@@ -77,15 +81,16 @@ def test_build_document_form_leads_with_type_then_location_then_the_record_field
         "Level",
         "Advertised Tags",
         "Extra Tags",
+        "Learning Paths",
     ]
     # the description editor carries no row label -- its own dock tab ("Description") already names it
     assert not form_labels(description)
 
 
 def test_build_document_form_puts_the_record_list_rows_where_tc4_had_them(qtbot: QtBot) -> None:
-    """The two record lists are viewer rows, placed as tc4's layout had them
-    ([[field-schema#tc4-viewer-layout]], #189): ``collections`` in the header group after the publisher,
-    ``learning_paths`` last, after the tag lists.
+    """The two record lists sit where tc4's layout had them ([[field-schema#tc4-viewer-layout]], #189):
+    ``collections`` in the header group after the publisher, ``learning_paths`` last, after the tag
+    lists.
 
     **Test steps:**
 
@@ -120,11 +125,59 @@ def test_build_document_form_trails_unknown_fields_after_the_record_fields(qtbot
     **Test steps:**
 
     * build the form over a model whose Tutorial block carries an unrecognized ``mystery`` key
-    * verify the main editor's last row is the unknown field, after the last record field (``Extra Tags``)
+    * verify the main editor's last row is the unknown field, after the last record field
+      (``Learning Paths``)
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "tutorial": {"mystery": 1}}))
     main = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
     qtbot.addWidget(main)
 
     labels = form_labels(main)
-    assert labels[-2:] == ["Extra Tags", "Mystery"]
+    assert labels[-2:] == ["Learning Paths", "Mystery"]
+
+
+def test_build_document_form_hands_the_learning_paths_editor_the_document_and_settings_identities(
+    qtbot: QtBot,
+) -> None:
+    """The table edits as the identity the document was **opened** under, and reparents a deleted-but-
+    subscribed path to the **configured** unknown identity -- ``unknown`` is a setting, not a reserved
+    name ([[field-schema#learning-path-ownership]], #235).
+
+    **Test steps:**
+
+    * configure a non-default unknown identity, and open a document as ``curator``
+    * build the editor over ``curator``'s subscribed-to path, and delete it
+    * verify the record moved to the configured identity, its slot and subscriber untouched
+    """
+    shared_identity_settings().unknown_username = "orphaned"
+    model = RehuDocumentModel(
+        RehuDocument(
+            {
+                "type": "Tutorial",
+                # stamped current: an unversioned block would run the ref-minting migration on load,
+                # renumbering the very subscription this test needs left alone
+                "tutorial": {
+                    "format_version": current_block_version("tutorial"),
+                    "users": {
+                        "curator": {"learning_paths": [{"title": "Mine", "index": 1, "ref": 1}]},
+                        "foo": {"learning_paths": [{"ref": 1}]},
+                    },
+                },
+            },
+            username="curator",
+        )
+    )
+    main = build_document_form(model, NameSuggestionModel(model)).make_editor(model)[EDITOR_MAIN_TAB]
+    qtbot.addWidget(main)
+    editor = main.findChild(LearningPathsEditor)
+    assert editor is not None
+    table_model = editor.model
+    assert isinstance(table_model, LearningPathsTableModel)
+
+    # the one row is ``curator``'s own -- deletable exactly because the form bound the document's identity
+    table_model.delete(0)
+
+    assert model.learning_paths == {
+        "orphaned": [{"title": "Mine", "index": 1, "ref": 1}],
+        "foo": [{"ref": 1}],
+    }

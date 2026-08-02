@@ -11,6 +11,7 @@ from typing import Any
 
 from rehuco_agent.fields.authors_field import AuthorsField
 from rehuco_agent.fields.boolean_field import BooleanField
+from rehuco_agent.fields.collections_field import CollectionsField
 from rehuco_agent.fields.content_count_field import ContentCountField
 from rehuco_agent.fields.count_claim_field import CountClaimField
 from rehuco_agent.fields.date_field import DateField
@@ -21,6 +22,7 @@ from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.images_field import ImagesField
 from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
+from rehuco_agent.fields.learning_paths_field import LearningPathsField
 from rehuco_agent.fields.measured_duration_field import MeasuredDurationField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
@@ -64,8 +66,23 @@ class TextListFieldTester(TextListField):
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 
-class IndexedListFieldTester(IndexedListField):
-    """`IndexedListField` with fixed test tabs."""
+class IndexedListFieldTester(IndexedListField[object]):  # pylint: disable=abstract-method
+    """The shared record-list viewer base with fixed test tabs (for base-class tests) -- deliberately
+    leaving ``entries``/``make_editor`` unimplemented, since refusing them is what it is testing."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class CollectionsFieldTester(CollectionsField):
+    """`CollectionsField` with fixed test tabs."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
+
+
+class LearningPathsFieldTester(LearningPathsField):
+    """`LearningPathsField` with fixed test tabs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)

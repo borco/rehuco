@@ -3,7 +3,7 @@
 from typing import Any
 
 from pytest import mark, param
-from rehuco_core.titled_index import titled_index
+from rehuco_core.titled_index import titled_index, with_titled_index
 
 
 def test_titled_index_reads_a_full_record() -> None:
@@ -70,3 +70,69 @@ def test_titled_index_leaves_the_record_untouched() -> None:
 
     assert titled_index(record) == (0, "Series")
     assert record == {"title": "Series", "index": "3", "url": "https://example.com/series"}
+
+
+def test_with_titled_index_keeps_every_other_key() -> None:
+    """The merge rule both membership editors are held to: a cell writes back into the record its row was
+    built from, changing only the key it owns (#235).
+
+    **Test steps:**
+
+    * retitle a record carrying a cached ``url`` and a slot no editor shows
+    * verify the title changed and both other keys survived
+    """
+    record = {"title": "Old", "index": 2, "url": "https://example.com", "ref": 7}
+
+    assert with_titled_index(record, title="New") == {
+        "title": "New",
+        "index": 2,
+        "url": "https://example.com",
+        "ref": 7,
+    }
+
+
+def test_with_titled_index_never_mutates_the_record_it_was_given() -> None:
+    """A document hands its lists out by reference, so an edit builds a new record rather than moving an
+    unsaved document's own state under it ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * edit a record
+    * verify the original is untouched and the result is a different object
+    """
+    record = {"title": "Old", "index": 2}
+
+    edited = with_titled_index(record, title="New", index=5)
+
+    assert record == {"title": "Old", "index": 2}
+    assert edited is not record
+
+
+def test_with_titled_index_writes_an_unplaced_index_explicitly() -> None:
+    """``0`` is stored rather than dropped: absent and ``0`` are *defined* to be the same value here, and
+    the legacy import writes it explicitly (#188) -- so storing it keeps an edited record looking like an
+    imported one instead of minting a second spelling of *no position chosen*.
+
+    **Test steps:**
+
+    * set a record's position to ``0``
+    * verify the key is present and reads back as unplaced
+    """
+    edited = with_titled_index({"title": "Series", "index": 4}, index=0)
+
+    assert edited == {"title": "Series", "index": 0}
+    assert titled_index(edited) == (0, "Series")
+
+
+def test_with_titled_index_changes_nothing_when_told_nothing() -> None:
+    """An omitted argument leaves its key exactly as it was, which is what lets one function serve both
+    cells without either knowing about the other.
+
+    **Test steps:**
+
+    * call with neither a title nor an index
+    * verify the record comes back equal
+    """
+    record = {"title": "Series", "index": 2}
+
+    assert with_titled_index(record) == record

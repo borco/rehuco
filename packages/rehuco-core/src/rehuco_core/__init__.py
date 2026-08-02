@@ -1,6 +1,6 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
-from .collection_entries import CollectionEntry, collection_entries
+from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
     CHECKSUM_MANIFEST_EXTENSIONS,
@@ -11,7 +11,13 @@ from .constants import (
     REHU_SUFFIX,
     VIDEO_EXTENSIONS,
 )
-from .learning_path_entries import LearningPathEntry, visible_learning_paths
+from .learning_path_entries import (
+    LearningPathEntry,
+    learning_path_records_by_scope,
+    learning_path_ref,
+    owned_learning_paths,
+    visible_learning_paths,
+)
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -63,12 +69,17 @@ from .tc_conversion import TcConverter, convert_tc
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
 from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshot_files, scan_tc_screenshots
+from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
 
 __version__ = "0.1.0"
 
 # plain `sorted()` order -- uppercase names, then `__version__`, then the lowercase ones -- so a new
 # export has exactly one correct place and no convention to remember (`borco_core.__init__` is the same)
 __all__ = [
+    "with_titled_index",
+    "titled_index",
+    "TITLE_KEY",
+    "INDEX_KEY",
     "ARCHIVE_EXTENSIONS",
     "AuthorEntry",
     "BUILTIN_PLUGINS",
@@ -123,6 +134,7 @@ __all__ = [
     "author_name",
     "authors_comma_editable",
     "collection_entries",
+    "collection_records",
     "content_duration",
     "content_size_on_disk",
     "convert_tc",
@@ -139,5 +151,8 @@ __all__ = [
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "tc_to_rehu_data",
+    "learning_path_records_by_scope",
+    "learning_path_ref",
+    "owned_learning_paths",
     "visible_learning_paths",
 ]

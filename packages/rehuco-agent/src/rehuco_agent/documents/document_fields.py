@@ -35,6 +35,7 @@ from ..fields import (
     UnknownField,
 )
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
@@ -64,6 +65,11 @@ DURATION_FIELD_NAMES: Final = ("original_duration", "current_duration")
 runtime measure callback (#224), for the same reason the sizes do. ``advertised_duration`` is
 deliberately absent: it is the claim the measurement is checked *against*
 ([[field-schema#duration-size]]), so it stays a plain duration with no measure row."""
+
+LEARNING_PATHS_FIELD_NAME: Final = "learning_paths"
+"""The learning-paths field's model name ([[field-schema#learning-path-ownership]]) -- the one record field
+whose editor needs to know **who is editing**, plus where the next file-scoped ``ref`` comes from (#235),
+named here so :func:`build_document_form` can hand it both."""
 
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
@@ -115,7 +121,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("authors", "authors"),
     FieldSpec("date", "released"),
     FieldSpec("text", "publisher"),
-    FieldSpec("indexed_list", "collections"),
+    FieldSpec("collections", "collections"),
     FieldSpec("url", "url"),
     FieldSpec("duration", "advertised_duration"),
     FieldSpec("measured_duration", "original_duration"),
@@ -134,7 +140,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("multi_choice", "level", {"choices": LEVEL_CHOICES}),
     FieldSpec("text_list", "advertised_tags"),
     FieldSpec("text_list", "extra_tags"),
-    FieldSpec("indexed_list", "learning_paths"),
+    FieldSpec("learning_paths", "learning_paths"),
 )
 """The **model-agnostic** fields the document declares -- the ones the `FieldRegistry` resolves from a
 ``(type, name)`` pair alone, bar the one runtime callback :func:`build_document_form` hands
@@ -162,7 +168,7 @@ here, in one list spanning every type, rather than being split across the declar
 Its members: the common-core title/authors/released/publisher/url, the Tutorial plugin-block duration
 fields, the ReferenceImages-only count pair, the common-core original/current size pair, the
 shared resource-type scalar flags, rating, the Tutorial-only ``level`` tags, the tag lists, and the two
-read-only record lists
+membership record lists
 ([[field-schema#resource-types]], [[field-schema#duration-size]], [[field-schema#sources]]) -- the
 record lists sit where tc4's viewer put them (``collections`` up in the header group beside the
 publisher, ``learning_paths`` last, after the tag lists, [[field-schema#tc4-viewer-layout]]), which
@@ -384,6 +390,19 @@ def build_document_form(
     runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
     runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})
     runtime_kwargs.update({name: {"measure": measure_duration} for name in DURATION_FIELD_NAMES})
+    # not a measurement, the same seam for the same reason: the learning-paths table has to know whose
+    # rows are editable, where a new path's file-scoped slot comes from, and who inherits a deleted path
+    # that still has subscribers -- none of which the toolkit could work out from a ``(type, name)`` pair.
+    # The editing identity is the document's own (fixed at open, [[field-schema#per-user-shared]]); the
+    # reparent target is the **configured** unknown identity, not core's constant, since ``unknown`` is a
+    # setting rather than a reserved name ([[field-schema#learning-path-ownership]], #235). ``next_ref``
+    # is a lambda for the reason every other deferred lookup here is one: it is read at mint time, so a
+    # test that swaps the document's answer after the form was built is still seen.
+    runtime_kwargs[LEARNING_PATHS_FIELD_NAME] = {
+        "username": model.document.username,
+        "next_ref": lambda: model.document.next_learning_path_ref(),  # pylint: disable=unnecessary-lambda
+        "unknown_username": shared_identity_settings().unknown_username,
+    }
     for spec in composed_field_specs(model):
         fields.append(
             registry.create(

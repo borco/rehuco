@@ -1,4 +1,4 @@
-"""The `indexed list` leaf field: a read-only list of named entries carrying a position
+"""The shared **viewer** half of the two record-list fields: named entries carrying a position
 ([[plugins#field-toolkit]], [[field-schema#field-types]]).
 """
 
@@ -7,7 +7,7 @@ from typing import Protocol, override
 
 from PySide6.QtWidgets import QLabel, QWidget
 
-from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
+from .field import Field, FieldBinding, FieldViewerWidgets
 from .text_list_string import TextListString
 
 UNPLACED_INDEX = 0
@@ -26,7 +26,7 @@ class IndexedEntry(Protocol):
     ``learning_paths`` are unrelated things that a viewer happens to present the same way -- one is a
     publisher's series, the other is somebody's curated order -- so each keeps its own type in the core
     (`CollectionEntry` / `LearningPathEntry`) and they meet only here, in a widget. Their editors part
-    ways again in #235, where each gets a table with its own columns.
+    ways again below: each subclass builds a table with its own columns.
     """
 
     @property
@@ -40,19 +40,17 @@ class IndexedEntry(Protocol):
         ...  # pylint: disable=unnecessary-ellipsis
 
 
-class IndexedListField(Field[Sequence[IndexedEntry]]):
-    """An ``indexed list`` field ([[plugins#field-toolkit]]): the viewer renders each entry as
-    ``Title [3]`` -- or bare ``Title`` when it carries no position -- comma-joined, in the order the
-    model resolved them in.
+class IndexedListField[T](Field[T]):
+    """An ``indexed list`` field's viewer ([[plugins#field-toolkit]]): each entry renders as
+    ``Title [3]`` -- or bare ``Title`` when it carries no position -- comma-joined, in the order
+    :meth:`entries` resolved them in.
 
-    Covers both of the document's record-list fields, ``collections`` ([[field-schema#sources]]) and
-    ``learning_paths`` ([[field-schema#learning-path-ownership]]), through the `IndexedEntry` contract
-    above rather than by knowing either.
-
-    **Viewer-only** for now: :meth:`make_editor` returns an all-``None`` bundle, so the field adds a row
-    to the viewer and none to the editor. Editing these needs a table -- sortable, filterable, and with
-    per-field columns an owner only one of them has -- which is #235's memberships table; a comma
-    line like the tag fields' could not carry the index, let alone the ownership.
+    A base, not a registered type. What a subclass binds is the field's **stored records**, because that
+    is what its editor has to write back merged (#235); turning those into the entries a viewer shows is
+    :meth:`entries`, and that projection is exactly where ``collections`` and ``learning_paths`` differ --
+    one is a list to coerce and sort, the other is an ownership question spanning several identities
+    ([[field-schema#sources]], [[field-schema#learning-path-ownership]]). Rendering the result is shared,
+    and is all that is shared.
 
     **An empty list hides the whole row** rather than showing an empty value, the same rule the image
     strip follows for a resource with no screenshots: most resources belong to nothing, and a permanently
@@ -60,10 +58,17 @@ class IndexedListField(Field[Sequence[IndexedEntry]]):
     does -- a revert, or a type switch to a block that has entries.
     """
 
-    TYPE = "indexed_list"
+    def entries(self, value: T) -> Sequence[IndexedEntry]:
+        """Project this field's stored value into the entries the viewer renders.
+
+        :param value: the field's stored value, as bound.
+        :returns: the entries to show, already in display order.
+        :raises NotImplementedError: unless a subclass overrides it.
+        """
+        raise NotImplementedError
 
     @override
-    def make_viewer(self, binding: FieldBinding[Sequence[IndexedEntry]]) -> FieldViewerWidgets:
+    def make_viewer(self, binding: FieldBinding[T]) -> FieldViewerWidgets:
         label = self.make_label()
         viewer = QLabel()
         viewer.setWordWrap(True)
@@ -74,22 +79,17 @@ class IndexedListField(Field[Sequence[IndexedEntry]]):
         self.bind_external(binding.changed, lambda value: self.__apply(row, viewer, value))
         return FieldViewerWidgets(self.viewer_tab, label, viewer)
 
-    @override
-    def make_editor(self, binding: FieldBinding[Sequence[IndexedEntry]]) -> FieldEditorWidgets:
-        # read-only until #235's memberships table: an all-``None`` bundle, so the assembler drops the
-        # row entirely rather than showing a disabled one promising an edit that isn't there
-        return FieldEditorWidgets(self.editor_tab, None, None)
-
-    def __apply(self, row: Sequence[QWidget], viewer: QLabel, entries: Sequence[IndexedEntry]) -> None:
-        """Render ``entries`` into the viewer and show or hide the whole row to match.
+    def __apply(self, row: Sequence[QWidget], viewer: QLabel, value: T) -> None:
+        """Render ``value``'s entries into the viewer and show or hide the whole row to match.
 
         Hiding every cell of a grid row collapses it (the row takes no height), the same mechanism the
         unknown-field fallback uses for a dropped key.
 
         :param row: the row's cells, label included, shown or hidden together.
         :param viewer: the value label to render into.
-        :param entries: the entries to show; empty hides the row.
+        :param value: the field's stored value; one projecting to no entries hides the row.
         """
+        entries = self.entries(value)
         viewer.setText(self.display(entries))
         for widget in row:
             if entries and widget.parentWidget() is None:
