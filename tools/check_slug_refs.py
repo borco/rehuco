@@ -87,7 +87,10 @@ def iter_repo_files() -> list[Path]:
     :returns: tracked files plus untracked-but-not-gitignored ones (``git ls-files --cached
         --others --exclude-standard``), so gitignored/generated content (`.venv`, `__pycache__`,
         build output) is never considered a source file, while a brand-new file a developer just
-        created -- not yet `git add`-ed -- still is.
+        created -- not yet `git add`-ed -- still is. The mirror case is dropped: a file **deleted**
+        from the working tree whose deletion is not staged yet is still in git's index, and reading it
+        would kill the checker with a traceback where a mid-rename tree deserves a report. A file that
+        is gone carries no tokens, so skipping it is the whole of the fix.
     """
     result = subprocess.run(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -96,7 +99,7 @@ def iter_repo_files() -> list[Path]:
         check=True,
         text=True,
     )
-    return [REPO_ROOT / rel for rel in result.stdout.split("\0") if rel]
+    return [path for rel in result.stdout.split("\0") if rel and (path := REPO_ROOT / rel).is_file()]
 
 
 def iter_source_files() -> list[Path]:

@@ -157,6 +157,27 @@ def test_iter_repo_files_parses_git_ls_files_output(mocker: MockerFixture) -> No
     ]
 
 
+def test_iter_repo_files_drops_a_path_git_lists_but_the_disk_no_longer_has(mocker: MockerFixture) -> None:
+    """A file deleted from the working tree with its deletion **unstaged** is still in git's index, so
+    ``ls-files`` names it and opening it would kill the checker with a traceback -- where a tree
+    mid-rename deserves a report.
+
+    Not a hypothetical: it is the state every ``git rm``-less delete leaves, and the one a contributor
+    is in for exactly as long as it takes to stage.
+
+    **Test steps:**
+
+    * fake `subprocess.run` to list a real file and one that does not exist
+    * verify only the real one comes back
+    """
+    fake_stdout = "CLAUDE.md\0packages/rehuco-agent/src/rehuco_agent/deleted_mid_rename.py\0"
+    mocker.patch.object(check_slug_refs.subprocess, "run", return_value=mocker.Mock(stdout=fake_stdout))
+
+    result = check_slug_refs.iter_repo_files()
+
+    assert result == [check_slug_refs.REPO_ROOT / "CLAUDE.md"]
+
+
 # endregion
 
 # region iter_source_files tests
