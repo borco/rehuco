@@ -286,7 +286,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     (#189): a projection of the block's own records, reseeded from the document at every seam that
     reseeds the type fields, with no write-through -- the stored records, and whatever else they carry
     (the collection's cached ``url``), are untouched, so a document that is merely viewed round-trips
-    unchanged. Editing them is #97's record-list machinery."""
+    unchanged. Editing them is #235's memberships table."""
 
     learning_paths = SimpleProperty[list[LearningPathEntry]](default_factory=list)
     """The learning paths the **current identity** sees ([[field-schema#learning-path-ownership]]): its own

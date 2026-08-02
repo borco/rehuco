@@ -5,7 +5,7 @@ from typing import Final
 from PySide6.QtWidgets import QWidget
 from rehuco_core import CHECKSUM_MANIFEST_EXTENSIONS, EXCLUDED_FILE_PATTERNS, IMAGE_EXTENSIONS, REHU_SUFFIX
 
-from ...string_list_editor_icons import apply_string_list_editor_icons
+from ...item_action_icons import apply_item_action_icons
 from ..excluded_files_settings import normalize_patterns, shared_excluded_files_settings
 from ..persistent_settings import persistent_settings
 from .excluded_files_page_ui import Ui_ExcludedFilesPage
@@ -46,7 +46,7 @@ class ExcludedFilesPage(QWidget):
         self.__ui.setupUi(self)
         self.__ui.structural_patterns_label.setText(self.__structural_summary())
         self.__ui.patterns_editor.defaults = EXCLUDED_FILE_PATTERNS
-        apply_string_list_editor_icons(self.__ui.patterns_editor)
+        apply_item_action_icons(self.__ui.patterns_editor)
 
         self.drop_changes()
 

@@ -1376,7 +1376,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         block, alongside the shared flags. Read-only: a projection of the stored records, sorted by
         ``index`` then ``title``, that never touches them -- whatever else an entry carries (the cached
         ``url`` the collection itself owns) stays in the document untouched. Editing the records is the
-        record-list machinery (#97).
+        memberships table (#235).
         """
         return collection_entries(self.active_field(COLLECTIONS_KEY))
 

@@ -187,9 +187,12 @@ Title:     [title edit]
 URL:       [url edit]
 ```
 
-The list/nested widgets and their group/subtype config land in a deferred slice (#97; the scope
-outlived LocalEdit2.3/#23 and LocalEdit2.6/#26);
-LocalEdit2.0 ships only the leaf text field. A composite field still returns **one** editor widget from
+The **record-list machinery** ships as `ItemListEditor` (`borco_pyside.widgets`): a view over a model
+plus the insert/edit/delete/reset and top/up/down/bottom action columns, with the keys armed on the
+view alone. Its two clients are the settings pages' `StringListEditor` and the `authors` record rows
+(#97). Declarative group/subtype *config* — a composite an admin describes rather than one a field
+builds — is still unbuilt, as are drag-to-reorder and nesting past one level. A composite field
+returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
 
@@ -206,8 +209,8 @@ other. Keeping the reactive layer in the agent preserves the core's non-GUI puri
 
 Common-core `title` / `publisher` / `url` are attributes of a **source record** ([[field-schema#sources]]), and
 `sources` is a list; the view-model exposes that list explicitly and, for now, edits the **primary**
-entry. The multi-source record-list *editor* is a deferred slice (#97; outlived LocalEdit2.3/#23, LocalEdit2.6/#26) — the view-model
-is the seam it plugs into.
+entry. The multi-source record-list *editor* is still unbuilt — the view-model is the seam it plugs
+into, and the machinery it would be built on is `authors`' (#97).
 
 ### §13.2.3 Viewer / editor / both surfaces
 

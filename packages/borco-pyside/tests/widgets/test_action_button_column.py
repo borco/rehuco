@@ -136,3 +136,28 @@ def test_the_column_never_stretches_past_its_buttons(qtbot: QtBot) -> None:
 
     assert column.sizePolicy().horizontalPolicy() == QSizePolicy.Policy.Fixed
     assert column.sizePolicy().verticalPolicy() == QSizePolicy.Policy.Fixed
+
+
+def test_a_buttons_visibility_follows_its_actions(qtbot: QtBot) -> None:
+    """A button showing a default action does not mirror the action's visibility on its own -- Qt only
+    does that for an action's proxy widgets in a menu or toolbar, not a bare `QToolButton` wired via
+    ``setDefaultAction``. `add_action_button` wires it explicitly instead.
+
+    **Test steps:**
+
+    * build a column, show it, and hide the action
+    * verify the button follows
+    * show the action again and verify the button comes back
+    """
+    column = ActionButtonColumn()
+    qtbot.addWidget(column)
+    action = column.add_action("Reset", "Put the defaults back")
+    column.show()
+    button = buttons(column)[0]
+    assert button.isVisible() is True
+
+    action.setVisible(False)
+    assert button.isVisible() is False
+
+    action.setVisible(True)
+    assert button.isVisible() is True

@@ -188,7 +188,7 @@ def test_the_editor_restores_the_shipped_patterns_not_an_empty_list(qtbot: QtBot
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
 
-    patterns_editor(page).item_actions.reset_action.trigger()
+    patterns_editor(page).reset_action.trigger()
 
     assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
 
@@ -209,7 +209,7 @@ def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
         editor.item_actions.insert_action,
         editor.item_actions.edit_action,
         editor.item_actions.delete_action,
-        editor.item_actions.reset_action,
+        editor.reset_action,
         editor.ordering_actions.move_to_top_action,
         editor.ordering_actions.move_up_action,
         editor.ordering_actions.move_down_action,

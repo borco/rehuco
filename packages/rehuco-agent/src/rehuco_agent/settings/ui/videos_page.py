@@ -6,7 +6,7 @@ from typing import Final
 from PySide6.QtWidgets import QFileDialog, QWidget
 from rehuco_core import VIDEO_EXTENSIONS, FfprobeDurationProbe, MediaInfoDurationProbe
 
-from ...string_list_editor_icons import apply_string_list_editor_icons
+from ...item_action_icons import apply_item_action_icons
 from ..persistent_settings import persistent_settings
 from ..videos_settings import VideosSettings, normalize_extensions, shared_videos_settings
 from .videos_page_ui import Ui_VideosPage
@@ -54,7 +54,7 @@ class VideosPage(QWidget):
         self.__ui.mediainfo_probe_radio_button.setText(MediaInfoDurationProbe.LABEL)
         self.__ui.ffprobe_probe_radio_button.setText(FfprobeDurationProbe.LABEL)
         self.__ui.extensions_editor.defaults = VIDEO_EXTENSIONS
-        apply_string_list_editor_icons(self.__ui.extensions_editor)
+        apply_item_action_icons(self.__ui.extensions_editor)
 
         self.__ui.ffprobe_probe_radio_button.toggled.connect(self.__on_probe_toggled)
         self.__ui.ffprobe_executable_edit.textChanged.connect(self.__show_availability)

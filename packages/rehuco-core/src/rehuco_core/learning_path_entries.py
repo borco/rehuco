@@ -10,7 +10,7 @@ Reading the field therefore means resolving across identities, which is why it i
 
 Read-only ([[data-model#write-integrity]]): nothing here touches the payload, so an unresolvable ``ref``
 is ignored on read rather than repaired, and the file round-trips byte for byte until something actually
-edits it -- the record-list machinery (#97), or the save that drops a dead subscription.
+edits it -- the memberships table (#235), or the save that drops a dead subscription.
 """
 
 from dataclasses import dataclass
@@ -59,7 +59,7 @@ def visible_learning_paths(users: Any, *, username: str) -> list[LearningPathEnt
     against whichever record in this block owns that ``ref``), and the reserved ``public`` scope
     (:data:`~rehuco_core.PUBLIC_USERNAME`), which is visible to everyone without subscribing. Another
     user's *private* paths are never included -- the editor is what will show those, once it can act on
-    them (#97).
+    them (#235).
 
     An **unresolvable ``ref`` is ignored** rather than rendered blank or raised on: a subscription whose
     target is gone is nothing. A path reached twice -- subscribed to *and* published, say -- renders

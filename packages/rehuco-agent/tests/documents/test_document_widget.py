@@ -35,7 +35,14 @@ from rehuco_agent.documents.document_widget import (
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
-from rehuco_agent.fields.widgets import ImageLightbox, ImageStrip, ImageViewerMode, PathEditor, SingleChoiceComboBox
+from rehuco_agent.fields.widgets import (
+    AuthorsEditor,
+    ImageLightbox,
+    ImageStrip,
+    ImageViewerMode,
+    PathEditor,
+    SingleChoiceComboBox,
+)
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
@@ -1443,6 +1450,34 @@ def test_save_state_round_trips_the_path_field_expand_state(qtbot: QtBot, widget
     fresh.restore_state(state)
 
     assert location_editor(fresh).expanded is True
+
+
+def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """The authors editor's simple/advanced choice is persisted per-``.rehu`` and restored on a fresh
+    widget -- the same `StatefulWidget` ride the location field's expand state takes (#97).
+
+    **Test steps:**
+
+    * switch the authors editor to the record rows and save the widget's state
+    * build a fresh widget (comma line) and restore that state
+    * verify the fresh widget's authors editor opens in the rows
+    """
+    editors = widget.findChildren(AuthorsEditor)
+    assert len(editors) == 1
+    editors[0].set_advanced(True)
+    state = widget.save_state()
+
+    fresh = DocumentWidget(
+        RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
+    )
+    qtbot.addWidget(fresh)
+    fresh_editors = fresh.findChildren(AuthorsEditor)
+    assert len(fresh_editors) == 1
+    assert fresh_editors[0].advanced is False
+
+    fresh.restore_state(state)
+
+    assert fresh_editors[0].advanced is True
 
 
 def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:

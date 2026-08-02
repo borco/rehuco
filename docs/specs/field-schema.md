@@ -427,10 +427,15 @@ author-page URL is a `{ "name": …, "url": … }` record instead. Decided with
 - **Editing follows a lossless-round-trip rule.** The comma-separated single-line editor is available **iff** every
   entry survives a round-trip through it (all plain strings, none containing a comma); otherwise only the record-list
   editor is, and the mode never switches on its own. A name containing a comma (`Foo Bar, Jr.`) is expressible only as
-  a record entry — an accepted limitation of the comma delimiter, not of the format. The record-list editor is
-  **deferred** (#97; today's only `.rehu` source is `.tc` import, which carries no author URLs), so until it lands a
-  list failing the predicate is **view-only**: the comma editor disables itself (#95) rather than corrupt what it
-  cannot represent.
+  a record entry — an accepted limitation of the comma delimiter, not of the format. Both modes ship (#97): the
+  editor row's misc-column toggle picks between them, the choice is remembered per resource, and a value the comma
+  line cannot represent is shown as rows *without* rewriting that choice — so it returns to the comma line the moment
+  the value can be shown there again. While that holds the toggle is disabled and says why, which is what the
+  view-only lock indicator #95 put in that column was standing in for.
+- **A row writes back into the entry it was built from**, changing only the field it owns, so a key beyond `name` and
+  `url` — a later schema version's addition — survives an edit to the name beside it. Reconstructing the entry from
+  the two cells would drop it on an entry nobody meant to touch, which is an *invisible* loss; an extra key is an
+  unknown field, not a coercion failure, so it does not lock the document either ([[data-model#schema-version]]).
 - **Validation splits by side.** The editor enforces what it writes: a non-empty name, and a URL that parses strictly
   as http/https. The viewer is the safety boundary for what it reads ([[data-model#write-integrity]]): names are
   HTML-escaped before rich-text display (HTML is never *interpreted*, so no character is banned from a name), and the

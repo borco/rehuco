@@ -9,7 +9,7 @@ That is the whole difference from ``learning_paths``
 Read-only ([[data-model#write-integrity]]): the projection here coerces defensively and never touches the
 payload, so whatever else a record carries -- the cached ``url`` the collection itself owns, a future
 ``id`` -- survives untouched and a document that is merely *looked at* round-trips byte for byte.
-Editing the records is the record-list machinery (#97).
+Editing the records is the memberships table (#235).
 """
 
 from dataclasses import dataclass

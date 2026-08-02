@@ -1,21 +1,22 @@
-"""The `authors` leaf field: a rich-text link viewer plus a lossless-guarded comma editor
-([[plugins#field-toolkit]], [[field-schema#authors]]).
+"""The `authors` leaf field: a rich-text link viewer plus a two-mode editor -- a comma line while it
+is lossless, record rows otherwise ([[plugins#field-toolkit]], [[field-schema#authors]]).
 """
 
 import html
 import logging
 from collections.abc import Sequence
 from typing import Final, override
-from urllib.parse import urlsplit
 
-from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QObject, QSignalBlocker, Qt, QUrl, Signal
-from PySide6.QtGui import QAction, QCursor, QDesktopServices
-from PySide6.QtWidgets import QLabel, QLineEdit, QToolButton, QToolTip
-from rehuco_core import AuthorEntry, author_name, authors_comma_editable
+from PySide6.QtGui import QCursor, QDesktopServices
+from PySide6.QtWidgets import QLabel, QToolTip
+from rehuco_core import AuthorEntry, author_name
 
+from .author_url import HTTP_SCHEMES, is_http_author_url
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldViewerWidgets
 from .text_list_string import TextListString
+from .widgets import AuthorsEditor, ExpandToggleButton
+from .widgets.authors_editor import SIMPLE_UNAVAILABLE_TOOLTIP
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -25,30 +26,24 @@ browser exists to filter against; no author-name anchor emits it yet, but the
 dispatch handler already recognizes it so it is never mistaken for an external link and sent to
 :class:`~PySide6.QtGui.QDesktopServices`."""
 
-HTTP_SCHEMES: Final = ("http", "https")
-
-LOCK_ICON_RESOURCE: Final = ":/icons/lock_on.svg"
-"""The disabled editor's lock indicator -- a static flag, not yet a control: clicking it does
-nothing until #97's deferred advanced editor gives it something to open."""
-
-DISABLED_EDITOR_TOOLTIP: Final = (
-    "Some authors have a link, or a comma in the name, that this simple editor can't show. "
-    "Editing here would drop it -- use the detailed editor (coming soon)."
-)
-"""Explains *why* the comma editor disabled itself and *where* the lossless path will be, without
-alarming -- the guard prevents loss, it isn't a mere restriction (#97's deferred record-list editor
-is that "coming soon")."""
+MODE_TOOLTIP: Final = "Edit the authors as rows, with a link for each."
+"""What the row's misc-column toggle offers, while both modes are on offer."""
 
 
 class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
     """An ``authors`` field ([[plugins#field-toolkit]], [[field-schema#authors]]): the viewer renders
     each entry as an HTML-escaped name, with a trailing ``(url)`` link for a strict http/https URL;
-    the editor keeps :class:`~rehuco_agent.fields.text_list_field.TextListField`'s comma-separated
-    ``QLineEdit`` shape but disables itself (tooltipped, with a lock icon in the row's ``misc``
-    column) whenever an entry would be corrupted by a round-trip through it -- a record entry, or a
-    name containing a comma (:func:`~rehuco_core.authors_comma_editable`). The lock icon is a static
-    flag for now, not a control -- #97's deferred advanced editor is what will eventually give a
-    click on it something to open.
+    the editor is an :class:`~rehuco_agent.fields.widgets.AuthorsEditor`, which is the comma-separated
+    ``QLineEdit`` the other list fields use for as long as every entry survives a round-trip through
+    it, and one row per author -- name and author-page URL -- whenever an entry would not
+    (:func:`~rehuco_core.authors_comma_editable`).
+
+    The row's ``misc`` column carries the toggle between the two (#97), which is what the lock
+    indicator #95 put there was standing in for: with a lossless editor now reachable, a value the
+    comma line cannot represent is no longer a flag on a disabled control but a switch to the editor
+    that *can* show it. The toggle disables itself, tooltipped, exactly while the simple mode is
+    unavailable -- the mode on screen is then not the user's to choose, and a control that silently
+    does nothing is worse than one that says why.
 
     The viewer's link never auto-follows (``setOpenExternalLinks(False)``): one
     :meth:`__on_link_activated` handler dispatches on the href's scheme instead, so a future
@@ -80,12 +75,20 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
 
     @override
     def make_editor(self, binding: FieldBinding[Sequence[AuthorEntry]]) -> FieldEditorWidgets:
-        line_edit = QLineEdit()
-        line_edit.textChanged.connect(lambda text: binding.set_value(TextListString.split(text)))
-        lock = self.__make_lock_indicator()
-        self.__apply(line_edit, lock, binding.value)
-        self.bind_external(binding.changed, lambda value: self.__apply(line_edit, lock, value))
-        return FieldEditorWidgets(self.editor_tab, self.make_label(), line_edit, lock)
+        editor = AuthorsEditor()
+        # the mode is a view state of this document, restored per ``.rehu`` (`StatefulWidget`), and the
+        # owner collects those by object name
+        editor.setObjectName(self.name)
+        # the ignore: PySide types a class-level ``Signal`` as ``Signal``, not as the
+        # ``SignalInstance`` an *instance* actually exposes, so no widget declaring one ever satisfies
+        # a protocol naming it statically
+        self.bind_value_widget(editor, binding)  # type: ignore[arg-type]  # value_changed is a class-level Signal
+
+        toggle = ExpandToggleButton()
+        toggle.toggled.connect(editor.set_advanced)
+        editor.mode_changed.connect(lambda: self.__sync_toggle(toggle, editor))
+        self.__sync_toggle(toggle, editor)
+        return FieldEditorWidgets(self.editor_tab, self.make_label(), editor, toggle)
 
     # region viewer
 
@@ -101,21 +104,11 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
         for entry in entries:
             name_html = html.escape(author_name(entry))
             url = entry.get("url") if isinstance(entry, dict) else None
-            if isinstance(url, str) and self.__is_http_url(url):
+            if isinstance(url, str) and is_http_author_url(url):
                 parts.append(f'{name_html} (<a href="{html.escape(url)}">url</a>)')
             else:
                 parts.append(name_html)
         return TextListString.join(parts)
-
-    @staticmethod
-    def __is_http_url(value: str) -> bool:
-        """Whether ``value`` parses strictly as an absolute http/https URL.
-
-        :param value: the candidate URL string.
-        :returns: ``True`` iff the scheme is ``http``/``https`` and a host is present.
-        """
-        parsed = urlsplit(value)
-        return parsed.scheme in HTTP_SCHEMES and bool(parsed.netloc)
 
     def __on_link_activated(self, href: str) -> None:
         """Dispatch a clicked viewer link by its scheme -- the shared shape ``tags``/``publishers``
@@ -152,51 +145,24 @@ class AuthorsField(Field[Sequence[AuthorEntry]], QObject):
 
     # region editor
 
-    def __apply(self, line_edit: QLineEdit, lock: QToolButton, value: Sequence[AuthorEntry]) -> None:
-        """Seed or echo the editor from ``value``, toggling the lossless-round-trip guard live.
-
-        Enabled (every entry a comma-free plain string): the editor round-trips the list as typed,
-        same as :class:`~rehuco_agent.fields.text_list_field.TextListField` -- the echo guard compares
-        the editor's own *parsed* text against ``value``, not the raw text, so a user's own keystroke
-        doesn't bounce back and reset the cursor. Disabled (a record entry, or a comma in a name): the
-        editor goes fully ``setEnabled(False)``, tooltipped with :data:`DISABLED_EDITOR_TOOLTIP`,
-        showing each entry's plain name (:func:`~rehuco_core.author_name`) -- a display only, never
-        written back -- with the row's lock indicator shown alongside it.
-
-        :param line_edit: the editor to update.
-        :param lock: the row's lock indicator, shown exactly while the editor is disabled.
-        :param value: the current authors list.
-        """
-        editable = authors_comma_editable(value)
-        line_edit.setEnabled(editable)
-        line_edit.setToolTip("" if editable else DISABLED_EDITOR_TOOLTIP)
-        lock.setVisible(not editable)
-        if editable:
-            # authors_comma_editable's own guarantee: every entry is a plain string here
-            names = [entry for entry in value if isinstance(entry, str)]
-            if TextListString.split(line_edit.text()) != names:
-                with QSignalBlocker(line_edit):
-                    line_edit.setText(TextListString.join(names))
-        else:
-            text = TextListString.join(author_name(entry) for entry in value)
-            if line_edit.text() != text:
-                with QSignalBlocker(line_edit):
-                    line_edit.setText(text)
-
     @staticmethod
-    def __make_lock_indicator() -> QToolButton:
-        """Build the row's lock indicator: a themed, initially-hidden static icon flagging that some
-        entries can't be shown in the simple editor -- purely a flag, not yet a control (clicking it
-        does nothing until #97's deferred advanced editor gives it something to open).
+    def __sync_toggle(toggle: ExpandToggleButton, editor: AuthorsEditor) -> None:
+        """Show the editor's current mode on the toggle, and whether it is the user's to change.
 
-        :returns: the lock button, hidden until :meth:`__apply` shows it.
+        Blocked while it is written: a forced mode must not read back as a *choice*, or a document
+        whose authors all carry links would leave the user in the rows for good once the value became
+        representable again.
+
+        :param toggle: the row's misc-column toggle.
+        :param editor: the editor whose mode it shows.
         """
-        button = QToolButton()
-        action = QAction(button)
-        action.setToolTip(DISABLED_EDITOR_TOOLTIP)
-        ActionIconThemeHandler(action, LOCK_ICON_RESOURCE)
-        button.setDefaultAction(action)
-        button.setVisible(False)
-        return button
+        available = editor.simple_available
+        with QSignalBlocker(toggle):
+            toggle.setChecked(editor.advanced)
+        # on the action, not the button: a tool button showing a default action mirrors it, and would
+        # undo an enabled state or a tooltip set on itself at the next refresh
+        action = toggle.defaultAction()
+        action.setEnabled(available)
+        action.setToolTip(MODE_TOOLTIP if available else SIMPLE_UNAVAILABLE_TOOLTIP)
 
     # endregion

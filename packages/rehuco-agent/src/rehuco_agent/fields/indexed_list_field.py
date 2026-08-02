@@ -26,7 +26,7 @@ class IndexedEntry(Protocol):
     ``learning_paths`` are unrelated things that a viewer happens to present the same way -- one is a
     publisher's series, the other is somebody's curated order -- so each keeps its own type in the core
     (`CollectionEntry` / `LearningPathEntry`) and they meet only here, in a widget. Their editors part
-    ways again in #97, where each gets a table with its own columns.
+    ways again in #235, where each gets a table with its own columns.
     """
 
     @property
@@ -51,7 +51,7 @@ class IndexedListField(Field[Sequence[IndexedEntry]]):
 
     **Viewer-only** for now: :meth:`make_editor` returns an all-``None`` bundle, so the field adds a row
     to the viewer and none to the editor. Editing these needs a table -- sortable, filterable, and with
-    per-field columns an owner only one of them has -- which is #97's record-list machinery; a comma
+    per-field columns an owner only one of them has -- which is #235's memberships table; a comma
     line like the tag fields' could not carry the index, let alone the ownership.
 
     **An empty list hides the whole row** rather than showing an empty value, the same rule the image
@@ -76,7 +76,7 @@ class IndexedListField(Field[Sequence[IndexedEntry]]):
 
     @override
     def make_editor(self, binding: FieldBinding[Sequence[IndexedEntry]]) -> FieldEditorWidgets:
-        # read-only until #97's record-list editor: an all-``None`` bundle, so the assembler drops the
+        # read-only until #235's memberships table: an all-``None`` bundle, so the assembler drops the
         # row entirely rather than showing a disabled one promising an edit that isn't there
         return FieldEditorWidgets(self.editor_tab, None, None)
 

@@ -5,8 +5,8 @@ The offscreen platform opens real in-place editors, so the insert/edit tests dri
 text while an entry is open" rule can be asserted at all.
 """
 
-from borco_pyside.widgets import ContentSizedListView, StringListEditor
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QStringListModel, Qt
+from borco_pyside.widgets import ContentSizedListView, StringItemListModel, StringListEditor
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
 from PySide6.QtGui import QKeySequence
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLineEdit, QSizePolicy
@@ -43,16 +43,20 @@ def inner_view(widget: StringListEditor) -> ContentSizedListView:
     :param widget: the editor to reach into.
     :returns: the view it edits through.
     """
-    return widget._StringListEditor__view  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    view = widget.view
+    assert isinstance(view, ContentSizedListView)
+    return view
 
 
-def inner_model(widget: StringListEditor) -> QStringListModel:
-    """The editor's own model -- the list itself, and what every edit is a single call on.
+def inner_model(widget: StringListEditor) -> StringItemListModel:
+    """The editor's own model -- the list itself, and what every domain operation is a call on.
 
     :param widget: the editor to reach into.
-    :returns: the string-list model behind the view.
+    :returns: the string-item-list model behind the view.
     """
-    return widget._StringListEditor__model  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    model = widget.model
+    assert isinstance(model, StringItemListModel)
+    return model
 
 
 def select(widget: StringListEditor, row: int) -> None:
@@ -172,11 +176,11 @@ def test_setting_the_same_values_changes_nothing_and_says_nothing(editor: String
 
 
 def test_replacing_the_list_is_one_model_reset_and_one_edit(editor: StringListEditor) -> None:
-    """The whole replacement is a single ``setStringList``, not a clear and a row-by-row refill.
+    """The whole replacement is a single reset, not a clear and a row-by-row refill.
 
     **Test steps:**
 
-    * spy on the change signal and the model's row signals, then replace the whole list
+    * spy on the change signal and every row-level model signal, then replace the whole list
     * verify exactly one edit was reported, by exactly one model reset
     """
     seen = row_signals(editor)
@@ -355,28 +359,28 @@ def test_reset_replaces_the_list_with_the_defaults(editor: StringListEditor) -> 
     """
     editor.values = ()
 
-    editor.item_actions.reset_action.trigger()
+    editor.reset_action.trigger()
 
     assert editor.values == DEFAULTS
 
 
-def test_reset_is_disabled_until_there_are_defaults_to_restore(qtbot: QtBot) -> None:
+def test_reset_is_hidden_until_there_are_defaults_to_restore(qtbot: QtBot) -> None:
     """A Reset with nothing to restore promises an action that would do nothing.
 
     **Test steps:**
 
-    * build an editor with no defaults and verify Reset is off
-    * give it defaults and verify Reset comes on, restoring them
+    * build an editor with no defaults and verify Reset is hidden
+    * give it defaults and verify Reset comes back, restoring them
     """
     widget = StringListEditor()
     qtbot.addWidget(widget)
 
-    assert widget.item_actions.reset_action.isEnabled() is False
+    assert widget.reset_action.isVisible() is False
 
     widget.defaults = DEFAULTS
 
     assert widget.defaults == DEFAULTS
-    assert widget.item_actions.reset_action.isEnabled() is True
+    assert widget.reset_action.isVisible() is True
 
 
 def test_insert_stays_available_with_nothing_selected(editor: StringListEditor) -> None:
@@ -478,21 +482,22 @@ def test_the_move_actions_are_disabled_at_the_ends_and_without_a_selection(edito
     """
     ordering = editor.ordering_actions
 
+    def enabled() -> tuple[bool, bool, bool, bool]:
+        return (
+            ordering.move_to_top_action.isEnabled(),
+            ordering.move_up_action.isEnabled(),
+            ordering.move_down_action.isEnabled(),
+            ordering.move_to_bottom_action.isEnabled(),
+        )
+
     select(editor, -1)
-    assert [action.isEnabled() for action in ordering.findChildren(type(ordering.move_up_action))] == [
-        False,
-        False,
-        False,
-        False,
-    ]
+    assert enabled() == (False, False, False, False)
 
     select(editor, 0)
-    assert (ordering.move_to_top_action.isEnabled(), ordering.move_up_action.isEnabled()) == (False, False)
-    assert (ordering.move_down_action.isEnabled(), ordering.move_to_bottom_action.isEnabled()) == (True, True)
+    assert enabled() == (False, False, True, True)
 
     select(editor, 2)
-    assert (ordering.move_to_top_action.isEnabled(), ordering.move_up_action.isEnabled()) == (True, True)
-    assert (ordering.move_down_action.isEnabled(), ordering.move_to_bottom_action.isEnabled()) == (False, False)
+    assert enabled() == (True, True, False, False)
 
 
 def test_a_move_fired_without_a_current_row_does_nothing(editor: StringListEditor) -> None:
