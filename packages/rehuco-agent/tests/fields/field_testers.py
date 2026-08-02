@@ -17,12 +17,12 @@ from rehuco_agent.fields.count_claim_field import CountClaimField
 from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
+from rehuco_agent.fields.duration_pair_field import DurationPairField
 from rehuco_agent.fields.field import Field, FieldsTab
 from rehuco_agent.fields.images_field import ImagesField
 from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
 from rehuco_agent.fields.learning_paths_field import LearningPathsField
-from rehuco_agent.fields.measured_duration_field import MeasuredDurationField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
@@ -126,10 +126,12 @@ class SizePairFieldTester(SizePairField):  # pylint: disable=abstract-method
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 
-class MeasuredDurationFieldTester(MeasuredDurationField):
-    """`MeasuredDurationField` with fixed test tabs and a measurement that finds nothing by default."""
+class DurationPairFieldTester(DurationPairField):  # pylint: disable=abstract-method
+    """`DurationPairField` with fixed test tabs, the ``current_duration`` partner, and a measurement that
+    finds nothing -- both by default, so a test that cares about neither says neither."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("partner_name", "current_duration")
         kwargs.setdefault("measure", lambda: None)
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 

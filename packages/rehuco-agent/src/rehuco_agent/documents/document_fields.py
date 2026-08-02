@@ -63,8 +63,11 @@ for the same answer; they still differ only in *when* the user accepts it
 ([[field-schema#duration-size]]), which is why the accept stayed per row."""
 
 DURATION_FIELD_NAMES: Final = ("original_duration", "current_duration")
-"""The measured duration fields' model names ([[field-schema#field-mapping]]) -- both take the same
-runtime measure callback (#224), for the same reason the sizes do. ``advertised_duration`` is
+"""The measured duration fields' model names ([[field-schema#field-mapping]]) -- **one** field binding
+both (#233), so it takes one runtime measure callback and one press fills both rows' readout. They were
+two fields taking the same callback until then (#224), which meant the same reading of the same videos
+ran twice for the same answer; they still differ only in *when* the user accepts it
+([[field-schema#duration-size]]), which is why the accept stayed per row. ``advertised_duration`` is
 deliberately absent: it is the claim the measurement is checked *against*
 ([[field-schema#duration-size]]), so it stays a plain duration with no measure row."""
 
@@ -135,8 +138,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("collections", "collections"),
     FieldSpec("url", "url"),
     FieldSpec("duration", "advertised_duration"),
-    FieldSpec("measured_duration", "original_duration"),
-    FieldSpec("measured_duration", "current_duration"),
+    FieldSpec("duration_pair", "original_duration", partner_name="current_duration"),
     FieldSpec("count_claim", "advertised_count"),
     FieldSpec("content_count", "current_count"),
     FieldSpec("size_pair", "original_size", partner_name="current_size"),
@@ -408,9 +410,8 @@ def build_document_form(
     # a user setting -- the recognized extensions for the count (#198), the excluded names for the sizes
     # and the durations (#224), and a probe backend for the durations besides
     # (#223/#226) -- none of which the toolkit knows about, so they are supplied here the same way the
-    # images strip's scanner is. The size pair is **one** field over both names, so it takes the callback
-    # once and one press answers both rows (#232); the two durations are still two fields taking the same
-    # callback, which is the merge #233 makes for them ([[field-schema#duration-size]]). Keying by name
+    # images strip's scanner is. Both pairs are **one** field over both names, so each takes its callback
+    # once and one press answers both rows (#232, #233 -- [[field-schema#duration-size]]). Keying by name
     # covers either shape -- a pair spec is keyed by whichever of its names leads it
     runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
     runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})

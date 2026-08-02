@@ -18,9 +18,10 @@ class ValueReadout(QLabel):
     count can be copied out and pasted somewhere it can be compared.
 
     Shared by every measure surface -- the single-value rows built on
-    :class:`~rehuco_agent.fields.widgets.MeasuredValueEdit` and the pair's stacked rows and spanning
-    readout (:class:`~rehuco_agent.fields.widgets.SharedMeasurementEdit`) -- so a change of look lands on all
-    of them at once: they sit on the same form, where one framed readout and one bare one read as a bug.
+    :class:`~rehuco_agent.fields.widgets.MeasuredValueEdit`, the size pair's stored readings, and both
+    pairs' spanning measurement (:class:`~rehuco_agent.fields.widgets.MeasurementResult`) -- so a change of
+    look lands on all of them at once: they sit on the same form, where one framed readout and one bare
+    one read as a bug.
 
     :param tooltip: what this readout shows, in words -- it carries no label of its own.
     :param parent: optional Qt parent.

@@ -68,9 +68,11 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
 
     This is the row for a value with **no twin**. It was the base under all three measure rows until the
     two sizes and the two durations turned out to be pairs sharing one scan
-    (:class:`SharedMeasurementEdit`, #232/#233); what is left on it is the content count, whose
-    ``advertised_count`` is a hand-entered claim rather than a second measurement of the same thing. Both
-    widgets keep the same compute/apply/busy vocabulary, which is what lets a reader move between them.
+    (:class:`~rehuco_agent.fields.widgets.SizeMeasurementEdit`,
+    :class:`~rehuco_agent.fields.widgets.DurationMeasurementEdit`, #232/#233); what is left on it is the
+    content count, whose ``advertised_count`` is a hand-entered claim rather than a second measurement of
+    the same thing. All of them keep the same compute/apply/busy vocabulary, which is what lets a reader
+    move between them.
 
     :param editor: the widget holding the stored value; reparented into the row's layout.
     :param set_editor_value: writes a value into ``editor``, called only when it holds a different one.

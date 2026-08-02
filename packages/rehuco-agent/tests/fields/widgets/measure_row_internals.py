@@ -1,10 +1,11 @@
 """Accessors for a measure row's internals -- `MeasuredValueEdit` exposes none by design (#224).
 
-One module rather than a copy per row: the rows built on that base
-(:class:`~rehuco_agent.fields.widgets.ContentCountEdit`,
-:class:`~rehuco_agent.fields.widgets.MeasuredDurationEdit`) hold their pieces in the *base*'s private
-attributes, so each test suite would otherwise spell the same five name-mangled lookups. The shared measurement's
-internals live in :mod:`fields.widgets.shared_measurement_internals`, since it is a different widget (#232).
+What is left on this base after the sizes and the durations turned out to be pairs sharing one scan
+(#232/#233) is :class:`~rehuco_agent.fields.widgets.ContentCountEdit`, whose ``advertised_count`` is a
+hand-entered claim rather than a second measurement of the same thing. Each pair editor's internals live
+in its own module (:mod:`fields.widgets.size_measurement_internals`,
+:mod:`fields.widgets.duration_measurement_internals`), since they are different widgets with different
+rows.
 """
 
 from typing import Any

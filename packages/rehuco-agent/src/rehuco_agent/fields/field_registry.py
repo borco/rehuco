@@ -10,10 +10,10 @@ from .count_claim_field import CountClaimField
 from .date_field import DateField
 from .description_field import DescriptionField
 from .duration_field import DurationField
+from .duration_pair_field import DurationPairField
 from .field import Field, FieldsTab
 from .int_field import IntField
 from .learning_paths_field import LearningPathsField
-from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
@@ -46,7 +46,7 @@ class FieldRegistry:
             AuthorsField,
             DateField,
             DurationField,
-            MeasuredDurationField,
+            DurationPairField,
             SizePairField,
             MultipleChoiceField,
             PathField,

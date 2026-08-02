@@ -26,15 +26,14 @@ from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_C
 from rehuco_agent.fields.widgets import (
     ContentCountEdit,
     DurationEdit,
-    MeasuredDurationEdit,
+    DurationMeasurementEdit,
     MeasuredValueEdit,
     SingleChoiceComboBox,
     SizeMeasurementEdit,
     TypeBadge,
 )
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
-from rehuco_agent.fields.widgets.measured_duration_edit import APPLY_TOOLTIP as DURATION_APPLY_TOOLTIP
-from rehuco_agent.fields.widgets.measured_duration_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
+from rehuco_agent.fields.widgets.duration_measurement_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
 from rehuco_agent.fields.widgets.size_measurement_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
@@ -336,12 +335,12 @@ def content_count_editor(grid: QWidget) -> ContentCountEdit:
 def row_editor(grid: QWidget, label_text: str) -> QWidget:
     """Find one row's composite editor by its row label.
 
-    The two size rows -- and the two measured-duration rows -- render the same widget type each, so
-    ``findChild`` alone cannot tell ``Original Size`` from ``Current Size``. This maps the row's label to
-    the editor sharing its grid row, the same way :func:`drop_button_for` maps a value to its button.
+    Used for the rows that are not one of the two measurement pairs (``advertised_duration``'s plain
+    editor, an unknown field) -- a pair's own editor is a single widget on the surface, found directly by
+    type (:func:`size_editor`, :func:`duration_editor`) rather than by label.
 
     :param grid: the editor surface to search.
-    :param label_text: the row's label, e.g. ``"Original Size"`` or ``"Current Duration"``.
+    :param label_text: the row's label, e.g. ``"Advertised Duration"``.
     :returns: that row's editor widget; the caller asserts which kind it expected.
     """
     layout = grid.layout()
@@ -384,16 +383,30 @@ def size_copy_tooltip(label_text: str) -> str:
     return f"Store the computed size in {label_text}"
 
 
-def duration_editor(grid: QWidget, label_text: str) -> MeasuredDurationEdit:
-    """Find one of the two measured-duration rows' composite editors by its row label.
+def duration_editor(grid: QWidget) -> DurationMeasurementEdit:
+    """Find the duration pair's composite editor on an already-built editor grid.
+
+    No label to search by, unlike ``advertised_duration``: the two measured durations are **one** editor
+    holding both rows (#233), so there is exactly one of these on the surface.
 
     :param grid: the editor surface to search.
-    :param label_text: the row's label, ``"Original Duration"`` or ``"Current Duration"``.
-    :returns: that row's `MeasuredDurationEdit`.
+    :returns: the duration pair's editor.
     """
-    editor = row_editor(grid, label_text)
-    assert isinstance(editor, MeasuredDurationEdit)
+    editor = grid.findChild(DurationMeasurementEdit)
+    assert isinstance(editor, DurationMeasurementEdit)
     return editor
+
+
+def duration_copy_tooltip(label_text: str) -> str:
+    """The tooltip naming the duration pair's copy action for one of its rows.
+
+    The pair's two copy buttons are icon-only and identical, so what tells them apart is which field each
+    stores into -- named in the tooltip, which is therefore also how a test picks one.
+
+    :param label_text: the row's label, ``"Original Duration"`` or ``"Current Duration"``.
+    :returns: that row's copy tooltip.
+    """
+    return f"Store the computed duration in {label_text}"
 
 
 def press(editor: QWidget, tooltip: str) -> None:
@@ -515,12 +528,14 @@ def test_a_tutorial_has_no_content_count_row_to_compute(qtbot: QtBot) -> None:
     assert grid.findChild(ContentCountEdit) is None
 
 
-def compute(qtbot: QtBot, editor: MeasuredValueEdit | SizeMeasurementEdit, tooltip: str) -> None:
+def compute(
+    qtbot: QtBot, editor: MeasuredValueEdit | SizeMeasurementEdit | DurationMeasurementEdit, tooltip: str
+) -> None:
     """Press a measure surface's Compute and wait for the off-thread measurement to report back (#223).
 
     Every kind of measurement runs on a worker thread, so a click alone proves nothing: the assertion has
-    to wait for the surface to leave its busy state. Both shapes qualify -- the single-value rows and the
-    size pair, which carries the same ``busy`` (#232).
+    to wait for the surface to leave its busy state. All three shapes qualify -- the single-value rows and
+    the two pairs, which carry the same ``busy`` (#232, #233).
 
     :param qtbot: the pytest-qt bot driving the event loop while the measurement runs.
     :param editor: the measure row or pair to compute on.
@@ -611,7 +626,7 @@ def test_the_two_size_rows_accept_one_measurement_independently(qtbot: QtBot, mo
 def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusions(
     qtbot: QtBot, mocker: MockerFixture
 ) -> None:
-    """The duration row's Compute measures *this* document's videos, reading the same excluded-name list
+    """The duration pair's Compute measures *this* document's videos, reading the same excluded-name list
     the size scan does -- one content set, decided once (#224, #226) -- under the backend and the video
     formats the Videos settings page holds (#225).
 
@@ -620,9 +635,9 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     * set a custom pattern list in the shared excluded-files settings, and a custom video format in the
       shared videos settings
     * build a tutorial's editor with the duration scan mocked to find 2h 15m
-    * press Compute on ``Original Duration`` and verify the scan was handed the document's own path,
-      that list, the configured formats and a probe built from the selected backend
-    * verify the measured duration reached the row, without touching the stored one
+    * press the pair's one Compute and verify the scan was handed the document's own path, that list, the
+      configured formats and a probe built from the selected backend
+    * verify the measured duration reached the pair, without touching either stored one
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
     shared_videos_settings().extensions = ("mkv",)
@@ -632,7 +647,7 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     )
     model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial"}}, PACK_PATH))
     grid = main_editor(qtbot, model)
-    editor = duration_editor(grid, "Original Duration")
+    editor = duration_editor(grid)
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
@@ -642,6 +657,7 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     assert content_duration.call_args.kwargs == {"video_extensions": (".mkv",), "excluded_patterns": ("*.tmp",)}
     assert editor.computed == 8100
     assert model.original_duration is None
+    assert model.current_duration is None
 
 
 def test_duration_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -651,13 +667,13 @@ def test_duration_compute_measures_nothing_for_a_document_with_no_path(qtbot: Qt
     **Test steps:**
 
     * build the editor over a path-less tutorial, with the duration scan mocked
-    * press Compute on ``Current Duration``
+    * press the pair's Compute
     * verify the scan was never called and nothing was computed
     """
     content_duration = mocker.patch("rehuco_agent.documents.document_fields.content_duration")
     model = typed_model("tutorial")
     grid = main_editor(qtbot, model)
-    editor = duration_editor(grid, "Current Duration")
+    editor = duration_editor(grid)
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
@@ -687,7 +703,7 @@ def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot,
         RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100}}, PACK_PATH)
     )
     grid = main_editor(qtbot, model)
-    editor = duration_editor(grid, "Original Duration")
+    editor = duration_editor(grid)
 
     compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
 
@@ -695,18 +711,19 @@ def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot,
     assert model.original_duration == 8100
 
 
-def test_the_two_duration_rows_apply_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Both rows measure the same videos and differ only in *when* they are pressed, so applying one must
-    leave the other alone: ``original_duration`` is the length when complete, the denominator for *how
-    much is left* ([[field-schema#duration-size]], #224).
+def test_the_two_duration_rows_accept_one_measurement_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """One scan fills both rows, and each row's copy stores it into that field alone: ``original_duration``
+    is the length when complete, the denominator for *how much is left*
+    ([[field-schema#duration-size]], #224, #233).
 
     **Test steps:**
 
     * build the editor over a tutorial whose two durations disagree, with the scan finding a third number
-    * compute and apply on ``Current Duration``
-    * verify ``current_duration`` took the measurement and ``original_duration`` is untouched
+    * press the pair's one Compute, then copy into ``Current Duration`` alone
+    * verify the scan ran **once**, ``current_duration`` took the measurement, and ``original_duration``
+      is untouched
     """
-    mocker.patch("rehuco_agent.documents.document_fields.content_duration", return_value=4050)
+    content_duration = mocker.patch("rehuco_agent.documents.document_fields.content_duration", return_value=4050)
     model = RehuDocumentModel(
         RehuDocument(
             {"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100, "current_duration": 7000}},
@@ -714,11 +731,12 @@ def test_the_two_duration_rows_apply_independently(qtbot: QtBot, mocker: MockerF
         )
     )
     grid = main_editor(qtbot, model)
-    current = duration_editor(grid, "Current Duration")
+    editor = duration_editor(grid)
 
-    compute(qtbot, current, DURATION_COMPUTE_TOOLTIP)
-    press(current, DURATION_APPLY_TOOLTIP)
+    compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
+    press(editor, duration_copy_tooltip("Current Duration"))
 
+    content_duration.assert_called_once()
     assert model.current_duration == 4050
     assert model.original_duration == 8100
 
@@ -818,25 +836,25 @@ def test_a_tutorial_document_composes_neither_count() -> None:
 
 
 def test_a_tutorial_composes_the_two_measured_durations_apart_from_the_claim() -> None:
-    """The three durations do not all take the same toolkit type ([[field-schema#duration-size]], #224).
+    """The three durations do not all take the same toolkit type ([[field-schema#duration-size]], #224,
+    #233).
 
-    ``original_duration`` and ``current_duration`` are **measured**, so they compose as
-    ``measured_duration`` and carry a compute/apply row. ``advertised_duration`` is the coarse web claim
-    kept precisely so ``original_duration`` can be checked against it -- *"did I get everything"* -- so
-    it stays a plain ``duration``: a measure row on it would erase the comparison by inviting the two to
-    be made equal. The same split ``count_claim``/``content_count`` already draws on the count pair.
+    ``original_duration`` and ``current_duration`` are **measured**, so they compose as **one**
+    ``duration_pair`` spec carrying the shared compute/copy row. ``advertised_duration`` is the coarse web
+    claim kept precisely so ``original_duration`` can be checked against it -- *"did I get everything"* --
+    so it stays a plain ``duration``: a measure row on it would erase the comparison by inviting the two
+    to be made equal. The same split ``count_claim``/``content_count`` already draws on the count pair.
 
     **Test steps:**
 
     * compose the record fields for a Tutorial
-    * verify each duration is composed exactly once, under its own field type
+    * verify each duration spec is composed exactly once, under its own field type
     """
     specs = [spec for spec in composed_field_specs(typed_model("tutorial")) if spec.name.endswith("_duration")]
 
-    assert [(spec.name, spec.type) for spec in specs] == [
-        ("advertised_duration", "duration"),
-        ("original_duration", "measured_duration"),
-        ("current_duration", "measured_duration"),
+    assert [(spec.name, spec.type, spec.partner_name) for spec in specs] == [
+        ("advertised_duration", "duration", None),
+        ("original_duration", "duration_pair", "current_duration"),
     ]
 
 
@@ -917,17 +935,17 @@ def test_a_type_switch_recomposes_to_the_incoming_types_fields_and_back() -> Non
     * switch back and verify they return
     """
     model = typed_model("tutorial")
-    assert "current_duration" in composed_names(model)
+    assert "original_duration" in composed_names(model)
 
     model.resource_type = "reference_images"
 
     names = composed_names(model)
-    assert "current_duration" not in names
+    assert "original_duration" not in names
     assert "level" not in names
 
     model.resource_type = "tutorial"
 
-    assert "current_duration" in composed_names(model)
+    assert "original_duration" in composed_names(model)
     assert "level" in composed_names(model)
 
 
