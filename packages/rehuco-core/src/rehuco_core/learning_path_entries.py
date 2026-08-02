@@ -8,9 +8,11 @@ whichever record owns that slot, and the reserved ``public`` scope holds what wa
 Reading the field therefore means resolving across identities, which is why it is nothing like
 ``collections`` (:mod:`rehuco_core.collection_entries`) despite being stored the same way.
 
-Read-only ([[data-model#write-integrity]]): nothing here touches the payload, so an unresolvable ``ref``
-is ignored on read rather than repaired, and the file round-trips byte for byte until something actually
-edits it -- the memberships table (#235), or the save that drops a dead subscription.
+Everything here past :func:`learning_path_records_by_scope` works on the **scope -> records** mapping that
+function projects, not on the raw ``users`` map: the map also holds ratings and per-user flags that none
+of this is about, and an editor that has to write records back should be handed the records and nothing
+else ([[data-model#write-integrity]]). Nothing here touches the payload -- an unresolvable ``ref`` is
+ignored on read rather than repaired -- so a document that is merely *looked at* round-trips byte for byte.
 """
 
 from dataclasses import dataclass
@@ -51,38 +53,69 @@ class LearningPathEntry:
     title: str
 
 
-def visible_learning_paths(users: Any, *, username: str) -> list[LearningPathEntry]:
-    """The learning paths ``username`` sees in a block's ``users`` map
-    ([[field-schema#learning-path-ownership]]).
+def learning_path_ref(record: dict[str, Any]) -> int | None:
+    """The file-scoped slot one stored record carries, if it carries a usable one.
+
+    Coerced the way every accessor here coerces ([[data-model#write-integrity]]): a missing, non-integer
+    or boolean ``ref`` reads as none at all. ``bool`` is excluded explicitly because Python's ``True``
+    *is* an ``int``, and a slot numbered ``1`` by a stray ``true`` would silently collide with a real one.
+
+    :param record: one stored learning-path record.
+    :returns: the slot, or ``None`` when the record carries none this reader can use.
+    """
+    ref = record.get(REF_KEY)
+    return ref if isinstance(ref, int) and not isinstance(ref, bool) else None
+
+
+def learning_path_records_by_scope(users: Any) -> dict[str, list[dict[str, Any]]]:
+    """Project a block's ``users`` map into the **scope -> records** mapping the rest of this module
+    (and the editor) works on ([[field-schema#learning-path-ownership]]).
+
+    The learning-path slice of the map and nothing else: the ratings and per-user flags sitting beside it
+    are a different field's business, and handing an editor the whole map would hand it the power to lose
+    them. Scopes carrying no records at all are left out, so the mapping reads as *who has paths*.
+
+    :param users: the block's ``users`` map, as stored; anything that isn't a map reads as no paths.
+    :returns: ``{scope: records}``, the records by reference and in stored order.
+    """
+    if not isinstance(users, dict):
+        return {}
+    found = {scope: learning_path_records(users.get(scope)) for scope in users}
+    return {scope: records for scope, records in found.items() if records}
+
+
+def visible_learning_paths(
+    records_by_scope: dict[str, list[dict[str, Any]]], *, username: str
+) -> list[LearningPathEntry]:
+    """The learning paths ``username`` sees ([[field-schema#learning-path-ownership]]).
 
     Three sources, per the viewer rule: this identity's **own** records, its **subscriptions** (resolved
     against whichever record in this block owns that ``ref``), and the reserved ``public`` scope
     (:data:`~rehuco_core.PUBLIC_USERNAME`), which is visible to everyone without subscribing. Another
-    user's *private* paths are never included -- the editor is what will show those, once it can act on
-    them (#235).
+    user's *private* paths are never included -- the **editor** shows those, in its all-scopes view, which
+    is a different question ("what is in this file") from this one ("what am I in").
 
     An **unresolvable ``ref`` is ignored** rather than rendered blank or raised on: a subscription whose
     target is gone is nothing. A path reached twice -- subscribed to *and* published, say -- renders
     once, keyed by its ``ref``; a record carrying no ``ref`` at all can't be recognized as a duplicate of
     anything, so it renders on its own terms.
 
-    :param users: the block's ``users`` map, as stored; anything that isn't a map reads as no paths.
+    :param records_by_scope: the block's learning-path records per scope
+        (:func:`learning_path_records_by_scope`).
     :param username: the identity to resolve for -- the *current* one, which for a freshly imported
         document is not the ``unknown`` the import filed its state under (the identity-collapse item in
         [[field-schema#deferred-items]]).
     :returns: the visible paths, sorted by ``index`` then ``title``.
     """
-    if not isinstance(users, dict):
-        return []
-    owned = owned_learning_paths(users)
+    owned = owned_learning_paths(records_by_scope)
     found: dict[int, LearningPathEntry] = {}
     unreferenced: list[LearningPathEntry] = []
     # the current identity first, then the public scope; a path in both is the same path, deduplicated
     # by ref below rather than shown twice
     for scope in dict.fromkeys((username, PUBLIC_USERNAME)):
-        for record in learning_path_records(users.get(scope)):
-            ref = record.get(REF_KEY)
-            if not isinstance(ref, int) or isinstance(ref, bool):
+        for record in records_by_scope.get(scope, []):
+            ref = learning_path_ref(record)
+            if ref is None:
                 # no slot to subscribe by, so it is whatever it carries itself -- and nothing else in
                 # the file can be the same path, since nothing can point at it
                 if (refless := titled_index(record)) is not None:
@@ -97,7 +130,7 @@ def visible_learning_paths(users: Any, *, username: str) -> list[LearningPathEnt
     return sorted([*found.values(), *unreferenced])
 
 
-def owned_learning_paths(users: dict[str, Any]) -> dict[int, LearningPathEntry]:
+def owned_learning_paths(records_by_scope: dict[str, list[dict[str, Any]]]) -> dict[int, LearningPathEntry]:
     """Index every **owned** learning path in a block by its ``ref``
     ([[field-schema#learning-path-ownership]]).
 
@@ -105,18 +138,19 @@ def owned_learning_paths(users: dict[str, Any]) -> dict[int, LearningPathEntry]:
     subscriber's bare ``{ref}`` finds its title and index here regardless of which identity owns the
     original -- that is the point of :data:`REF_KEY` being a file-scoped slot rather than a name.
 
-    Users are walked in name order so a file that (malformedly) has two owners of one ``ref`` resolves
-    the same way every time rather than by dict insertion order.
+    Scopes are walked in name order so a file that (malformedly) has two owners of one ``ref`` resolves
+    the same way every time rather than by mapping insertion order.
 
-    :param users: the block's ``users`` map, as stored.
+    :param records_by_scope: the block's learning-path records per scope
+        (:func:`learning_path_records_by_scope`).
     :returns: ``{ref: path}`` for every owned record carrying an integer ``ref``.
     """
     owned: dict[int, LearningPathEntry] = {}
-    for name in sorted(users):
-        for record in learning_path_records(users.get(name)):
-            ref = record.get(REF_KEY)
+    for scope in sorted(records_by_scope):
+        for record in records_by_scope[scope]:
+            ref = learning_path_ref(record)
             found = titled_index(record)
-            if found is not None and isinstance(ref, int) and not isinstance(ref, bool):
+            if found is not None and ref is not None:
                 owned.setdefault(ref, LearningPathEntry(*found))
     return owned
 

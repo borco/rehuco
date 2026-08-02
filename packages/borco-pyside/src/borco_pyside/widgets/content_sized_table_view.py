@@ -33,8 +33,10 @@ class ContentSizedTableView(QTableView):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         # what one row measured, last time there was a row to measure -- an emptied table's floor. The
-        # font's line height stands in until then; a table emptied of rows it once had is sized by them
-        # rather than by an estimate that can differ from what the style actually draws.
+        # vertical header's own uniform section height stands in until then, which is the height the rows
+        # are drawn at anyway (they are ``Fixed`` below), so a table that has never held a row is the same
+        # height as one emptied of the rows it held: the two states looked different when the stand-in was
+        # the font's line height, for no reason a reader could account for.
         self.__row_height = 0
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # rows keep the header's uniform default height rather than each being measured
@@ -102,7 +104,7 @@ class ContentSizedTableView(QTableView):
         if heights:
             self.__row_height = heights[0]
         else:
-            heights = [self.__row_height or self.fontMetrics().height()]
+            heights = [self.__row_height or self.verticalHeader().defaultSectionSize()]
         return sum(heights) + self.__chrome_height()
 
     def __chrome_height(self) -> int:

@@ -21,8 +21,6 @@ from rehuco_core import (
     INFO_REHU_FILENAME,
     USERS_KEY,
     AuthorEntry,
-    CollectionEntry,
-    LearningPathEntry,
     LockReason,
     RehuDocument,
     convert_tc,
@@ -78,6 +76,16 @@ v1) instead of the shared inline ones. Mirrors the core importer's per-user set
 and one whose *visible* set spans several identities (this one's own entries, its subscriptions, and the
 reserved ``public`` scope), so it resolves through :attr:`~RehuDocument.learning_paths` rather than the
 single-identity accessors this set routes through."""
+
+RECORD_LIST_FIELD_NAMES: Final = ("collections", "learning_paths")
+"""The active block's two **record-list** fields ([[field-schema#sources]],
+[[field-schema#learning-path-ownership]]), wired to :meth:`RehuDocumentModel.__on_record_list_changed`.
+
+A group of their own rather than members of :data:`TYPE_FIELD_STR_LIST_NAMES` and friends, because
+neither is a coercion group's shape: a collection membership is a *record* with keys no editor here shows,
+and a learning path is a record whose **scope** is half its meaning. Each therefore routes through the
+document's own accessor pair rather than the generic block writers -- which is also what keeps the
+absent-not-empty rule and the scope bookkeeping in one place instead of two (#235)."""
 
 COMMON_FIELD_NAMES: Final = (
     "title",
@@ -280,22 +288,31 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     """Disk space, in bytes, currently used by this copy ([[field-schema#duration-size]]), or ``None``
     when absent ([[field-schema#deferred-items]])."""
 
-    collections = SimpleProperty[list[CollectionEntry]](default_factory=list)
-    """The resource's collection memberships, resolved for display ([[field-schema#sources]]) -- a
-    publisher-defined series and this resource's position in it, sorted by index then title. **Read-only**
-    (#189): a projection of the block's own records, reseeded from the document at every seam that
-    reseeds the type fields, with no write-through -- the stored records, and whatever else they carry
-    (the collection's cached ``url``), are untouched, so a document that is merely viewed round-trips
-    unchanged. Editing them is #235's memberships table."""
+    collections = SimpleProperty[list[dict[str, Any]]](default_factory=list)
+    """The resource's collection memberships **as stored** ([[field-schema#sources]]) -- the records
+    themselves, in stored order, not the sorted ``(index, title)`` projection the viewer shows.
 
-    learning_paths = SimpleProperty[list[LearningPathEntry]](default_factory=list)
-    """The learning paths the **current identity** sees ([[field-schema#learning-path-ownership]]): its own
-    entries, its subscriptions, and the reserved ``public`` scope -- never another user's private paths,
-    which the editor will show once it can act on them. Read-only and reseeded exactly like
-    :attr:`collections` -- a separate type, though, not a shared one: a path is owned where a collection
-    belongs to nobody. The resolution itself (ownership is structural, a bare ``{ref}`` is a subscription,
-    an unresolvable one is ignored) belongs to the document (:attr:`~RehuDocument.learning_paths`), not to
-    this model."""
+    The records rather than the projection because #235's memberships table has to write one back
+    *merged*: a title cell that rebuilt its entry from the two columns it can see would drop the ``url``
+    the collection owns and any key a later version adds, on an entry nobody meant to touch. Only the
+    stored record carries those. The projection is still where display order comes from -- the field
+    computes it (:func:`~rehuco_core.collection_entries`), so this property never has to decide what a
+    viewer's order is."""
+
+    learning_paths = SimpleProperty[dict[str, list[dict[str, Any]]]](default_factory=dict)
+    """The active block's learning-path records **as stored**, keyed by scope
+    ([[field-schema#learning-path-ownership]]).
+
+    Every scope, not just the visible ones: *what is in this file* is a different question from *what am I
+    in*, and the editor's all-scopes view is the one that asks it -- while the viewer resolves the second
+    from the same value (:func:`~rehuco_core.visible_learning_paths`, given this document's identity).
+    Stored records for the same reason :attr:`collections` holds them, plus one this field has of its own:
+    ownership here is expressed by *where a record sits and what it carries*, so a projection that
+    flattened the scopes away would have thrown out the field's whole subject.
+
+    Not the block's ``users`` map, which also holds the ratings and per-user flags this field is not about
+    -- the document hands out the learning-path slice of it and takes that slice back
+    (:attr:`~RehuDocument.learning_path_records`)."""
 
     advertised_tags = SimpleProperty[list[str]](default_factory=list)
     """The web-scraped ``advertised_tags`` list ([[field-schema#field-mapping]])."""
@@ -380,6 +397,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         for name in (*TYPE_FIELD_BOOL_NAMES, *TYPE_FIELD_INT_NAMES, *TYPE_FIELD_STR_NAMES, *TYPE_FIELD_STR_LIST_NAMES):
             signal_name = SimpleProperty.notify_signal_name(type(self), name)
             getattr(self, signal_name).connect(lambda value, key=name: self.__on_type_field_changed(key, value))
+        for name in RECORD_LIST_FIELD_NAMES:
+            signal_name = SimpleProperty.notify_signal_name(type(self), name)
+            getattr(self, signal_name).connect(lambda value, key=name: self.__on_record_list_changed(key, value))
 
     @classmethod
     def create_new(
@@ -874,12 +894,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             value = self.__read_field(name, default)
             coerced = [item for item in value if isinstance(item, str)] if isinstance(value, list) else default
             setattr(self, name, coerced)
-        # the record lists are read-only projections, so they take the document's own resolving accessors
-        # whole rather than a generic block read plus a coercion here: which entries a learning path even
-        # *shows* is an ownership question ([[field-schema#learning-path-ownership]]) that belongs to the
-        # document, and the collections list is coerced and sorted by the same rule next to it
-        self.collections = self.__document.collections
-        self.learning_paths = self.__document.learning_paths
+        # the record lists take the document's own record accessors whole rather than a generic block read
+        # plus a coercion here: *which* keys a membership record may carry is not this model's to decide
+        # (that is the merge contract, #235), and *where* a learning path sits is half of what it means
+        # ([[field-schema#learning-path-ownership]]), so the scope keying belongs to the document too
+        self.collections = self.__document.collection_records
+        self.learning_paths = self.__document.learning_path_records
 
     def __read_field(self, name: str, default: Any) -> Any:
         """Read active-block field ``name`` through its own accessor: the per-user one for a
@@ -1060,4 +1080,31 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 self.__document.remove_active_field(key)
             else:
                 self.__document.set_active_field(key, value)
+        self.dirty = True
+
+    def __on_record_list_changed(self, key: str, value: Any) -> None:
+        """Write an edited record list through to the document and mark dirty.
+
+        One handler for both :data:`RECORD_LIST_FIELD_NAMES` members, each forwarded to the document's own
+        writer for that field (:meth:`~rehuco_core.RehuDocument.set_collection_records` /
+        :meth:`~rehuco_core.RehuDocument.set_learning_path_records`) rather than to the generic block
+        writers :meth:`__on_type_field_changed` uses. That is where the rules live that a generic value
+        write has none of: an emptied collections list removes its key instead of storing ``[]``, and a
+        learning-path write spans every scope in the block, removing the key from one a path just left
+        ([[field-schema#learning-path-ownership]]).
+
+        No-op while the model is seeding (construction, :meth:`revert`, or :meth:`convert`) -- see the
+        comment there. That guard matters more here than for a scalar: a seed assigns the very records it
+        just read, so an unguarded write-through would dirty every document merely by opening it.
+
+        :param key: the record-list field that changed.
+        :param value: the new value -- the records for ``collections``, the scope-keyed mapping for
+            ``learning_paths``.
+        """
+        if self.__seeding:
+            return
+        if key == "collections":
+            self.__document.set_collection_records(value)
+        else:
+            self.__document.set_learning_path_records(value)
         self.dirty = True

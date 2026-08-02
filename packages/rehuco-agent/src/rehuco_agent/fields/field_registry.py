@@ -4,6 +4,7 @@ from typing import Any, Final
 
 from .authors_field import AuthorsField
 from .boolean_field import BooleanField
+from .collections_field import CollectionsField
 from .content_count_field import ContentCountField
 from .count_claim_field import CountClaimField
 from .date_field import DateField
@@ -11,8 +12,8 @@ from .description_field import DescriptionField
 from .duration_field import DurationField
 from .field import Field, FieldsTab
 from .file_size_field import FileSizeField
-from .indexed_list_field import IndexedListField
 from .int_field import IntField
+from .learning_paths_field import LearningPathsField
 from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
@@ -39,7 +40,8 @@ class FieldRegistry:
             ContentCountField,
             CountClaimField,
             TextListField,
-            IndexedListField,
+            CollectionsField,
+            LearningPathsField,
             UrlField,
             AuthorsField,
             DateField,

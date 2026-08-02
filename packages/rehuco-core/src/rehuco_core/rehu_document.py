@@ -18,7 +18,7 @@ a torn file ([[data-model#write-integrity]]).
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,8 +27,14 @@ from uuid import uuid4
 
 from borco_core import atomic_write_text
 
-from .collection_entries import COLLECTIONS_KEY, CollectionEntry, collection_entries
-from .learning_path_entries import LearningPathEntry, visible_learning_paths
+from .collection_entries import COLLECTIONS_KEY, CollectionEntry, collection_entries, collection_records
+from .learning_path_entries import (
+    LEARNING_PATHS_KEY,
+    LearningPathEntry,
+    learning_path_records_by_scope,
+    learning_path_ref,
+    visible_learning_paths,
+)
 from .lock_reasons import SAVE_BLOCKING_LOCK_KINDS, LockReason, LockReasonKind
 from .migrations import (
     CURRENT_FORMAT_VERSION,
@@ -1323,11 +1329,7 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         :returns: the per-user dict for this document's username, attached by reference into ``data`` so
             mutating it in place is reflected on the next :meth:`save`.
         """
-        block = self.__active_block_or_create()
-        users = block.get(USERS_KEY)
-        if not isinstance(users, dict):
-            users = {}
-            block[USERS_KEY] = users
+        users = self.__active_users_or_create()
         user = users.get(self.__username)
         if not isinstance(user, dict):
             user = {}
@@ -1373,12 +1375,43 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """This resource's **collection memberships**, resolved for display ([[field-schema#sources]]).
 
         A collection is publisher-defined and belongs to nobody, so its entries sit inline in the active
-        block, alongside the shared flags. Read-only: a projection of the stored records, sorted by
-        ``index`` then ``title``, that never touches them -- whatever else an entry carries (the cached
-        ``url`` the collection itself owns) stays in the document untouched. Editing the records is the
-        memberships table (#235).
+        block, alongside the shared flags. A **display projection**, sorted by ``index`` then ``title``,
+        that never touches the stored records -- whatever else an entry carries (the cached ``url`` the
+        collection itself owns) stays in the document untouched. The records an editor writes back into
+        are :attr:`collection_records` (#235).
         """
         return collection_entries(self.active_field(COLLECTIONS_KEY))
+
+    @property
+    def collection_records(self) -> list[dict[str, Any]]:
+        """This resource's collection memberships **as stored** ([[field-schema#sources]]) -- what the
+        memberships editor binds to, where :attr:`collections` is what the viewer binds to (#235).
+
+        Returned **by reference**, in stored order, so an editor can recognize the record a row was built
+        from; writing one back is :meth:`set_collection_records`, which expects the merged copies rather
+        than in-place mutation ([[data-model#write-integrity]]).
+        """
+        return collection_records(self.active_field(COLLECTIONS_KEY))
+
+    def set_collection_records(self, records: Sequence[dict[str, Any]]) -> None:
+        """Replace this resource's collection memberships with ``records`` ([[field-schema#sources]]).
+
+        The whole list at once, because that is the shape a table edit produces: a row inserted, dropped
+        or retyped is one new list, and diffing it back to per-record writes would buy nothing a caller
+        can use. An **empty** list removes the key rather than storing ``[]`` -- absent is not empty
+        ([[field-schema#deferred-items]]), and a resource belonging to no series should read the same way
+        one imported from a ``.tc`` with no collection does.
+
+        :param records: the records to store, in the order to store them; copied into a fresh list, so a
+            caller's own list is not adopted and later mutations of it cannot reach the document.
+        :raises ValueError: if there are records to write and the document's :attr:`type` is unset --
+            there is no block to write them into. Clearing a typeless document's memberships is instead a
+            no-op: there is nothing there to remove.
+        """
+        if not records:
+            self.remove_active_field(COLLECTIONS_KEY)
+            return
+        self.set_active_field(COLLECTIONS_KEY, list(records))
 
     @property
     def learning_paths(self) -> list[LearningPathEntry]:
@@ -1396,7 +1429,99 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         *current* one, so a just-converted ``.tc`` shows none of them until the two names agree -- the
         identity-collapse item in [[field-schema#deferred-items]], equally true of an imported rating.
         """
-        return visible_learning_paths(self.active_block.get(USERS_KEY), username=self.__username)
+        return visible_learning_paths(self.learning_path_records, username=self.__username)
+
+    @property
+    def learning_path_records(self) -> dict[str, list[dict[str, Any]]]:
+        """Every scope's learning-path records in the active block, **as stored**
+        ([[field-schema#learning-path-ownership]]) -- what the memberships editor binds to, where
+        :attr:`learning_paths` is what the viewer binds to (#235).
+
+        Not the ``users`` map: the learning-path slice of it, keyed by scope. The map also holds ratings
+        and per-user flags, and an editor handed the whole thing would be handed the power to lose them
+        ([[data-model#write-integrity]]). Every scope is here, not just the visible ones -- *what is in
+        this file* is a different question from *what am I in*, and the editor's all-scopes view is the
+        one that asks it.
+
+        Returned with the records **by reference**, so an editor can recognize the record a row was built
+        from; writing them back is :meth:`set_learning_path_records`.
+        """
+        return learning_path_records_by_scope(self.active_block.get(USERS_KEY))
+
+    def set_learning_path_records(self, records_by_scope: Mapping[str, Sequence[dict[str, Any]]]) -> None:
+        """Replace the active block's learning-path records, scope by scope
+        ([[field-schema#learning-path-ownership]]).
+
+        The mapping is the **whole** picture: a scope that carries records today and is absent (or empty)
+        here has its :data:`~rehuco_core.learning_path_entries.LEARNING_PATHS_KEY` removed, which is how
+        the last path leaving a scope stops being ``learning_paths: []``. Only that key is ever touched --
+        a scope's rating and flags sit beside it and are none of this field's business -- and a scope
+        submap left holding *nothing at all* is dropped too, so subscribing and then unsubscribing leaves
+        no empty identity behind that the file never had.
+
+        :param records_by_scope: the records to store per scope, in the order to store them; each list is
+            copied, so a caller's own lists are not adopted.
+        :raises ValueError: if there are records to write and the document's :attr:`type` is unset --
+            there is no block to write them into.
+        """
+        wanted = {scope: list(records) for scope, records in records_by_scope.items() if records}
+        if not wanted and not self.learning_path_records:
+            return
+        users = self.__active_users_or_create()
+        for scope in [*users, *wanted]:
+            user = users.get(scope)
+            if not isinstance(user, dict):
+                user = {}
+                users[scope] = user
+            records = wanted.get(scope)
+            if records:
+                user[LEARNING_PATHS_KEY] = records
+            else:
+                user.pop(LEARNING_PATHS_KEY, None)
+            if not user:
+                del users[scope]
+
+    def next_learning_path_ref(self) -> int:
+        """The next free learning-path slot for this **file** ([[field-schema#learning-path-ownership]]).
+
+        File-scoped, not block-scoped: :data:`~rehuco_core.learning_path_entries.REF_KEY` is unique across
+        every block in the file, and keeping it so is the invariant of whoever *mints* one -- a per-block
+        migration can only promise as much as the one block it is handed
+        (:func:`~rehuco_core.migrations.shared.migrate_learning_path_refs`), so a writer that can see the
+        whole file is what closes the gap. Every top-level object is scanned, the reserved keys included:
+        a slot taken by a block this build has no plugin for is taken all the same.
+
+        One past the highest slot in use, rather than the lowest free one: a reused slot is a
+        subscription silently re-pointed at a different path, where an ever-climbing counter can at worst
+        leave a gap nothing reads.
+
+        :returns: the slot to mint the next owned path with; ``1`` for a file holding none.
+        """
+        highest = 0
+        for block in self.__data.values():
+            if not isinstance(block, dict):
+                continue
+            for records in learning_path_records_by_scope(block.get(USERS_KEY)).values():
+                for record in records:
+                    highest = max(highest, learning_path_ref(record) or 0)
+        return highest + 1
+
+    def __active_users_or_create(self) -> dict[str, Any]:
+        """Return the active block's mutable ``users`` map, installing it when absent or malformed.
+
+        The scope-agnostic half of :meth:`__active_user_or_create`, which reaches one identity's submap:
+        a learning-path write spans every scope in the block (an owner's record, a subscriber's ``ref``,
+        the reserved ``public`` copy), so it takes the map itself.
+
+        :returns: the ``users`` map, attached by reference into ``data``.
+        :raises ValueError: if the document's :attr:`type` is unset.
+        """
+        block = self.__active_block_or_create()
+        users = block.get(USERS_KEY)
+        if not isinstance(users, dict):
+            users = {}
+            block[USERS_KEY] = users
+        return users
 
     def __normalize(self) -> None:
         """Rewrite alias spellings to their plugin's main key, in place, at construction

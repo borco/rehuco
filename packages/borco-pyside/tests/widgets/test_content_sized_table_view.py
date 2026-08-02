@@ -131,18 +131,20 @@ def test_an_emptied_table_stays_exactly_one_row_tall(qtbot: QtBot) -> None:
 
 
 def test_a_table_that_never_held_a_row_is_still_a_legible_band(qtbot: QtBot) -> None:
-    """With no row ever measured, the font's line height stands in -- never nothing at all.
+    """With no row ever measured, the uniform row height the rows *would* be drawn at stands in -- so a
+    table that has never held one is exactly as tall as one emptied of the rows it held, and never
+    nothing at all.
 
     **Test steps:**
 
     * build a view and give it nothing, not even a model
-    * verify it asks for a line of text's worth of height on top of its chrome
+    * verify it asks for one row's worth of height on top of its chrome
     """
     view = ContentSizedTableView()
     qtbot.addWidget(view)
 
     # a header with nothing behind it reports an invalid hint, which counts as no header at all
-    assert view.sizeHint().height() == view.fontMetrics().height() + 2 * view.frameWidth()
+    assert view.sizeHint().height() == view.verticalHeader().defaultSectionSize() + 2 * view.frameWidth()
 
 
 def test_the_minimum_and_preferred_heights_agree(qtbot: QtBot) -> None:

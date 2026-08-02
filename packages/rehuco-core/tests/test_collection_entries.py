@@ -3,7 +3,7 @@
 from typing import Any
 
 from pytest import mark, param
-from rehuco_core import CollectionEntry, LearningPathEntry, RehuDocument, collection_entries
+from rehuco_core import CollectionEntry, LearningPathEntry, RehuDocument, collection_entries, collection_records
 
 
 def tutorial_with(collections: Any) -> RehuDocument:
@@ -130,3 +130,121 @@ def test_reading_the_collections_leaves_the_document_unchanged_on_save() -> None
     assert document.collections
 
     assert document.serialize() == before
+
+
+def test_collection_records_are_the_stored_records_by_reference() -> None:
+    """The editor's read is the records themselves, in stored order -- a title cell that rebuilt its
+    record from the two columns it shows would sever the ``url`` beside it (#235).
+
+    **Test steps:**
+
+    * read the records off a document whose membership carries a cached ``url``
+    * verify the ``url`` is there, and the record is the stored object itself
+    """
+    stored = [{"title": "Series", "index": 2, "url": "https://example.com"}]
+    document = tutorial_with(stored)
+
+    records = document.collection_records
+
+    assert records == stored
+    assert records[0] is stored[0]
+
+
+def test_collection_records_keep_the_stored_order() -> None:
+    """Stored order is kept where the projection sorts: ``index`` is the position, and the records' own
+    order means nothing -- which is exactly why an editor must not quietly rewrite it.
+
+    **Test steps:**
+
+    * read the records off a document whose memberships are stored out of index order
+    * verify they come back as stored, unlike :attr:`collections`
+    """
+    document = tutorial_with([{"title": "Second", "index": 2}, {"title": "First", "index": 1}])
+
+    assert [record["title"] for record in document.collection_records] == ["Second", "First"]
+    assert [entry.title for entry in document.collections] == ["First", "Second"]
+
+
+@mark.parametrize(
+    ("stored", "expected"),
+    [
+        param("not a list", [], id="value-not-a-list"),
+        param([], [], id="an-empty-list"),
+        param(["not a record", {"title": "Real"}], [{"title": "Real"}], id="a-non-record-is-skipped"),
+    ],
+)
+def test_collection_records_are_read_defensively(stored: Any, expected: list[dict[str, Any]]) -> None:
+    """Malformed payload reads as no records the same way the projection reads it as no entries
+    ([[data-model#write-integrity]]).
+
+    **Test steps:**
+
+    * read each malformed shape, through the projection and through the document alike
+    * verify only genuine records come through
+    """
+    assert collection_records(stored) == expected
+    assert tutorial_with(stored).collection_records == expected
+
+
+def test_setting_the_collection_records_stores_them_whole() -> None:
+    """A table edit is one new list, so the whole list is what is written.
+
+    **Test steps:**
+
+    * write two records over a document that had one
+    * verify the block carries exactly what was written
+    """
+    document = tutorial_with([{"title": "Old"}])
+
+    document.set_collection_records([{"title": "One", "index": 1}, {"title": "Two", "index": 2}])
+
+    assert document.data["tutorial"]["collections"] == [{"title": "One", "index": 1}, {"title": "Two", "index": 2}]
+
+
+def test_setting_no_collection_records_removes_the_key() -> None:
+    """An emptied list removes the key rather than storing ``[]`` -- absent is not empty
+    ([[field-schema#deferred-items]]), and a resource belonging to no series should read the way one
+    imported with no collection does.
+
+    **Test steps:**
+
+    * clear the memberships of a document that had one
+    * verify the key is gone from the block
+    """
+    document = tutorial_with([{"title": "Old"}])
+
+    document.set_collection_records([])
+
+    assert "collections" not in document.data["tutorial"]
+
+
+def test_setting_the_collection_records_does_not_adopt_the_caller_s_list() -> None:
+    """The list is copied on the way in, so a caller mutating its own afterwards cannot reach the document.
+
+    **Test steps:**
+
+    * write a list, then append to the caller's own copy of it
+    * verify the document still holds one record
+    """
+    document = tutorial_with(None)
+    records = [{"title": "One"}]
+
+    document.set_collection_records(records)
+    records.append({"title": "Two"})
+
+    assert document.data["tutorial"]["collections"] == [{"title": "One"}]
+
+
+def test_setting_no_collection_records_on_a_typeless_document_is_a_no_op() -> None:
+    """Clearing what a typeless document does not have is nothing, not an error.
+
+    **Test steps:**
+
+    * clear the memberships on a document with no type
+    * verify the accessor still reads empty
+    """
+    document = RehuDocument({"core": {"sources": [{"title": "Foo", "primary": True}]}})
+
+    document.set_collection_records([])
+
+    assert document.collection_records == []

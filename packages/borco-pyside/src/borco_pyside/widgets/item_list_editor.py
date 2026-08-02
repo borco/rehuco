@@ -2,7 +2,14 @@
 
 from typing import Final
 
-from PySide6.QtCore import QAbstractItemModel, QModelIndex, QPersistentModelIndex, Qt, Signal
+from PySide6.QtCore import (
+    QAbstractItemModel,
+    QAbstractProxyModel,
+    QModelIndex,
+    QPersistentModelIndex,
+    Qt,
+    Signal,
+)
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QAbstractItemDelegate,
@@ -58,6 +65,13 @@ class ItemListEditor(QWidget):
         meaning, where four move buttons would invite an edit that changes nothing. Settable later
         through :meth:`set_ordering_visible`, for a widget promoted into a ``.ui`` (constructed with a
         parent and nothing else).
+    :param proxy: an optional proxy to put between the view and the model -- a filter, a sort, or both.
+        The view is given the proxy and the *model* is still what everything else here talks to, so a
+        filtered list is one model with a view onto part of it rather than a second code path: the two
+        columns, the shortcuts, the abandoned-insert rule and the reported edits are all unchanged and
+        unaware. Only :attr:`current_index` and :meth:`set_current_index` know the difference, because a
+        row number is the one thing the two row spaces disagree about -- and those are stated in **source**
+        rows, the space every model call is already in, so a caller never has to map either.
     """
 
     values_changed = Signal()
@@ -73,6 +87,7 @@ class ItemListEditor(QWidget):
         parent: QWidget | None = None,
         *,
         with_ordering: bool = True,
+        proxy: QAbstractProxyModel | None = None,
     ) -> None:
         super().__init__(parent)
         # the row an insert just made, until its editor closes -- persistent, so it still names that
@@ -86,7 +101,13 @@ class ItemListEditor(QWidget):
         model.setParent(self)
         self.__view: Final = view
         view.setParent(self)
-        view.setModel(model)
+        self.__proxy: Final = proxy
+        if proxy is None:
+            view.setModel(model)
+        else:
+            proxy.setParent(self)
+            proxy.setSourceModel(model)
+            view.setModel(proxy)
         # banded rows: the entries are short values with little other structure to read a row boundary
         # from, and these lists have no grid to supply one
         view.setAlternatingRowColors(True)
@@ -144,15 +165,26 @@ class ItemListEditor(QWidget):
 
     @property
     def current_index(self) -> int:
-        """The row being acted on; ``-1`` when there is none."""
-        return self.__view.currentIndex().row()
+        """The row being acted on, as a **source** row; ``-1`` when there is none.
+
+        Source rather than view rows because that is the space every model call is in: the two columns
+        read this and hand it straight to `ItemEditor`/`ItemOrderingEditor`, which know only the model. A
+        filtered-out or reordered row is therefore never acted on by its position on screen."""
+        index = self.__view.currentIndex()
+        if self.__proxy is not None:
+            index = self.__proxy.mapToSource(index)
+        return index.row()
 
     def set_current_index(self, row: int) -> None:
         """Make ``row`` the current one.
 
-        :param row: the row to select, or a negative row to select none.
+        :param row: the **source** row to select, or a negative row to select none. A row the proxy does
+            not show maps to an invalid index, which selects nothing -- the honest answer for a row that
+            is not on screen to be current *on*.
         """
         index = self.__model.index(row, 0) if row >= 0 else QModelIndex()
+        if self.__proxy is not None:
+            index = self.__proxy.mapFromSource(index)
         self.__view.setCurrentIndex(index)
 
     def edit_current(self) -> None:

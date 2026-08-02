@@ -18,13 +18,13 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_l
 from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
-    CollectionEntry,
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
     current_block_version,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
+    visible_learning_paths,
 )
 
 
@@ -2105,29 +2105,32 @@ def test_unknown_field_names_recognizes_by_the_active_types_declaration(document
 
 
 def test_model_seeds_the_record_lists(document: RehuDocument) -> None:
-    """Both record lists seed from the document, resolved and sorted ([[field-schema#sources]], #189).
+    """Both record lists seed from the document **as stored** -- the records, not the sorted projection
+    the viewer shows ([[field-schema#sources]], #235).
 
     **Test steps:**
 
     * seed the block with two collections and the current identity's own learning path
-    * verify each list reads back projected and index-ordered
+    * verify each reads back as the stored records, in stored order and keyed by scope
     """
     document.set_active_field("collections", [{"title": "Second", "index": 2}, {"title": "First", "index": 1}])
     document.set_active_user_field("learning_paths", [{"title": "My Order", "index": 7, "ref": 1}])
     model = RehuDocumentModel(document)
 
-    assert model.collections == [CollectionEntry(1, "First"), CollectionEntry(2, "Second")]
-    assert model.learning_paths == [LearningPathEntry(7, "My Order")]
+    assert model.collections == [{"title": "Second", "index": 2}, {"title": "First", "index": 1}]
+    assert model.learning_paths == {"admin": [{"title": "My Order", "index": 7, "ref": 1}]}
 
 
-def test_model_learning_paths_exclude_another_identitys_private_paths(document: RehuDocument) -> None:
-    """The viewer rule holds through the model: own entries, subscriptions, and ``public`` only
-    ([[field-schema#learning-path-ownership]], #189).
+def test_model_learning_paths_carry_every_identitys_records(document: RehuDocument) -> None:
+    """The model holds every scope's records, including another identity's private paths -- *what is in
+    this file* is what the editor acts on, and resolving *what am I in* is the viewer's own step
+    ([[field-schema#learning-path-ownership]], #235).
 
     **Test steps:**
 
     * file a private path under another identity, a published one, and a subscription to it
-    * verify the model shows the published path and not the private one
+    * verify all three scopes are in the model's value, and that resolving it for ``admin`` shows the
+      published path and not the private one
     """
     document.set_active_field(
         "users",
@@ -2139,7 +2142,8 @@ def test_model_learning_paths_exclude_another_identitys_private_paths(document: 
     )
     model = RehuDocumentModel(document)
 
-    assert model.learning_paths == [LearningPathEntry(3, "Shared")]
+    assert set(model.learning_paths) == {"admin", "public", "foo"}
+    assert visible_learning_paths(model.learning_paths, username="admin") == [LearningPathEntry(3, "Shared")]
 
 
 def test_model_reseeds_the_record_lists_on_revert(mocker: MockerFixture, document: RehuDocument) -> None:
@@ -2161,7 +2165,7 @@ def test_model_reseeds_the_record_lists_on_revert(mocker: MockerFixture, documen
 
     model.revert()
 
-    assert model.collections == [CollectionEntry(2, "Series")]
+    assert model.collections == [{"title": "Series", "index": 2}]
 
 
 def test_unknown_field_names_excludes_the_users_map(document: RehuDocument) -> None:
@@ -2673,11 +2677,11 @@ def test_switching_type_reseeds_the_record_lists(document: RehuDocument) -> None
     document.set_active_field("collections", [{"title": "Tutorial Series", "index": 1}])
     document.data["reference_images"] = {"collections": [{"title": "Image Series", "index": 5}]}
     model = RehuDocumentModel(document)
-    assert model.collections == [CollectionEntry(1, "Tutorial Series")]
+    assert model.collections == [{"title": "Tutorial Series", "index": 1}]
 
     model.resource_type = "reference_images"
 
-    assert model.collections == [CollectionEntry(5, "Image Series")]
+    assert model.collections == [{"title": "Image Series", "index": 5}]
 
 
 def test_switching_type_leaves_the_common_core_fields_untouched(document: RehuDocument) -> None:
@@ -2897,3 +2901,71 @@ def test_reverting_a_type_round_trip_restores_a_foreign_blocks_carry_or_drop(moc
 
 
 # endregion
+
+
+def test_editing_the_collections_writes_through_and_dirties(document: RehuDocument) -> None:
+    """A memberships edit reaches the block and marks the model dirty, like every other write-through
+    ([[field-schema#sources]], #235).
+
+    **Test steps:**
+
+    * set the model's collections to one record carrying a key no editor shows
+    * verify the block holds exactly that record, and the model is dirty
+    """
+    model = RehuDocumentModel(document)
+
+    model.collections = [{"title": "Series", "index": 2, "url": "https://example.com"}]
+
+    assert document.active_field("collections") == [{"title": "Series", "index": 2, "url": "https://example.com"}]
+    assert model.dirty is True
+
+
+def test_clearing_the_collections_removes_the_key(document: RehuDocument) -> None:
+    """Absent is not empty: an emptied membership list takes its key with it rather than storing ``[]``
+    ([[field-schema#deferred-items]]).
+
+    **Test steps:**
+
+    * seed a membership, then clear it through the model
+    * verify the key is gone from the block
+    """
+    document.set_active_field("collections", [{"title": "Series"}])
+    model = RehuDocumentModel(document)
+
+    model.collections = []
+
+    assert "collections" not in document.active_block
+
+
+def test_editing_the_learning_paths_writes_every_scope_through(document: RehuDocument) -> None:
+    """A learning-path edit spans scopes: an owned record here, a subscription there
+    ([[field-schema#learning-path-ownership]], #235).
+
+    **Test steps:**
+
+    * write one owned path for ``admin`` and a subscription for ``foo``
+    * verify each landed under its own identity, and the model is dirty
+    """
+    model = RehuDocumentModel(document)
+
+    model.learning_paths = {"admin": [{"title": "Mine", "index": 1, "ref": 1}], "foo": [{"ref": 1}]}
+
+    users = document.active_block["users"]
+    assert users["admin"]["learning_paths"] == [{"title": "Mine", "index": 1, "ref": 1}]
+    assert users["foo"]["learning_paths"] == [{"ref": 1}]
+    assert model.dirty is True
+
+
+def test_seeding_the_record_lists_is_not_an_edit(document: RehuDocument) -> None:
+    """The seed guard matters more here than for a scalar: a seed assigns the very records it just read,
+    so an unguarded write-through would dirty every document merely by opening it.
+
+    **Test steps:**
+
+    * open a document already carrying both record lists
+    * verify the model is clean
+    """
+    document.set_active_field("collections", [{"title": "Series", "index": 2}])
+    document.set_active_user_field("learning_paths", [{"title": "Mine", "index": 1, "ref": 1}])
+
+    assert RehuDocumentModel(document).dirty is False
