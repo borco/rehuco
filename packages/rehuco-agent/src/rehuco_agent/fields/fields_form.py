@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from .field import (
     Field,
+    FieldBinding,
     FieldEditorWidgets,
     FieldModel,
     FieldsTab,
@@ -40,6 +41,12 @@ class FieldsForm:
 
     Emptiness cascades: a field whose row widgets are all ``None`` contributes no row, and a tab that
     ends up with no rows is absent from the returned mapping (so no empty dock is built).
+
+    A field contributes **exactly one editor row** and **one or more viewer rows**. The asymmetry is the
+    grid's: `CONTENT_COLUMN` is a single cell, so two editor bundles would be two independent widgets
+    with nothing aligning their internals, which is why a composite holds its own layout instead
+    ([[plugins#field-toolkit]]). A viewer row carries no such internals, so the size pair -- one editor
+    over two model fields -- still renders its two formatted rows separately (#232).
 
     :param fields: the fields to lay out, in display order.
     """
@@ -109,10 +116,10 @@ class FieldsForm:
         """
         by_tab: dict[FieldsTab, list[FieldViewerWidgets]] = {}
         for field in self.__fields:
-            bundle = field.make_viewer(model.bind(field))
-            if bundle.label is None and bundle.viewer is None:
-                continue
-            by_tab.setdefault(bundle.tab, []).append(bundle)
+            for bundle in field.make_viewer_rows(self.__bindings(field, model)):
+                if bundle.label is None and bundle.viewer is None:
+                    continue
+                by_tab.setdefault(bundle.tab, []).append(bundle)
 
         grids: dict[FieldsTab, QWidget] = {}
         for tab, bundles in by_tab.items():
@@ -139,7 +146,7 @@ class FieldsForm:
         """
         by_tab: dict[FieldsTab, list[FieldEditorWidgets]] = {}
         for field in self.__fields:
-            bundle = field.make_editor(model.bind(field))
+            bundle = field.make_editor_row(self.__bindings(field, model))
             if bundle.label is None and bundle.misc is None and bundle.editor is None:
                 continue
             by_tab.setdefault(bundle.tab, []).append(bundle)
@@ -166,6 +173,20 @@ class FieldsForm:
             self.__distribute_vertical_space(grid, bundles)
             grids[tab] = widget
         return grids
+
+    @staticmethod
+    def __bindings(field: Field[Any], model: FieldModel) -> tuple[FieldBinding[Any], ...]:
+        """Resolve every name ``field`` binds against ``model``, in the field's own order.
+
+        One binding for nearly every field, and two for a composite spanning two model fields (the size
+        pair, #232) -- resolved here rather than by the field, so a field still never sees the model
+        ([[plugins#field-toolkit]]).
+
+        :param field: the field to resolve for.
+        :param model: the view-model to resolve against.
+        :returns: the bindings, positionally matching ``field.names``.
+        """
+        return tuple(model.bind(field, name) for name in field.names)
 
     @staticmethod
     def __add_vertical_row(

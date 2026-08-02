@@ -18,7 +18,6 @@ from .measure_row_internals import (
     internal_computed_label,
     internal_editor,
     internal_row_widgets,
-    internal_stored_label,
 )
 
 
@@ -39,7 +38,8 @@ def test_the_row_reads_left_to_right_as_stored_then_measured(qtbot: QtBot) -> No
     **Test steps:**
 
     * build the widget
-    * verify the laid-out widgets, left to right, and that no separate stored readout was added
+    * verify the laid-out widgets, left to right -- the duration editor carries its own human
+      reading, so the row adds no readout of its own
     """
     edit = MeasuredDurationEdit()
     qtbot.addWidget(edit)
@@ -50,7 +50,6 @@ def test_the_row_reads_left_to_right_as_stored_then_measured(qtbot: QtBot) -> No
         internal_computed_label(edit),
         internal_compute_button(edit),
     ]
-    assert internal_stored_label(edit) is None
 
 
 def test_edit_starts_unmeasured_with_nothing_computed(qtbot: QtBot) -> None:

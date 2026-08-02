@@ -64,14 +64,13 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
 
     **The computed readout is exact**, never formatted: it is compared against the stored editor beside
     it digit for digit, rather than through a rounded ``1.4G`` or ``2h 15m`` that two different values
-    would share. A row wanting a human reading of the *stored* value asks for one with ``stored_format``,
-    which adds a leading readout the value follows.
+    would share.
 
-    Three rows are built on this -- the content count (#198), the size on disk (#223) and the duration
-    (#224). They were three separate widgets until the third arrived, which is what settled where the
-    seam is: everything about *requesting, showing and applying a measurement* is identical, and what
-    differs is which widget holds the stored value, how wide it wants to be, and whether the row shows a
-    human reading of it.
+    This is the row for a value with **no twin**. It was the base under all three measure rows until the
+    two sizes and the two durations turned out to be pairs sharing one scan
+    (:class:`SharedMeasurementEdit`, #232/#233); what is left on it is the content count, whose
+    ``advertised_count`` is a hand-entered claim rather than a second measurement of the same thing. Both
+    widgets keep the same compute/apply/busy vocabulary, which is what lets a reader move between them.
 
     :param editor: the widget holding the stored value; reparented into the row's layout.
     :param set_editor_value: writes a value into ``editor``, called only when it holds a different one.
@@ -81,10 +80,6 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
     :param apply_tooltip: names the apply action; also how a test tells the two icon-only buttons apart.
     :param editor_stretch: the stored editor's share of the row's width.
     :param computed_stretch: the computed readout's share of the row's width.
-    :param stored_format: renders the stored value for a leading human-readable readout; ``None`` for a
-        row whose stored value is already a human reading of itself (a count), or whose editor carries
-        one of its own (a duration).
-    :param stored_tooltip: what that leading readout shows; ignored without ``stored_format``.
     :param parent: optional Qt parent.
     """
 
@@ -120,15 +115,11 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
         apply_tooltip: str = APPLY_TOOLTIP,
         editor_stretch: int = 1,
         computed_stretch: int = 1,
-        stored_format: Callable[[int | None], str] | None = None,
-        stored_tooltip: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.__set_editor_value: Final = set_editor_value
         self.__editor: Final = editor
-        self.__stored_format: Final = stored_format
-        self.__stored_label: Final = ValueReadout(stored_tooltip, self) if stored_format is not None else None
         self.__computed_label: Final = ValueReadout(computed_tooltip, self)
         # the enabled state lives on the *action*, not the button: a QToolButton showing a default action
         # mirrors it, so disabling the button alone would be undone by the next action-driven refresh
@@ -139,10 +130,8 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        # the readouts sit beside what they read and the two icon buttons take their natural width, so
+        # the readout sits beside what it reads and the two icon buttons take their natural width, so
         # the row still spans the same content column every other editor on the form does
-        if self.__stored_label is not None:
-            layout.addWidget(self.__stored_label, 1)
         layout.addWidget(editor, editor_stretch)  # type: ignore[arg-type]  # a Protocol over the widget it is
         layout.addWidget(self.__apply_button)
         layout.addWidget(self.__computed_label, computed_stretch)
@@ -192,7 +181,7 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
         return button
 
     def __on_value_changed(self, value: int | None) -> None:
-        """Echo a stored-value change into the editor and its human reading, and re-render the actions.
+        """Echo a stored-value change into the editor, and re-render the actions.
 
         The guard is a compare against what the editor already holds, not a signal blocker: the editor's
         own edit reaches :attr:`value` through the very connection this echoes back over, and writing the
@@ -202,8 +191,6 @@ class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attribute
         """
         if self.__editor.value != value:
             self.__set_editor_value(value)
-        if self.__stored_label is not None and self.__stored_format is not None:
-            self.__stored_label.setText(self.__stored_format(value))
         self.__render_actions()
 
     def __on_computed_changed(self, value: int | None) -> None:

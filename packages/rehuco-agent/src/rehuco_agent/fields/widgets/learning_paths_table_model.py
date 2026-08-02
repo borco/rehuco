@@ -207,10 +207,12 @@ class LearningPathsTableModel(MembershipTableModel):
         if subscribed:
             self.__records.setdefault(self.__username, []).append({REF_KEY: ref})
         else:
-            # is_subscribed disagreeing with ``subscribed`` above is exactly this record being present,
-            # so the lookup cannot come back empty -- the guard is for the type checker, not the flow
-            existing = self.__subscription(ref)
-            if existing is not None:
+            # drained rather than removed once: ``is_subscribed`` disagreeing with ``subscribed`` above
+            # says at least one such record is present, and a hand-edited file can carry the same bare
+            # ``{ref}`` twice -- dropping one would leave the row still reading as followed, which is the
+            # checkbox refusing to turn off. The loop also spares the flow an ``is not None`` guard that
+            # only ever satisfied the type checker.
+            while (existing := self.__subscription(ref)) is not None:
                 self.__records[self.__username].remove(existing)
             self.__prune(self.__username)
         cell = self.index(row, SUBSCRIBED_COLUMN)

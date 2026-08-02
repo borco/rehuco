@@ -1,10 +1,10 @@
 """Accessors for a measure row's internals -- `MeasuredValueEdit` exposes none by design (#224).
 
-One module rather than a copy per row: the three rows built on that base
+One module rather than a copy per row: the rows built on that base
 (:class:`~rehuco_agent.fields.widgets.ContentCountEdit`,
-:class:`~rehuco_agent.fields.widgets.FileSizeEdit`,
 :class:`~rehuco_agent.fields.widgets.MeasuredDurationEdit`) hold their pieces in the *base*'s private
-attributes, so all three test suites would otherwise spell the same five name-mangled lookups.
+attributes, so each test suite would otherwise spell the same five name-mangled lookups. The shared measurement's
+internals live in :mod:`fields.widgets.shared_measurement_internals`, since it is a different widget (#232).
 """
 
 from typing import Any
@@ -21,15 +21,6 @@ def internal_editor(edit: MeasuredValueEdit) -> Any:
     :returns: the internal editor widget, untyped because each row supplies a different one.
     """
     return edit._MeasuredValueEdit__editor  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-
-def internal_stored_label(edit: MeasuredValueEdit) -> ValueReadout:
-    """Return the row's leading human-readable readout.
-
-    :param edit: the row to inspect.
-    :returns: the internal ``ValueReadout``; ``None`` on a row that asked for none.
-    """
-    return edit._MeasuredValueEdit__stored_label  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
 def internal_computed_label(edit: MeasuredValueEdit) -> ValueReadout:

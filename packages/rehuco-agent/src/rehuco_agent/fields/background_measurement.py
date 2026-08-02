@@ -43,7 +43,7 @@ class BackgroundMeasurement(QObject):
 
         Returns immediately; nothing is awaited here. Starting a second measurement before the first
         finishes runs both -- the caller keeps that from happening by disabling the control that starts
-        one (`FileSizeField` disables Compute for exactly as long as a scan is in flight).
+        one (every measure row disables Compute for exactly as long as a scan is in flight).
 
         :param measure: the measurement, called on a worker thread.
         """

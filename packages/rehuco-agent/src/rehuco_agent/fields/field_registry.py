@@ -11,13 +11,13 @@ from .date_field import DateField
 from .description_field import DescriptionField
 from .duration_field import DurationField
 from .field import Field, FieldsTab
-from .file_size_field import FileSizeField
 from .int_field import IntField
 from .learning_paths_field import LearningPathsField
 from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
+from .size_pair_field import SizePairField
 from .text_field import TextField
 from .text_list_field import TextListField
 from .type_field import TypeField
@@ -47,7 +47,7 @@ class FieldRegistry:
             DateField,
             DurationField,
             MeasuredDurationField,
-            FileSizeField,
+            SizePairField,
             MultipleChoiceField,
             PathField,
             TypeField,

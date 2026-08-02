@@ -56,9 +56,11 @@ whose editor takes a runtime callback ([[plugins#field-toolkit]], #198), named h
 :func:`build_document_form` can hand it one."""
 
 SIZE_FIELD_NAMES: Final = ("original_size", "current_size")
-"""The measured size fields' model names ([[field-schema#field-mapping]]) -- both take the same runtime
-measure callback (#223), because both measure the same content and differ only in *when* they are
-pressed ([[field-schema#duration-size]])."""
+"""The measured size fields' model names ([[field-schema#field-mapping]]) -- **one** field binding both
+(#232), so it takes one runtime measure callback and one press fills both rows' readout. They were two
+fields taking the same callback until then (#223), which meant the same walk of the same tree ran twice
+for the same answer; they still differ only in *when* the user accepts it
+([[field-schema#duration-size]]), which is why the accept stayed per row."""
 
 DURATION_FIELD_NAMES: Final = ("original_duration", "current_duration")
 """The measured duration fields' model names ([[field-schema#field-mapping]]) -- both take the same
@@ -103,6 +105,9 @@ class FieldSpec(NamedTuple):
     :param viewer_tab: the viewer surface this field's viewer lands on; defaults to :data:`VIEWER_TAB`.
     :param editor_tab: the editor surface this field's editor lands on; defaults to
         :data:`EDITOR_MAIN_TAB` (``description`` overrides it to its own dock).
+    :param partner_name: a **second** model field this spec's type binds alongside ``name``, for a
+        composite spanning a pair (the sizes, #232); ``None`` -- every other spec -- names one field.
+        :func:`composed_field_specs` is where a partly-declared pair is narrowed back to one name.
     """
 
     type: str
@@ -114,6 +119,12 @@ class FieldSpec(NamedTuple):
     kwargs: Mapping[str, Any] = MappingProxyType({})
     viewer_tab: FieldsTab = VIEWER_TAB
     editor_tab: FieldsTab = EDITOR_MAIN_TAB
+    partner_name: str | None = None
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Every model field this spec binds -- one, or two for a pair."""
+        return (self.name,) if self.partner_name is None else (self.name, self.partner_name)
 
 
 MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
@@ -128,8 +139,7 @@ MODEL_AGNOSTIC_FIELD_SPECS: Final[tuple[FieldSpec, ...]] = (
     FieldSpec("measured_duration", "current_duration"),
     FieldSpec("count_claim", "advertised_count"),
     FieldSpec("content_count", "current_count"),
-    FieldSpec("size", "original_size"),
-    FieldSpec("size", "current_size"),
+    FieldSpec("size_pair", "original_size", partner_name="current_size"),
     FieldSpec("bool", "complete"),
     FieldSpec("bool", "online"),
     FieldSpec("bool", "viewed"),
@@ -197,11 +207,24 @@ def composed_field_specs(model: RehuDocumentModel) -> tuple[FieldSpec, ...]:
     (`RehuDocumentModel.unknown_field_names`, [[plugins#fallback-editor]]), which is what keeps a
     narrowed field list from *swallowing* a value rather than merely not rendering it.
 
+    **A pair spec survives on either name.** A spec naming two model fields (the sizes, #232) is kept
+    when *either* is declared and **narrowed to the declared ones**, so a type declaring one composes a
+    coherent single row rather than a composite bound to a field that type does not have. Both sizes are
+    common core today, so both are always declared and the narrowing never fires; the rule is stated here
+    -- and tested -- so that stays a fact about the declarations rather than a load-bearing accident.
+
     :param model: the document whose active type selects the fields.
-    :returns: the declared specs, in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order.
+    :returns: the declared specs, in :data:`MODEL_AGNOSTIC_FIELD_SPECS` order, each narrowed to the names
+        this type declares.
     """
     declared = frozenset(CORE_FIELD_NAMES) | frozenset(model.document.plugins.field_names(model.resource_type))
-    return tuple(spec for spec in MODEL_AGNOSTIC_FIELD_SPECS if spec.name in declared)
+    specs: list[FieldSpec] = []
+    for spec in MODEL_AGNOSTIC_FIELD_SPECS:
+        kept = tuple(name for name in spec.names if name in declared)
+        if not kept:
+            continue
+        specs.append(spec._replace(name=kept[0], partner_name=kept[1] if len(kept) > 1 else None))
+    return tuple(specs)
 
 
 # the local count is what "the whole field composition lives here, in one place" costs: each model-aware
@@ -385,8 +408,10 @@ def build_document_form(
     # a user setting -- the recognized extensions for the count (#198), the excluded names for the sizes
     # and the durations (#224), and a probe backend for the durations besides
     # (#223/#226) -- none of which the toolkit knows about, so they are supplied here the same way the
-    # images strip's scanner is. Both sizes get the *same* callback, and so do both durations: each pair
-    # measures the same content and differs only in when the user presses it ([[field-schema#duration-size]])
+    # images strip's scanner is. The size pair is **one** field over both names, so it takes the callback
+    # once and one press answers both rows (#232); the two durations are still two fields taking the same
+    # callback, which is the merge #233 makes for them ([[field-schema#duration-size]]). Keying by name
+    # covers either shape -- a pair spec is keyed by whichever of its names leads it
     runtime_kwargs: dict[str, dict[str, Any]] = {CURRENT_COUNT_FIELD_NAME: {"measure": measure_content_images}}
     runtime_kwargs.update({name: {"measure": measure_size_on_disk} for name in SIZE_FIELD_NAMES})
     runtime_kwargs.update({name: {"measure": measure_duration} for name in DURATION_FIELD_NAMES})
@@ -404,6 +429,9 @@ def build_document_form(
         "unknown_username": shared_identity_settings().unknown_username,
     }
     for spec in composed_field_specs(model):
+        # a pair spec's second name is passed as an ordinary constructor argument, so the registry stays
+        # a ``(type, name)`` resolver and knows nothing about which types bind more than one field (#232)
+        pair_kwargs = {} if spec.partner_name is None else {"partner_name": spec.partner_name}
         fields.append(
             registry.create(
                 spec.type,
@@ -411,6 +439,7 @@ def build_document_form(
                 viewer_tab=spec.viewer_tab,
                 editor_tab=spec.editor_tab,
                 **spec.kwargs,
+                **pair_kwargs,
                 **runtime_kwargs.get(spec.name, {}),
             )
         )

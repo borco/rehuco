@@ -8,7 +8,6 @@ from .content_count_edit import ContentCountEdit
 from .date_edit import DateEdit
 from .duration_edit import DurationEdit
 from .expand_toggle_button import ExpandToggleButton
-from .file_size_edit import FileSizeEdit
 from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
 from .image_strip import ImageStrip
@@ -23,7 +22,9 @@ from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
+from .shared_measurement_edit import SharedMeasurementEdit, SharedMeasurementRow
 from .single_choice_combo_box import SingleChoiceComboBox
+from .size_measurement_edit import SizeMeasurementEdit
 from .type_badge import TypeBadge
 from .value_readout import ValueReadout
 
@@ -43,7 +44,7 @@ __all__ = [
     "DateEdit",
     "DurationEdit",
     "ExpandToggleButton",
-    "FileSizeEdit",
+    "SizeMeasurementEdit",
     "ImageLightbox",
     "ImageSelector",
     "ImageStrip",
@@ -52,6 +53,8 @@ __all__ = [
     "MarkdownEdit",
     "MarkdownView",
     "MeasuredDurationEdit",
+    "SharedMeasurementEdit",
+    "SharedMeasurementRow",
     "MeasuredValueEdit",
     "PathEditor",
     "RatingSlider",

@@ -17,9 +17,10 @@ class ValueReadout(QLabel):
     one, and a `QLabel` says so with no ``setReadOnly`` to be undone later. Selectable, so an exact byte
     count can be copied out and pasted somewhere it can be compared.
 
-    Shared by both measure rows (:class:`~rehuco_agent.fields.widgets.FileSizeEdit`,
-    :class:`~rehuco_agent.fields.widgets.ContentCountEdit`) so a change of look lands on every row at
-    once -- the two rows sit on the same form, where one framed readout and one bare one read as a bug.
+    Shared by every measure surface -- the single-value rows built on
+    :class:`~rehuco_agent.fields.widgets.MeasuredValueEdit` and the pair's stacked rows and spanning
+    readout (:class:`~rehuco_agent.fields.widgets.SharedMeasurementEdit`) -- so a change of look lands on all
+    of them at once: they sit on the same form, where one framed readout and one bare one read as a bug.
 
     :param tooltip: what this readout shows, in words -- it carries no label of its own.
     :param parent: optional Qt parent.

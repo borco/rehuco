@@ -321,6 +321,35 @@ def test_unsubscribing_drops_the_ref_and_nothing_else(model: LearningPathsTableM
     assert model.entries["foo"] == [{"title": "Private Study", "index": 1, "ref": 3}]
 
 
+def test_unsubscribing_drops_every_copy_of_a_duplicated_ref() -> None:
+    """A file carrying the same bare ``{ref}`` twice is unfollowed in one press, not one press per copy.
+
+    Nothing this app writes makes a duplicate -- ``set_subscribed`` refuses to add a second -- but a
+    ``.rehu`` is plain JSON anyone can edit by hand ([[data-model#rehu-format]]), and a leftover copy
+    would read back as still followed: the checkbox would refuse to turn off, with no way to see why.
+
+    **Test steps:**
+
+    * seed an identity whose own scope holds one path and the same subscription ref twice
+    * unsubscribe
+    * verify both copies are gone and the identity's own path stayed
+    """
+    model = LearningPathsTableModel(USERNAME, lambda: 3, UNKNOWN)
+    model.set_entries(
+        {
+            USERNAME: [{"ref": 1}, {"title": "Mine", "index": 2, "ref": 2}, {"ref": 1}],
+            "foo": [{"title": "Theirs", "index": 1, "ref": 1}],
+        }
+    )
+    foreign_row = next(row for row in range(model.rowCount()) if model.row_is_subscribable(row))
+    assert model.is_subscribed(foreign_row) is True
+
+    model.set_subscribed(foreign_row, False)
+
+    assert model.entries[USERNAME] == [{"title": "Mine", "index": 2, "ref": 2}]
+    assert model.is_subscribed(foreign_row) is False
+
+
 def test_unsubscribing_the_last_record_drops_the_scope() -> None:
     """A scope that only ever existed to hold a subscription goes with it, rather than leaving an identity
     in the file that was never really there.

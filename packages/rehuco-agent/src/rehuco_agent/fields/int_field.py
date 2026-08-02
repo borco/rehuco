@@ -63,7 +63,7 @@ class IntField(Field[int | None]):
         spin_box = UnboundedSpinBox(value=binding.value, minimum=self.__minimum, maximum=self.__maximum)
         # a flag, not QSignalBlocker(spin_box): UnboundedSpinBox syncs its own displayed text by
         # listening to its own value_changed, so blocking it here would also silence that internal
-        # resync (confirmed empirically by FileSizeEdit, which hit the same widget).
+        # resync (confirmed empirically by the size row, which hit the same widget).
         echoing = False
 
         def on_spin_box_value_changed(value: int | None) -> None:
