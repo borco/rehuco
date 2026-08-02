@@ -278,10 +278,12 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   two action columns: insert/edit/delete/reset and top/up/down/bottom, each with a key (`Ins`, `F2`,
   `Del`, `Ctrl+Home`/`Up`/`Down`/`End`), armed on the view alone so an open in-place editor keeps its own
   `Del`. `with_ordering=False` (or `set_ordering_visible`) hides the ordering half for a list whose order
-  carries nothing. It ships **no icons**: call `apply_string_list_editor_icons`
-  (`rehuco_agent/string_list_editor_icons.py`) to dress it in this app's set, and set its `defaults` to
+  carries nothing. It ships **no icons**: call `apply_item_action_icons`
+  (`rehuco_agent/item_action_icons.py`) to dress it in this app's set, and set its `defaults` to
   whatever Reset should restore. It holds what was typed and normalizes nothing — that stays on the
-  settings object, where two pages can (and do) normalize differently (§3).
+  settings object, where two pages can (and do) normalize differently (§3). It is a `QStringListModel`
+  under `ItemListEditor`, the shared machinery the `authors` record rows are built on too (#97), which is
+  why a list edited on a settings page and one edited in a document behave identically.
 - Use `ContentSizedListView` (`borco_pyside.widgets`) for any *other* list, not a plain `QListView`
   (`StringListEditor` already uses one inside, over a `QStringListModel`). A list
   that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to

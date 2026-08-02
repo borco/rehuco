@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QRadioButton, QWidget
 from rehuco_core import CONTENT_IMAGE_EXTENSIONS
 
 from ...fields.widgets.image_lightbox import ImageViewerMode
-from ...string_list_editor_icons import apply_string_list_editor_icons
+from ...item_action_icons import apply_item_action_icons
 from ..image_viewer_settings import DEFAULT_MODE, shared_image_viewer_settings
 from ..markdown_rendering_settings import shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
@@ -73,7 +73,7 @@ class ImagesPage(QWidget):
             ImageViewerMode.FULL_SCREEN: self.__ui.full_screen_radio_button,
         }
         self.__ui.extensions_editor.defaults = CONTENT_IMAGE_EXTENSIONS
-        apply_string_list_editor_icons(self.__ui.extensions_editor)
+        apply_item_action_icons(self.__ui.extensions_editor)
         self.drop_changes()
 
     @property

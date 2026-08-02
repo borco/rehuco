@@ -1,15 +1,37 @@
-"""Tests for AuthorsField: the rich-text link viewer, the lossless-guarded comma editor, and the
-scheme-dispatching link handlers (#95)."""
+"""Tests for AuthorsField: the rich-text link viewer, the two-mode editor and its misc-column toggle
+(#95, #97), and the scheme-dispatching link handlers."""
 
 import logging
 
 import pytest
-from PySide6.QtWidgets import QLabel, QLineEdit, QToolButton
+from PySide6.QtWidgets import QLabel
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields.widgets import AuthorsEditor, ExpandToggleButton
 
 from fields.field_testers import AuthorsFieldTester as AuthorsField
+
+
+# region helpers
+def build_editor(qtbot: QtBot, model: RehuDocumentModel) -> tuple[AuthorsEditor, ExpandToggleButton]:
+    """Build the field's editor row over ``model``.
+
+    :param qtbot: the widget-owning fixture.
+    :param model: the view-model to bind to.
+    :returns: the editor and the row's misc-column toggle.
+    """
+    field = AuthorsField("authors")
+    widgets = field.make_editor(model.bind(field))
+    editor, toggle = widgets.editor, widgets.misc
+    assert isinstance(editor, AuthorsEditor)
+    assert isinstance(toggle, ExpandToggleButton)
+    qtbot.addWidget(editor)
+    qtbot.addWidget(toggle)
+    return editor, toggle
+
+
+# endregion
 
 
 # region viewer
@@ -116,178 +138,135 @@ def test_authors_field_viewer_tracks_model_changes(qtbot: QtBot, model: RehuDocu
 
 
 # region editor
-def test_authors_field_editor_enabled_for_a_comma_free_plain_list(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """A losslessly comma-editable list leaves the editor enabled, untooltipped, its lock indicator
-    hidden.
+def test_authors_field_editor_opens_simple_for_a_comma_free_plain_list(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A losslessly comma-editable list opens in the comma line, with the toggle offered and unchecked.
 
     **Test steps:**
 
     * seed a comma-free plain-string list
-    * build the editor
-    * verify it's enabled, has no tooltip, shows the joined text, and the lock indicator is hidden
+    * build the editor row
+    * verify the simple mode is what is shown, and the toggle is enabled and unchecked
     """
     model.authors = ["Alice", "Bob"]
-    field = AuthorsField("authors")
-    widgets = field.make_editor(model.bind(field))
-    editor, lock = widgets.editor, widgets.misc
-    assert isinstance(editor, QLineEdit)
-    assert isinstance(lock, QToolButton)
-    qtbot.addWidget(editor)
-    qtbot.addWidget(lock)
+    editor, toggle = build_editor(qtbot, model)
 
-    assert editor.isEnabled() is True
-    assert editor.toolTip() == ""
-    assert editor.text() == "Alice, Bob"
-    assert lock.isVisible() is False
+    assert editor.advanced is False
+    assert editor.simple_available is True
+    assert toggle.isChecked() is False
+    assert toggle.defaultAction().isEnabled() is True
 
 
 def test_authors_field_editor_writes_back_to_the_model(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Editing the enabled editor writes the parsed list through to the model.
+    """Editing the comma line writes the parsed list through to the model.
 
     **Test steps:**
 
     * build the editor over an empty seed
-    * set its text
+    * set its value as the comma line would
     * verify ``model.authors`` holds the parsed list
     """
-    field = AuthorsField("authors")
-    editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, QLineEdit)
-    qtbot.addWidget(editor)
+    editor, _toggle = build_editor(qtbot, model)
 
-    editor.setText("Alice, Bob")
+    editor.value_changed.emit(["Alice", "Bob"])
     assert model.authors == ["Alice", "Bob"]
 
 
-def test_authors_field_editor_disables_for_a_record_entry(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """A record entry (an author URL) disables the editor, tooltipped, showing the name only, with
-    the row's lock indicator shown.
+def test_authors_field_editor_opens_in_rows_for_a_record_entry(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A record entry (an author URL) is shown as rows, with the toggle held there and explained.
 
     **Test steps:**
 
     * seed one ``{name, url}`` record
-    * build the editor
-    * verify it is disabled, tooltipped, shows the entry's plain name, and the lock indicator is
-      visible and tooltipped the same way
+    * build the editor row
+    * verify the rows are what is shown, and the toggle is checked, disabled and tooltipped
     """
     model.authors = [{"name": "Alice", "url": "https://example.com"}]
-    field = AuthorsField("authors")
-    widgets = field.make_editor(model.bind(field))
-    editor, lock = widgets.editor, widgets.misc
-    assert isinstance(editor, QLineEdit)
-    assert isinstance(lock, QToolButton)
-    qtbot.addWidget(editor)
-    qtbot.addWidget(lock)
+    editor, toggle = build_editor(qtbot, model)
 
-    assert editor.isEnabled() is False
-    assert editor.toolTip() != ""
-    assert editor.text() == "Alice"
-    assert lock.isVisible() is True
-    assert lock.toolTip() == editor.toolTip()
+    assert editor.advanced is True
+    assert editor.simple_available is False
+    assert toggle.isChecked() is True
+    assert toggle.defaultAction().isEnabled() is False
+    assert toggle.defaultAction().toolTip() != ""
 
 
-def test_authors_field_editor_disables_for_a_comma_in_a_name(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """A name containing a comma disables the editor -- it has no lossless comma-line representation.
+def test_authors_field_editor_opens_in_rows_for_a_comma_in_a_name(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A name containing a comma is shown as rows -- it has no lossless comma-line representation.
 
     **Test steps:**
 
     * seed a plain name containing a comma
-    * build the editor
-    * verify it is disabled and the lock indicator is visible
+    * build the editor row
+    * verify the rows are what is shown and the toggle is not the user's to change
     """
     model.authors = ["Foo Bar, Jr."]
-    field = AuthorsField("authors")
-    widgets = field.make_editor(model.bind(field))
-    editor, lock = widgets.editor, widgets.misc
-    assert isinstance(editor, QLineEdit)
-    assert isinstance(lock, QToolButton)
-    qtbot.addWidget(editor)
-    qtbot.addWidget(lock)
+    editor, toggle = build_editor(qtbot, model)
 
-    assert editor.isEnabled() is False
-    assert lock.isVisible() is True
+    assert editor.advanced is True
+    assert toggle.defaultAction().isEnabled() is False
 
 
-def test_authors_field_editor_lock_indicator_click_is_a_no_op(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The lock indicator is a static flag, not a control yet -- clicking it changes nothing (#97's
-    deferred advanced editor is what will eventually give it something to open).
+def test_authors_field_editor_toggle_switches_modes(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Clicking the misc-column toggle switches the editor between the comma line and the rows.
 
     **Test steps:**
 
-    * build the editor over a record entry (disabled, lock indicator visible)
-    * click the lock indicator
-    * verify the editor is still disabled, showing the same value
+    * build the editor over a simple list
+    * check the toggle, then uncheck it
+    * verify the editor followed both ways
     """
-    model.authors = [{"name": "Alice", "url": "https://example.com"}]
-    field = AuthorsField("authors")
-    widgets = field.make_editor(model.bind(field))
-    editor, lock = widgets.editor, widgets.misc
-    assert isinstance(editor, QLineEdit)
-    assert isinstance(lock, QToolButton)
-    qtbot.addWidget(editor)
-    qtbot.addWidget(lock)
+    model.authors = ["Alice"]
+    editor, toggle = build_editor(qtbot, model)
 
-    lock.click()
+    toggle.setChecked(True)
+    assert editor.advanced is True
 
-    assert editor.isEnabled() is False
-    assert editor.text() == "Alice"
-    assert model.authors == [{"name": "Alice", "url": "https://example.com"}]
+    toggle.setChecked(False)
+    assert editor.advanced is False
 
 
-def test_authors_field_editor_re_enables_live_after_reverting_to_a_clean_list(
+def test_authors_field_editor_forcing_the_rows_does_not_rewrite_the_choice(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """A ``binding.changed`` back to an all-plain-comma-free list flips the guard live (e.g. revert()),
-    hiding the lock indicator again.
+    """A value the comma line cannot show holds the editor in the rows without becoming the choice
+    (#97: the mode never switches on its own).
 
     **Test steps:**
 
-    * build the editor over a record entry (disabled, lock indicator visible)
-    * change ``model.authors`` to a clean plain-string list, as a revert would
-    * verify the editor re-enables, shows the new value, and the lock indicator hides
+    * build the editor over a simple list, left in the simple mode
+    * change ``model.authors`` to a record entry -- the rows are forced, the toggle reads checked
+    * change it back to a plain list
+    * verify the editor is back in the comma line the user never left
     """
+    model.authors = ["Alice"]
+    editor, toggle = build_editor(qtbot, model)
+
     model.authors = [{"name": "Alice", "url": "https://example.com"}]
-    field = AuthorsField("authors")
-    widgets = field.make_editor(model.bind(field))
-    editor, lock = widgets.editor, widgets.misc
-    assert isinstance(editor, QLineEdit)
-    assert isinstance(lock, QToolButton)
-    qtbot.addWidget(editor)
-    qtbot.addWidget(lock)
-    assert editor.isEnabled() is False
-    assert lock.isVisible() is True
+    assert editor.advanced is True
+    assert toggle.isChecked() is True
 
     model.authors = ["Alice", "Bob"]
 
-    assert editor.isEnabled() is True
-    assert editor.toolTip() == ""
-    assert editor.text() == "Alice, Bob"
-    assert lock.isVisible() is False
+    assert editor.advanced is False
+    assert toggle.isChecked() is False
+    assert toggle.defaultAction().isEnabled() is True
 
 
-def test_authors_field_editor_stays_disabled_when_the_disabled_display_text_is_unchanged(
-    qtbot: QtBot, model: RehuDocumentModel
-) -> None:
-    """A ``binding.changed`` that keeps the editor disabled, with the same displayed names, doesn't
-    needlessly rewrite the (already correct) disabled text.
+def test_authors_field_editor_tracks_model_changes(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A ``binding.changed`` -- a revert, a type switch -- lands in the editor.
 
     **Test steps:**
 
-    * build the editor over a record entry (disabled)
-    * change ``model.authors`` to a different record with the same name (still disabled, same display)
-    * verify the editor is still disabled, showing the unchanged name
+    * build the editor over one seed
+    * change ``model.authors``
+    * verify the editor holds the new value
     """
-    model.authors = [{"name": "Alice", "url": "https://example.com/a"}]
-    field = AuthorsField("authors")
-    editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, QLineEdit)
-    qtbot.addWidget(editor)
-    assert editor.isEnabled() is False
+    model.authors = ["Alice"]
+    editor, _toggle = build_editor(qtbot, model)
 
-    model.authors = [{"name": "Alice", "url": "https://example.com/b"}]
+    model.authors = ["Bob", "Carol"]
 
-    assert editor.isEnabled() is False
-    assert editor.text() == "Alice"
+    assert editor.value == ["Bob", "Carol"]
 
 
 def test_authors_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -296,50 +275,38 @@ def test_authors_field_editor_and_viewer_echo_without_a_feedback_loop(qtbot: QtB
     **Test steps:**
 
     * build both an editor and a viewer over the same ``authors`` field and model
-    * type in the editor
-    * verify the viewer reflects it and the editor still holds the typed text once
+    * report an edit from the editor
+    * verify the viewer reflects it and the editor still holds the edited value once
     """
     field = AuthorsField("authors")
-    # pylint: disable=duplicate-code
     editor = field.make_editor(model.bind(field)).editor
     viewer = field.make_viewer(model.bind(field)).viewer
-    assert isinstance(editor, QLineEdit)
+    assert isinstance(editor, AuthorsEditor)
     assert isinstance(viewer, QLabel)
     qtbot.addWidget(editor)
     qtbot.addWidget(viewer)
-    # pylint: enable=duplicate-code
 
-    editor.setText("Alice, Bob")
+    editor.value_changed.emit(["Alice", "Bob"])
 
     assert model.authors == ["Alice", "Bob"]
     assert viewer.text() == "Alice, Bob"
-    assert editor.text() == "Alice, Bob"
+    assert editor.value == ["Alice", "Bob"]
 
 
-def test_authors_field_editor_preserves_the_cursor_when_typing_mid_string(
+def test_authors_field_editor_is_named_for_its_field_so_its_mode_persists(
     qtbot: QtBot, model: RehuDocumentModel
 ) -> None:
-    """Typing in the middle of the text doesn't teleport the cursor to the end (echo guard, cf. #35).
+    """The editor carries the field's name, which is the key its saved mode is stored under
+    (`StatefulWidget`).
 
     **Test steps:**
 
-    * build the editor and seed it with a two-name value
-    * place the cursor mid-string and type one character there
-    * verify the character landed at the cursor and the cursor advanced by one
+    * build the editor row
+    * verify the editor's object name is the field's
     """
-    field = AuthorsField("authors")
-    # pylint: disable=duplicate-code
-    editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, QLineEdit)
-    qtbot.addWidget(editor)
-    editor.setText("Alice, Bob")
-    editor.setCursorPosition(5)
+    editor, _toggle = build_editor(qtbot, model)
 
-    qtbot.keyClicks(editor, "x")
-
-    assert editor.text() == "Alicex, Bob"
-    assert editor.cursorPosition() == 6
-    # pylint: enable=duplicate-code
+    assert editor.objectName() == "authors"
 
 
 # endregion

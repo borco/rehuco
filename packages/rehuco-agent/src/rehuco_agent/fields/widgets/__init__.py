@@ -1,5 +1,7 @@
 """Composite editor widgets used by the field toolkit ([[plugins#field-toolkit]])."""
 
+from .authors_editor import AuthorsEditor
+from .authors_list_editor import AuthorsListEditor
 from .choice_check_boxes import ChoiceCheckBoxes
 from .content_count_edit import ContentCountEdit
 from .date_edit import DateEdit
@@ -21,6 +23,8 @@ from .type_badge import TypeBadge
 from .value_readout import ValueReadout
 
 __all__ = [
+    "AuthorsEditor",
+    "AuthorsListEditor",
     "ChoiceCheckBoxes",
     "ContentCountEdit",
     "DateEdit",
