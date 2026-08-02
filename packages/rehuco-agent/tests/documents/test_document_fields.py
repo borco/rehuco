@@ -26,17 +26,16 @@ from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_C
 from rehuco_agent.fields.widgets import (
     ContentCountEdit,
     DurationEdit,
-    FileSizeEdit,
     MeasuredDurationEdit,
     MeasuredValueEdit,
     SingleChoiceComboBox,
+    SizeMeasurementEdit,
     TypeBadge,
 )
 from rehuco_agent.fields.widgets.content_count_edit import APPLY_TOOLTIP, COMPUTE_TOOLTIP
-from rehuco_agent.fields.widgets.file_size_edit import APPLY_TOOLTIP as SIZE_APPLY_TOOLTIP
-from rehuco_agent.fields.widgets.file_size_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
 from rehuco_agent.fields.widgets.measured_duration_edit import APPLY_TOOLTIP as DURATION_APPLY_TOOLTIP
 from rehuco_agent.fields.widgets.measured_duration_edit import COMPUTE_TOOLTIP as DURATION_COMPUTE_TOOLTIP
+from rehuco_agent.fields.widgets.size_measurement_edit import COMPUTE_TOOLTIP as SIZE_COMPUTE_TOOLTIP
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.videos_settings import shared_videos_settings
@@ -359,16 +358,30 @@ def row_editor(grid: QWidget, label_text: str) -> QWidget:
     raise AssertionError(f"no {label_text!r} row on this surface")
 
 
-def size_editor(grid: QWidget, label_text: str) -> FileSizeEdit:
-    """Find one of the two size rows' composite editors by its row label.
+def size_editor(grid: QWidget) -> SizeMeasurementEdit:
+    """Find the size pair's composite editor on an already-built editor grid.
+
+    No label to search by, unlike the durations: the two sizes are **one** editor holding both rows
+    (#232), so there is exactly one of these on the surface.
 
     :param grid: the editor surface to search.
-    :param label_text: the row's label, ``"Original Size"`` or ``"Current Size"``.
-    :returns: that row's `FileSizeEdit`.
+    :returns: the size pair's editor.
     """
-    editor = row_editor(grid, label_text)
-    assert isinstance(editor, FileSizeEdit)
+    editor = grid.findChild(SizeMeasurementEdit)
+    assert isinstance(editor, SizeMeasurementEdit)
     return editor
+
+
+def size_copy_tooltip(label_text: str) -> str:
+    """The tooltip naming the size pair's copy action for one of its rows.
+
+    The pair's two copy buttons are icon-only and identical, so what tells them apart is which field each
+    stores into -- named in the tooltip, which is therefore also how a test picks one.
+
+    :param label_text: the row's label, ``"Original Size"`` or ``"Current Size"``.
+    :returns: that row's copy tooltip.
+    """
+    return f"Store the computed size in {label_text}"
 
 
 def duration_editor(grid: QWidget, label_text: str) -> MeasuredDurationEdit:
@@ -502,15 +515,16 @@ def test_a_tutorial_has_no_content_count_row_to_compute(qtbot: QtBot) -> None:
     assert grid.findChild(ContentCountEdit) is None
 
 
-def compute(qtbot: QtBot, editor: MeasuredValueEdit, tooltip: str) -> None:
-    """Press a measure row's Compute and wait for the off-thread measurement to report back (#223).
+def compute(qtbot: QtBot, editor: MeasuredValueEdit | SizeMeasurementEdit, tooltip: str) -> None:
+    """Press a measure surface's Compute and wait for the off-thread measurement to report back (#223).
 
-    Every kind of row measures on a worker thread, so a click alone proves nothing: the assertion has to
-    wait for the row to leave its busy state.
+    Every kind of measurement runs on a worker thread, so a click alone proves nothing: the assertion has
+    to wait for the surface to leave its busy state. Both shapes qualify -- the single-value rows and the
+    size pair, which carries the same ``busy`` (#232).
 
     :param qtbot: the pytest-qt bot driving the event loop while the measurement runs.
-    :param editor: the measure row to compute on.
-    :param tooltip: that row's own compute tooltip.
+    :param editor: the measure row or pair to compute on.
+    :param tooltip: that surface's own compute tooltip.
     """
     press(editor, tooltip)
     qtbot.waitUntil(lambda: not editor.busy)
@@ -524,9 +538,8 @@ def test_compute_sums_the_resources_content_with_the_configured_exclusions(qtbot
 
     * set a custom pattern list in the shared excluded-files settings
     * build a document's editor with the size scan mocked to find a gigabyte
-    * press Compute on ``Original Size`` and verify the scan was handed the document's own path and that
-      list
-    * verify the measured size reached the row, without touching the stored one
+    * press the pair's one Compute and verify the scan was handed the document's own path and that list
+    * verify the measured size reached the pair, without touching either stored one
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
     content_size_on_disk = mocker.patch(
@@ -535,13 +548,14 @@ def test_compute_sums_the_resources_content_with_the_configured_exclusions(qtbot
     )
     model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial"}}, PACK_PATH))
     grid = main_editor(qtbot, model)
-    editor = size_editor(grid, "Original Size")
+    editor = size_editor(grid)
 
     compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
 
     content_size_on_disk.assert_called_once_with(PACK_PATH, ("*.tmp",))
     assert editor.computed == 1073741824
     assert model.original_size is None
+    assert model.current_size is None
 
 
 def test_size_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -551,13 +565,13 @@ def test_size_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot,
     **Test steps:**
 
     * build the editor over a path-less document, with the size scan mocked
-    * press Compute on ``Current Size``
+    * press the pair's Compute
     * verify the scan was never called and nothing was computed
     """
     content_size_on_disk = mocker.patch("rehuco_agent.documents.document_fields.content_size_on_disk")
     model = typed_model("tutorial")
     grid = main_editor(qtbot, model)
-    editor = size_editor(grid, "Current Size")
+    editor = size_editor(grid)
 
     compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
 
@@ -565,27 +579,31 @@ def test_size_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot,
     assert editor.computed is None
 
 
-def test_the_two_size_rows_apply_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """Both rows measure the same content and differ only in *when* they are pressed, so applying one
-    must leave the other alone: ``original_size`` is the footprint when complete, the denominator for
-    *how much is left* ([[field-schema#duration-size]], #223).
+def test_the_two_size_rows_accept_one_measurement_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """One scan fills both rows, and each row's copy stores it into that field alone: ``original_size``
+    is the footprint when complete, the denominator for *how much is left*
+    ([[field-schema#duration-size]], #223, #232).
 
     **Test steps:**
 
     * build the editor over a document whose two sizes disagree, with the scan finding a third number
-    * compute and apply on ``Current Size``
-    * verify ``current_size`` took the measurement and ``original_size`` is untouched
+    * press the pair's one Compute, then copy into ``Current Size`` alone
+    * verify the scan ran **once**, ``current_size`` took the measurement, and ``original_size`` is
+      untouched
     """
-    mocker.patch("rehuco_agent.documents.document_fields.content_size_on_disk", return_value=4096)
+    content_size_on_disk = mocker.patch(
+        "rehuco_agent.documents.document_fields.content_size_on_disk", return_value=4096
+    )
     model = RehuDocumentModel(
         RehuDocument({"core": {"type": "tutorial", "original_size": 8192, "current_size": 1024}}, PACK_PATH)
     )
     grid = main_editor(qtbot, model)
-    current = size_editor(grid, "Current Size")
+    editor = size_editor(grid)
 
-    compute(qtbot, current, SIZE_COMPUTE_TOOLTIP)
-    press(current, SIZE_APPLY_TOOLTIP)
+    compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
+    press(editor, size_copy_tooltip("Current Size"))
 
+    content_size_on_disk.assert_called_once()
     assert model.current_size == 4096
     assert model.original_size == 8192
 
@@ -913,6 +931,35 @@ def test_a_type_switch_recomposes_to_the_incoming_types_fields_and_back() -> Non
     assert "level" in composed_names(model)
 
 
+def test_a_pair_spec_narrows_to_the_names_the_type_declares(mocker: MockerFixture) -> None:
+    """A spec naming two model fields survives on either name and is narrowed to the declared ones, so a
+    type declaring one composes a coherent single row rather than a composite bound to a field that type
+    does not have (#232).
+
+    Both sizes are common core today, so no shipped declaration exercises this -- which is exactly why it
+    is pinned against a narrowed declaration rather than left as a fact about the current plugins: the
+    rule must hold when a future type stops being that accident.
+
+    **Test steps:**
+
+    * narrow the core declaration so only ``current_size`` is declared, then compose a Tutorial
+    * verify the pair spec survives, led by ``current_size`` with no partner
+    * narrow away both names and verify the spec is gone entirely
+    """
+    core_without_original = tuple(name for name in CORE_FIELD_NAMES if name != "original_size")
+    mocker.patch("rehuco_agent.documents.document_fields.CORE_FIELD_NAMES", core_without_original)
+
+    specs = [spec for spec in composed_field_specs(typed_model("tutorial")) if spec.type == "size_pair"]
+    assert [(spec.name, spec.partner_name) for spec in specs] == [("current_size", None)]
+
+    mocker.patch(
+        "rehuco_agent.documents.document_fields.CORE_FIELD_NAMES",
+        tuple(name for name in core_without_original if name != "current_size"),
+    )
+
+    assert not [spec for spec in composed_field_specs(typed_model("tutorial")) if spec.type == "size_pair"]
+
+
 def test_every_declared_field_spec_is_claimed_by_the_core_or_a_plugin() -> None:
     """No entry in the toolkit-type map renders on **no** type ([[field-schema#resource-types]], #195).
 
@@ -923,11 +970,13 @@ def test_every_declared_field_spec_is_claimed_by_the_core_or_a_plugin() -> None:
     **Test steps:**
 
     * collect every name the core and the shipped plugins declare
-    * verify each entry in the toolkit-type map is one of them
+    * verify **every** name each entry in the toolkit-type map binds is one of them -- a pair spec's
+      ``partner_name`` included (#232), since an unclaimed partner is the same render-nowhere hole one
+      narrowing away
     """
     declared = {*CORE_FIELD_NAMES, *(name for plugin in BUILTIN_PLUGINS for name in plugin.field_names)}
 
-    assert {spec.name for spec in MODEL_AGNOSTIC_FIELD_SPECS} <= declared
+    assert {name for spec in MODEL_AGNOSTIC_FIELD_SPECS for name in spec.names} <= declared
 
 
 # endregion

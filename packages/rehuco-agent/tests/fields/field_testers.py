@@ -18,7 +18,6 @@ from rehuco_agent.fields.date_field import DateField
 from rehuco_agent.fields.description_field import DescriptionField
 from rehuco_agent.fields.duration_field import DurationField
 from rehuco_agent.fields.field import Field, FieldsTab
-from rehuco_agent.fields.file_size_field import FileSizeField
 from rehuco_agent.fields.images_field import ImagesField
 from rehuco_agent.fields.indexed_list_field import IndexedListField
 from rehuco_agent.fields.int_field import IntField
@@ -27,6 +26,7 @@ from rehuco_agent.fields.measured_duration_field import MeasuredDurationField
 from rehuco_agent.fields.multiple_choice_field import MultipleChoiceField
 from rehuco_agent.fields.path_field import PathField
 from rehuco_agent.fields.rating_field import RatingField
+from rehuco_agent.fields.size_pair_field import SizePairField
 from rehuco_agent.fields.text_field import TextField
 from rehuco_agent.fields.text_list_field import TextListField
 from rehuco_agent.fields.type_field import TypeField
@@ -116,10 +116,12 @@ class DurationFieldTester(DurationField):
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 
-class FileSizeFieldTester(FileSizeField):
-    """`FileSizeField` with fixed test tabs and a measurement that finds nothing by default."""
+class SizePairFieldTester(SizePairField):  # pylint: disable=abstract-method
+    """`SizePairField` with fixed test tabs, the ``current_size`` partner, and a measurement that finds
+    nothing -- both by default, so a test that cares about neither says neither."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("partner_name", "current_size")
         kwargs.setdefault("measure", lambda: None)
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 

@@ -1,7 +1,7 @@
 """Field toolkit base: a `Field` binds one logical value to viewer/editor widgets ([[plugins#field-toolkit]])."""
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol, runtime_checkable
 
@@ -33,11 +33,18 @@ class FieldModel(Protocol):  # pylint: disable=too-few-public-methods
     ([[plugins#field-toolkit]], [[plugins#view-model]]).
     """
 
-    def bind[T](self, field: Field[T]) -> FieldBinding[T]:
-        """Resolve a field into its current binding.
+    def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
+        """Resolve one of a field's names into its current binding.
 
-        :param field: the field to resolve.
-        :returns: the field's binding on this model.
+        Most fields bind a single value, and the name is theirs (`Field.name`) -- ``None`` says so. A
+        **composite over several model fields** (the size pair, #232) resolves each of its
+        :attr:`Field.names` in turn, so the name is passed explicitly; the field is still handed in
+        because *how* a name resolves depends on it (an `UnknownField` never binds a declared property,
+        even when the names collide).
+
+        :param field: the field to resolve for.
+        :param name: which of ``field.names`` to resolve; ``field.name`` when omitted.
+        :returns: the named value's binding on this model.
         """
         ...  # pylint: disable=unnecessary-ellipsis
 
@@ -115,7 +122,7 @@ class FieldEditorWidgets:
 class ValueWidget[T](Protocol):
     """The **value-widget contract** a content field's editor satisfies ([[plugins#field-toolkit]]):
     a ``value`` property, a ``value_changed`` signal, and a ``set_value`` slot -- as ``DurationEdit`` /
-    ``FileSizeEdit`` / ``DateEdit`` / ``LineEdit`` already do. :meth:`Field.bind_value_widget` binds any
+    ``SharedMeasurementRow`` / ``DateEdit`` / ``LineEdit`` already do. :meth:`Field.bind_value_widget` binds any
     such widget two-way to a :class:`FieldBinding` in one call, so the standard four-line wiring lives
     once instead of per field. A scalar-or-list value fits directly (a ``multi_choice`` editor is just
     ``value: list[str]`` + ``value_changed``). The ``path`` field is deliberately **not** a value widget
@@ -249,7 +256,7 @@ class Field[T]:
         # (object.__init__) for every plain, non-QObject field.
         super().__init__()
         self.__name: Final = name
-        self.__label: Final = label if label is not None else self.__make_label(name)
+        self.__label: Final = label if label is not None else self.derive_label(name)
         self.__viewer_tab: Final = viewer_tab
         self.__editor_tab: Final = editor_tab
         self.__connections: Final = ConnectionList()
@@ -261,6 +268,18 @@ class Field[T]:
     def name(self) -> str:
         """This field's identifier on its model."""
         return self.__name
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """Every model name this field binds, in display order -- just :attr:`name` for a field with one
+        logical value, which is nearly all of them.
+
+        A composite spanning several model fields (the size pair, #232) overrides this, and `FieldsForm`
+        resolves one binding per name before building its widgets. The alternative -- letting a field
+        reach for the model itself -- would hand it the very thing the toolkit keeps it from seeing
+        ([[plugins#field-toolkit]]).
+        """
+        return (self.__name,)
 
     @property
     def label(self) -> str:
@@ -298,6 +317,32 @@ class Field[T]:
         :raises NotImplementedError: unless a subclass overrides it.
         """
         raise NotImplementedError
+
+    def make_viewer_rows(self, bindings: Sequence[FieldBinding[T]]) -> Sequence[FieldViewerWidgets]:
+        """Build this field's viewer rows -- what `FieldsForm` actually calls.
+
+        One row, from the one binding, unless a field says otherwise. A composite over several model
+        fields overrides it: the size pair's editor is a single widget, but its **viewer** is unchanged
+        from before the merge -- one formatted row per size, because a reader comparing two numbers wants
+        them labeled separately (#232).
+
+        :param bindings: one binding per :attr:`names` entry, in that order.
+        :returns: the viewer-row bundles, in display order.
+        """
+        return (self.make_viewer(bindings[0]),)
+
+    def make_editor_row(self, bindings: Sequence[FieldBinding[T]]) -> FieldEditorWidgets:
+        """Build this field's **one** editor row -- what `FieldsForm` actually calls.
+
+        Always one row, and always one editor widget, however many names the field binds: `FieldsForm`'s
+        content column is a single cell, so a field emitting two bundles would produce two independent
+        editors with nothing aligning their internals. A composite holds its own layout instead
+        ([[plugins#field-toolkit]], #232).
+
+        :param bindings: one binding per :attr:`names` entry, in that order.
+        :returns: the editor-row bundle.
+        """
+        return self.make_editor(bindings[0])
 
     @staticmethod
     def bind_value_widget(widget: ValueWidget[T], binding: FieldBinding[T]) -> None:
@@ -354,8 +399,11 @@ class Field[T]:
         return QLabel(self.label)
 
     @staticmethod
-    def __make_label(name: str) -> str:
+    def derive_label(name: str) -> str:
         """Derive a display label from a field name (``foo_bar`` / ``FooBar`` -> ``Foo Bar``).
+
+        Public because a field binding **several** names labels each of them the same way this labels its
+        own (#232) -- the size pair stacks ``Original Size`` over ``Current Size`` in one label cell.
 
         :param name: the field name.
         :returns: the title-cased, word-split label; empty for an empty name.

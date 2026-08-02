@@ -639,12 +639,15 @@ Field order, in the three groups the layout separates:
   zips' entries ([[data-model#resource-scoping]]), on an explicit action that fills a label beside the stored
   value rather than overwriting it: a stored count disagreeing with the archive is evidence of a refreshed
   zip, not a stale number to correct silently. `advertised_count` is hand-entered — nothing measures a claim.
-- **Size on disk — resolved ([#223](https://github.com/borco/rehuco/issues/223))** — `original_size` and
-  `current_size` are measured, each by its own compute/apply row over the shared content-file set
+- **Size on disk — resolved ([#223](https://github.com/borco/rehuco/issues/223),
+  [#232](https://github.com/borco/rehuco/issues/232))** — `original_size` and
+  `current_size` are measured over the shared content-file set
   ([[data-model#resource-scoping]]) and the shared exclusion list
   ([#226](https://github.com/borco/rehuco/issues/226)), so a file counted by the size scan can never be
   skipped by the checksums. Both rows run the **same** scan — *when* you press one is the whole difference
-  — which means `original_size`'s compute on a partly-deleted resource replaces the denominator of "how
+  — so they are **one field with one Measure and one measured readout**, and a copy button per row: one
+  walk of the tree, two acceptances, each still explicit and separate (#232). It means
+  `original_size`'s copy on a partly-deleted resource replaces the denominator of "how
   much is left" with the remainder. That is accepted rather than guarded: two independent rows are what
   let a re-downloaded resource have its original refreshed on purpose, and the alternative (tc4's rule,
   where only `current_size` computes and seeds `original_size` when empty) cannot express it. Still no

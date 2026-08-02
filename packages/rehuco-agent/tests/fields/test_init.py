@@ -23,6 +23,10 @@ from rehuco_core import RehuDocument, current_block_version
 def form_labels(widget: QWidget) -> list[str]:
     """Return the label-column text of every row in a form's grid, top to bottom.
 
+    A cell holding **several** labels contributes all of them, top to bottom: the size pair is one editor
+    row whose label cell stacks both bound names (#232), and what this list is checked against is the
+    names a reader sees, not how many grid rows they were laid out in.
+
     :param widget: the form grid widget built by ``build_document_form``.
     :returns: each row's label text, in order.
     """
@@ -32,9 +36,9 @@ def form_labels(widget: QWidget) -> list[str]:
     for row in range(layout.rowCount()):
         item = layout.itemAtPosition(row, LABEL_COLUMN)
         cell = item.widget() if item is not None else None
-        label = cell if isinstance(cell, QLabel) else cell.findChild(QLabel) if cell is not None else None
-        if label is not None:
-            texts.append(label.text())
+        if cell is None:
+            continue
+        texts.extend(label.text() for label in ([cell] if isinstance(cell, QLabel) else cell.findChildren(QLabel)))
     return texts
 
 

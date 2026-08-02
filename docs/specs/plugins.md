@@ -154,7 +154,7 @@ filtered per type.
 **Content fields vs. the location control — two different categories.** Almost every field is a piece of
 **content**: a value stored *inside* the `.rehu` payload, bound bidirectionally to its editor. These
 follow a **value-widget contract** — a `value` property, a `value_changed` signal, and a `set_value`
-slot (as `DurationEdit` / `FileSizeEdit` / `DateEdit` already do) — and a scalar-or-list value fits it
+slot (as `DurationEdit` / `SharedMeasurementRow` / `DateEdit` already do) — and a scalar-or-list value fits it
 directly (a multi-choice field is just `value: list[str]` + `value_changed`). Consolidation of the
 remaining content fields onto this contract (e.g. `text`'s inline `QLineEdit` becoming a value widget
 that owns the echo guard) shipped in LocalEdit2.8/#28. The **`path` field is not
@@ -195,6 +195,16 @@ builds — is still unbuilt, as are drag-to-reorder and nesting past one level. 
 returns **one** editor widget from
 `make_editor()` — a container holding its stacked subtypes — so owning child fields needs no base
 change, and never a list of editors.
+
+**A field may bind more than one model field.** `Field.names` lists them (just its own `name` for nearly
+every field); the assembler resolves one binding per name and hands the field all of them, so a field
+still never sees the model. That is what lets the two sizes be **one** composite over `original_size` and
+`current_size` sharing a single scan (#232) — the merge exists because both are the same walk of the same
+tree, differing only in when the user accepts it, so two independent rows meant running it twice for the
+same answer. The **editor** is one widget holding its own grid, per the rule above; the **viewer** is not
+bound by it — a viewer row carries no internals to align — so such a field still contributes one plain
+labeled row per name. A pair spec whose type declares only one of its names is narrowed to that name
+rather than refused.
 
 ### §13.2.2 Reactive view-model
 

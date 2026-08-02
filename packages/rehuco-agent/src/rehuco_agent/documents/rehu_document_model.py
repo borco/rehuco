@@ -631,15 +631,19 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.reloaded.emit()
         self.__recompute_upgradable()
 
-    def bind[T](self, field: Field[T]) -> FieldBinding[T]:
-        """Resolve a field into its current binding on this model ([[plugins#field-toolkit]], `FieldModel`).
+    def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
+        """Resolve one of a field's names into its current binding on this model
+        ([[plugins#field-toolkit]], `FieldModel`).
 
-        :param field: the field to resolve; its :attr:`~Field.name` matches either a `SimpleProperty`
+        :param field: the field to resolve for; the name resolved matches either a `SimpleProperty`
             declared on this class or an unrecognized key in the active plugin block (an unknown field,
             [[plugins#fallback-editor]]).
-        :returns: the field's current value, its notify signal, and a setter.
+        :param name: which of :attr:`~Field.names` to resolve -- passed explicitly by a composite over
+            several model fields (the size pair, #232); :attr:`~Field.name` when omitted, which is every
+            other field.
+        :returns: the named value's current value, its notify signal, and a setter.
         """
-        name = field.name
+        name = field.name if name is None else name
         # an `UnknownField` never binds a property, even when its name collides with a declared one --
         # possible since recognition went per-type (#195): a tutorial block's stray ``current_count`` is
         # unknown *here* while still being a property of the model. The property read is coerced (and,

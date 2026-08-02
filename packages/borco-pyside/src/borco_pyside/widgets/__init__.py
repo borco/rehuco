@@ -20,7 +20,7 @@ from .item_actions import (
 )
 from .item_list_editor import ItemListEditor
 from .item_protocols import ItemEditor, ItemOrderingEditor, ItemViewer
-from .layout_helpers import equal_width_row
+from .layout_helpers import equal_height_column, equal_width_row
 from .line_edit_clear_action import LineEditClearActionFilter
 from .line_edit_helpers import resync_line_edit, write_through_or_none
 from .message_banner import (
@@ -71,6 +71,7 @@ __all__ = [
     "WrappingCheckBox",
     "WrappingLabel",
     "equal_width_row",
+    "equal_height_column",
     "resync_line_edit",
     "toggle_dynamic_property",
     "write_through_or_none",
