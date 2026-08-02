@@ -1,9 +1,9 @@
-"""Tests for SizePairField: two model fields bound by one field, two formatted viewer rows, one
+"""Tests for DurationPairField: two model fields bound by one field, two formatted viewer rows, one
 off-thread measurement behind one Compute, and the alignment that lets the stacked labels sit against
 the editor's rows.
 """
 
-# the viewer half is the same formatted label the sizes have always shown, so its tests read like the
+# the viewer half is the same formatted label the durations have always shown, so its tests read like the
 # other formatted viewers' -- the pair is where this field and a plain measured field differ
 # pylint: disable=duplicate-code
 # a row's ``value``/``set_value`` are a ``SimpleProperty`` and its synthesized slot, which pylint
@@ -19,11 +19,11 @@ from pytest import fixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, FieldsForm
-from rehuco_agent.fields.widgets import SizeMeasurementEdit
+from rehuco_agent.fields.widgets import DurationMeasurementEdit
 
 from fields.field_testers import TEST_EDITOR_TAB, TEST_VIEWER_TAB, TextFieldTester
-from fields.field_testers import SizePairFieldTester as SizePairField
-from fields.widgets.size_measurement_internals import (
+from fields.field_testers import DurationPairFieldTester as DurationPairField
+from fields.widgets.duration_measurement_internals import (
     internal_compute_button,
     internal_computed_label,
     internal_copy_button,
@@ -32,7 +32,7 @@ from fields.widgets.size_measurement_internals import (
 
 
 @fixture
-def build_editor(qtbot: QtBot, model: RehuDocumentModel) -> Callable[[SizePairField], SizeMeasurementEdit]:
+def build_editor(qtbot: QtBot, model: RehuDocumentModel) -> Callable[[DurationPairField], DurationMeasurementEdit]:
     """Return a builder for a field's editor over the shared model, resolving both of its bindings the
     way `FieldsForm` does.
 
@@ -48,21 +48,21 @@ def build_editor(qtbot: QtBot, model: RehuDocumentModel) -> Callable[[SizePairFi
     """
     surfaces: list[QWidget] = []
 
-    def build(field: SizePairField) -> SizeMeasurementEdit:
+    def build(field: DurationPairField) -> DurationMeasurementEdit:
         grid = FieldsForm([field]).make_editor(model)[TEST_EDITOR_TAB]
         qtbot.addWidget(grid)
         surfaces.append(grid)
-        editor = grid.findChild(SizeMeasurementEdit)
-        assert isinstance(editor, SizeMeasurementEdit)
+        editor = grid.findChild(DurationMeasurementEdit)
+        assert isinstance(editor, DurationMeasurementEdit)
         return editor
 
     return build
 
 
-def compute(qtbot: QtBot, editor: SizeMeasurementEdit) -> None:
+def compute(qtbot: QtBot, editor: DurationMeasurementEdit) -> None:
     """Press the pair's ``Compute`` and wait for the scan to report back.
 
-    The measurement runs on a worker thread (#223), so the result is not on screen when the click
+    The measurement runs on a worker thread (#224), so the result is not on screen when the click
     returns -- every test that computes goes through here rather than each spelling the wait.
 
     :param qtbot: the pytest-qt bot driving the event loop while the scan runs.
@@ -74,82 +74,82 @@ def compute(qtbot: QtBot, editor: SizeMeasurementEdit) -> None:
 
 # region binding tests
 def test_the_field_binds_both_names(
-    model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """The pair is one field over two model fields: it names both, and the form resolves a binding each.
 
     **Test steps:**
 
-    * seed both sizes on the model and build the editor
+    * seed both durations on the model and build the editor
     * verify ``names`` carries both and each row was seeded from its own model field
     """
-    model.original_size = 8192
-    model.current_size = 1024
-    field = SizePairField("original_size")
+    model.original_duration = 8100
+    model.current_duration = 4050
+    field = DurationPairField("original_duration")
 
     editor = build_editor(field)
 
-    assert field.names == ("original_size", "current_size")
-    assert [row.value for row in editor.rows] == [8192, 1024]
+    assert field.names == ("original_duration", "current_duration")
+    assert [row.value for row in editor.rows] == [8100, 4050]
 
 
 def test_each_row_writes_through_to_its_own_model_field(
-    model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """Editing one row writes to that model field and leaves the other alone.
 
     **Test steps:**
 
     * build the editor and set the second row's value
-    * verify ``model.current_size`` followed and ``model.original_size`` did not
+    * verify ``model.current_duration`` followed and ``model.original_duration`` did not
     """
-    editor = build_editor(SizePairField("original_size"))
+    editor = build_editor(DurationPairField("original_duration"))
 
-    editor.rows[1].value = 1073741824
+    editor.rows[1].value = 4050
 
-    assert model.current_size == 1073741824
-    assert model.original_size is None
+    assert model.current_duration == 4050
+    assert model.original_duration is None
 
 
 def test_each_row_follows_its_own_external_model_change(
-    model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """A model change from elsewhere updates the row bound to that field, and only it.
 
     **Test steps:**
 
     * build the editor
-    * change ``model.original_size`` directly (as another surface would)
-    * verify the first row's value and spin box followed, and the second stayed unmeasured
+    * change ``model.original_duration`` directly (as another surface would)
+    * verify the first row's value and duration editor followed, and the second stayed unmeasured
     """
-    editor = build_editor(SizePairField("original_size"))
+    editor = build_editor(DurationPairField("original_duration"))
 
-    model.original_size = 2048
+    model.original_duration = 8100
 
-    assert editor.rows[0].value == 2048
-    assert internal_editor(editor.rows[0]).value == 2048
+    assert editor.rows[0].value == 8100
+    assert internal_editor(editor.rows[0]).value == 8100
     assert editor.rows[1].value is None
 
 
 def test_a_lone_declared_name_composes_a_single_row(
-    model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """A field built without a partner is a coherent one-row editor rather than a refusal -- the rule
-    `composed_field_specs` narrows a partly-declared pair down to (#232).
+    `composed_field_specs` narrows a partly-declared pair down to (#232, #233).
 
     **Test steps:**
 
-    * build the field with no ``partner_name`` over a seeded ``current_size``
+    * build the field with no ``partner_name`` over a seeded ``current_duration``
     * verify it names one field, renders one row and one viewer row, and is bound to it
     """
-    model.current_size = 4096
-    field = SizePairField("current_size", partner_name=None)
+    model.current_duration = 4050
+    field = DurationPairField("current_duration", partner_name=None)
 
     editor = build_editor(field)
 
-    assert field.names == ("current_size",)
+    assert field.names == ("current_duration",)
     assert len(editor.rows) == 1
-    assert editor.rows[0].value == 4096
+    assert editor.rows[0].value == 4050
 
 
 # endregion
@@ -174,24 +174,25 @@ def column_texts(layout: QGridLayout, column: int, rows: int) -> list[str]:
     return texts
 
 
-def test_the_viewer_stays_one_formatted_row_per_size(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Merging the editors left the viewer alone: each size keeps its own labeled, formatted row (#232).
+def test_the_viewer_stays_one_formatted_row_per_duration(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Merging the editors left the viewer alone: each duration keeps its own labeled, formatted row
+    (#232, #233).
 
     **Test steps:**
 
-    * seed both sizes and build the viewer surface
+    * seed both durations and build the viewer surface
     * verify it holds two rows, labeled and formatted separately
     """
-    model.original_size = 5368709120
-    model.current_size = 1024
-    field = SizePairField("original_size")
+    model.original_duration = 8100
+    model.current_duration = 4050
+    field = DurationPairField("original_duration")
     grid = FieldsForm([field]).make_viewer(model)[TEST_VIEWER_TAB]
     qtbot.addWidget(grid)
     layout = grid.layout()
     assert isinstance(layout, QGridLayout)
 
-    assert column_texts(layout, LABEL_COLUMN, 2) == ["Original Size", "Current Size"]
-    assert column_texts(layout, CONTENT_COLUMN, 2) == ["5.0G", "1.0K"]
+    assert column_texts(layout, LABEL_COLUMN, 2) == ["Original Duration", "Current Duration"]
+    assert column_texts(layout, CONTENT_COLUMN, 2) == ["2h 15m", "1h 7m"]
 
 
 def test_each_viewer_row_tracks_its_own_model_field(qtbot: QtBot, model: RehuDocumentModel) -> None:
@@ -199,18 +200,18 @@ def test_each_viewer_row_tracks_its_own_model_field(qtbot: QtBot, model: RehuDoc
 
     **Test steps:**
 
-    * build the viewer surface, then change one size on the model
+    * build the viewer surface, then change one duration on the model
     * verify only that row re-rendered, formatted
     """
-    field = SizePairField("original_size")
+    field = DurationPairField("original_duration")
     grid = FieldsForm([field]).make_viewer(model)[TEST_VIEWER_TAB]
     qtbot.addWidget(grid)
     layout = grid.layout()
     assert isinstance(layout, QGridLayout)
 
-    model.current_size = 5368709120
+    model.current_duration = 8100
 
-    assert column_texts(layout, CONTENT_COLUMN, 2) == ["", "5.0G"]
+    assert column_texts(layout, CONTENT_COLUMN, 2) == ["", "2h 15m"]
 
 
 # endregion
@@ -218,10 +219,11 @@ def test_each_viewer_row_tracks_its_own_model_field(qtbot: QtBot, model: RehuDoc
 
 # region measurement tests
 def test_one_press_runs_the_scan_once_for_the_pair(
-    qtbot: QtBot, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
-    """The whole point of the merge: one Compute, one walk of the tree, one answer both rows read
-    (#232). Two rows each with a Compute meant running the identical scan twice.
+    """The whole point of the merge: one Compute, one reading of the videos, one answer both rows read
+    (#233). Two rows each with a Compute meant running the identical scan twice -- and this scan is the
+    slow one.
 
     **Test steps:**
 
@@ -233,46 +235,46 @@ def test_one_press_runs_the_scan_once_for_the_pair(
 
     def measure() -> int:
         calls.append(None)
-        return 2048
+        return 4050
 
-    editor = build_editor(SizePairField("original_size", measure=measure))
+    editor = build_editor(DurationPairField("original_duration", measure=measure))
 
     compute(qtbot, editor)
 
     assert len(calls) == 1
-    assert internal_computed_label(editor).text() == "2048"
-    assert [row.computed for row in editor.rows] == [2048, 2048]
+    assert internal_computed_label(editor).text() == "4050"
+    assert [row.computed for row in editor.rows] == [4050, 4050]
 
 
 def test_compute_fills_the_readout_without_touching_a_value_or_dirtying(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
-    """Compute measures and shows, and stops there: both stored sizes and the document's dirty flag are
-    untouched (#223).
+    """Compute measures and shows, and stops there: both stored durations and the document's dirty flag
+    are untouched (#224).
 
     **Test steps:**
 
-    * build the editor over stored sizes with a measurement that finds a third number
+    * build the editor over stored durations with a measurement that finds a third number
     * press Compute
     * verify the readout shows it while the model still reads what it held, and the document is clean
     """
-    model.original_size = 8192
-    model.current_size = 1024
+    model.original_duration = 8100
+    model.current_duration = 4050
     model.dirty = False
-    editor = build_editor(SizePairField("original_size", measure=lambda: 2048))
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: 7000))
 
     compute(qtbot, editor)
 
-    assert internal_computed_label(editor).text() == "2048"
-    assert model.original_size == 8192
-    assert model.current_size == 1024
+    assert internal_computed_label(editor).text() == "7000"
+    assert model.original_duration == 8100
+    assert model.current_duration == 4050
     assert model.dirty is False
 
 
 def test_compute_measures_afresh_on_every_press(
-    qtbot: QtBot, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
-    """Each press asks again -- the size is read from disk at that moment, never cached from the last
+    """Each press asks again -- the duration is read from disk at that moment, never cached from the last
     press or from form construction.
 
     **Test steps:**
@@ -280,21 +282,21 @@ def test_compute_measures_afresh_on_every_press(
     * build the editor over a measurement whose answer changes between presses
     * press Compute twice and verify the readout followed the second answer
     """
-    answers = iter([2048, 4096])
-    editor = build_editor(SizePairField("original_size", measure=lambda: next(answers)))
+    answers = iter([4050, 8100])
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: next(answers)))
 
     compute(qtbot, editor)
-    assert internal_computed_label(editor).text() == "2048"
+    assert internal_computed_label(editor).text() == "4050"
 
     compute(qtbot, editor)
-    assert internal_computed_label(editor).text() == "4096"
+    assert internal_computed_label(editor).text() == "8100"
 
 
 def test_nothing_is_measured_until_compute_is_pressed(
-    build_editor: Callable[[SizePairField], SizeMeasurementEdit],
+    build_editor: Callable[[DurationPairField], DurationMeasurementEdit],
 ) -> None:
     """Building the editor measures nothing: opening a document must not silently rewrite -- or even
-    read -- what is on disk (#223).
+    read -- what is on disk (#224).
 
     **Test steps:**
 
@@ -305,19 +307,19 @@ def test_nothing_is_measured_until_compute_is_pressed(
 
     def measure() -> int:
         calls.append(None)
-        return 2048
+        return 4050
 
-    editor = build_editor(SizePairField("original_size", measure=measure))
+    editor = build_editor(DurationPairField("original_duration", measure=measure))
 
     assert not calls
     assert internal_computed_label(editor).text() == ""
 
 
 def test_the_scan_runs_off_the_gui_thread(
-    qtbot: QtBot, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
-    """The measurement runs on a worker thread: a ``stat`` sum over a multi-gigabyte tree on an SMB
-    mount takes seconds, and the window must stay responsive for them (#223).
+    """The measurement runs on a worker thread: a container header read per video -- or a subprocess per
+    video with the external backend -- takes seconds, and the window must stay responsive for them (#224).
 
     **Test steps:**
 
@@ -330,21 +332,21 @@ def test_the_scan_runs_off_the_gui_thread(
 
     def measure() -> int:
         scan_threads.append(get_ident())
-        return 2048
+        return 4050
 
-    editor = build_editor(SizePairField("original_size", measure=measure))
+    editor = build_editor(DurationPairField("original_duration", measure=measure))
 
     compute(qtbot, editor)
 
     assert scan_threads and gui_thread not in scan_threads
-    assert editor.computed == 2048
+    assert editor.computed == 4050
 
 
 def test_both_rows_are_busy_while_a_scan_is_in_flight(
-    qtbot: QtBot, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """One scan answers both rows, so both wait for it: while it runs neither can be re-scanned nor have
-    a half-finished answer copied (#223, #232).
+    a half-finished answer copied (#224, #233).
 
     **Test steps:**
 
@@ -356,9 +358,9 @@ def test_both_rows_are_busy_while_a_scan_is_in_flight(
 
     def measure() -> int:
         release.wait(timeout=5)
-        return 2048
+        return 4050
 
-    editor = build_editor(SizePairField("original_size", measure=measure))
+    editor = build_editor(DurationPairField("original_duration", measure=measure))
 
     try:
         internal_compute_button(editor).click()
@@ -372,54 +374,80 @@ def test_both_rows_are_busy_while_a_scan_is_in_flight(
         release.set()
 
     qtbot.waitUntil(lambda: not editor.busy)
-    assert editor.computed == 2048
+    assert editor.computed == 4050
     assert internal_compute_button(editor).isEnabled()
 
 
 def test_a_scan_that_raises_gives_both_rows_back(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """A measurement that blows up reports *nothing measured* to every row rather than stranding the pair
-    busy with a Compute that can never be pressed again (#223).
+    busy with a Compute that can never be pressed again (#224).
 
     **Test steps:**
 
     * build the editor over a measurement that raises
     * press Compute and wait
-    * verify nothing was computed, both stored sizes are untouched, no copy is offered, and Compute is
-      offered again
+    * verify nothing was computed, both stored durations are untouched, no copy is offered, and Compute
+      is offered again
     """
-    model.original_size = 8192
-    model.current_size = 1024
+    model.original_duration = 8100
+    model.current_duration = 4050
 
     def measure() -> int:
         raise OSError("the mount went away mid-scan")
 
-    editor = build_editor(SizePairField("original_size", measure=measure))
+    editor = build_editor(DurationPairField("original_duration", measure=measure))
 
     compute(qtbot, editor)
 
     assert editor.computed is None
     assert internal_computed_label(editor).text() == ""
-    assert (model.original_size, model.current_size) == (8192, 1024)
+    assert (model.original_duration, model.current_duration) == (8100, 4050)
     assert not any(internal_copy_button(row).isEnabled() for row in editor.rows)
     assert internal_compute_button(editor).isEnabled()
 
 
+def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
+) -> None:
+    """A backend that cannot run here reports *nothing measured*, never a duration of ``0``: a silent
+    zero is indistinguishable from a tutorial holding no video, and would be applied over a real
+    ``original_duration`` without anyone noticing (#224). The measure callback itself is what turns
+    ``DurationProbeError`` into ``None`` (`~rehuco_agent.documents.document_fields.measure_duration`); this
+    pins that the pair passes such a ``None`` straight through, the same as any other failure.
+
+    **Test steps:**
+
+    * build the editor over stored durations with a measurement returning ``None``
+    * press Compute
+    * verify nothing was computed and both stored durations are untouched
+    """
+    model.original_duration = 8100
+    model.current_duration = 4050
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: None))
+
+    compute(qtbot, editor)
+
+    assert editor.computed is None
+    assert internal_computed_label(editor).text() == ""
+    assert (model.original_duration, model.current_duration) == (8100, 4050)
+
+
 def test_a_copy_is_offered_only_where_the_measurement_disagrees(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """One measurement, two independent verdicts: the row it agrees with has nothing to copy.
 
     **Test steps:**
 
-    * store two sizes, one of which the measurement will match
+    * store two durations, one of which the measurement will match
     * press Compute
     * verify only the disagreeing row offers a copy
     """
-    model.original_size = 2048
-    model.current_size = 1024
-    editor = build_editor(SizePairField("original_size", measure=lambda: 2048))
+    model.original_duration = 8100
+    model.current_duration = 4050
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: 8100))
 
     compute(qtbot, editor)
 
@@ -428,74 +456,74 @@ def test_a_copy_is_offered_only_where_the_measurement_disagrees(
 
 
 def test_a_copy_stores_into_its_own_field_and_dirties(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """A copy is the only path from a measurement into the document -- and it is an ordinary edit on one
-    field: ``original_size`` is the denominator for *how much is left*
-    ([[field-schema#duration-size]]), so accepting into ``current_size`` must leave it alone.
+    field: ``original_duration`` is the denominator for *how much is left*
+    ([[field-schema#duration-size]]), so accepting into ``current_duration`` must leave it alone.
 
     **Test steps:**
 
-    * build the editor over two stale sizes, compute a third, then press the second row's copy
-    * verify the model and the document's core block hold it, ``original_size`` is untouched, and the
+    * build the editor over two stale durations, compute a third, then press the second row's copy
+    * verify the model and the document's core block hold it, ``original_duration`` is untouched, and the
       model went dirty
     """
-    model.original_size = 8192
-    model.current_size = 1024
+    model.original_duration = 8100
+    model.current_duration = 4050
     model.dirty = False
-    editor = build_editor(SizePairField("original_size", measure=lambda: 2048))
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: 7000))
     compute(qtbot, editor)
 
     internal_copy_button(editor.rows[1]).click()
 
-    assert model.current_size == 2048
-    assert model.document.current_size == 2048
-    assert model.original_size == 8192
+    assert model.current_duration == 7000
+    assert model.document.current_duration == 7000
+    assert model.original_duration == 8100
     assert model.dirty is True
 
 
-def test_a_stale_stored_size_stays_until_it_is_copied(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+def test_a_stale_stored_duration_stays_until_it_is_copied(
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
-    """Opening a document whose stored sizes disagree with the disk changes nothing: the disagreement is
-    evidence -- content added or deleted since -- and only the user resolves it (#223).
+    """Opening a document whose stored durations disagree with the disk changes nothing: the disagreement
+    is evidence -- videos deleted as they were watched -- and only the user resolves it (#224).
 
     **Test steps:**
 
-    * build the editor over a stored ``1024`` with a measurement that finds ``2048``
-    * verify the model still reads ``1024`` before and after computing
+    * build the editor over a stored ``4050`` with a measurement that finds ``8100``
+    * verify the model still reads ``4050`` before and after computing
     * copy, and verify only then does it move
     """
-    model.original_size = 1024
-    editor = build_editor(SizePairField("original_size", measure=lambda: 2048))
-    assert model.original_size == 1024
+    model.original_duration = 4050
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: 8100))
+    assert model.original_duration == 4050
 
     compute(qtbot, editor)
-    assert model.original_size == 1024
+    assert model.original_duration == 4050
 
     internal_copy_button(editor.rows[0]).click()
-    assert model.original_size == 2048
+    assert model.original_duration == 8100
 
 
 def test_an_unmeasurable_document_computes_nothing(
-    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[SizePairField], SizeMeasurementEdit]
+    qtbot: QtBot, model: RehuDocumentModel, build_editor: Callable[[DurationPairField], DurationMeasurementEdit]
 ) -> None:
     """A measurement that cannot run -- a document with no path yet -- leaves the readout empty and offers
-    nothing to copy, rather than reporting a size of zero it never took.
+    nothing to copy, rather than reporting a duration of zero it never took.
 
     **Test steps:**
 
     * build the editor over a measurement returning ``None`` and press Compute
-    * verify the readout is empty, no copy is offered, and the stored sizes are untouched
+    * verify the readout is empty, no copy is offered, and the stored durations are untouched
     """
-    model.original_size = 1024
-    editor = build_editor(SizePairField("original_size", measure=lambda: None))
+    model.original_duration = 4050
+    editor = build_editor(DurationPairField("original_duration", measure=lambda: None))
 
     compute(qtbot, editor)
 
     assert internal_computed_label(editor).text() == ""
     assert not any(internal_copy_button(row).isEnabled() for row in editor.rows)
-    assert model.original_size == 1024
+    assert model.original_duration == 4050
 
 
 # endregion
@@ -503,7 +531,8 @@ def test_an_unmeasurable_document_computes_nothing(
 
 # region alignment tests
 def shown_editor_grid(qtbot: QtBot, model: RehuDocumentModel) -> QWidget:
-    """Build and show an editor surface holding a plain field and the size pair, wide enough to lay out.
+    """Build and show an editor surface holding a plain field and the duration pair, wide enough to lay
+    out.
 
     Geometry is the assertion in this region, so the grid has to be real: laid out, exposed, and at a
     size the rows are not being squeezed into.
@@ -512,7 +541,7 @@ def shown_editor_grid(qtbot: QtBot, model: RehuDocumentModel) -> QWidget:
     :param model: the view-model the fields bind to.
     :returns: the shown editor grid.
     """
-    form = FieldsForm([TextFieldTester("title"), SizePairField("original_size")])
+    form = FieldsForm([TextFieldTester("title"), DurationPairField("original_duration")])
     grid = form.make_editor(model)[TEST_EDITOR_TAB]
     qtbot.addWidget(grid)
     grid.resize(800, 300)
@@ -524,17 +553,18 @@ def shown_editor_grid(qtbot: QtBot, model: RehuDocumentModel) -> QWidget:
 def test_the_stacked_labels_line_up_with_the_editor_rows(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """Each stacked name sits against the row it names, asserted on geometry rather than by eye -- the
     whole reason the labels are stacked with `equal_height_column` and the rows given equal stretch
-    (#232).
+    (#232, #233).
 
     **Test steps:**
 
     * show an editor surface carrying the pair
-    * verify each label's vertical center matches its row's spin box's, in the grid's own coordinates
+    * verify each label's vertical center matches its row's duration editor's, in the grid's own
+      coordinates
     """
     grid = shown_editor_grid(qtbot, model)
-    editor = grid.findChild(SizeMeasurementEdit)
-    assert isinstance(editor, SizeMeasurementEdit)
-    labels = [label for label in grid.findChildren(QLabel) if label.text() in ("Original Size", "Current Size")]
+    editor = grid.findChild(DurationMeasurementEdit)
+    assert isinstance(editor, DurationMeasurementEdit)
+    labels = [label for label in grid.findChildren(QLabel) if label.text() in ("Original Duration", "Current Duration")]
 
     centers = [label.mapTo(grid, label.rect().center()).y() for label in labels]
     rows = [internal_editor(row) for row in editor.rows]
@@ -558,11 +588,11 @@ def test_the_pairs_label_column_lines_up_with_the_plain_fields(qtbot: QtBot, mod
 
     lefts = {
         text: labels[text].mapTo(grid, labels[text].rect().topLeft()).x()
-        for text in ("Title", "Original Size", "Current Size")
+        for text in ("Title", "Original Duration", "Current Duration")
     }
 
-    assert lefts["Original Size"] == lefts["Title"]
-    assert lefts["Current Size"] == lefts["Title"]
+    assert lefts["Original Duration"] == lefts["Title"]
+    assert lefts["Current Duration"] == lefts["Title"]
 
 
 # endregion

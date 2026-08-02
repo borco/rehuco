@@ -122,7 +122,7 @@ class FieldEditorWidgets:
 class ValueWidget[T](Protocol):
     """The **value-widget contract** a content field's editor satisfies ([[plugins#field-toolkit]]):
     a ``value`` property, a ``value_changed`` signal, and a ``set_value`` slot -- as ``DurationEdit`` /
-    ``SharedMeasurementRow`` / ``DateEdit`` / ``LineEdit`` already do. :meth:`Field.bind_value_widget` binds any
+    ``SizeRow`` / ``DateEdit`` / ``LineEdit`` already do. :meth:`Field.bind_value_widget` binds any
     such widget two-way to a :class:`FieldBinding` in one call, so the standard four-line wiring lives
     once instead of per field. A scalar-or-list value fits directly (a ``multi_choice`` editor is just
     ``value: list[str]`` + ``value_changed``). The ``path`` field is deliberately **not** a value widget

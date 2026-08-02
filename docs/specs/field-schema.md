@@ -652,10 +652,14 @@ Field order, in the three groups the layout separates:
   let a re-downloaded resource have its original refreshed on purpose, and the alternative (tc4's rule,
   where only `current_size` computes and seeds `original_size` when empty) cannot express it. Still no
   `advertised_size` ([[field-schema#duration-size]]) — nothing publishes one.
-- **Duration on disk — resolved ([#224](https://github.com/borco/rehuco/issues/224))** — `original_duration`
-  and `current_duration` are measured, each by its own compute/apply row over the same content-file set
-  and exclusion list the sizes use, so a video the size scan counted is a video the duration sums. The
-  same *when you press it* caveat as the sizes applies, and is accepted for the same reason.
+- **Duration on disk — resolved ([#224](https://github.com/borco/rehuco/issues/224),
+  [#233](https://github.com/borco/rehuco/issues/233))** — `original_duration` and `current_duration` are
+  measured over the same content-file set and exclusion list the sizes use, so a video the size scan
+  counted is a video the duration sums. The same *when you press it* caveat as the sizes applies, and is
+  accepted for the same reason — and, as with the sizes, they are **one field with one Measure and one
+  measured readout**, and a copy button per row (#233): one reading of the videos, two acceptances, each
+  still explicit and separate. This pair is where the merge pays off most, since the scan behind it is the
+  slow one — a container header read per video, or a subprocess per video with the external backend.
   `advertised_duration` deliberately keeps **no** row: it is the claim `original_duration` is checked
   against ([[field-schema#duration-size]]), and measuring it would erase the comparison.
   Reading a container is delegated to a **probe backend**, of which two ship, selected by an `engine`

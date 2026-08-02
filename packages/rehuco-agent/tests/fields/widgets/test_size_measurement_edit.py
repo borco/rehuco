@@ -14,17 +14,20 @@ from borco_pyside.widgets import UnboundedSpinBox
 from PySide6.QtWidgets import QGridLayout
 from pytest import mark, param
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.shared_measurement_edit import (
+from rehuco_agent.fields.widgets.size_measurement_edit import (
     COMPUTE_COLUMN,
     COMPUTED_COLUMN,
+    COMPUTED_TOOLTIP,
     COPY_COLUMN,
     EDITOR_COLUMN,
-    SharedMeasurementRow,
+    STORED_COLUMN,
+    STORED_TOOLTIP,
+    SizeMeasurementEdit,
+    SizeRow,
 )
-from rehuco_agent.fields.widgets.size_measurement_edit import COMPUTED_TOOLTIP, STORED_TOOLTIP, SizeMeasurementEdit
 from rehuco_agent.fields.widgets.value_readout import ValueReadout
 
-from .shared_measurement_internals import (
+from .size_measurement_internals import (
     internal_compute_button,
     internal_computed_label,
     internal_copy_button,
@@ -36,7 +39,7 @@ ROW_LABELS = ("Original Size", "Current Size")
 """The two sizes' labels, as the field composes them -- what each row's copy action is named after."""
 
 
-def internal_spin_box(row: SharedMeasurementRow) -> UnboundedSpinBox:
+def internal_spin_box(row: SizeRow) -> UnboundedSpinBox:
     """Return one row's stored-size spin box, named for what this editor puts there.
 
     :param row: the row to inspect.
@@ -130,6 +133,28 @@ def test_the_measurement_spans_every_row(qtbot: QtBot) -> None:
     compute = grid.indexOf(internal_compute_button(edit))
     assert grid.getItemPosition(computed) == (0, COMPUTED_COLUMN, 2, 1)
     assert grid.getItemPosition(compute) == (0, COMPUTE_COLUMN, 2, 1)
+
+
+def test_the_column_stretches_are_set_explicitly(qtbot: QtBot) -> None:
+    """The five column stretches are set literally on this widget's own grid -- 1, 1, 0, 1, 0 -- the same
+    values `DurationMeasurementEdit` sets on its own, rather than threaded through the shared base's
+    constructor (#232).
+
+    **Test steps:**
+
+    * build the editor
+    * verify each column's stretch matches
+    """
+    edit = SizeMeasurementEdit(ROW_LABELS)
+    qtbot.addWidget(edit)
+    grid = edit.layout()
+    assert isinstance(grid, QGridLayout)
+
+    assert grid.columnStretch(STORED_COLUMN) == 1
+    assert grid.columnStretch(EDITOR_COLUMN) == 1
+    assert grid.columnStretch(COPY_COLUMN) == 0
+    assert grid.columnStretch(COMPUTED_COLUMN) == 1
+    assert grid.columnStretch(COMPUTE_COLUMN) == 0
 
 
 def test_the_rows_take_equal_bands_of_the_editors_height(qtbot: QtBot) -> None:

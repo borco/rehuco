@@ -13,6 +13,7 @@ from .count_claim_field import CountClaimField
 from .date_field import DateField
 from .description_field import DescriptionField
 from .duration_field import DurationField
+from .duration_pair_field import DurationPairField
 from .field import (
     Field,
     FieldEditorWidgets,
@@ -29,7 +30,6 @@ from .images_field import ImagesField
 from .indexed_list_field import IndexedEntry, IndexedListField
 from .int_field import IntField
 from .learning_paths_field import LearningPathsField
-from .measured_duration_field import MeasuredDurationField
 from .multiple_choice_field import MultipleChoiceField
 from .path_field import PathField
 from .rating_field import RatingField
@@ -72,7 +72,7 @@ __all__ = [
     "UrlField",
     "DateField",
     "DurationField",
-    "MeasuredDurationField",
+    "DurationPairField",
     "SizePairField",
     "MultipleChoiceField",
     "PathField",

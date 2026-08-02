@@ -7,6 +7,7 @@ from .collections_table_model import CollectionsTableModel
 from .content_count_edit import ContentCountEdit
 from .date_edit import DateEdit
 from .duration_edit import DurationEdit
+from .duration_measurement_edit import DurationMeasurementEdit
 from .expand_toggle_button import ExpandToggleButton
 from .image_lightbox import ImageLightbox, ImageViewerMode
 from .image_selector import ImageSelector
@@ -16,13 +17,12 @@ from .learning_paths_table_model import LearningPathScopeFilterProxyModel, Learn
 from .line_edit import LineEdit
 from .markdown_edit import MarkdownEdit
 from .markdown_view import MarkdownView
-from .measured_duration_edit import MeasuredDurationEdit
 from .measured_value_edit import MeasuredValueEdit
+from .measurement_result import MeasurementResult
 from .membership_table_model import MembershipTableModel
 from .memberships_editor import CollectionsEditor, LearningPathsEditor, MembershipsEditor
 from .path_editor import PathEditor
 from .rating_slider import RatingSlider
-from .shared_measurement_edit import SharedMeasurementEdit, SharedMeasurementRow
 from .single_choice_combo_box import SingleChoiceComboBox
 from .size_measurement_edit import SizeMeasurementEdit
 from .type_badge import TypeBadge
@@ -43,6 +43,7 @@ __all__ = [
     "ContentCountEdit",
     "DateEdit",
     "DurationEdit",
+    "DurationMeasurementEdit",
     "ExpandToggleButton",
     "SizeMeasurementEdit",
     "ImageLightbox",
@@ -52,10 +53,8 @@ __all__ = [
     "LineEdit",
     "MarkdownEdit",
     "MarkdownView",
-    "MeasuredDurationEdit",
-    "SharedMeasurementEdit",
-    "SharedMeasurementRow",
     "MeasuredValueEdit",
+    "MeasurementResult",
     "PathEditor",
     "RatingSlider",
     "SingleChoiceComboBox",
