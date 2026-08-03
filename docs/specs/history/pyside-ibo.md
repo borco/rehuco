@@ -70,20 +70,20 @@ and its utilities are reimplemented under rehuco's own conventions in `borco-cor
 | `ApplicationSingleton` (`other_instance_run = Signal(list)`, `setup(port, secret) -> bool`) | Reimplemented in `borco_pyside/core/application_singleton.py` — pure PySide6 (QLocalServer/QLocalSocket), no third-party singleton dep |
 | `SimpleProperty` / `ObjectProperty` | `borco_pyside/core/properties.py` — `SimpleProperty` keeps the name; `TypedProperty` replaces `ObjectProperty` |
 | Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (LocalEdit1 depends on it) |
-| **In-app logging stack** (bridge + log widget) | **Half carried** — `borco_pyside/logging/` has the bridge and the models ([[appendices.logging]]); the dock, view and delegates are still scheduled, ahead of the task queue/dock — see below |
+| **In-app logging stack** (bridge + log widget) | **Carried, reworked** — `borco_pyside/logging/` has the bridge, the models, the view, the delegates and the widget ([[appendices.logging]]); rehuco hosts it as an app-wide log dock and one per open resource — see below for what was and was not carried |
 | `widgets/flow_layout`, `line_edit` | `borco_pyside/widgets/` (`flow_layout`, `line_edit_helpers`, `line_edit_clear_action`, …) — a wider set than either snapshot |
 | `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is planned on **pyside6-scintilla** |
 | `image_browser/` (1st only) | Not carried: the image strip/lightbox is tutorial-plugin work (**LocalEdit5**), and the image grid is a planned QML surface |
 | Atomic write — *no pyside-ibo equivalent* | `borco_core/atomic_write.py` — new (LocalEdit1's atomic save) |
 | Theming, QtAds helpers, dockable dialogs — *no pyside-ibo equivalent* | `borco_pyside/theming`, `qtads`, `dialogs` — new in rehuco |
 
-### The in-app log surface (scheduled: LocalEdit7)
+### The in-app log surface
 
 [[[pyside-ibo#log-stack]]]
 
-The single biggest thing pyside-ibo had that rehuco does not. `borco_pyside/logging/` is **one
-function** — `setup_console_logging()`, colorized console output via colorama (~23 lines). pyside-ibo
-shipped an entire in-app log viewer:
+For a long time the single biggest thing pyside-ibo had that rehuco did not: `borco_pyside/logging/`
+was **one function** — `setup_console_logging()`, colorized console output via colorama (~23 lines) —
+while pyside-ibo shipped an entire in-app log viewer:
 
 - **`LogWidgetBridge(logging.Handler)`** — the interesting part. It plugs into Python's stdlib
   logging as a handler, **caches every record it receives**, and forwards them to any widget
@@ -97,20 +97,40 @@ shipped an entire in-app log viewer:
 - **`LogWidget`** / **`LogWindow`** (the 1st snapshot used a `log_widget_mixin` instead) — the
   dockable/standalone surface the user actually reads.
 
-**Status in rehuco: the non-GUI half is built** (#199) — `LogBridge`, `LogModel`, `LogFilterModel` and
-the `LogRecordSink` protocol live in `borco_pyside/logging/`, specified in [[appendices.logging]]. The
-cache-then-replay design was the piece worth reusing and was; three things were deliberately not
-carried. The **names** (`LogWidgetBridge`/`SupportsLogging`) went, because the bridge never imports a
-widget. The sink takes a **batch** rather than a record, because the per-record shape cannot survive a
-job logging once per file. And there is now **more than one sink**, each scoped and cleared
-independently ([[appendices.logging#routing]]) — where the prior art had a single `widget` and wired
-its `cleared` signal back to `clear_cache()`, so emptying the view also erased the replay buffer. The
-dock, the view and the delegates are still to come.
+**Status in rehuco: built** — the non-GUI half in #199, the surfaces in #200. `LogBridge`, `LogModel`,
+`LogFilterModel`, the `LogRecordSink` protocol, `LogView`, the two delegates and `LogWidget` all live in
+`borco_pyside/logging/`, specified in [[appendices.logging]]; rehuco hosts that widget twice, as the
+window's own log dock and as one per open resource ([[appendices.logging#surfaces]]).
 
-**Originally: none of this existed — scheduled as the first item of LocalEdit7**
-([[implementation-plan]]), ahead of the task queue/dock and the checksums that ride on it, on the
+The cache-then-replay design was the piece worth reusing and was. Three things were deliberately not
+carried from the **bridge**: the **names** (`LogWidgetBridge`/`SupportsLogging`) went, because the bridge
+never imports a widget; the sink takes a **batch** rather than a record, because the per-record shape
+cannot survive a job logging once per file; and there is now **more than one sink**, each scoped and
+cleared independently ([[appendices.logging#routing]]) — where the prior art had a single `widget` and
+wired its `cleared` signal back to `clear_cache()`, so emptying the view also erased the replay buffer.
+
+From the **view and delegates**, the shape was carried and three things corrected:
+
+- **Bands, not a ladder of named levels.** The prior art's level delegate chose its color with
+  `if 0 <= level <= DEBUG … elif level <= INFO …`, so a record logged at 15 or past `CRITICAL` fell
+  through to whatever came last. Classification is now `LogLevelBand.of` ([[appendices.logging#bands]]),
+  which is total by construction.
+- **Theme-aware tints, not a light-only table.** Its four hardcoded colors (`#DDDDDD`, `#FFFFFF`,
+  `#FFFFCC`, `#FFCCCC`) are opaque fills that only read on a light theme, and this app has two. The
+  colors are now supplied by the application and painted as a low-alpha wash over whatever the palette
+  already drew, so one set works in both.
+- **Follow-tail off the scroll position, not the wheel.** Its `LogView` existed to emit `wheel_rotated`,
+  and auto-scroll was toggled from the angle delta — which misses a scrollbar drag, `Page Up`, `Home`
+  and a keyboard selection, each of which leaves a reader being yanked back to the bottom. The
+  scrollbar's position is where all of them end up, so that is what is read.
+
+Also not carried: its `LogItem` (a mutable dataclass computing its own color) — `LogEntry` is frozen,
+carries the scope and the run-long serial, and holds no opinion about how it is drawn.
+
+**Originally none of this existed**, and it was scheduled first in LocalEdit7
+([[implementation-plan]]) — ahead of the task queue/dock and the checksums that ride on it, on the
 reasoning that the log dock is the simplest real dock and is what makes those two observable when
-they misbehave. It lands on the QtAds shell already in place.
+they misbehave. It landed on the QtAds shell already in place.
 
 ## Can rehuco work with it?
 
