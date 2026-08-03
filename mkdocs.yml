@@ -125,6 +125,7 @@ nav:
           - QtAds: specs/appendices/qt-ads.md
           - Release Runbook: specs/appendices/release-runbook.md
           - Settings Pages: specs/appendices/settings-pages.md
+          - Task Queue: specs/appendices/task-queue.md
           - Testing: specs/appendices/testing.md
           - Theming & Styling: specs/appendices/theming_and_styling.md
           - Windows Dev Launcher: specs/appendices/windows-dev-launcher.md
