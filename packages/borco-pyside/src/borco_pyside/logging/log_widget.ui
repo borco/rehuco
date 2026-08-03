@@ -43,19 +43,6 @@
    <item>
     <widget class="LogView" name="log_view"/>
    </item>
-   <item>
-    <widget class="QLabel" name="dropped_label">
-     <property name="visible">
-      <bool>false</bool>
-     </property>
-     <property name="toolTip">
-      <string>Older records this view no longer holds. Raise the limit in Settings to keep more.</string>
-     </property>
-     <property name="margin">
-      <number>3</number>
-     </property>
-    </widget>
-   </item>
   </layout>
   <action name="clear_action">
    <property name="text">

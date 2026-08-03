@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from enum import IntEnum, unique
 from typing import Any, Final, override
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt
 
 from .log_bridge import DEFAULT_LOG_LIMIT
 from .log_entry import LogEntry
@@ -54,12 +54,6 @@ class LogModel(QAbstractTableModel):
     :param limit: how many entries to keep; see :attr:`limit`.
     """
 
-    dropped_changed = Signal(int)
-    """Fires with :attr:`dropped` whenever entries are discarded to stay within :attr:`limit`.
-
-    So a surface can say *"N earlier records dropped"* without polling: the number changes while the
-    view is busy showing the rows that displaced them."""
-
     @unique
     class Roles(IntEnum):
         """Roles beyond Qt's own."""
@@ -71,7 +65,6 @@ class LogModel(QAbstractTableModel):
         super().__init__(parent)
         self.__limit = LogModel.__capped(limit)
         self.__entries: deque[LogEntry] = deque(maxlen=self.__limit)
-        self.__dropped = 0
 
     # region the history
 
@@ -106,14 +99,6 @@ class LogModel(QAbstractTableModel):
         # already taken it down to size, through the row removal a view needs to see
         self.__entries = deque(self.__entries, maxlen=limit)
 
-    @property
-    def dropped(self) -> int:
-        """How many entries this model has discarded to stay within :attr:`limit`, over the whole run.
-
-        Not reset by :meth:`clear`: it answers *"is anything missing"*, and clearing a view does not
-        bring back what was already gone before it."""
-        return self.__dropped
-
     def clear(self) -> None:
         """Drop every row.
 
@@ -138,10 +123,9 @@ class LogModel(QAbstractTableModel):
             return
         limit = self.__limit
         # a longer batch than the buffer can hold keeps its newest, which is what the ring would have
-        # left after appending them one by one -- and the rest is dropped, so it is counted as dropped
-        # rather than quietly never arriving; with no cap there is no such thing as a batch too long
+        # left after appending them one by one, and the rest is let go the same way the ring lets go of
+        # anything; with no cap there is no such thing as a batch too long
         arriving = list(entries) if limit is None else list(entries)[-limit:]
-        self.__count_dropped(len(entries) - len(arriving))
         self.__discard(0 if limit is None else len(self.__entries) + len(arriving) - limit)
         first = len(self.__entries)
         self.beginInsertRows(QModelIndex(), first, first + len(arriving) - 1)
@@ -163,21 +147,6 @@ class LogModel(QAbstractTableModel):
         for _ in range(count):
             self.__entries.popleft()
         self.endRemoveRows()
-        self.__count_dropped(count)
-
-    def __count_dropped(self, count: int) -> None:
-        """Record that ``count`` entries will not be shown, and say so.
-
-        Separate from :meth:`__discard` because entries are lost two ways -- displaced out of the
-        buffer, and never put in it because the batch that carried them was longer than the buffer --
-        and a reader asking *"is anything missing"* is owed both.
-
-        :param count: how many were lost; zero or fewer is a no-op.
-        """
-        if count <= 0:
-            return
-        self.__dropped += count
-        self.dropped_changed.emit(self.__dropped)
 
     @staticmethod
     def __capped(limit: int | None) -> int | None:

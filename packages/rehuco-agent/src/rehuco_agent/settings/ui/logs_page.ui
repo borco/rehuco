@@ -140,7 +140,7 @@
       <item>
        <widget class="WrappingLabel" name="limits_note_label">
         <property name="text">
-         <string>Older records are dropped once a log is full, and each log says how many it no longer holds. A new limit applies at once, including to logs already open. Lowering one discards what no longer fits.</string>
+         <string>Older records are dropped once a log is full. A new limit applies at once, including to logs already open. Lowering one discards what no longer fits.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

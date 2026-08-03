@@ -90,7 +90,6 @@ class LogBridge(Handler):
         self.__marshaller = LogBridge.Marshaller()
         self.__limit = max(1, limit)
         self.__entries: deque[LogEntry] = deque(maxlen=self.__limit)
-        self.__dropped = 0
         self.__next_serial = 0
         self.__dispatched_through = -1
         self.__sinks: list[LogRecordSink] = []
@@ -110,9 +109,9 @@ class LogBridge(Handler):
         **This is also the ceiling on one batch.** The cache is not only the replay buffer -- it is
         where entries wait for their thread, since keeping a second, unbounded queue for them would
         just move the leak. So a burst longer than this arriving while that thread is busy loses its
-        oldest, counted in :attr:`dropped` like any other overflow. Sinks are bounded too and would
-        have dropped those entries on arrival anyway, as long as none of them is asked to hold more
-        than this.
+        oldest. A bounded sink would have let those entries go on arrival anyway, as long as it is not
+        asked to hold more than this; an unbounded one would have kept them, which is the one case
+        where this ceiling costs a reader something ([[appendices.logging#buffers]]).
         """
         return self.__limit
 
@@ -129,19 +128,10 @@ class LogBridge(Handler):
         try:
             self.__limit = limit
             # a deque's maxlen is read-only, so re-capping means building the replacement; the slice
-            # keeps the newest, and what falls off is dropped for the same reason an overflow is
-            self.__dropped += max(0, len(self.__entries) - limit)
+            # keeps the newest, and what falls off goes for the same reason an overflow does
             self.__entries = deque(list(self.__entries)[-limit:], maxlen=limit)
         finally:
             self.release()
-
-    @property
-    def dropped(self) -> int:
-        """How many entries the cache has discarded to stay within :attr:`limit`, over the whole run.
-
-        Never reset by :meth:`clear_cache` -- it answers *"is anything missing from what you are
-        showing me"*, and clearing does not make the discarded records reappear."""
-        return self.__dropped
 
     def clear_cache(self) -> None:
         """Forget the cached entries, so a later attach replays nothing from before now.
@@ -227,8 +217,6 @@ class LogBridge(Handler):
             self.handleError(record)
             return
         self.__next_serial += 1
-        if len(self.__entries) == self.__limit:
-            self.__dropped += 1
         self.__entries.append(entry)
         if not self.__batch_pending:
             self.__batch_pending = True

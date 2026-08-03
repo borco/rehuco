@@ -65,7 +65,7 @@ class LogsSettings(QObject):
 
         The bridge's cache is also its queue ([[appendices.logging#buffers]]), so a resource surface
         asked to hold more than the bridge does can never fill past it -- the entries were dropped before
-        they could arrive. Clamping keeps the number a surface reports honest rather than leaving a
+        they could arrive. Clamping keeps the number this page shows honest rather than leaving a
         promise the plumbing cannot keep.
 
         **The clamp does not apply to no cap.** Unbounded is not a larger number, so it is not *above*

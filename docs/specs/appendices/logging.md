@@ -106,16 +106,22 @@ The connection is **explicitly queued, not automatic**, so a record logged on th
 same path as one logged off it. No sink is entered re-entrantly from inside a log call, and a sink that
 logs while handling a batch queues another batch instead of recursing.
 
-## 6. Buffers are bounded by default, and say what they dropped
+## 6. Buffers are bounded by default, and drop quietly
 
 [[[appendices.logging#buffers]]]
 
 A buffer is a ring, defaulting to `DEFAULT_LOG_LIMIT` (500) — what a person actually scrolls back
 through, not what fits in memory. Keeping the whole run would trade a bounded leak for an unbounded one
-and hand the reader a haystack. Both the bridge and each model count what they discarded and report it,
-so a surface can say *"N earlier records dropped"* rather than quietly showing less than it was given.
-The count is never reset by clearing: it answers *"is anything missing"*, and clearing brings nothing
-back.
+and hand the reader a haystack.
+
+**What falls out is not counted and not reported.** A terminal's scroll back and an editor's output pane
+both truncate silently, and a reader coming from either already knows a log view is a window rather than
+an archive. A count would have to be honest to be worth showing, and an honest one is not available at
+the place a reader looks: what a surface can count is only its own discards, while the bridge sheds
+entries of its own — sometimes before that surface ever saw them, sometimes long after it did. The
+number would read as *"this is what is missing"* while meaning neither. Nothing here is actionable
+either: the record is already gone, and the setting that would have kept it is the same setting whether
+one entry fell out or ten thousand.
 
 Limits are settable while running and trim immediately, so a change made in a settings dialog reaches
 an open, scrolled-back view rather than waiting for a restart. That runs both ways: a buffer given a cap
@@ -124,20 +130,17 @@ takes it there and then, however it was filled before.
 **A sink may be asked to keep everything** (`LogModel.limit` is `None`), and one kind is —
 [[appendices.logging#configured-limits]] says which, and why that one. What makes an unbounded buffer
 offered at all is **lifetime**, not size: a buffer that lives as long as the one thing it is about, and
-is freed with it, is a different proposition from one that lives for the whole run. Nothing is dropped
-under no cap, so such a surface reports no drops rather than reporting zero of them.
+is freed with it, is a different proposition from one that lives for the whole run.
 
 > [!NOTE]
 > **The bridge's buffer is also its queue.** Entries wait there for their thread, since a second,
 > unbounded queue would just move the leak. So a burst longer than the bridge's limit, arriving while
-> that thread is busy, loses its oldest — counted like any other overflow. A bounded sink would have
-> dropped those on arrival anyway, as long as it is not asked to hold more than the bridge, so the loss
-> costs it nothing it would have kept.
+> that thread is busy, loses its oldest. A bounded sink would have dropped those on arrival anyway, as
+> long as it is not asked to hold more than the bridge, so the loss costs it nothing it would have kept.
 >
-> **An unbounded sink is where that stops being true.** It would have kept them, and it is the one place
-> the bridge's own overflow is a real loss rather than a bookkeeping one — visible only as the bridge's
-> count, since the sink never saw the entries to report them missing. Whether the bridge's buffer should
-> therefore be settable to unbounded too is deliberately still open.
+> **An unbounded sink is where that stops being true.** It would have kept them, so this is the one
+> place the bridge's own limit decides what a surface holds rather than merely what it replays. Whether
+> the bridge's buffer should therefore be settable to unbounded too is deliberately still open.
 
 ### 6.1 What rehuco configures
 
@@ -170,12 +173,11 @@ is not a larger number, so it is not *above* the app limit in the sense the clam
 **0 is also the one value the clamp's guarantee stops covering.** What that guarantee buys, at every
 other value, is that a surface holds exactly the number it states: since its cap is at most the bridge's,
 the entries the bridge dropped during a burst are the oldest, which that surface would have discarded
-itself — the loss changes nothing about what it ends up holding, and its own *"N earlier records
-dropped"* still tells a reader the log is partial. An unbounded surface *would* have kept them, and
-reports nothing, because it discarded nothing itself: the loss happened upstream. So this is the one
-setting under which a log can look complete while being short, and the shortfall is the bridge's to fix
-rather than a per-resource number's — which is why it is recorded here and not said again on the
-settings page, where it would be a paragraph to read past on every visit.
+itself, so the loss changes nothing about what it ends up holding. An unbounded surface *would* have
+kept them. So this is the one setting under which what a log holds is decided somewhere other than by
+the setting itself — which is the bridge's to fix rather than a per-resource number's, and is recorded
+here rather than said again on the settings page, where it would be a paragraph to read past on every
+visit.
 
 The library holds neither setting. `LogModel.limit` is an ordinary per-instance property — *"all the
 resource surfaces agree"* is a fact about how the app wires them, not a policy a generic table model

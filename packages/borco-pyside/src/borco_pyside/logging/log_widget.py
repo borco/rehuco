@@ -23,13 +23,6 @@ STATE_SHOW_ERRORS_KEY: Final = "show_errors"
 STATE_FOLLOW_TAIL_KEY: Final = "follow_tail"
 STATE_SEARCH_KEY: Final = "search"
 
-DROPPED_MESSAGE: Final = "{count} earlier records dropped"
-"""What the footer says once the ring buffer has discarded anything.
-
-A number, not *"some records were dropped"*: whether the answer to *"is anything missing"* is 3 or
-3 000 changes what a reader does about it -- raise the limit, or stop reading this surface and go to
-the file."""
-
 
 @dataclass(frozen=True, slots=True)
 class LogWidgetIcons:
@@ -165,7 +158,7 @@ class LogWidget(QWidget):
         view.follow_tail = self.__ui.follow_tail_action.isChecked()
 
     def __setup_controls(self) -> None:
-        """Wire the actions, the search box and the dropped-count footer.
+        """Wire the actions and the search box.
 
         The follow-tail action is wired **both ways**: it drives the view, and the view drives it back
         -- because the view decides to stop following when the reader scrolls away, and a button
@@ -179,7 +172,6 @@ class LogWidget(QWidget):
         ui.follow_tail_action.toggled.connect(self.__on_follow_tail_toggled)
         ui.log_view.follow_tail_changed.connect(self.__on_view_follow_tail_changed)
         ui.search_edit.textChanged.connect(self.__on_search_changed)
-        self.__model.dropped_changed.connect(self.__on_dropped_changed)
 
     # endregion
 
@@ -274,14 +266,6 @@ class LogWidget(QWidget):
         :param text: the substring to look for; empty stops searching.
         """
         self.__proxy.search = text
-
-    def __on_dropped_changed(self, dropped: int) -> None:
-        """Say how many entries this surface no longer holds, once there are any.
-
-        :param dropped: the cumulative count.
-        """
-        self.__ui.dropped_label.setText(DROPPED_MESSAGE.format(count=dropped))
-        self.__ui.dropped_label.setVisible(dropped > 0)
 
     # endregion
 
