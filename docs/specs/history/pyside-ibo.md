@@ -70,7 +70,7 @@ and its utilities are reimplemented under rehuco's own conventions in `borco-cor
 | `ApplicationSingleton` (`other_instance_run = Signal(list)`, `setup(port, secret) -> bool`) | Reimplemented in `borco_pyside/core/application_singleton.py` — pure PySide6 (QLocalServer/QLocalSocket), no third-party singleton dep |
 | `SimpleProperty` / `ObjectProperty` | `borco_pyside/core/properties.py` — `SimpleProperty` keeps the name; `TypedProperty` replaces `ObjectProperty` |
 | Windows registry helpers | `borco_core/platforms/windows/` — `file_association`, `hkcu_registry`, `file_extension_context_menu`, `directory_context_menu`; exercised by the file-association pre-work spike (LocalEdit1 depends on it) |
-| **In-app logging stack** (bridge + log widget) | **Not carried yet** — `borco_pyside/logging/` is console-only. **Scheduled: LocalEdit7**, ahead of the task queue/dock — see below |
+| **In-app logging stack** (bridge + log widget) | **Half carried** — `borco_pyside/logging/` has the bridge and the models ([[appendices.logging]]); the dock, view and delegates are still scheduled, ahead of the task queue/dock — see below |
 | `widgets/flow_layout`, `line_edit` | `borco_pyside/widgets/` (`flow_layout`, `line_edit_helpers`, `line_edit_clear_action`, …) — a wider set than either snapshot |
 | `markdown/` editor + viewer (1st only) | Not carried as-is: `rich_text_view` covers viewing; the Markdown **editor** is planned on **pyside6-scintilla** |
 | `image_browser/` (1st only) | Not carried: the image strip/lightbox is tutorial-plugin work (**LocalEdit5**), and the image grid is a planned QML surface |
@@ -97,11 +97,20 @@ shipped an entire in-app log viewer:
 - **`LogWidget`** / **`LogWindow`** (the 1st snapshot used a `log_widget_mixin` instead) — the
   dockable/standalone surface the user actually reads.
 
-**Status in rehuco: none of this exists yet — now scheduled as the first item of LocalEdit7**
+**Status in rehuco: the non-GUI half is built** (#199) — `LogBridge`, `LogModel`, `LogFilterModel` and
+the `LogRecordSink` protocol live in `borco_pyside/logging/`, specified in [[appendices.logging]]. The
+cache-then-replay design was the piece worth reusing and was; three things were deliberately not
+carried. The **names** (`LogWidgetBridge`/`SupportsLogging`) went, because the bridge never imports a
+widget. The sink takes a **batch** rather than a record, because the per-record shape cannot survive a
+job logging once per file. And there is now **more than one sink**, each scoped and cleared
+independently ([[appendices.logging#routing]]) — where the prior art had a single `widget` and wired
+its `cleared` signal back to `clear_cache()`, so emptying the view also erased the replay buffer. The
+dock, the view and the delegates are still to come.
+
+**Originally: none of this existed — scheduled as the first item of LocalEdit7**
 ([[implementation-plan]]), ahead of the task queue/dock and the checksums that ride on it, on the
 reasoning that the log dock is the simplest real dock and is what makes those two observable when
-they misbehave. It lands on the QtAds shell already in place. The piece worth reusing is the
-bridge's **cache-then-replay** design.
+they misbehave. It lands on the QtAds shell already in place.
 
 ## Can rehuco work with it?
 
