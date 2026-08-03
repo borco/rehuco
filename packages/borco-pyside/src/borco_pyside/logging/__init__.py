@@ -1,15 +1,21 @@
-"""Logging for a GUI app: console setup, and the bridge and models behind an in-app log surface."""
+"""Logging for a GUI app: console setup, the bridge and models, and the surface a reader reads."""
 
-from .console_logging import setup_console_logging
+from .console_logging import DEFAULT_CONSOLE_LEVEL, setup_console_logging
 from .log_bridge import DEFAULT_LOG_LIMIT, LogBridge
 from .log_entry import LogEntry
 from .log_filter_model import LogFilterModel
 from .log_level_band import LogLevelBand
+from .log_level_delegate import BAND_TINT_ALPHA, LogLevelDelegate
+from .log_message_delegate import LogMessageDelegate
 from .log_model import LEVEL_COLUMN, MESSAGE_COLUMN, LogModel
 from .log_record_sink import LogRecordSink
 from .log_scope import LOG_SCOPE_ATTRIBUTE, LogScope
+from .log_view import LogView
+from .log_widget import LogWidget, LogWidgetIcons
 
 __all__ = [
+    "BAND_TINT_ALPHA",
+    "DEFAULT_CONSOLE_LEVEL",
     "DEFAULT_LOG_LIMIT",
     "LEVEL_COLUMN",
     "LOG_SCOPE_ATTRIBUTE",
@@ -18,8 +24,13 @@ __all__ = [
     "LogEntry",
     "LogFilterModel",
     "LogLevelBand",
+    "LogLevelDelegate",
+    "LogMessageDelegate",
     "LogModel",
     "LogRecordSink",
     "LogScope",
+    "LogView",
+    "LogWidget",
+    "LogWidgetIcons",
     "setup_console_logging",
 ]
