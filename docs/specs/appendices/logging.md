@@ -40,7 +40,32 @@ whatever block is open, because it is the more specific statement.
 > behalf — the task queue above all — owes its jobs that capture, or their records land under nothing
 > and the resource's own log stays empty while work is being done on it.
 
-## 2. One bridge, many independent surfaces
+## 2. A record has a severity, and severities come in four bands
+
+[[[appendices.logging#bands]]]
+
+`logging` levels are **numbers, not four constants**: `DEBUG` and friends are landmarks in a continuous
+range, and any library may log at 15, at 5, or past `CRITICAL`. So `LogLevelBand` covers ranges rather
+than named values — every level belongs to exactly one band, and none belongs to none:
+
+| Band | Covers |
+| --- | --- |
+| `DEBUGS` | at `DEBUG` or below, including `NOTSET` and any finer level |
+| `INFOS` | above `DEBUG`, up to and including `INFO` |
+| `WARNINGS` | above `INFO`, up to and including `WARNING` |
+| `ERRORS` | anything above `WARNING` — errors, criticals, and whatever was invented past them |
+
+**The bands filter independently — they are four toggles, not a threshold.** All four start shown, and
+each is turned on or off without regard to the others: a reader may ask for exactly the debugs and get
+no infos, warnings or errors beside them, however many exist. A floor cannot express that, and asking
+for debugs under one would drag in everything above them — which during a loud job is precisely the
+noise the reader was trying to get out of the way. Turning all four off shows nothing, which is a state
+a reader chose rather than one to be quietly corrected back.
+
+The same four bands are what a view paints by, so the classification lives on its own rather than
+inside the filter.
+
+## 3. One bridge, many independent surfaces
 
 [[[appendices.logging#routing]]]
 
@@ -60,7 +85,7 @@ holds for the next surface to attach. This is why no sink is asked for a `cleare
 art had one, wired so that clearing the single view also wiped the bridge's replay buffer, which with
 several surfaces would mean emptying one resource's log threw away another's history.
 
-## 3. Cache, then replay
+## 4. Cache, then replay
 
 [[[appendices.logging#replay]]]
 
@@ -68,7 +93,7 @@ The bridge is installed before there is a GUI, so that startup, the settings rea
 are all in hand by the time anything can show them. It caches what it receives and replays it on
 attach — per scope, so a resource's surface opened *after* the work was done still shows the work.
 
-## 4. Batching and the thread boundary
+## 5. Batching and the thread boundary
 
 [[[appendices.logging#batching]]]
 
@@ -81,7 +106,7 @@ The connection is **explicitly queued, not automatic**, so a record logged on th
 same path as one logged off it. No sink is entered re-entrantly from inside a log call, and a sink that
 logs while handling a batch queues another batch instead of recursing.
 
-## 5. Buffers are bounded, and say what they dropped
+## 6. Buffers are bounded, and say what they dropped
 
 [[[appendices.logging#buffers]]]
 
@@ -101,7 +126,7 @@ an open, scrolled-back view rather than waiting for a restart.
 > that thread is busy, loses its oldest — counted like any other overflow. Sinks are bounded too and
 > would have dropped those on arrival anyway, as long as none is asked to hold more than the bridge.
 
-### 5.1 What rehuco configures
+### 6.1 What rehuco configures
 
 [[[appendices.logging#configured-limits]]]
 

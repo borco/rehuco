@@ -4,6 +4,7 @@ import logging
 
 from borco_pyside.logging.log_entry import LogEntry
 from borco_pyside.logging.log_filter_model import LogFilterModel
+from borco_pyside.logging.log_level_band import LogLevelBand
 from borco_pyside.logging.log_model import MESSAGE_COLUMN, LogModel
 from borco_pyside.widgets import StringItemListModel
 from pytest import fixture
@@ -16,7 +17,7 @@ LEVELS = (
     (logging.ERROR, "an error"),
     (logging.CRITICAL, "a catastrophe"),
 )
-"""One record per level, so a threshold's cut is visible from either side of it."""
+"""One record per named level, so every band has something in it and the errors band has two."""
 
 
 # region helpers
@@ -77,85 +78,170 @@ def proxy(source: LogModel) -> LogFilterModel:
 # endregion
 
 
-# region the level floor
+# region the level bands
 
 
 def test_nothing_is_filtered_out_by_default(proxy: LogFilterModel) -> None:
-    """A fresh filter shows every record.
+    """A fresh filter shows every record, because every band starts shown.
 
     **Test steps:**
 
     * read the proxy without setting a filter
-    * verify every record is visible
+    * verify every band is visible and every record with it
     """
+    assert proxy.visible_bands == frozenset(LogLevelBand)
     assert len(messages_of(proxy)) == len(LEVELS)
 
 
-def test_the_floor_reads_back_what_was_set(proxy: LogFilterModel) -> None:
-    """The floor is readable, so a control can show the state it is driving.
+def test_showing_one_band_hides_the_other_three(proxy: LogFilterModel) -> None:
+    """Asking for exactly the debugs gets the debugs, and nothing above them.
+
+    The whole reason these are toggles rather than a threshold: a reader digging through debug
+    output is trying to get the rest out of the way, and a floor would drag it all back in.
 
     **Test steps:**
 
-    * verify a fresh filter reports NOTSET
-    * set the floor and verify it reports the new value
+    * show only the debugs band
+    * verify the debug note is visible and no info, warning or error is
     """
-    assert proxy.minimum_level == logging.NOTSET
+    proxy.visible_bands = {LogLevelBand.DEBUGS}
 
-    proxy.minimum_level = logging.WARNING
-
-    assert proxy.minimum_level == logging.WARNING
+    assert messages_of(proxy) == ["a debug note"]
 
 
-def test_a_floor_hides_everything_below_it(proxy: LogFilterModel) -> None:
-    """Setting a minimum level shows that level and worse.
+def test_each_band_can_be_shown_alone(proxy: LogFilterModel) -> None:
+    """Every band stands on its own, not only the lowest one.
 
     **Test steps:**
 
-    * set the floor to WARNING
-    * verify the warning, error and catastrophe are visible and the rest are not
+    * show only the warnings band
+    * verify the warning is visible and neither the info below nor the error above is
     """
-    proxy.minimum_level = logging.WARNING
+    proxy.visible_bands = {LogLevelBand.WARNINGS}
 
-    assert messages_of(proxy) == ["a warning", "an error", "a catastrophe"]
+    assert messages_of(proxy) == ["a warning"]
 
 
-def test_the_floor_is_inclusive(proxy: LogFilterModel) -> None:
-    """A record exactly at the floor is shown, not hidden.
+def test_bands_are_independent_of_each_other(proxy: LogFilterModel) -> None:
+    """Showing two bands with a hidden one between them is a state the filter honours.
 
     **Test steps:**
 
-    * set the floor to ERROR
-    * verify the error itself is visible
+    * show the debugs and the errors, leaving out the infos and warnings
+    * verify only those two bands' records are visible
     """
-    proxy.minimum_level = logging.ERROR
+    proxy.visible_bands = {LogLevelBand.DEBUGS, LogLevelBand.ERRORS}
 
-    assert "an error" in messages_of(proxy)
+    assert messages_of(proxy) == ["a debug note", "an error", "a catastrophe"]
 
 
-def test_a_floor_between_two_named_levels_is_honoured(proxy: LogFilterModel) -> None:
-    """The floor is a number, not one of five choices.
+def test_hiding_every_band_shows_nothing(proxy: LogFilterModel) -> None:
+    """Turning all four off is a choice, not a state to be corrected back to showing everything.
 
     **Test steps:**
 
-    * set the floor between WARNING and ERROR
-    * verify the warning is hidden and the error is not
+    * hide every band
+    * verify nothing is visible
     """
-    proxy.minimum_level = logging.WARNING + 1
+    proxy.visible_bands = set()
+
+    assert messages_of(proxy) == []
+
+
+def test_the_errors_band_covers_everything_above_warning(proxy: LogFilterModel) -> None:
+    """Errors and criticals share one band, and one toggle.
+
+    **Test steps:**
+
+    * show only the errors band
+    * verify both the error and the catastrophe are visible
+    """
+    proxy.visible_bands = {LogLevelBand.ERRORS}
 
     assert messages_of(proxy) == ["an error", "a catastrophe"]
 
 
-def test_lowering_the_floor_brings_records_back(proxy: LogFilterModel) -> None:
+def test_a_level_nobody_named_is_filtered_by_its_band(proxy: LogFilterModel, source: LogModel) -> None:
+    """A record logged between two named levels is shown by the band covering it.
+
+    **Test steps:**
+
+    * hand the source a record logged between INFO and WARNING
+    * show only the warnings band
+    * verify the record is visible
+    """
+    source.handle_log_records([make_entry(logging.INFO + 1, "logged at an odd level", len(LEVELS))])
+
+    proxy.visible_bands = {LogLevelBand.WARNINGS}
+
+    assert messages_of(proxy) == ["a warning", "logged at an odd level"]
+
+
+def test_one_band_is_toggled_without_disturbing_the_others(proxy: LogFilterModel) -> None:
+    """A toggle button changes its own band and leaves the rest alone.
+
+    **Test steps:**
+
+    * turn off the debugs, then the infos
+    * verify both are gone and the warnings and errors are untouched
+    """
+    proxy.set_band_visible(LogLevelBand.DEBUGS, False)
+    proxy.set_band_visible(LogLevelBand.INFOS, False)
+
+    assert messages_of(proxy) == ["a warning", "an error", "a catastrophe"]
+
+
+def test_a_band_is_toggled_back_on(proxy: LogFilterModel) -> None:
+    """Turning a band off and on again restores exactly it.
+
+    **Test steps:**
+
+    * turn the warnings off, then on again
+    * verify every record is visible
+    """
+    proxy.set_band_visible(LogLevelBand.WARNINGS, False)
+
+    proxy.set_band_visible(LogLevelBand.WARNINGS, True)
+
+    assert len(messages_of(proxy)) == len(LEVELS)
+
+
+def test_turning_on_a_band_that_is_already_on_changes_nothing(proxy: LogFilterModel, qtbot: QtBot) -> None:
+    """A toggle set to the state it is already in does no work.
+
+    **Test steps:**
+
+    * turn on a band that is already on, while watching for a refilter
+    * verify the model was not invalidated
+    """
+    with qtbot.assertNotEmitted(proxy.layoutChanged):
+        proxy.set_band_visible(LogLevelBand.WARNINGS, True)
+
+
+def test_the_bands_read_back_what_was_set(proxy: LogFilterModel) -> None:
+    """The bands are readable, so four toggle buttons can show the state they drive.
+
+    **Test steps:**
+
+    * show two bands
+    * verify the proxy reports exactly those
+    """
+    proxy.visible_bands = {LogLevelBand.INFOS, LogLevelBand.ERRORS}
+
+    assert proxy.visible_bands == {LogLevelBand.INFOS, LogLevelBand.ERRORS}
+
+
+def test_showing_the_bands_again_brings_records_back(proxy: LogFilterModel) -> None:
     """Filtering hides records rather than discarding them.
 
     **Test steps:**
 
-    * raise the floor to CRITICAL, then drop it back to NOTSET
-    * verify every record is visible again
+    * hide every band, then show them all again
+    * verify every record is visible
     """
-    proxy.minimum_level = logging.CRITICAL
+    proxy.visible_bands = set()
 
-    proxy.minimum_level = logging.NOTSET
+    proxy.visible_bands = set(LogLevelBand)
 
     assert len(messages_of(proxy)) == len(LEVELS)
 
@@ -165,10 +251,10 @@ def test_filtering_hides_nothing_from_the_source(proxy: LogFilterModel, source: 
 
     **Test steps:**
 
-    * set the floor to CRITICAL
+    * show only the warnings band
     * verify the proxy shows one row while the source still holds them all
     """
-    proxy.minimum_level = logging.CRITICAL
+    proxy.visible_bands = {LogLevelBand.WARNINGS}
 
     assert len(messages_of(proxy)) == 1
     assert source.rowCount() == len(LEVELS)
@@ -179,32 +265,32 @@ def test_records_arriving_while_narrowed_are_kept(proxy: LogFilterModel, source:
 
     **Test steps:**
 
-    * set the floor to CRITICAL and hand the source a debug record
+    * show only the errors band and hand the source a debug record
     * verify it is not visible
-    * drop the floor and verify it appears
+    * show the debugs and verify it appears
     """
-    proxy.minimum_level = logging.CRITICAL
+    proxy.visible_bands = {LogLevelBand.ERRORS}
     source.handle_log_records([make_entry(logging.DEBUG, "arrived while narrowed", len(LEVELS))])
 
     assert "arrived while narrowed" not in messages_of(proxy)
 
-    proxy.minimum_level = logging.NOTSET
+    proxy.set_band_visible(LogLevelBand.DEBUGS, True)
 
     assert "arrived while narrowed" in messages_of(proxy)
 
 
-def test_setting_the_same_floor_does_not_refilter(proxy: LogFilterModel, qtbot: QtBot) -> None:
-    """Re-setting the floor to what it already is does no work.
+def test_setting_the_same_bands_does_not_refilter(proxy: LogFilterModel, qtbot: QtBot) -> None:
+    """Re-setting the bands to what they already are does no work.
 
     **Test steps:**
 
-    * set the floor, then set it again to the same value while watching for a refilter
+    * set the bands, then set them again to the same value while watching for a refilter
     * verify the model was not invalidated the second time
     """
-    proxy.minimum_level = logging.WARNING
+    proxy.visible_bands = {LogLevelBand.WARNINGS}
 
     with qtbot.assertNotEmitted(proxy.layoutChanged):
-        proxy.minimum_level = logging.WARNING
+        proxy.visible_bands = {LogLevelBand.WARNINGS}
 
 
 # endregion
@@ -282,18 +368,18 @@ def test_a_search_matching_nothing_shows_nothing(proxy: LogFilterModel) -> None:
     assert messages_of(proxy) == []
 
 
-def test_the_search_and_the_floor_both_apply(proxy: LogFilterModel) -> None:
+def test_the_search_and_the_bands_both_apply(proxy: LogFilterModel) -> None:
     """The two filters narrow together, not one instead of the other.
 
     **Test steps:**
 
-    * search for "a" and set the floor to ERROR
-    * verify only the error-or-worse messages containing it are visible
+    * search for "note" and show only the debugs band
+    * verify only the debug message containing it is visible, not the info note
     """
-    proxy.search = "a"
-    proxy.minimum_level = logging.ERROR
+    proxy.search = "note"
+    proxy.visible_bands = {LogLevelBand.DEBUGS}
 
-    assert messages_of(proxy) == ["an error", "a catastrophe"]
+    assert messages_of(proxy) == ["a debug note"]
 
 
 def test_setting_the_same_search_does_not_refilter(proxy: LogFilterModel, qtbot: QtBot) -> None:
@@ -321,7 +407,7 @@ def test_rows_that_are_not_log_entries_fall_back_to_the_base_filter(qtbot: QtBot
 
     **Test steps:**
 
-    * put the filter over a plain string list model and set a floor
+    * put the filter over a plain string list model and hide every band
     * verify its rows are still shown
     """
     del qtbot  # only needed so a QApplication exists
@@ -330,7 +416,7 @@ def test_rows_that_are_not_log_entries_fall_back_to_the_base_filter(qtbot: QtBot
     proxy = LogFilterModel()
     proxy.setSourceModel(source)
 
-    proxy.minimum_level = logging.CRITICAL
+    proxy.visible_bands = set()
 
     assert proxy.rowCount() == 1
 

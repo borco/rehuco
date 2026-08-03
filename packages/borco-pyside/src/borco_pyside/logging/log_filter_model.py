@@ -1,11 +1,12 @@
 """Narrows a log table to what is being looked for, without throwing anything away."""
 
-import logging
+from collections.abc import Iterable
 from typing import override
 
 from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel
 
 from .log_entry import LogEntry
+from .log_level_band import LogLevelBand
 from .log_model import LogModel
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
@@ -13,12 +14,14 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 
 
 class LogFilterModel(QSortFilterProxyModel):
-    """Shows the part of a :class:`~.log_model.LogModel` matching a level floor and a search string.
+    """Shows the part of a :class:`~.log_model.LogModel` in the chosen bands and matching a search.
 
-    **A floor, not a set of toggles.** Levels are ordered and a reader's question is almost always
-    *"show me this and anything worse"* -- so one threshold, which a single control can express, and
-    which cannot land in the contradictory states a checkbox per level allows (errors hidden while
-    warnings show). A reader after exactly one level has the search box.
+    **Independent bands, not a floor.** Each :class:`~.log_level_band.LogLevelBand` is shown or hidden
+    on its own, so a reader can ask for exactly the debugs -- with no infos, warnings or errors beside
+    them, however many exist. A threshold cannot express that: *"debugs"* would drag in everything
+    above them, which during a loud job is the noise the reader was trying to get out of the way. All
+    four start shown; turning them all off shows nothing, which is a state a reader chose rather than
+    one to be quietly corrected.
 
     **Filtering hides; it never discards.** The entries stay in the source model, so narrowing to
     errors and then widening again brings everything back -- including whatever arrived while the view
@@ -30,24 +33,39 @@ class LogFilterModel(QSortFilterProxyModel):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        self.__minimum_level = logging.NOTSET
+        self.__visible_bands = frozenset(LogLevelBand)
         self.__search = ""
 
     @property
-    def minimum_level(self) -> int:
-        """The lowest level shown; anything below it is hidden. `logging.NOTSET` shows everything."""
-        return self.__minimum_level
+    def visible_bands(self) -> frozenset[LogLevelBand]:
+        """The bands currently shown; every band to begin with, and possibly none."""
+        return self.__visible_bands
 
-    @minimum_level.setter
-    def minimum_level(self, level: int) -> None:
-        """Show only records at ``level`` or above.
+    @visible_bands.setter
+    def visible_bands(self, bands: Iterable[LogLevelBand]) -> None:
+        """Show exactly these bands and hide the rest.
 
-        :param level: a `logging` level number, not necessarily one of the named ones.
+        :param bands: the bands to show; empty hides everything.
         """
-        if level == self.__minimum_level:
+        replacement = frozenset(bands)
+        if replacement == self.__visible_bands:
             return
-        self.__minimum_level = level
+        self.__visible_bands = replacement
         self.__refilter()
+
+    def set_band_visible(self, band: LogLevelBand, visible: bool) -> None:
+        """Show or hide one band, leaving the other three as they are.
+
+        What one toggle button drives -- so a surface wires four buttons to one method rather than
+        four, and the bands stay independent of each other's state.
+
+        :param band: the band to change.
+        :param visible: whether to show it.
+        """
+        if visible:
+            self.visible_bands = self.__visible_bands | {band}
+        else:
+            self.visible_bands = self.__visible_bands - {band}
 
     @property
     def search(self) -> str:
@@ -84,6 +102,6 @@ class LogFilterModel(QSortFilterProxyModel):
         entry = source.data(source.index(source_row, 0, source_parent), LogModel.Roles.ENTRY)
         if not isinstance(entry, LogEntry):
             return super().filterAcceptsRow(source_row, source_parent)
-        if entry.record.levelno < self.__minimum_level:
+        if LogLevelBand.of(entry.record.levelno) not in self.__visible_bands:
             return False
         return not self.__search or self.__search.casefold() in entry.message.casefold()
