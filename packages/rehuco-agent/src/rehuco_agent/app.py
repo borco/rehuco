@@ -22,6 +22,7 @@ from borco_pyside.widgets import (
 )
 
 from . import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
+from .app_logging import shared_log_bridge
 from .fields.colors import ERROR_COLOR, INFO_COLOR, WARNING_COLOR
 from .glyphs import CLEAR_ACTION_GLYPH
 from .linux_registration import DESKTOP_FILE_NAME
@@ -170,6 +171,12 @@ def run(argv: list[str]) -> int:
     :returns: process exit code; ``0`` immediately if this process forwarded to a running primary.
     """
     setup_console_logging()
+    # before the first record worth keeping, and before there is any GUI: the bridge caches what it
+    # receives and replays it to the log docks as they attach (#200, [[appendices.logging#replay]]), so
+    # the settings path below, the singleton check, and a failure during startup are all still there to
+    # be read once a dock is first opened. It must also come *after* setup_console_logging, which
+    # basicConfig makes a no-op once any handler is on the root logger
+    shared_log_bridge()
     QGuiApplication.setDesktopFileName(DESKTOP_FILE_NAME)
     LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)

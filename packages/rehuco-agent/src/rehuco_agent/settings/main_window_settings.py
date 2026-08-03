@@ -11,14 +11,19 @@ GEOMETRY_KEY: Final = "geometry"
 OUTER_DOCKS_STATE_KEY: Final = "outer_docks_state"
 OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
+LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 1
+OUTER_DOCKS_STATE_VERSION: Final = 2
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the central
 documents dock plus any sibling dockable dialogs, e.g. #47's settings dock) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
 would accept it and silently hide docks not present in the saved layout. Bump this whenever the
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
-keeping the default (all-visible) layout instead."""
+keeping the default (all-visible) layout instead.
+
+Bumped to 2 when the app-wide log dock was added (#200): a v1 blob knows nothing of it, so restoring
+one would leave that dock in whatever state QtAds invents for a dock the layout never mentions, rather
+than the deliberately-hidden-by-default one the window builds."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
@@ -49,6 +54,16 @@ class MainWindowSettings:
     layout, distinct from :attr:`outer_docks_state` (QtAds' own docks). Empty before any session
     has been saved."""
 
+    log_widget_state: bytes = field(default=b"")
+    """The app-wide log surface's own blob (#200): which level bands are shown, whether the tail is
+    followed, and what is searched for.
+
+    Kept outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard on purpose, the same way
+    ``DocumentWidget``'s image-strip key is: that version guards the *dock set*, while this is one
+    widget's filters, read key by key and defaulting individually
+    (:meth:`~borco_pyside.logging.LogWidget.restore_state`). A blob written before a filter existed is
+    still a perfectly good answer about the others."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what's in
         persistent storage.
@@ -68,6 +83,9 @@ class MainWindowSettings:
 
         toolbars_state = cast(QByteArray, settings.value(TOOLBARS_STATE_KEY, QByteArray(), type=QByteArray))
         self.toolbars_state = bytes(toolbars_state.data())
+
+        log_widget_state = cast(QByteArray, settings.value(LOG_WIDGET_STATE_KEY, QByteArray(), type=QByteArray))
+        self.log_widget_state = bytes(log_widget_state.data())
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -80,6 +98,7 @@ class MainWindowSettings:
         settings.setValue(OUTER_DOCKS_STATE_KEY, QByteArray(self.outer_docks_state))
         settings.setValue(OUTER_DOCKS_STATE_VERSION_KEY, OUTER_DOCKS_STATE_VERSION)
         settings.setValue(TOOLBARS_STATE_KEY, QByteArray(self.toolbars_state))
+        settings.setValue(LOG_WIDGET_STATE_KEY, QByteArray(self.log_widget_state))
         settings.endGroup()
 
 
