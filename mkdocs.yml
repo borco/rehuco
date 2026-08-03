@@ -118,6 +118,7 @@ nav:
           - Briefcase Packaging: specs/appendices/briefcase-packaging.md
           - Code Conventions: specs/appendices/code-conventions.md
           - Continuous Integration: specs/appendices/continuous-integration.md
+          - Logging: specs/appendices/logging.md
           - Open Questions: specs/appendices/open-questions.md
           - Post-Mortem: specs/appendices/post-mortem.md
           - Project Management: specs/appendices/project-management.md
