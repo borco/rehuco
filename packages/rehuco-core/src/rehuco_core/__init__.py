@@ -65,6 +65,17 @@ from .rehu_document import (
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_rename import PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .tasks import (
+    DEFAULT_SHUTDOWN_TIMEOUT,
+    FINISHED_JOB_STATES,
+    JobCancelled,
+    JobControl,
+    JobState,
+    JobStatus,
+    TaskJob,
+    TaskQueue,
+    TaskQueueListener,
+)
 from .tc_conversion import TcConverter, convert_tc
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
@@ -95,15 +106,21 @@ __all__ = [
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
+    "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_UNKNOWN_USERNAME",
     "DURATION_PROBES",
     "DurationProbe",
     "DurationProbeError",
     "EXCLUDED_FILE_PATTERNS",
+    "FINISHED_JOB_STATES",
     "FORMAT_VERSION_KEY",
     "FfprobeDurationProbe",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
+    "JobCancelled",
+    "JobControl",
+    "JobState",
+    "JobStatus",
     "LearningPathEntry",
     "LockReason",
     "LockReasonKind",
@@ -124,6 +141,9 @@ __all__ = [
     "ScreenshotRename",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
+    "TaskJob",
+    "TaskQueue",
+    "TaskQueueListener",
     "TcConverter",
     "TcDescriptionRewriter",
     "TcDocument",

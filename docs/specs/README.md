@@ -50,6 +50,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | | `appendices.qt-ads` | QtAds — Hurdles and Solutions | [appendices/qt-ads.md](appendices/qt-ads.md) |
 | | `appendices.release-runbook` | Release Runbook — Cutting a Release | [appendices/release-runbook.md](appendices/release-runbook.md) |
 | | `appendices.settings-pages` | Settings Pages — Managing App-Wide Configuration | [appendices/settings-pages.md](appendices/settings-pages.md) |
+| | `appendices.task-queue` | Task Queue — Serial Work, Cooperative Stops, and Lifetime | [appendices/task-queue.md](appendices/task-queue.md) |
 | | `appendices.testing` | Testing and Cross-Platform QA | [appendices/testing.md](appendices/testing.md) |
 | | `appendices.theming_and_styling` | Theming and Styling | [appendices/theming_and_styling.md](appendices/theming_and_styling.md) |
 | | `appendices.windows-dev-launcher` | Windows Dev Launcher — Hurdles and Solutions | [appendices/windows-dev-launcher.md](appendices/windows-dev-launcher.md) |
