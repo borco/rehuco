@@ -85,14 +85,14 @@ def shared_log_bridge() -> LogBridge:
     return bridge
 
 
-def build_log_widget(parent: QWidget | None = None, *, limit: int = DEFAULT_LOG_LIMIT) -> LogWidget:
+def build_log_widget(parent: QWidget | None = None, *, limit: int | None = DEFAULT_LOG_LIMIT) -> LogWidget:
     """Build a `LogWidget` wearing this app's icons and colors.
 
     One place, so the app-wide dock and every resource's dock are recognisably the same surface -- the
     thing that differs between them is which records they are shown, not how they look.
 
     :param parent: optional Qt parent.
-    :param limit: how many records the surface keeps.
+    :param limit: how many records the surface keeps, or ``None`` for all of them.
     :returns: the widget, not yet attached to the bridge.
     """
     return LogWidget(parent, icons=LOG_WIDGET_ICONS, band_colors=LOG_BAND_COLORS, limit=limit)

@@ -84,7 +84,7 @@ class LogWidget(QWidget):
     :param icons: the toolbar's icons; omitted leaves the actions text-only.
     :param band_colors: the level column's tint per band
         (:class:`~.log_level_delegate.LogLevelDelegate`).
-    :param limit: how many entries this surface keeps; see :attr:`limit`.
+    :param limit: how many entries this surface keeps, or ``None`` for all of them; see :attr:`limit`.
     """
 
     def __init__(
@@ -93,7 +93,7 @@ class LogWidget(QWidget):
         *,
         icons: LogWidgetIcons | None = None,
         band_colors: Mapping[LogLevelBand, QColor] | None = None,
-        limit: int = DEFAULT_LOG_LIMIT,
+        limit: int | None = DEFAULT_LOG_LIMIT,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = LogModel(self, limit=limit)
@@ -191,17 +191,19 @@ class LogWidget(QWidget):
         return self.__model
 
     @property
-    def limit(self) -> int:
-        """How many entries this surface keeps before dropping its oldest.
+    def limit(self) -> int | None:
+        """How many entries this surface keeps before dropping its oldest, or ``None`` for all of them.
 
-        Never usefully larger than the bridge's own limit: the bridge's cache is also its queue, so
-        entries beyond that were already dropped before they could arrive here (see
-        :attr:`~.log_bridge.LogBridge.limit`).
+        A *number* here is never usefully larger than the bridge's own limit: the bridge's cache is also
+        its queue, so entries beyond that were already dropped before they could arrive here (see
+        :attr:`~.log_bridge.LogBridge.limit`). ``None`` is not that number made larger -- it keeps
+        whatever does arrive, however long the surface stays attached, and says nothing about what the
+        bridge dropped on the way.
         """
         return self.__model.limit
 
     @limit.setter
-    def limit(self, limit: int) -> None:
+    def limit(self, limit: int | None) -> None:
         """Re-cap the history now, trimming the oldest rows if it no longer fits.
 
         :param limit: the new cap.

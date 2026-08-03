@@ -880,7 +880,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         Connected to **both** signals, and reads neither payload: what applies here is
         :attr:`~rehuco_agent.settings.logs_settings.LogsSettings.effective_resource_limit`, which is the
         per-resource limit held down to the app-wide one -- so raising the app limit can raise this
-        surface's cap without the per-resource number having changed at all.
+        surface's cap without the per-resource number having changed at all, and no cap at all is a
+        third thing neither payload could carry (#236).
 
         :param limit: the newly-configured limit; unused, see above.
         """

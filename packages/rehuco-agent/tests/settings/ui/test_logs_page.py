@@ -272,3 +272,70 @@ def test_the_note_clears_once_the_app_limit_is_raised(page: LogsPage) -> None:
 
 
 # endregion
+
+
+# region keeping everything
+
+
+def test_the_resource_limit_goes_down_to_zero_and_the_app_one_does_not(page: LogsPage) -> None:
+    """Only the per-resource surface can be asked to keep everything (#236).
+
+    **Test steps:**
+
+    * Assert each spin box's smallest value.
+    """
+    assert ui(page).resource_limit_spin_box.minimum() == 0
+    assert ui(page).app_limit_spin_box.minimum() == 1
+
+
+def test_zero_reads_as_words_rather_than_a_number(page: LogsPage) -> None:
+    """A bare ``0`` in a *records kept* box reads as *keep none* -- the opposite of what it means.
+
+    **Test steps:**
+
+    * Set the resource limit to zero.
+    * Assert the box shows wording instead of the digit.
+    """
+    ui(page).resource_limit_spin_box.setValue(0)
+
+    assert ui(page).resource_limit_spin_box.specialValueText() != ""
+    assert ui(page).resource_limit_spin_box.text() == ui(page).resource_limit_spin_box.specialValueText()
+    assert "0" not in ui(page).resource_limit_spin_box.text()
+
+
+def test_the_clamp_note_stays_quiet_at_zero(page: LogsPage) -> None:
+    """*Keep everything* is never *above* the app limit, so there is nothing to hold it down to (#236).
+
+    The note would otherwise be the page's loudest element in the one case where nothing is wrong: zero
+    is honoured exactly as typed, unlike the number it shares a comparison with.
+
+    **Test steps:**
+
+    * Set the resource limit to zero, under an app limit that would clamp a number.
+    * Assert the note is neither shown nor holding text.
+    """
+    ui(page).app_limit_spin_box.setValue(200)
+    ui(page).resource_limit_spin_box.setValue(0)
+
+    assert not ui(page).clamp_note_label.isVisible()
+    assert ui(page).clamp_note_label.text() == ""
+
+
+def test_zero_saves_through_to_the_shared_settings(page: LogsPage) -> None:
+    """Zero is a value like any other on the way out of this page.
+
+    **Test steps:**
+
+    * Set the resource limit to zero and save.
+    * Assert the shared settings hold it, and hand out no cap.
+    """
+    ui(page).resource_limit_spin_box.setValue(0)
+
+    page.save_changes()
+
+    settings = shared_logs_settings()
+    assert settings.resource_limit == 0
+    assert settings.effective_resource_limit is None
+
+
+# endregion

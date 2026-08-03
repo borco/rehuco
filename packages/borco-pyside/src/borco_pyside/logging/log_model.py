@@ -1,4 +1,4 @@
-"""Log entries as table rows -- one bounded history, owned by whoever built the model."""
+"""Log entries as table rows -- one history, owned and capped by whoever built the model."""
 
 from collections import deque
 from collections.abc import Sequence
@@ -25,7 +25,8 @@ COLUMN_TITLES: Final = ("Level", "Message")
 
 
 class LogModel(QAbstractTableModel):
-    """A bounded, self-contained table of log entries -- and a `LogRecordSink`.
+    """A self-contained table of log entries, bounded unless its owner asks otherwise -- and a
+    `LogRecordSink`.
 
     **Its history is its own.** Several of these exist at once: one showing everything, one per thing
     with a log of its own. Each keeps its own buffer, drops its own oldest entries, and is cleared on
@@ -34,6 +35,11 @@ class LogModel(QAbstractTableModel):
     models are likely to share is the *number* in :attr:`limit`, and even that is their owner's doing
     rather than something arranged here -- a table model is a poor place to put a policy about other
     table models.
+
+    **No cap is the owner's call.** :attr:`limit` accepts ``None``, and the history then keeps everything.
+    That is a leak, so it is not the default -- what makes it offered at all is *lifetime*: a surface
+    that lives as long as the one thing it is about, and is freed with it, is a different proposition
+    from one that lives for the whole run. Which of the two this model is, only its owner knows.
 
     **Two columns, and the entry behind them.** Level and message are what a table lays out; everything
     else a surface might want -- the timestamp, the scope, the source file and line, the exception --
@@ -61,34 +67,41 @@ class LogModel(QAbstractTableModel):
         ENTRY = Qt.ItemDataRole.UserRole + 1
         """The whole :class:`~.log_entry.LogEntry` for the row, on any column."""
 
-    def __init__(self, parent: QObject | None = None, *, limit: int = DEFAULT_LOG_LIMIT) -> None:
+    def __init__(self, parent: QObject | None = None, *, limit: int | None = DEFAULT_LOG_LIMIT) -> None:
         super().__init__(parent)
-        self.__limit = max(1, limit)
+        self.__limit = LogModel.__capped(limit)
         self.__entries: deque[LogEntry] = deque(maxlen=self.__limit)
         self.__dropped = 0
 
     # region the history
 
     @property
-    def limit(self) -> int:
-        """How many entries to keep before dropping the oldest.
+    def limit(self) -> int | None:
+        """How many entries to keep before dropping the oldest, or ``None`` to keep everything.
 
         Settable while running, and applied at once rather than at the next restart: a reader who
-        lowers this in a settings dialog is telling an open, scrolled-back view what to hold now.
+        lowers this in a settings dialog is telling an open, scrolled-back view what to hold now. That
+        includes going the other way -- a history that had no cap takes one the moment it is given one,
+        and trims to it there and then.
+
+        ``None`` rather than zero, which would have to mean both *"keep nothing"* and its opposite: the
+        type says which of the two an unbounded history is, and leaves zero free to mean nothing at all
+        to whatever offers a number.
         """
         return self.__limit
 
     @limit.setter
-    def limit(self, limit: int) -> None:
+    def limit(self, limit: int | None) -> None:
         """Re-cap the history, removing the oldest rows if it no longer fits.
 
-        :param limit: the new cap; anything below 1 is raised to 1.
+        :param limit: the new cap; ``None`` for no cap, and anything below 1 is raised to 1.
         """
-        limit = max(1, limit)
+        limit = LogModel.__capped(limit)
         if limit == self.__limit:
             return
         self.__limit = limit
-        self.__discard(max(0, len(self.__entries) - limit))
+        if limit is not None:
+            self.__discard(max(0, len(self.__entries) - limit))
         # a deque's maxlen is read-only, so re-capping means building the replacement; __discard has
         # already taken it down to size, through the row removal a view needs to see
         self.__entries = deque(self.__entries, maxlen=limit)
@@ -123,12 +136,13 @@ class LogModel(QAbstractTableModel):
         """
         if not entries:
             return
+        limit = self.__limit
         # a longer batch than the buffer can hold keeps its newest, which is what the ring would have
         # left after appending them one by one -- and the rest is dropped, so it is counted as dropped
-        # rather than quietly never arriving
-        arriving = list(entries)[-self.__limit :]
+        # rather than quietly never arriving; with no cap there is no such thing as a batch too long
+        arriving = list(entries) if limit is None else list(entries)[-limit:]
         self.__count_dropped(len(entries) - len(arriving))
-        self.__discard(len(self.__entries) + len(arriving) - self.__limit)
+        self.__discard(0 if limit is None else len(self.__entries) + len(arriving) - limit)
         first = len(self.__entries)
         self.beginInsertRows(QModelIndex(), first, first + len(arriving) - 1)
         self.__entries.extend(arriving)
@@ -164,6 +178,19 @@ class LogModel(QAbstractTableModel):
             return
         self.__dropped += count
         self.dropped_changed.emit(self.__dropped)
+
+    @staticmethod
+    def __capped(limit: int | None) -> int | None:
+        """What a given cap means as a `deque` ``maxlen``.
+
+        The one place a cap is made sense of, so that construction and a later change cannot disagree
+        about it -- and so that ``None`` reaches the buffer as itself rather than through arithmetic
+        that would have to special-case it twice.
+
+        :param limit: the cap as asked for.
+        :returns: ``None`` for no cap, otherwise the cap, never below 1.
+        """
+        return None if limit is None else max(1, limit)
 
     # endregion
 

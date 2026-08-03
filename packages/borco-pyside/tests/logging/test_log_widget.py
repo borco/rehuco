@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import cbor2
-from borco_pyside.logging.log_bridge import LogBridge
+from borco_pyside.logging.log_bridge import DEFAULT_LOG_LIMIT, LogBridge
 from borco_pyside.logging.log_entry import LogEntry
 from borco_pyside.logging.log_level_band import LogLevelBand
 from borco_pyside.logging.log_level_delegate import LogLevelDelegate
@@ -499,6 +499,39 @@ def test_the_limit_is_the_models(widget: LogWidget) -> None:
     widget.limit = 7
     assert widget.model.limit == 7
     assert widget.limit == 7
+
+
+def test_the_limit_can_be_taken_off(widget: LogWidget) -> None:
+    """No limit is a value the widget forwards like any other, not one it has to interpret.
+
+    **Test steps:**
+
+    * Take the widget's limit off.
+    * Assert the model's went with it.
+    """
+    widget.limit = None
+    assert widget.model.limit is None
+    assert widget.limit is None
+
+
+def test_a_widget_with_no_limit_keeps_everything_and_reports_no_loss(qtbot: QtBot) -> None:
+    """A surface asked to keep everything drops nothing, so its footer stays out of the way.
+
+    **Test steps:**
+
+    * Build a widget with no limit and give it more than the default one's worth of records.
+    * Assert every record is a row and the footer is still hidden.
+    """
+    widget = LogWidget(limit=None)
+    qtbot.addWidget(widget)
+    widget.show()
+    qtbot.waitExposed(widget)
+    count = DEFAULT_LOG_LIMIT + 1
+
+    widget.handle_log_records([make_entry(logging.INFO, f"note {serial}", serial) for serial in range(count)])
+
+    assert widget.model.rowCount() == count
+    assert not ui(widget).dropped_label.isVisible()
 
 
 def test_lowering_the_limit_trims_now(widget: LogWidget) -> None:

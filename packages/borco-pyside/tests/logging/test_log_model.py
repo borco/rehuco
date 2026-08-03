@@ -395,6 +395,137 @@ def test_setting_the_same_cap_changes_nothing(model: LogModel, qtbot: QtBot) -> 
 # endregion
 
 
+# region no cap
+
+
+def test_a_model_with_no_cap_keeps_a_batch_longer_than_the_default(qtbot: QtBot) -> None:
+    """Nothing is too long to keep when there is no length to be too long for.
+
+    **Test steps:**
+
+    * build an uncapped model and hand it one batch of twice the default cap
+    * verify every entry is still a row
+    """
+    del qtbot  # only needed so a QApplication exists
+    model = LogModel(limit=None)
+    entries = make_entries(*(f"entry {index}" for index in range(DEFAULT_LOG_LIMIT * 2)))
+
+    model.handle_log_records(entries)
+
+    assert model.rowCount() == DEFAULT_LOG_LIMIT * 2
+
+
+def test_a_model_with_no_cap_keeps_accumulating_past_the_default(qtbot: QtBot) -> None:
+    """A long job's records pile up rather than displacing the ones that explain them.
+
+    **Test steps:**
+
+    * build an uncapped model and hand it the default cap's worth of entries one batch at a time
+    * hand it one more
+    * verify the first entry is still the first row
+    """
+    del qtbot  # only needed so a QApplication exists
+    model = LogModel(limit=None)
+    for index in range(DEFAULT_LOG_LIMIT + 1):
+        model.handle_log_records(make_entries(f"entry {index}"))
+
+    assert model.rowCount() == DEFAULT_LOG_LIMIT + 1
+    assert messages_of(model)[0] == "entry 0"
+
+
+def test_a_model_with_no_cap_reports_nothing_dropped(qtbot: QtBot) -> None:
+    """Nothing is dropped under no cap, so the count stays quiet rather than reporting zero.
+
+    **Test steps:**
+
+    * build an uncapped model and hand it twice the default cap's worth of entries
+    * verify it never announced a drop, and reports none
+    """
+    model = LogModel(limit=None)
+
+    with qtbot.assertNotEmitted(model.dropped_changed):
+        model.handle_log_records(make_entries(*(f"entry {index}" for index in range(DEFAULT_LOG_LIMIT * 2))))
+
+    assert model.dropped == 0
+
+
+def test_taking_the_cap_off_stops_a_model_trimming(qtbot: QtBot) -> None:
+    """A cap removed while running applies now, like any other change to it.
+
+    **Test steps:**
+
+    * build a model capped at two, give it two rows, then take the cap off
+    * hand it two more entries
+    * verify all four are rows and nothing was dropped
+    """
+    del qtbot  # only needed so a QApplication exists
+    model = LogModel(limit=2)
+    model.handle_log_records(make_entries("first", "second"))
+
+    model.limit = None
+    model.handle_log_records(make_entries("third", "fourth"))
+
+    assert messages_of(model) == ["first", "second", "third", "fourth"]
+    assert model.dropped == 0
+
+
+def test_capping_an_uncapped_model_trims_at_once(qtbot: QtBot) -> None:
+    """A buffer with no length to trim to gets one, and is trimmed to it there and then.
+
+    **Test steps:**
+
+    * give an uncapped model three rows, then cap it at one
+    * verify only the newest row remains and two are reported dropped
+    """
+    del qtbot  # only needed so a QApplication exists
+    model = LogModel(limit=None)
+    model.handle_log_records(make_entries("first", "second", "third"))
+
+    model.limit = 1
+
+    assert messages_of(model) == ["third"]
+    assert model.dropped == 2
+
+
+def test_a_newly_capped_model_still_takes_entries(qtbot: QtBot) -> None:
+    """Capping leaves a working ring, not a buffer stuck at the size it was trimmed to.
+
+    **Test steps:**
+
+    * give an uncapped model three rows and cap it at two
+    * hand it another entry
+    * verify it holds the newest two
+    """
+    del qtbot  # only needed so a QApplication exists
+    model = LogModel(limit=None)
+    model.handle_log_records(make_entries("first", "second", "third"))
+    model.limit = 2
+
+    model.handle_log_records(make_entries("fourth"))
+
+    assert messages_of(model) == ["third", "fourth"]
+
+
+def test_taking_off_a_cap_that_is_already_off_changes_nothing(qtbot: QtBot) -> None:
+    """No cap is a value like any other, and setting it twice is setting it once.
+
+    **Test steps:**
+
+    * give an uncapped model a row, then set no cap again while watching rowsRemoved
+    * verify nothing was removed
+    """
+    model = LogModel(limit=None)
+    model.handle_log_records(make_entries("first"))
+
+    with qtbot.assertNotEmitted(model.rowsRemoved):
+        model.limit = None
+
+    assert messages_of(model) == ["first"]
+
+
+# endregion
+
+
 # region Qt model interface
 
 
