@@ -13,11 +13,20 @@ GROUP: Final = "logs"
 APP_LIMIT_KEY: Final = "app_limit"
 RESOURCE_LIMIT_KEY: Final = "resource_limit"
 
-MINIMUM_LIMIT: Final = 1
-"""The smallest either limit can be set to -- one record, which is what the models themselves clamp to.
+MINIMUM_APP_LIMIT: Final = 1
+"""The smallest the app-wide limit can be set to -- one record, which is what the models themselves
+clamp to.
 
 Not zero: a surface holding nothing would look exactly like a surface nothing had been logged to, and
 turning a log off is what closing its dock is for."""
+
+MINIMUM_RESOURCE_LIMIT: Final = 0
+"""The smallest the per-resource limit can be set to -- zero, meaning *keep everything* (#236).
+
+Zero is free to mean that here because :data:`MINIMUM_APP_LIMIT` already rules out the reading it would
+otherwise collide with: no surface can be asked to hold nothing, so a number that cannot mean *"keep
+none"* is available to mean *"keep all"* instead. The library is told in its own terms
+(:attr:`~borco_pyside.logging.LogModel.limit` is ``None``); this is the spelling a spin box can offer."""
 
 
 class LogsSettings(QObject):
@@ -44,35 +53,46 @@ class LogsSettings(QObject):
     """How many records the app-wide log surface keeps -- and the cap on the bridge's replay cache."""
 
     resource_limit = SimpleProperty(DEFAULT_LOG_LIMIT)
-    """How many records each resource's own log surface keeps, as stored.
+    """How many records each resource's own log surface keeps, as stored -- or
+    :data:`MINIMUM_RESOURCE_LIMIT` for all of them.
 
     What a surface is actually given is :attr:`effective_resource_limit`."""
 
     @property
-    def effective_resource_limit(self) -> int:
+    def effective_resource_limit(self) -> int | None:
         """What a resource surface is really capped at: :attr:`resource_limit`, but never above
-        :attr:`app_limit`.
+        :attr:`app_limit` -- or ``None`` for no cap at all.
 
         The bridge's cache is also its queue ([[appendices.logging#buffers]]), so a resource surface
         asked to hold more than the bridge does can never fill past it -- the entries were dropped before
-        they could arrive. Clamping keeps the number a surface reports honest rather than leaving a
+        they could arrive. Clamping keeps the number this page shows honest rather than leaving a
         promise the plumbing cannot keep.
+
+        **The clamp does not apply to no cap.** Unbounded is not a larger number, so it is not *above*
+        the app limit in the sense the clamp exists for -- there is no number to hold down. It is also
+        the one setting the clamp's guarantee does not cover: a surface capped at or below
+        :attr:`app_limit` always holds exactly what it says, since the entries the bridge dropped are
+        ones it would have dropped itself, while an unbounded one would have kept them
+        ([[appendices.logging#configured-limits]], #236).
         """
+        if self.resource_limit == MINIMUM_RESOURCE_LIMIT:
+            return None
         return min(self.resource_limit, self.app_limit)
 
     def load(self, settings: QSettings) -> None:
         """Replace the current limits with what's in persistent storage.
 
-        A stored value below :data:`MINIMUM_LIMIT` -- an ``.ini`` edited by hand, or written by a version
-        that allowed zero -- is raised to it rather than refused: an unreadable preference must not stop
-        a log surface from opening.
+        A stored value below its own minimum -- an ``.ini`` edited by hand, or written by a version that
+        allowed a negative -- is raised to it rather than refused: an unreadable preference must not stop
+        a log surface from opening. The two minima differ, which is the whole of #236 at this layer: a
+        stored zero is a floor for the resource limit and a mistake for the app one.
 
         :param settings: the ``QSettings`` to read from.
         """
         settings.beginGroup(GROUP)
-        self.app_limit = max(MINIMUM_LIMIT, cast(int, settings.value(APP_LIMIT_KEY, DEFAULT_LOG_LIMIT, type=int)))
+        self.app_limit = max(MINIMUM_APP_LIMIT, cast(int, settings.value(APP_LIMIT_KEY, DEFAULT_LOG_LIMIT, type=int)))
         self.resource_limit = max(
-            MINIMUM_LIMIT, cast(int, settings.value(RESOURCE_LIMIT_KEY, DEFAULT_LOG_LIMIT, type=int))
+            MINIMUM_RESOURCE_LIMIT, cast(int, settings.value(RESOURCE_LIMIT_KEY, DEFAULT_LOG_LIMIT, type=int))
         )
         settings.endGroup()
 

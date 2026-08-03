@@ -47,8 +47,9 @@ class LogLevelDelegate(QStyledItemDelegate):
 
     **The corner number is the serial, not the row.** :attr:`~.log_entry.LogEntry.serial` counts from
     the first record of the run and is never reused, so it stays the same number as the ring buffer
-    drops entries underneath it. A row index would renumber every record above a dropped one, and
-    could not be lined up against *"N earlier records dropped"*.
+    drops entries underneath it. A row index would renumber every record above a discarded one, so the
+    same record would read as a different number depending on when it was looked at, and two surfaces
+    showing it would disagree.
 
     A row whose :attr:`~.log_model.LogModel.Roles.ENTRY` is not a :class:`~.log_entry.LogEntry` is
     handed to the base delegate untouched -- the same deference

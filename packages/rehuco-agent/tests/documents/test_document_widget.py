@@ -24,7 +24,7 @@ from typing import Final
 
 import cbor2
 import PySide6QtAds as QtAds
-from borco_pyside.logging import LOG_SCOPE_ATTRIBUTE, LogScope, LogWidget
+from borco_pyside.logging import LOG_SCOPE_ATTRIBUTE, LogEntry, LogScope, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
@@ -2748,6 +2748,68 @@ def test_raising_the_app_limit_lifts_a_clamped_resource_surface(widget: Document
     shared_logs_settings().app_limit = 400
 
     assert widget.log_widget.limit == 100
+
+
+def test_a_resource_limit_of_zero_leaves_the_surface_uncapped(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Zero reaches the surface as no cap at all, not as the app limit it would otherwise clamp to (#236).
+
+    **Test steps:**
+
+    * ask for everything, under an app limit that would clamp a number
+    * verify the surface took no cap
+    """
+    shared_logs_settings().app_limit = 50
+    shared_logs_settings().resource_limit = 0
+
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    assert widget.log_widget.limit is None
+
+
+def test_asking_for_everything_stops_an_open_surface_trimming(widget: DocumentWidget) -> None:
+    """A dock already open takes the change, like any other change to either limit (#236).
+
+    **Test steps:**
+
+    * cap the open surface low, then ask for everything
+    * verify it is uncapped
+    """
+    shared_logs_settings().resource_limit = 2
+    assert widget.log_widget.limit == 2
+
+    shared_logs_settings().resource_limit = 0
+
+    assert widget.log_widget.limit is None
+
+
+def test_a_number_after_everything_caps_an_open_surface_again(widget: DocumentWidget) -> None:
+    """Going back to a number trims the surface there and then, not at the next restart (#236).
+
+    The path worth covering: a buffer with no length to trim to has to become one that has it.
+
+    **Test steps:**
+
+    * ask for everything and fill the surface past a number
+    * set that number
+    * verify the surface trimmed at once
+    """
+    shared_logs_settings().resource_limit = 0
+    widget.log_widget.handle_log_records(
+        [
+            LogEntry(
+                logging.LogRecord("test", logging.INFO, __file__, 1, f"note {serial}", None, None),
+                f"note {serial}",
+                None,
+                serial,
+            )
+            for serial in range(5)
+        ]
+    )
+
+    shared_logs_settings().resource_limit = 2
+
+    assert widget.log_widget.model.rowCount() == 2
 
 
 def test_the_log_surfaces_filters_ride_the_documents_saved_layout(widget: DocumentWidget) -> None:

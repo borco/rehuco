@@ -96,10 +96,13 @@
         <item>
          <widget class="QSpinBox" name="resource_limit_spin_box">
           <property name="toolTip">
-           <string>How many records each open resource's own log dock keeps. One value, applied to every one of them.</string>
+           <string>How many records each open resource's own log dock keeps. One value, applied to every one of them. Set it to 0 to keep everything, with no limit.</string>
+          </property>
+          <property name="specialValueText">
+           <string>Keep everything</string>
           </property>
           <property name="minimum">
-           <number>1</number>
+           <number>0</number>
           </property>
           <property name="maximum">
            <number>100000</number>
@@ -137,7 +140,7 @@
       <item>
        <widget class="WrappingLabel" name="limits_note_label">
         <property name="text">
-         <string>Older records are dropped once a log is full, and each log says how many it no longer holds. A new limit applies at once, including to logs already open. Lowering one discards what no longer fits.</string>
+         <string>Older records are dropped once a log is full. A new limit applies at once, including to logs already open. Lowering one discards what no longer fits.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

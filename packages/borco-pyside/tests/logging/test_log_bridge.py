@@ -527,27 +527,6 @@ def test_the_cache_keeps_the_newest_entries_within_its_cap(log: logging.Logger) 
     assert sink.messages == ["second", "third"]
 
 
-def test_the_cache_reports_what_it_dropped(log: logging.Logger) -> None:
-    """The bridge counts the entries it discarded to stay within its cap.
-
-    **Test steps:**
-
-    * build a bridge capped at two and log three records
-    * verify it reports one dropped
-    """
-    bridge = LogBridge(limit=2)
-    bridge.setFormatter(logging.Formatter("%(message)s"))
-    log.addHandler(bridge)
-    try:
-        log.info("first")
-        log.info("second")
-        log.info("third")
-    finally:
-        log.removeHandler(bridge)
-
-    assert bridge.dropped == 1
-
-
 def test_a_cap_below_one_still_holds_one(bridge: LogBridge) -> None:
     """A cap of zero or less is raised to one rather than making the cache useless.
 
@@ -568,7 +547,7 @@ def test_lowering_the_cap_trims_the_cache_at_once(bridge: LogBridge, log: loggin
 
     * log three records, then lower the cap to one
     * attach a sink
-    * verify only the newest record was replayed, and two are reported dropped
+    * verify only the newest record was replayed
     """
     log.info("first")
     log.info("second")
@@ -579,7 +558,6 @@ def test_lowering_the_cap_trims_the_cache_at_once(bridge: LogBridge, log: loggin
     bridge.add_sink(sink)
 
     assert sink.messages == ["third"]
-    assert bridge.dropped == 2
 
 
 def test_raising_the_cap_keeps_what_is_cached(bridge: LogBridge, log: logging.Logger) -> None:
@@ -589,7 +567,7 @@ def test_raising_the_cap_keeps_what_is_cached(bridge: LogBridge, log: logging.Lo
 
     * log a record, then raise the cap
     * attach a sink
-    * verify the record was replayed and nothing is reported dropped
+    * verify the record was replayed
     """
     log.info("kept")
 
@@ -598,7 +576,6 @@ def test_raising_the_cap_keeps_what_is_cached(bridge: LogBridge, log: logging.Lo
     bridge.add_sink(sink)
 
     assert sink.messages == ["kept"]
-    assert bridge.dropped == 0
 
 
 def test_setting_the_same_cap_changes_nothing(bridge: LogBridge, log: logging.Logger) -> None:
@@ -617,28 +594,6 @@ def test_setting_the_same_cap_changes_nothing(bridge: LogBridge, log: logging.Lo
     bridge.add_sink(sink)
 
     assert sink.messages == ["kept"]
-
-
-def test_clearing_the_cache_does_not_reset_what_was_dropped(log: logging.Logger) -> None:
-    """The drop count survives a clear, because clearing brings nothing back.
-
-    **Test steps:**
-
-    * build a bridge capped at one and log two records, dropping one
-    * clear the cache
-    * verify it still reports one dropped
-    """
-    bridge = LogBridge(limit=1)
-    log.addHandler(bridge)
-    try:
-        log.info("first")
-        log.info("second")
-    finally:
-        log.removeHandler(bridge)
-
-    bridge.clear_cache()
-
-    assert bridge.dropped == 1
 
 
 # endregion

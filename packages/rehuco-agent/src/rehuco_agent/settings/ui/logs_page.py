@@ -23,7 +23,11 @@ class LogsPage(QWidget):
     ([[appendices.logging#configured-limits]]).
 
     Two spin boxes over `LogsSettings`. The app-wide limit is deliberately *also* the bridge's replay
-    cache, so raising it is what makes a newly opened log dock show more of what already happened.
+    cache, so raising it is what makes a newly opened log dock show more of what already happened. The
+    per-resource one goes down to zero, meaning *keep everything*, which the spin box shows in words
+    rather than as a bare ``0`` a reader would take for *keep none*; the app-wide one does not, and
+    :data:`~rehuco_agent.settings.logs_settings.MINIMUM_RESOURCE_LIMIT` says why the difference is what
+    lets zero mean that at all.
 
     Edits are staged in the widgets until :meth:`save_changes` pushes them into the shared settings,
     which re-caps every log surface already open -- the reason this page's settings object is reactive
@@ -75,6 +79,11 @@ class LogsPage(QWidget):
 
     def __show_clamp_note(self) -> None:
         """Say when the staged resource limit is above the app one, and so cannot be honoured.
+
+        Zero needs no case of its own, and gets none: *keep everything* is never *above* a limit, so the
+        comparison is false and the note stays quiet -- which is the whole of what the page owes it. What
+        no cap does and does not cover is [[appendices.logging#configured-limits]]'s to say, not a
+        paragraph a reader has to read past every time this page is opened (#236).
 
         Checked against the *staged* values, not the saved ones: what a reader wants to know while typing
         a number is whether the number they are typing will apply.

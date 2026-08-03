@@ -11,7 +11,8 @@ from pytest import fixture
 from rehuco_agent.settings.logs_settings import (
     APP_LIMIT_KEY,
     GROUP,
-    MINIMUM_LIMIT,
+    MINIMUM_APP_LIMIT,
+    MINIMUM_RESOURCE_LIMIT,
     RESOURCE_LIMIT_KEY,
     LogsSettings,
 )
@@ -122,28 +123,66 @@ def test_writes_both_limits_under_the_logs_group(settings: FakeSettings) -> None
     assert settings.value(RESOURCE_LIMIT_KEY) == DEFAULT_LOG_LIMIT
 
 
-def test_a_stored_limit_below_the_minimum_is_raised_to_it(settings: FakeSettings) -> None:
-    """A hand-edited ``.ini`` asking for zero records gets one, rather than a surface holding nothing.
+def test_a_stored_limit_below_its_minimum_is_raised_to_it(settings: FakeSettings) -> None:
+    """A hand-edited ``.ini`` asking for less than a surface can be given gets the least it can be.
 
-    A log holding nothing would look exactly like a log nothing had been written to, and turning one off
-    is what closing its dock is for.
+    An app log holding nothing would look exactly like a log nothing had been written to, and turning one
+    off is what closing its dock is for -- so zero is a mistake there, and its floor is one record.
 
     **Test steps:**
 
-    * Store zero and a negative number.
+    * Store a negative number under each key.
     * Load.
-    * Assert both came back as the minimum.
+    * Assert each came back as its own minimum.
     """
     settings.beginGroup(GROUP)
-    settings.setValue(APP_LIMIT_KEY, 0)
+    settings.setValue(APP_LIMIT_KEY, -5)
     settings.setValue(RESOURCE_LIMIT_KEY, -5)
     settings.endGroup()
 
     logs = LogsSettings()
     logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
 
-    assert logs.app_limit == MINIMUM_LIMIT
-    assert logs.resource_limit == MINIMUM_LIMIT
+    assert logs.app_limit == MINIMUM_APP_LIMIT
+    assert logs.resource_limit == MINIMUM_RESOURCE_LIMIT
+
+
+def test_a_stored_zero_app_limit_is_still_raised(settings: FakeSettings) -> None:
+    """Zero means *keep everything* for a resource log only -- the app-wide one does not take it.
+
+    **Test steps:**
+
+    * Store zero under the app key.
+    * Load.
+    * Assert it came back as one record.
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(APP_LIMIT_KEY, 0)
+    settings.endGroup()
+
+    logs = LogsSettings()
+    logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
+
+    assert logs.app_limit == MINIMUM_APP_LIMIT
+
+
+def test_a_stored_zero_resource_limit_is_kept(settings: FakeSettings) -> None:
+    """Zero is a resource limit a reader can actually have chosen, so loading must not raise it (#236).
+
+    **Test steps:**
+
+    * Store zero under the resource key.
+    * Load.
+    * Assert it came back as zero.
+    """
+    settings.beginGroup(GROUP)
+    settings.setValue(RESOURCE_LIMIT_KEY, 0)
+    settings.endGroup()
+
+    logs = LogsSettings()
+    logs.load(settings)  # type: ignore[arg-type]  # the stand-in mirrors the QSettings API used
+
+    assert logs.resource_limit == MINIMUM_RESOURCE_LIMIT
 
 
 # endregion
@@ -182,6 +221,23 @@ def test_a_resource_limit_above_the_app_limit_is_clamped_to_it() -> None:
     logs.resource_limit = 5000
     assert logs.effective_resource_limit == 200
     assert logs.resource_limit == 5000
+
+
+def test_a_resource_limit_of_zero_is_no_cap_rather_than_the_app_limit() -> None:
+    """*Keep everything* is not a number, so the clamp has nothing to hold it down to (#236).
+
+    Unbounded is not *above* the app limit in the sense the clamp exists for: it promises to keep what
+    reaches the surface, which the plumbing does honour, from attach onward.
+
+    **Test steps:**
+
+    * Set the resource limit to zero, under an app limit that would otherwise clamp it.
+    * Assert the effective limit is no cap at all.
+    """
+    logs = LogsSettings()
+    logs.app_limit = 200
+    logs.resource_limit = 0
+    assert logs.effective_resource_limit is None
 
 
 # endregion

@@ -34,5 +34,5 @@ class LogEntry:
 
     Not a row number: every ring buffer downstream drops its oldest entries, so row 0 is a different
     record over time and the same record has a different row in each surface holding it. The serial is
-    what survives that -- it is how the bridge knows which entries a sink has already been given, and
-    it is what makes *"427 earlier records dropped"* a number a reader can act on."""
+    what survives that: it is how the bridge knows which entries a sink has already been given, and the
+    one number a reader can carry between two surfaces showing the same run."""

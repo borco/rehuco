@@ -23,13 +23,6 @@ STATE_SHOW_ERRORS_KEY: Final = "show_errors"
 STATE_FOLLOW_TAIL_KEY: Final = "follow_tail"
 STATE_SEARCH_KEY: Final = "search"
 
-DROPPED_MESSAGE: Final = "{count} earlier records dropped"
-"""What the footer says once the ring buffer has discarded anything.
-
-A number, not *"some records were dropped"*: whether the answer to *"is anything missing"* is 3 or
-3 000 changes what a reader does about it -- raise the limit, or stop reading this surface and go to
-the file."""
-
 
 @dataclass(frozen=True, slots=True)
 class LogWidgetIcons:
@@ -84,7 +77,7 @@ class LogWidget(QWidget):
     :param icons: the toolbar's icons; omitted leaves the actions text-only.
     :param band_colors: the level column's tint per band
         (:class:`~.log_level_delegate.LogLevelDelegate`).
-    :param limit: how many entries this surface keeps; see :attr:`limit`.
+    :param limit: how many entries this surface keeps, or ``None`` for all of them; see :attr:`limit`.
     """
 
     def __init__(
@@ -93,7 +86,7 @@ class LogWidget(QWidget):
         *,
         icons: LogWidgetIcons | None = None,
         band_colors: Mapping[LogLevelBand, QColor] | None = None,
-        limit: int = DEFAULT_LOG_LIMIT,
+        limit: int | None = DEFAULT_LOG_LIMIT,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = LogModel(self, limit=limit)
@@ -165,7 +158,7 @@ class LogWidget(QWidget):
         view.follow_tail = self.__ui.follow_tail_action.isChecked()
 
     def __setup_controls(self) -> None:
-        """Wire the actions, the search box and the dropped-count footer.
+        """Wire the actions and the search box.
 
         The follow-tail action is wired **both ways**: it drives the view, and the view drives it back
         -- because the view decides to stop following when the reader scrolls away, and a button
@@ -179,7 +172,6 @@ class LogWidget(QWidget):
         ui.follow_tail_action.toggled.connect(self.__on_follow_tail_toggled)
         ui.log_view.follow_tail_changed.connect(self.__on_view_follow_tail_changed)
         ui.search_edit.textChanged.connect(self.__on_search_changed)
-        self.__model.dropped_changed.connect(self.__on_dropped_changed)
 
     # endregion
 
@@ -191,17 +183,19 @@ class LogWidget(QWidget):
         return self.__model
 
     @property
-    def limit(self) -> int:
-        """How many entries this surface keeps before dropping its oldest.
+    def limit(self) -> int | None:
+        """How many entries this surface keeps before dropping its oldest, or ``None`` for all of them.
 
-        Never usefully larger than the bridge's own limit: the bridge's cache is also its queue, so
-        entries beyond that were already dropped before they could arrive here (see
-        :attr:`~.log_bridge.LogBridge.limit`).
+        A *number* here is never usefully larger than the bridge's own limit: the bridge's cache is also
+        its queue, so entries beyond that were already dropped before they could arrive here (see
+        :attr:`~.log_bridge.LogBridge.limit`). ``None`` is not that number made larger -- it keeps
+        whatever does arrive, however long the surface stays attached, and says nothing about what the
+        bridge dropped on the way.
         """
         return self.__model.limit
 
     @limit.setter
-    def limit(self, limit: int) -> None:
+    def limit(self, limit: int | None) -> None:
         """Re-cap the history now, trimming the oldest rows if it no longer fits.
 
         :param limit: the new cap.
@@ -272,14 +266,6 @@ class LogWidget(QWidget):
         :param text: the substring to look for; empty stops searching.
         """
         self.__proxy.search = text
-
-    def __on_dropped_changed(self, dropped: int) -> None:
-        """Say how many entries this surface no longer holds, once there are any.
-
-        :param dropped: the cumulative count.
-        """
-        self.__ui.dropped_label.setText(DROPPED_MESSAGE.format(count=dropped))
-        self.__ui.dropped_label.setVisible(dropped > 0)
 
     # endregion
 
