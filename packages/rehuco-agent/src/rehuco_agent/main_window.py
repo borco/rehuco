@@ -6,11 +6,13 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
+from borco_pyside.logging import LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
 
+from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
@@ -20,6 +22,7 @@ from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .main_window_ui import Ui_MainWindow
 from .settings.document_session_settings import DocumentSessionSettings
+from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
@@ -28,11 +31,21 @@ from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
+from .settings.ui.logs_page import LogsPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.videos_page import VideosPage
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
+
+LOG_DOCK_OBJECT_NAME: Final = "log_dock"
+"""The app-wide log dock's ``objectName`` -- its identity in the outer `CDockManager`'s saved layout.
+
+A fixed literal, like the settings dock's: this is the one dock on that manager that is not about a
+document, so nothing here derives from a path and nothing resyncs on a rename (#52's dock-identity
+resync is document-scoped)."""
+
+LOG_DOCK_TITLE: Final = "Log"
 
 THEME_DEFAULT_ICON: Final = ":/icons/theme_auto.svg"
 """Shown for the follow-system theme mode (``Qt.ColorScheme.Unknown``) -- on the toolbar's
@@ -86,6 +99,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # dock's own, and one per open document -- would otherwise carry its own copy of QtAds'
         # ~10 KB default stylesheet, re-evaluated per level on every tab switch
         # ([[appendices.qt-ads#per-manager-stylesheet]], #234)
+        # the app-wide log surface, built before the docking system that hosts it: the dock is placed in
+        # __setup_docking_system, but the widget is this window's for its whole life (#200)
+        self.__log_widget: Final = build_log_widget(limit=shared_logs_settings().app_limit)
+
         self.__documents_dock: Final = DocumentsDock(self, stylesheet_host=self.__dock_manager)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
@@ -98,6 +115,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if self.__window_settings.geometry:
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
+        self.__log_widget.restore_state(self.__window_settings.log_widget_state)
 
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
@@ -133,7 +151,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(theme_menu.default_action)
         self.__ui.view_menu.addAction(theme_menu.light_action)
         self.__ui.view_menu.addAction(theme_menu.dark_action)
-        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the dynamic docks list below
+        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the log toggle below
+        # the log dock's own toggle sits between the theme entries and the open-resource list: it is a
+        # view of the app rather than of a resource, and __add_open_documents only ever appends, so the
+        # static section keeps this order however often the dynamic tail is rebuilt (#200)
+        self.__ui.view_menu.addAction(self.__log_dock.toggleViewAction())
+        self.__ui.view_menu.addSeparator()  # between the log toggle above and the dynamic docks list below
 
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
@@ -317,6 +340,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         report there.
         """
         self.__settings_dialog.add_page(IdentityPage())
+        # top-level, not under "Plugins": how much log to keep is about the app itself, and a reader
+        # looking for it has no plugin name to guess (#200)
+        self.__settings_dialog.add_page(LogsPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
@@ -339,6 +365,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         central_dock.setFeature(QtAds.CDockWidget.NoTab, True)
 
         self.__dock_manager.setCentralWidget(central_dock)
+
+        # not Final: this runs from __setup_docking_system rather than __init__, matching
+        # __settings_action_icon_handler below
+        self.__log_dock = self.__add_log_dock()
 
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
@@ -369,7 +399,61 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.__ui.action_bar.addWidget(spacer)
         self.__ui.action_bar.addAction(self.__ui.theme_action)
+        self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(settings_dock.toggle_action)
+
+    def __add_log_dock(self) -> QtAds.CDockWidget:
+        """Build the app-wide log dock on the outer manager, hidden by default (#200).
+
+        A plain ``CDockWidget``, not a `DockableDialog`: that framework's whole addition over a dock is
+        the "Restore on start" checkbox, which belongs to a modeless dialog and not to a log -- whether
+        this reopens with the window is simply whether it was open when the window closed, which the
+        outer manager's own ``saveState()`` already records.
+
+        **Hidden by default**, and the dock area is the bottom one: a log is read across the width of the
+        window, under the thing it is about, and a first run should show the resource being edited rather
+        than a log of having opened it. An older saved layout knows nothing of this dock, which is what
+        :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`'s bump is for.
+
+        The widget is attached to the bridge here, at construction, rather than on first reveal: the
+        replay is what makes a dock opened later worth opening, and it costs one batch of rows in a model
+        that is not on screen.
+
+        :returns: the dock, hidden.
+        """
+        self.__log_widget.attach_to(shared_log_bridge())
+        shared_logs_settings().app_limit_changed.connect(self.__on_app_log_limit_changed)  # type: ignore[attr-defined]
+
+        dock = QtAds.CDockWidget(self.__dock_manager, LOG_DOCK_TITLE)
+        dock.setObjectName(LOG_DOCK_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+        )
+        dock.setWidget(self.__log_widget)
+        self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
+        dock.toggleView(False)
+        ActionIconThemeHandler(dock.toggleViewAction(), LOG_VIEW_ICON_RESOURCE)
+        return dock
+
+    def __on_app_log_limit_changed(self, limit: int) -> None:
+        """Re-cap the app-wide log surface as the setting changes.
+
+        The bridge re-caps itself (:func:`~rehuco_agent.app_logging.shared_log_bridge`); this is the
+        surface's half, so a limit lowered in the settings dialog reaches a dock that is open and
+        scrolled back rather than waiting for a restart ([[appendices.logging#buffers]]).
+
+        :param limit: the newly-configured limit.
+        """
+        self.__log_widget.limit = limit
+
+    @property
+    def log_widget(self) -> LogWidget:
+        """The app-wide log surface hosted by the log dock (#200)."""
+        return self.__log_widget
 
     @override
     def closeEvent(self, event: QCloseEvent) -> None:
@@ -429,10 +513,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__documents_dock.open_document(focused_path)  # re-focuses an already-open dock
 
     def __save_window_state(self) -> None:
-        """Persist this window's current size/position, toolbar layout, and outer dock layout."""
+        """Persist this window's current size/position, toolbar layout, outer dock layout, and the
+        app-wide log surface's own filters (#200)."""
         self.__window_settings.geometry = bytes(self.saveGeometry().data())
         self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
         self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
+        self.__window_settings.log_widget_state = self.__log_widget.save_state()
         self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:

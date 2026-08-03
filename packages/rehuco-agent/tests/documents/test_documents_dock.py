@@ -1,5 +1,11 @@
 """Tests for DocumentsDock: one dock per open `.rehu`, focus-and-reuse by path."""
 
+# The RecordingSink double and the attach-the-bridge-to-one-logger fixture read the same here as in
+# test_rehu_document_model.py and borco-pyside's test_log_bridge.py: asserting *where a record was placed*
+# takes a sink that keeps what it was handed and a logger isolated from every other handler. Kept as a copy
+# per module, the convention every settings test's own FakeSettings already follows here.
+# pylint: disable=duplicate-code
+
 # the dock owns a broad surface (open/reuse-by-path, dock titles, focus tracking, close guards,
 # close_all/close_missing, folder/archive companions); its test suite is correspondingly long --
 # one cohesive module reads better than an arbitrary split, so the module-length cap is lifted
@@ -7,14 +13,19 @@
 # pylint: disable=too-many-lines
 
 import json
+import logging
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
+from borco_pyside.logging import LogEntry
 from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
+from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents import documents_dock
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
 from rehuco_agent.documents.documents_dock import DocumentsDock
@@ -1558,3 +1569,152 @@ def test_a_new_document_threads_the_current_username(mocker: MockerFixture, qtbo
 
     assert widget.model.dirty is True
     assert widget.model.document.username == "alice"
+
+
+# region logging the read (#200)
+
+
+class RecordingSink:
+    """A `LogRecordSink` that keeps every entry it is given, for asserting on scope and level."""
+
+    def __init__(self) -> None:
+        self.entries: list[LogEntry] = []
+
+    def handle_log_records(self, entries: Sequence[LogEntry]) -> None:
+        """Keep a batch.
+
+        :param entries: the entries handed over.
+        """
+        self.entries.extend(entries)
+
+    def messages_at(self, level: int) -> list[str]:
+        """The messages kept at exactly ``level``.
+
+        :param level: the level to filter by.
+        :returns: the matching messages, in order.
+        """
+        return [entry.message for entry in self.entries if entry.record.levelno == level]
+
+
+@fixture
+def read_sink(qtbot: QtBot) -> Iterator[RecordingSink]:
+    """Provide a sink recording what this module's own logging says about ``FAKE_PATH``.
+
+    Scoped to that path, so the test asserts the record was *placed* -- which is what makes it show up
+    in that resource's own log dock rather than only in the app-wide one.
+
+    :param qtbot: pytest-qt bot, whose event loop the bridge's queued dispatch needs.
+    :returns: the sink.
+    """
+    del qtbot  # only needed so a QApplication and an event loop exist
+    bridge = shared_log_bridge()
+    logger = logging.getLogger(documents_dock.__name__)
+    previous_propagate = logger.propagate
+    previous_level = logger.level
+    # DEBUG explicitly: this logger's own level is NOTSET, so the effective floor would otherwise be the
+    # root logger's -- WARNING under pytest, which would drop the info this asserts on
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    logger.addHandler(bridge)
+    sink = RecordingSink()
+    bridge.add_scoped_sink(sink, FAKE_PATH)
+    yield sink
+    bridge.remove_sink(sink)
+    logger.removeHandler(bridge)
+    logger.propagate = previous_propagate
+    logger.setLevel(previous_level)
+
+
+def test_reading_a_document_is_logged_under_its_own_scope(
+    mocker: MockerFixture, qtbot: QtBot, read_sink: RecordingSink
+) -> None:
+    """Opening a resource says so, in that resource's own log (#200).
+
+    Reading is logged, not only writing: what a reader wants from a resource's log first is *when it was
+    opened and as what*.
+
+    **Test steps:**
+
+    * mock the filesystem to return a tutorial
+    * open the path
+    * verify the read was recorded as an info under that path's scope, naming its type
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    qtbot.wait(10)
+
+    messages = read_sink.messages_at(logging.INFO)
+    # the type as the document resolves it, which is the normalized spelling rather than the file's
+    assert any(str(FAKE_PATH) in message and "tutorial" in message.casefold() for message in messages)
+
+
+def test_a_failed_read_is_logged_as_an_error_carrying_the_reason(
+    mocker: MockerFixture, qtbot: QtBot, read_sink: RecordingSink
+) -> None:
+    """A file that could not be read says why, as an error, in that resource's own log (#200).
+
+    An error rather than a warning: it is not the shape of the document that is in question, it is that
+    there is no document -- the locked stub stands in for one. And the reason is carried, because
+    *"could not be read"* alone leaves the reader with nothing to fix.
+
+    **Test steps:**
+
+    * mock the filesystem so reading raises
+    * open the path
+    * verify an error was recorded under that scope, naming the path and the failure
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    qtbot.wait(10)
+
+    errors = read_sink.messages_at(logging.ERROR)
+    assert any(str(FAKE_PATH) in message and "no such file" in message for message in errors)
+
+
+def test_a_successful_read_logs_no_error(mocker: MockerFixture, qtbot: QtBot, read_sink: RecordingSink) -> None:
+    """An ordinary open is not reported as a failure.
+
+    **Test steps:**
+
+    * mock the filesystem to return a tutorial
+    * open the path
+    * verify nothing was recorded at error level
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    qtbot.wait(10)
+
+    assert read_sink.messages_at(logging.ERROR) == []
+
+
+def test_reading_an_untyped_document_says_so_rather_than_naming_nothing(
+    mocker: MockerFixture, qtbot: QtBot, read_sink: RecordingSink
+) -> None:
+    """A document with no type reads as *an untyped resource*, not as an empty gap in the sentence (#200).
+
+    **Test steps:**
+
+    * mock the filesystem to return a document with no type
+    * open the path
+    * verify the record says it is untyped
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION}))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    qtbot.wait(10)
+
+    assert any("untyped" in message for message in read_sink.messages_at(logging.INFO))
+
+
+# endregion

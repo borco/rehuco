@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from borco_pyside.core import SimpleProperty
+from borco_pyside.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -383,6 +384,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = self.__make_image_scanner()
         self.__recompute_upgradable()
+        self.__log_document_state()
 
         # a live edit toggles dirty, and a lock can appear/clear outside revert/convert too (tests
         # assign lock_reasons directly to simulate one) -- both must hide/reveal the upgrade offer
@@ -479,7 +481,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         there is no separate migrate call -- this is the only one needed, whether reached from the
         toolbar's Save action or the inline banner's Upgrade action.
         """
-        self.__document.save()
+        with LogScope.open(self.path):
+            self.__document.save()
+            LOG.info("Saved %s", self.path)
         self.dirty = False
         # the file now exists on disk, so there is finally something to revert to: mark saved_on_disk so
         # DocumentWidget re-enables Revert (#147). Set once and never unset -- a later out-of-band
@@ -542,18 +546,21 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             clicked `PathField` suggestion).
         :returns: whether the rename succeeded.
         """
-        LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
-        self.rename_error = ""
-        if self.path is None:
-            return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
-        if self.dirty:
-            try:
-                self.save()
-            except (OSError, ValueError) as error:
-                return self.__rename_failed(
-                    f'Could not save "{self.current_name}" before renaming it: {self.__failure_reason(error)}'
-                )
-        return self.__move(new_name)
+        # scoped to the path being renamed *from*: every record here is about the resource as it stands
+        # now, including the failure ones, and the sink for the new path only exists once the move landed
+        with LogScope.open(self.path):
+            LOG.info("Attempting to rename %r to %r", self.current_name, new_name)
+            self.rename_error = ""
+            if self.path is None:
+                return self.__rename_failed(f'Cannot rename to "{new_name}": this document has no location yet.')
+            if self.dirty:
+                try:
+                    self.save()
+                except (OSError, ValueError) as error:
+                    return self.__rename_failed(
+                        f'Could not save "{self.current_name}" before renaming it: {self.__failure_reason(error)}'
+                    )
+            return self.__move(new_name)
 
     def revert(self) -> None:
         """Discard in-memory edits and reseed every field from the document's file on disk.
@@ -581,7 +588,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
-        self.__document.reload()
+        with LogScope.open(self.path):
+            self.__document.reload()
+            LOG.info("Reverted %s to what is on disk", self.path)
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""
@@ -590,6 +599,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.active_block_changed.emit()
         self.reloaded.emit()
         self.__recompute_upgradable()
+        self.__log_document_state()
 
     def convert(self, *, keep_backups: bool, overwrite: bool = False) -> None:
         """Convert this locked, legacy ``.tc``-backed document into a real ``.rehu`` in place
@@ -619,9 +629,12 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             raise ValueError("only a legacy .tc-backed document can be converted")
         if self.path is None:
             raise ValueError("no path to convert -- document was not loaded from a file")
-        self.__document = convert_tc(
-            self.path, keep_backups=keep_backups, overwrite=overwrite, username=self.__document.username
-        )
+        with LogScope.open(self.path):
+            LOG.info("Converting %s, %s", self.path, "keeping backups" if keep_backups else "discarding originals")
+            self.__document = convert_tc(
+                self.path, keep_backups=keep_backups, overwrite=overwrite, username=self.__document.username
+            )
+            LOG.info("Converted to %s", self.__document.path)
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""
@@ -630,6 +643,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.unknown_fields_changed.emit()
         self.reloaded.emit()
         self.__recompute_upgradable()
+        self.__log_document_state()
 
     def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
         """Resolve one of a field's names into its current binding on this model
@@ -832,6 +846,30 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.upgradable = (
             (file_pending or self.__document.active_block_upgrade_pending) and not self.dirty and not self.locked
         )
+
+    def __log_document_state(self) -> None:
+        """Write a record for everything the inline notice banner would show about this document (#200).
+
+        **Banner parity.** ``DocumentWidget.__banner_rows`` builds its rows from exactly three sources:
+        :attr:`lock_reasons`, :attr:`upgradable`, and :attr:`rename_error`. The first two are written
+        here, in the same words the banner uses, so a reader who dismissed a banner -- or never had one
+        on screen, because the dock was closed -- can still find out why a document is locked. The third
+        needs nothing: :meth:`__rename_failed` already logs it where it happens, which is also the only
+        place it becomes true.
+
+        Called from the three seams that recompute this document's state -- construction, revert and
+        convert -- and deliberately **not** from :attr:`lock_reasons`'s getter, which is read on every
+        repaint: a record per transition is a log, a record per paint is a flood.
+
+        A lock is a **warning**: the document is intact and inspectable, and the banner names the remedy.
+        The upgrade offer is an **info** for the same reason it is an info in the banner -- nothing is
+        wrong, there is simply something better available.
+        """
+        with LogScope.open(self.path):
+            for reason in self.lock_reasons:
+                LOG.warning("%s", reason.message)
+            if self.upgradable:
+                LOG.info("An older format: saving this document upgrades it")
 
     @contextmanager
     def __seeding_guard(self) -> Generator[None]:

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
+from borco_pyside.logging import LogScope
 from borco_pyside.qtads import QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
@@ -289,18 +290,26 @@ class DocumentsDock(QMainWindow):
         adopts whichever name its branch would have used, so a hand-fix-and-revert retries under the same
         identity the open was asked for.
 
+        **The read is logged, under this resource's own scope** (#200): this is the one funnel both
+        loaders and both failure kinds pass through, so it is the one place that can say *"this file was
+        read"* or *"this file could not be"* once rather than per branch. The failure is an **error**, not
+        a warning: it is not the shape of the document that is in question, it is that there is no
+        document -- the stub stands in for one.
+
         :param path: the file to load (a ``.rehu``, or a legacy ``.tc``).
         :returns: the loaded document, or a locked stub bound to ``path``.
         """
         settings = shared_identity_settings()
         is_tc = path.suffix.lower() == ".tc"
         username = settings.unknown_username if is_tc else settings.current_username
-        try:
-            if is_tc:
-                return load_tc(path, username=username)
-            return RehuDocument.load(path, username=username)
-        except (OSError, RehuFormatError) as error:
-            return RehuDocument.locked_stub_for_error(path, error, username=username)
+        with LogScope.open(path):
+            try:
+                document = load_tc(path, username=username) if is_tc else RehuDocument.load(path, username=username)
+            except (OSError, RehuFormatError) as error:
+                LOG.error("Could not read %s: %s", path, error)
+                return RehuDocument.locked_stub_for_error(path, error, username=username)
+            LOG.info("Read %s as %s", path, document.type or "an untyped resource")
+            return document
 
     def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget:
         """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.

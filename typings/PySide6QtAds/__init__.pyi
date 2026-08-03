@@ -28,6 +28,10 @@ RightDockWidgetArea: DockWidgetArea
 LeftDockWidgetArea: DockWidgetArea
 """Docks in a new area split off to the left of the reference area."""
 
+BottomDockWidgetArea: DockWidgetArea
+"""Docks in a new area split off below the reference area -- where the app-wide log dock goes (#200),
+read across the width of the window under the thing it is about."""
+
 class TitleBarButton:
     """Selector for `CDockAreaWidget.titleBarButton` (e.g. `TitleBarButtonTabsMenu`)."""
 

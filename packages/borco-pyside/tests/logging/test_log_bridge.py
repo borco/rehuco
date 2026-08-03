@@ -1,5 +1,11 @@
 """Tests for LogBridge."""
 
+# The fixture attaching this bridge to one isolated logger -- level, propagation off, add, remove -- is
+# the canonical way to test anything downstream of it, so it reads the same in rehuco-agent's own log
+# tests (#200). Kept as a copy per module, the convention every settings test's own FakeSettings already
+# follows here: a shared helper across two packages would couple this library's tests to an app's.
+# pylint: disable=duplicate-code
+
 import logging
 import threading
 from collections.abc import Callable, Iterator, Sequence

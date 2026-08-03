@@ -10,12 +10,22 @@ the closed-dock-size workaround ([[packaging-deployment#qml-regression]]).
 # reads better than an arbitrary split (same precedent as test_rehu_document_model.py).
 # pylint: disable=too-many-lines
 
+# The RecordingSink double and the attach-the-bridge-to-one-logger fixture read the same here as in
+# test_rehu_document_model.py and borco-pyside's test_log_bridge.py: asserting *where a record was placed*
+# takes a sink that keeps what it was handed and a logger isolated from every other handler. Kept as a copy
+# per module, the convention every settings test's own FakeSettings already follows here.
+# pylint: disable=duplicate-code
+
 import json
+import logging
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.logging import LOG_SCOPE_ATTRIBUTE, LogScope, LogWidget
+from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
@@ -25,11 +35,13 @@ from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from qt_waits import wait_destroyed
+from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import (
     ON_DISK_ICON_RESOURCE,
     SAVE_PREVIEW_ICON_RESOURCE,
     STATE_IMAGE_STRIP_VISIBLE_KEY,
+    STATE_VERSION_KEY,
     DocumentWidget,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -47,6 +59,7 @@ from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
+from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
 
 TC_PATH: Final = Path("/fake/info.tc")
@@ -2367,3 +2380,415 @@ def test_a_document_that_was_told_otherwise_keeps_its_own_row_choice(
     assert isinstance(reopened, ImageLightbox)
     assert not reopened.strip_visible
     assert shared_image_viewer_settings().strip_visible is True
+
+
+# region this resource's own log dock (#200)
+
+
+def log_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """Return the widget's private log dock.
+
+    :param widget: the document widget to inspect.
+    :returns: the log `CDockWidget`.
+    """
+    return widget._DocumentWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def log_messages(widget: DocumentWidget) -> list[str]:
+    """Read every message this resource's log surface holds.
+
+    :param widget: the document widget to inspect.
+    :returns: the messages, oldest first.
+    """
+    model = widget.log_widget.model
+    return [model.data(model.index(row, MESSAGE_COLUMN)) for row in range(model.rowCount())]
+
+
+LOG_DOCUMENT_PATH: Final = Path("logged-resource.rehu").resolve()
+"""A path for the scoped-log tests to be the log *of*.
+
+The module's own ``model`` fixture is a never-saved document with no path at all -- which is its own
+case (see :func:`test_a_document_with_no_path_yet_is_the_log_of_nothing`), but not the one where a
+resource has a log."""
+
+
+@fixture
+def saved_model() -> RehuDocumentModel:
+    """A view-model bound to a path, so its log surface has a scope to be attached under.
+
+    :returns: the model.
+    """
+    return RehuDocumentModel(
+        RehuDocument(
+            {"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]},
+            LOG_DOCUMENT_PATH,
+        )
+    )
+
+
+@fixture
+def saved_widget(qtbot: QtBot, saved_model: RehuDocumentModel) -> DocumentWidget:
+    """A widget over the path-bearing model, registered for teardown.
+
+    :param qtbot: pytest-qt bot.
+    :param saved_model: the model to build over.
+    :returns: the widget.
+    """
+    widget = DocumentWidget(saved_model)
+    qtbot.addWidget(widget)
+    return widget
+
+
+@fixture
+def scoped_logger() -> Iterator[logging.Logger]:
+    """Provide a logger feeding the shared bridge and nothing else.
+
+    Propagation off, so these records reach the bridge under test and never the console or another
+    handler a different test left behind.
+
+    :returns: the logger.
+    """
+    bridge = shared_log_bridge()
+    logger = logging.getLogger("rehuco_agent.tests.document_log_dock")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    logger.addHandler(bridge)
+    yield logger
+    logger.removeHandler(bridge)
+
+
+def test_the_log_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
+    """This resource's log dock is built, and hidden by default like the inspection docks (#200).
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify the dock exists, hosts a `LogWidget`, and its toggle reports unchecked
+    """
+    assert isinstance(log_dock(widget).widget(), LogWidget)
+    assert widget.log_widget is log_dock(widget).widget()
+    assert log_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_the_log_dock_toggle_carries_the_log_view_icon(widget: DocumentWidget) -> None:
+    """Its toggle is themed from the same log icon the window's own log toggle uses (#200).
+
+    The same icon for both on purpose: they are the same kind of thing about different subjects, which
+    the surrounding toolbar already says.
+
+    **Test steps:**
+
+    * find the ``ActionIconThemeHandler`` instances parented to the toggle action
+    * verify one was built from the log icon's SVG bytes
+    """
+    handlers = log_dock(widget).toggleViewAction().findChildren(ActionIconThemeHandler)
+    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert read_resource_bytes(LOG_VIEW_ICON_RESOURCE) in svgs
+
+
+def test_the_log_dock_toggle_is_on_the_toolbar(widget: DocumentWidget) -> None:
+    """Its toggle sits on the View toolbar, with the viewer/editor and inspection toggles (#200).
+
+    **Test steps:**
+
+    * gather every action across the widget's toolbars
+    * verify the log dock's toggle action is among them
+    """
+    actions = {action for toolbar in widget.findChildren(QToolBar) for action in toolbar.actions()}
+    assert log_dock(widget).toggleViewAction() in actions
+
+
+def test_adding_the_log_dock_leaves_the_main_viewer_current(widget: DocumentWidget) -> None:
+    """The main viewer stays the current tab, though the log dock was stacked in after it (#200).
+
+    **Test steps:**
+
+    * verify the first viewer dock is the current tab
+    """
+    viewer_docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert next(iter(viewer_docks.values())).isCurrentTab()
+
+
+def test_the_log_surface_shows_only_records_about_this_resource(
+    saved_widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """It is the log *of this resource*: not another's records, and not the app's unscoped ones (#200).
+
+    A reader who wants those has the window's own log dock.
+
+    **Test steps:**
+
+    * log one record under this document's path, one under another path, and one unscoped
+    * verify only the first arrived
+    """
+    scoped_logger.info("about this resource", extra={LOG_SCOPE_ATTRIBUTE: saved_widget.model.path})
+    scoped_logger.info("about a different resource", extra={LOG_SCOPE_ATTRIBUTE: Path("elsewhere.rehu")})
+    scoped_logger.info("about nothing in particular")
+    qtbot.wait(10)
+
+    assert log_messages(saved_widget) == ["about this resource"]
+
+
+def test_an_open_scope_places_a_record_without_the_call_site_saying_so(
+    saved_widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """A record logged inside an open scope lands here without naming it -- the ambient placement.
+
+    Which is what lets `rehuco_core`'s own logging reach a resource's surface without ever having heard
+    of one.
+
+    **Test steps:**
+
+    * log inside ``LogScope.open`` on this document's path
+    * verify the record arrived
+    """
+    with LogScope.open(saved_widget.model.path):
+        scoped_logger.warning("logged inside an open scope")
+    qtbot.wait(10)
+
+    assert log_messages(saved_widget) == ["logged inside an open scope"]
+
+
+def test_the_log_surface_replays_records_made_before_it_was_shown(
+    qtbot: QtBot, saved_model: RehuDocumentModel, scoped_logger: logging.Logger
+) -> None:
+    """A conversion that happened before this dock was first opened is in it when it is (#200).
+
+    **Test steps:**
+
+    * log a record under a path, then build a widget for that document
+    * verify the record was replayed into its surface
+    """
+    scoped_logger.error("logged before this document was opened", extra={LOG_SCOPE_ATTRIBUTE: saved_model.path})
+
+    widget = DocumentWidget(saved_model)
+    qtbot.addWidget(widget)
+
+    assert log_messages(widget) == ["logged before this document was opened"]
+
+
+def test_a_renamed_resource_keeps_its_history_and_follows_its_new_path(
+    saved_widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """A rename moves the thing this surface is the log of, so the sink follows the new path (#200).
+
+    The rows already shown stay: they are this resource's own history, and the resource was renamed
+    rather than replaced. Without the re-attach the dock would go quiet exactly when the document is
+    busiest.
+
+    **Test steps:**
+
+    * log under the old path, then change the model's path
+    * log under the new path
+    * verify both records are shown, in order
+    """
+    old_path = saved_widget.model.path
+    assert old_path is not None
+    scoped_logger.info("before the rename", extra={LOG_SCOPE_ATTRIBUTE: old_path})
+    qtbot.wait(10)
+
+    saved_widget.model.path = old_path.with_name("renamed.rehu")
+    scoped_logger.info("after the rename", extra={LOG_SCOPE_ATTRIBUTE: saved_widget.model.path})
+    qtbot.wait(10)
+
+    assert log_messages(saved_widget) == ["before the rename", "after the rename"]
+
+
+def test_a_renamed_resource_stops_taking_the_old_paths_records(
+    saved_widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """After a rename the old path is somebody else's business, not this resource's.
+
+    **Test steps:**
+
+    * change the model's path, then log under the *old* one
+    * verify nothing arrived
+    """
+    old_path = saved_widget.model.path
+    assert old_path is not None
+    saved_widget.model.path = old_path.with_name("renamed.rehu")
+
+    scoped_logger.info("about the path this document no longer has", extra={LOG_SCOPE_ATTRIBUTE: old_path})
+    qtbot.wait(10)
+
+    assert log_messages(saved_widget) == []
+
+
+def test_a_document_with_no_path_yet_is_the_log_of_nothing(
+    widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """A never-saved document has no scope to be the log of, so its surface attaches to nothing (#200).
+
+    Nothing is logged *about* a resource that has no path: there is no key for a record to carry, and
+    attaching under ``None`` would quietly make this surface a second app-wide log.
+
+    **Test steps:**
+
+    * over the never-saved sample model, log an unscoped record
+    * verify the surface stayed empty
+    """
+    assert widget.model.path is None
+
+    scoped_logger.info("about nothing in particular")
+    qtbot.wait(10)
+
+    assert log_messages(widget) == []
+
+
+def test_a_first_save_gives_a_document_a_log_of_its_own(
+    widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """Binding a path is what gives a never-saved document a log of its own (#200).
+
+    **Test steps:**
+
+    * give the never-saved model a path
+    * log under it
+    * verify the record arrived
+    """
+    widget.model.path = LOG_DOCUMENT_PATH
+
+    scoped_logger.info("about it, now that it has a path", extra={LOG_SCOPE_ATTRIBUTE: LOG_DOCUMENT_PATH})
+    qtbot.wait(10)
+
+    assert log_messages(widget) == ["about it, now that it has a path"]
+
+
+def test_a_resource_losing_its_path_becomes_the_log_of_nothing_again(
+    saved_widget: DocumentWidget, scoped_logger: logging.Logger, qtbot: QtBot
+) -> None:
+    """A path cleared back to nothing detaches the surface rather than leaving it on the old path.
+
+    The mirror of the first-save case: what a surface is the log *of* follows the model's path in both
+    directions, so a document that no longer has one is the log of nothing rather than of wherever it
+    used to be.
+
+    **Test steps:**
+
+    * clear the model's path
+    * log under the path it used to have
+    * verify nothing arrived
+    """
+    old_path = saved_widget.model.path
+    assert old_path is not None
+
+    saved_widget.model.path = None
+
+    scoped_logger.info("about the path it used to have", extra={LOG_SCOPE_ATTRIBUTE: old_path})
+    qtbot.wait(10)
+
+    assert log_messages(saved_widget) == []
+
+
+def test_the_log_surface_takes_the_configured_resource_limit(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Every resource surface is capped at the one configured per-resource limit (#200).
+
+    **Test steps:**
+
+    * set the resource limit before the widget is built
+    * verify the surface took it
+    """
+    shared_logs_settings().resource_limit = 33
+
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    assert widget.log_widget.limit == 33
+
+
+def test_the_resource_limit_is_held_down_to_the_app_limit(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A resource surface is never promised more than the bridge itself keeps (#200).
+
+    The bridge's cache is also its queue, so entries beyond the app-wide limit were dropped before they
+    could reach here.
+
+    **Test steps:**
+
+    * set a resource limit above the app limit
+    * verify the surface took the app limit instead
+    """
+    shared_logs_settings().app_limit = 50
+    shared_logs_settings().resource_limit = 5000
+
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+
+    assert widget.log_widget.limit == 50
+
+
+def test_changing_the_resource_limit_re_caps_an_open_surface(widget: DocumentWidget) -> None:
+    """A limit changed in the settings dialog reaches a resource's dock that is already open.
+
+    **Test steps:**
+
+    * change the shared resource limit
+    * verify the open surface re-capped
+    """
+    shared_logs_settings().resource_limit = 12
+
+    assert widget.log_widget.limit == 12
+
+
+def test_raising_the_app_limit_lifts_a_clamped_resource_surface(widget: DocumentWidget) -> None:
+    """Raising the app limit gives a clamped resource surface the number it was already asked for.
+
+    Which is why both limits' change signals are watched: the per-resource number need not have changed
+    at all for what applies here to.
+
+    **Test steps:**
+
+    * clamp the surface by asking for more than the app limit
+    * raise the app limit past it
+    * verify the surface took the per-resource number
+    """
+    shared_logs_settings().app_limit = 40
+    shared_logs_settings().resource_limit = 100
+    assert widget.log_widget.limit == 40
+
+    shared_logs_settings().app_limit = 400
+
+    assert widget.log_widget.limit == 100
+
+
+def test_the_log_surfaces_filters_ride_the_documents_saved_layout(widget: DocumentWidget) -> None:
+    """Which bands this resource's log shows is persisted with its dock layout, by protocol (#200).
+
+    No new state key: the surface satisfies `StatefulWidget` and carries an object name, so the layout
+    blob's existing widget-state map collects it the same way the path editor's expand state is.
+
+    **Test steps:**
+
+    * hide a band and save the document's state
+    * restore it into a fresh widget over the same model
+    * verify the band came back hidden
+    """
+    source_ui = widget.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_ui.show_debugs_action.setChecked(False)
+    state = widget.save_state()
+
+    restored = DocumentWidget(widget.model)
+    restored.restore_state(state)
+
+    restored_ui = restored.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert not restored_ui.show_debugs_action.isChecked()
+
+
+def test_a_layout_saved_before_the_log_dock_existed_is_rejected(widget: DocumentWidget) -> None:
+    """A v4 blob knows nothing of the log dock, so it is ignored rather than restored (#200).
+
+    Restoring it would leave the new dock in whatever state QtAds invents for a dock the layout never
+    mentions, rather than the deliberately-hidden-by-default one this widget builds.
+
+    **Test steps:**
+
+    * roll a saved blob's version back to 4
+    * restore it
+    * verify it was refused
+    """
+    values = cbor2.loads(widget.save_state())
+    values[STATE_VERSION_KEY] = 4
+
+    assert widget.restore_state(cbor2.dumps(values)) is False
+
+
+# endregion

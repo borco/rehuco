@@ -5,24 +5,30 @@
 # split, so the module-length cap is lifted here rather than fragmenting it.
 # pylint: disable=too-many-lines
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
 from borco_pyside.dialogs import DockableDialogManager
+from borco_pyside.logging import LogWidget
+from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QScrollArea, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.main_window import SETTINGS_DIALOG_OBJECT_NAME, MainWindow
+from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.main_window import LOG_DOCK_OBJECT_NAME, SETTINGS_DIALOG_OBJECT_NAME, MainWindow
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
+from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
+from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.videos_page import VideosPage
 
@@ -2120,3 +2126,318 @@ def test_close_missing_files_action_triggering_delegates_to_the_documents_dock(
     window._MainWindow__dynamic_view_menu_actions[1].trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access,no-member
 
     close_missing.assert_called_once_with()
+
+
+# region the app-wide log dock (#200)
+
+
+def log_dock(window: MainWindow) -> Any:
+    """Find the app-wide log dock on the outer manager.
+
+    :param window: the window to read.
+    :returns: the dock.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return dock_manager.findDockWidget(LOG_DOCK_OBJECT_NAME)
+
+
+def log_messages(window: MainWindow) -> list[str]:
+    """Read every message the app-wide log surface holds.
+
+    :param window: the window to read.
+    :returns: the messages, oldest first.
+    """
+    model = window.log_widget.model
+    return [model.data(model.index(row, MESSAGE_COLUMN)) for row in range(model.rowCount())]
+
+
+def test_installs_a_log_dock_on_the_outer_manager(qtbot: QtBot) -> None:
+    """The log dock (#200) is registered on the *outer* manager, and hosts the app-wide log surface.
+
+    Not on ``DocumentsDock``'s nested manager: it is a log of the app, not of any one document.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the outer dock manager's registered dock named :data:`LOG_DOCK_OBJECT_NAME`
+    * verify it exists, is placed, and hosts the window's ``log_widget``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = log_dock(window)
+
+    assert dock is not None
+    assert dock.dockAreaWidget() is not None
+    assert isinstance(dock.widget(), LogWidget)
+    assert window.log_widget is dock.widget()
+
+
+def test_the_log_dock_starts_hidden(qtbot: QtBot) -> None:
+    """A first run shows the resource being edited, not a log of having opened it (#200).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing persisted
+    * verify the log dock is closed and its toggle unchecked
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = log_dock(window)
+
+    assert dock.isClosed()
+    assert not dock.toggleViewAction().isChecked()
+
+
+def test_the_log_dock_toggle_sits_between_theme_and_settings_on_the_action_bar(qtbot: QtBot) -> None:
+    """The log toggle is on the action bar, between the theme action and the settings dock's toggle.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * read the action bar's actions in order
+    * verify the log toggle sits between the two
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    actions = ui.action_bar.actions()
+    toggle = log_dock(window).toggleViewAction()
+
+    assert actions.index(ui.theme_action) < actions.index(toggle)
+    assert actions.index(toggle) < actions.index(settings_dock.toggleViewAction())
+
+
+def test_the_log_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
+    """The toggle is themed from the log icon, so it follows a theme switch like every other dock's.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the log dock's toggle action carries an icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not log_dock(window).toggleViewAction().icon().isNull()
+
+
+def test_the_log_dock_toggle_is_in_the_view_menu_between_theme_and_the_documents(qtbot: QtBot) -> None:
+    """The View menu lists the log toggle after the theme entries and before the open resources (#200).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and rebuild the dynamic tail as ``aboutToShow`` would
+    * verify the toggle is in the menu, after the theme entries and before the first dynamic entry
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__add_open_documents(ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    actions = ui.view_menu.actions()
+    toggle = log_dock(window).toggleViewAction()
+    dynamic = window._MainWindow__dynamic_view_menu_actions  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    theme_titles = {"&Default", "&Light", "Dar&k"}
+
+    assert toggle in actions
+    assert actions.index(toggle) > max(actions.index(action) for action in actions if action.text() in theme_titles)
+    assert actions.index(toggle) < min(actions.index(action) for action in dynamic)
+
+
+def test_the_view_menu_toggle_shows_and_hides_the_log_dock(qtbot: QtBot) -> None:
+    """Triggering the View menu's log entry opens the dock; triggering it again closes it (#200).
+
+    The entry in the menu *is* the dock's own ``toggleViewAction`` -- this pins that it actually
+    drives visibility, not merely that it sits in the right place.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and find the log toggle in the View menu
+    * trigger it and verify the dock opened
+    * trigger it again and verify the dock closed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    toggle = log_dock(window).toggleViewAction()
+    assert toggle in ui.view_menu.actions()
+
+    toggle.trigger()
+    assert not log_dock(window).isClosed()
+
+    toggle.trigger()
+    assert log_dock(window).isClosed()
+
+
+def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A log dock left open is open again on the next launch -- it rides the outer dock layout (#200).
+
+    The other half of "state survives a restart": the filters have their own test above; this pins
+    the visibility, which is the outer ``CDockManager``'s ``saveState()``'s to carry.
+
+    **Test steps:**
+
+    * construct a window, open its log dock, and capture the real window state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state
+    * verify the second window's log dock starts open, unlike the hidden default
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    log_dock(first).toggleView(True)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved.outer_docks_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    assert not log_dock(second).isClosed()
+
+
+def test_the_log_dock_replays_records_logged_before_it_was_ever_shown(qtbot: QtBot) -> None:
+    """A record logged before there was a GUI is in the dock the first time it is opened.
+
+    The whole point of the bridge caching: startup, the settings read and an early failure all happen
+    before there is anything to show them.
+
+    **Test steps:**
+
+    * log a record through the shared bridge before building the window
+    * construct a real ``MainWindow`` and reveal its log dock
+    * verify the record is in the surface
+    """
+    bridge = shared_log_bridge()
+    logger = logging.getLogger("rehuco_agent.tests.main_window_log_dock")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    logger.addHandler(bridge)
+    try:
+        logger.warning("logged before the window existed")
+
+        window = MainWindow()
+        qtbot.addWidget(window)
+        log_dock(window).toggleView(True)
+
+        assert "logged before the window existed" in log_messages(window)
+    finally:
+        logger.removeHandler(bridge)
+
+
+def test_the_log_surface_takes_its_limit_from_the_settings(qtbot: QtBot) -> None:
+    """The app-wide surface is capped at the configured app limit, not the library's default.
+
+    **Test steps:**
+
+    * set the app limit before the window is built
+    * construct a real ``MainWindow``
+    * verify the surface took it
+    """
+    shared_logs_settings().app_limit = 42
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.log_widget.limit == 42
+
+
+def test_changing_the_app_limit_re_caps_the_open_log_surface(qtbot: QtBot) -> None:
+    """A limit lowered in the settings dialog reaches a dock already open and scrolled back.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * change the shared app limit
+    * verify the surface and the bridge both re-capped
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    shared_logs_settings().app_limit = 17
+
+    assert window.log_widget.limit == 17
+    assert shared_log_bridge().limit == 17
+
+
+def test_close_event_saves_the_log_surfaces_filters(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves which bands the log dock was showing, and what it was searching for.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``MainWindowSettings.save`` and dispatch a close event
+    * verify a non-empty log widget state was recorded
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.log_widget_state != b""
+    save.assert_called_once()
+
+
+def test_the_log_surfaces_filters_are_restored_on_start(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A restart brings the log dock back under the filters it was left with.
+
+    **Test steps:**
+
+    * save a state with the debug band hidden and a search typed
+    * seed ``MainWindowSettings.load`` with it and construct a window
+    * verify both came back
+    """
+    source = MainWindow()
+    qtbot.addWidget(source)
+    source_ui = source.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_ui.show_debugs_action.setChecked(False)
+    source_ui.search_edit.setText("a search")
+    saved = source.log_widget.save_state()
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.log_widget_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restored_ui = window.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert not restored_ui.show_debugs_action.isChecked()
+    assert restored_ui.search_edit.text() == "a search"
+
+
+def test_registers_the_logs_page(qtbot: QtBot) -> None:
+    """The Logs settings page (#200) is registered top-level, not under "Plugins".
+
+    How much log to keep is about the app itself, and a reader looking for it has no plugin name to
+    guess.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``LogsPage``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, LogsPage) for page in pages)
+
+
+# endregion

@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LogWidget</class>
+ <widget class="QWidget" name="LogWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>520</width>
+    <height>320</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <layout class="QHBoxLayout" name="controls_layout">
+     <item>
+      <widget class="QLineEdit" name="search_edit">
+       <property name="toolTip">
+        <string>Show only records whose message contains this text.</string>
+       </property>
+       <property name="placeholderText">
+        <string>Search…</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="LogView" name="log_view"/>
+   </item>
+   <item>
+    <widget class="QLabel" name="dropped_label">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <property name="toolTip">
+      <string>Older records this view no longer holds. Raise the limit in Settings to keep more.</string>
+     </property>
+     <property name="margin">
+      <number>3</number>
+     </property>
+    </widget>
+   </item>
+  </layout>
+  <action name="clear_action">
+   <property name="text">
+    <string>Clear</string>
+   </property>
+   <property name="toolTip">
+    <string>Clear this log view. Other log views, and what a newly opened one replays, are unaffected.</string>
+   </property>
+  </action>
+  <action name="show_debugs_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Debug</string>
+   </property>
+   <property name="toolTip">
+    <string>Show debug records.</string>
+   </property>
+  </action>
+  <action name="show_infos_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Info</string>
+   </property>
+   <property name="toolTip">
+    <string>Show info records.</string>
+   </property>
+  </action>
+  <action name="show_warnings_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Warning</string>
+   </property>
+   <property name="toolTip">
+    <string>Show warning records.</string>
+   </property>
+  </action>
+  <action name="show_errors_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Error</string>
+   </property>
+   <property name="toolTip">
+    <string>Show error records, and anything logged above them.</string>
+   </property>
+  </action>
+  <action name="follow_tail_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Follow</string>
+   </property>
+   <property name="toolTip">
+    <string>Scroll new records into view. Turns itself off while you scroll back, and on again at the bottom.</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LogView</class>
+   <extends>QTableView</extends>
+   <header>borco_pyside.logging.log_view</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,5 +1,11 @@
 """Tests for the RehuDocumentModel reactive view-model."""
 
+# The RecordingSink double and the attach-the-bridge-to-one-logger fixture read the same here as in
+# test_rehu_document_model.py and borco-pyside's test_log_bridge.py: asserting *where a record was placed*
+# takes a sink that keeps what it was handed and a logger isolated from every other handler. Kept as a copy
+# per module, the convention every settings test's own FakeSettings already follows here.
+# pylint: disable=duplicate-code
+
 # the model has a broad reactive surface (common-core + type fields, seeding, revert, dirty
 # tracking); its test suite is correspondingly long -- one cohesive module reads better than an
 # arbitrary split, so the module-length cap is lifted here rather than fragmenting it.
@@ -7,17 +13,23 @@
 
 import json
 import logging
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from pathlib import Path
+from typing import Final
 
 import pytest
+from borco_pyside.logging import LogEntry
 from fields.field_testers import FieldTester as Field
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
+from pytestqt.qtbot import QtBot
+from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
 from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    FORMAT_VERSION_KEY,
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
@@ -2969,3 +2981,222 @@ def test_seeding_the_record_lists_is_not_an_edit(document: RehuDocument) -> None
     document.set_active_user_field("learning_paths", [{"title": "Mine", "index": 1, "ref": 1}])
 
     assert RehuDocumentModel(document).dirty is False
+
+
+# region what a resource's log says about it (#200)
+
+LOGGED_PATH: Final = Path("logged-resource.rehu").resolve()
+"""The path the scoped-log tests are the log *of*; nothing is ever written to it -- every filesystem
+call these tests would make is mocked, the same way the save/revert tests above do it."""
+
+
+class RecordingSink:
+    """A `LogRecordSink` that keeps every entry it is given, for asserting on scope and level."""
+
+    def __init__(self) -> None:
+        self.entries: list[LogEntry] = []
+
+    def handle_log_records(self, entries: Sequence[LogEntry]) -> None:
+        """Keep a batch.
+
+        :param entries: the entries handed over.
+        """
+        self.entries.extend(entries)
+
+    def messages_at(self, level: int) -> list[str]:
+        """The messages kept at exactly ``level``.
+
+        :param level: the level to filter by.
+        :returns: the matching messages, in order.
+        """
+        return [entry.message for entry in self.entries if entry.record.levelno == level]
+
+
+@fixture
+def scoped_sink(qtbot: QtBot) -> Iterator[Callable[[Hashable | None], RecordingSink]]:
+    """Provide a way to record what the shared bridge routes to one scope.
+
+    The model's own logger is attached to the bridge with propagation off, so these records reach the
+    bridge under test and neither the console nor a handler another test left behind.
+
+    :param qtbot: pytest-qt bot, whose event loop the bridge's queued dispatch needs.
+    :returns: a callable taking a scope -- or ``None`` for a sink that sees everything, which is what a
+        path-less document's records are -- and returning the sink attached under it.
+    """
+    del qtbot  # only needed so a QApplication and an event loop exist
+    bridge = shared_log_bridge()
+    logger = logging.getLogger(RehuDocumentModel.__module__)
+    previous_propagate = logger.propagate
+    previous_level = logger.level
+    # DEBUG explicitly: this logger's own level is NOTSET, so without it the effective floor is the root
+    # logger's -- which under pytest is WARNING, and would silently drop every info these tests assert on
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    logger.addHandler(bridge)
+    sinks: list[RecordingSink] = []
+
+    def attach(scope: Hashable | None = None) -> RecordingSink:
+        sink = RecordingSink()
+        if scope is None:
+            bridge.add_sink(sink)
+        else:
+            bridge.add_scoped_sink(sink, scope)
+        sinks.append(sink)
+        return sink
+
+    yield attach
+    for sink in sinks:
+        bridge.remove_sink(sink)
+    logger.removeHandler(bridge)
+    logger.propagate = previous_propagate
+    logger.setLevel(previous_level)
+
+
+@fixture
+def saved_document() -> RehuDocument:
+    """A document bound to a path, so what happens to it has a scope to be logged under.
+
+    :returns: the document.
+    """
+    return RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, LOGGED_PATH)
+
+
+def test_saving_logs_under_this_documents_own_scope(
+    mocker: MockerFixture, saved_document: RehuDocument, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """A save is logged, and placed under the resource it saved (#200).
+
+    **Test steps:**
+
+    * patch the document's own save, and attach a sink for its path
+    * save through the model
+    * verify the save was recorded under that scope
+    """
+    mocker.patch.object(saved_document, "save")
+    model = RehuDocumentModel(saved_document)
+    sink = scoped_sink(LOGGED_PATH)
+
+    model.save()
+    qtbot.wait(10)
+
+    assert any(str(LOGGED_PATH) in message for message in sink.messages_at(logging.INFO))
+
+
+def test_reverting_logs_under_this_documents_own_scope(
+    mocker: MockerFixture, saved_document: RehuDocument, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """A revert is logged, and placed under the resource it re-read (#200).
+
+    **Test steps:**
+
+    * patch the document's own reload, and attach a sink for its path
+    * revert through the model
+    * verify the revert was recorded under that scope
+    """
+    mocker.patch.object(saved_document, "reload")
+    model = RehuDocumentModel(saved_document)
+    sink = scoped_sink(LOGGED_PATH)
+
+    model.revert()
+    qtbot.wait(10)
+
+    assert any("Reverted" in message for message in sink.messages_at(logging.INFO))
+
+
+def test_a_lock_is_logged_as_a_warning_in_the_banners_own_words(
+    scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """Every lock reason the banner would show is also a warning in that resource's log (#200).
+
+    Banner parity: a reader who dismissed a banner -- or never had one on screen, because the dock was
+    closed -- can still find out why a document is locked. The same words, so the two cannot disagree.
+
+    **Test steps:**
+
+    * attach a sink for a locked document's path
+    * build the model over it
+    * verify each lock reason's own message was recorded as a warning
+    """
+    sink = scoped_sink(LOGGED_PATH)
+
+    model = RehuDocumentModel(RehuDocument({FORMAT_VERSION_KEY: CURRENT_FORMAT_VERSION + 1}, LOGGED_PATH))
+    qtbot.wait(10)
+
+    assert model.lock_reasons
+    assert sink.messages_at(logging.WARNING) == [reason.message for reason in model.lock_reasons]
+
+
+def test_an_upgrade_offer_is_logged_as_an_info(
+    mocker: MockerFixture, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """The upgrade offer the banner shows is also an info in that resource's log (#200).
+
+    An info, not a warning, for the same reason it is one in the banner: nothing is wrong, there is
+    simply something better available.
+
+    **Test steps:**
+
+    * mock a file stamped at an older format version, and attach a sink for its path
+    * load it and wrap it in a model
+    * verify the offer was recorded, and as an info rather than a warning
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({FORMAT_VERSION_KEY: 1, "type": "Tutorial"}))
+    sink = scoped_sink(LOGGED_PATH)
+
+    model = RehuDocumentModel(RehuDocument.load(LOGGED_PATH))
+    qtbot.wait(10)
+
+    assert model.upgradable
+    assert any("upgrades it" in message for message in sink.messages_at(logging.INFO))
+    assert sink.messages_at(logging.WARNING) == []
+
+
+def test_a_clean_current_document_reports_nothing_about_its_state(
+    mocker: MockerFixture, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """A document with no lock and no upgrade offer has nothing to say about itself (#200).
+
+    The log is what happened, not a status line: an ordinary document opening is the read record the
+    dock area writes, and nothing more.
+
+    **Test steps:**
+
+    * mock a file at the current format version, and attach a sink for its path
+    * load it and wrap it in a model
+    * verify neither a warning nor an info was recorded
+    """
+    mocker.patch.object(
+        Path, "read_text", return_value=json.dumps({FORMAT_VERSION_KEY: CURRENT_FORMAT_VERSION, "type": "Tutorial"})
+    )
+    sink = scoped_sink(LOGGED_PATH)
+
+    RehuDocumentModel(RehuDocument.load(LOGGED_PATH))
+    qtbot.wait(10)
+
+    assert sink.messages_at(logging.WARNING) == []
+    assert sink.messages_at(logging.INFO) == []
+
+
+def test_a_failed_rename_is_logged_as_an_error(scoped_sink: Callable[..., RecordingSink], qtbot: QtBot) -> None:
+    """A failed rename is an error in the log, in the words the banner shows (#200).
+
+    The third banner source, and the only one whose record is written where it happens rather than at a
+    state transition -- a failure is not a state to be recomputed.
+
+    **Test steps:**
+
+    * attach a sink over everything, since a path-less document's records are unscoped
+    * attempt to rename a document that has no location yet
+    * verify the failure was recorded as an error, saying the same thing as ``rename_error``
+    """
+    model = RehuDocumentModel.create_new()
+    sink = scoped_sink()
+
+    assert model.rename_location("whatever") is False
+    qtbot.wait(10)
+
+    assert model.rename_error
+    assert model.rename_error in sink.messages_at(logging.ERROR)
+
+
+# endregion

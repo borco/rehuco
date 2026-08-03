@@ -140,6 +140,62 @@ Two settings, both defaulting to 500:
 **The value is shared; the buffers are not.** Changing it re-caps every open resource's model; it
 changes nothing about what each of them holds relative to the others, or about clearing them.
 
+A per-resource limit set **above** the app-wide one is kept as typed but held down to it in effect: the
+bridge's cache is also its queue, so entries past that number were dropped before any resource surface
+could see them, and promising more would be a promise the plumbing cannot keep. The settings page says
+so rather than silently correcting the number, since raising the app limit later makes the typed one
+apply after all.
+
 The library holds neither setting. `LogModel.limit` is an ordinary per-instance property — *"all the
 resource surfaces agree"* is a fact about how the app wires them, not a policy a generic table model
 should invent.
+
+## 7. What a reader reads
+
+[[[appendices.logging#surfaces]]]
+
+One widget, hosted twice: the window's own **Log** dock, and a **Log** dock inside every open resource.
+Both are hidden by default and share the same icon — they are the same kind of thing about different
+subjects, which is what the surrounding toolbar already says. The app-wide one is toggled from the
+action bar (between the theme and settings buttons) and from `View`; a resource's from its own view
+toolbar, beside the inspection docks.
+
+**Level and message, and the entry behind them.** The level cell is tinted by the record's band, in the
+same colors the inline notice banner uses for its severities, and annotated with the record's serial.
+The tint is a **wash over whatever the theme already painted**, not an opaque fill: that is what lets
+one set of colors read in both light and dark instead of two tables kept in step by hand. Debugs are
+left plain — there is nothing to draw attention to, and a fourth tint would make the three that mean
+something harder to pick out. The message is **wrapped, not elided**: the end of a log line is usually
+where the answer is.
+
+**Following the tail is a fact about where the reader is, not a mode they set.** New records scroll into
+view while the view is at the bottom, stop the moment the reader scrolls back, and resume when they
+return. That is read off the scroll position rather than from wheel events, because a scrollbar drag,
+`Page Up`, `Home` and a keyboard selection are all ways to leave the bottom that a wheel hook never
+sees. There is still an explicit toggle, because a reader is owed a way to say *"stay at the bottom"*
+without holding the scrollbar there.
+
+**Clearing empties one surface.** Not another, and not what the bridge still holds for the next surface
+to attach ([[appendices.logging#routing]]). Filtering, likewise, hides without discarding: narrowing to
+errors and widening again brings back everything, including whatever arrived while the view was narrow.
+What each surface saves across a restart is the reader's *view* of the log — the four bands, the search,
+whether the tail is followed — never the entries, which come from the replay.
+
+### 7.1 What is written, and what it is about
+
+[[[appendices.logging#what-is-logged]]]
+
+**Every condition that puts a row in a resource's inline notice banner also writes a record.** A banner
+is transient and only exists while its dock is open; the log is what happened. So each lock reason is a
+**warning** in the banner's own words, the upgrade offer is an **info**, and a failed rename is an
+**error** — written at the transitions that produce them (a document being read, reverted, converted),
+never from a property a repaint reads.
+
+**Reading a resource is logged, not only writing one.** The one funnel both loaders and both failure
+kinds pass through says either *"read, as this type"* or *"could not be read, because"* — with the
+reason, since *"could not be read"* alone leaves the reader nothing to fix.
+
+Records made about a resource are placed under its **path** ([[appendices.logging#scopes]]). A resource
+renamed mid-session re-scopes its surface to the new path and keeps the rows it already showed: the
+thing was renamed, not replaced. A resource with no path yet — a never-saved document — is the log of
+nothing, and its first save is what gives it one.

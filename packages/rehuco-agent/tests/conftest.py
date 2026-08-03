@@ -1,14 +1,18 @@
 """pytest fixtures for rehuco-agent."""
 
+import logging
 from collections.abc import Iterator
 from typing import Any
 
+from borco_pyside.logging import LogBridge
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.settings import (
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
+    logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
     videos_settings,
@@ -16,6 +20,7 @@ from rehuco_agent.settings import (
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
+from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.ui import settings_dialog
@@ -154,6 +159,47 @@ def isolate_shared_videos_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(videos_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_videos_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_logs_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `LogsSettings` singleton (#200).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds a
+    log surface (directly, or via ``MainWindow`` or any ``DocumentWidget``) would otherwise pin an
+    instance loaded from the developer's real on-disk settings for the rest of the session -- and decide,
+    from that file, how many records every later test's log docks keep.
+
+    Tests that specifically exercise the log settings patch ``persistent_settings`` themselves.
+    """
+    shared_logs_settings.cache_clear()
+    mocker.patch.object(logs_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_logs_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_log_bridge() -> Iterator[None]:
+    """Isolate every test from the process-wide `LogBridge` (#200).
+
+    Two reasons, and the second is the sharp one. The bridge subscribes to
+    :func:`~rehuco_agent.settings.logs_settings.shared_logs_settings` for its limit, so a bridge built in
+    one test would stay wired to the settings object that test's own isolation has already replaced.
+    And it **installs itself on the root logger**: without this teardown every test that builds a window
+    would leave another handler there, so by the end of a session one record would be cached dozens of
+    times over by bridges nothing can reach.
+
+    Any bridge is removed from the root logger and closed, not merely forgotten -- dropping the cached
+    reference alone would leave the handler attached and `logging`'s own module-level handler list
+    holding it.
+    """
+    shared_log_bridge.cache_clear()
+    yield
+    root = logging.getLogger()
+    for handler in [handler for handler in root.handlers if isinstance(handler, LogBridge)]:
+        root.removeHandler(handler)
+        handler.close()
+    shared_log_bridge.cache_clear()
 
 
 @fixture(autouse=True)

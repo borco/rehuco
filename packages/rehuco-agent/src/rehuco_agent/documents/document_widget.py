@@ -1,10 +1,12 @@
 """Per-document viewer/editor docks over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any, Final
 
 import cbor2
 import PySide6QtAds as QtAds
+from borco_pyside.logging import LogWidget
 from borco_pyside.qtads import QtAdsFocusTracker
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
@@ -12,10 +14,12 @@ from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
 
+from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.widgets import ImageLightbox
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.image_viewer_settings import shared_image_viewer_settings
+from ..settings.logs_settings import shared_logs_settings
 from .document_fields import build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -23,7 +27,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 4
+STATE_VERSION: Final = 5
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -32,7 +36,9 @@ the default (all-visible) layout instead.
 
 Bumped to 4 when the read-only inspection docks were added (#111): an older (v3) blob knows nothing of
 them, so ``restoreState`` would restore cleanly yet leave each new dock in whatever default state QtAds
-invents for an unknown dock, rather than the deliberately-hidden-by-default one this widget builds."""
+invents for an unknown dock, rather than the deliberately-hidden-by-default one this widget builds.
+
+Bumped to 5 when this resource's own log dock was added (#200), for exactly the same reason."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -54,14 +60,16 @@ ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
 ON_DISK_DOCK_NAME: Final = "on_disk"
-"""Object names of the read-only inspection docks (#111); namespaced apart from the
-``viewer:``/``editor:`` docks, and the keys `restore_state` restores their hidden-by-default
-visibility under."""
+LOG_DOCK_NAME: Final = "log"
+"""Object names of the read-only inspection docks (#111) and this resource's own log (#200);
+namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
+hidden-by-default visibility under."""
 
 SAVE_PREVIEW_DOCK_TITLE: Final = "Save Preview"
 ON_DISK_DOCK_TITLE: Final = "On Disk"
-"""Tab titles of the read-only inspection docks (#111): the live model serialization (what a Save would
-write) and the verbatim on-disk file."""
+LOG_DOCK_TITLE: Final = "Log"
+"""Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
+write) and the verbatim on-disk file -- and of this resource's own log (#200)."""
 
 UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Upgrade</i> button to bring it up to date."
 """The upgrade offer's inline banner message (#89, [[data-model#schema-version]]); names the toolbar
@@ -167,6 +175,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         strip_default_changed.connect(self.__on_default_strip_visible_changed)
         lightbox_height_changed.connect(self.__on_lightbox_image_height_changed)
 
+        self.__log_scope: Hashable | None = None
+        """What this document's log surface is currently attached under -- its path, or ``None`` while it
+        has none ([[appendices.logging#scopes]]). Held rather than re-read off the model, because a path
+        change has to detach the sink from the value it was attached with, not the new one (#200)."""
+
+        self.__log_widget: Final = build_log_widget(limit=shared_logs_settings().effective_resource_limit)
+        """This resource's own log surface, built before the docks that host it."""
+
         self.__banner: Final = MessageBanner(self)
         # a plain container, not `self`, hosts the dock manager -- CDockManager auto-installs itself
         # as its parent's central widget when that parent is a QMainWindow (confirmed empirically),
@@ -221,6 +237,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea
         )
         self.__save_preview_dock, self.__on_disk_dock = self.__add_inspection_docks(model)
+        self.__log_dock: Final = self.__add_log_dock(model)
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -282,7 +299,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
-        inspection_docks = (self.__save_preview_dock, self.__on_disk_dock)
+        inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
 
@@ -803,6 +820,77 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__viewer_docks:
             next(iter(self.__viewer_docks.values())).setAsCurrentTab()
         return save_preview, on_disk
+
+    def __add_log_dock(self, model: RehuDocumentModel) -> QtAds.CDockWidget:
+        """Build **this resource's own** log dock, stacked with the inspection docks and hidden (#200).
+
+        Scoped to the document's **path** ([[appendices.logging#scopes]]), so this surface shows the
+        records made about this resource and neither another's nor the app's unscoped ones -- the reader
+        who wants those has the window's own log dock. The path is the scope rather than this model
+        object because `rehuco_core` is where most of the work is logged, and it knows a path and has
+        never heard of a view-model.
+
+        Attached at construction, so the replay puts a conversion that happened before this dock was
+        first opened into it ([[appendices.logging#replay]]).
+
+        :param model: the view-model whose path this surface is the log of.
+        :returns: the dock, hidden.
+        """
+        settings = shared_logs_settings()
+        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
+        dock = self.__add_hidden_inspection_dock(
+            LOG_DOCK_NAME, LOG_DOCK_TITLE, LOG_VIEW_ICON_RESOURCE, self.__log_widget, viewer_area
+        )
+        if self.__viewer_docks:
+            # a just-added dock opens as the current tab; put the main viewer back, as
+            # __add_inspection_docks does for its own pair
+            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
+
+        self.__log_scope = model.path
+        if self.__log_scope is not None:
+            self.__log_widget.attach_to(shared_log_bridge(), self.__log_scope)
+        model.path_changed.connect(self.__on_log_scope_changed)  # type: ignore[attr-defined]
+        settings.resource_limit_changed.connect(self.__on_resource_log_limit_changed)  # type: ignore[attr-defined]
+        settings.app_limit_changed.connect(self.__on_resource_log_limit_changed)  # type: ignore[attr-defined]
+        return dock
+
+    def __on_log_scope_changed(self, path: Path | None) -> None:
+        """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).
+
+        A rename or a first save moves the thing this surface is the log *of*; records made from then on
+        carry the new path, so the sink has to be re-attached under it or the dock goes quiet exactly
+        when the document is busiest.
+
+        The rows already shown stay: they are this resource's own history, and the resource was renamed
+        rather than replaced. A never-saved document starts with no path and so attaches nothing at all
+        -- its first save is what gives it a scope to be the log of.
+
+        :param path: the model's new path, or ``None``.
+        """
+        bridge = shared_log_bridge()
+        if self.__log_scope is not None:
+            self.__log_widget.detach_from(bridge)
+        self.__log_scope = path
+        if path is not None:
+            self.__log_widget.attach_to(bridge, path)
+
+    def __on_resource_log_limit_changed(self, limit: int) -> None:
+        """Re-cap this resource's log surface as either configured limit changes.
+
+        Connected to **both** signals, and reads neither payload: what applies here is
+        :attr:`~rehuco_agent.settings.logs_settings.LogsSettings.effective_resource_limit`, which is the
+        per-resource limit held down to the app-wide one -- so raising the app limit can raise this
+        surface's cap without the per-resource number having changed at all.
+
+        :param limit: the newly-configured limit; unused, see above.
+        """
+        del limit
+        self.__log_widget.limit = shared_logs_settings().effective_resource_limit
+
+    @property
+    def log_widget(self) -> LogWidget:
+        """This resource's own log surface (#200) -- the log of the records made about it."""
+        return self.__log_widget
 
     def __add_hidden_inspection_dock(
         self, name: str, title: str, icon: str, content: QWidget, viewer_area: QtAds.CDockAreaWidget | None
