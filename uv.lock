@@ -141,7 +141,7 @@ dev = [
 requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
-    { name = "pyside6-qtads", specifier = ">=5.0.0" },
+    { name = "pyside6-qtads", specifier = ">=5.0.0,!=5.0.0.1" },
 ]
 
 [package.metadata.requires-dev]
@@ -1242,7 +1242,7 @@ requires-dist = [
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pillow" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
-    { name = "pyside6-qtads", specifier = ">=5.0.0" },
+    { name = "pyside6-qtads", specifier = ">=5.0.0,!=5.0.0.1" },
     { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },
