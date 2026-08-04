@@ -481,6 +481,8 @@ is never offered**: a modal blocking on an unbounded disk walk is a window that 
 only answers are to quit anyway or to go back and deal with the work.
 
 **Out of scope, filed separately:** a status-bar indicator for the queue running while the dock is
-hidden, and locking the location editor while an unfinished job's `source` would be moved by a rename —
-both need seams this dock does not (an `addPermanentWidget` with no existing precedent, and a new
-predicate on `PathField`/`PathEditor` alongside `set_conflict_check`).
+hidden ([#239](https://github.com/borco/rehuco/issues/239)), and locking the location editor while an
+unfinished job's `source` would be moved by a rename
+([#240](https://github.com/borco/rehuco/issues/240)) — both need seams this dock does not: an
+`addPermanentWidget` with no existing precedent, and a new predicate on `PathField`/`PathEditor`
+alongside `set_conflict_check`.
