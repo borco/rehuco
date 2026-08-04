@@ -20,17 +20,26 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
-from rehuco_agent.main_window import LOG_DOCK_OBJECT_NAME, SETTINGS_DIALOG_OBJECT_NAME, MainWindow
+from rehuco_agent.main_window import (
+    LOG_DOCK_OBJECT_NAME,
+    SETTINGS_DIALOG_OBJECT_NAME,
+    TASK_QUEUE_DOCK_OBJECT_NAME,
+    MainWindow,
+)
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
+from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
+from rehuco_agent.tasks import TaskQueueWidget
+from rehuco_core import JobState, JobStatus
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
@@ -46,10 +55,17 @@ def mock_persistent_settings(mocker: MockerFixture) -> Any:
     type=QByteArray)``, since ``bytes(MagicMock())`` doesn't raise -- which would make every
     ``MainWindow()`` in these tests spuriously call ``restoreGeometry`` with junk bytes.
     ``beginReadArray`` must return an int (``DocumentSessionSettings.load`` feeds it to ``range()``).
+
+    Patched at **two** import sites: this module's own, and
+    ``rehuco_agent.tasks.task_queue_store``'s -- ``TaskQueueStore`` resolves ``task_queue_path()``
+    off its own imported name, not this module's, so a window's task queue would otherwise compute a
+    path from the real per-user settings file (#202).
     """
     settings = mocker.MagicMock()
     settings.value.side_effect = lambda key, default=None, type=None: default  # noqa: A002
     settings.beginReadArray.return_value = 0
+    settings.fileName.return_value = "/dev/null/settings.ini"
+    mocker.patch("rehuco_agent.tasks.task_queue_store.persistent_settings", return_value=settings)
     return mocker.patch("rehuco_agent.main_window.persistent_settings", return_value=settings)
 
 
@@ -2141,6 +2157,16 @@ def log_dock(window: MainWindow) -> Any:
     return dock_manager.findDockWidget(LOG_DOCK_OBJECT_NAME)
 
 
+def task_queue_dock(window: MainWindow) -> Any:
+    """Find the app-wide task queue dock on the outer manager (#202).
+
+    :param window: the window to read.
+    :returns: the dock.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return dock_manager.findDockWidget(TASK_QUEUE_DOCK_OBJECT_NAME)
+
+
 def log_messages(window: MainWindow) -> list[str]:
     """Read every message the app-wide log surface holds.
 
@@ -2191,13 +2217,14 @@ def test_the_log_dock_starts_hidden(qtbot: QtBot) -> None:
 
 
 def test_the_log_dock_toggle_sits_between_theme_and_settings_on_the_action_bar(qtbot: QtBot) -> None:
-    """The log toggle is on the action bar, between the theme action and the settings dock's toggle.
+    """The log and task queue toggles are on the action bar, between the theme action and the settings
+    dock's toggle -- in that order (#202 added the second one alongside the log's).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
     * read the action bar's actions in order
-    * verify the log toggle sits between the two
+    * verify both app-dock toggles sit between theme and settings, log before tasks
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -2206,10 +2233,12 @@ def test_the_log_dock_toggle_sits_between_theme_and_settings_on_the_action_bar(q
     settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
 
     actions = ui.action_bar.actions()
-    toggle = log_dock(window).toggleViewAction()
+    log_toggle = log_dock(window).toggleViewAction()
+    tasks_toggle = task_queue_dock(window).toggleViewAction()
 
-    assert actions.index(ui.theme_action) < actions.index(toggle)
-    assert actions.index(toggle) < actions.index(settings_dock.toggleViewAction())
+    assert actions.index(ui.theme_action) < actions.index(log_toggle)
+    assert actions.index(log_toggle) < actions.index(tasks_toggle)
+    assert actions.index(tasks_toggle) < actions.index(settings_dock.toggleViewAction())
 
 
 def test_the_log_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
@@ -2227,12 +2256,18 @@ def test_the_log_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
 
 
 def test_the_log_dock_toggle_is_in_the_view_menu_between_theme_and_the_documents(qtbot: QtBot) -> None:
-    """The View menu lists the log toggle after the theme entries and before the open resources (#200).
+    """The View menu lists ``log_action``/``tasks_action``, in that order, after the theme entries and
+    before the open resources (#200, #202).
+
+    Companions, not the docks' own ``toggleViewAction()``s: those carry the toolbar's checked-state
+    color, unreadable against a menu row with no highlighted backdrop behind it -- see
+    ``__add_log_dock``'s and ``__add_task_queue_dock``'s companion-wiring comments.
 
     **Test steps:**
 
     * construct a real ``MainWindow`` and rebuild the dynamic tail as ``aboutToShow`` would
-    * verify the toggle is in the menu, after the theme entries and before the first dynamic entry
+    * verify both companions are in the menu, after the theme entries and before the first dynamic
+      entry, log before tasks
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -2240,31 +2275,33 @@ def test_the_log_dock_toggle_is_in_the_view_menu_between_theme_and_the_documents
     window._MainWindow__add_open_documents(ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     actions = ui.view_menu.actions()
-    toggle = log_dock(window).toggleViewAction()
     dynamic = window._MainWindow__dynamic_view_menu_actions  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     theme_titles = {"&Default", "&Light", "Dar&k"}
 
-    assert toggle in actions
-    assert actions.index(toggle) > max(actions.index(action) for action in actions if action.text() in theme_titles)
-    assert actions.index(toggle) < min(actions.index(action) for action in dynamic)
+    assert ui.log_action in actions
+    assert ui.tasks_action in actions
+    last_theme = max(actions.index(action) for action in actions if action.text() in theme_titles)
+    assert last_theme < actions.index(ui.log_action) < actions.index(ui.tasks_action)
+    assert actions.index(ui.tasks_action) < min(actions.index(action) for action in dynamic)
 
 
 def test_the_view_menu_toggle_shows_and_hides_the_log_dock(qtbot: QtBot) -> None:
     """Triggering the View menu's log entry opens the dock; triggering it again closes it (#200).
 
-    The entry in the menu *is* the dock's own ``toggleViewAction`` -- this pins that it actually
-    drives visibility, not merely that it sits in the right place.
+    The entry in the menu is ``log_action``, the companion -- its own ``triggered`` is wired straight
+    to the dock's real toggle action's ``trigger()`` by ``ActionIconThemeHandler``, so this pins that
+    the companion actually drives visibility, not merely that it sits in the right place.
 
     **Test steps:**
 
-    * construct a real ``MainWindow`` and find the log toggle in the View menu
+    * construct a real ``MainWindow`` and find ``log_action`` in the View menu
     * trigger it and verify the dock opened
     * trigger it again and verify the dock closed
     """
     window = MainWindow()
     qtbot.addWidget(window)
     ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    toggle = log_dock(window).toggleViewAction()
+    toggle = ui.log_action
     assert toggle in ui.view_menu.actions()
 
     toggle.trigger()
@@ -2272,6 +2309,25 @@ def test_the_view_menu_toggle_shows_and_hides_the_log_dock(qtbot: QtBot) -> None
 
     toggle.trigger()
     assert log_dock(window).isClosed()
+
+
+def test_opening_the_log_dock_from_the_action_bar_checks_the_menu_companion_too(qtbot: QtBot) -> None:
+    """``log_action`` (the View menu row) follows the real toggle action (the action bar button), not
+    just the other way around -- the direction ``ActionIconThemeHandler`` wires via ``toggled``.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and trigger the action bar's own log toggle
+    * verify the View menu's ``log_action`` reads checked too
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    log_dock(window).toggleViewAction().trigger()
+
+    assert not log_dock(window).isClosed()
+    assert ui.log_action.isChecked()
 
 
 def test_the_log_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2438,6 +2494,432 @@ def test_registers_the_logs_page(qtbot: QtBot) -> None:
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
     assert any(isinstance(page, LogsPage) for page in pages)
+
+
+# endregion
+
+
+# region the app-wide task queue dock (#202)
+
+
+def test_installs_a_task_queue_dock_on_the_outer_manager(qtbot: QtBot) -> None:
+    """The task queue dock is registered on the *outer* manager, hosting the window's task queue widget.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the outer dock manager's registered dock named :data:`TASK_QUEUE_DOCK_OBJECT_NAME`
+    * verify it exists, is placed, and hosts a ``TaskQueueWidget``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = task_queue_dock(window)
+
+    assert dock is not None
+    assert dock.dockAreaWidget() is not None
+    assert isinstance(dock.widget(), TaskQueueWidget)
+
+
+def test_the_task_queue_dock_starts_hidden(qtbot: QtBot) -> None:
+    """A first run does not show an empty queue (#202, mirroring the log dock's #200 default).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing persisted
+    * verify the task queue dock is closed and its toggle unchecked
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = task_queue_dock(window)
+
+    assert dock.isClosed()
+    assert not dock.toggleViewAction().isChecked()
+
+
+def test_the_task_queue_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
+    """The toggle is themed from the task-view icon, so it follows a theme switch like every dock's.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the task queue dock's toggle action carries an icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not task_queue_dock(window).toggleViewAction().icon().isNull()
+
+
+def test_the_view_menu_toggle_shows_and_hides_the_task_queue_dock(qtbot: QtBot) -> None:
+    """Triggering the View menu's task queue entry (``tasks_action``, the companion) opens the dock;
+    triggering it again closes it.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and find ``tasks_action`` in the View menu
+    * trigger it and verify the dock opened
+    * trigger it again and verify the dock closed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    toggle = ui.tasks_action
+    assert toggle in ui.view_menu.actions()
+
+    toggle.trigger()
+    assert not task_queue_dock(window).isClosed()
+
+    toggle.trigger()
+    assert task_queue_dock(window).isClosed()
+
+
+def test_opening_the_task_queue_dock_from_the_action_bar_checks_the_menu_companion_too(qtbot: QtBot) -> None:
+    """``tasks_action`` follows the real toggle action, the same direction pinned for the log dock.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and trigger the action bar's own task queue toggle
+    * verify the View menu's ``tasks_action`` reads checked too
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    task_queue_dock(window).toggleViewAction().trigger()
+
+    assert not task_queue_dock(window).isClosed()
+    assert ui.tasks_action.isChecked()
+
+
+def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A task queue dock left open is open again on the next launch -- it rides the outer dock layout.
+
+    **Test steps:**
+
+    * construct a window, open its task queue dock, and capture the real window state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state
+    * verify the second window's task queue dock starts open, unlike the hidden default
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    task_queue_dock(first).toggleView(True)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved.outer_docks_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    assert not task_queue_dock(second).isClosed()
+
+
+def test_registers_the_tasks_page(qtbot: QtBot) -> None:
+    """The Tasks settings page (#202) is registered top-level, not under "Plugins" -- the same
+    reasoning as the Logs page: a restart-time choice about the app's own queue, not a plugin's.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds a ``TasksPage``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, TasksPage) for page in pages)
+
+
+def test_restore_tasks_on_restart_brings_unfinished_work_back_queued(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """*Resume tasks on restart* on means unfinished work comes back ``queued``, not ``paused``.
+
+    **Test steps:**
+
+    * turn the setting on, leaving both clears off
+    * construct a ``MainWindow``
+    * verify ``store.restore`` was asked for ``queued``
+    """
+    restore_spy = mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.restore")
+
+    def fake_load(self: TasksSettings, settings: object) -> None:
+        del settings
+        self.resume_on_restart = True
+
+    mocker.patch.object(TasksSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restore_spy.assert_called_once()
+    assert restore_spy.call_args.kwargs["unfinished_state"].value == "queued"  # pylint: disable=no-member
+
+
+def test_closing_the_window_pauses_waits_saves_and_shuts_down_the_task_queue(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The exit sequence runs, in order, before the window actually closes ([[appendices.task-queue#teardown]]).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing dirty to prompt about
+    * patch the queue's pause/wait_until_idle/shutdown and the store's save
+    * close the window
+    * verify all four ran, in order
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    store = window._MainWindow__task_queue_store  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    calls: list[str] = []
+    mocker.patch.object(queue, "pause", side_effect=lambda: calls.append("pause"))
+    mocker.patch.object(queue, "wait_until_idle", side_effect=lambda: calls.append("wait") or True)
+    mocker.patch.object(store, "save", side_effect=lambda: calls.append("save"))
+    mocker.patch.object(queue, "shutdown", side_effect=lambda: calls.append("shutdown"))
+
+    window.close()
+
+    assert calls == ["pause", "wait", "save", "shutdown"]
+
+
+def at_risk_status(*, safely_interruptible: bool = True, persistable: bool = True) -> JobStatus:
+    """An unfinished job status with the two declarations a quit prompt reads.
+
+    :param safely_interruptible: whether stopping it part-way leaves nothing behind.
+    :param persistable: whether it survives a restart.
+    :returns: the status.
+    """
+    return JobStatus(
+        serial=1,
+        label="job",
+        state=JobState.RUNNING,
+        safely_interruptible=safely_interruptible,
+        persistable=persistable,
+    )
+
+
+def stub_queue_jobs(window: MainWindow, mocker: MockerFixture, *statuses: JobStatus) -> None:
+    """Make the window's task queue report exactly ``statuses``.
+
+    Crafted statuses rather than real jobs: what the prompt reads is two booleans a job *declares*,
+    and driving a real job into each combination would test the fake rather than the decision.
+
+    :param window: the window whose queue to stub.
+    :param mocker: the patcher.
+    :param statuses: what the queue should report.
+    """
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(queue, "jobs", return_value=statuses)
+
+
+def test_quitting_is_silent_when_every_unfinished_job_is_safe_and_saved(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The common case raises no prompt at all -- being asked every time is the friction persistence
+    exists to remove ([[appendices.task-queue#lifetime]]).
+
+    **Test steps:**
+
+    * stub the queue with an unfinished job that is both interruptible and persistable
+    * close the window
+    * verify no dialog appeared and the window closed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stub_queue_jobs(window, mocker, at_risk_status())
+    warning = mocker.patch("rehuco_agent.main_window.QMessageBox.warning")
+
+    assert window.close()
+
+    warning.assert_not_called()
+
+
+def test_quitting_is_silent_when_the_only_at_risk_jobs_have_already_finished(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A finished job is not about to lose anything, whatever it declared while it ran.
+
+    **Test steps:**
+
+    * stub the queue with a done job that is neither interruptible nor persistable
+    * close the window
+    * verify no dialog appeared
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    finished = JobStatus(serial=1, label="job", state=JobState.DONE, safely_interruptible=False, persistable=False)
+    stub_queue_jobs(window, mocker, finished)
+    warning = mocker.patch("rehuco_agent.main_window.QMessageBox.warning")
+
+    assert window.close()
+
+    warning.assert_not_called()
+
+
+@mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        ({"safely_interruptible": False}, "cannot be stopped part-way"),
+        ({"persistable": False}, "will not be saved"),
+    ],
+)
+def test_quitting_names_why_work_would_be_lost(
+    mocker: MockerFixture, qtbot: QtBot, kwargs: dict[str, bool], expected: str
+) -> None:
+    """Each of the two ways work is lost gets its own line, so the prompt says which one applies.
+
+    **Test steps:**
+
+    * stub the queue with one unfinished job carrying the declaration under test
+    * accept the prompt and close
+    * verify the message named that reason
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stub_queue_jobs(window, mocker, at_risk_status(**kwargs))
+    warning = mocker.patch("rehuco_agent.main_window.QMessageBox.warning", return_value=QMessageBox.StandardButton.Yes)
+
+    window.close()
+
+    warning.assert_called_once()
+    assert expected in warning.call_args.args[2]
+
+
+def test_refusing_the_quit_prompt_keeps_the_window_open_and_the_queue_running(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Answering No aborts the close, leaving the queue untouched -- "wait for them to finish" is never
+    offered, so going back is how someone deals with the work on their own terms.
+
+    **Test steps:**
+
+    * stub the queue with an unsaveable unfinished job and answer No
+    * close the window
+    * verify the close was refused and the queue was never shut down
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stub_queue_jobs(window, mocker, at_risk_status(persistable=False))
+    mocker.patch("rehuco_agent.main_window.QMessageBox.warning", return_value=QMessageBox.StandardButton.No)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    shutdown = mocker.patch.object(queue, "shutdown")
+
+    assert not window.close()
+
+    shutdown.assert_not_called()
+
+
+def test_accepting_the_quit_prompt_shuts_the_queue_down_anyway(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Answering Yes goes ahead, losing what was named -- the choice was made knowingly.
+
+    **Test steps:**
+
+    * stub the queue with an uninterruptible unfinished job and answer Yes
+    * close the window
+    * verify the queue was shut down
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    stub_queue_jobs(window, mocker, at_risk_status(safely_interruptible=False))
+    mocker.patch("rehuco_agent.main_window.QMessageBox.warning", return_value=QMessageBox.StandardButton.Yes)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    shutdown = mocker.patch.object(queue, "shutdown")
+
+    assert window.close()
+
+    shutdown.assert_called_once()
+
+
+def test_a_queue_that_will_not_settle_is_logged_rather_than_waited_on(
+    mocker: MockerFixture, qtbot: QtBot, caplog: Any
+) -> None:
+    """A job ignoring its checkpoints must never turn quitting into a window that will not close.
+
+    **Test steps:**
+
+    * make ``wait_until_idle`` report that the queue never settled
+    * close the window
+    * verify a warning was logged and the window still closed
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(queue, "wait_until_idle", return_value=False)
+
+    with caplog.at_level(logging.WARNING, logger="rehuco_agent.main_window"):
+        assert window.close()
+
+    assert "did not settle" in caplog.text
+
+
+@mark.parametrize(
+    ("clear_done", "clear_failed", "kept"),
+    [
+        (False, False, ["done", "failed", "cancelled", "queued"]),
+        (True, False, ["failed", "cancelled", "queued"]),
+        (False, True, ["done", "cancelled", "queued"]),
+        (True, True, ["cancelled", "queued"]),
+    ],
+)
+def test_each_clear_on_restart_setting_drops_only_its_own_kind(
+    mocker: MockerFixture, qtbot: QtBot, clear_done: bool, clear_failed: bool, kept: list[str]
+) -> None:
+    """The two clears are independent, and **a cancelled job survives every combination** -- it was
+    stopped on purpose and is the likeliest of the three to be retried.
+
+    **Test steps:**
+
+    * stand in a saved queue holding one job of each finished state, plus one queued
+    * set each combination of the two clear settings
+    * verify exactly the expected jobs reached ``restore``
+    """
+    saved = [
+        {"kind": "x", "label": "done", "job_state": "done", "state": {}},
+        {"kind": "x", "label": "failed", "job_state": "failed", "state": {}},
+        {"kind": "x", "label": "cancelled", "job_state": "cancelled", "state": {}},
+        {"kind": "x", "label": "queued", "job_state": "queued", "state": {}},
+    ]
+    mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.read_items", return_value=saved)
+    restore = mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.restore")
+
+    def fake_load(self: TasksSettings, settings: object) -> None:
+        del settings
+        self.clear_done_on_restart = clear_done
+        self.clear_failed_on_restart = clear_failed
+
+    mocker.patch.object(TasksSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restore.assert_called_once()
+    assert [item["label"] for item in restore.call_args.args[0]] == kept
+
+
+def test_restored_unfinished_work_comes_back_held_unless_resuming_is_asked_for(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Held is the default, so a restarted app comes up with nothing running.
+
+    **Test steps:**
+
+    * construct a window with the resume setting left off
+    * verify ``restore`` was asked for the paused state
+    """
+    restore = mocker.patch("rehuco_agent.tasks.task_queue_store.TaskQueueStore.restore")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    restore.assert_called_once()
+    assert restore.call_args.kwargs["unfinished_state"] is JobState.PAUSED
 
 
 # endregion

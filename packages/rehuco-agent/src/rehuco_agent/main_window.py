@@ -1,5 +1,6 @@
 """Top-level `QtAds` dock-in-dock shell hosting the open-documents area ([[plugins#toolkit-surfaces]])."""
 
+import logging
 import sys
 from pathlib import Path
 from typing import Final, override
@@ -10,7 +11,16 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
-from PySide6.QtWidgets import QFileDialog, QMainWindow, QMenu, QSizePolicy, QWidget, QWidgetAction
+from PySide6.QtWidgets import (
+    QFileDialog,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QSizePolicy,
+    QWidget,
+    QWidgetAction,
+)
+from rehuco_core import FINISHED_JOB_STATES, JobState, TaskQueue
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -26,6 +36,7 @@ from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
+from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
@@ -33,7 +44,11 @@ from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.settings_dialog import SettingsDialog
+from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
+from .tasks import TaskQueueStore, TaskQueueWidget
+
+LOG: Final = logging.getLogger(__name__)
 
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
@@ -46,6 +61,22 @@ document, so nothing here derives from a path and nothing resyncs on a rename (#
 resync is document-scoped)."""
 
 LOG_DOCK_TITLE: Final = "Log"
+
+TASK_QUEUE_DOCK_OBJECT_NAME: Final = "task_queue_dock"
+"""The app-wide task queue dock's ``objectName`` -- a fixed literal, the same reason the log dock's is
+(#202): this is not a document either, so nothing here resyncs on a rename."""
+
+TASK_QUEUE_DOCK_TITLE: Final = "Tasks"
+
+TASK_VIEW_ICON_RESOURCE: Final = ":/icons/task_view.svg"
+
+TASK_QUEUE_LOSS_TITLE: Final = "Unfinished tasks"
+TASK_QUEUE_LOSS_MESSAGE: Final = "{count} unfinished task(s) will not survive quitting:"
+"""Opens the only prompt quitting can raise about the queue (#202).
+
+Counts rather than names the jobs: the reason a prompt is owed is the *kind* of loss, which the lines
+below it spell out, and a label list would grow unbounded on the bulk enqueue this is most likely to
+follow."""
 
 THEME_DEFAULT_ICON: Final = ":/icons/theme_auto.svg"
 """Shown for the follow-system theme mode (``Qt.ColorScheme.Unknown``) -- on the toolbar's
@@ -103,6 +134,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # __setup_docking_system, but the widget is this window's for its whole life (#200)
         self.__log_widget: Final = build_log_widget(limit=shared_logs_settings().app_limit)
 
+        # same shape, for the task queue (#202): the engine and its store exist for the window's whole
+        # life, restored here -- before the dock that shows them is built -- so the widget's own model
+        # seeds itself from an already-restored queue rather than an empty one it would have to be told
+        # to re-seed from a moment later
+        self.__task_queue: Final = TaskQueue()
+        self.__task_queue_store: Final = TaskQueueStore(self.__task_queue)
+        self.__restore_task_queue()
+        self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue)
+        self.__task_queue_widget.attach()
+
         self.__documents_dock: Final = DocumentsDock(self, stylesheet_host=self.__dock_manager)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
@@ -151,12 +192,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(theme_menu.default_action)
         self.__ui.view_menu.addAction(theme_menu.light_action)
         self.__ui.view_menu.addAction(theme_menu.dark_action)
-        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the log toggle below
-        # the log dock's own toggle sits between the theme entries and the open-resource list: it is a
-        # view of the app rather than of a resource, and __add_open_documents only ever appends, so the
-        # static section keeps this order however often the dynamic tail is rebuilt (#200)
-        self.__ui.view_menu.addAction(self.__log_dock.toggleViewAction())
-        self.__ui.view_menu.addSeparator()  # between the log toggle above and the dynamic docks list below
+        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
+        # log_action/tasks_action stand in for the docks' own toggleViewAction()s here (see
+        # __setup_docking_system's companion-wiring comment) -- a plain menu row, unlike the toolbar
+        # buttons those were built for. Sit between the theme entries and the open-resource list: both
+        # are views of the app rather than of a resource, and __add_open_documents only ever appends,
+        # so the static section keeps this order however often the dynamic tail is rebuilt (#200, #202)
+        self.__ui.view_menu.addAction(self.__ui.log_action)
+        self.__ui.view_menu.addAction(self.__ui.tasks_action)
+        self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
 
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
@@ -343,6 +387,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # top-level, not under "Plugins": how much log to keep is about the app itself, and a reader
         # looking for it has no plugin name to guess (#200)
         self.__settings_dialog.add_page(LogsPage())
+        # same reasoning, for the task queue's restart choices (#202)
+        self.__settings_dialog.add_page(TasksPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
@@ -369,6 +415,25 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # not Final: this runs from __setup_docking_system rather than __init__, matching
         # __settings_action_icon_handler below
         self.__log_dock = self.__add_log_dock()
+        self.__task_queue_dock = self.__add_task_queue_dock()
+        # log_action/tasks_action stand in for the docks' own toggleViewAction()s in the View menu,
+        # the same reason settings_action stands in for toggle_action in File below: the toolbar
+        # button sits on a highlighted checked-button background, where ActionIconThemeHandler's
+        # checked-state color reads well, but a menu row has no such background behind its icon --
+        # only the native checkmark -- so that same color would be unreadable there whenever a dock
+        # is open. Kept (unlike every other ActionIconThemeHandler call site here) since view_menu's
+        # own aboutToShow needs them to resync log_action/tasks_action right before View shows --
+        # connected here rather than where the actions are actually added to view_menu (__init__,
+        # once the theme entries ahead of them exist) because both handlers already exist by this
+        # point and view_menu itself does too, declared in the .ui.
+        self.__log_view_icon_handler = ActionIconThemeHandler(
+            self.__log_dock.toggleViewAction(), LOG_VIEW_ICON_RESOURCE, companion=self.__ui.log_action
+        )
+        self.__task_view_icon_handler = ActionIconThemeHandler(
+            self.__task_queue_dock.toggleViewAction(), TASK_VIEW_ICON_RESOURCE, companion=self.__ui.tasks_action
+        )
+        self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
+        self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
 
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
@@ -400,6 +465,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.action_bar.addWidget(spacer)
         self.__ui.action_bar.addAction(self.__ui.theme_action)
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
+        self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
         self.__ui.action_bar.addAction(settings_dock.toggle_action)
 
     def __add_log_dock(self) -> QtAds.CDockWidget:
@@ -436,8 +502,122 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         dock.setWidget(self.__log_widget)
         self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
         dock.toggleView(False)
-        ActionIconThemeHandler(dock.toggleViewAction(), LOG_VIEW_ICON_RESOURCE)
         return dock
+
+    def __restore_task_queue(self) -> None:
+        """Read the saved queue, drop what the two "clear on restart" settings say to, and restore
+        the rest -- before anything else touches :attr:`__task_queue` (#202,
+        [[appendices.task-queue#lifetime]]).
+
+        **Applied at load, before ``restore()``.** A clear-on-restart setting turned on after the app
+        was last closed is then honoured on the very next start rather than the one after, and the
+        dropped jobs never enter the queue at all -- no ``jobs_removed`` churn, no flash of rows
+        vanishing as the window opens. Which of the two held-back states unfinished work restarts in is
+        *resume tasks on restart*'s to decide, not this method's: eligibility is per-job, so a newly
+        enqueued job runs immediately regardless.
+        """
+        settings = TasksSettings()
+        settings.load(persistent_settings())
+        items = self.__task_queue_store.read_items()
+        dropped_states = set()
+        if settings.clear_done_on_restart:
+            dropped_states.add(JobState.DONE)
+        if settings.clear_failed_on_restart:
+            dropped_states.add(JobState.FAILED)
+        if dropped_states:
+            items = [item for item in items if item.get("job_state") not in dropped_states]
+        unfinished_state = JobState.QUEUED if settings.resume_on_restart else JobState.PAUSED
+        self.__task_queue_store.restore(items, unfinished_state=unfinished_state)
+
+    def __add_task_queue_dock(self) -> QtAds.CDockWidget:
+        """Build the app-wide task queue dock on the outer manager, hidden by default (#202).
+
+        The same shape as :meth:`__add_log_dock`, and for the same reasons: a plain ``CDockWidget``
+        rather than a `DockableDialog` (whose only addition, the "Restore on start" checkbox, belongs
+        to a modeless dialog and not to a queue whose visibility the outer manager's own
+        ``saveState()`` already records), placed beside it in the bottom area, hidden until asked for.
+
+        :returns: the dock, hidden.
+        """
+        dock = QtAds.CDockWidget(self.__dock_manager, TASK_QUEUE_DOCK_TITLE)
+        dock.setObjectName(TASK_QUEUE_DOCK_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+        )
+        dock.setWidget(self.__task_queue_widget)
+        self.__dock_manager.addDockWidget(QtAds.BottomDockWidgetArea, dock)
+        dock.toggleView(False)
+        return dock
+
+    def __confirm_task_queue_loss(self) -> bool:
+        """Ask before quitting only when quitting would actually cost something (#202).
+
+        **Silent in the common case**, which is the whole point of persistence: if every unfinished job
+        can be stopped part-way leaving nothing behind *and* will be written to the queue file, the app
+        quits with no prompt at all -- being asked every time is exactly the friction
+        [[appendices.task-queue#lifetime]] exists to remove.
+
+        A prompt appears for the two cases where something is genuinely lost, each read off the
+        job's own declaration on its status: a job that is **not**
+        :attr:`~rehuco_core.JobStatus.safely_interruptible` leaves something behind when stopped
+        part-way, and one that is not :attr:`~rehuco_core.JobStatus.persistable` is dropped rather
+        than restored -- the opt-out §6.1 puts on every row precisely so a surface can say so instead
+        of letting it vanish.
+
+        **"Wait for them to finish" is deliberately not offered.** A modal blocking on an unbounded
+        disk walk is a window that will not close, so the only choices are to quit anyway or to go
+        back -- which is what leaves someone able to pause or finish the work on their own terms.
+
+        :returns: whether the close may proceed.
+        """
+        at_risk = [
+            status
+            for status in self.__task_queue.jobs()
+            if status.state not in FINISHED_JOB_STATES and not (status.safely_interruptible and status.persistable)
+        ]
+        if not at_risk:
+            return True
+
+        unsafe = sum(1 for status in at_risk if not status.safely_interruptible)
+        unsaved = sum(1 for status in at_risk if not status.persistable)
+        reasons = []
+        if unsafe:
+            reasons.append(f"{unsafe} cannot be stopped part-way without leaving something behind.")
+        if unsaved:
+            reasons.append(f"{unsaved} will not be saved, and will be lost.")
+        question = "\n".join([TASK_QUEUE_LOSS_MESSAGE.format(count=len(at_risk)), *reasons, "", "Quit anyway?"])
+        answer = QMessageBox.warning(
+            self,
+            TASK_QUEUE_LOSS_TITLE,
+            question,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        return answer == QMessageBox.StandardButton.Yes
+
+    def __shutdown_task_queue(self) -> None:
+        """Pause, wait, save, then shut the task queue down ([[appendices.task-queue#teardown]]).
+
+        Silent in the common case: pausing and waiting settle every unfinished job that is
+        interruptible without losing anything, so the queue is written and torn down with no prompt.
+        ``wait_until_idle`` **reports** rather than hangs -- a job ignoring its checkpoints must never
+        turn "quit" into a window that will not close -- so a job left running is logged, not blocked
+        on.
+
+        The observer is detached **before** ``shutdown()``: shutdown synchronously emits
+        ``job_updated`` for each job it cancels, and each would otherwise schedule a wake-up whose
+        dispatch runs against a model whose widget is already being torn down.
+        """
+        self.__task_queue.pause()
+        if not self.__task_queue.wait_until_idle():
+            LOG.warning("The task queue did not settle before quitting; the unfinished job may be lost.")
+        self.__task_queue_store.save()
+        self.__task_queue_widget.detach()
+        self.__task_queue.shutdown()
 
     def __on_app_log_limit_changed(self, limit: int) -> None:
         """Re-cap the app-wide log surface as the setting changes.
@@ -474,6 +654,14 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         if not confirm_and_save_dirty(self, dirty_models):
             event.ignore()
             return
+
+        if not self.__confirm_task_queue_loss():
+            event.ignore()
+            return
+
+        # pause, wait, save, shut down (#202, [[appendices.task-queue#teardown]]) -- before the outer
+        # dock layout is captured below, the same ordering constraint __dialog_manager's call is under
+        self.__shutdown_task_queue()
 
         # must run before __save_window_state captures the outer CDockManager's saveState(), or a
         # floating-and-visible-but-unchecked dialog gets saved that way anyway and flashes open on

@@ -13,7 +13,7 @@ OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 2
+OUTER_DOCKS_STATE_VERSION: Final = 3
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the central
 documents dock plus any sibling dockable dialogs, e.g. #47's settings dock) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
@@ -23,7 +23,9 @@ keeping the default (all-visible) layout instead.
 
 Bumped to 2 when the app-wide log dock was added (#200): a v1 blob knows nothing of it, so restoring
 one would leave that dock in whatever state QtAds invents for a dock the layout never mentions, rather
-than the deliberately-hidden-by-default one the window builds."""
+than the deliberately-hidden-by-default one the window builds.
+
+Bumped to 3 when the app-wide task queue dock was added (#202), for the same reason."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
