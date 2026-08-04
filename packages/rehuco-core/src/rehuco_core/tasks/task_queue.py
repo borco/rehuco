@@ -6,15 +6,21 @@ rehuco's own specification, a headless node is specified to run jobs too, and th
 (:class:`~rehuco_core.tasks.TaskQueueListener`) is all a dock needs to render one.
 """
 
+# One class, one lock, one worker loop: scheduling, stopping, ordering and persistence are the same
+# invariants seen from four sides, and every method below reads or writes the same entry list under the
+# same condition. Splitting it would put those invariants in two files that have to be read together.
+# pylint: disable=too-many-lines
+
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import Context, copy_context
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Condition, RLock, Thread
-from typing import Final
+from typing import Any, Final
 
+from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
     FINISHED_JOB_STATES,
     JobCancelled,
@@ -24,6 +30,7 @@ from .task_job import (
     StopRequest,
     TaskJob,
 )
+from .task_job_registry import TaskJobRegistry
 from .task_queue_listener import TaskQueueListener
 
 LOG: Final = logging.getLogger(__name__)
@@ -42,6 +49,13 @@ MOVABLE_JOB_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED})
 Both, because neither is executing and both are still waiting their turn: a paused job is as
 reorderable as a queued one, and refusing to move it would be an arbitrary difference between two jobs
 that are equally not running."""
+
+RESTORED_UNFINISHED_STATES: Final = frozenset({JobState.QUEUED, JobState.PAUSED})
+"""The states unfinished work may be brought back in ([[appendices.task-queue#lifetime]]).
+
+Which of the two :meth:`TaskQueue.restore` is asked for is a setting a surface owns -- come back held,
+or come back running -- and nothing else is a legal answer: a restored job has neither run nor been
+stopped in this session, so every other state would be a claim about a session that is over."""
 
 
 class TaskQueue:
@@ -77,11 +91,29 @@ class TaskQueue:
     > specified as recording a request, which is all that needs doing under a lock.
     """
 
-    # Thirteen, and each is a distinct fact about one job: its identity and label, the job itself, the
+    @dataclass(frozen=True)
+    class Captured:
+        """What a persistable job last handed over, and how far it had got when it did.
+
+        The three are taken together and kept together, because a state and a progress bar that
+        disagree describe two different moments of one job: restoring a bar that has run ahead of the
+        state behind it would show work that is about to be done again.
+
+        :param state: the job's own :meth:`~rehuco_core.tasks.PersistableTaskJob.capture_state`.
+        :param done: units finished as of that capture.
+        :param total: units expected as of that capture, or ``None``.
+        """
+
+        state: dict[str, Any]
+        done: int
+        total: int | None
+
+    # Fifteen, and each is a distinct fact about one job: its identity and label, the job itself, the
     # context it was enqueued in, what it declared about itself, where it has got to, what it
-    # reported, why it failed, and what it was asked. `resume_requested` alone stays off the status:
-    # it exists for one gap -- a pause taken back too late to stop the unwind -- and its only
-    # observable effect is the state that outcome is recorded as.
+    # reported, why it failed, what it was asked, and what it last gave the queue to write down.
+    # `resume_requested` alone stays off the status: it exists for one gap -- a pause taken back too
+    # late to stop the unwind -- and its only observable effect is the state that outcome is recorded
+    # as.
     @dataclass
     # pylint: disable-next=too-many-instance-attributes
     class Entry:
@@ -100,6 +132,8 @@ class TaskQueue:
         source: Path | None = None
         safely_interruptible: bool = True
         resumes_where_it_stopped: bool = False
+        persistable: bool = False
+        captured: TaskQueue.Captured | None = None
         state: JobState = JobState.QUEUED
         done: int = 0
         total: int | None = None
@@ -123,6 +157,7 @@ class TaskQueue:
                 source=self.source,
                 safely_interruptible=self.safely_interruptible,
                 resumes_where_it_stopped=self.resumes_where_it_stopped,
+                persistable=self.persistable,
             )
 
         def unfinished(self) -> bool:
@@ -250,6 +285,8 @@ class TaskQueue:
         :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped` -- are read here, once, and
         carried on every status from now on. Once, because each of them answers a question about the
         row a reader is looking at, and an answer that changed while the job ran would rewrite it.
+        Whether it is a :class:`~rehuco_core.tasks.PersistableTaskJob` is settled here too, and a job
+        that is one is asked for its state now, so that a queue written while it runs still holds it.
 
         **The caller's context is captured here and the job runs inside it**
         ([[appendices.task-queue#scopes]]): a thread does not inherit a context, so a job enqueued
@@ -263,24 +300,7 @@ class TaskQueue:
             accepting work that will never run would be worse than refusing it.
         """
         with self.__condition:
-            if self.__stopping:
-                raise RuntimeError("This task queue has been shut down.")
-            entry = TaskQueue.Entry(
-                serial=self.__next_serial,
-                job=job,
-                label=job.label,
-                context=copy_context(),
-                source=job.source,
-                safely_interruptible=job.safely_interruptible,
-                resumes_where_it_stopped=job.resumes_where_it_stopped,
-            )
-            self.__next_serial += 1
-            with self.__watching_paused():
-                self.__entries.append(entry)
-                index = len(self.__entries) - 1
-                status = entry.status()
-                self.__ensure_worker()
-                self.__notify(lambda listener: listener.job_enqueued(status, index))
+            entry = self.__accept(job)
             self.__condition.notify_all()
             return entry.serial
 
@@ -454,6 +474,9 @@ class TaskQueue:
         re-entry -- a conversion refuses to start over a leftover backup
         ([[acquisition-tooling#convert-mechanics]]) rather than trust the caller not to ask twice.
 
+        What a persistable job would be written down as is re-read here, so that a queue saved
+        afterwards never restores it to the very cursor Retry has just thrown away.
+
         A job that has not finished is a no-op: retrying something still running or still waiting has
         no meaning, and interpreting it as a restart would throw away work nobody asked to lose.
 
@@ -471,8 +494,98 @@ class TaskQueue:
                 entry.error = None
                 entry.stop_requested = None
                 entry.resume_requested = False
+                self.__capture(entry)
                 self.__notify_updated(entry)
             self.__condition.notify_all()
+
+    # endregion
+
+    # region persistence
+
+    def serialize(self) -> tuple[TaskQueueItem, ...]:
+        """Write down every job that can be written down ([[appendices.task-queue#lifetime]]).
+
+        **Everything persistable, including the finished ones.** Since jobs leave only when removed
+        ([[appendices.task-queue#kept]]), dropping the done, failed and cancelled ones at quit would be
+        exactly the implicit removal that rule exists to prevent -- and it would take the retryable
+        failures with it. A job that is not a :class:`~rehuco_core.tasks.PersistableTaskJob` is
+        skipped; its row said so all along, through
+        :attr:`~rehuco_core.tasks.JobStatus.persistable`.
+
+        **The running job is written from what it last gave the queue**, never asked now:
+        :meth:`~rehuco_core.tasks.PersistableTaskJob.capture_state` is specified as called only when
+        the job is not running, so a queue written mid-run holds the running job as of its last safe
+        moment rather than dropping it. The specified exit sequence -- pause, wait, save, shut down
+        ([[appendices.task-queue#teardown]]) -- has nothing running by the time it saves, and it is
+        the *structural* writes during a run that this is for.
+
+        :returns: one item per persistable job, in the queue's own order.
+        """
+        with self.__condition:
+            items: list[TaskQueueItem] = []
+            for entry in self.__entries:
+                if not entry.persistable:
+                    continue
+                if entry.state is not JobState.RUNNING:
+                    self.__capture(entry)
+                if entry.captured is None:
+                    continue
+                items.append(self.__item(entry, entry.captured))
+            return tuple(items)
+
+    def restore(
+        self,
+        items: Iterable[TaskQueueItem],
+        registry: TaskJobRegistry,
+        *,
+        unfinished_state: JobState = JobState.PAUSED,
+    ) -> tuple[int, ...]:
+        """Bring a saved queue back, in the order it was saved in.
+
+        **Unfinished jobs come back held and finished ones keep their state**, so a restarted app comes
+        up with nothing running while a job added afterwards starts immediately -- eligibility is
+        per-job, and nothing restored is eligible. ``unfinished_state`` is the seam a *resume tasks on
+        restart* setting turns; filtering *which* items come back at all is the caller's, which is why
+        this takes a list it hands over rather than a file it opens.
+
+        **An item this build cannot use is dropped, never fatal**: an unknown kind, one whose job
+        refuses the state, or one that is not shaped like an item at all. A queue file from a newer
+        build, or one naming a feature that has been removed, must not stop the app starting, so the
+        loss is logged with a count and the rest of the queue comes back.
+
+        :param items: the saved items, oldest position first.
+        :param registry: what turns each item's kind back into a job.
+        :param unfinished_state: the state to revive unfinished work in; one of
+            :data:`RESTORED_UNFINISHED_STATES`.
+        :returns: the serial of each restored job, in order.
+        :raises ValueError: if ``unfinished_state`` is not a state work can be restored in.
+        :raises RuntimeError: if the queue already holds jobs, or has been shut down. This is a startup
+            operation -- making it merge would invite a question about identity and order that nobody
+            has asked.
+        """
+        if unfinished_state not in RESTORED_UNFINISHED_STATES:
+            raise ValueError(f"Restored work cannot be revived in {unfinished_state}.")
+        with self.__condition:
+            if self.__stopping:
+                raise RuntimeError("This task queue has been shut down.")
+            if self.__entries:
+                raise RuntimeError("This task queue already holds jobs; restore is a startup operation.")
+            serials: list[int] = []
+            dropped = 0
+            for item in items:
+                entry = self.__revive(item, registry, unfinished_state)
+                if entry is None:
+                    dropped += 1
+                    continue
+                serials.append(entry.serial)
+            if dropped:
+                LOG.warning("%d saved task(s) could not be restored by this build and were dropped.", dropped)
+            self.__condition.notify_all()
+            return tuple(serials)
+
+    # endregion
+
+    # region waiting and teardown
 
     def wait_until_idle(self, timeout: float = DEFAULT_SHUTDOWN_TIMEOUT) -> bool:
         """Wait until no job is running.
@@ -524,6 +637,212 @@ class TaskQueue:
     # endregion
 
     # region internals
+
+    # six, because a restored job is accepted with everything an earlier session left it holding; the
+    # alternative is a second acceptance path that would have to keep the first one's invariants.
+    # pylint: disable-next=too-many-arguments
+    def __accept(
+        self,
+        job: TaskJob,
+        *,
+        label: str | None = None,
+        state: JobState = JobState.QUEUED,
+        done: int = 0,
+        total: int | None = None,
+        error: str | None = None,
+    ) -> TaskQueue.Entry:
+        """Take a job into the queue and tell the listeners, whether it is new or restored.
+
+        Written once for both, because everything an enqueue does -- read the declarations, mint a
+        serial, capture the caller's context, start the worker, announce the row -- a restore does too.
+        The only difference is where the job starts from, which is what the keyword arguments carry.
+
+        Called with the condition held.
+
+        :param job: the work to hold.
+        :param label: what to call it, for a restored job whose row was named in an earlier session;
+            ``None`` to ask the job, which is what a new one does.
+        :param state: the state to hold it in.
+        :param done: units already finished.
+        :param total: units expected, or ``None``.
+        :param error: why it failed, for a job restored as failed.
+        :returns: the entry now in the queue.
+        :raises RuntimeError: if the queue has been shut down.
+        """
+        if self.__stopping:
+            raise RuntimeError("This task queue has been shut down.")
+        entry = TaskQueue.Entry(
+            serial=self.__next_serial,
+            job=job,
+            label=label if label else job.label,
+            context=copy_context(),
+            source=job.source,
+            safely_interruptible=job.safely_interruptible,
+            resumes_where_it_stopped=job.resumes_where_it_stopped,
+            persistable=isinstance(job, PersistableTaskJob),
+            state=state,
+            done=done,
+            total=total,
+            error=error,
+        )
+        self.__next_serial += 1
+        self.__capture(entry)
+        with self.__watching_paused():
+            self.__entries.append(entry)
+            index = len(self.__entries) - 1
+            status = entry.status()
+            self.__ensure_worker()
+            self.__notify(lambda listener: listener.job_enqueued(status, index))
+        return entry
+
+    def __revive(
+        self,
+        item: TaskQueueItem,
+        registry: TaskJobRegistry,
+        unfinished_state: JobState,
+    ) -> TaskQueue.Entry | None:
+        """Turn one saved item back into a job the queue holds.
+
+        Reads the item defensively rather than trusting it: what arrives here came off disk, possibly
+        from another build and possibly from an editor. Anything unreadable is one dropped row, which
+        :meth:`restore` counts and logs.
+
+        Called with the condition held.
+
+        :param item: the saved item.
+        :param registry: what turns its kind into a job.
+        :param unfinished_state: the state to revive unfinished work in.
+        :returns: the entry, or ``None`` when this build cannot make one.
+        """
+        kind = item.get("kind")
+        state = item.get("state")
+        if not isinstance(kind, str) or not isinstance(state, dict):
+            return None
+        job = registry.create(kind, state)
+        if job is None:
+            return None
+        saved = self.__saved_state(item.get("job_state"))
+        if saved is None:
+            return None
+        restored = saved if saved in FINISHED_JOB_STATES else unfinished_state
+        error = item.get("error") if saved is JobState.FAILED else None
+        done, total = self.__saved_progress(item, job)
+        label = item.get("label")
+        return self.__accept(
+            job,
+            label=label if isinstance(label, str) else None,
+            state=restored,
+            done=done,
+            total=total,
+            error=error if isinstance(error, str) else None,
+        )
+
+    @staticmethod
+    def __saved_state(value: object) -> JobState | None:
+        """Read the state a saved item was written in.
+
+        :param value: whatever was under ``job_state``.
+        :returns: the state, or ``None`` when it names none -- a queue file from a build whose states
+            were not these.
+        """
+        try:
+            return JobState(value)
+        except ValueError:
+            return None
+
+    @staticmethod
+    def __saved_progress(item: TaskQueueItem, job: TaskJob) -> tuple[int, int | None]:
+        """Read how far a saved item had got, if it is entitled to say.
+
+        **The job's declaration wins over the file**: progress is restored only for a job that says it
+        resumes where it stopped, because only such a job genuinely is as far along as its bar. One
+        that starts over comes back at zero however far the file says it got.
+
+        :param item: the saved item.
+        :param job: the job just rebuilt from it.
+        :returns: the units done and the units expected.
+        """
+        if not job.resumes_where_it_stopped:
+            return 0, None
+        done = item.get("done")
+        total = item.get("total")
+        return done if isinstance(done, int) else 0, total if isinstance(total, int) else None
+
+    def __capture(self, entry: TaskQueue.Entry) -> None:
+        """Ask a persistable job for its state, and keep it with the progress of the same moment.
+
+        Called only where the job is demonstrably not running -- at enqueue, at restore, on retry, and
+        from :meth:`serialize` for the jobs that are not the running one -- which is the whole of the
+        *called only when the job is not running* contract.
+
+        A job that raises rather than answering keeps whatever was captured before it: the queue is
+        still worth writing, and a state it could not produce is not one worth inventing.
+
+        Called with the condition held.
+
+        :param entry: the job to ask.
+        """
+        if not entry.persistable:
+            return
+        try:
+            state = entry.job.capture_state()  # pyright: ignore[reportAttributeAccessIssue]
+        except Exception:  # pylint: disable=broad-exception-caught
+            LOG.exception("Task %r could not say what it would need to carry on; its last state stands.", entry.label)
+            return
+        entry.captured = TaskQueue.Captured(state=state, done=entry.done, total=entry.total)
+
+    @staticmethod
+    def __item(entry: TaskQueue.Entry, captured: TaskQueue.Captured) -> TaskQueueItem:
+        """Write one job down.
+
+        :param entry: the job to write.
+        :param captured: what it last handed over.
+        :returns: the saved item.
+        """
+        item: TaskQueueItem = {
+            "kind": entry.job.kind,  # pyright: ignore[reportAttributeAccessIssue]
+            "label": entry.label,
+            "job_state": entry.state.value,
+            "state": captured.state,
+            "error": entry.error,
+        }
+        if entry.resumes_where_it_stopped:
+            item["done"] = captured.done
+            item["total"] = captured.total
+        return item
+
+    def __validated(self, entry: TaskQueue.Entry) -> bool:
+        """Ask a job whether it can still be started, just before starting it.
+
+        **Before every start, not only after a restore**, so one rule covers the restored resource that
+        is gone and the one deleted while its job waited in the queue. A job that objects is failed
+        with its own sentence rather than given a state of its own -- a failure is kept and retryable,
+        so fixing the cause and pressing Retry is the recovery, and no surface has to learn a seventh
+        state.
+
+        A job that raises out of ``validate`` is failed the same way: it has said it cannot start, and
+        how it said so is not worth a second path ([[appendices.task-queue#failure]]).
+
+        Called on the worker thread with the condition held.
+
+        :param entry: the job about to run.
+        :returns: ``True`` when it may start; ``False`` when it has been failed instead.
+        """
+        if not entry.persistable:
+            return True
+        try:
+            reason = entry.job.validate()  # pyright: ignore[reportAttributeAccessIssue]
+        except Exception as error:  # pylint: disable=broad-exception-caught
+            LOG.error("Task could not be checked before starting: %s", entry.label, exc_info=error)
+            reason = f"{type(error).__name__}: {error}"
+        if reason is None:
+            return True
+        LOG.warning("Task refused to start: %s -- %s", entry.label, reason)
+        with self.__watching_paused():
+            entry.state = JobState.FAILED
+            entry.error = reason
+            self.__notify_updated(entry)
+        return False
 
     def __entry(self, serial: int) -> TaskQueue.Entry | None:
         """Find the entry with ``serial``.
@@ -676,6 +995,9 @@ class TaskQueue:
                     entry = self.__next_queued()
                 if self.__stopping or entry is None:
                     return
+                if not self.__validated(entry):
+                    self.__condition.notify_all()
+                    continue
                 with self.__watching_paused():
                     entry.state = JobState.RUNNING
                     self.__running = entry

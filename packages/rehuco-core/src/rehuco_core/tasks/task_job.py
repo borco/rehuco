@@ -252,10 +252,11 @@ class TaskJob(Protocol):
         """
 
 
-# Ten, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far it
-# has got, what went wrong, what has been asked of it, and what stopping it would cost. The last three
-# are the job's own declarations, copied here so that a status answers without reaching back for the
-# job object -- which a reader on another thread has no business holding.
+# Eleven, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
+# it has got, what went wrong, what has been asked of it, what stopping it would cost, and whether it
+# will still be here tomorrow. The last four are the job's own declarations, copied here so that a
+# status answers without reaching back for the job object -- which a reader on another thread has no
+# business holding.
 @dataclass(frozen=True)
 # pylint: disable-next=too-many-instance-attributes
 class JobStatus:
@@ -283,6 +284,11 @@ class JobStatus:
     :param safely_interruptible: the job's :attr:`TaskJob.safely_interruptible`, read once at enqueue.
     :param resumes_where_it_stopped: the job's :attr:`TaskJob.resumes_where_it_stopped`, read once at
         enqueue.
+    :param persistable: whether this job satisfies
+        :class:`~rehuco_core.tasks.PersistableTaskJob` and will therefore still be here after a
+        restart. **The opt-out has to be visible** ([[appendices.task-queue#lifetime]]): a surface that
+        knows a row is about to be lost at quit can say so, where one that does not would let it vanish
+        silently.
     """
 
     serial: int
@@ -295,3 +301,4 @@ class JobStatus:
     source: Path | None = None
     safely_interruptible: bool = True
     resumes_where_it_stopped: bool = False
+    persistable: bool = False
