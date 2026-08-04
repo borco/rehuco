@@ -105,6 +105,22 @@
     <string>S&amp;ettings</string>
    </property>
   </action>
+  <action name="log_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Log</string>
+   </property>
+  </action>
+  <action name="tasks_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Tasks</string>
+   </property>
+  </action>
   <action name="quit_action">
    <property name="text">
     <string>&amp;Quit</string>

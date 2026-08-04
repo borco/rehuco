@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>TaskQueueWidget</class>
+ <widget class="QWidget" name="TaskQueueWidget">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>320</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="spacing">
+    <number>0</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QTableView" name="task_view">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SelectionMode::ExtendedSelection</enum>
+     </property>
+     <property name="selectionBehavior">
+      <enum>QAbstractItemView::SelectionBehavior::SelectRows</enum>
+     </property>
+     <property name="dragDropMode">
+      <enum>QAbstractItemView::DragDropMode::NoDragDrop</enum>
+     </property>
+     <property name="contextMenuPolicy">
+      <enum>Qt::ContextMenuPolicy::CustomContextMenu</enum>
+     </property>
+     <attribute name="horizontalHeaderStretchLastSection">
+      <bool>true</bool>
+     </attribute>
+    </widget>
+   </item>
+  </layout>
+  <action name="pause_all_action">
+   <property name="text">
+    <string>Pause All</string>
+   </property>
+   <property name="toolTip">
+    <string>Ask every unfinished job to pause.</string>
+   </property>
+  </action>
+  <action name="resume_all_action">
+   <property name="text">
+    <string>Resume All</string>
+   </property>
+   <property name="toolTip">
+    <string>Resume every paused job.</string>
+   </property>
+  </action>
+  <action name="pause_action">
+   <property name="text">
+    <string>Pause</string>
+   </property>
+   <property name="toolTip">
+    <string>Ask the selected jobs to pause.</string>
+   </property>
+  </action>
+  <action name="resume_action">
+   <property name="text">
+    <string>Resume</string>
+   </property>
+   <property name="toolTip">
+    <string>Resume the selected jobs.</string>
+   </property>
+  </action>
+  <action name="cancel_action">
+   <property name="text">
+    <string>Cancel</string>
+   </property>
+   <property name="toolTip">
+    <string>Ask the selected jobs to cancel.</string>
+   </property>
+  </action>
+  <action name="retry_action">
+   <property name="text">
+    <string>Retry</string>
+   </property>
+   <property name="toolTip">
+    <string>Run the selected cancelled or failed jobs again, from the top.</string>
+   </property>
+  </action>
+  <action name="clear_action">
+   <property name="text">
+    <string>Clear</string>
+   </property>
+   <property name="toolTip">
+    <string>Remove the selected jobs from the queue.</string>
+   </property>
+  </action>
+  <action name="clear_done_action">
+   <property name="text">
+    <string>Clear Done Jobs</string>
+   </property>
+  </action>
+  <action name="clear_failed_action">
+   <property name="text">
+    <string>Clear Failed Jobs</string>
+   </property>
+  </action>
+  <action name="clear_all_action">
+   <property name="text">
+    <string>Clear All Jobs</string>
+   </property>
+  </action>
+  <action name="move_to_top_action">
+   <property name="text">
+    <string>Top</string>
+   </property>
+   <property name="toolTip">
+    <string>Move the selected jobs to the top of the queue.</string>
+   </property>
+  </action>
+  <action name="move_up_action">
+   <property name="text">
+    <string>Up</string>
+   </property>
+   <property name="toolTip">
+    <string>Move the selected jobs up.</string>
+   </property>
+  </action>
+  <action name="move_down_action">
+   <property name="text">
+    <string>Down</string>
+   </property>
+   <property name="toolTip">
+    <string>Move the selected jobs down.</string>
+   </property>
+  </action>
+  <action name="move_to_bottom_action">
+   <property name="text">
+    <string>Bottom</string>
+   </property>
+   <property name="toolTip">
+    <string>Move the selected jobs to the bottom of the queue.</string>
+   </property>
+  </action>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

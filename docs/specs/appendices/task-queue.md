@@ -9,12 +9,12 @@
 - [#201: feat: task queue engine — serialized background jobs with pause/resume/cancel/reorder](https://github.com/borco/rehuco/issues/201)
 - [#237: feat: per-job pause via a job cursor — plus explicit removal and retry](https://github.com/borco/rehuco/issues/237)
 - [#238: feat: queue persistence — a job registry, serializable jobs, and validation on start](https://github.com/borco/rehuco/issues/238)
+- [#202: feat: task queue dock — the visible queue, its context menu, and per-job controls](https://github.com/borco/rehuco/issues/202)
 
 How slow work gets off the interactive path: checksum runs, directory scans, copies, bulk conversions,
 and later a node's swarm chatter ([[nodes#readiness-per-op]]). The component itself is named in
-[[architecture-design#components]]; this page is the half that has been built — the engine in
-`rehuco_core/tasks/`, and the agent's queue file over it — and the decisions behind it. What a reader
-*sees* is a dock over that, which is a separate piece of work.
+[[architecture-design#components]]; this page covers the engine in `rehuco_core/tasks/`, the agent's
+queue file over it, and now the dock that shows both (§8) — and the decisions behind all three.
 
 The one sentence the whole design falls out of is the component's own: *"multi-selecting serializes the
 work rather than running it all at once."*
@@ -391,3 +391,98 @@ that ignores its checkpoints cannot be joined, so the wait is the chance a coope
 what it opened, not the mechanism that lets the app quit. A job outliving the wait is logged as a
 warning rather than waited on forever — the failure this exists to prevent is a window that will not
 close, and a log line is a better answer to *"why did quitting take a moment"* than a hang.
+
+## 8. The dock is a pure view, and re-snapshots rather than replays
+
+[[[appendices.task-queue#dock]]]
+
+- [#202: feat: task queue dock — the visible queue, its context menu, and per-job controls](https://github.com/borco/rehuco/issues/202)
+
+`rehuco_agent.tasks.TaskQueueModel`/`TaskQueueWidget` are what a reader sees; every decision here is
+about *drawing* the engine's state, never about deciding it. No control here changes its own state —
+each calls into the queue and waits for the engine to say what happened.
+
+**The observer re-snapshots rather than replays** (§1.1). The engine's five listener methods all
+collapse to *something changed*; on the next GUI-thread turn, the model takes a fresh `queue.jobs()` and
+diffs it against what it is holding. Per-serial last-wins coalescing — the cheap way to replay — is
+unsound the moment a reorder or removal interleaves with an update, and keeping it correct needs an
+ordered op-log that coalesces almost nothing. Re-snapshotting is correct by construction: the model is
+always exactly the queue at a recent instant. Removals and insertions are drawn as row operations, so a
+bulk enqueue of thousands of jobs costs one insertion rather than one per row; an actual reorder — rare,
+and only ever from an explicit Top/Up/Down/Bottom click, never from progress — is a full model reset,
+trading its row-level animation for a diff that cannot be gotten subtly wrong.
+
+**Marshalling is a nested `Marshaller(QObject)` with one payload-free signal on an explicit
+`QueuedConnection`**, the same shape `LogBridge` uses for records. Explicit-queued is load-bearing: a
+control clicked on the GUI thread re-enters a listener method synchronously and must still take the
+queued path, which is what makes "the view follows the engine, not its own optimistic guess" mechanical
+rather than a discipline someone has to remember.
+
+**Reorder is buttons only, no drag-and-drop.** Qt's internal-move drag-and-drop needs the *model* to
+perform the move, contradicting a pure view; the engine clamps an out-of-range move, so a drop would
+visibly spring back; and buttons are the only usable gesture at thousands of rows.
+
+**A failed job's reason draws in the progress column**, elided, with the full string as the row's
+tooltip — that column carries nothing useful for a failed row, and a fourth column would be blank on
+nearly every row. Progress for a job that cannot estimate its total draws an honest indeterminate bar:
+`total is None` and `total == 0` both read as busy, and `done > total` clamps the bar to full while the
+numbers underneath still disagree, since the engine clamps nothing.
+
+**No force-start**, matching §3.3: the queue runs exactly one job at a time, so its order already is the
+answer to *what runs next*. Resuming a multi-selection schedules them all and the topmost starts; to run
+a specific job now, move it to the top and resume it.
+
+**Pausing informs, it never blocks.** The dock reads one bit — `JobStatus.resumes_where_it_stopped` —
+and knows nothing about *how* any job resumes; that is the job class's own business (§3.2). A row that
+does not resume where it stopped says so on its tooltip and on the Pause action. Starting over is
+*wasteful, not wrong*, so there is no prompt: pausing destroys time, not data, and a modal on every pause
+of a cheap job would be worse than the thing it warns about. Cancel is the one action that prompts, and
+once per batch rather than once per row.
+
+**Resume is offered for a paused job, and for a running job with a stop pending.** `resume_job` answers
+whether the stop was still retractable, so Cancel-then-Resume is a recoverable mis-click while the job
+has not yet looked at the request. A `False` answer is not shown as a failure — the row simply carries on
+to its real outcome, no prompt and no optimistic redraw.
+
+**The bulk clears are the dock's own sweeps, not an engine feature.** #237 deleted `clear_finished()`
+because deciding *which* jobs a sweep drops is a view's business: *Clear done jobs* and *Clear failed
+jobs* filter `queue.jobs()` and call `queue.remove(*serials)`; *Clear all jobs* cancels whatever is
+unfinished first. There is no *clear cancelled jobs on restart* — a cancelled job was stopped on purpose
+and is the one most likely to be retried, and *Clear all jobs* already covers a clean slate.
+
+**Three restart-time settings, all off by default** (`Settings > Tasks`, `TasksSettings`): *clear done
+tasks*, *clear failed tasks*, and *resume tasks*. The two clears are **applied at load, before
+`restore()`** — a setting turned on after the app was last closed is honoured on the very next start
+rather than the one after, since deciding at quit would make the checkbox appear not to work until the
+second restart, and the dropped jobs never enter the queue at all, so there is no `jobs_removed` churn
+and no flash of rows vanishing as the window opens. *Resume tasks on restart* decides which of the two
+legal restored states (§6.3) unfinished work comes back in: `queued`, so the topmost starts immediately,
+or the default `paused`.
+
+**The bulk pair mirrors its own calls, not `queue.paused`.** That property is a *derived convenience*
+meaning **every** unfinished job is held (§3.3), so one job paused beside one still running makes it
+`False` — and gating Resume All on it would disable a resume the engine would happily perform. Each
+control therefore reads the predicate its own call uses: Pause All is offered while any unfinished job
+has not been asked, Resume All while any job is paused or pausing.
+
+**Closing the app runs the exit sequence from §7** — `pause()`, `wait_until_idle()`, the store's `save()`,
+the model's `detach()`, then `shutdown()` — before the outer dock layout is captured, so a floating queue
+dock's visibility is never written mid-teardown. The observer detaches *before* `shutdown()`: shutdown
+synchronously emits `job_updated` for each job it cancels, and each would otherwise schedule a wake-up
+whose dispatch runs against a model whose widget is already being torn down.
+
+**Quitting is silent unless it would actually cost something.** If every unfinished job is
+`safely_interruptible` *and* `persistable`, the queue is written and the app quits with no prompt — being
+asked every time is exactly the friction persistence exists to remove. A prompt appears only for the two
+ways work is genuinely lost, each read off the job's own declaration: one that cannot be stopped
+part-way without leaving something behind, and one that is not saved and so is dropped rather than
+restored — which is what `JobStatus.persistable` is on every row for (§6.1). **"Wait for them to finish"
+is never offered**: a modal blocking on an unbounded disk walk is a window that will not close, so the
+only answers are to quit anyway or to go back and deal with the work.
+
+**Out of scope, filed separately:** a status-bar indicator for the queue running while the dock is
+hidden ([#239](https://github.com/borco/rehuco/issues/239)), and locking the location editor while an
+unfinished job's `source` would be moved by a rename
+([#240](https://github.com/borco/rehuco/issues/240)) — both need seams this dock does not: an
+`addPermanentWidget` with no existing precedent, and a new predicate on `PathField`/`PathEditor`
+alongside `set_conflict_check`.
