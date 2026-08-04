@@ -8,12 +8,13 @@
 
 - [#201: feat: task queue engine — serialized background jobs with pause/resume/cancel/reorder](https://github.com/borco/rehuco/issues/201)
 - [#237: feat: per-job pause via a job cursor — plus explicit removal and retry](https://github.com/borco/rehuco/issues/237)
+- [#238: feat: queue persistence — a job registry, serializable jobs, and validation on start](https://github.com/borco/rehuco/issues/238)
 
 How slow work gets off the interactive path: checksum runs, directory scans, copies, bulk conversions,
 and later a node's swarm chatter ([[nodes#readiness-per-op]]). The component itself is named in
 [[architecture-design#components]]; this page is the half that has been built — the engine in
-`rehuco_core/tasks/` — and the decisions behind it. What a reader *sees* is a dock over it, which is a
-separate piece of work.
+`rehuco_core/tasks/`, and the agent's queue file over it — and the decisions behind it. What a reader
+*sees* is a dock over that, which is a separate piece of work.
 
 The one sentence the whole design falls out of is the component's own: *"multi-selecting serializes the
 work rather than running it all at once."*
@@ -264,23 +265,103 @@ worker where the caller's context is already gone — and the job is run inside 
 generic: the engine never learns what is in a context, only that the caller's belongs to the work. That
 is also what keeps this out of `borco-pyside`'s reach and leaves `rehuco-core` importing nothing new.
 
-## 6. Nothing survives a restart
+## 6. The queue survives a restart, for the jobs that opt in
 
 [[[appendices.task-queue#lifetime]]]
 
-The queue is **in memory**. Quitting mid-sweep drops what was queued, and re-running it is the user's to
-ask for.
+- [#238: feat: queue persistence — a job registry, serializable jobs, and validation on start](https://github.com/borco/rehuco/issues/238)
 
-Persisting it was weighed seriously — a checksum sweep over a large catalog is long enough that quitting
-part-way through is normal, not exceptional. It was rejected for what it costs the job protocol: a
-restorable job cannot be an arbitrary object closing over whatever it needs, it has to be a **registered
-kind plus serializable arguments**, resolvable at start by a build that may no longer ship that kind.
-That is a constraint on every client the queue will ever have, imposed now, to buy the resumption of one
-interrupted run.
+The queue is **written to disk**, and behaves like a download manager's: close the app, reopen it, the
+list is still there. Nobody has to remember what they had planned, and nobody is held hostage by a
+running queue at shutdown.
 
-The door is deliberately left open: an *optional* serializable descriptor can be added to the protocol
-later, and a job that carries one becomes restorable without any job that does not carrying the cost.
-Adding it later is cheap; taking the constraint back once every client is written against it is not.
+**This reverses what this section said until #238**, and the reversal is recorded with both halves so
+the trade stays visible. The old text rejected persistence because it *"would make every job a
+registered kind plus serializable arguments — a constraint on every future client, bought for the
+resumption of one interrupted sweep."* The **cost** it named is real and is now accepted — but only by
+the jobs that opt in. The **benefit** was misjudged: it is not the resumption of one sweep, it is not
+losing planned work and not being unable to quit.
+
+### 6.1 A second protocol, not a wider one
+
+`TaskJob` is unchanged. `PersistableTaskJob` extends it with `kind`, `validate()`, and the
+`capture_state()` / `restore_state()` pair. **A job satisfying only `TaskJob` is legal** — it is simply
+not saved — and `JobStatus.persistable` says so on every row, so a surface can mark what is about to be
+lost rather than let it vanish at quit. That opt-out has to survive: a silent close depends on knowing
+whether a prompt is owed.
+
+`capture_state()`/`restore_state()` rather than a payload property plus a `from_payload` classmethod:
+the pair is symmetric, and it is the same pair §3.1's cursor already implies — so **in-session pause and
+across-restart resume stay one concept** instead of becoming two. It costs the registry a factory per
+kind, which is what the classmethod would have saved.
+
+`capture_state()` is specified as **called only when the job is not running**, so it never reads state
+that is mutating on the worker thread. The engine keeps the last state it captured, so a queue written
+*while* a job runs still holds that job — as of the last moment it could safely be asked.
+
+**`kind` is a stable string, not a class path.** A class path bakes today's module layout into the
+user's saved queue, and this repo has already moved its packages once (#157). `TaskJobRegistry` is the
+indirection that turns a rename into a one-line map change instead of an unreadable file. It hands out
+restored jobs through one call rather than a blank instance plus a separate restore, because a job that
+has been built but not restored is an invalid object; an unknown kind answers `None`, matching
+`PluginRegistry.resolve`'s house style rather than raising. Registration belongs to whoever owns the
+job.
+
+**The job class is the unit of responsibility** (§3.2, and it governs here too): how a job captures
+itself, what that state holds, and how it picks up on reconstruction are one class's business. The
+registry, the queue and the file know only `kind` and an opaque blob, and nothing in between inspects
+one — the class that wrote a state is the class that reads it.
+
+> [!NOTE]
+> The constraint the old §6 warned about is genuine, and whoever writes the first persistable job pays
+> it: the state may hold only what survives a round trip through JSON, and `kind` is a promise that
+> cannot be casually renamed.
+
+### 6.2 What is written, and when
+
+**Everything persistable is written, including `done`, `failed` and `cancelled`.** Since jobs leave only
+when removed (§4.1), dropping the finished ones at quit would be exactly the implicit removal that rule
+exists to prevent — and it would take the retryable failures with it. Each item carries `kind`, the
+captured state, the label, the state it was in, and the reason it failed.
+
+**Progress is written for a job that declares `resumes_where_it_stopped`, and only for that job.** Such
+a job genuinely is as far along as its bar says, because whatever it needs to carry on is in the state
+it captured. A job that starts over comes back at zero, because restoring a bar the first checkpoint is
+about to reset would be a lie with a witness. Note that nothing here asks *how* a job resumes, only
+whether it says it does.
+
+**Written on structural change, never on progress.** Enqueue, remove, reorder, retry, state transitions,
+shutdown — O(jobs), not O(work units), so a five thousand file checksum sweep writes about twice rather
+than five thousand times. What is being avoided is **`fsync` latency on the worker thread**, not SSD
+wear: the file is tens of KB and endurance is a non-issue, but an atomic write is a durability barrier
+by design (~0.1–1 ms on SSD, 5–15 ms on spinning disk, worse on an SMB mount) and the page cache cannot
+absorb it.
+
+The file is **JSON beside the settings file** — `task-queue.json` in the settings directory, written
+through `borco_core.atomic_write_text`. Not `QSettings`, whose flat key space would spell an opaque job
+state as `tasks/3/state/paths/7`. A corrupt or unreadable file logs and starts empty; it never blocks
+startup.
+
+### 6.3 What happens on the way back
+
+**`validate()` runs before *every* start, not only after a restore.** One rule then covers both the
+restored-resource-is-gone case and the deleted-while-queued one. A non-`None` return puts the job in
+`failed` with that sentence as its error — no seventh state — and because a failed job is kept and
+retryable (§4.1), the recovery is to fix the cause and press Retry.
+
+**Unfinished jobs come back `paused`; finished ones keep their state.** So a restarted app comes up with
+everything held, while a **newly added job runs immediately**, because eligibility is per-job and
+nothing else is eligible. Which state unfinished work returns in is an argument rather than a decision
+the engine makes, so a *resume tasks on restart* setting has somewhere to stand; likewise the load path
+is a plain list the surface filters, not a sealed `queue.load_from(path)`.
+
+**An unknown `kind` is dropped with a logged warning and a count**, not an error: a queue file from a
+newer build, or one naming a removed feature, must not stop the app starting. The same is true of a
+record that is not shaped like one at all, since what arrives came off a disk anyone can edit.
+
+**`restore` is refused on a queue that already holds jobs, or one that has been shut down.** It is a
+startup operation; making it merge invites a subtler question about identity and order that nobody has
+asked.
 
 ## 7. Teardown is a courtesy with a deadline
 
@@ -302,9 +383,8 @@ rather than hangs, so a job ignoring its checkpoints leaves the caller to choose
 has and waiting longer.
 
 > [!NOTE]
-> The *save* in that sequence is not built. The engine offers the pause and the wait that make a
-> clean stop possible; what is written, and where, is §6's question and is being reversed by
-> [#238](https://github.com/borco/rehuco/issues/238).
+> The *save* in that sequence is §6: the engine hands over what to write, and the surface that owns the
+> file writes it.
 
 The worker is also a **daemon** thread, and that is what actually guarantees the process exits: a job
 that ignores its checkpoints cannot be joined, so the wait is the chance a cooperative job gets to close
