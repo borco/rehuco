@@ -33,7 +33,7 @@ class FieldModel(Protocol):  # pylint: disable=too-few-public-methods
     ([[plugins#field-toolkit]], [[plugins#view-model]]).
     """
 
-    def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:
+    def bind[T](self, field: Field[T], name: str | None = None) -> FieldBinding[T]:  # pyright: ignore[reportReturnType]
         """Resolve one of a field's names into its current binding.
 
         Most fields bind a single value, and the name is theirs (`Field.name`) -- ``None`` says so. A
@@ -46,7 +46,6 @@ class FieldModel(Protocol):  # pylint: disable=too-few-public-methods
         :param name: which of ``field.names`` to resolve; ``field.name`` when omitted.
         :returns: the named value's binding on this model.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @dataclass(frozen=True)
@@ -130,21 +129,18 @@ class ValueWidget[T](Protocol):
     """
 
     @property
-    def value(self) -> T:
+    def value(self) -> T:  # pyright: ignore[reportReturnType]
         """The widget's current value."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     @property
-    def value_changed(self) -> SignalInstance:
+    def value_changed(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
         """The signal that fires with the new value on every user edit."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def set_value(self, value: T) -> None:
         """Write ``value`` in without re-emitting ``value_changed`` (the echo guard).
 
         :param value: the new value.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @runtime_checkable
@@ -154,19 +150,17 @@ class StatefulWidget(Protocol):
     protocol, keyed by field, and folds their state into the document's saved layout.
     """
 
-    def save_state(self) -> bytes:
+    def save_state(self) -> bytes:  # pyright: ignore[reportReturnType]
         """Encode this widget's UI state.
 
         :returns: the opaque blob, restorable by :meth:`restore_state`.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def restore_state(self, state: bytes) -> None:
         """Restore UI state previously produced by :meth:`save_state`.
 
         :param state: the blob to restore from.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @runtime_checkable
@@ -179,10 +173,9 @@ class HeaderPinned(Protocol):  # pylint: disable=too-few-public-methods
     """
 
     @property
-    def header_height(self) -> int:
+    def header_height(self) -> int:  # pyright: ignore[reportReturnType]
         """This editor's first line's natural height, stable regardless of whatever makes the
         editor's overall height vary."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 @runtime_checkable

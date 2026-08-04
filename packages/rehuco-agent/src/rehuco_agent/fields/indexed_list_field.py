@@ -30,14 +30,12 @@ class IndexedEntry(Protocol):
     """
 
     @property
-    def title(self) -> str:
+    def title(self) -> str:  # pyright: ignore[reportReturnType]
         """The entry's display name."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     @property
-    def index(self) -> int:
+    def index(self) -> int:  # pyright: ignore[reportReturnType]
         """Where this resource sits in it; :data:`UNPLACED_INDEX` for no position."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 class IndexedListField[T](Field[T]):

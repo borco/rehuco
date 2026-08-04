@@ -78,16 +78,14 @@ class MeasureRow(Protocol):
     """
 
     @property
-    def compute_requested(self) -> SignalInstance:
+    def compute_requested(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
         """Fires when the row's ``Compute`` is pressed; the row is already busy by then."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def show_measurement(self, value: int | None) -> None:
         """Show a completed measurement and leave the busy state.
 
         :param value: what was measured, or ``None`` when nothing could be.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 def measure_in_background(row: MeasureRow, measure: Callable[[], int | None]) -> None:

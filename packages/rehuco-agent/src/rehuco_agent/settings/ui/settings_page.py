@@ -15,21 +15,17 @@ class SettingsPage(Protocol):
     """
 
     @property
-    def title(self) -> str:
+    def title(self) -> str:  # pyright: ignore[reportReturnType]
         """This page's label in the category tree."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
-    def is_dirty(self) -> bool:
+    def is_dirty(self) -> bool:  # pyright: ignore[reportReturnType]
         """Whether this page has unsaved changes.
 
         Reserved for a later dirty-badging slice -- not yet consumed by `SettingsDialog`.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def save_changes(self) -> None:
         """Persist this page's current field values."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def drop_changes(self) -> None:
         """Discard this page's in-progress edits, reverting its fields to the last-saved values."""
-        ...  # pylint: disable=unnecessary-ellipsis

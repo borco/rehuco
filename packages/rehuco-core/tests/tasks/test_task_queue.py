@@ -1,26 +1,41 @@
-"""Tests for the serial task-queue engine -- ordering, pause, cancellation, failure and teardown (#201).
+"""Tests for the serial task-queue engine -- ordering, pause, cancellation, failure and teardown (#201),
+and per-job pause, removal and retry (#237).
 
 Every job below is driven by `threading.Event`s rather than by sleeping, so a test asserts on a state
 the worker has demonstrably reached instead of on one it has probably reached by now. The one place
 polling is unavoidable is observing a transition the worker makes on its own -- that is what the
 ``settles`` fixture is for, and it waits on a condition rather than for a duration.
+
+**No test asserts on a cursor.** Whether a job carries on or starts over is observed through what it
+did -- the values its ``run`` saw on each entry -- because the engine has no access to a cursor and
+neither should its tests.
 """
 
 # The engine's surface is small but its behaviors are many, and every one of them below is a distinct
 # fact about it. Splitting the file would put ordering, pausing and teardown in three modules that
-# share the same four fakes and the same two fixtures.
+# share the same fakes and the same three fixtures.
 # pylint: disable=too-many-lines
 
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from contextvars import ContextVar
-from threading import Event, get_ident
+from pathlib import Path
+from threading import Event, active_count, get_ident
 from time import monotonic, sleep
 from typing import Final
 
 import pytest
 from pytest import fixture
-from rehuco_core import JobControl, JobState, JobStatus, TaskQueue
+from rehuco_core import (
+    JobCancelled,
+    JobControl,
+    JobPaused,
+    JobState,
+    JobStatus,
+    StopRequest,
+    TaskJobBase,
+    TaskQueue,
+)
 
 TIMEOUT: Final = 5.0
 """How long a test waits for the worker before calling it a failure, in seconds.
@@ -31,11 +46,24 @@ the condition holds, so a passing run never spends this."""
 
 # region Sample classes
 
-# a fake job is one method by definition -- ``run`` is the whole of what the engine asks of it
-# pylint: disable=too-few-public-methods
+
+# a shared base for the fakes below, so ``run`` is deliberately left to each of them
+# pylint: disable-next=abstract-method
+class SampleJob(TaskJobBase):
+    """What every fake below shares: the real stop protocol, so these tests exercise the shipped one.
+
+    Deliberately :class:`~rehuco_core.TaskJobBase` rather than a hand-written stand-in -- the engine's
+    stop behavior is now half the job's, and a fake that reimplemented it would be testing the fake.
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
 
 
-class RecordingJob:
+class RecordingJob(SampleJob):
     """A job that runs to completion, checkpointing and reporting once per unit.
 
     :param label: the job's label.
@@ -45,7 +73,7 @@ class RecordingJob:
     """
 
     def __init__(self, label: str, order: list[str] | None = None, units: int = 1) -> None:
-        self.label: Final = label
+        super().__init__(label)
         self.__order: Final = order
         self.__units: Final = units
 
@@ -55,13 +83,13 @@ class RecordingJob:
         :param control: the engine's face to this job.
         """
         for unit in range(self.__units):
-            control.checkpoint()
+            self.checkpoint()
             control.report(unit + 1, self.__units)
         if self.__order is not None:
             self.__order.append(self.label)
 
 
-class GatedJob:
+class GatedJob(SampleJob):
     """A job the test holds mid-run: it announces that it started, waits to be let go, then checkpoints.
 
     The shape every "while a job is running..." test needs -- the queue is demonstrably busy from the
@@ -75,7 +103,7 @@ class GatedJob:
     """
 
     def __init__(self, label: str = "gated") -> None:
-        self.label: Final = label
+        super().__init__(label)
         self.entered: Final = Event()
         self.release: Final = Event()
         self.finished = False
@@ -87,21 +115,21 @@ class GatedJob:
         """
         self.entered.set()
         self.release.wait(TIMEOUT)
-        control.checkpoint()
+        self.checkpoint()
         self.finished = True
 
 
-class CheckpointingJob:
+class CheckpointingJob(SampleJob):
     """A job that checkpoints in a loop until the test lets it stop -- somewhere a pause can land.
 
-    Unlike :class:`GatedJob`, this one is *inside* its checkpoint repeatedly, so pausing the queue
-    parks it without the test having to time anything.
+    Unlike :class:`GatedJob`, this one is *inside* its checkpoint repeatedly, so pausing it unwinds it
+    without the test having to time anything.
 
     :param label: the job's label.
     """
 
     def __init__(self, label: str = "looping") -> None:
-        self.label: Final = label
+        super().__init__(label)
         self.entered: Final = Event()
         self.release: Final = Event()
         self.finished = False
@@ -113,42 +141,172 @@ class CheckpointingJob:
         """
         self.entered.set()
         while not self.release.is_set():
-            control.checkpoint()
+            self.checkpoint()
             sleep(0.001)
-        control.checkpoint()
+        self.checkpoint()
         self.finished = True
 
 
-class StubbornJob:
+class CursorJob(SampleJob):
+    """A job that counts units and, if it says it does, picks up where it left off when re-entered.
+
+    The A/B the whole cursor design rests on: **one class, one flag**, so a test can show that the
+    same engine produces *continues* and *starts over* purely from what the job declares. What it
+    keeps is a plain counter, and nothing outside this class ever reads it -- the tests assert on
+    :attr:`entered_at`, which is what each ``run`` was handed, not on the counter itself.
+
+    :param label: the job's label.
+    :param units: how many units of work to do in all.
+    :param hold_after: how many units to do before announcing :attr:`reached` and waiting on
+        :attr:`release`, so a test can pause it at a known point. Happens once per job.
+    :param resumes: what to declare as
+        :attr:`~rehuco_core.TaskJob.resumes_where_it_stopped`, and whether to honor it.
+    """
+
+    def __init__(self, label: str = "cursor", units: int = 4, hold_after: int = 2, resumes: bool = True) -> None:
+        super().__init__(label)
+        self.resumes_where_it_stopped = resumes
+        self.__units: Final = units
+        self.__hold_after: Final = hold_after
+        self.__cursor = 0
+        self.entered_at: Final[list[int]] = []
+        self.reached: Final = Event()
+        self.release: Final = Event()
+
+    def reset(self) -> None:
+        """Throw the counter away, so the next run starts from the beginning."""
+        super().reset()
+        self.__cursor = 0
+
+    def run(self, control: JobControl) -> None:
+        """Count to :attr:`units`, from the counter or from zero, pausing once at ``hold_after``.
+
+        :param control: the engine's face to this job.
+        """
+        if not self.resumes_where_it_stopped:
+            self.__cursor = 0
+        self.entered_at.append(self.__cursor)
+        while self.__cursor < self.__units:
+            self.checkpoint()
+            self.__cursor += 1
+            control.report(self.__cursor, self.__units)
+            if self.__cursor == self.__hold_after and not self.reached.is_set():
+                self.reached.set()
+                self.release.wait(TIMEOUT)
+
+
+# nine, because this fake is CursorJob with one more gate: the work, the point to pause it at, and a
+# hold *inside* the unwind, which is the part no smaller fake can offer.
+# pylint: disable-next=too-many-instance-attributes
+class SlowUnwindJob(SampleJob):
+    """A job whose unwind can be held open, so a test can land a call inside the raise-to-record gap.
+
+    :class:`CursorJob` proves what pausing does; this one proves what happens to a call that arrives
+    *while* a stop is in flight. It catches the raise, announces :attr:`unwinding`, waits on
+    :attr:`finish_unwind`, and re-raises -- which is also the sanctioned shape for a real job that
+    must tidy up before it stops, and is exactly the job whose cancel cannot be taken back.
+
+    :param label: the job's label.
+    :param stop: which stop this job expects to catch, so the test can hold either unwind open.
+    :param units: how many units of work to do in all.
+    :param hold_after: how many units to do before announcing :attr:`reached` and waiting on
+        :attr:`proceed`, so the test can land its request at a known point.
+    """
+
+    resumes_where_it_stopped = True
+
+    def __init__(
+        self,
+        label: str = "unwinding",
+        stop: StopRequest = StopRequest.PAUSE,
+        units: int = 4,
+        hold_after: int = 2,
+    ) -> None:
+        super().__init__(label)
+        self.__expected: Final = JobPaused if stop is StopRequest.PAUSE else JobCancelled
+        self.__units: Final = units
+        self.__hold_after: Final = hold_after
+        self.__cursor = 0
+        self.entered_at: Final[list[int]] = []
+        self.reached: Final = Event()
+        self.proceed: Final = Event()
+        self.unwinding: Final = Event()
+        self.finish_unwind: Final = Event()
+
+    def run(self, control: JobControl) -> None:
+        """Count units from the cursor, holding at ``hold_after`` and again inside the unwind.
+
+        :param control: the engine's face to this job.
+        """
+        del control
+        self.entered_at.append(self.__cursor)
+        try:
+            while self.__cursor < self.__units:
+                if self.__cursor == self.__hold_after and not self.reached.is_set():
+                    self.reached.set()
+                    self.proceed.wait(TIMEOUT)
+                self.checkpoint()
+                self.__cursor += 1
+        except self.__expected:
+            self.unwinding.set()
+            self.finish_unwind.wait(TIMEOUT)
+            raise
+
+
+class SelfPausingJob(SampleJob):
+    """A job that raises the pause exception without ever having been asked -- a contract violation
+    the engine must absorb without re-running it forever.
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str = "unasked") -> None:
+        super().__init__(label)
+        self.runs = 0
+
+    def run(self, control: JobControl) -> None:
+        """Raise the pause exception, unasked.
+
+        :param control: unused.
+        :raises JobPaused: always.
+        """
+        del control
+        self.runs += 1
+        raise JobPaused(self.label)
+
+
+class StubbornJob(SampleJob):
     """A job that never checkpoints -- what work the engine cannot interrupt looks like.
 
     :param label: the job's label.
     """
 
     def __init__(self, label: str = "stubborn") -> None:
-        self.label: Final = label
+        super().__init__(label)
         self.entered: Final = Event()
         self.release: Final = Event()
         self.saw_cancellation = False
+        self.saw_pause = False
 
     def run(self, control: JobControl) -> None:
-        """Announce, wait to be let go, and read the cancellation flag without unwinding on it.
+        """Announce, wait to be let go, and read both requests without unwinding on either.
 
         :param control: the engine's face to this job.
         """
         self.entered.set()
         self.release.wait(TIMEOUT)
-        self.saw_cancellation = control.cancelled
+        self.saw_cancellation = self.stop_requested is StopRequest.CANCEL
+        self.saw_pause = self.stop_requested is StopRequest.PAUSE
 
 
-class FailingJob:
+class FailingJob(SampleJob):
     """A job that raises, so the queue's failure policy has something to record.
 
     :param label: the job's label.
     """
 
     def __init__(self, label: str = "failing") -> None:
-        self.label: Final = label
+        super().__init__(label)
 
     def run(self, control: JobControl) -> None:
         """Raise, having done nothing.
@@ -160,14 +318,14 @@ class FailingJob:
         raise RuntimeError("the disk went away")
 
 
-class IndeterminateJob:
+class IndeterminateJob(SampleJob):
     """A job that reports progress it cannot total -- a scan that discovers as it walks.
 
     :param label: the job's label.
     """
 
     def __init__(self, label: str = "scanning") -> None:
-        self.label: Final = label
+        super().__init__(label)
 
     def run(self, control: JobControl) -> None:
         """Report a count with no total.
@@ -177,7 +335,28 @@ class IndeterminateJob:
         control.report(3)
 
 
-class ScopeReadingJob:
+class DeclaringJob(SampleJob):
+    """A job that declares everything about itself, so a status can be checked against it.
+
+    :param label: the job's label.
+    """
+
+    source = Path("/library/Sculpting Series/info.rehu")
+    safely_interruptible = False
+    resumes_where_it_stopped = True
+
+    def __init__(self, label: str = "declaring") -> None:
+        super().__init__(label)
+
+    def run(self, control: JobControl) -> None:
+        """Do nothing at all.
+
+        :param control: unused.
+        """
+        del control
+
+
+class ScopeReadingJob(SampleJob):
     """A job that records what a `contextvars.ContextVar` held on the worker thread.
 
     :param label: the job's label.
@@ -185,7 +364,7 @@ class ScopeReadingJob:
     """
 
     def __init__(self, variable: ContextVar[str], label: str = "scoped") -> None:
-        self.label: Final = label
+        super().__init__(label)
         self.__variable: Final = variable
         self.seen: str | None = None
         self.done: Final = Event()
@@ -448,6 +627,54 @@ def test_a_job_that_cannot_total_its_work_reports_indeterminate(queue: TaskQueue
     assert (3, None) in [(status.done, status.total) for status in listener.updated]
 
 
+def test_what_a_job_declares_about_itself_is_read_once_and_carried_on_its_status(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """A reader asks the row, never the job -- so what stopping one costs is answerable off a snapshot.
+
+    **Test steps:**
+
+    * enqueue a job declaring a source, that it is unsafe to interrupt, and that it resumes
+    * change every declaration on the job object after the enqueue
+    * verify the enqueue notification already carried all three
+    * wait for it to finish and verify the final status still carries what was declared at enqueue
+    """
+    job = DeclaringJob()
+    serial = queue.enqueue(job)
+    job.source = None
+    job.safely_interruptible = True
+    job.resumes_where_it_stopped = False
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    accepted = listener.enqueued[0][0]
+    assert (accepted.source, accepted.safely_interruptible, accepted.resumes_where_it_stopped) == (
+        Path("/library/Sculpting Series/info.rehu"),
+        False,
+        True,
+    )
+    assert queue.jobs()[0].resumes_where_it_stopped
+
+
+def test_a_job_that_says_nothing_about_itself_is_interruptible_and_starts_over(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """The cautious defaults: no resource, nothing left behind, and no promise to carry on.
+
+    **Test steps:**
+
+    * enqueue a plain job that declares only a label
+    * wait for it to finish
+    * verify its status reports no source, safely interruptible, and no resumption
+    """
+    serial = queue.enqueue(RecordingJob("plain"))
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    status = queue.jobs()[0]
+    assert (status.source, status.safely_interruptible, status.resumes_where_it_stopped) == (None, True, False)
+
+
 def test_the_scope_open_at_enqueue_is_the_one_the_job_runs_in(queue: TaskQueue) -> None:
     """A thread inherits no context, so the queue carries the caller's onto the worker itself.
 
@@ -499,6 +726,28 @@ def test_a_queued_job_can_be_moved_ahead_of_the_others(
 
     assert order == ["c", "a", "b"]
     assert listener.reordered == [(0, 3, 1, 2)]
+
+
+def test_a_paused_job_is_as_reorderable_as_a_queued_one(queue: TaskQueue, listener: RecordingListener) -> None:
+    """Neither is executing, so refusing to move one of them would be an arbitrary difference.
+
+    **Test steps:**
+
+    * hold a job running, and enqueue two behind it
+    * pause the last of the two, then move it ahead of the other
+    * verify the new order was reported
+    """
+    gated = GatedJob()
+    running = queue.enqueue(gated)
+    first = queue.enqueue(RecordingJob("a"))
+    second = queue.enqueue(RecordingJob("b"))
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.pause_job(second)
+    queue.move(second, 1)
+    gated.release.set()
+
+    assert listener.reordered == [(running, second, first)]
 
 
 def test_a_queued_job_cannot_be_moved_ahead_of_the_running_one(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -564,7 +813,7 @@ def test_moving_a_job_to_where_it_already_is_says_nothing(queue: TaskQueue, list
 
 
 def test_moving_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue, listener: RecordingListener) -> None:
-    """A cleared job's serial may still be in a view's hand, so this must not raise.
+    """A removed job's serial may still be in a view's hand, so this must not raise.
 
     **Test steps:**
 
@@ -578,76 +827,575 @@ def test_moving_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue, l
 
 # endregion
 
-# region Pausing
+# region Pausing one job
 
 
-def test_pausing_parks_the_running_job_at_its_next_checkpoint(
+def test_pausing_the_running_job_lets_the_next_one_start(
     queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
 ) -> None:
-    """Cooperative, not immediate: the job stops where it chose to yield, and says it has.
+    """The heart of #237: the queue does not stop because one job did.
 
     **Test steps:**
 
-    * start a job that checkpoints in a loop
-    * pause the queue
-    * verify the queue reports paused and the job reaches the paused state
+    * start a job that holds part-way, with a second behind it
+    * pause the running one and let it reach its next checkpoint
+    * verify it went to paused, the second ran to done, and the paused one kept its place at the front
+    """
+    order: list[str] = []
+    job = CursorJob()
+    paused = queue.enqueue(job)
+    queue.enqueue(RecordingJob("next", order))
+    assert job.reached.wait(TIMEOUT)
+
+    queue.pause_job(paused)
+    job.release.set()
+
+    assert wait_for_state(listener, paused, JobState.PAUSED)
+    settles(lambda: order == ["next"])
+    assert [status.serial for status in queue.jobs()] == [paused, paused + 1]
+
+
+def test_a_paused_job_has_returned_rather_than_parked(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """A cursor, not a held stack: pausing costs no thread, and that is why it costs nothing at all.
+
+    **Test steps:**
+
+    * start a checkpointing job and count the threads while it runs
+    * pause it and wait for it to unwind
+    * verify the thread count is unchanged and the worker is idle
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
+    while_running = active_count()
 
-    queue.pause()
+    queue.pause_job(serial)
 
-    assert queue.paused
-    settles(lambda: any(status.state is JobState.PAUSED for status in queue.jobs()))
-    assert listener.paused == [True]
-    assert JobState.PAUSED in listener.states_of(serial)
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+    settles(lambda: active_count() == while_running)
+    assert queue.wait_until_idle(TIMEOUT)
     job.release.set()
 
 
-def test_resuming_continues_the_parked_job(
-    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
-) -> None:
-    """Nothing is re-run: the job carries on from the checkpoint it stopped at.
+def test_a_job_that_says_it_resumes_carries_on_where_it_stopped(queue: TaskQueue, listener: RecordingListener) -> None:
+    """The promise ``resumes_where_it_stopped`` makes, and the one it can be held to.
 
     **Test steps:**
 
-    * start a checkpointing job and pause the queue
-    * wait for the job to park, then resume
-    * release the job and verify it ran to completion
+    * start a job that holds after two of its four units, and pause it there
+    * resume it and wait for it to finish
+    * verify its second run began at two, not at zero
     """
-    job = CheckpointingJob()
+    job = CursorJob(units=4, hold_after=2, resumes=True)
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.pause_job(serial)
+    job.release.set()
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+
+    queue.resume_job(serial)
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+    assert job.entered_at == [0, 2]
+
+
+def test_a_job_that_starts_over_is_resumed_from_the_top_and_that_is_correct(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Starting over is a supported answer, not a defect -- pausing such a job is wasteful, not wrong.
+
+    **Test steps:**
+
+    * start a job that declares it does not resume, hold it after two of four units, and pause it
+    * resume it and wait for it to finish
+    * verify its second run began at zero, and that it still finished
+    """
+    job = CursorJob(units=4, hold_after=2, resumes=False)
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.pause_job(serial)
+    job.release.set()
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+
+    queue.resume_job(serial)
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+    assert job.entered_at == [0, 0]
+
+
+def test_pausing_a_queued_job_takes_it_out_of_the_running_without_losing_its_place(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """A queued job has nothing to unwind, so asking it to pause simply *is* pausing it.
+
+    **Test steps:**
+
+    * hold a job running, with three queued behind it
+    * pause the middle queued job, then release the running one
+    * verify the other two ran, the paused one did not, and the order is untouched
+    """
+    order: list[str] = []
+    gated = GatedJob()
+    running = queue.enqueue(gated)
+    first = queue.enqueue(RecordingJob("a", order))
+    held = queue.enqueue(RecordingJob("b", order))
+    last = queue.enqueue(RecordingJob("c", order))
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.pause_job(held)
+    gated.release.set()
+
+    settles(lambda: order == ["a", "c"])
+    assert listener.states_of(held) == [JobState.PAUSED]
+    assert [status.serial for status in queue.jobs()] == [running, first, held, last]
+
+
+def test_a_job_that_never_checkpoints_cannot_be_paused_either(queue: TaskQueue, listener: RecordingListener) -> None:
+    """The same cooperative rule as cancellation: a job that never yields runs to completion.
+
+    **Test steps:**
+
+    * start a job that never checkpoints and ask it to pause
+    * let it return of its own accord
+    * verify it saw the request, finished done, and carries the request on its status
+    """
+    job = StubbornJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
-    queue.pause()
-    settles(lambda: any(status.state is JobState.PAUSED for status in queue.jobs()))
 
-    queue.resume()
+    queue.pause_job(serial)
     job.release.set()
 
     assert wait_for_state(listener, serial, JobState.DONE)
-    assert job.finished
-    assert listener.paused == [True, False]
+    assert job.saw_pause
+    assert queue.jobs()[0].stop_requested is StopRequest.PAUSE
 
 
-def test_a_paused_queue_starts_no_further_job(queue: TaskQueue, settles: Callable[[Callable[[], bool]], None]) -> None:
-    """Pause is about the queue, not only about the job that happened to be running.
+def test_a_cancel_beats_a_pause_at_the_same_checkpoint(queue: TaskQueue, listener: RecordingListener) -> None:
+    """The stronger request wins: a cancelled job has nothing to resume to.
 
     **Test steps:**
 
-    * pause an empty queue, then enqueue a job
-    * verify it stays queued
-    * resume and verify it then runs
+    * start a job that blocks before its checkpoint
+    * ask it to pause and to cancel, then release it into the checkpoint
+    * verify it was reported cancelled
     """
-    queue.pause()
-    order: list[str] = []
-    queue.enqueue(RecordingJob("waited", order))
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
 
-    sleep(0.05)
-    assert [status.state for status in queue.jobs()] == [JobState.QUEUED]
+    queue.pause_job(serial)
+    queue.cancel(serial)
+    gated.release.set()
+
+    assert wait_for_state(listener, serial, JobState.CANCELLED)
+    assert not gated.finished
+
+
+def test_a_resume_landing_while_the_pause_is_in_flight_keeps_the_job_going(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """A retracted pause is honored on whichever side of the raise the retraction lands.
+
+    The raise and its recording are two moments with the job's own cleanup between them; a resume in
+    that gap must not leave the job parked on a request nobody holds any more.
+
+    **Test steps:**
+
+    * hold a job at a known point, pause it, and let it raise -- holding its unwind open
+    * resume it while it is demonstrably still unwinding
+    * let the unwind finish, and verify it re-entered where it stopped and was never reported paused
+    """
+    job = SlowUnwindJob()
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.pause_job(serial)
+    job.proceed.set()
+    assert job.unwinding.wait(TIMEOUT)
+
+    queue.resume_job(serial)
+    job.finish_unwind.set()
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+    assert job.entered_at == [0, 2]
+    assert JobState.PAUSED not in listener.states_of(serial)
+
+
+def test_a_cancel_the_job_has_not_looked_at_is_taken_back_by_a_resume(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The mis-click this whole seam exists for: Cancel, then Resume, and the job never knew.
+
+    The engine cannot tell a cancel nobody has read from one already half-way through a rollback --
+    that distinction lives inside the job -- so it asks, and the job answers.
+
+    **Test steps:**
+
+    * start a job that blocks before its first checkpoint, and cancel it
+    * resume it before it can look
+    * verify the resume was accepted, the request is gone, and the job ran to completion
+    """
+    gated = GatedJob("mis-clicked")
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+    queue.cancel(serial)
+
+    assert queue.resume_job(serial)
+
+    gated.release.set()
+    settles(lambda: gated.finished)
+    assert wait_for_state(listener, serial, JobState.DONE)
+    assert queue.jobs()[0].stop_requested is None
+
+
+def test_a_cancel_the_job_has_acted_on_is_not_taken_back(queue: TaskQueue, listener: RecordingListener) -> None:
+    """Once the job has been told, the engine can no longer promise nothing has begun -- and a job
+    part-way through undoing its work must not be told to carry on.
+
+    **Test steps:**
+
+    * start a job that blocks, cancel it, and let it reach the checkpoint so it unwinds
+    * resume it while it is still unwinding
+    * verify the resume was refused and the job was recorded cancelled
+    """
+    job = SlowUnwindJob(stop=StopRequest.CANCEL)
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.cancel(serial)
+    job.proceed.set()
+    assert job.unwinding.wait(TIMEOUT)
+
+    assert not queue.resume_job(serial)
+
+    job.finish_unwind.set()
+    assert wait_for_state(listener, serial, JobState.CANCELLED)
+
+
+def test_the_bulk_resume_never_un_cancels_anything(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """Pressing Resume over the whole queue is the inverse of Pause, not an undo for a cancel someone
+    made deliberately -- pointing at one row is how that is asked for.
+
+    **Test steps:**
+
+    * hold a job running, with two queued behind it; cancel one and pause the other
+    * resume the whole queue
+    * verify the paused one went back in line and the cancelled one stayed cancelled
+    """
+    gated = GatedJob()
+    queue.enqueue(gated)
+    cancelled = queue.enqueue(RecordingJob("never"))
+    paused = queue.enqueue(RecordingJob("later"))
+    assert gated.entered.wait(TIMEOUT)
+    queue.cancel(cancelled)
+    queue.pause_job(paused)
 
     queue.resume()
-    settles(lambda: order == ["waited"])
+    gated.release.set()
+
+    settles(lambda: queue.jobs()[2].state is JobState.DONE)
+    assert listener.states_of(cancelled) == [JobState.CANCELLED]
+
+
+def test_a_cancel_after_a_pause_replaces_it_rather_than_joining_it(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """One slot, latest instruction wins -- so *cancel and pause* is never a state anything arbitrates.
+
+    **Test steps:**
+
+    * start a job that blocks before its checkpoint
+    * ask it to pause, then to cancel, then release it
+    * verify it was reported cancelled, carrying a cancel request
+    """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.pause_job(serial)
+    queue.cancel(serial)
+    gated.release.set()
+
+    assert wait_for_state(listener, serial, JobState.CANCELLED)
+    assert queue.jobs()[0].stop_requested is StopRequest.CANCEL
+
+
+def test_a_pause_after_a_cancel_downgrades_it(queue: TaskQueue, listener: RecordingListener) -> None:
+    """The same rule in the direction that costs less: asking a cancelling job to pause keeps the work.
+
+    **Test steps:**
+
+    * start a job that blocks before its checkpoint
+    * ask it to cancel, then to pause, then release it
+    * verify it was reported paused rather than cancelled
+    """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.cancel(serial)
+    queue.pause_job(serial)
+    gated.release.set()
+
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+    assert queue.jobs()[0].stop_requested is StopRequest.PAUSE
+
+
+def test_resuming_a_job_with_nothing_pending_is_accepted(queue: TaskQueue) -> None:
+    """A Resume on a row nothing was asked of has nothing to take back, and says so rather than lying.
+
+    **Test steps:**
+
+    * start a job with no request against it and resume it
+    * verify the answer was yes and the job is untouched
+    """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+
+    assert queue.resume_job(serial)
+
+    assert queue.jobs()[0].state is JobState.RUNNING
+    gated.release.set()
+
+
+def test_resuming_a_finished_job_reports_that_it_took_nothing_back(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Retry is the verb for a finished job; Resume has nothing to offer one and does not pretend to.
+
+    **Test steps:**
+
+    * run a job to completion
+    * resume it
+    * verify the answer was no and it is still done
+    """
+    serial = queue.enqueue(RecordingJob("done"))
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    assert not queue.resume_job(serial)
+
+    assert queue.jobs()[0].state is JobState.DONE
+
+
+def test_a_cancel_landing_while_the_pause_is_in_flight_is_not_stranded(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """The other request in the same gap, with more at stake: a cancel recorded onto a parked job
+    would wait forever, because nothing ever picks a paused job up.
+
+    **Test steps:**
+
+    * hold a job at a known point, pause it, and let it raise -- holding its unwind open
+    * cancel it while it is still unwinding
+    * let the unwind finish, and verify it was recorded cancelled, not paused, and never re-entered
+    """
+    job = SlowUnwindJob()
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.pause_job(serial)
+    job.proceed.set()
+    assert job.unwinding.wait(TIMEOUT)
+
+    queue.cancel(serial)
+    job.finish_unwind.set()
+
+    assert wait_for_state(listener, serial, JobState.CANCELLED)
+    assert JobState.PAUSED not in listener.states_of(serial)
+    assert job.entered_at == [0]
+
+
+def test_a_job_raising_the_pause_exception_unasked_is_paused_once_not_looped(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """The reconciliation keys on a *retracted* request, never on a missing one -- and this is why:
+    inferring a resume from the absent request would re-run an unasked raise forever.
+
+    **Test steps:**
+
+    * enqueue a job that raises the pause exception with no request against it
+    * wait for it to be reported paused
+    * verify it ran exactly once and stays paused
+    """
+    job = SelfPausingJob()
+    serial = queue.enqueue(job)
+
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+
+    assert queue.wait_until_idle(TIMEOUT)
+    assert job.runs == 1
+    assert queue.jobs()[0].state is JobState.PAUSED
+
+
+def test_pausing_a_finished_job_changes_nothing(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A view's pause button can be pressed on a row that finished a moment earlier.
+
+    **Test steps:**
+
+    * run a job to completion, then pause it
+    * verify it is still reported done
+    """
+    serial = queue.enqueue(RecordingJob("done"))
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    queue.pause_job(serial)
+
+    assert listener.states_of(serial)[-1] is JobState.DONE
+
+
+# endregion
+
+# region Pausing the queue
+
+
+def test_pausing_the_queue_pauses_every_unfinished_job(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """One pause concept, not two: the queue's pause is the per-job one applied to all of them.
+
+    **Test steps:**
+
+    * hold a job running, with two queued behind it
+    * pause the queue and release the running job
+    * verify all three ended up paused, and the queue reads as paused
+    """
+    job = CursorJob()
+    running = queue.enqueue(job)
+    first = queue.enqueue(RecordingJob("a"))
+    second = queue.enqueue(RecordingJob("b"))
+    assert job.reached.wait(TIMEOUT)
+
+    queue.pause()
+    job.release.set()
+
+    assert wait_for_state(listener, running, JobState.PAUSED)
+    settles(lambda: all(status.state is JobState.PAUSED for status in queue.jobs()))
+    assert queue.paused
+    assert (listener.states_of(first), listener.states_of(second)) == ([JobState.PAUSED], [JobState.PAUSED])
+
+
+def test_the_queue_reads_as_paused_only_once_every_unfinished_job_is(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Derived, not held -- so a half-paused queue never claims to be a paused one.
+
+    **Test steps:**
+
+    * hold a job running, with two queued behind it
+    * pause one queued job, and verify the queue does not read as paused
+    * pause the rest, and verify it does
+    """
+    gated = GatedJob()
+    running = queue.enqueue(gated)
+    first = queue.enqueue(RecordingJob("a"))
+    second = queue.enqueue(RecordingJob("b"))
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.pause_job(first)
+
+    assert not queue.paused
+    assert listener.paused == []
+
+    queue.pause_job(second)
+    queue.cancel(running)
+    gated.release.set()
+
+    assert wait_for_state(listener, running, JobState.CANCELLED)
+    assert queue.paused
+    assert listener.paused == [True]
+
+
+def test_resuming_one_job_is_enough_to_unpause_the_queue(queue: TaskQueue, listener: RecordingListener) -> None:
+    """``paused`` means *all of them*, so putting one back in line ends it.
+
+    **Test steps:**
+
+    * hold a job running with a second behind it, and pause the queue so both end up paused
+    * resume the second, which then starts and holds in its turn
+    * verify the queue was reported paused, then unpaused
+    """
+    first = GatedJob("first")
+    running = queue.enqueue(first)
+    second = GatedJob("second")
+    resumed = queue.enqueue(second)
+    assert first.entered.wait(TIMEOUT)
+    queue.pause()
+    first.release.set()
+    assert wait_for_state(listener, running, JobState.PAUSED)
+    assert queue.paused
+
+    queue.resume_job(resumed)
+
+    assert second.entered.wait(TIMEOUT)
+    assert not queue.paused
+    assert listener.paused == [True, False]
+    second.release.set()
+
+
+def test_a_queue_holding_nothing_unfinished_does_not_read_as_paused(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Vacuously true would read as *the queue is held*, which is the opposite of what empty means.
+
+    **Test steps:**
+
+    * verify an empty queue does not read as paused, and that pausing it says nothing
+    * run a job to completion, then pause again
+    * verify a queue holding only a finished job is not paused either -- pausing passes over it
+    """
+    assert not queue.paused
+    queue.pause()
+    assert not queue.paused
+
+    serial = queue.enqueue(RecordingJob("only"))
+    assert wait_for_state(listener, serial, JobState.DONE)
+    queue.pause()
+
+    assert not queue.paused
+    assert listener.states_of(serial)[-1] is JobState.DONE
+    assert listener.paused == []
+
+
+def test_a_job_enqueued_after_a_pause_runs_at_once(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """Eligibility is per job, so a pause is over the jobs it was asked about and no others.
+
+    **Test steps:**
+
+    * enqueue a job and pause the queue so it is held
+    * enqueue a second job
+    * verify the second runs while the first stays paused
+    """
+    order: list[str] = []
+    gated = GatedJob()
+    held = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+    queue.pause()
+    gated.release.set()
+    assert wait_for_state(listener, held, JobState.PAUSED)
+
+    queue.enqueue(RecordingJob("fresh", order))
+
+    settles(lambda: order == ["fresh"])
+    assert queue.jobs()[0].state is JobState.PAUSED
+
+
+def test_pausing_or_resuming_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue) -> None:
+    """A removed job's serial may still be in a view's hand, exactly as for cancel, move and retry.
+
+    **Test steps:**
+
+    * pause and resume a serial no job has
+    * verify nothing raised and the queue still holds nothing
+    """
+    queue.pause_job(999)
+    queue.resume_job(999)
+
+    assert queue.jobs() == ()
 
 
 def test_pausing_twice_is_reported_once(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -655,10 +1403,17 @@ def test_pausing_twice_is_reported_once(queue: TaskQueue, listener: RecordingLis
 
     **Test steps:**
 
-    * pause the queue twice, then resume it twice
+    * hold a job running and pause the queue so it unwinds
+    * pause it again, then resume twice
     * verify exactly one pause and one resume were reported
     """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
     queue.pause()
+    gated.release.set()
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+
     queue.pause()
     queue.resume()
     queue.resume()
@@ -716,39 +1471,64 @@ def test_cancelling_the_running_job_reaches_it_at_its_checkpoint(queue: TaskQueu
     assert not gated.finished
 
 
-def test_cancelling_a_parked_job_does_not_wait_for_a_resume(
-    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
-) -> None:
-    """A parked job waits on the same condition a cancel notifies, so it is reachable while paused.
+def test_a_cancel_request_is_announced_before_the_job_obeys_it(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A request is a fact of its own, so a watcher can be honest about it while nothing has happened yet.
 
     **Test steps:**
 
-    * start a checkpointing job and pause the queue so it parks
+    * start a job that blocks before its checkpoint
+    * cancel it, and verify the request reached the listener while the job is still running
+    * release it and verify it then goes to cancelled
+    """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.cancel(serial)
+
+    requested = [
+        status for status in listener.updated if status.serial == serial and status.stop_requested is StopRequest.CANCEL
+    ]
+    assert requested[0].state is JobState.RUNNING
+    gated.release.set()
+    assert wait_for_state(listener, serial, JobState.CANCELLED)
+
+
+def test_cancelling_a_paused_job_stops_it_without_resuming_it(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A paused job is not running, so there is nothing to reach: it is cancelled where it stands.
+
+    **Test steps:**
+
+    * start a checkpointing job and pause it so it unwinds
     * cancel it without resuming
     * verify it was reported cancelled
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
-    queue.pause()
-    settles(lambda: any(status.state is JobState.PAUSED for status in queue.jobs()))
+    queue.pause_job(serial)
+    assert wait_for_state(listener, serial, JobState.PAUSED)
 
     queue.cancel(serial)
 
     assert wait_for_state(listener, serial, JobState.CANCELLED)
     assert not job.finished
+    job.release.set()
 
 
-def test_a_job_that_never_checkpoints_is_still_reported_cancelled(
+def test_a_job_that_finished_is_done_even_though_a_stop_was_asked_for(
     queue: TaskQueue, listener: RecordingListener
 ) -> None:
-    """It cannot be interrupted, and it must not read as done -- those are two different facts.
+    """Reversing #201: the request was never acted on, and the work genuinely finished.
+
+    A job that never checkpoints cannot be interrupted, so reporting it *cancelled* would describe an
+    intention rather than an outcome. The request is not lost -- it is on the status, where it belongs.
 
     **Test steps:**
 
     * start a job that never checkpoints
     * cancel it, then let it return of its own accord
-    * verify it saw the cancellation and was reported cancelled rather than done
+    * verify it saw the cancellation, was reported done, and still carries the request
     """
     job = StubbornJob()
     serial = queue.enqueue(job)
@@ -757,8 +1537,9 @@ def test_a_job_that_never_checkpoints_is_still_reported_cancelled(
     queue.cancel(serial)
     job.release.set()
 
-    assert wait_for_state(listener, serial, JobState.CANCELLED)
+    assert wait_for_state(listener, serial, JobState.DONE)
     assert job.saw_cancellation
+    assert queue.jobs()[0].stop_requested is StopRequest.CANCEL
 
 
 def test_cancelling_a_finished_job_changes_nothing(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -779,7 +1560,7 @@ def test_cancelling_a_finished_job_changes_nothing(queue: TaskQueue, listener: R
 
 
 def test_cancelling_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue) -> None:
-    """Same reason as the move: a cleared job's serial may still be in a view's hand.
+    """Same reason as the move: a removed job's serial may still be in a view's hand.
 
     **Test steps:**
 
@@ -948,43 +1729,189 @@ def test_progress_is_reported_on_the_worker_thread(queue: TaskQueue, listener: R
 
 # endregion
 
-# region Clearing
+# region Removing and retrying
 
 
-def test_clearing_drops_the_finished_and_keeps_the_rest(queue: TaskQueue, listener: RecordingListener) -> None:
-    """Safe to offer while work is in flight, which is when a user reaches for it.
+def test_nothing_leaves_the_queue_until_it_is_asked_for(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """Jobs leave only when told to: a failure is kept because it is the thing worth acting on.
 
     **Test steps:**
 
-    * run one job to completion, then hold a second running with a third queued behind it
-    * clear the finished jobs
-    * verify only the finished one was removed
+    * hold a job running, with a failing one and a third behind it, and cancel the third
+    * release everything and wait for the queue to go quiet
+    * verify all three are still held, and nothing was reported removed
     """
-    finished = queue.enqueue(RecordingJob("finished"))
-    assert wait_for_state(listener, finished, JobState.DONE)
-    gated = GatedJob()
-    running = queue.enqueue(gated)
-    queued = queue.enqueue(RecordingJob("queued"))
+    gated = GatedJob("fine")
+    queue.enqueue(gated)
+    queue.enqueue(FailingJob())
+    cancelled = queue.enqueue(RecordingJob("never"))
     assert gated.entered.wait(TIMEOUT)
-
-    queue.clear_finished()
+    queue.cancel(cancelled)
     gated.release.set()
 
-    assert listener.removed == [(finished,)]
-    assert [status.serial for status in queue.jobs()] == [running, queued]
+    settles(lambda: all(status.state is not JobState.QUEUED for status in queue.jobs()))
+
+    assert {status.state for status in queue.jobs()} == {JobState.DONE, JobState.FAILED, JobState.CANCELLED}
+    assert listener.removed == []
 
 
-def test_clearing_nothing_says_nothing(queue: TaskQueue, listener: RecordingListener) -> None:
-    """No event for a clear that removed nothing.
+def test_remove_drops_only_the_jobs_it_was_named(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A multi-selection is removed in one call, and everything else keeps its place.
 
     **Test steps:**
 
-    * clear an empty queue
+    * hold a job running, with three queued behind it
+    * remove two of the queued ones
+    * verify only those two went, in the order they were held
+    """
+    gated = GatedJob()
+    running = queue.enqueue(gated)
+    first = queue.enqueue(RecordingJob("a"))
+    second = queue.enqueue(RecordingJob("b"))
+    third = queue.enqueue(RecordingJob("c"))
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.remove(third, first)
+    gated.release.set()
+
+    assert listener.removed == [(first, third)]
+    assert [status.serial for status in queue.jobs()] == [running, second]
+
+
+def test_removing_the_running_job_cancels_it_and_drops_its_outcome(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """Telling a listener that a row it deleted has just been cancelled would announce a job that,
+    as far as anyone watching is concerned, no longer exists.
+
+    **Test steps:**
+
+    * start a job that blocks before its checkpoint
+    * remove it, then release it into the checkpoint
+    * wait for the worker to go idle, and verify the job unwound but was never reported cancelled
+    """
+    gated = GatedJob()
+    serial = queue.enqueue(gated)
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.remove(serial)
+    gated.release.set()
+
+    assert queue.wait_until_idle(TIMEOUT)
+    assert not gated.finished
+    assert listener.removed == [(serial,)]
+    assert JobState.CANCELLED not in listener.states_of(serial)
+
+
+def test_removing_serials_that_belong_to_nothing_says_nothing(queue: TaskQueue, listener: RecordingListener) -> None:
+    """No event for a removal that removed nothing, so a caller never has to filter its selection.
+
+    **Test steps:**
+
+    * remove serials no job has, on an empty queue
     * verify nothing was reported removed
     """
-    queue.clear_finished()
+    queue.remove(999, 1000)
 
     assert listener.removed == []
+
+
+def test_retry_runs_a_finished_job_again(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """The recovery a kept failure exists for: fix the cause, press Retry.
+
+    **Test steps:**
+
+    * run a job to completion
+    * retry it
+    * verify it went back to queued and its ``run`` was entered a second time
+    """
+    job = CursorJob(units=1, hold_after=99)
+    serial = queue.enqueue(job)
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    queue.retry(serial)
+
+    settles(lambda: len(job.entered_at) == 2)
+    assert JobState.QUEUED in listener.states_of(serial)
+
+
+def test_retry_clears_a_failed_jobs_reason(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A stale reason on a row that is about to run again would describe the wrong attempt.
+
+    **Test steps:**
+
+    * run a job that raises
+    * retry it and wait for it to fail again
+    * verify the listener saw it queued with no error in between
+    """
+    serial = queue.enqueue(FailingJob())
+    assert wait_for_state(listener, serial, JobState.FAILED)
+
+    queue.retry(serial)
+
+    assert wait_for_state(listener, serial, JobState.QUEUED)
+    requeued = [status for status in listener.updated if status.serial == serial and status.state is JobState.QUEUED]
+    assert (requeued[0].error, requeued[0].done, requeued[0].total) == (None, 0, None)
+
+
+def test_retry_starts_a_job_over_even_when_it_would_otherwise_carry_on(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """Clearing what the job kept is the whole difference between Retry and Resume.
+
+    **Test steps:**
+
+    * run a job that resumes where it stopped all the way to done
+    * retry it
+    * verify its second run began at zero rather than at the end it had reached
+    """
+    job = CursorJob(units=3, hold_after=99, resumes=True)
+    serial = queue.enqueue(job)
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    queue.retry(serial)
+
+    settles(lambda: len(job.entered_at) == 2)
+    assert job.entered_at == [0, 0]
+
+
+def test_retrying_a_job_that_has_not_finished_is_a_no_op(queue: TaskQueue, listener: RecordingListener) -> None:
+    """Interpreting it as a restart would throw away work nobody asked to lose.
+
+    **Test steps:**
+
+    * hold a job running, with one queued behind it
+    * retry both
+    * verify neither changed state
+    """
+    gated = GatedJob()
+    running = queue.enqueue(gated)
+    queued = queue.enqueue(RecordingJob("a"))
+    assert gated.entered.wait(TIMEOUT)
+
+    queue.retry(running)
+    queue.retry(queued)
+
+    assert listener.states_of(running) == [JobState.RUNNING]
+    assert listener.states_of(queued) == []
+    gated.release.set()
+
+
+def test_retrying_a_serial_that_belongs_to_nothing_is_accepted(queue: TaskQueue) -> None:
+    """A removed job's serial may still be in a view's hand, exactly as for cancel and move.
+
+    **Test steps:**
+
+    * retry a serial no job has
+    * verify nothing raised
+    """
+    queue.retry(999)
+
+    assert queue.jobs() == ()
 
 
 # endregion
@@ -1013,27 +1940,76 @@ def test_shutdown_stops_the_worker_and_cancels_what_is_left(queue: TaskQueue, li
     assert all(status.state is not JobState.RUNNING for status in queue.jobs())
 
 
-def test_shutdown_reaches_a_paused_job(
-    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
-) -> None:
-    """The pause is released first, or a parked job would wait for a resume that is never coming.
+def test_shutdown_cancels_a_paused_job(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A paused job is unfinished work, so shutdown owes it the same answer as a queued one.
 
     **Test steps:**
 
-    * start a checkpointing job and pause the queue so it parks
+    * start a checkpointing job and pause it so it unwinds
     * shut the queue down
-    * verify the job was cancelled and the queue was reported unpaused
+    * verify the job was cancelled
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
     assert job.entered.wait(TIMEOUT)
-    queue.pause()
-    settles(lambda: any(status.state is JobState.PAUSED for status in queue.jobs()))
+    queue.pause_job(serial)
+    assert wait_for_state(listener, serial, JobState.PAUSED)
 
     queue.shutdown()
 
     assert listener.states_of(serial)[-1] is JobState.CANCELLED
-    assert listener.paused == [True, False]
+    job.release.set()
+
+
+def test_wait_until_idle_returns_once_the_running_job_has_paused(queue: TaskQueue, listener: RecordingListener) -> None:
+    """The clean exit #238 saves from: pause, wait, and only then is there a queue worth writing down.
+
+    **Test steps:**
+
+    * start a job that holds part-way, pause the whole queue, and let it reach its checkpoint
+    * wait for the queue to go idle
+    * verify the wait succeeded and the job is paused with the work it did intact
+    """
+    job = CursorJob(units=4, hold_after=2)
+    serial = queue.enqueue(job)
+    assert job.reached.wait(TIMEOUT)
+    queue.pause()
+    job.release.set()
+
+    assert queue.wait_until_idle(TIMEOUT)
+
+    assert wait_for_state(listener, serial, JobState.PAUSED)
+    assert queue.jobs()[0].done == 2
+
+
+def test_wait_until_idle_gives_up_on_a_job_that_ignores_its_checkpoints(queue: TaskQueue) -> None:
+    """It reports rather than hangs, so the caller decides whether to save what it has or wait longer.
+
+    **Test steps:**
+
+    * start a job that never checkpoints and ask the queue to pause
+    * wait for it to go idle, with a wait too short for the job
+    * verify the wait reported failure, then release the job
+    """
+    job = StubbornJob()
+    queue.enqueue(job)
+    assert job.entered.wait(TIMEOUT)
+    queue.pause()
+
+    assert not queue.wait_until_idle(timeout=0.01)
+
+    job.release.set()
+
+
+def test_wait_until_idle_on_a_queue_with_nothing_running_returns_at_once(queue: TaskQueue) -> None:
+    """Most quits happen with nothing in flight, and none of them should cost a wait.
+
+    **Test steps:**
+
+    * wait for a queue that was never given work to go idle
+    * verify it reported success
+    """
+    assert queue.wait_until_idle(TIMEOUT)
 
 
 def test_shutdown_reports_a_job_that_outlives_the_wait(queue: TaskQueue, caplog: pytest.LogCaptureFixture) -> None:
@@ -1054,6 +2030,34 @@ def test_shutdown_reports_a_job_that_outlives_the_wait(queue: TaskQueue, caplog:
 
     assert [record for record in caplog.records if "outlived" in record.getMessage()]
     job.release.set()
+
+
+def test_quitting_with_a_paused_and_a_running_job_leaves_no_thread(
+    queue: TaskQueue, listener: RecordingListener
+) -> None:
+    """The state an app closes in, end to end: one job held, one still working, and nothing left over.
+
+    **Test steps:**
+
+    * pause one job so it unwinds, then start a second and hold it running
+    * count the threads, release the second, and shut the queue down
+    * verify the thread count came back to what it was before either job existed
+    """
+    before = active_count()
+    first = CheckpointingJob("held")
+    held = queue.enqueue(first)
+    assert first.entered.wait(TIMEOUT)
+    queue.pause_job(held)
+    assert wait_for_state(listener, held, JobState.PAUSED)
+    first.release.set()
+    second = GatedJob("working")
+    queue.enqueue(second)
+    assert second.entered.wait(TIMEOUT)
+
+    second.release.set()
+    queue.shutdown()
+
+    assert active_count() == before
 
 
 def test_shutting_down_a_queue_that_never_ran_anything_is_accepted(queue: TaskQueue) -> None:

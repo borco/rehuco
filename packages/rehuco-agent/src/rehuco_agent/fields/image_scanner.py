@@ -19,12 +19,11 @@ class ImageScanner(Protocol):
     the Markdown viewer calls :meth:`get_markdown_viewer_image`. The concrete scanner provides both.
     """
 
-    def files(self) -> list[Path]:
+    def files(self) -> list[Path]:  # pyright: ignore[reportReturnType]
         """Every recognized screenshot for this resource, as absolute paths.
 
         :returns: the matching paths.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def get_markdown_viewer_image(self, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
         """Resolve ``name`` against this resource's own directory, decoded and scaled for display.
@@ -33,4 +32,3 @@ class ImageScanner(Protocol):
         :param device_pixel_ratio: the screen's device-pixel-ratio to tag the image for.
         :returns: the (possibly scaled) image, or ``None`` if unresolvable or undecodable.
         """
-        ...  # pylint: disable=unnecessary-ellipsis

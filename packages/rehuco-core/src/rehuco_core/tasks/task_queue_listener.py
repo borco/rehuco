@@ -38,7 +38,6 @@ class TaskQueueListener(Protocol):
         :param index: where it landed in the queue's order. Always the end today; passed anyway so a
             listener never has to keep a count of its own in step with the engine's.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def job_updated(self, status: JobStatus) -> None:
         """A job's state or progress changed.
@@ -46,7 +45,6 @@ class TaskQueueListener(Protocol):
         :param status: the job as it now is, identified by
             :attr:`~rehuco_core.tasks.JobStatus.serial`.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def jobs_reordered(self, serials: Sequence[int]) -> None:
         """The queue's order changed.
@@ -56,22 +54,21 @@ class TaskQueueListener(Protocol):
 
         :param serials: every job's serial, in the new order.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def jobs_removed(self, serials: Sequence[int]) -> None:
         """Jobs were dropped from the queue.
 
         :param serials: the serials removed, in the order they were held.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
 
     def queue_paused_changed(self, paused: bool) -> None:
-        """The queue was paused or resumed.
+        """Every unfinished job became paused, or stopped being.
 
-        Says nothing about the running job, which is still running: it reports its own
-        :attr:`~rehuco_core.tasks.JobState.PAUSED` through :meth:`job_updated` when it reaches a
-        checkpoint, which may be a long way after this.
+        A **derived** fact, not a switch the engine holds: it flips whenever the rows make it flip,
+        including on the worker thread as the last running job unwinds. Says nothing new about any one
+        job -- each reported its own :attr:`~rehuco_core.tasks.JobState.PAUSED` through
+        :meth:`job_updated` first -- and exists so a surface can draw one Pause/Resume control over
+        the queue without deriving it from the rows itself.
 
-        :param paused: whether the queue is now paused.
+        :param paused: whether the queue now reads as paused.
         """
-        ...  # pylint: disable=unnecessary-ellipsis
