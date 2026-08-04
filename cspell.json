@@ -86,6 +86,8 @@
     "rehu",
     "rehuco",
     "rehuspike",
+    "retryable",
+    "revertible",
     "reparented",
     "setattr",
     "setdefault",

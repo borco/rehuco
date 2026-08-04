@@ -7,6 +7,7 @@
 [[[appendices.task-queue#overview]]]
 
 - [#201: feat: task queue engine — serialized background jobs with pause/resume/cancel/reorder](https://github.com/borco/rehuco/issues/201)
+- [#237: feat: per-job pause via a job cursor — plus explicit removal and retry](https://github.com/borco/rehuco/issues/237)
 
 How slow work gets off the interactive path: checksum runs, directory scans, copies, bulk conversions,
 and later a node's swarm chatter ([[nodes#readiness-per-op]]). The component itself is named in
@@ -71,38 +72,150 @@ issue asked for a decision rather than an assumption. If one is ever wanted — 
 disk lane — it is a **second queue over a different resource**, never a concurrency count on this one.
 Two queues make the resource each is protecting explicit; one queue with a number makes it invisible.
 
-## 3. A job is a plain object, and stopping is something it does
+## 3. The engine schedules; the job stops itself
 
 [[[appendices.task-queue#jobs]]]
 
-A job is anything with a `label` and a `run(control)` — a `Protocol`, satisfied structurally, so a
-checksum operation, a scan and a test's fake all qualify without inheriting anything. The engine knows
-none of them, which is what keeps it from accumulating a case per client.
+A job is a `Protocol`. The engine orders jobs, runs one at a time, and records outcomes; **everything
+about stopping belongs to the job**. Asking a running job to pause or cancel is a call *into* it —
+`pause()`, `cancel()`, `resume()` — and it holds the request and acts on it wherever its own work
+divides.
 
-**Cancellation is cooperative, because the alternative is unsafe.** A thread cannot be killed: a job
-halfway through a rename, holding a file handle, has to be allowed to unwind. So the control it is
-handed offers one `checkpoint()`, and **the same call is where a pause parks it** — a job that can be
-cancelled can be paused for free, and there is one place to get right rather than two.
+**Stopping is cooperative, because the alternative is unsafe.** A thread cannot be killed: a job
+halfway through a rename, holding a file handle, has to be allowed to unwind. So a stop is a request
+the job honors at a checkpoint it chose, and the engine learns the outcome only when `run()` returns
+or raises.
 
-Two consequences worth stating, because both are visible from outside:
+An earlier design kept the request in the engine and handed the job a `control.checkpoint()` that
+raised. It was replaced because of one question it could not answer: **can this stop still be taken
+back?** A cancel that has merely been recorded is retractable; a cancel the job has read and begun
+undoing work on is not — and that distinction lives entirely inside the job. An engine holding the flag
+cannot tell the two apart, so it must either refuse every retraction or risk telling a job that is
+mid-rollback to carry on. Moving the state into the job makes the question answerable by the only
+party that knows: `resume()` returns whether it was in time.
 
-- **A job that never checkpoints cannot be interrupted.** It runs to completion. It is still reported
-  `cancelled` rather than `done` when a stop was asked for before it returned — *it could not be stopped*
-  and *it ran to completion normally* are different facts, and reporting the second would be a lie about
-  the first.
-- **A pause does not stop anything the moment it is asked.** The queue starts no further job
-  immediately, but the running one keeps running until it yields. That is why `paused` is a state of the
-  *job* as well as of the queue: a job that has not reached a checkpoint yet is genuinely still running,
-  and collapsing the two would hide the difference from the person watching.
+> [!NOTE]
+> Three methods are therefore called **on a different thread from `run()`**, and only ever on the one
+> job that is running. A job that keeps mutable stop state owns its own locking — which is why
+> `TaskJobBase` exists and why most jobs should inherit it rather than implement the protocol. It is
+> the same eleven lines every time, and this reverses the earlier *"a plain object rather than a
+> subclass"*: that was right when a job owed two members and is not right now that it owes six.
 
-### 3.1 Reordering applies to what has not started
+### 3.1 A paused job returns; it is not parked
+
+[[[appendices.task-queue#cursor]]]
+
+Pausing the running job must park it **and let the next one start**, and resuming must *continue* it
+rather than start it over. The obvious reading is that the paused job's Python stack has to be kept
+alive — a thread each, a run token handed between them, a rewritten worker loop. That was the first
+design and it was **rejected** after reading DownThemAll's manager, which holds no continuation in
+memory at all: its `resume()` simply puts the item back in the queue, and byte-level resumption is
+delegated to HTTP range requests.
+
+**A cursor does the same job here.** A job asked to pause *returns* from `run()`; on resume, `run()` is
+called again and the job picks up from whatever it kept. There is no stack to hold, so:
+
+- **The single worker thread and its loop are unchanged.** No run token, no thread per paused job, no
+  N-thread shutdown join. §2 is untouched, which is the clearest evidence this was the right call.
+- **In-session pause and across-restart resume are the same mechanism** — both re-enter `run()`. That is
+  what makes them one feature instead of two.
+- **The cost is paid selectively.** A job with nothing kept starts over, which is honest and costs
+  nothing to implement; a job that wants better implements it. Nothing is imposed on every future client.
+
+The rejected alternative would have held a Python stack and every open file handle per paused job, to
+buy granularity finer than a checkpoint that nothing had asked for.
+
+### 3.2 The job class is the unit of responsibility
+
+[[[appendices.task-queue#job-responsibility]]]
+
+How a cursor is shaped, where it is kept, what `run()` does on re-entry, when a stop takes effect, and
+what a job undoes when it stops part-way are **one class's business**. The engine never sees a cursor
+and has no opinion about one, and it does not hold the stop request either — both would put it in the
+middle of something it cannot be right about. Stated as a rule because it is what keeps the protocol
+from growing: **a new kind of resumable work is a new class, not a new engine feature.**
+
+This is why `JobControl` has exactly one method. Progress is the only thing the engine genuinely needs
+from a running job, because it cannot observe it and a view cannot draw without it. Everything else a
+job might want to say, it says by returning or raising.
+
+Exactly one bit crosses that boundary, and it is named for a *consequence* rather than a mechanism:
+`resumes_where_it_stopped`. Nothing outside the class may assume there is a cursor at all, and the only
+question a surface has a legitimate interest in is *will pausing this cost the work done so far?* — so
+a dock can say so before someone pauses a forty-minute sweep that will start again.
+
+**Starting over is a supported answer, not a defect.** A verify job that records only which manifest it
+checks against is correct, and pausing it is *wasteful* rather than *wrong*. Requiring every job to
+resume in place before it could be paused would be exactly the constraint-on-every-client this design
+keeps refusing.
+
+Two more declarations are read beside it, once, at enqueue: `source`, the `.rehu` this job is about —
+the job's own declaration, so there is one answer and nothing to keep in step — and
+`safely_interruptible`, whether stopping it part-way leaves nothing behind. That last is **distinct
+from *revertible***: a conversion undoes itself on failure ([[acquisition-tooling#convert-mechanics]])
+and is still not safely interruptible, because it has touched the directory. The undo is the job's own,
+exactly as the cursor is; the engine only ever *asks*, and never learns what unwinding means.
+
+### 3.3 One pause concept, and requests kept apart from states
+
+[[[appendices.task-queue#pause-concept]]]
+
+`pause()` asks **every unfinished job** to pause; the per-job pair asks one. There is no separate queue-wide flag, and dispatch consults per-job state only — which
+is what lets pausing one job leave the rest running, and lets a job enqueued afterwards start
+immediately. `queue.paused` is a **derived convenience** meaning *there is unfinished work and all of
+it is paused*; it gates nothing, and it is false on a queue holding nothing unfinished, since a
+vacuous truth would read as *the queue is held*.
+
+**One request slot, not two flags.** A job is asked for at most one thing at a time and the latest
+instruction replaces the one before it: asking a cancelling job to pause *downgrades* the request,
+asking a pausing job to cancel escalates it. Two independent booleans could express *cancel and pause*,
+which is not a state anything can act on and not a state a dock can draw. What was asked is carried on
+the status as `stop_requested`, a fact separate from the state, so a watcher can be honest before the
+job has obeyed.
+
+Three consequences, all visible from outside:
+
+- **A job that never looks at its request cannot be interrupted.** It runs to completion, and is
+  reported `done` — reversing #201's *"a cancelled job must never read as done"*. The request was not
+  acted on and the work genuinely finished; reporting it `cancelled` would describe an intention rather
+  than an outcome. Nothing is lost, because the request is on the status.
+- **A stop does not stop anything the moment it is asked.** The running job keeps running until it
+  yields. That is why `paused` is a state of the *job*: a job that has not acted yet is genuinely still
+  running, and collapsing the two would hide the difference from the person watching.
+- **A stop can be taken back until the job has looked at it.** `resume()` on a running job asks, and
+  the job answers: *not yet acted on* means it carries on as though nothing was asked, which is what
+  makes Cancel-then-Resume a recoverable mis-click rather than a lost job. *Already stopping* means no
+  — and it is the job that knows, because reading its request is an acknowledgement and a job reads it
+  in order to start tidying up.
+- **A refusal after a pause still costs only a re-entry, and the engine spends it.** The job's raise
+  and the engine's recording of it are two moments with the job's own cleanup between them; a resume in
+  that gap is refused, but a pause that far along has destroyed nothing, so the job is re-queued when
+  the outcome lands. A refusal after a *cancel* stands: the job may already have undone work, and Retry
+  is the honest recovery. Likewise a cancel arriving in that gap wins over a pause already unwinding —
+  recorded onto a parked job it would be stranded, since nothing ever picks a paused job up.
+
+**The bulk `resume()` never un-cancels anything.** It is the inverse of the bulk `pause()` and touches
+only jobs whose pending request is a pause; retracting a cancel is something you ask of one row.
+Sweeping a multi-selection and resurrecting a job the user cancelled ten minutes ago would be a
+surprise, and the per-job call is exactly as easy to reach.
+
+`SCHEDULED` is deliberately **not** a state: queued and scheduled are the same concept — a job waiting
+its turn — and a resumed job is `QUEUED` like any other. There is likewise **no force-start**. The
+queue runs exactly one job at a time, so its order already *is* the answer to "what runs next":
+resuming a multi-selection schedules them all and the topmost starts, and to run a specific job now you
+move it to the top. Forcing would have to mean running two things at once, which is the one thing this
+component is specified not to do.
+
+### 3.4 Reordering applies to what has not started
 
 [[[appendices.task-queue#reorder]]]
 
-Only a queued job moves. A running one cannot be made to have started later than it did, and a finished
-one has no position left to matter. A move aimed above the running job is **clamped rather than
-refused**: the request is honest, only its index reaches too far, and placing a job ahead of the one
-already running would promise an order the queue cannot deliver.
+A queued **or paused** job moves: neither is executing, both are still waiting their turn, and refusing
+to move one of them would be an arbitrary difference between two jobs that are equally not running. A
+running job cannot be made to have started later than it did, and a finished one has no position left
+to matter. A move aimed above the running job is **clamped rather than refused**: the request is
+honest, only its index reaches too far, and placing a job ahead of the one already running would
+promise an order the queue cannot deliver.
 
 ## 4. A failure costs its job and nothing else
 
@@ -116,6 +229,26 @@ a run of thousands.
 The log is deliberately where the detail lives ([[appendices.logging#what-is-logged]]): a status carries
 the sentence, the log carries the traceback, and a job's records land under the scope it was enqueued in
 (below), so a failure while working on a document is readable in *that document's* log.
+
+### 4.1 A failure is kept, because it is the thing worth acting on
+
+[[[appendices.task-queue#kept]]]
+
+**Jobs leave the queue only when told to. Nothing sweeps.** A failed or cancelled job is usually
+retryable — a verify that ran before its generate fails for a reason that stops being true, and the fix
+is to run it again — so dropping it would throw away exactly the row a reader came back for. `remove`
+is the only way out, and `retry` puts a finished job back to `queued`, clears its error and progress,
+and runs it **from the top**: clearing what the job kept is the whole difference between Retry and
+Resume.
+
+Re-entering a job blindly is safe because a job that changes anything guards its own re-entry — a
+conversion refuses to start over a leftover backup ([[acquisition-tooling#convert-mechanics]]) rather
+than trust the caller not to ask twice.
+
+Removing the *running* job is the sharp edge. Cancellation is cooperative, so a detached job may still
+be inside `run()` for a checkpoint or two; the engine **drops its terminal notification**, because
+telling a listener that a row it deleted has just been cancelled would announce a job that, as far as
+anyone watching is concerned, no longer exists.
 
 ## 5. The caller's context travels to the worker
 
@@ -153,9 +286,25 @@ Adding it later is cheap; taking the constraint back once every client is writte
 
 [[[appendices.task-queue#teardown]]]
 
-Shutting the queue down cancels everything, **releases a pause first** — a parked job would otherwise
-wait for a resume that is never coming — and joins the worker with a timeout. Shutdown is terminal: a
+Shutting the queue down cancels everything and joins the worker with a timeout. Shutdown is terminal: a
 queue that has been shut down refuses further work rather than accepting jobs that will never run.
+Nothing has to be released first — §3.1 means no job is ever parked waiting on the queue, so a paused
+job is simply an unfinished one, cancelled where it stands.
+
+**Cancelling is the wrong verb for quitting with work outstanding**, though, which is why it is not the
+only thing here. The app must be closeable without anyone having to remember what they had planned, so
+the exit sequence is *pause, wait, save, shut down*: `pause()` asks every unfinished job to stop,
+`wait_until_idle()` waits for the running one to unwind to `paused` — at which point it has kept
+whatever it needs to carry on — and only then is there a queue worth writing down. Waiting is a
+separate call rather than part of `pause()` because pausing from a dock must never block the thread
+drawing the dock; where the waiting happens is the caller's decision. `wait_until_idle` **reports**
+rather than hangs, so a job ignoring its checkpoints leaves the caller to choose between saving what it
+has and waiting longer.
+
+> [!NOTE]
+> The *save* in that sequence is not built. The engine offers the pause and the wait that make a
+> clean stop possible; what is written, and where, is §6's question and is being reversed by
+> [#238](https://github.com/borco/rehuco/issues/238).
 
 The worker is also a **daemon** thread, and that is what actually guarantees the process exits: a job
 that ignores its checkpoints cannot be joined, so the wait is the chance a cooperative job gets to close

@@ -83,6 +83,15 @@ pythonPlatform = "All"
 # Setting this replaces pyright's defaults rather than adding to them, so they are restated.
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "**/build", "**/dist"]
 
+[tool.pylint.similarities]
+# duplicate-code compares across the whole run and reports against an arbitrary module, so it can
+# never be suppressed where the similarity actually is -- which leaves the threshold as the only
+# place to answer it. Both cases it finds are mirrors that exist on purpose: `TaskQueue.Entry` is
+# the mutable original its frozen `JobStatus` snapshot is taken from, so the two agree field for
+# field by design ([[appendices.task-queue#observation]]), and a subpackage's `__all__` necessarily
+# repeats the names its parent re-exports. Eight clears both and still catches a copied function.
+min-similarity-lines = 8
+
 [tool.pylint.messages_control]
 # redefined-outer-name: standard false positive for pytest fixtures used as same-file test parameters
 disable = ["fixme", "redefined-outer-name"]
