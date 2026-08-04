@@ -33,4 +33,3 @@ class LogRecordSink(Protocol):  # pylint: disable=too-few-public-methods
 
         :param entries: the entries to take, in the order they were logged.
         """
-        ...  # pylint: disable=unnecessary-ellipsis

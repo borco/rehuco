@@ -37,12 +37,10 @@ class StoredValueEditor(Protocol):
     @property
     def value(self) -> int | None:
         """The value currently held."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     @property
-    def value_changed(self) -> SignalInstance:
+    def value_changed(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
         """Fires when :attr:`value` changes."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 class MeasuredValueEdit(QWidget):  # pylint: disable=too-many-instance-attributes

@@ -26,21 +26,18 @@ class DescriptionRenderingSettings(Protocol):
     """
 
     @property
-    def engine(self) -> str:
+    def engine(self) -> str:  # pyright: ignore[reportReturnType]
         """The selected renderer -- a key of ``markdown_view.RENDERERS``."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     @property
-    def css(self) -> str:
+    def css(self) -> str:  # pyright: ignore[reportReturnType]
         """The stylesheet for the currently-selected :attr:`engine`."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
     @property
-    def description_rendering_changed(self) -> SignalInstance:
+    def description_rendering_changed(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
         """Fires when the :attr:`engine`, the active stylesheet (:attr:`css`), or the image-width cap
         changes -- i.e. whenever an already-open viewer needs to re-render. The width cap is a
         re-render trigger only (the scanner reads it live), never read through this contract."""
-        ...  # pylint: disable=unnecessary-ellipsis
 
 
 class DescriptionField(Field[str]):
