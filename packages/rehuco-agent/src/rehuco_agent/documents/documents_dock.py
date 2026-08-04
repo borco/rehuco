@@ -2,15 +2,25 @@
 ([[nodes#single-instance]])."""
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogScope
 from borco_pyside.qtads import QtAdsFocusTracker
-from PySide6.QtCore import QByteArray, Signal
+from PySide6.QtCore import QByteArray, QObject, Qt, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget
-from rehuco_core import INFO_REHU_FILENAME, LockReasonKind, RehuDocument, RehuFormatError, load_tc
+from rehuco_core import (
+    FINISHED_JOB_STATES,
+    INFO_REHU_FILENAME,
+    JobStatus,
+    LockReasonKind,
+    RehuDocument,
+    RehuFormatError,
+    TaskQueue,
+    load_tc,
+)
 
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.identity_settings import shared_identity_settings
@@ -23,7 +33,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 LOG: Final = logging.getLogger(__name__)
 
 
-class DocumentsDock(QMainWindow):
+class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
 
     Reopening an already-open path focuses its existing dock rather than opening a second one
@@ -40,6 +50,13 @@ class DocumentsDock(QMainWindow):
         evaluated once per repolish instead of once per manager ([[appendices.qt-ads#per-manager-stylesheet]],
         #234, and see
         :class:`~borco_pyside.qtads.QtAdsFocusTracker`). ``None`` leaves every manager styling itself.
+    :param task_queue: the engine every open document's ``location`` editor asks whether it may rename
+        right now (#240). This dock is the **one** listener for the whole nest -- mirroring
+        `TaskQueueStore`/`TaskQueueWidget`'s single-attachment-per-app-lifetime shape rather than one
+        listener per document -- and re-checks every open model's answer whenever the set of
+        **unfinished job sources** moves (:meth:`__wake_rename_locks`; :meth:`detach` before the queue
+        shuts down, the same discipline `TaskQueueWidget.detach` follows). ``None`` (most tests) leaves
+        every document's rename never locked by this.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -59,15 +76,48 @@ class DocumentsDock(QMainWindow):
     it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
     ``MainWindow`` hop."""
 
-    def __init__(self, parent: QWidget | None = None, stylesheet_host: QWidget | None = None) -> None:
+    class Marshaller(QObject):
+        """Carries "the task queue changed, a rename lock may have moved" across the thread boundary,
+        and nothing else (#240) -- the same nested, undocumented-outside-its-class shape
+        `TaskQueueModel.Marshaller` uses, for the same reason: a mangled class name is not one Qt or
+        the linters will accept, and nothing outside :class:`DocumentsDock` has a reason to build one.
+        """
+
+        rename_locks_may_have_changed = Signal()
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        stylesheet_host: QWidget | None = None,
+        task_queue: TaskQueue | None = None,
+    ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
+        self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
         self.__tracker: Final = QtAdsFocusTracker(
             self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
         )
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
+
+        self.__marshaller: Final = DocumentsDock.Marshaller()
+        self.__marshaller.rename_locks_may_have_changed.connect(
+            self.__refresh_rename_lock_reasons, Qt.ConnectionType.QueuedConnection
+        )
+        self.__pending_rename_lock_refresh = False
+        self.__locking_sources: frozenset[Path] | None = None
+        """The last-seen set of unfinished job sources, or ``None`` until the first callback settles it
+        (:meth:`__resync_rename_locks`, whose comparison ``None`` never satisfies). Deliberately **not**
+        read from the queue here: the worker is already running restored jobs when this dock is built,
+        so a job transitioning between that read and ``add_listener`` below would be baked in as a
+        permanently missed update -- a stale set a later walk can equal by coincidence, swallowing the
+        one wake that mattered. Settling inside a callback instead runs under the queue's own lock,
+        serialized with every callback after it. Restored jobs still lock correctly before any callback:
+        :meth:`~RehuDocumentModel.rename_lock_reason` reads the queue live, and this set only decides
+        when to *re-announce*."""
+        if task_queue is not None:
+            task_queue.add_listener(self)
 
     def open_document(self, path: Path) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.
@@ -260,6 +310,152 @@ class DocumentsDock(QMainWindow):
             return False
         return bool(self.__dock_manager.restoreState(QByteArray(state)))
 
+    def detach(self) -> None:
+        """Stop listening to the task queue (#240).
+
+        Called before :meth:`~rehuco_core.TaskQueue.shutdown` (``MainWindow.__shutdown_task_queue``),
+        the same discipline :meth:`~rehuco_agent.tasks.task_queue_widget.TaskQueueWidget.detach`
+        follows: shutdown synchronously emits ``job_updated`` for each job it cancels, and each would
+        otherwise schedule a re-check against document docks already being torn down. A no-op when this
+        dock was built with no queue.
+        """
+        if self.__task_queue is not None:
+            self.__task_queue.remove_listener(self)
+
+    # region TaskQueueListener (#240) -- a rename lock is a function of one thing only, the set of
+    # unfinished jobs' sources ([[appendices.task-queue#observation]]), so every method here keeps
+    # that set current and the GUI is woken only when it genuinely moved
+    #
+    # Why this is not simply "re-snapshot on every callback", the shape `TaskQueueModel` uses:
+    # ``job_updated`` fires once per progress report -- once per *file* for a job hashing a tree --
+    # and each needless refresh re-renders every open document's location editor, which for a
+    # file-scoped resource is a full directory sweep (measured ~11.5 ms over a thousand siblings, vs
+    # ~8 us for a directory-scoped one, which reads no directory at all). Waking on every report was
+    # measured at ~175 refreshes per 200 reports once the job does real per-unit work; the wake-up
+    # coalescing collapses a burst only while the worker never yields, which an I/O-bound job
+    # constantly does. Re-snapshotting to *compare* instead is sound but costs a walk of the whole job
+    # list per report -- 2.6 us at one queued job, but 1.57 ms at a thousand, which bulk work
+    # (a library-wide checksum run) would reach. So the walk is kept for the rare events and the hot
+    # one answers in constant time; see :meth:`job_updated`.
+
+    def job_enqueued(self, status: JobStatus, index: int) -> None:
+        """See :class:`~rehuco_core.TaskQueueListener`."""
+        del status, index
+        self.__resync_rename_locks()
+
+    def job_updated(self, status: JobStatus) -> None:
+        """See :class:`~rehuco_core.TaskQueueListener`.
+
+        Answers in **constant time** for everything but a job finishing, which is what keeps a
+        progress report free. The reasoning, given that this event concerns exactly one job and so
+        can move at most that job's own contribution:
+
+        * **set not settled yet** -- the first callback since attaching; walk
+          (:meth:`__resync_rename_locks`), because there is no baseline to reason against.
+        * **no source** -- contributes nothing whatever its state; the set cannot have moved.
+        * **unfinished, source already held** -- its contribution is already in the set, and no other
+          job's changed. This is every progress report, and the whole point of the fast path.
+        * **unfinished, source not held** -- the job just became unfinished (a retry, or its first
+          run), so the set gains exactly that source; no walk is needed to know it.
+        * **finished, source not held** -- contributes nothing, and nothing claimed it. Unchanged.
+        * **finished, source held** -- the only ambiguous case: the source leaves the set *unless*
+          another unfinished job also names it, which only a walk can say. Once per job outcome, so
+          the cost lands where it is affordable.
+        """
+        held = self.__locking_sources
+        if held is None:
+            self.__resync_rename_locks()
+            return
+        source = status.source
+        if source is None:
+            return
+        if status.state not in FINISHED_JOB_STATES:
+            if source not in held:
+                self.__locking_sources = held | {source}
+                self.__wake_rename_locks()
+            return
+        if source in held:
+            self.__resync_rename_locks()
+
+    def jobs_removed(self, serials: Sequence[int]) -> None:
+        """See :class:`~rehuco_core.TaskQueueListener`."""
+        del serials
+        self.__resync_rename_locks()
+
+    def jobs_reordered(self, serials: Sequence[int]) -> None:
+        """See :class:`~rehuco_core.TaskQueueListener`."""
+        del serials
+        self.__resync_rename_locks()
+
+    def queue_paused_changed(self, paused: bool) -> None:
+        """See :class:`~rehuco_core.TaskQueueListener`."""
+        del paused
+        self.__resync_rename_locks()
+
+    def __unfinished_sources(self) -> frozenset[Path]:
+        """Every unfinished job's ``source`` -- the whole of what a rename lock can be built from.
+
+        Exactly the inputs :meth:`~RehuDocumentModel.rename_lock_reason` reads
+        (:data:`~rehuco_core.FINISHED_JOB_STATES`, and a job about no one resource contributing
+        nothing), so two equal sets guarantee an unchanged answer for **every** open document,
+        whatever their paths and scopes are.
+
+        :returns: the sources, or an empty set when this dock has no queue.
+        """
+        if self.__task_queue is None:  # pragma: no cover -- callbacks fire only once attached, which needs a queue
+            return frozenset()
+        return frozenset(
+            status.source
+            for status in self.__task_queue.jobs()
+            if status.source is not None and status.state not in FINISHED_JOB_STATES
+        )
+
+    def __resync_rename_locks(self) -> None:
+        """Re-read the whole set and wake the GUI only if it actually moved.
+
+        The walk, for the events where it is affordable -- an enqueue, a removal, a job finishing, and
+        the two that provably cannot matter (a reorder; a pause/resume toggle, since a paused job is
+        unfinished, [[appendices.task-queue#pause-concept]]). Routing those two through the comparison
+        rather than making them bare no-ops keeps *that* claim enforced by the code rather than by a
+        comment that has to stay true.
+
+        Also how the set is **settled**: the not-yet-settled ``None`` satisfies no comparison here, so
+        the first callback of any kind -- whatever it reports -- walks and re-announces unconditionally,
+        which is what makes a transition the dock was built too late to see harmless.
+        """
+        sources = self.__unfinished_sources()
+        if sources == self.__locking_sources:
+            return
+        self.__locking_sources = sources
+        self.__wake_rename_locks()
+
+    def __wake_rename_locks(self) -> None:
+        """Ask the GUI thread to re-check every open document's rename lock, once per burst.
+
+        Called under the queue's own lock, on whichever thread the change happened on -- so this must
+        stay quick and must not touch a widget. Emitted only once per pending batch, the same
+        coalescing :class:`~rehuco_agent.tasks.task_queue_model.TaskQueueModel` uses; callers update
+        :attr:`__locking_sources` *before* getting here, so a change and a change back within one
+        batch are never mistaken for no change at all.
+        """
+        if self.__pending_rename_lock_refresh:
+            return
+        self.__pending_rename_lock_refresh = True
+        self.__marshaller.rename_locks_may_have_changed.emit()
+
+    def __refresh_rename_lock_reasons(self) -> None:
+        """Re-announce every open document's :meth:`~RehuDocumentModel.rename_lock_reason` (#240).
+
+        Runs on the GUI thread (the marshaller's queued connection). Asks every open model to re-emit
+        rather than computing an answer itself: the model owns what the answer means, this dock only
+        owns knowing *when* to ask again.
+        """
+        self.__pending_rename_lock_refresh = False
+        for widget in self.__document_docks.values():
+            widget.model.refresh_rename_lock_reason()
+
+    # endregion
+
     def __activate(self, dock: QtAds.CDockWidget) -> DocumentWidget:
         """Make ``dock`` the current dock and return its widget.
 
@@ -331,9 +527,11 @@ class DocumentsDock(QMainWindow):
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
-            model = RehuDocumentModel.create_new(path, username=shared_identity_settings().current_username)
+            model = RehuDocumentModel.create_new(
+                path, username=shared_identity_settings().current_username, task_queue=self.__task_queue
+            )
         else:
-            model = RehuDocumentModel(self.__load_or_locked(path))
+            model = RehuDocumentModel(self.__load_or_locked(path), task_queue=self.__task_queue)
         # the model is created parentless and handed to the dock, which adopts it -- so the whole
         # document is freed when the dock closes rather than leaking for the session (#148). The dock
         # also owns its own title/identity upkeep; the area only wires the two seams that cross back to
