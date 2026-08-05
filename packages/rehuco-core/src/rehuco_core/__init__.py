@@ -77,6 +77,12 @@ from .rehu_rename import (
     rename_rehu_resource,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .rename_coordination import (
+    DEFAULT_RENAME_YIELD_TIMEOUT,
+    RenameCoordinator,
+    RenameYieldTimeout,
+    ResourceLocation,
+)
 from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
@@ -133,6 +139,7 @@ __all__ = [
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
+    "DEFAULT_RENAME_YIELD_TIMEOUT",
     "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_TASK_JOB_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
@@ -170,6 +177,9 @@ __all__ = [
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
+    "RenameCoordinator",
+    "RenameYieldTimeout",
+    "ResourceLocation",
     "ScreenshotRename",
     "StopRequest",
     "TUTORIAL_FIELD_NAMES",
