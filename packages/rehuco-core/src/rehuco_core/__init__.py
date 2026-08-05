@@ -18,6 +18,7 @@ from .constants import (
     REHU_SUFFIX,
     VIDEO_EXTENSIONS,
 )
+from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
 from .learning_path_entries import (
     LearningPathEntry,
     learning_path_records_by_scope,
@@ -136,6 +137,7 @@ __all__ = [
     "CollectionEntry",
     "ContentImageEntry",
     "DEFAULT_CHECKSUM_ALGORITHM",
+    "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
@@ -210,6 +212,7 @@ __all__ = [
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
+    "read_content_chunks",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
     "rename_rehu_resource",

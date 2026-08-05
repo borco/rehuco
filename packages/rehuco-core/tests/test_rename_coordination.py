@@ -10,13 +10,11 @@ hangs: :data:`SETTLE` is what a test waits for something to happen, and it is ge
 slow machine does not read as a defect.
 """
 
-from collections.abc import Callable, Generator
-from contextlib import contextmanager
 from pathlib import Path
-from threading import Event, Thread
-from time import monotonic, sleep
+from threading import Event
 from typing import Any, Final
 
+from concurrency import BRIEF, SETTLE, running, wait_until
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from rehuco_core import RenameCoordinator, RenameYieldTimeout, ResourceLocation
@@ -27,16 +25,6 @@ INFO_PATH: Final = FOLDER / "info.rehu"
 CONTENT: Final = FOLDER / "content.zip"
 NEW_NAME: Final = "new_name"
 RENAMED: Final = DIRECTORY / NEW_NAME
-
-SETTLE: Final = 5.0
-"""How long a test waits for another thread to reach the state it is checking, in seconds.
-
-Far above anything the barrier needs (~7 ms measured) and far below a suite that looks hung: a wait that
-runs out is a genuine failure, never a slow runner."""
-
-BRIEF: Final = 0.05
-"""A timeout a test *expects* to run out, in seconds. Short, because waiting for a failure is dead
-time."""
 
 
 @fixture(name="filesystem")
@@ -58,40 +46,6 @@ def fixture_coordinator() -> RenameCoordinator:
     :returns: the coordinator under test.
     """
     return RenameCoordinator()
-
-
-@contextmanager
-def running(target: Callable[[], object]) -> Generator[None]:
-    """Run ``target`` on a daemon thread for the length of the block.
-
-    Daemon, and joined with a bounded wait on the way out, so a test that fails its assertions still
-    lets the suite exit rather than hanging on a worker stuck behind a barrier that never lifted.
-
-    :param target: what to run; whatever it returns is dropped, so a bare ``coordinator.rename(...)``
-        can be handed over without a wrapper that discards the new path.
-    :yields: nothing; the block does the asserting.
-    """
-    thread = Thread(target=target, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        thread.join(SETTLE)
-
-
-def wait_until(predicate: Callable[[], bool]) -> bool:
-    """Poll ``predicate`` until it holds, or :data:`SETTLE` runs out.
-
-    :param predicate: what to wait for.
-    :returns: whether it came true in time -- asserted by the caller, so a barrier that never lifts
-        fails the test rather than hanging it.
-    """
-    deadline = monotonic() + SETTLE
-    while monotonic() < deadline:
-        if predicate():
-            return True
-        sleep(0.001)
-    return predicate()
 
 
 def tracked_count(coordinator: RenameCoordinator) -> int:
