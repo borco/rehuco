@@ -89,6 +89,28 @@ class RecordingJob(SampleJob):
             self.__order.append(self.label)
 
 
+class MovableSourceJob(SampleJob):
+    """A job whose ``source`` the test can move, standing in for one that follows a rename (#241).
+
+    A plain attribute rather than a real :class:`~rehuco_core.ResourceLocation`: what the queue is
+    tested on is that it *re-reads* the declaration, not how a particular job decided to answer it.
+
+    :param label: the job's label.
+    :param source: where it starts.
+    """
+
+    def __init__(self, label: str, source: Path) -> None:
+        super().__init__(label)
+        self.source = source
+
+    def run(self, control: JobControl) -> None:
+        """Finish immediately.
+
+        :param control: the engine's face to this job.
+        """
+        del control
+
+
 class GatedJob(SampleJob):
     """A job the test holds mid-run: it announces that it started, waits to be let go, then checkpoints.
 
@@ -2085,6 +2107,80 @@ def test_a_queue_that_has_been_shut_down_refuses_work(queue: TaskQueue) -> None:
 
     with pytest.raises(RuntimeError):
         queue.enqueue(RecordingJob("too late"))
+
+
+# endregion
+
+
+# region Sources that move (#241)
+def test_resync_sources_announces_a_job_whose_source_moved(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A job that followed its resource is re-read, and its row is told the new path.
+
+    The row a reader clicks has to name somewhere that exists; a rename mid-sweep would otherwise leave
+    it pointing at a folder that is gone.
+
+    **Test steps:**
+
+    * enqueue a job over a movable source and check the row carries the original path
+    * move the source and ask the queue to re-read
+    * check exactly one update arrived, carrying the new path
+    """
+    job = MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu"))
+    serial = queue.enqueue(job)
+    assert listener.enqueued[0][0].source == Path("/fake/library/old_folder/info.rehu")
+    listener.updated.clear()
+
+    job.source = Path("/fake/library/new_name/info.rehu")
+    queue.resync_sources()
+
+    assert [(status.serial, status.source) for status in listener.updated] == [
+        (serial, Path("/fake/library/new_name/info.rehu"))
+    ]
+
+
+def test_resync_sources_is_silent_when_nothing_moved(queue: TaskQueue, listener: RecordingListener) -> None:
+    """A rename that touched nothing this queue holds announces nothing.
+
+    Without the comparison, every rename would burst one identical update per job -- and a catalog-wide
+    sweep holds a great many.
+
+    **Test steps:**
+
+    * enqueue a job over a fixed source and a job about no resource at all
+    * re-read sources without moving anything
+    * check no update arrived
+    """
+    queue.enqueue(MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu")))
+    queue.enqueue(RecordingJob("sourceless"))
+    listener.updated.clear()
+
+    queue.resync_sources()
+
+    assert listener.updated == []
+
+
+def test_resync_sources_re_reads_finished_jobs_too(
+    queue: TaskQueue, listener: RecordingListener, settles: Callable[[Callable[[], bool]], None]
+) -> None:
+    """A done job's row names a path a reader may still click, so it follows the rename as well.
+
+    **Test steps:**
+
+    * run a job to completion over a movable source
+    * move the source and re-read
+    * check the finished row was updated, and is still reported done
+    """
+    job = MovableSourceJob("scan", Path("/fake/library/old_folder/info.rehu"))
+    serial = queue.enqueue(job)
+    settles(lambda: wait_for_state(listener, serial, JobState.DONE))
+    listener.updated.clear()
+
+    job.source = Path("/fake/library/new_name/info.rehu")
+    queue.resync_sources()
+
+    assert [(status.source, status.state) for status in listener.updated] == [
+        (Path("/fake/library/new_name/info.rehu"), JobState.DONE)
+    ]
 
 
 # endregion

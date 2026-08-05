@@ -282,9 +282,11 @@ class TaskQueue:
         The job's declarations -- :attr:`~rehuco_core.tasks.TaskJob.label`,
         :attr:`~rehuco_core.tasks.TaskJob.source`,
         :attr:`~rehuco_core.tasks.TaskJob.safely_interruptible` and
-        :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped` -- are read here, once, and
-        carried on every status from now on. Once, because each of them answers a question about the
-        row a reader is looking at, and an answer that changed while the job ran would rewrite it.
+        :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped` -- are read here and carried on
+        every status from now on. All but one are read *only* here, because each answers a question
+        about the row a reader is looking at, and an answer that changed while the job ran would
+        rewrite it. ``source`` is the exception: it names where the work is rather than describing it,
+        and :meth:`resync_sources` re-reads it when a rename has moved that place (#241).
         Whether it is a :class:`~rehuco_core.tasks.PersistableTaskJob` is settled here too, and a job
         that is one is asked for its state now, so that a queue written while it runs still holds it.
 
@@ -303,6 +305,33 @@ class TaskQueue:
             entry = self.__accept(job)
             self.__condition.notify_all()
             return entry.serial
+
+    def resync_sources(self) -> None:
+        """Re-read every job's :attr:`~rehuco_core.tasks.TaskJob.source` and announce the ones that
+        moved (#241).
+
+        **The one declaration that is not read once.** :attr:`~rehuco_core.tasks.TaskJob.label` and the
+        rest are read at enqueue and never again, because an answer that changed while the job ran would
+        rewrite a row a reader is looking at. ``source`` is different in kind: it is not a claim about
+        the job, it is *where the work is*, and a rename moves that while the job runs. A row still
+        naming the old path would send a reader to a folder that no longer exists -- which is exactly
+        the confusion a rename-aware job exists to spare them.
+
+        Called by whoever knows a rename happened, not discovered here: the queue never learns what a
+        :class:`~rehuco_core.RenameCoordinator` is, and the app wires the coordinator's own
+        notification to this. Every entry is re-read, finished ones included, since a done job's row
+        names a path a reader may still click.
+
+        Only the entries whose source actually changed are announced, so a rename touching nothing this
+        queue holds is silent rather than a burst of identical updates.
+        """
+        with self.__condition:
+            for entry in self.__entries:
+                source = entry.job.source
+                if source == entry.source:
+                    continue
+                entry.source = source
+                self.__notify_updated(entry)
 
     def pause(self) -> None:
         """Ask every unfinished job to pause.

@@ -150,12 +150,24 @@ checks against is correct, and pausing it is *wasteful* rather than *wrong*. Req
 resume in place before it could be paused would be exactly the constraint-on-every-client this design
 keeps refusing.
 
-Two more declarations are read beside it, once, at enqueue: `source`, the `.rehu` this job is about —
-the job's own declaration, so there is one answer and nothing to keep in step — and
-`safely_interruptible`, whether stopping it part-way leaves nothing behind. That last is **distinct
-from *revertible***: a conversion undoes itself on failure ([[acquisition-tooling#convert-mechanics]])
-and is still not safely interruptible, because it has touched the directory. The undo is the job's own,
-exactly as the cursor is; the engine only ever *asks*, and never learns what unwinding means.
+Two more declarations are read beside it at enqueue: `source`, the `.rehu` this job is about — the job's
+own declaration, so there is one answer and nothing to keep in step — and `safely_interruptible`,
+whether stopping it part-way leaves nothing behind. That last is **distinct from *revertible***: a
+conversion undoes itself on failure ([[acquisition-tooling#convert-mechanics]]) and is still not safely
+interruptible, because it has touched the directory. The undo is the job's own, exactly as the cursor
+is; the engine only ever *asks*, and never learns what unwinding means.
+
+**`source` is the one declaration that is re-read** ([#241](https://github.com/borco/rehuco/issues/241)).
+Every other answer is fixed at enqueue, because one that changed while the job ran would rewrite a row
+somebody is looking at. `source` is not that kind of answer: it names *where the work is* rather than
+describing the work, and a rename moves that while the job runs. A row still naming the old folder would
+send a reader somewhere that no longer exists — so `resync_sources()` re-reads every job's source and
+announces the ones that moved. Whoever performed the rename calls it; the queue does not go looking, and
+never learns what a rename coordinator is.
+
+That re-read **overlaps `run`**, unlike everything else here, so a job whose source can move must answer
+from something safe to read on another thread. That is what a `ResourceLocation` is for, and why such a
+job holds one instead of a path.
 
 ### 3.3 One pause concept, and requests kept apart from states
 
