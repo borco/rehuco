@@ -78,6 +78,7 @@ from .rehu_rename import (
     rename_rehu_resource,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
     DEFAULT_TASK_JOB_REGISTRY,
@@ -200,6 +201,7 @@ __all__ = [
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
+    "readers_must_yield_for_directory_rename",
     "rehu_rename_affects",
     "rehu_rename_conflict",
     "rename_rehu_resource",
