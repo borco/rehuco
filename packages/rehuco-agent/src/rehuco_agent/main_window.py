@@ -144,9 +144,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue)
         self.__task_queue_widget.attach()
 
-        self.__documents_dock: Final = DocumentsDock(
-            self, stylesheet_host=self.__dock_manager, task_queue=self.__task_queue
-        )
+        self.__documents_dock: Final = DocumentsDock(self, stylesheet_host=self.__dock_manager)
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__setup_docking_system()
@@ -610,17 +608,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         turn "quit" into a window that will not close -- so a job left running is logged, not blocked
         on.
 
-        Both observers -- the task queue dock's widget and the documents dock's rename-lock listener
-        (#240) -- are detached **before** ``shutdown()``: shutdown synchronously emits ``job_updated``
-        for each job it cancels, and each would otherwise schedule a wake-up whose dispatch runs against
-        a model or widget already being torn down.
+        The task queue dock's widget is detached **before** ``shutdown()``: shutdown synchronously emits
+        ``job_updated`` for each job it cancels, and each would otherwise schedule a wake-up whose
+        dispatch runs against a widget already being torn down.
         """
         self.__task_queue.pause()
         if not self.__task_queue.wait_until_idle():
             LOG.warning("The task queue did not settle before quitting; the unfinished job may be lost.")
         self.__task_queue_store.save()
         self.__task_queue_widget.detach()
-        self.__documents_dock.detach()
         self.__task_queue.shutdown()
 
     def __on_app_log_limit_changed(self, limit: int) -> None:

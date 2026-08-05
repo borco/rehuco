@@ -61,21 +61,6 @@ def rename_rehu_resource(path: Path, new_name: str) -> Path:
     return RehuRenamer(path, new_name).rename()
 
 
-def rehu_rename_affects(path: Path, candidate: Path) -> bool:
-    """Whether renaming the resource at ``path`` would move ``candidate`` along with it.
-
-    Exposes exactly what :class:`RehuRenamer`'s own plan already knows a rename moves
-    (:meth:`RehuRenamer.affects`) -- the predicate a caller asking "would this resource's rename touch
-    that other path" wants, reusing the one traversal :meth:`RehuRenamer.__plan` is built from rather
-    than inventing a second one that could drift from it (#240).
-
-    :param path: the resource's own ``.rehu`` file, exactly as :class:`RehuRenamer` takes it.
-    :param candidate: the path to test -- typically another job's ``source``.
-    :returns: whether ``candidate`` sits among the paths a rename of ``path`` would move.
-    """
-    return RehuRenamer(path, path.stem).affects(candidate)
-
-
 def rehu_rename_conflict(path: Path, new_name: str) -> Path | None:
     """Whatever already occupies the destination renaming ``path`` to ``new_name`` would take.
 
@@ -166,29 +151,6 @@ class RehuRenamer:
         if os.path.normcase(source) == os.path.normcase(destination):
             return None
         return destination if destination.exists() else None
-
-    def affects(self, candidate: Path) -> bool:
-        """Whether ``candidate`` is among the paths this resource's rename would move.
-
-        Reuses exactly :attr:`__directory_scoped` and :meth:`__sibling_set` -- what :meth:`__plan` is
-        already built from -- rather than a second traversal invented for this question (#240). A
-        directory-scoped resource's plan renames the whole parent directory in one step, so its
-        affected set is unbounded and is answered as **containment**: ``candidate`` is the directory
-        itself, or sits anywhere beneath it (:meth:`Path.parents`) -- never by enumerating the subtree,
-        which is what keeps this cheap even over a directory holding thousands of files. A file-scoped
-        resource's plan is exactly its finite :meth:`__sibling_set`, so membership in that list --
-        case-folded the same way :meth:`__check_no_collisions` decides whether two paths name the same
-        file -- is the whole answer.
-
-        :param candidate: the path to test, e.g. another job's ``source``.
-        :returns: whether renaming this resource would carry ``candidate`` along with it.
-        :raises OSError: (file-scoped only) the directory cannot be listed; see :meth:`__sibling_set`.
-        """
-        if self.__directory_scoped:
-            directory = self.__path.parent
-            return candidate == directory or directory in candidate.parents
-        normcased = os.path.normcase(candidate)
-        return any(normcased == os.path.normcase(sibling) for sibling in self.__sibling_set())
 
     @property
     def __directory_scoped(self) -> bool:

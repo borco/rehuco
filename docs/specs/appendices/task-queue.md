@@ -481,8 +481,13 @@ is never offered**: a modal blocking on an unbounded disk walk is a window that 
 only answers are to quit anyway or to go back and deal with the work.
 
 **Out of scope, filed separately:** a status-bar indicator for the queue running while the dock is
-hidden ([#239](https://github.com/borco/rehuco/issues/239)), and locking the location editor while an
-unfinished job's `source` would be moved by a rename
-([#240](https://github.com/borco/rehuco/issues/240)) — both need seams this dock does not: an
-`addPermanentWidget` with no existing precedent, and a new predicate on `PathField`/`PathEditor`
-alongside `set_conflict_check`.
+hidden ([#239](https://github.com/borco/rehuco/issues/239)) — it needs an `addPermanentWidget` seam this
+dock does not have and no existing precedent to follow.
+
+**A rename is never refused because a job is running** ([#241](https://github.com/borco/rehuco/issues/241)).
+[#240](https://github.com/borco/rehuco/issues/240) briefly locked the location editor while an unfinished
+job's `source` sat among the paths a rename would move; on a deep sweep that is minutes to hours of not
+being able to rename a folder, and with several people using the app potentially never. It is reversed
+rather than tuned: jobs cooperate with a rename instead of blocking it, which is #241's whole subject.
+Scheduling the rename as a job that runs once the scan releases is the same failure in a different shape
+and is rejected for the same reason.

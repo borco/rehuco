@@ -32,14 +32,6 @@ label already rendering the resource name in the UI font. The same trade `Messag
 own fallback glyph. It therefore leans on the platform's font fallback covering U+26BF; should that
 ever render as tofu, the guaranteed alternative is a separate marker label per row drawn in Phosphor."""
 
-LOCKED_SUFFIX: Final = " ⧗"
-"""Appended to a suggestion that would otherwise be clickable but is locked by a busy task-queue job
-(#240) -- a distinct marker from :data:`UNAVAILABLE_SUFFIX`, since "something already has this name"
-and "a job is using this resource right now" are different reasons a suggestion isn't offered, and
-conflating their markers would blur which one applies. Same reasoning as :data:`UNAVAILABLE_SUFFIX`
-for riding in the label's own text rather than a stylesheet or color alone -- an hourglass glyph, so
-its shape reads as "busy" independent of any tooltip."""
-
 
 class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     """Edits a resource's name by picking a rename suggestion ([[plugins#field-toolkit]],
@@ -64,11 +56,6 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     decides *that* it needs something, never how the answer is obtained ([[plugins#field-toolkit]]).
     With no predicate set, nothing is unavailable, which is what keeps the widget usable on its own.
 
-    Every suggestion is disabled the same way, marked with :data:`LOCKED_SUFFIX`, while a busy
-    task-queue job would be moved by this resource's rename (#240) -- asked through
-    :meth:`set_lock_reason`, the whole-editor sibling of :meth:`set_conflict_check`. With no predicate
-    set, the editor is never locked by this.
-
     :param parent: optional Qt parent.
     """
 
@@ -86,10 +73,6 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__conflicts: Callable[[str], bool] | None = None
         """Answers whether a candidate name is already taken, supplied by the owner
         (:meth:`set_conflict_check`); ``None`` until one is, so every name reads as available."""
-        self.__lock_reason: Callable[[], str | None] | None = None
-        """Answers whether -- and why -- this resource's rename is locked right now, supplied by the
-        owner (:meth:`set_lock_reason`, #240); ``None`` until one is, so the editor is never locked on
-        its own."""
 
         self.__name_label: Final = ElidedLabel()
 
@@ -130,23 +113,6 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
             occupies it; ``None`` to treat every name as available.
         """
         self.__conflicts = conflicts
-        self.__render()
-
-    def set_lock_reason(self, lock_reason: Callable[[], str | None] | None) -> None:
-        """Supply the predicate deciding whether this resource's rename is locked right now, and why
-        (#240).
-
-        Unlike :meth:`set_conflict_check` -- *is this candidate name taken*, asked per suggestion --
-        this is a **whole-editor** question, asked once per render: *may this resource be renamed at
-        all*. A busy queue is narrower than
-        :class:`~rehuco_agent.documents.document_widget.DocumentWidget`'s whole-document lock
-        (``model.locked``): only this control is affected, and every other field on the resource stays
-        editable.
-
-        :param lock_reason: called with no arguments for the reason the rename is currently refused, or
-            ``None`` when it isn't; ``None`` to leave the editor never locked.
-        """
-        self.__lock_reason = lock_reason
         self.__render()
 
     def set_suggestions(self, raw_suggestions: Sequence[str]) -> None:
@@ -197,45 +163,30 @@ class PathEditor(QWidget):  # pylint: disable=too-many-instance-attributes
     def __render(self) -> None:
         """Refresh the current-name label (warning-colored when unmatched) and each suggestion's state.
 
-        Four states per suggestion, in precedence order: the **current name** (disabled, plain -- a
+        Three states per suggestion, in precedence order: the **current name** (disabled, plain -- a
         rename to it is a no-op, not a problem), a name something already **occupies** (disabled, and
-        marked with :data:`UNAVAILABLE_SUFFIX`, #162), a name a busy task-queue job **locks** (disabled,
-        marked with :data:`LOCKED_SUFFIX`, #240), and otherwise a live link. The current name wins over
-        both disabled states, since a resource always "occupies" its own name and saying so would flag
-        every document as a conflict with itself -- which is also why the conflict check is skipped
+        marked with :data:`UNAVAILABLE_SUFFIX`, #162), and otherwise a live link. The current name wins
+        over the disabled state, since a resource always "occupies" its own name and saying so would
+        flag every document as a conflict with itself -- which is also why the conflict check is skipped
         entirely for it rather than merely overridden: no reason to ask about a name whose answer cannot
-        matter. A lock, unlike a conflict, says nothing about *this* name in particular -- it is asked
-        once per render, not once per suggestion -- so it applies uniformly to every non-current row.
+        matter.
 
         The marker rides in the label's own **text**, because Qt Style Sheets cannot inject content:
         they implement no ``content`` property and no ``::before``/``::after`` (Qt's pseudo-elements are
         widget subcontrols like ``::indicator``). ``name`` stays the dict key and the value
         :attr:`suggestion_selected` would carry, so the marker never leaks into what a rename renames to.
-
-        The lock reason, when present, is also set as this whole widget's tooltip -- so hovering
-        anywhere over the control, not just a disabled suggestion, explains why nothing here is
-        clickable right now.
         """
-        reason = self.__lock_reason() if self.__lock_reason is not None else None
-        self.setToolTip(reason or "")
         self.__name_label.set_text(self.__current_name)
         unmatched = bool(self.__current_name) and self.__current_name not in self.__suggestions
         self.__name_label.setStyleSheet(WARNING_STYLESHEET if unmatched else "")
         for name, label in self.__suggestion_labels.items():
             is_current = name == self.__current_name
             unavailable = not is_current and self.__conflicts is not None and self.__conflicts(name)
-            locked = not is_current and not unavailable and reason is not None
-            label.setEnabled(not is_current and not unavailable and not locked)
-            suffix = UNAVAILABLE_SUFFIX if unavailable else LOCKED_SUFFIX if locked else ""
+            label.setEnabled(not is_current and not unavailable)
             label.set_text(
-                f"{name}{suffix}",
-                href="" if is_current or unavailable or locked else "#",
+                f"{name}{UNAVAILABLE_SUFFIX if unavailable else ''}",
+                href="" if is_current or unavailable else "#",
             )
-            # set_text (ElidedLabel) manages this label's tooltip itself -- showing the full text while
-            # elided, clearing it otherwise -- so the lock reason must be applied *after*, or it would
-            # be overwritten by that internal render.
-            if locked:
-                label.setToolTip(reason or "")
 
     @staticmethod
     def __sanitize_all(raw_suggestions: Sequence[str]) -> list[str]:

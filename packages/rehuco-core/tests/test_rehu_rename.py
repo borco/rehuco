@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import PartialRenameError, rehu_rename_affects, rehu_rename_conflict, rename_rehu_resource
+from rehuco_core import PartialRenameError, rehu_rename_conflict, rename_rehu_resource
 
 DIRECTORY: Final = Path("/fake/library")
 FOLDER: Final = DIRECTORY / "old_folder"
@@ -396,131 +396,6 @@ def test_conflict_never_lists_the_directory(mocker: MockerFixture) -> None:
     mock_environment(mocker, listing_error=OSError("the directory must not be listed"))
 
     assert rehu_rename_conflict(FILE_PATH, NEW_NAME) is None
-
-
-# endregion
-
-
-# region the affects query (#240)
-def test_affects_directory_scoped_own_directory(mocker: MockerFixture) -> None:
-    """A directory-scoped resource's rename affects its own directory -- the one pair every plan has.
-
-    **Test steps:**
-
-    * ask whether renaming a directory-scoped resource affects its own parent directory
-    * verify it does
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(INFO_PATH, FOLDER) is True
-
-
-def test_affects_directory_scoped_nested_resource(mocker: MockerFixture) -> None:
-    """A resource nested anywhere beneath the directory is carried along by the directory rename.
-
-    **Test steps:**
-
-    * ask whether renaming a directory-scoped resource affects a resource two levels beneath it
-    * verify it does
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(INFO_PATH, FOLDER / "sub" / "info.rehu") is True
-
-
-def test_affects_directory_scoped_file_scoped_sibling(mocker: MockerFixture) -> None:
-    """A file-scoped resource sitting directly inside the directory is carried along too.
-
-    **Test steps:**
-
-    * ask whether renaming a directory-scoped resource affects a file-scoped resource inside it
-    * verify it does
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(INFO_PATH, FOLDER / "xxx.rehu") is True
-
-
-def test_affects_directory_scoped_sibling_directory_is_not_affected(mocker: MockerFixture) -> None:
-    """A resource in a **different** directory beside this one is not touched by this rename.
-
-    **Test steps:**
-
-    * ask whether renaming a directory-scoped resource affects a resource in a sibling directory
-    * verify it does not
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(INFO_PATH, DIRECTORY / "other_folder" / "info.rehu") is False
-
-
-def test_affects_directory_scoped_never_lists_the_directory(mocker: MockerFixture) -> None:
-    """The containment check never enumerates the directory's contents.
-
-    **Test steps:**
-
-    * make any attempt to list a directory raise
-    * ask whether renaming a directory-scoped resource affects a path beneath it
-    * verify it answered rather than raising
-    """
-    mock_environment(mocker, listing_error=OSError("the directory must not be listed"))
-
-    assert rehu_rename_affects(INFO_PATH, FOLDER / "sub" / "info.rehu") is True
-
-
-def test_affects_file_scoped_own_sibling_set(mocker: MockerFixture) -> None:
-    """A file-scoped resource's rename affects every file in its own sibling set -- the `.rehu` itself
-    and each of its screenshots.
-
-    **Test steps:**
-
-    * ask whether renaming a file-scoped resource affects its own `.rehu` and each screenshot
-    * verify all three are affected
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(FILE_PATH, FILE_PATH) is True
-    for screenshot in SCREENSHOTS:
-        assert rehu_rename_affects(FILE_PATH, screenshot) is True
-
-
-def test_affects_file_scoped_excludes_a_foreign_records_files(mocker: MockerFixture) -> None:
-    """A sibling `.rehu` whose stem extends this one's owns everything under that longer stem -- none
-    of it is affected by renaming this resource.
-
-    **Test steps:**
-
-    * list a foreign ``old_file2.rehu`` and its own screenshot and archive among the siblings
-    * ask whether renaming ``old_file`` affects any of the foreign resource's files
-    * verify none of them are
-    """
-    mock_environment(
-        mocker,
-        siblings=[
-            FILE_PATH,
-            DIRECTORY / "old_file.zip",
-            DIRECTORY / "old_file2.rehu",
-            DIRECTORY / "old_file200.jpg",
-            DIRECTORY / "old_file2.zip",
-        ],
-    )
-
-    assert rehu_rename_affects(FILE_PATH, DIRECTORY / "old_file2.rehu") is False
-    assert rehu_rename_affects(FILE_PATH, DIRECTORY / "old_file200.jpg") is False
-    assert rehu_rename_affects(FILE_PATH, DIRECTORY / "old_file2.zip") is False
-
-
-def test_affects_file_scoped_excludes_an_unrelated_path(mocker: MockerFixture) -> None:
-    """A path with nothing to do with this resource at all is never affected.
-
-    **Test steps:**
-
-    * ask whether renaming a file-scoped resource affects a path in a different directory entirely
-    * verify it does not
-    """
-    mock_environment(mocker)
-
-    assert rehu_rename_affects(FILE_PATH, DIRECTORY.parent / "elsewhere" / "info.rehu") is False
 
 
 # endregion

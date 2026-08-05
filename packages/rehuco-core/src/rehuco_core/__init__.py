@@ -73,7 +73,6 @@ from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_rename import (
     PartialRenameError,
     RehuRenamer,
-    rehu_rename_affects,
     rehu_rename_conflict,
     rename_rehu_resource,
 )
@@ -202,7 +201,6 @@ __all__ = [
     "migrate_block_data",
     "migrate_rehu_data",
     "readers_must_yield_for_directory_rename",
-    "rehu_rename_affects",
     "rehu_rename_conflict",
     "rename_rehu_resource",
     "rewrite_description_images",
