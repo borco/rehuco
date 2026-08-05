@@ -27,6 +27,9 @@ dependencies = [
     # lesson (unexamined payload rides along unnoticed) applied before rather than after the fact.
     "pymediainfo",
     "pyyaml",
+    # the default checksum algorithm and the fastest measured -- 22.9 GB/s against CRC-32's 9.4
+    # ([[data-model#checksums]], #203). BSD-2-Clause, ~50 KB of wheel.
+    "xxhash",
 ]
 
 [project.urls]

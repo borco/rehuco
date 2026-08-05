@@ -1,5 +1,12 @@
 """rehuco-core: shared library for models, .rehu I/O, and sync primitives."""
 
+from .checksum_algorithms import (
+    CHECKSUM_ALGORITHMS,
+    CHECKSUM_READ_CHUNK_SIZE,
+    DEFAULT_CHECKSUM_ALGORITHM,
+    ChecksumAlgorithm,
+    ChecksumDigest,
+)
 from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
@@ -109,15 +116,20 @@ __all__ = [
     "ARCHIVE_EXTENSIONS",
     "AuthorEntry",
     "BUILTIN_PLUGINS",
+    "CHECKSUM_ALGORITHMS",
     "CHECKSUM_MANIFEST_EXTENSIONS",
+    "CHECKSUM_READ_CHUNK_SIZE",
     "COLLECTION_PLUGIN",
     "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
     "CORE_FIELD_NAMES",
     "CORE_PLUGIN",
     "CURRENT_FORMAT_VERSION",
+    "ChecksumAlgorithm",
+    "ChecksumDigest",
     "CollectionEntry",
     "ContentImageEntry",
+    "DEFAULT_CHECKSUM_ALGORITHM",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",

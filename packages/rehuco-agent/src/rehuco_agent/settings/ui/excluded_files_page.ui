@@ -45,12 +45,15 @@
        </widget>
       </item>
       <item>
-       <widget class="QLabel" name="structural_patterns_label">
+       <widget class="WrappingLabel" name="structural_patterns_label">
         <property name="textInteractionFlags">
          <set>Qt::TextInteractionFlag::TextSelectableByMouse|Qt::TextInteractionFlag::TextSelectableByKeyboard</set>
         </property>
         <property name="toolTip">
          <string>Derived from each record's own name, wherever it is found — these cannot be changed.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>

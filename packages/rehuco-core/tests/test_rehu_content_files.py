@@ -351,15 +351,29 @@ def test_directory_scoped_drops_the_record_screenshots_and_manifest_by_slug(mock
 
 
 def test_directory_scoped_drops_every_manifest_extension(mocker: MockerFixture) -> None:
-    """``.md5`` and ``.sha256`` are manifests as much as ``.sfv`` ([[data-model#resource-scoping]]).
+    """The written ``.checksum`` and every legacy manifest suffix are bookkeeping alike
+    ([[data-model#resource-scoping]], [[data-model#checksums]]).
+
+    The names are spelled out here on purpose -- asserting against the constant they are read from
+    would pass however the constant changed, so the second copy *is* the test.
 
     **Test steps:**
 
-    * mock the tree to hold ``info.sfv``, ``info.md5``, ``info.sha256`` and ``video.mp4``
+    * mock the tree to hold a record-named file per manifest suffix, plus ``video.mp4``
     * enumerate ``info.rehu``'s content files
     * verify only ``video.mp4`` came back
     """
-    mock_tree(mocker, ["info.sfv", "info.md5", "info.sha256", "video.mp4"])
+    manifests = [
+        "info.checksum",
+        "info.md5",
+        "info.sfv",
+        "info.sha1",
+        "info.sha224",
+        "info.sha256",
+        "info.sha384",
+        "info.sha512",
+    ]
+    mock_tree(mocker, [*manifests, "video.mp4"])
 
     assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 

@@ -289,7 +289,7 @@ class RehuRenamer:
 
         A file-scoped resource carries no manifest of the files it describes
         ([[data-model#resource-scoping]] names that as the gap), so **being named after it is the
-        association**: the ``.rehu``, the ``<stem>NN`` screenshots, the ``.sfv``/``.md5`` manifest, and
+        association**: the ``.rehu``, the ``<stem>NN`` screenshots, the checksum manifest, and
         the content itself -- one ``foo.zip``, or a ``foo.001``/``foo.002`` multi-part set. Renaming
         only some of them would break the one convention holding them together, which is why membership
         is a naming rule rather than the list of file kinds this build happens to recognize.

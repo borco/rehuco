@@ -27,11 +27,26 @@ registered and opened everywhere a ``.zip`` is: the shell verb and ``RegistryPag
 (:mod:`rehuco_agent.archives`, #43) and the content-image enumeration
 (:mod:`rehuco_core.rehu_content_images`). One constant serves both uses deliberately."""
 
-CHECKSUM_MANIFEST_EXTENSIONS: Final = (".sfv", ".md5", ".sha256")
-"""A checksum manifest's file extensions, case-insensitively ([[data-model#resource-scoping]]) -- the
-``<record>.sfv``/``.md5``/``.sha256`` sibling that records a resource's content hashes. Recognized here
-so :mod:`rehuco_core.rehu_content_files` can keep a manifest out of the content it describes; which one
-is *written*, and in what format, is the checksum feature's own decision."""
+CHECKSUM_MANIFEST_EXTENSIONS: Final = (
+    ".checksum",
+    ".md5",
+    ".sfv",
+    ".sha1",
+    ".sha224",
+    ".sha256",
+    ".sha384",
+    ".sha512",
+)
+"""A checksum record's file extensions, case-insensitively ([[data-model#resource-scoping]]) -- the
+``<record>.<extension>`` sibling that records a resource's content hashes, so
+:mod:`rehuco_core.rehu_content_files` can keep one out of the content it describes.
+
+**Only ``.checksum`` is written** ([[data-model#checksums]], #203): one JSON record per resource, holding
+each file's hash, when it was last verified and what the answer was -- which no single-algorithm manifest
+format can express. The rest are what a predecessor or an external checker such as ``cfv`` leaves beside
+a resource, listed here so a catalog that already carries them never counts one as content. Recognizing
+more than is written is the safe direction; the reverse would make a size scan and a verify disagree
+about the same directory."""
 
 CONTENT_IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 """Default image extensions to recognize inside a reference-images resource's archive(s), case-insensitively
