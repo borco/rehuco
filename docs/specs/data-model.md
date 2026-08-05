@@ -81,11 +81,11 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 
 Two patterns for what a `.rehu` describes:
 
-- **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif/webp` images and an `info.sfv`/`.md5`/`.sha256` checksum
-  manifest. Covers tutorials (flat or nested) and folder-based resources generally. The checksum manifest covers
+- **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif/webp` images and an `info.checksum` record
+  ([[data-model#checksums]]). Covers tutorials (flat or nested) and folder-based resources generally. The record covers
   everything in the directory **except** `info.rehu` and the `infoXX.*` images, so description/images stay freely
   editable without invalidating integrity checks.
-- **File-scoped**: `foo.rehu` + `foo00.jpg`, `foo01.jpg`, ... + `foo.sfv`/`foo.md5`, describing a single file like
+- **File-scoped**: `foo.rehu` + `foo00.jpg`, `foo01.jpg`, ... + `foo.checksum`, describing a single file like
   `foo.zip`. Whether this must extend to **multiple files** treated as one logical resource via an explicit manifest
   block in the `.rehu` is a Daz3D-milestone question ([[daz3d-personal-database#multi-part]]), and its only remaining
   caller: reference-images resources are decided *not* to need it (#197, below), and DAZ multi-part archives share a
@@ -123,11 +123,56 @@ What a **reference-images** resource's content *is* was settled by #197: content
 [[[data-model#checksums]]]
 
 - [#226: feat: excluded-files settings page — one pattern list shared by the size scan and checksums](https://github.com/borco/rehuco/issues/226)
+- [#203: feat: the .checksum record — per-file hash, verification date and status, generate and verify](https://github.com/borco/rehuco/issues/203)
+- [#241: feat: rename-aware jobs — a rename never waits for a scan, and a job follows the resource it moved](https://github.com/borco/rehuco/issues/241)
+- [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 
-- Algorithm in use today: CRC32 (SFV). Subject to change pending benchmarking (CPU-accelerated CRC32 vs. alternatives
-  like xxHash or hardware-accelerated SHA). The checksum manifest format should record **which algorithm was used** per
-  entry, so a future algorithm switch doesn't invalidate or require migrating existing checksums, and different
-  resources can use different algorithms if needed.
+- **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
+  change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
+  ([[mounts-and-storage#node-benchmark]]) grades a *node's* cold-read throughput for dispatch and never compares
+  algorithms. `test_checksum_algorithms_benchmark` is that comparison, kept in the repository and re-runnable with
+  `make checksum-bench`: it folds one fixed 64 MiB in-memory block through each candidate, because the read loop moves
+  the same bytes whichever digest consumes them, so I/O is a constant and only the fold is the variable.
+
+  Median of 15 rounds, AMD Ryzen 5 5600, Python 3.14.6, 2026-08-04:
+
+  | algorithm | ms / 64 MiB | throughput |
+  | --- | --- | --- |
+  | **XXH3-64** | **2.94** | **22.9 GB/s** |
+  | CRC-32 | 7.14 | 9.4 GB/s |
+  | BLAKE3 | 14.40 | 4.7 GB/s (measured, not shipped) |
+  | SHA-1 | 29.41 | 2.3 GB/s |
+  | SHA-256 | 31.48 | 2.1 GB/s |
+  | SHA-512 / SHA-384 | 68.6 | 0.98 GB/s |
+  | MD5 | 70.52 | 0.95 GB/s |
+
+  **XXH3 is the default.** Nothing outside this app reads a checksum record, so there is no interop to trade the speed
+  against; CRC-32 stays available because that is what the existing catalog's `.sfv` files hold. MD5 losing to SHA-512
+  is not a mistake in the table: SHA-2 has hardware acceleration on this CPU and MD5 has none. Every candidate is far
+  above any disk this reads from, so a sweep is I/O-bound whichever is chosen — what the choice buys is headroom for
+  the day the storage is not the bottleneck.
+
+  **`gxhash` was measured and rejected** (0.7.0, MIT). At **23.3 GB/s (64-bit) / 28.9 GB/s (128-bit)** one-shot it is
+  the fastest thing tested, and it is unusable here: upstream states plainly that *"GxHash is not an incremental
+  hasher, and all inputs provided to the `update` method will be accumulated internally"*. Through the chunked read
+  loop this app actually uses it measures **0.09 GB/s** — 100× slower than CRC-32 — while buffering the whole input,
+  which for an 8 GB video means an 8 GB resident buffer. A hash that must see the file in one piece cannot hash the
+  files this catalog holds.
+
+- **The read chunk is 1 MiB**, from the same benchmark's 64 KiB–16 MiB sweep: below 256 KiB the per-`update` call is
+  visible on the cheapest fold (CRC-32 costs 4% more at 64 KiB), above it nothing changes but the resident buffer.
+  It is also the granularity at which a running job releases a file handle, so a rename never waits longer than one
+  chunk read (#241).
+
+- **Every algorithm ships; the set is closed.** `xxhash` (BSD-2-Clause) is a dependency, and the SHA-2 family and MD5
+  come from `hashlib` — so an algorithm is added by editing one file, never by dropping a package into an install, and
+  there is no optional-backend path to reason about. **BLAKE3 was dropped**: it existed to be written in `b3sum`'s
+  format for an external checker to verify, that interop is gone, and it folds a third of XXH3's throughput. What a
+  record written by some *other* build names, and this one has no entry for, is a question for whoever reads the
+  record — it is not answered by keeping an entry that cannot hash anything.
+
+- **The record format itself is #203's**, together with what a verify records and how a sweep skips what it checked
+  recently.
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the
   `infoXX.*` images, which are designed to be freely editable.
 - **What a resource's content *is* is computed once and shared** (#226) — `rehuco_core.rehu_content_files` resolves it
@@ -137,7 +182,8 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - **Two tiers of exclusion, and only one is the user's.** **Structural** — **every** `.rehu` a scan meets, at any
   depth, together with the files that belong to it: its `<record>NN` screenshots (`<record>NN` plus an image
   extension, the same shape [[data-model#image-meanings]] defines, so a numbered *video* stays content) and its
-  `<record>.sfv`/`.md5`/`.sha256` manifest. Not only the scanning resource's own — a nested `bar/info.rehu` and a
+  `<record>.checksum` record -- and the legacy manifest suffixes a predecessor or an external checker may have left
+  beside it. Not only the scanning resource's own — a nested `bar/info.rehu` and a
   file-scoped `baz.rehu` in the tree bring their own bookkeeping, and all of it is skipped. **Find the records
   first, drop what each one claims, and count what is left** — with two conditions that fall out of that order.
   A record claims **only its own directory**, since screenshots and a manifest are its siblings: a root
@@ -162,12 +208,28 @@ What a **reference-images** resource's content *is* was settled by #197: content
   — a whitelist named by the `.rehu` itself ([[data-model#resource-scoping]]) — so a neighboring `info.rehu`,
   `bar00.jpg` or `bar.zip` is out of scope *before* any pattern is consulted, and emptying the list cannot change
   that.
-- **This makes a verify result depend on a setting** — a manifest generated under one junk list and verified under
-  another can report spurious *unexpected new file* entries. Whether the manifest should record the list it was
-  generated under is the checksum feature's own question.
+- **The record does not store the list it was generated under, and it does not need to** (#203, answering this
+  section's own open question). Verify checks *what the record lists*: every file with a recorded checksum is hashed
+  and compared, so matched / mismatched / missing are decided without consulting the setting at all. The exclusion
+  list decides what gets hashed at **generate** time, and at verify time it shapes one thing — the list of content
+  files the record does not cover, which is advisory and never makes a resource dirty. So a changed junk list can move
+  a file in and out of that advisory list and can never turn a match into a mismatch. Storing it would buy an
+  exactness nothing needs, at the cost of a record that disagrees with the setting the user is looking at.
+- **Excluded files are never reported as unexpected**, in either tier — that list comes from the same enumeration the
+  record was generated over (#226), so a `Thumbs.db` a Windows browse dropped into the directory, and an edited or
+  newly added screenshot, all leave a verify clean.
 - The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue
   ([[architecture-design#components]]), and multi-selecting many resources serializes the work rather than running it
-  all at once.
+  all at once. **Core ships generate and verify as plain callables** (#203) taking a progress callback and a
+  checkpoint that is called between chunks and never caught, so a job's pause and cancel travel out untouched and core
+  never learns a queue exists ([[appendices.task-queue#job-responsibility]]). The job class wrapping them is #204's
+  and the settings page that chooses an algorithm is #242's. Progress counts **bytes, not files** — a tutorial is
+  three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
+- **A cancelled run reports nothing it did not establish.** A verdict is only produced once a file's whole digest has
+  been computed and compared, and a stop leaves through the checkpoint rather than returning a half-filled report, so
+  a cancel can never manufacture a mismatch. A generate writes its record **once, at the end**, through the atomic
+  writer: a stopped or crashed run leaves the previous record intact rather than a truncated one that a later verify
+  would read as authority for half the resource.
 - **Execution location is a dispatch decision, not fixed.** A checksum job can run: (a) on the node that owns the files
   (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
   directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,
