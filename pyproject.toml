@@ -119,8 +119,9 @@ markers = [
     "macos: marks tests that only run on macOS",
     "linux: marks tests that only run on Linux",
     "fails_offscreen: marks tests that fail when run offscreen (e.g. in CI)",
+    "checksum_benchmark: marks tests that benchmark checksum performance (not correctness)",
 ]
-explicit-only = ["fails_offscreen"]
+explicit-only = ["fails_offscreen", "checksum_benchmark"]
 
 [tool.coverage.run]
 branch = true

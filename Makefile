@@ -1,4 +1,4 @@
-.PHONY: sync tests cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build setup-git \
+.PHONY: sync tests checksum-bench cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build setup-git \
 	uis qrcs icons agent-dev-build agent-dev-clean agent-dev-register agent-dev-unregister \
 	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean \
 	agent-appimage-build agent-appimage-clean
@@ -135,6 +135,11 @@ sync:
 
 tests:
 	uv run pytest
+
+# The checksum-algorithm comparison [[data-model#checksums]] left open (#203). Opt-in rather than part of
+# `tests`: it measures rather than asserts, and pytest-explicit skips it without the --run flag.
+checksum-bench:
+	uv run pytest -m checksum_benchmark --run-checksum_benchmark --benchmark-only
 
 cov:
 	uv run pytest --cov=rehuco_agent --cov=rehuco_core --cov=rehuco_node --cov=borco_core --cov=borco_pyside --cov-report=term-missing --cov-report=xml
