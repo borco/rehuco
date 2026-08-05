@@ -34,6 +34,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     LockReasonKind,
     RehuDocument,
+    RenameCoordinator,
 )
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -1723,6 +1724,61 @@ def test_reading_an_untyped_document_says_so_rather_than_naming_nothing(
     qtbot.wait(10)
 
     assert any("untyped" in message for message in read_sink.messages_at(logging.INFO))
+
+
+# endregion
+
+
+# region handing on the rename coordinator (#241)
+def test_an_opened_document_renames_through_the_docks_coordinator(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Every document this dock opens renames through the **app's** coordinator, not one of its own.
+
+    A job and a document holding different coordinators would each coordinate with nobody, so what
+    matters is that the one handed in is the one that arrives.
+
+    **Test steps:**
+
+    * build a dock over a coordinator whose rename is mocked, and open a document
+    * rename from the model
+    * verify that coordinator was the one asked
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION}))
+    coordinator = RenameCoordinator()
+    renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
+    through = mocker.patch.object(coordinator, "rename", return_value=renamed)
+    dock = DocumentsDock(rename_coordinator=coordinator)
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    assert widget.model.rename_location("new_name") is True
+
+    through.assert_called_once_with(FAKE_PATH, "new_name")
+
+
+def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document started by ``open_folder`` gets the coordinator too, not only a loaded one.
+
+    Both construction paths matter: a resource created in an empty folder is renamed at least as often
+    as one that was already there.
+
+    **Test steps:**
+
+    * build a dock over a coordinator and start a new document in a folder with no `info.rehu`
+    * save it, then rename
+    * verify the dock's coordinator was asked
+    """
+    mocker.patch.object(Path, "exists", return_value=False)
+    coordinator = RenameCoordinator()
+    renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
+    through = mocker.patch.object(coordinator, "rename", return_value=renamed)
+    dock = DocumentsDock(rename_coordinator=coordinator)
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+    mocker.patch.object(widget.model, "save")
+    assert widget.model.rename_location("new_name") is True
+
+    through.assert_called_once_with(FAKE_PATH, "new_name")
 
 
 # endregion

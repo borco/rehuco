@@ -39,7 +39,7 @@ from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueWidget
-from rehuco_core import JobState, JobStatus
+from rehuco_core import JobState, JobStatus, TaskQueue
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
@@ -2618,6 +2618,39 @@ def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixtur
     qtbot.addWidget(second)
 
     assert not task_queue_dock(second).isClosed()
+
+
+def test_a_rename_makes_the_queue_re_read_its_job_sources(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The window wires the coordinator's notification to the queue's re-read, so a job's row follows
+    the resource it was working on (#241).
+
+    The two halves are built and tested apart -- core never learns what a coordinator is -- so this is
+    the one place the connection between them is a fact rather than an intention.
+
+    **Test steps:**
+
+    * mock the queue's re-read, then construct a real ``MainWindow``
+    * rename through the window's coordinator, with the renamer itself mocked out
+    * verify the queue was asked to re-read exactly once
+
+    Patched on the **class, before the window exists**: the window hands the coordinator a *bound*
+    method, so an instance patched afterwards would never be the object the coordinator holds -- and
+    the test would fail while the wiring was perfectly correct.
+
+    The **renamer** is mocked rather than ``Path``: patching the filesystem wholesale reaches the
+    window's own teardown, where the task queue is written to disk, and a rename test has no business
+    breaking a save.
+    """
+    resync = mocker.patch.object(TaskQueue, "resync_sources", autospec=True)
+    renamer = mocker.patch("rehuco_core.rename_coordination.RehuRenamer")
+    renamer.return_value.rename.return_value = Path("C:/tutorials/new_name/info.rehu")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    coordinator = window._MainWindow__rename_coordinator  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    coordinator.rename(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+
+    assert resync.call_count == 1
 
 
 def test_registers_the_tasks_page(qtbot: QtBot) -> None:

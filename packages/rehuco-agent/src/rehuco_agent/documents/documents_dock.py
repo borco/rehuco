@@ -15,6 +15,7 @@ from rehuco_core import (
     LockReasonKind,
     RehuDocument,
     RehuFormatError,
+    RenameCoordinator,
     load_tc,
 )
 
@@ -46,6 +47,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         evaluated once per repolish instead of once per manager ([[appendices.qt-ads#per-manager-stylesheet]],
         #234, and see
         :class:`~borco_pyside.qtads.QtAdsFocusTracker`). ``None`` leaves every manager styling itself.
+    :param rename_coordinator: handed to every document this dock opens, so a rename from the location
+        editor stands the running jobs aside instead of being refused while they finish (#241). Held
+        here rather than built here: it is the **app's** coordinator, and a job and a document that
+        disagreed about which one to use would coordinate with nobody.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -69,9 +74,11 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self,
         parent: QWidget | None = None,
         stylesheet_host: QWidget | None = None,
+        rename_coordinator: RenameCoordinator | None = None,
     ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
+        self.__rename_coordinator: Final = rename_coordinator
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
         self.__tracker: Final = QtAdsFocusTracker(
@@ -341,9 +348,13 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
-            model = RehuDocumentModel.create_new(path, username=shared_identity_settings().current_username)
+            model = RehuDocumentModel.create_new(
+                path,
+                username=shared_identity_settings().current_username,
+                rename_coordinator=self.__rename_coordinator,
+            )
         else:
-            model = RehuDocumentModel(self.__load_or_locked(path))
+            model = RehuDocumentModel(self.__load_or_locked(path), rename_coordinator=self.__rename_coordinator)
         # the model is created parentless and handed to the dock, which adopts it -- so the whole
         # document is freed when the dock closes rather than leaking for the session (#148). The dock
         # also owns its own title/identity upkeep; the area only wires the two seams that cross back to

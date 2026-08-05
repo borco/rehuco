@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
-from rehuco_core import FINISHED_JOB_STATES, JobState, TaskQueue
+from rehuco_core import FINISHED_JOB_STATES, JobState, RenameCoordinator, TaskQueue
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -144,7 +144,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue)
         self.__task_queue_widget.attach()
 
-        self.__documents_dock: Final = DocumentsDock(self, stylesheet_host=self.__dock_manager)
+        # the app's one rename coordinator: every document renames through it and every job that reads
+        # files tracks its locations in it, so a rename asks the running work to stand aside for one
+        # chunk instead of waiting for it to finish (#241). Its notification drives the queue's own
+        # re-read, which is how a moved job's row stops naming a folder that no longer exists.
+        self.__rename_coordinator: Final = RenameCoordinator()
+        self.__rename_coordinator.add_rename_listener(self.__task_queue.resync_sources)
+
+        self.__documents_dock: Final = DocumentsDock(
+            self, stylesheet_host=self.__dock_manager, rename_coordinator=self.__rename_coordinator
+        )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__setup_docking_system()
