@@ -38,7 +38,8 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
     exclusion.
 
     **Structural** -- every ``.rehu`` the walk finds, at any depth, together with the files that belong to
-    it: its ``<record>NN`` screenshots and its ``<record>.sfv``/``.md5``/``.sha256`` manifest. Not just
+    it: its ``<record>NN`` screenshots and its ``<record>.checksum`` record -- together with the legacy
+    manifest suffixes an external checker may have left beside it ([[data-model#checksums]]). Not just
     the scanning resource's own: a nested ``bar/info.rehu`` and a file-scoped ``baz.rehu`` sitting in the
     tree bring their own bookkeeping. [[data-model#checksums]] and [[data-model#image-meanings]] define
     *every* record and its screenshots as editable at any moment, so a measurement that counted them

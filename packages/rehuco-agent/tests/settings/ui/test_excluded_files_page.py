@@ -134,7 +134,7 @@ def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> No
     summary = page_ui(page).structural_patterns_label.text()
     assert "<record>.rehu — every resource record found while scanning" in summary
     assert "<record>NN with .jpg, .jpeg, .png, .gif, .webp" in summary
-    assert "<record> with .sfv, .md5, .sha256" in summary
+    assert "<record> with .checksum, .md5, .sfv, .sha1, .sha224, .sha256, .sha384, .sha512" in summary
     assert not any("rehu" in pattern or "sfv" in pattern for pattern in listed_patterns(page))
 
 
