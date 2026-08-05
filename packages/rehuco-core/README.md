@@ -25,6 +25,9 @@ It provides:
 - **File I/O** — atomic read and write, with unknown fields preserved verbatim
 - **Format versioning** — a per-file version, migrations applied on load, and read-only handling of a
   file written by a newer version
+- **Content checksums** — a `.checksum` record beside the `.rehu` holding, per content file, its hash,
+  when it was last verified and what the answer was; generate and verify read it, and can re-check just
+  one file or skip whatever was checked recently
 - **Legacy `.tc` reading** — parsing the predecessor format and converting it to `.rehu`, with backups
   and rollback
 
