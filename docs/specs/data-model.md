@@ -126,6 +126,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#203: feat: the .checksum record — per-file hash, verification date and status, generate and verify](https://github.com/borco/rehuco/issues/203)
 - [#241: feat: rename-aware jobs — a rename never waits for a scan, and a job follows the resource it moved](https://github.com/borco/rehuco/issues/241)
 - [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
+- [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -171,8 +172,48 @@ What a **reference-images** resource's content *is* was settled by #197: content
   record written by some *other* build names, and this one has no entry for, is a question for whoever reads the
   record — it is not answered by keeping an entry that cannot hash anything.
 
-- **The record format itself is #203's**, together with what a verify records and how a sweep skips what it checked
-  recently.
+- **A `.checksum` is a record of verification over time, not a manifest** (#203) — per content file: which hash, when
+  it was last checked, and what the answer was. That is what lets a sweep skip what was checked recently (#242), and
+  it is not expressible in any format an external checker reads, so `cfv` interop is dropped deliberately. It is JSON,
+  sits beside the `.rehu` under the same stem (`info.rehu` → `info.checksum`), and carries its own `version` for the
+  migration chain to climb:
+
+  ```json
+  {
+    "version": 1,
+    "files": [
+      { "name": "foo1/bar1.zip", "crc32": "42342424",
+        "verified": "2026-08-04T23:34:56Z", "status": "matched" },
+      { "name": "bar2.zip", "status": "unexpected" },
+      { "name": "foo3/bar3.zip", "xxh3": "42342424",
+        "verified": "2026-08-04T23:34:56Z", "status": "mismatched" }
+    ]
+  }
+  ```
+
+  `name` is relative to the `.rehu`, POSIX-separated, never absolute and never escaping the directory. **The hash key
+  is the algorithm tag**, at most one per entry and present only once hashed — which is how *record which algorithm was
+  used per entry* is satisfied literally, and it is genuinely per entry, so `crc32` and `xxh3` entries sit side by side
+  and changing the configured algorithm invalidates nothing. `status` is `matched` / `mismatched` / `missing` /
+  `unexpected` / `malformed`; a `malformed` entry is one the reading build cannot read, and it costs itself while its
+  neighbours still verify.
+
+- **Generate and verify take the same selection**, because they are two halves of one workflow and a selection meaning
+  different things in each would be a trap: which files (one, a set, or everything), and a staleness window whose
+  *absence* is how force is expressed — no separate force flag to drift out of step. **A targeted generate re-baselines
+  exactly the named entries and carries every other byte-for-byte**, which is what makes the real loop work: verify,
+  inspect what came back `mismatched`, decide whether the change was genuine (an archive legitimately repacked; or
+  corruption with no backup, where keeping a checksum that can only ever fail helps nobody), then re-baseline just
+  those files without re-reading the terabyte that was fine.
+
+- **Migration happens in one pass, and never launders corruption** — with *Update checksums on verify* on, an entry
+  recorded under a non-default algorithm is read **once** and fed to two digests at the same time, its own and the
+  default. The *recorded* algorithm decides the verdict: if it matches, the old key is dropped and the new replaces it;
+  if it fails, the entry is `mismatched`, keeps its old key, and the new hash is discarded. Blessing bad bytes under a
+  new name would produce a record that then looks clean forever.
+
+- **A sweep adopts** a content file with no recorded hash — hash it, date it, record it `matched` — so `unexpected` is
+  a report state rather than a resting one.
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the
   `infoXX.*` images, which are designed to be freely editable.
 - **What a resource's content *is* is computed once and shared** (#226) — `rehuco_core.rehu_content_files` resolves it

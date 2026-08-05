@@ -27,8 +27,14 @@ registered and opened everywhere a ``.zip`` is: the shell verb and ``RegistryPag
 (:mod:`rehuco_agent.archives`, #43) and the content-image enumeration
 (:mod:`rehuco_core.rehu_content_images`). One constant serves both uses deliberately."""
 
+CHECKSUM_RECORD_SUFFIX: Final = ".checksum"
+"""A checksum record's file extension ([[data-model#checksums]], #203) -- the ``<record>.checksum``
+sibling holding each content file's hash, when it was last verified and what the answer was
+(:mod:`rehuco_core.checksum_record`). The **only** one of
+:data:`CHECKSUM_MANIFEST_EXTENSIONS` this build ever writes, which is why it is named on its own."""
+
 CHECKSUM_MANIFEST_EXTENSIONS: Final = (
-    ".checksum",
+    CHECKSUM_RECORD_SUFFIX,
     ".md5",
     ".sfv",
     ".sha1",

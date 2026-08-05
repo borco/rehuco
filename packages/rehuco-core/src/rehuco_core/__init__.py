@@ -7,10 +7,22 @@ from .checksum_algorithms import (
     ChecksumAlgorithm,
     ChecksumDigest,
 )
+from .checksum_record import (
+    ChecksumEntry,
+    ChecksumRecordError,
+    ChecksumStatus,
+    checksum_entry_name,
+    checksum_record_path,
+    load_checksum_record,
+    new_checksum_record,
+    parse_checksum_entry,
+    save_checksum_record,
+)
 from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
     CHECKSUM_MANIFEST_EXTENSIONS,
+    CHECKSUM_RECORD_SUFFIX,
     CONTENT_IMAGE_EXTENSIONS,
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
@@ -28,9 +40,11 @@ from .learning_path_entries import (
 )
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
+    CURRENT_CHECKSUM_RECORD_VERSION,
     CURRENT_FORMAT_VERSION,
     current_block_version,
     migrate_block_data,
+    migrate_checksum_data,
     migrate_rehu_data,
 )
 from .plugins import (
@@ -50,6 +64,13 @@ from .plugins import (
     USERS_KEY,
     PluginRegistry,
     PluginSpec,
+)
+from .rehu_checksums import (
+    ChecksumCheckpoint,
+    ChecksumProgress,
+    ChecksumReport,
+    generate_checksums,
+    verify_checksums,
 )
 from .rehu_content_duration import (
     DEFAULT_DURATION_PROBE,
@@ -126,14 +147,22 @@ __all__ = [
     "CHECKSUM_ALGORITHMS",
     "CHECKSUM_MANIFEST_EXTENSIONS",
     "CHECKSUM_READ_CHUNK_SIZE",
+    "CHECKSUM_RECORD_SUFFIX",
     "COLLECTION_PLUGIN",
     "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
     "CORE_FIELD_NAMES",
     "CORE_PLUGIN",
+    "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "ChecksumAlgorithm",
+    "ChecksumCheckpoint",
     "ChecksumDigest",
+    "ChecksumEntry",
+    "ChecksumProgress",
+    "ChecksumRecordError",
+    "ChecksumReport",
+    "ChecksumStatus",
     "CollectionEntry",
     "ContentImageEntry",
     "DEFAULT_CHECKSUM_ALGORITHM",
@@ -201,6 +230,8 @@ __all__ = [
     "__version__",
     "author_name",
     "authors_comma_editable",
+    "checksum_entry_name",
+    "checksum_record_path",
     "collection_entries",
     "collection_records",
     "content_duration",
@@ -209,9 +240,14 @@ __all__ = [
     "current_block_version",
     "enumerate_content_files",
     "enumerate_content_images",
+    "generate_checksums",
+    "load_checksum_record",
     "load_tc",
     "migrate_block_data",
+    "migrate_checksum_data",
     "migrate_rehu_data",
+    "new_checksum_record",
+    "parse_checksum_entry",
     "read_content_chunks",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
@@ -220,7 +256,9 @@ __all__ = [
     "scan_rehu_screenshot_files",
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
+    "save_checksum_record",
     "tc_to_rehu_data",
+    "verify_checksums",
     "learning_path_records_by_scope",
     "learning_path_ref",
     "owned_learning_paths",
