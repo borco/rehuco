@@ -97,7 +97,9 @@ class HashingJob(TaskJobBase):
             done += len(chunk)
             control.report(done, len(PAYLOAD))
             self.parked.set()
-            self.__permits.acquire(timeout=SETTLE)
+            # a *timed* acquire, which `with` cannot express: the timeout is what keeps a test that
+            # never steps the job from hanging the suite instead of failing
+            self.__permits.acquire(timeout=SETTLE)  # pylint: disable=consider-using-with
         self.digest = digest.hexdigest()
 
 

@@ -30,7 +30,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 LOG: Final = logging.getLogger(__name__)
 
 
-class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
+class DocumentsDock(QMainWindow):
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
 
     Reopening an already-open path focuses its existing dock rather than opening a second one

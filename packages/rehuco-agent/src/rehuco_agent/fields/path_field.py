@@ -13,7 +13,7 @@ from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldView
 from .widgets import ExpandToggleButton, PathEditor
 
 
-class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
+class PathField(Field[str]):
     """The special ``path`` field ([[plugins#field-toolkit]], [[field-schema#field-mapping]]): a
     file's location, common to every ``.rehu`` and unlike the record fields in that its editor is
     driven by *other* fields' values (rename suggestions built from title/publisher/etc). It is

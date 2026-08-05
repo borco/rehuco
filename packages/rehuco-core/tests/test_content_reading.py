@@ -41,7 +41,7 @@ CHUNK_COUNT: Final = len(PAYLOAD) // CHUNK
 
 
 # region fakes and helpers
-class FakeFiles:
+class FakeFiles:  # pylint: disable=too-few-public-methods  # one way in; the rest is what it recorded
     """Every file the reader can open, and a record of how it was opened.
 
     Stands in for :func:`~borco_core.shared_read_open`. Each open hands back an independent
@@ -106,7 +106,9 @@ class SteppedReader:
         for chunk in read_content_chunks(self.__location, self.__coordinator, CHUNK):
             self.collected.append(chunk)
             self.parked.set()
-            self.__permits.acquire(timeout=SETTLE)
+            # a *timed* acquire, which `with` cannot express: the timeout is what keeps a test that
+            # never steps the reader from hanging the suite instead of failing
+            self.__permits.acquire(timeout=SETTLE)  # pylint: disable=consider-using-with
         self.done.set()
 
     def start(self) -> None:
@@ -170,6 +172,23 @@ def fixture_files(mocker: MockerFixture) -> FakeFiles:
     return files
 
 
+@fixture(name="locking_storage")
+def fixture_locking_storage(mocker: MockerFixture) -> None:
+    """Say the storage locks a directory against an open handle, whatever host the suite runs on.
+
+    What NTFS does, and the reason the close-and-re-open half of this module exists
+    (:func:`~rehuco_core.readers_must_yield_for_directory_rename`). Pinned rather than inherited from
+    ``sys.platform``: a test that asserts *the reader re-opened at the new path* describes the locking
+    backend, so on POSIX it would either fail or -- worse -- pass while proving nothing, since there is
+    no re-open to observe there. Its opposite number,
+    ``test_a_non_locking_backend_keeps_its_handle_open``, pins the trait the other way for the same
+    reason.
+
+    :param mocker: pytest-mock fixture.
+    """
+    mocker.patch("rehuco_core.content_reading.readers_must_yield_for_directory_rename", return_value=True)
+
+
 @fixture(name="coordinator")
 def fixture_coordinator(mocker: MockerFixture) -> RenameCoordinator:
     """A coordinator over a mocked filesystem, so its renames succeed without touching a disk.
@@ -228,7 +247,7 @@ def test_an_empty_file_yields_nothing(coordinator: RenameCoordinator, mocker: Mo
     files = FakeFiles({CONTENT: b""})
     mocker.patch("rehuco_core.content_reading.shared_read_open", side_effect=files.open)
 
-    assert list(read_content_chunks(coordinator.track(CONTENT), coordinator, CHUNK)) == []
+    assert not list(read_content_chunks(coordinator.track(CONTENT), coordinator, CHUNK))
 
 
 def test_a_missing_file_raises_from_the_first_chunk(coordinator: RenameCoordinator, mocker: MockerFixture) -> None:
@@ -412,7 +431,9 @@ def test_a_failed_read_closes_the_handle_inside_the_hold(coordinator: RenameCoor
 
 
 # region standing aside for a rename
-def test_a_rename_mid_read_yields_the_same_bytes(coordinator: RenameCoordinator, files: FakeFiles) -> None:
+def test_a_rename_mid_read_yields_the_same_bytes(
+    coordinator: RenameCoordinator, files: FakeFiles, locking_storage: None
+) -> None:
     """A directory rename landing mid-read produces exactly what an uninterrupted pass would.
 
     The measurement this whole issue rests on, as a test: the reader closes, waits, re-opens at the new
@@ -423,6 +444,7 @@ def test_a_rename_mid_read_yields_the_same_bytes(coordinator: RenameCoordinator,
     * park a reader mid-file and rename the folder underneath it
     * let the read finish, and check the bytes and where it re-opened
     """
+    del locking_storage  # the backend this test describes; see the fixture
     location = coordinator.track(CONTENT)
     reader = SteppedReader(coordinator, location)
     reader.start()
@@ -435,7 +457,9 @@ def test_a_rename_mid_read_yields_the_same_bytes(coordinator: RenameCoordinator,
     assert location.path == RENAMED_CONTENT
 
 
-def test_the_reader_seeks_back_to_where_it_stopped(coordinator: RenameCoordinator, files: FakeFiles) -> None:
+def test_the_reader_seeks_back_to_where_it_stopped(
+    coordinator: RenameCoordinator, files: FakeFiles, locking_storage: None
+) -> None:
     """Re-opening starts a fresh handle at byte zero, so the reader must seek -- and does.
 
     Pinned separately because the fake serves an independent stream per open: a reader that forgot to
@@ -446,7 +470,7 @@ def test_the_reader_seeks_back_to_where_it_stopped(coordinator: RenameCoordinato
     * park a reader mid-file, rename, and let it finish
     * check the total read is the file's length and every chunk is distinct
     """
-    del files
+    del files, locking_storage  # without the re-open there is no seek to observe; see the fixture
     reader = SteppedReader(coordinator, coordinator.track(CONTENT))
     reader.start()
 
@@ -457,7 +481,9 @@ def test_the_reader_seeks_back_to_where_it_stopped(coordinator: RenameCoordinato
     assert len(reader.collected) == CHUNK_COUNT
 
 
-def test_a_reader_survives_several_renames_in_one_pass(coordinator: RenameCoordinator, mocker: MockerFixture) -> None:
+def test_a_reader_survives_several_renames_in_one_pass(
+    coordinator: RenameCoordinator, mocker: MockerFixture, locking_storage: None
+) -> None:
     """A long job renamed under three times still reads the file exactly once, end to end.
 
     A rename is not a once-per-job event: a user reorganizing a catalog while a sweep runs may move the
@@ -469,6 +495,7 @@ def test_a_reader_survives_several_renames_in_one_pass(coordinator: RenameCoordi
     * park a reader and rename three times
     * check the bytes, the re-opens, and where the location ended
     """
+    del locking_storage  # one re-open per rename is the thing counted; see the fixture
     names = ["first", "second", "third"]
     files = FakeFiles({CONTENT: PAYLOAD} | {DIRECTORY / name / "content.zip": PAYLOAD for name in names})
     mocker.patch("rehuco_core.content_reading.shared_read_open", side_effect=files.open)

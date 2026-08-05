@@ -183,33 +183,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # QApplication.styleHints().colorScheme() itself, which reports the *resolved* appearance
         # and can't distinguish "explicitly Light" from "Default, currently resolving to Light"
         self.__theme_model: Final = ThemeModel(self.__theme_settings.mode)
-        ThemeManager(
-            self.__theme_model,
-            self.__ui.theme_action,
-            default_icon=THEME_DEFAULT_ICON,
-            light_icon=THEME_LIGHT_ICON,
-            dark_icon=THEME_DARK_ICON,
-        )
-
-        theme_menu = ThemeMenu(
-            self.__theme_model,
-            default_icon=THEME_DEFAULT_ICON,
-            light_icon=THEME_LIGHT_ICON,
-            dark_icon=THEME_DARK_ICON,
-        )
-
-        self.__ui.view_menu.addAction(theme_menu.default_action)
-        self.__ui.view_menu.addAction(theme_menu.light_action)
-        self.__ui.view_menu.addAction(theme_menu.dark_action)
-        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
-        # log_action/tasks_action stand in for the docks' own toggleViewAction()s here (see
-        # __setup_docking_system's companion-wiring comment) -- a plain menu row, unlike the toolbar
-        # buttons those were built for. Sit between the theme entries and the open-resource list: both
-        # are views of the app rather than of a resource, and __add_open_documents only ever appends,
-        # so the static section keeps this order however often the dynamic tail is rebuilt (#200, #202)
-        self.__ui.view_menu.addAction(self.__ui.log_action)
-        self.__ui.view_menu.addAction(self.__ui.tasks_action)
-        self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
+        self.__setup_view_menu()
 
         # must be called after restoring the geometry and the session (open documents) so
         # the outer dock layout can be restored to the right place, and any floating
@@ -295,6 +269,43 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
             menu.addAction(action)
             self.__dynamic_view_menu_actions.append(action)
+
+    def __setup_view_menu(self) -> None:
+        """Build the theme controls and fill ``View``'s static section -- the theme entries, then the
+        app-wide docks (#57, #200, #202).
+
+        The toolbar's 3-state cycling action and the menu's three explicit entries are two views of the
+        one :class:`~borco_pyside.theming.ThemeModel` built in ``__init__``; neither reads
+        ``QApplication.styleHints().colorScheme()``, which reports the *resolved* appearance and cannot
+        tell "explicitly Light" from "Default, currently resolving to Light".
+
+        ``log_action``/``tasks_action`` stand in for those docks' own ``toggleViewAction()``s here (see
+        :meth:`__setup_docking_system`'s companion-wiring comment) -- a plain menu row, unlike the
+        toolbar buttons those were built for. They sit between the theme entries and the open-resource
+        list because both are views of the *app* rather than of a resource, and
+        :meth:`__add_open_documents` only ever appends, so this static order survives however often the
+        dynamic tail is rebuilt.
+        """
+        ThemeManager(
+            self.__theme_model,
+            self.__ui.theme_action,
+            default_icon=THEME_DEFAULT_ICON,
+            light_icon=THEME_LIGHT_ICON,
+            dark_icon=THEME_DARK_ICON,
+        )
+        theme_menu = ThemeMenu(
+            self.__theme_model,
+            default_icon=THEME_DEFAULT_ICON,
+            light_icon=THEME_LIGHT_ICON,
+            dark_icon=THEME_DARK_ICON,
+        )
+        self.__ui.view_menu.addAction(theme_menu.default_action)
+        self.__ui.view_menu.addAction(theme_menu.light_action)
+        self.__ui.view_menu.addAction(theme_menu.dark_action)
+        self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
+        self.__ui.view_menu.addAction(self.__ui.log_action)
+        self.__ui.view_menu.addAction(self.__ui.tasks_action)
+        self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
 
     def __setup_file_menu(self) -> None:
         """Wire ``File``'s static actions -- open dialogs, save all, quit -- and the ``Open recents``
