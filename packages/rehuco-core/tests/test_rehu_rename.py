@@ -7,7 +7,7 @@ from typing import Any, Final
 
 from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import PartialRenameError, rehu_rename_conflict, rename_rehu_resource
+from rehuco_core import PartialRenameError, RehuRenamer, rehu_rename_conflict, rename_rehu_resource
 
 DIRECTORY: Final = Path("/fake/library")
 FOLDER: Final = DIRECTORY / "old_folder"
@@ -396,6 +396,154 @@ def test_conflict_never_lists_the_directory(mocker: MockerFixture) -> None:
     mock_environment(mocker, listing_error=OSError("the directory must not be listed"))
 
     assert rehu_rename_conflict(FILE_PATH, NEW_NAME) is None
+
+
+# endregion
+
+
+# region relocating a path across the rename (#241)
+def test_relocate_moves_the_directory_scoped_subtree(mocker: MockerFixture) -> None:
+    """Everything at or beneath a renamed directory lands at the same offset beneath the new one.
+
+    What lets a job holding a content file keep reading it after the folder moves: it asks where its
+    path went rather than rebuilding one.
+
+    **Test steps:**
+
+    * rename a directory-scoped resource
+    * relocate the directory itself, its `info.rehu`, a content file, and a nested resource
+    """
+    mock_environment(mocker)
+    renamer = RehuRenamer(INFO_PATH, NEW_NAME)
+    renamer.rename()
+    renamed = DIRECTORY / NEW_NAME
+
+    assert renamer.relocate(FOLDER) == renamed
+    assert renamer.relocate(INFO_PATH) == renamed / "info.rehu"
+    assert renamer.relocate(FOLDER / "content.zip") == renamed / "content.zip"
+    assert renamer.relocate(FOLDER / "sub" / "info.rehu") == renamed / "sub" / "info.rehu"
+
+
+def test_relocate_never_lists_the_renamed_directory(mocker: MockerFixture) -> None:
+    """The subtree rebases without being enumerated, so a directory holding thousands of files costs
+    the same as one holding none.
+
+    **Test steps:**
+
+    * make any attempt to list a directory raise
+    * rename a directory-scoped resource and relocate a path beneath it
+    * verify it answered rather than raising
+    """
+    mock_environment(mocker, listing_error=OSError("the directory must not be listed"))
+    renamer = RehuRenamer(INFO_PATH, NEW_NAME)
+    renamer.rename()
+
+    assert renamer.relocate(FOLDER / "deep" / "content.zip") == DIRECTORY / NEW_NAME / "deep" / "content.zip"
+
+
+def test_relocate_moves_every_file_scoped_sibling(mocker: MockerFixture) -> None:
+    """A file-scoped resource's own files each land under the new stem, keeping their own tails.
+
+    **Test steps:**
+
+    * rename a file-scoped resource listing a `.rehu`, two screenshots and an archive
+    * relocate each of them
+    """
+    mock_environment(mocker, siblings=[FILE_PATH, *SCREENSHOTS, DIRECTORY / "old_file.zip"])
+    renamer = RehuRenamer(FILE_PATH, NEW_NAME)
+    renamer.rename()
+
+    assert renamer.relocate(FILE_PATH) == DIRECTORY / f"{NEW_NAME}.rehu"
+    assert renamer.relocate(SCREENSHOTS[0]) == DIRECTORY / f"{NEW_NAME}00.jpg"
+    assert renamer.relocate(SCREENSHOTS[1]) == DIRECTORY / f"{NEW_NAME}01.png"
+    assert renamer.relocate(DIRECTORY / "old_file.zip") == DIRECTORY / f"{NEW_NAME}.zip"
+
+
+def test_relocate_leaves_a_path_this_rename_did_not_move(mocker: MockerFixture) -> None:
+    """A path outside the resource comes back untouched -- including a **sibling whose name merely
+    starts alike**, which a textual prefix test would wrongly claim had moved.
+
+    **Test steps:**
+
+    * rename a directory-scoped resource
+    * relocate a sibling directory, a resource beside it, and a path starting with the folder's name
+    """
+    mock_environment(mocker)
+    renamer = RehuRenamer(INFO_PATH, NEW_NAME)
+    renamer.rename()
+
+    assert renamer.relocate(DIRECTORY / "other" / "info.rehu") == DIRECTORY / "other" / "info.rehu"
+    assert renamer.relocate(DIRECTORY / "old_folder2" / "x.zip") == DIRECTORY / "old_folder2" / "x.zip"
+    assert renamer.relocate(FILE_PATH) == FILE_PATH
+
+
+def test_relocate_folds_case_exactly_where_the_filesystem_does(mocker: MockerFixture) -> None:
+    """A candidate spelled in another case relocates, and keeps its **own** spelling below the part
+    that moved.
+
+    On a case-insensitive filesystem ``OLD_FOLDER/Content.ZIP`` is the same file as
+    ``old_folder/Content.ZIP``, so a job holding either must be answered -- while the tail is taken
+    from the candidate, since renaming a folder never respells what is inside it.
+
+    **Test steps:**
+
+    * force Windows-style case folding and rename a directory-scoped resource
+    * relocate a path whose ancestor is spelled in upper case
+    """
+    mocker.patch.object(os.path, "normcase", side_effect=lambda path: str(path).lower())
+    mock_environment(mocker)
+    renamer = RehuRenamer(INFO_PATH, NEW_NAME)
+    renamer.rename()
+
+    recased = DIRECTORY / FOLDER.name.upper() / "Content.ZIP"
+    assert renamer.relocate(recased) == DIRECTORY / NEW_NAME / "Content.ZIP"
+
+
+def test_relocate_answers_unchanged_before_the_rename_runs(mocker: MockerFixture) -> None:
+    """Nothing has moved yet, so nothing relocates.
+
+    **Test steps:**
+
+    * build a renamer without running it
+    * relocate a path inside the resource
+    """
+    mock_environment(mocker)
+
+    assert RehuRenamer(INFO_PATH, NEW_NAME).relocate(FOLDER / "content.zip") == FOLDER / "content.zip"
+
+
+def test_relocate_answers_unchanged_after_a_no_op_rename(mocker: MockerFixture) -> None:
+    """Renaming to the name it already has moves nothing, so nothing relocates.
+
+    **Test steps:**
+
+    * rename a directory-scoped resource to its current name
+    * relocate a path inside it
+    """
+    mock_environment(mocker)
+    renamer = RehuRenamer(INFO_PATH, FOLDER.name)
+    renamer.rename()
+
+    assert renamer.relocate(FOLDER / "content.zip") == FOLDER / "content.zip"
+
+
+def test_relocate_answers_unchanged_after_a_rolled_back_rename(mocker: MockerFixture) -> None:
+    """A rename that failed and was undone left every file where it was, so nothing relocates.
+
+    The property that keeps a job pointed at something real: a relocation to a destination the rollback
+    has just emptied would send it to a path that holds nothing.
+
+    **Test steps:**
+
+    * fail the second of a file-scoped resource's renames, so the first is rolled back
+    * relocate the `.rehu`, whose own rename did briefly succeed
+    """
+    mock_environment(mocker, rename_side_effect=[None, OSError("boom"), None])
+    renamer = RehuRenamer(FILE_PATH, NEW_NAME)
+    with raises(OSError):
+        renamer.rename()
+
+    assert renamer.relocate(FILE_PATH) == FILE_PATH
 
 
 # endregion
