@@ -16,8 +16,6 @@ import json
 import logging
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from threading import Event
-from time import sleep
 from typing import Any, Final
 
 import PySide6QtAds as QtAds
@@ -34,13 +32,9 @@ from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
-    JobControl,
-    JobState,
-    JobStatus,
     LockReasonKind,
     RehuDocument,
-    TaskJobBase,
-    TaskQueue,
+    RenameCoordinator,
 )
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -1732,425 +1726,59 @@ def test_reading_an_untyped_document_says_so_rather_than_naming_nothing(
     assert any("untyped" in message for message in read_sink.messages_at(logging.INFO))
 
 
-# region rename-lock listening (#240)
-class GatedJob(TaskJobBase):
-    """A job the test holds mid-run, so it is demonstrably unfinished until released.
-
-    :param label: the job's label.
-    :param source: the job's declared :attr:`~rehuco_core.tasks.TaskJob.source`.
-    """
-
-    def __init__(self, label: str, source: Path) -> None:
-        super().__init__()
-        self.label = label
-        self.source = source
-        self.entered: Final = Event()
-        self.release: Final = Event()
-
-    def run(self, control: JobControl) -> None:
-        """Announce, then wait for the test to let it go.
-
-        :param control: unused.
-        """
-        del control
-        self.entered.set()
-        self.release.wait(TIMEOUT)
-
-
-class ReportingJob(TaskJobBase):
-    """A job that runs, waits to be told to report, then reports many times before parking.
-
-    Reports with a real pause between them, which is what a job doing per-file I/O does and what
-    hands the GUI thread a turn in between -- without that, the wake-up coalescing would collapse the
-    whole burst on its own and the test could not tell the source-set comparison from it.
-
-    :param label: the job's label.
-    :param source: the job's declared :attr:`~rehuco_core.tasks.TaskJob.source`.
-    """
-
-    REPORTS: Final = 40
-    PAUSE_SECONDS: Final = 0.002
-
-    def __init__(self, label: str, source: Path) -> None:
-        super().__init__()
-        self.label = label
-        self.source = source
-        self.entered: Final = Event()
-        self.reporting: Final = Event()
-        self.reported: Final = Event()
-        self.release: Final = Event()
-
-    def run(self, control: JobControl) -> None:
-        """Announce, report on demand, then wait for the test to let it go.
-
-        :param control: the engine's face to this job.
-        """
-        self.entered.set()
-        self.reporting.wait(TIMEOUT)
-        for unit in range(ReportingJob.REPORTS):
-            sleep(ReportingJob.PAUSE_SECONDS)
-            control.report(unit + 1, ReportingJob.REPORTS)
-        self.reported.set()
-        self.release.wait(TIMEOUT)
-
-
-@fixture(name="queue")
-def queue_fixture() -> Iterator[TaskQueue]:
-    """A queue that is always shut down, so no test can leave a worker thread behind."""
-    queue = TaskQueue()
-    yield queue
-    queue.shutdown()
-
-
-def settle_rename_locks(dock: DocumentsDock, qtbot: QtBot) -> None:
-    """Deliver one benign callback and drain its refresh, so the dock's source set is settled.
-
-    The set is deliberately not read at construction (a job transitioning between that read and the
-    attach would be a permanently missed update), so the **first** callback of any kind walks and
-    re-announces unconditionally -- a test asserting "this event announces nothing" must spend that
-    first announcement before listening.
-
-    :param dock: the dock whose set to settle.
-    :param qtbot: to drain the queued refresh.
-    """
-    dock.job_updated(JobStatus(serial=0, label="settle", state=JobState.RUNNING, source=None))
-    qtbot.wait(50)
-
-
-def test_a_document_dock_locks_its_location_once_a_job_moves_in(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """Opening a document over a task queue, then enqueuing a job whose ``source`` sits beneath it,
-    locks that document's ``rename_lock_reason`` -- ``DocumentsDock`` is listening and re-checks every
-    open model when the queue changes.
-
-    **Test steps:**
-
-    * open a document over a queue with nothing in it yet
-    * verify it starts unlocked
-    * enqueue a job whose source is nested beneath it, and pump the event loop
-    * verify the document is now locked
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    assert widget.model.rename_lock_reason() is None
-
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    queue.enqueue(job)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-
-    job.release.set()
-
-
-def test_the_lock_lifts_once_the_job_finishes(mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue) -> None:
-    """The lock a running job holds lifts once it finishes, picked up live off the same listener.
-
-    **Test steps:**
-
-    * open a document and start a job locking it
-    * release the job
-    * verify the document's lock reason clears
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    queue.enqueue(job)
-    assert job.entered.wait(TIMEOUT)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-
-    job.release.set()
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is None, timeout=int(TIMEOUT * 1000))
-
-
-def test_the_first_callback_settles_the_source_set_and_reannounces(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """The first callback after attaching walks the queue and re-announces unconditionally -- however
-    benign what it reports looks -- because the set is deliberately not read at construction: a job
-    transitioning between that read and the attach would be baked in as a permanently missed update,
-    a stale baseline a later walk could equal by coincidence, swallowing the one wake that mattered.
-
-    **Test steps:**
-
-    * open a document over a queue and connect to ``rename_lock_reason_changed``
-    * deliver a first update that on a settled set would announce nothing (a sourceless job)
-    * verify it re-announced exactly once, and a second delivery announced nothing
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-
-    dock.job_updated(JobStatus(serial=1, label="sourceless", state=JobState.RUNNING, source=None))
-    qtbot.wait(50)
-    assert len(received) == 1
-
-    dock.job_updated(JobStatus(serial=1, label="sourceless", state=JobState.RUNNING, source=None))
-    qtbot.wait(50)
-    assert len(received) == 1
-
-
-def test_a_sourceless_jobs_updates_wake_nothing(mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue) -> None:
-    """A job about no one resource contributes to no lock whatever its state, so its updates are
-    dropped without even consulting the held set (#240).
-
-    **Test steps:**
-
-    * open a document over a queue, settle the dock's source set, and connect to
-      ``rename_lock_reason_changed``
-    * deliver a running and then a finished update for a job carrying no ``source``
-    * verify the signal never fired
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    settle_rename_locks(dock, qtbot)
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-
-    dock.job_updated(JobStatus(serial=1, label="sourceless", state=JobState.RUNNING, source=None))
-    dock.job_updated(JobStatus(serial=1, label="sourceless", state=JobState.DONE, source=None))
-    qtbot.wait(50)
-
-    assert not received
-
-
-def test_a_finished_jobs_update_wakes_nothing_when_its_source_is_not_held(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """A finished job whose source no longer sits in the held set claims nothing and releases nothing,
-    so it is dropped without the walk (#240).
-
-    **Test steps:**
-
-    * open a document over an empty queue, settle the dock's source set, and connect to
-      ``rename_lock_reason_changed``
-    * deliver a finished update for a job whose source was never held
-    * verify the signal never fired
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    settle_rename_locks(dock, qtbot)
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-
-    dock.job_updated(
-        JobStatus(serial=1, label="gone", state=JobState.DONE, source=FAKE_PATH.parent / "sub" / "info.rehu")
-    )
-    qtbot.wait(50)
-
-    assert not received
-
-
-def test_retrying_a_finished_job_locks_the_document_again(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """A retried job is unfinished again with a source the held set has already let go, so the lock
-    comes back -- the fast path adds the source without needing the walk to find it (#240).
-
-    **Test steps:**
-
-    * open a document and let a job about it run to completion, so the lock lifts
-    * retry the job
-    * verify the document locks again
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    serial = queue.enqueue(job)
-    assert job.entered.wait(TIMEOUT)
-    job.release.set()
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is None, timeout=int(TIMEOUT * 1000))
-
-    job.entered.clear()
-    job.release.set()
-    queue.retry(serial)
-
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-
-
-def test_detach_stops_reacting_to_the_queue(mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue) -> None:
-    """After :meth:`~DocumentsDock.detach`, a job enqueued on the queue no longer wakes an open
-    document's ``rename_lock_reason_changed`` -- the discipline ``MainWindow`` relies on before
-    ``TaskQueue.shutdown``. ``rename_lock_reason`` itself stays a live, pull-based read of the queue
-    regardless (detaching stops the *push*, not the answer), so this asserts on the signal.
-
-    **Test steps:**
-
-    * open a document over a queue, connect to its ``rename_lock_reason_changed``, and detach the dock
-    * enqueue a job whose source sits beneath the document, and pump the event loop
-    * verify the signal never fired
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-
-    dock.detach()
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    queue.enqueue(job)
-    assert job.entered.wait(TIMEOUT)
-    qtbot.wait(50)
-
-    assert not received
-
-    job.release.set()
-
-
-def test_the_lock_lifts_once_the_job_is_removed(mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue) -> None:
-    """Removing the busy job from the queue lifts the lock live -- ``jobs_removed`` is one of the three
-    listener methods that wake the re-check.
-
-    **Test steps:**
-
-    * open a document and start a job locking it
-    * remove the job from the queue
-    * verify the document's lock reason clears
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    serial = queue.enqueue(job)
-    assert job.entered.wait(TIMEOUT)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-
-    queue.remove(serial)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is None, timeout=int(TIMEOUT * 1000))
-
-    job.release.set()
-
-
-def test_a_reorder_and_a_pause_toggle_do_not_wake_the_recheck(
-    mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue
-) -> None:
-    """A reorder and a pause/resume toggle move no job into or out of "unfinished with a source", so
-    the source-set comparison finds nothing changed and nothing is re-announced -- a no-op by
-    construction rather than by assertion.
-
-    **Test steps:**
-
-    * open a document over a queue holding one busy job, and let its lock settle
-    * connect to ``rename_lock_reason_changed``, then deliver both events to the listener
-    * verify the signal never fired, though the document is still locked throughout
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    job = GatedJob("busy", FAKE_PATH.parent / "sub" / "info.rehu")
-    serial = queue.enqueue(job)
-    assert job.entered.wait(TIMEOUT)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-    # drain the enqueue's own refresh before listening: rename_lock_reason reads the queue live, so
-    # the wait above returns before that queued dispatch has landed
-    qtbot.wait(50)
-
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-    # delivered straight to the listener: the engine moves only a queued or paused job, and this one
-    # is running, so asking the queue to reorder would be a no-op that never reaches the protocol
-    dock.jobs_reordered([serial])
-    dock.queue_paused_changed(True)
-    qtbot.wait(50)
-
-    assert not received
-    assert widget.model.rename_lock_reason() is not None
-
-    job.release.set()
-
-
-def test_progress_reports_do_not_wake_the_recheck(mocker: MockerFixture, qtbot: QtBot, queue: TaskQueue) -> None:
-    """A running job's progress reports never re-announce the lock (#240).
-
-    ``job_updated`` fires once per report -- once per *file* for a job hashing a tree -- while the
-    lock's answer cannot move until a job is added, removed, or finishes. Each spurious refresh would
-    cost a full directory sweep per open file-scoped document, so this is the fact the source-set
-    comparison exists to guarantee.
-
-    **Test steps:**
-
-    * open a document over a queue holding one job that reports progress many times
-    * connect to ``rename_lock_reason_changed`` once the job's own lock has settled
-    * let it report, pumping the GUI thread throughout
-    * verify not one refresh was announced, while the document stayed locked
-    """
-    load_document(mocker)
-    dock = DocumentsDock(task_queue=queue)
-    qtbot.addWidget(dock)
-    widget = dock.open_document(FAKE_PATH)
-    job = ReportingJob("reporting", FAKE_PATH.parent / "sub" / "info.rehu")
-    queue.enqueue(job)
-    qtbot.waitUntil(lambda: widget.model.rename_lock_reason() is not None, timeout=int(TIMEOUT * 1000))
-    # drain the enqueue's own refresh before listening: rename_lock_reason reads the queue live, so
-    # the wait above returns before that queued dispatch has landed
-    qtbot.wait(50)
-
-    received: list[None] = []
-    widget.model.rename_lock_reason_changed.connect(lambda: received.append(None))  # type: ignore[attr-defined]
-    job.reporting.set()
-    qtbot.waitUntil(job.reported.is_set, timeout=int(TIMEOUT * 1000))
-    qtbot.wait(50)
-
-    assert not received
-    assert widget.model.rename_lock_reason() is not None
-
-    job.release.set()
-
-
-def test_detach_without_a_queue_is_a_no_op(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """Detaching a dock that was built with no task queue does nothing, rather than reaching for a
-    queue that isn't there.
-
-    **Test steps:**
-
-    * build a dock with no ``task_queue`` and open a document
-    * call ``detach``
-    * verify nothing raised
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-    dock.open_document(FAKE_PATH)
-
-    dock.detach()
-
-
-def test_a_dock_with_no_task_queue_is_never_locked(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A dock built with no task queue at all -- most tests, and any caller with nothing to offer --
-    never locks any of its documents.
-
-    **Test steps:**
-
-    * open a document over a dock built with no ``task_queue``
-    * verify its lock reason is unset
-    """
-    load_document(mocker)
-    dock = DocumentsDock()
-    qtbot.addWidget(dock)
-
-    widget = dock.open_document(FAKE_PATH)
-
-    assert widget.model.rename_lock_reason() is None
-
-
 # endregion
+
+
+# region handing on the rename coordinator (#241)
+def test_an_opened_document_renames_through_the_docks_coordinator(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Every document this dock opens renames through the **app's** coordinator, not one of its own.
+
+    A job and a document holding different coordinators would each coordinate with nobody, so what
+    matters is that the one handed in is the one that arrives.
+
+    **Test steps:**
+
+    * build a dock over a coordinator whose rename is mocked, and open a document
+    * rename from the model
+    * verify that coordinator was the one asked
+    """
+    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": CURRENT_FORMAT_VERSION}))
+    coordinator = RenameCoordinator()
+    renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
+    through = mocker.patch.object(coordinator, "rename", return_value=renamed)
+    dock = DocumentsDock(rename_coordinator=coordinator)
+    qtbot.addWidget(dock)
+
+    widget = dock.open_document(FAKE_PATH)
+    assert widget.model.rename_location("new_name") is True
+
+    through.assert_called_once_with(FAKE_PATH, "new_name")
+
+
+def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document started by ``open_folder`` gets the coordinator too, not only a loaded one.
+
+    Both construction paths matter: a resource created in an empty folder is renamed at least as often
+    as one that was already there.
+
+    **Test steps:**
+
+    * build a dock over a coordinator and start a new document in a folder with no `info.rehu`
+    * save it, then rename
+    * verify the dock's coordinator was asked
+    """
+    mocker.patch.object(Path, "exists", return_value=False)
+    coordinator = RenameCoordinator()
+    renamed = FAKE_PATH.parent.with_name("new_name") / "info.rehu"
+    through = mocker.patch.object(coordinator, "rename", return_value=renamed)
+    dock = DocumentsDock(rename_coordinator=coordinator)
+    qtbot.addWidget(dock)
+
+    widget = dock.open_folder(FAKE_PATH.parent)
+    mocker.patch.object(widget.model, "save")
+    assert widget.model.rename_location("new_name") is True
+
+    through.assert_called_once_with(FAKE_PATH, "new_name")
 
 
 # endregion

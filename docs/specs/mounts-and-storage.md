@@ -27,6 +27,23 @@ the originally-owning box goes down but another node still has it mounted, that 
 the read-only cached fallback ([[instances-and-dedup#failure-model]]) only applies when **no** live route remains at
 all.
 
+**A rename should be addressed by UUID too, once one can cross machines** ([#241](https://github.com/borco/rehuco/issues/241)).
+Within one process this is settled: a job holds a `ResourceLocation` rather than a path, and the rename rewrites it. Across
+machines the same question returns as *which resource did the requester mean*, and the answer must be the UUID. A request
+naming a path is stale the moment somebody else renames: it arrives at a `.rehu` that is no longer there, and is correctly
+refused rather than guessed at. A request naming the UUID resolves to the resource under whatever it is called now, so two
+people renaming the same thing produces two renames in order — both honoured, both reported truthfully — instead of one
+silently discarding the other.
+
+**Coalescing them is the wrong repair.** Collapsing "rename to `bar`" and "rename to `baz`" into just `baz` reports success
+for a name it did not produce, and throws away an update whose loss the version vector exists to *detect*
+([[sync#overview]]). Ordering by identity is what removes the need to choose.
+
+Not a concern for a single owner today — writes to a managed resource route through its primary node
+([[data-model#write-integrity]]), and two nodes claiming primary for one storage is a flagged misconfiguration
+([[mounts-and-storage#folder-add]]) — so this is recorded as the shape the swarm-era rename takes, not as a gap in the
+current one.
+
 ## §9.3 `.rehuco`: explicit, local, declared scope
 
 [[[mounts-and-storage#rehuco-scope]]]
@@ -119,6 +136,22 @@ each box's power/compute profile to a job, rather than picking one "correct" ser
 - This role assignment is a deployment/configuration choice (expressed via `.rehuco` and task-dispatch tagging,
   [[data-model#checksums]]), not an architectural constraint — different households, or the same household at different
   times, could assign roles differently without any design change.
+
+**One thing several machines on one share cannot do: yield to each other's renames**
+([#241](https://github.com/borco/rehuco/issues/241)). Within one process a rename asks the jobs reading beneath it to
+close their handles, and they do so at the next chunk boundary — measured at ~7 ms. That request does not cross a machine
+boundary. A rename issued on box A while box B is reading the same directory over SMB can still be refused by the server,
+because B's handle is open and nobody asked B to let go.
+
+**Mitigated rather than solved, and worth being precise about which half is which.** File-level operations are fine
+regardless: readers open sharing every right including delete, so renaming or deleting *the file being read* succeeds from
+any machine. What remains exposed is renaming a **directory** while another host reads inside it, and only for the window
+in which a handle is actually held — one chunk, not one job. So the failure is a transient refusal the user can retry, not
+a resource locked for the length of a sweep, which is the outcome that mattered.
+
+Closing the gap properly is swarm-era and belongs with the UUID-addressed rename ([[mounts-and-storage#uuid-not-paths]]):
+once a rename is a request to the resource's primary node rather than a filesystem call from wherever the user happens to
+be standing, it is that node's coordinator that stands its own readers aside, and the cross-host case stops being one.
 
 ## §9.8 Configurable durable retention of remote/offline metadata
 

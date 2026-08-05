@@ -144,7 +144,10 @@ class TaskJob(Protocol):
     mutable stop state therefore owns its own locking; :class:`~rehuco_core.tasks.TaskJobBase` does
     this and is the reason it exists. :attr:`label` and the other declarations are read once at
     enqueue, and :meth:`reset` is called only on a job that has finished, so neither ever overlaps
-    ``run``.
+    ``run``. :attr:`source` is the exception on both counts: it is re-read whenever
+    :meth:`~rehuco_core.TaskQueue.resync_sources` is called, **which does overlap** ``run``, so a job
+    whose source can move must answer from something safe to read on another thread -- a
+    :class:`~rehuco_core.ResourceLocation` is exactly that, and is why it holds one.
     """
 
     @property
@@ -157,10 +160,19 @@ class TaskJob(Protocol):
 
     @property
     def source(self) -> Path | None:
-        """The ``.rehu`` this job is about, or ``None`` for work that is about no one resource.
+        """Where this job's work **is** -- the ``.rehu`` it is about, or ``None`` for work about no one
+        resource.
 
         The job's own declaration rather than something the enqueuer passes alongside, so there is one
-        answer and nothing to keep in step. Read once at enqueue, beside :attr:`label`.
+        answer and nothing to keep in step.
+
+        **The one declaration that may change while the job runs** (#241). Everything else here is read
+        once at enqueue, because an answer that moved would rewrite a row a reader is looking at; this
+        one is not a claim about the job but a location, and a rename moves locations under running
+        work. A job that follows its resource returns its
+        :class:`~rehuco_core.ResourceLocation`'s current path from here, and
+        :meth:`~rehuco_core.TaskQueue.resync_sources` is how the queue is told to look again. A job that
+        does not care answers the same path forever and costs nothing.
         """
 
     @property
@@ -280,7 +292,10 @@ class JobStatus:
         -- and so that a job which finished anyway can be reported :attr:`JobState.DONE` without the
         request being lost. What the engine last *asked*; whether the job has acted on it is the
         job's to know, and a surface finds out by asking for a resume.
-    :param source: the job's :attr:`TaskJob.source`, read once at enqueue.
+    :param source: where the job's work is, as of this snapshot -- its :attr:`TaskJob.source`, read at
+        enqueue and re-read whenever the queue is told a rename moved something
+        (:meth:`~rehuco_core.TaskQueue.resync_sources`, #241). The one declaration below that is not
+        fixed for the job's lifetime, because it names a place rather than describing the work.
     :param safely_interruptible: the job's :attr:`TaskJob.safely_interruptible`, read once at enqueue.
     :param resumes_where_it_stopped: the job's :attr:`TaskJob.resumes_where_it_stopped`, read once at
         enqueue.

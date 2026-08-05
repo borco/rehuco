@@ -33,6 +33,8 @@ from rehuco_core import (
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
+    RenameCoordinator,
+    RenameYieldTimeout,
     current_block_version,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
@@ -569,6 +571,76 @@ def test_rename_location_does_not_save_when_clean(mocker: MockerFixture) -> None
     model.rename_location("new_name")
 
     save.assert_not_called()
+
+
+def test_rename_location_goes_through_the_coordinator_when_there_is_one(mocker: MockerFixture) -> None:
+    """With a coordinator, the rename asks the running jobs to stand aside rather than going straight
+    to disk (#241).
+
+    **Test steps:**
+
+    * build a model over a coordinator whose rename is mocked to succeed
+    * rename
+    * verify the coordinator was asked, the bare core function was not, and the new path was adopted
+    """
+    coordinator = RenameCoordinator()
+    renamed = Path("C:/tutorials/new_name/info.rehu")
+    through = mocker.patch.object(coordinator, "rename", return_value=renamed)
+    direct = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource")
+    document = RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu"))
+    model = RehuDocumentModel(document, rename_coordinator=coordinator)
+
+    assert model.rename_location("new_name") is True
+
+    through.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    direct.assert_not_called()
+    assert model.path == renamed
+
+
+def test_a_rename_readers_will_not_release_fails_through_the_banner(mocker: MockerFixture) -> None:
+    """A job that never lets go costs the rename its ceiling and then reports like any other refusal
+    (#241).
+
+    The reason this is a *failure* rather than a lock: the user is told what happened and may try
+    again, where #240 would simply have refused to offer the rename at all.
+
+    **Test steps:**
+
+    * make the coordinator's rename time out waiting for readers
+    * rename
+    * verify it failed, said so in the banner, and left the document where it was
+    """
+    coordinator = RenameCoordinator()
+    mocker.patch.object(coordinator, "rename", side_effect=RenameYieldTimeout("A task is still reading these files."))
+    path = Path("C:/tutorials/old_folder/info.rehu")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, path), rename_coordinator=coordinator)
+
+    assert model.rename_location("new_name") is False
+
+    assert "still reading these files" in model.rename_error
+    assert model.path == path
+
+
+def test_rename_location_goes_straight_to_disk_without_a_coordinator(mocker: MockerFixture) -> None:
+    """With no coordinator there are no tracked readers to ask, so the barrier is skipped entirely.
+
+    Not a lesser mode: it is the same operation with the empty case left out, which is what keeps every
+    caller that has no running work -- most tests, and any headless use -- from having to build one.
+
+    **Test steps:**
+
+    * build a model with no coordinator and mock the core rename
+    * rename
+    * verify the core function did the work
+    """
+    renamed = Path("C:/tutorials/new_name/info.rehu")
+    direct = mocker.patch("rehuco_agent.documents.rehu_document_model.rename_rehu_resource", return_value=renamed)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("C:/tutorials/old_folder/info.rehu")))
+
+    assert model.rename_location("new_name") is True
+
+    direct.assert_called_once_with(Path("C:/tutorials/old_folder/info.rehu"), "new_name")
+    assert model.path == renamed
 
 
 @mark.parametrize(

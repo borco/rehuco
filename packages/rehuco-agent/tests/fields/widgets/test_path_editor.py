@@ -5,7 +5,7 @@ rename suggestions, unavailable candidates, and the live setters.
 from borco_pyside.widgets import ElidedLabel
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.colors import WARNING_COLOR
-from rehuco_agent.fields.widgets.path_editor import LOCKED_SUFFIX, UNAVAILABLE_SUFFIX, PathEditor
+from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX, PathEditor
 
 
 def name_label(editor: PathEditor) -> ElidedLabel:
@@ -294,116 +294,6 @@ def test_header_height_is_the_name_label_height_regardless_of_expanded(qtbot: Qt
     editor.expanded = True
 
     assert editor.header_height == collapsed_height
-
-
-def test_a_lock_reason_disables_and_marks_every_non_current_suggestion(qtbot: QtBot) -> None:
-    """A lock reason (#240) disables every non-current suggestion, marks it with :data:`LOCKED_SUFFIX`,
-    unlinks it, and sets both its own tooltip and the whole widget's to the reason.
-
-    **Test steps:**
-
-    * set a current name and two suggestions, one of them current, then a lock reason
-    * verify the non-current suggestion is disabled, marked, unlinked and tooltipped
-    * verify the whole editor's tooltip is the reason too
-    """
-    editor = PathEditor()
-    qtbot.addWidget(editor)
-    editor.set_current_name("Foo")
-    editor.set_suggestions(["Foo", "Bar"])
-
-    editor.set_lock_reason(lambda: "busy")
-
-    label = suggestion_labels(editor)["Bar"]
-    assert label.isEnabled() is False
-    assert full_text(label) == f"Bar{LOCKED_SUFFIX}"
-    assert "<a " not in label.text()
-    assert label.toolTip() == "busy"
-    assert editor.toolTip() == "busy"
-
-
-def test_clearing_the_lock_reason_restores_normal_behavior(qtbot: QtBot) -> None:
-    """Setting the lock reason back to ``None`` un-disables and un-marks every suggestion again.
-
-    **Test steps:**
-
-    * lock the editor, then clear the lock reason
-    * verify the suggestion is enabled, unmarked, linked, and both tooltips are cleared
-    """
-    editor = PathEditor()
-    qtbot.addWidget(editor)
-    editor.set_suggestions(["Bar"])
-    editor.set_lock_reason(lambda: "busy")
-
-    editor.set_lock_reason(None)
-
-    label = suggestion_labels(editor)["Bar"]
-    assert label.isEnabled() is True
-    assert full_text(label) == "Bar"
-    assert "<a " in label.text()
-    assert label.toolTip() == ""
-    assert editor.toolTip() == ""
-
-
-def test_an_occupied_suggestion_keeps_its_own_marker_over_a_lock(qtbot: QtBot) -> None:
-    """A suggestion that is both occupied and locked reads as occupied -- the two markers answer
-    different questions, and a suggestion no rename could ever land on (#162) is the more specific fact.
-
-    **Test steps:**
-
-    * mark a suggestion as both occupied and locked
-    * verify it carries :data:`UNAVAILABLE_SUFFIX`, not :data:`LOCKED_SUFFIX`
-    """
-    editor = PathEditor()
-    qtbot.addWidget(editor)
-    editor.set_conflict_check(lambda name: name == "Foo2")
-    editor.set_suggestions(["Foo2"])
-
-    editor.set_lock_reason(lambda: "busy")
-
-    label = suggestion_labels(editor)["Foo2"]
-    assert full_text(label) == f"Foo2{UNAVAILABLE_SUFFIX}"
-    assert label.isEnabled() is False
-
-
-def test_the_current_name_is_never_locked(qtbot: QtBot) -> None:
-    """The current name's row stays plain-disabled under a lock, exactly as it does under a conflict --
-    a rename to it is a no-op, not something a busy queue has any say over.
-
-    **Test steps:**
-
-    * set a current name equal to a suggestion, then lock the editor
-    * verify that row carries no lock marker
-    """
-    editor = PathEditor()
-    qtbot.addWidget(editor)
-    editor.set_current_name("Foo")
-    editor.set_suggestions(["Foo"])
-
-    editor.set_lock_reason(lambda: "busy")
-
-    label = suggestion_labels(editor)["Foo"]
-    assert full_text(label) == "Foo"
-    assert label.isEnabled() is False
-
-
-def test_without_a_lock_reason_the_editor_is_never_locked(qtbot: QtBot) -> None:
-    """The widget stays usable on its own: with no predicate supplied, nothing is locked.
-
-    **Test steps:**
-
-    * set suggestions on a fresh editor, supplying no lock reason
-    * verify every row is a live, unmarked link with no tooltip
-    """
-    editor = PathEditor()
-    qtbot.addWidget(editor)
-
-    editor.set_suggestions(["Foo2", "Bar"])
-
-    for name, label in suggestion_labels(editor).items():
-        assert label.isEnabled() is True
-        assert full_text(label) == name
-        assert label.toolTip() == ""
-    assert editor.toolTip() == ""
 
 
 def test_set_suggestions_updates_the_list_live(qtbot: QtBot) -> None:

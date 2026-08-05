@@ -236,59 +236,6 @@ def test_suggestions_refresh_live_when_the_change_signal_fires(qtbot: QtBot, mod
     assert editor_suggestion_names(editor) == ["Beta", "Gamma"]
 
 
-def test_lock_reason_is_forwarded_to_the_editor(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The ``lock_reason`` predicate is forwarded straight into the editor's :meth:`set_lock_reason`
-    seam (#240).
-
-    **Test steps:**
-
-    * build the editor with a ``lock_reason`` reporting a fixed reason
-    * verify a non-current suggestion renders locked
-    """
-    field = PathField(
-        "location",
-        suggestions=lambda: ["Alpha"],
-        current_name=lambda: "current",
-        lock_reason=lambda: "busy",
-    )
-    editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, PathEditor)
-    qtbot.addWidget(editor)
-
-    label = editor_suggestion_labels(editor)["Alpha"]
-    assert label.isEnabled() is False
-    assert editor.toolTip() == "busy"
-
-
-def test_lock_reason_refreshes_live_when_the_change_signal_fires(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """The editor re-pulls the lock reason when ``lock_reason_changed`` fires (#240), the same live
-    wiring ``suggestions_changed`` gets.
-
-    **Test steps:**
-
-    * build the editor over a mutable lock reason with a change emitter
-    * change the reason and emit the signal, verifying the editor picks it up
-    """
-    changed = Emitter()
-    reason: list[str | None] = [None]
-    field = PathField(
-        "location",
-        suggestions=lambda: ["Alpha"],
-        current_name=lambda: "current",
-        lock_reason=lambda: reason[0],
-        lock_reason_changed=changed.changed,
-    )
-    editor = field.make_editor(model.bind(field)).editor
-    assert isinstance(editor, PathEditor)
-    qtbot.addWidget(editor)
-    assert editor_suggestion_labels(editor)["Alpha"].isEnabled() is True
-
-    reason[0] = "busy"
-    changed.changed.emit()
-
-    assert editor_suggestion_labels(editor)["Alpha"].isEnabled() is False
-
-
 def test_current_name_refreshes_when_the_bound_value_changes(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """The editor re-pulls the current name when the bound value changes.
 

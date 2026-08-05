@@ -41,11 +41,6 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         it, so the editor can show it as unavailable rather than offer a rename that could only fail
         (#162). Omit to leave every candidate offerable. This field still touches no filesystem
         itself -- it forwards the owner's answer, exactly as it forwards a click.
-    :param lock_reason: called with no arguments for why a rename is currently refused, or ``None``
-        when it isn't -- so the editor can lock itself while a task-queue job would be moved by the
-        rename (#240), rather than let one be offered that would collide with work in progress.
-    :param lock_reason_changed: fires when the task queue changes in a way that might change
-        ``lock_reason``'s answer, to re-pull it live.
     :param expanded: the suggestions panel's starting expand state.
     """
 
@@ -60,8 +55,6 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         current_name: Callable[[], str] | None = None,
         suggestions_changed: SignalInstance | None = None,
         conflicts: Callable[[str], bool] | None = None,
-        lock_reason: Callable[[], str | None] | None = None,
-        lock_reason_changed: SignalInstance | None = None,
         expanded: bool = False,
         *,
         viewer_tab: FieldsTab,
@@ -73,8 +66,6 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         self.__current_name = current_name
         self.__suggestions_changed = suggestions_changed
         self.__conflicts = conflicts
-        self.__lock_reason = lock_reason
-        self.__lock_reason_changed = lock_reason_changed
         self.__expanded = expanded
 
     @override
@@ -92,7 +83,6 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         editor.expanded = self.__expanded
         # set before the first __refresh below, so the opening render already marks the taken names
         editor.set_conflict_check(self.__conflicts)
-        editor.set_lock_reason(self.__lock_reason)
         if self.__on_suggestion_selected is not None:
             editor.suggestion_selected.connect(self.__on_suggestion_selected)
 
@@ -100,8 +90,6 @@ class PathField(Field[str]):  # pylint: disable=too-many-instance-attributes
         self.bind_external(binding.changed, lambda _value: self.__refresh(editor))
         if self.__suggestions_changed is not None:
             self.bind_external(self.__suggestions_changed, lambda *_: self.__refresh(editor))
-        if self.__lock_reason_changed is not None:
-            self.bind_external(self.__lock_reason_changed, lambda *_: editor.set_lock_reason(self.__lock_reason))
 
         # expand/collapse toggle for the middle column, two-way bound to the editor's expand state
         toggle = ExpandToggleButton()

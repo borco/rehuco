@@ -18,16 +18,14 @@ from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
-    FINISHED_JOB_STATES,
     FORMAT_VERSION_KEY,
     INFO_REHU_FILENAME,
     USERS_KEY,
     AuthorEntry,
     LockReason,
     RehuDocument,
-    TaskQueue,
+    RenameCoordinator,
     convert_tc,
-    rehu_rename_affects,
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
@@ -150,9 +148,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     :param document: the document to wrap.
     :param parent: optional Qt parent.
-    :param task_queue: the engine :meth:`rename_lock_reason` asks whether a rename is currently safe
-        (#240); ``None`` -- most tests, and any caller with no queue to offer -- leaves a rename never
-        locked by this.
+    :param rename_coordinator: what :meth:`rename_location` renames through, so a job reading this
+        resource is asked to stand aside rather than made to finish first (#241). ``None`` -- most
+        tests, and any caller with no running work to coordinate with -- renames directly, which is
+        exactly what a coordinator holding no readers does anyway.
     """
 
     unknown_fields_changed = Signal()
@@ -169,12 +168,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     edited out of band, which is exactly the workflow Revert advertises. `OnDiskView` re-reads on it
     (#174); a consumer that only cares whether a *value* moved should bind to that value's own notify
     signal instead."""
-
-    rename_lock_reason_changed = Signal()
-    """Fires when the task queue changes in a way that might change :meth:`rename_lock_reason`'s answer
-    (#240). Emitted by :meth:`refresh_rename_lock_reason`, called by the owner (`DocumentsDock`) rather
-    than this model watching the queue itself -- one queue listener for every open document, the same
-    shape `TaskQueueStore`/`TaskQueueWidget` use for the whole app rather than one per consumer."""
 
     active_block_changed = Signal()
     """Fires when the whole field composition must be re-resolved from scratch: the outgoing block's
@@ -384,11 +377,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     without rebuilding the field composition ([[acquisition-tooling#tc-to-rehu]])."""
 
     def __init__(
-        self, document: RehuDocument, parent: QObject | None = None, *, task_queue: TaskQueue | None = None
+        self,
+        document: RehuDocument,
+        parent: QObject | None = None,
+        *,
+        rename_coordinator: RenameCoordinator | None = None,
     ) -> None:
         super().__init__(parent)
         self.__document = document
-        self.__task_queue: Final = task_queue
+        self.__rename_coordinator: Final = rename_coordinator
 
         self.__seeding = False
         """True only while :meth:`__seed_from_document` is applying field values pulled from the
@@ -425,7 +422,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         parent: QObject | None = None,
         *,
         username: str = DEFAULT_CURRENT_USERNAME,
-        task_queue: TaskQueue | None = None,
+        rename_coordinator: RenameCoordinator | None = None,
     ) -> RehuDocumentModel:
         """Start a new, empty document, optionally already bound to a save path.
 
@@ -438,13 +435,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :param username: the identity the new document's per-user writes are filed under
             ([[field-schema#per-user-shared]], #99) -- the caller (e.g. `DocumentsDock`) passes the
             **current**-user identity setting; core's :data:`~rehuco_core.DEFAULT_CURRENT_USERNAME` otherwise.
-        :param task_queue: forwarded to the constructor; see its own docstring (#240).
+        :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
         :returns: the new model, wrapping a fresh in-memory `RehuDocument` that already carries its own
             ``id`` (:meth:`~rehuco_core.RehuDocument.new`, [[data-model#stable-identity]]). Starts **not**
             :attr:`saved_on_disk` -- it has never been persisted to its path, so Revert is disabled until
             the first :meth:`save` (#147).
         """
-        model = cls(RehuDocument.new(path, username=username), parent, task_queue=task_queue)
+        model = cls(RehuDocument.new(path, username=username), parent, rename_coordinator=rename_coordinator)
         model.saved_on_disk = False
         if path is not None:
             model.dirty = True
@@ -532,46 +529,6 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if path is None:
             return False
         return rehu_rename_conflict(path, new_name) is not None
-
-    def rename_lock_reason(self) -> str | None:
-        """Why the location editor must refuse a rename right now, or ``None`` when it may proceed
-        (#240).
-
-        Exact, not merely cautious: refused only while an *unfinished* job's own ``source`` sits among
-        the paths this resource's rename would actually move
-        (:func:`~rehuco_core.rehu_rename_affects`) -- a directory-scoped resource locks on a job
-        anywhere beneath its directory (a nested resource, or a file-scoped sibling directly inside it,
-        since renaming the directory carries both along); a file-scoped resource locks only on its own
-        sibling set, never on an unrelated ``.rehu`` beside it. A ``done``/``failed``/``cancelled`` job
-        is kept in the queue but is not about to touch anything, so it locks nothing
-        (:data:`~rehuco_core.FINISHED_JOB_STATES`).
-
-        A directory that cannot be listed -- an offline mount
-        ([[mounts-and-storage#offline-mounts]]), reachable only through a file-scoped resource's
-        sibling sweep -- reads as **unlocked**: a rename attempted there fails cleanly through
-        :attr:`rename_error` anyway, where a lock would claim a busy job this model cannot actually
-        see.
-
-        :returns: a one-sentence reason, or ``None`` -- including when this document has no location
-            yet, or was opened with no task queue at all.
-        """
-        path = self.path
-        if path is None or self.__task_queue is None:
-            return None
-        try:
-            for status in self.__task_queue.jobs():
-                if status.source is None or status.state in FINISHED_JOB_STATES:
-                    continue
-                if rehu_rename_affects(path, status.source):
-                    return "A queued task is still working on this resource -- rename it once that finishes."
-        except OSError:
-            return None
-        return None
-
-    def refresh_rename_lock_reason(self) -> None:
-        """Re-announce that :meth:`rename_lock_reason` may have a new answer (#240): called by the
-        owner (`DocumentsDock`) whenever the task queue changes in a way worth re-checking."""
-        self.rename_lock_reason_changed.emit()
 
     def rename_location(self, new_name: str) -> bool:
         """Rename this resource to ``new_name`` -- clicked from a `PathField` rename suggestion.
@@ -1024,7 +981,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         The filesystem work -- which files each resource scope owns, the collision check, the rollback
         ([[data-model#resource-scoping]], [[data-model#write-integrity]]) -- belongs to
-        :func:`~rehuco_core.rename_rehu_resource`, so all that is left here is *adopting* what it
+        :func:`~rehuco_core.rename_rehu_resource`, and standing the readers aside first belongs to
+        :class:`~rehuco_core.RenameCoordinator` (#241), so all that is left here is *adopting* what it
         returns: the document is re-pointed at its new location (:meth:`~RehuDocument.rebind_path`),
         :attr:`path` and :attr:`location` reseed from it, and a fresh screenshot scanner is installed.
         :attr:`current_name` and :attr:`label` derive from :attr:`path`, so they follow on their own, as
@@ -1038,6 +996,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         Nothing here writes back to the document's payload, so a rename is not an edit: the model ends
         as clean as :meth:`rename_location`'s pre-move save left it.
 
+        **The wait is short and it is on this thread.** Renaming through the coordinator asks any job
+        reading beneath this resource to close its handle, which costs one chunk read -- ~7 ms measured
+        -- so the editor is not made to wait for the *job* the way #240's lock made the user wait
+        (#241). A reader that never answers costs
+        :data:`~rehuco_core.DEFAULT_RENAME_YIELD_TIMEOUT` instead and then fails through
+        :attr:`rename_error` like any other refusal, which is why that ceiling is seconds rather than
+        the queue's own shutdown wait: a window that stops repainting for five seconds is one the
+        operating system starts drawing as hung.
+
         :param new_name: the destination file/folder name.
         :returns: whether the rename succeeded; a failure's reason is left in :attr:`rename_error`.
         """
@@ -1046,7 +1013,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             return False
         current_name = self.current_name
         try:
-            new_path = rename_rehu_resource(path, new_name)
+            new_path = self.__renamed(path, new_name)
         except (OSError, ValueError) as error:
             return self.__rename_failed(
                 f'Could not rename "{current_name}" to "{new_name}": {self.__failure_reason(error)}'
@@ -1057,6 +1024,23 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.image_scanner = self.__make_image_scanner()
         LOG.info("Renamed %r to %r", current_name, new_name)
         return True
+
+    def __renamed(self, path: Path, new_name: str) -> Path:
+        """Perform the rename, through the coordinator when there is one (#241).
+
+        The two paths differ only in whether anybody is asked to stand aside first: with no coordinator
+        there are no tracked readers to ask, which is the same answer the barrier would reach, so the
+        direct call is not a lesser mode -- it is the same operation with the empty case skipped.
+
+        :param path: the resource's current ``.rehu``.
+        :param new_name: the destination file/folder name.
+        :returns: the resource's ``.rehu`` under its new name.
+        :raises OSError: the rename failed, or readers did not stand aside in time.
+        :raises ValueError: ``new_name`` is not a plain file/folder name.
+        """
+        if self.__rename_coordinator is None:
+            return rename_rehu_resource(path, new_name)
+        return self.__rename_coordinator.rename(path, new_name)
 
     def __rename_failed(self, message: str) -> bool:
         """Record a failed rename attempt: log it, and hand ``message`` to the banner channel.

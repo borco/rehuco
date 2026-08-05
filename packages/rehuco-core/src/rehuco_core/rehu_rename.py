@@ -61,21 +61,6 @@ def rename_rehu_resource(path: Path, new_name: str) -> Path:
     return RehuRenamer(path, new_name).rename()
 
 
-def rehu_rename_affects(path: Path, candidate: Path) -> bool:
-    """Whether renaming the resource at ``path`` would move ``candidate`` along with it.
-
-    Exposes exactly what :class:`RehuRenamer`'s own plan already knows a rename moves
-    (:meth:`RehuRenamer.affects`) -- the predicate a caller asking "would this resource's rename touch
-    that other path" wants, reusing the one traversal :meth:`RehuRenamer.__plan` is built from rather
-    than inventing a second one that could drift from it (#240).
-
-    :param path: the resource's own ``.rehu`` file, exactly as :class:`RehuRenamer` takes it.
-    :param candidate: the path to test -- typically another job's ``source``.
-    :returns: whether ``candidate`` sits among the paths a rename of ``path`` would move.
-    """
-    return RehuRenamer(path, path.stem).affects(candidate)
-
-
 def rehu_rename_conflict(path: Path, new_name: str) -> Path | None:
     """Whatever already occupies the destination renaming ``path`` to ``new_name`` would take.
 
@@ -108,6 +93,11 @@ class RehuRenamer:
     def __init__(self, path: Path, new_name: str) -> None:
         self.__path: Final = path
         self.__new_name: Final = new_name
+        self.__executed: list[tuple[Path, Path]] = []
+        """The plan :meth:`rename` actually carried out, and what :meth:`relocate` answers from. Empty
+        until a rename succeeds -- including after one that was rolled back, so a failure leaves every
+        path where a caller last saw it rather than pointing at destinations that no longer hold
+        anything."""
 
     def rename(self) -> Path:
         """Run the full plan-check-execute sequence.
@@ -130,6 +120,47 @@ class RehuRenamer:
         self.__check_no_collisions(plan)
         self.__execute(plan)
         return self.__new_document_path()
+
+    def relocate(self, candidate: Path) -> Path:
+        """Where ``candidate`` ended up once this rename ran, or ``candidate`` itself if it did not move
+        (#241).
+
+        **The rename seen from the outside.** A long job holds paths inside a resource -- the file it is
+        reading, the record it will write -- and a rename moves them out from under it. Rather than have
+        the job guess, it asks here, and the answer comes from *the plan this instance actually
+        executed* rather than from a second traversal that could disagree with it: the same one list of
+        pairs :meth:`__execute` renamed, read back the other way.
+
+        Both scopes ([[data-model#resource-scoping]]) are one rule -- **a path at or beneath a renamed
+        source lands at the same offset beneath its destination**. For a file-scoped resource every
+        source is a file, so nothing is ever beneath one and the rule degenerates to exact matching
+        against its sibling set; for a directory-scoped one the single source is the directory, so the
+        whole subtree rebases without any of it ever being enumerated. Comparison folds case exactly
+        where the filesystem does, through :func:`os.path.normcase` -- the same rule
+        :meth:`__check_no_collisions` uses to decide whether two paths name the same file -- and the
+        tail is taken from ``candidate``'s **own** parts, so a differently-cased ancestor relocates
+        without rewriting how the rest of the name is spelled.
+
+        Answers about **this instance's** rename and no other: before :meth:`rename` has run, after one
+        that was a no-op, and after one that failed and was rolled back, every path comes back
+        unchanged, because in each of those cases nothing moved. After a
+        :class:`PartialRenameError` it also answers unchanged, which is deliberate: some files did move
+        and could not be put back, and pointing a job at a destination that may or may not hold anything
+        would be guessing where reporting the original path lets the job fail where the problem is.
+
+        :param candidate: a path that may sit inside this resource -- a job's content file, its record,
+            or the ``.rehu`` itself.
+        :returns: the path ``candidate`` now has, or ``candidate`` unchanged when this rename did not
+            move it.
+        """
+        candidate_parts = self.__normalized_path_parts(candidate)
+        for source, destination in self.__executed:
+            source_parts = self.__normalized_path_parts(source)
+            if candidate_parts == source_parts:
+                return destination
+            if candidate_parts[: len(source_parts)] == source_parts:
+                return destination.joinpath(*candidate.parts[len(source_parts) :])
+        return candidate
 
     def conflict(self) -> Path | None:
         """Whatever already occupies this rename's own destination, or ``None`` when it is free.
@@ -166,29 +197,6 @@ class RehuRenamer:
         if os.path.normcase(source) == os.path.normcase(destination):
             return None
         return destination if destination.exists() else None
-
-    def affects(self, candidate: Path) -> bool:
-        """Whether ``candidate`` is among the paths this resource's rename would move.
-
-        Reuses exactly :attr:`__directory_scoped` and :meth:`__sibling_set` -- what :meth:`__plan` is
-        already built from -- rather than a second traversal invented for this question (#240). A
-        directory-scoped resource's plan renames the whole parent directory in one step, so its
-        affected set is unbounded and is answered as **containment**: ``candidate`` is the directory
-        itself, or sits anywhere beneath it (:meth:`Path.parents`) -- never by enumerating the subtree,
-        which is what keeps this cheap even over a directory holding thousands of files. A file-scoped
-        resource's plan is exactly its finite :meth:`__sibling_set`, so membership in that list --
-        case-folded the same way :meth:`__check_no_collisions` decides whether two paths name the same
-        file -- is the whole answer.
-
-        :param candidate: the path to test, e.g. another job's ``source``.
-        :returns: whether renaming this resource would carry ``candidate`` along with it.
-        :raises OSError: (file-scoped only) the directory cannot be listed; see :meth:`__sibling_set`.
-        """
-        if self.__directory_scoped:
-            directory = self.__path.parent
-            return candidate == directory or directory in candidate.parents
-        normcased = os.path.normcase(candidate)
-        return any(normcased == os.path.normcase(sibling) for sibling in self.__sibling_set())
 
     @property
     def __directory_scoped(self) -> bool:
@@ -384,8 +392,29 @@ class RehuRenamer:
             if destination.exists():
                 raise FileExistsError(f'"{destination.name}" already exists.')
 
+    @staticmethod
+    def __normalized_path_parts(path: Path) -> tuple[str, ...]:
+        """``path`` split into components, each normalized the way this filesystem normalizes a name.
+
+        :func:`os.path.normcase` does the normalizing -- folding case on Windows and rewriting
+        separators there, identity on POSIX -- so two paths that name the same thing come out equal and
+        two that do not, do not.
+
+        Split into components rather than left as one normalized string so that a prefix test cannot
+        mistake a *sibling whose name merely starts alike* for something inside a directory --
+        ``/lib/folder2`` starts with ``/lib/folder`` as text and is not beneath it as a path.
+
+        :param path: the path to normalize.
+        :returns: its normalized components.
+        """
+        return tuple(os.path.normcase(part) for part in path.parts)
+
     def __execute(self, plan: Sequence[tuple[Path, Path]]) -> None:
         """Perform every planned rename, undoing the completed ones if any of them fails.
+
+        Records the plan for :meth:`relocate` only once the **whole** of it has run: a rename that was
+        rolled back moved nothing in the end, and one that could not be rolled back left the resource
+        split between two names, which is not a state to answer relocation questions from.
 
         :param plan: the collision-checked renames.
         :raises PartialRenameError: a rename failed and undoing the completed ones failed too.
@@ -400,6 +429,7 @@ class RehuRenamer:
         except OSError as error:
             self.__roll_back(completed, error)
             raise
+        self.__executed = completed
 
     def __roll_back(self, completed: Sequence[tuple[Path, Path]], error: OSError) -> None:
         """Rename every completed step back to its original name, most recent first.

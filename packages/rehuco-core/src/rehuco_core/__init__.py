@@ -18,6 +18,7 @@ from .constants import (
     REHU_SUFFIX,
     VIDEO_EXTENSIONS,
 )
+from .content_reading import DEFAULT_CONTENT_CHUNK_SIZE, read_content_chunks
 from .learning_path_entries import (
     LearningPathEntry,
     learning_path_records_by_scope,
@@ -73,11 +74,17 @@ from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_rename import (
     PartialRenameError,
     RehuRenamer,
-    rehu_rename_affects,
     rehu_rename_conflict,
     rename_rehu_resource,
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .rename_coordination import (
+    DEFAULT_RENAME_YIELD_TIMEOUT,
+    RenameCoordinator,
+    RenameYieldTimeout,
+    ResourceLocation,
+)
+from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
     DEFAULT_TASK_JOB_REGISTRY,
@@ -130,9 +137,11 @@ __all__ = [
     "CollectionEntry",
     "ContentImageEntry",
     "DEFAULT_CHECKSUM_ALGORITHM",
+    "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
+    "DEFAULT_RENAME_YIELD_TIMEOUT",
     "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_TASK_JOB_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
@@ -170,6 +179,9 @@ __all__ = [
     "RehuDocument",
     "RehuFormatError",
     "RehuRenamer",
+    "RenameCoordinator",
+    "RenameYieldTimeout",
+    "ResourceLocation",
     "ScreenshotRename",
     "StopRequest",
     "TUTORIAL_FIELD_NAMES",
@@ -200,7 +212,8 @@ __all__ = [
     "load_tc",
     "migrate_block_data",
     "migrate_rehu_data",
-    "rehu_rename_affects",
+    "read_content_chunks",
+    "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
     "rename_rehu_resource",
     "rewrite_description_images",
