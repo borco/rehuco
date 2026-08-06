@@ -16,6 +16,7 @@ from rehuco_core import (
     RehuDocument,
     RehuFormatError,
     RenameCoordinator,
+    TaskQueue,
     load_tc,
 )
 
@@ -51,6 +52,9 @@ class DocumentsDock(QMainWindow):
         editor stands the running jobs aside instead of being refused while they finish (#241). Held
         here rather than built here: it is the **app's** coordinator, and a job and a document that
         disagreed about which one to use would coordinate with nobody.
+    :param task_queue: the app-wide queue every document's slow work goes on (#204), handed on for the
+        same reason: there is one queue, and a serial one, which is the whole point of running the
+        checksum work through it. ``None`` opens documents that offer no such work.
     """
 
     document_focus_changed: Signal = Signal(object)
@@ -75,10 +79,12 @@ class DocumentsDock(QMainWindow):
         parent: QWidget | None = None,
         stylesheet_host: QWidget | None = None,
         rename_coordinator: RenameCoordinator | None = None,
+        task_queue: TaskQueue | None = None,
     ) -> None:
         super().__init__(parent)
         self.__stylesheet_host: Final = stylesheet_host
         self.__rename_coordinator: Final = rename_coordinator
+        self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
         self.__tracker: Final = QtAdsFocusTracker(
@@ -359,7 +365,9 @@ class DocumentsDock(QMainWindow):
         # document is freed when the dock closes rather than leaking for the session (#148). The dock
         # also owns its own title/identity upkeep; the area only wires the two seams that cross back to
         # it: the field status-message relay and the close request.
-        dock = DocumentDock(self.__dock_manager, model, stylesheet_host=self.__stylesheet_host)
+        dock = DocumentDock(
+            self.__dock_manager, model, stylesheet_host=self.__stylesheet_host, task_queue=self.__task_queue
+        )
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)
         dock.document_widget.status_message.connect(self.status_message)
@@ -442,6 +450,11 @@ class DocumentsDock(QMainWindow):
             dock (which emits :attr:`document_focus_changed` with ``None`` when it was the current
             one).
         """
+        # let go of everything app-wide this document is attached to before it is destroyed: the task
+        # queue calls its listeners on the worker thread, so one arriving after the C++ objects have
+        # gone would reach a deleted QObject (#204). The work itself is untouched -- closing a document
+        # does not cancel a run over its files.
+        self.__document_docks[dock].detach()
         self.__dock_manager.removeDockWidget(dock)
         # deleting the dock frees the whole document with it: the `DocumentDock` owns its model (parented
         # to it) and widget, so their children -- the NameSuggestionModel, the field bindings' data --

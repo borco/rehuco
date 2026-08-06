@@ -1,5 +1,10 @@
 """Per-document viewer/editor docks over a nested `CDockManager` ([[plugins#viewer-editor-both]])."""
 
+# one cohesive module: this is the document's whole dock shell -- its docks, its toolbar, its banner
+# and the state they persist -- and a scoped disable reads better than an arbitrary split
+# (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
+# pylint: disable=too-many-lines
+
 from collections.abc import Hashable
 from pathlib import Path
 from typing import Any, Final
@@ -13,6 +18,7 @@ from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerS
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from rehuco_core import TaskQueue
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..fields import FieldsTab, StatefulWidget
@@ -20,6 +26,7 @@ from ..fields.widgets import ImageLightbox
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
+from .checksum_actions import ChecksumActions
 from .document_fields import build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -144,7 +151,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
     to the genuine top-level window instead."""
 
     def __init__(  # pylint: disable=too-many-statements
-        self, model: RehuDocumentModel, parent: QWidget | None = None, stylesheet_host: QWidget | None = None
+        self,
+        model: RehuDocumentModel,
+        parent: QWidget | None = None,
+        stylesheet_host: QWidget | None = None,
+        task_queue: TaskQueue | None = None,
     ) -> None:
         super().__init__(parent)
         self.__model: Final = model
@@ -285,6 +296,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__save_action.setEnabled(model.dirty)
         model.dirty_changed.connect(self.__on_dirty_changed)  # type: ignore[attr-defined]
 
+        # the two checksum actions exist only where there is a queue to put their work on (#204): a
+        # gigabyte-scale hash never runs inline, so a widget built without one -- a test, or any host
+        # that has no queue -- offers neither rather than offering something that would block it.
+        # Built before the first __banner_rows call below, which asks them what the last run found.
+        self.__checksums: Final = ChecksumActions(model, task_queue, self) if task_queue is not None else None
+        if self.__checksums is not None:
+            self.__checksums.finding_changed.connect(self.__on_checksum_finding_changed)
+
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
@@ -299,6 +318,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
+        if self.__checksums is not None:
+            toolbar.addAction(self.__checksums.verify_action)
+            toolbar.addAction(self.__checksums.generate_action)
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
@@ -326,6 +348,23 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :attr:`~RehuDocumentModel.upgradable`). Visible on the toolbar exactly while the offer stands,
         same as the convert actions during ``legacy_tc``."""
         return self.__upgrade_action
+
+    @property
+    def checksum_actions(self) -> ChecksumActions | None:
+        """This document's Generate/Verify pair (#204), or ``None`` when it was built with no queue to
+        put their work on."""
+        return self.__checksums
+
+    def detach(self) -> None:
+        """Let go of everything app-wide this document is attached to, before it is destroyed.
+
+        Called by the owner (`DocumentsDock`) as a document is closed. Only the queue listener needs it
+        today: the engine calls its listeners on the worker thread, so one arriving after the C++
+        objects have gone would emit from a deleted ``QObject``. Work already enqueued is untouched --
+        closing a document does not cancel a run over its files, and the row stays in the Tasks dock.
+        """
+        if self.__checksums is not None:
+            self.__checksums.detach()
 
     def toggle_action(self, tab: FieldsTab) -> QAction:
         """The visibility-toggle action for ``tab``'s dock -- whichever viewer or editor tab it is.
@@ -505,6 +544,16 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_checksum_finding_changed(self) -> None:
+        """Rebuild the inline notice strip as a checksum run reports what it established (#204).
+
+        The banner half of :meth:`__on_upgradable_changed`'s shape with no toolbar half, exactly as
+        :meth:`__on_rename_error_changed` is: a verify finding a mismatch changes nothing about what
+        this document can do -- the record is a claim about the *files*, and the document is still
+        perfectly editable -- so there is nothing to swap, only something to say.
+        """
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
 
@@ -595,6 +644,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             rows.append(MessageBannerRow(MessageBannerSeverity.INFO, UPGRADE_MESSAGE))
         if self.__model.rename_error:
             rows.append(MessageBannerRow(MessageBannerSeverity.ERROR, self.__model.rename_error))
+        if self.__checksums is not None and self.__checksums.finding:
+            severity = MessageBannerSeverity.INFO if self.__checksums.finding_clean else MessageBannerSeverity.WARNING
+            rows.append(MessageBannerRow(severity, self.__checksums.finding))
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

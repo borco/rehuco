@@ -170,6 +170,20 @@ class RenameCoordinator:
         with self.__condition:
             self.__listeners.append(listener)
 
+    def remove_rename_listener(self, listener: Callable[[], None]) -> None:
+        """Stop being told, for a listener that is going away.
+
+        The counterpart :meth:`add_rename_listener` needs once a coordinator outlives its listeners --
+        which :data:`DEFAULT_RENAME_COORDINATOR` does by construction. A listener that was never added
+        is ignored rather than refused: removing twice is what a teardown path does when it runs after a
+        failed setup, and there is nothing for it to have got wrong.
+
+        :param listener: the callable to drop.
+        """
+        with self.__condition:
+            if listener in self.__listeners:
+                self.__listeners.remove(listener)
+
     @property
     def yield_wanted(self) -> bool:
         """Whether a rename is waiting for readers to let go.
@@ -319,3 +333,17 @@ class RenameCoordinator:
                 listener()
             except Exception:  # pylint: disable=broad-exception-caught
                 LOG.exception("A rename listener failed; detach it or fix it -- it was skipped.")
+
+
+DEFAULT_RENAME_COORDINATOR: Final = RenameCoordinator()
+"""The one coordinator the app renames through, and the one every job reads through (#204).
+
+A module-level instance, the same shape as :data:`~rehuco_core.DEFAULT_TASK_JOB_REGISTRY`, because it
+describes something the *process* has rather than something a window owns: one filesystem, and one
+answer to *is a rename waiting*. Two coordinators would each be right about their own readers and blind
+to the other's, which is the one thing a barrier cannot be.
+
+**What made it necessary is persistence** ([[appendices.task-queue#lifetime]]): a restored job is built
+by the registry from a saved state, with no window to be handed anything, and a job reading through a
+coordinator nobody renames through would hold a directory open against the rename it is supposed to
+stand aside for. Tests build their own :class:`RenameCoordinator` instead of registering into this."""
