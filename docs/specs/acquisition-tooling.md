@@ -98,6 +98,27 @@ discipline is a strict **never-overwrite, never-delete-then-write** contract:
 The I/O failure of a convert surfaces through the same Retry/Cancel discipline as a save ([[data-model#write-integrity]]),
 as a "Conversion Failed" dialog.
 
+Retained backups stay usable **after** a run, not only during one: a completed conversion can be **reverted** — the
+written `.rehu` and the `<stem>NN` screenshots it installed are deleted and every `.orig` renamed back — or its backups
+**discarded**, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every
+item can be undone one at a time. The same discipline applies as to the forward direction:
+
+- **It refuses rather than half-reverts.** No backed-up `.tc` beside the resource means this is not a conversion to
+  undo; a restore target occupied by a file the revert would not itself delete — a legacy name the user has since put
+  back by hand — refuses the whole operation rather than overwriting it.
+- **Nothing is deleted while a rename can still fail.** The written files are moved aside first, every backup is renamed
+  back, and only then are the moved-aside files deleted — so a failure part-way leaves the resource **converted**, the
+  mirror of the forward rollback leaving it unconverted.
+- **A revert discards edits made since the conversion**, since it deletes the `.rehu` outright. That drift is
+  detectable — a conversion seeds `created` and `updated` with the same stamp and only a changed save moves `updated`
+  ([[field-schema#record-timestamps]]) — so the caller can warn before losing them.
+- **Backups are the directory's `.orig` siblings**, not a stem-scoped set: a legacy screenshot is named `cover.jpg` or
+  `sample-01.jpg`, carrying nothing that ties it to the resource it belongs to. Exact for the directory-scoped
+  resources tc4 catalogs are made of, and why a revert names a directory rather than a file.
+
+Reading what a revert *would* do — how many files, how many bytes, under what names, and whether it is possible at all
+— is a separate query that writes nothing, so a surface can list retained backups without performing anything.
+
 ### §15.3.2 The five legacy screenshot naming schemes
 
 [[[acquisition-tooling#screenshot-schemes]]]
