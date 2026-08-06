@@ -10,6 +10,7 @@ the claim that a record covers exactly what the size scan counts is exercised ra
 # pylint: disable=too-many-lines  # one cohesive module per subject, see [[appendices.code-conventions]]
 
 import json
+import re
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -25,8 +26,10 @@ from rehuco_core import (
     DEFAULT_CHECKSUM_ALGORITHM,
     ChecksumRecordError,
     ChecksumReport,
+    ContentUnreachableError,
     checksum_entry_name,
     checksum_record_path,
+    content_size_on_disk,
     generate_checksums,
     parse_checksum_entry,
     verify_checksums,
@@ -111,6 +114,10 @@ class FakeDisk:
         """How many bytes have been handed to a digest."""
         self.writes = 0
         """How many times the record has been written."""
+        self.offline_directories: Final[set[Path]] = set()
+        """The directories whose listing refuses -- an away mount, or a branch of one
+        ([[mounts-and-storage#offline-mounts]]). Their files stay in :attr:`files`, because that is the
+        point: they exist, and this run cannot see them (#245)."""
         self.open_errors: Final[dict[Path, OSError]] = {}
         """What opening a given file raises instead of serving it -- a share that refuses, or a file
         that vanished between the enumeration and the read, neither of which a test can arrange by
@@ -123,9 +130,12 @@ class FakeDisk:
 
         :param directory: the directory to read.
         :returns: its entries -- files directly in it, and one entry per immediate subdirectory.
+        :raises PermissionError: the directory is in :attr:`offline_directories`.
         :raises FileNotFoundError: nothing lives at or under ``directory``.
         """
         directory = Path(directory)
+        if directory in self.offline_directories:
+            raise PermissionError(str(directory))
         entries: list[FakeDirEntry] = []
         subdirectories: set[str] = set()
         for path in self.files:
@@ -238,8 +248,12 @@ class FakeDisk:
 
         :param path: the file.
         :returns: its contents.
+        :raises PermissionError: it sits under a directory that would not list -- a file behind an away
+            mount is no more readable than the mount is listable.
         :raises FileNotFoundError: nothing lives at ``path``.
         """
+        if any(directory in Path(path).parents for directory in self.offline_directories):
+            raise PermissionError(str(path))
         payload = self.files.get(Path(path))
         if payload is None:
             raise FileNotFoundError(str(path))
@@ -1076,6 +1090,166 @@ def test_an_adopted_file_that_cannot_be_read_rests_unexpected(disk: FakeDisk) ->
 
     assert report.statuses[VIDEO] == "unexpected"
     assert disk.entries[VIDEO] == {"name": VIDEO, "status": "unexpected"}
+
+
+# endregion
+
+
+# region Resources that cannot be reached
+
+
+def test_a_verify_over_an_unreachable_resource_refuses_rather_than_reporting_clean(disk: FakeDisk) -> None:
+    """An away mount used to verify clean: nothing read, nothing reported, indistinguishable from a
+    resource whose every file was checked a moment ago (#245).
+
+    **Test steps:**
+
+    * generate a record, then take the resource's own directory offline
+    * verify with ``create_if_missing`` off, and again with it on
+    * check both refuse, naming the directory rather than the record
+    """
+    generate_checksums(INFO_PATH)
+    disk.offline_directories.add(DIRECTORY)
+
+    for create_if_missing in (False, True):
+        with raises(ContentUnreachableError, match=re.escape(str(DIRECTORY))):
+            verify_checksums(INFO_PATH, create_if_missing=create_if_missing)
+
+
+def test_a_generate_over_an_unreachable_resource_refuses_rather_than_baselining_nothing(
+    disk: FakeDisk,
+) -> None:
+    """The other half of the same answer: a baseline over a resource nobody can list is not an empty
+    baseline (#245).
+
+    **Test steps:**
+
+    * take the resource's own directory offline
+    * generate
+    * check it refused, and wrote no record
+    """
+    disk.offline_directories.add(DIRECTORY)
+
+    with raises(ContentUnreachableError, match=re.escape(str(DIRECTORY))):
+        generate_checksums(INFO_PATH)
+
+    assert RECORD_PATH not in disk.files
+
+
+def test_an_unreachable_resource_is_refused_before_the_record_is_looked_for(disk: FakeDisk) -> None:
+    """*The mount is away* outranks *this resource has no checksums*, which is what a
+    ``FileNotFoundError`` naming ``info.checksum`` said about a resource that may well have one (#245).
+
+    **Test steps:**
+
+    * take the directory offline, with no record ever written
+    * verify with ``create_if_missing`` off, which is the call that used to raise ``FileNotFoundError``
+    * check what came back is the unreachable-resource refusal, and names no record
+    """
+    disk.offline_directories.add(DIRECTORY)
+
+    with raises(ContentUnreachableError) as refusal:
+        verify_checksums(INFO_PATH)
+
+    assert RECORD_NAME not in str(refusal.value)
+
+
+def test_a_full_generate_keeps_the_entries_under_a_branch_it_could_not_list(disk: FakeDisk) -> None:
+    """The data loss this issue is about: a full baseline used to drop ``extras/pack.zip`` -- the only
+    description of what that file was supposed to be -- because a directory would not list (#245).
+
+    **Test steps:**
+
+    * generate over both files, then take the archive's branch offline
+    * generate again, over everything
+    * check the video was re-baselined, the archive's entry survived untouched, and both the branch and
+      the entry under it were reported
+    """
+    generate_checksums(INFO_PATH)
+    recorded = disk.entries[ARCHIVE]
+    disk.offline_directories.add(DIRECTORY / "extras")
+
+    report = generate_checksums(INFO_PATH)
+
+    assert disk.entries[ARCHIVE] == recorded
+    assert report.statuses == {VIDEO: "matched"}
+    assert report.unreadable == (ARCHIVE,)
+    assert report.unreadable_directories == ("extras",)
+
+
+def test_a_generate_over_a_partly_unreadable_tree_says_so_with_nothing_recorded_under_it(
+    disk: FakeDisk,
+) -> None:
+    """A branch with no entries under it has nothing to carry, and still must not read as a clean run:
+    the files behind it are simply not in the baseline anybody reads afterwards (#245).
+
+    **Test steps:**
+
+    * take the archive's branch offline before any record exists
+    * generate
+    * check the video was baselined, nothing was recorded for the branch, and the branch was reported
+    """
+    disk.offline_directories.add(DIRECTORY / "extras")
+
+    report = generate_checksums(INFO_PATH)
+
+    assert set(disk.entries) == {VIDEO}
+    assert not report.unreadable
+    assert report.unreadable_directories == ("extras",)
+
+
+def test_a_verify_still_checks_what_the_record_lists_under_an_offline_branch(disk: FakeDisk) -> None:
+    """Verify's saving property, kept: it checks what the record lists rather than what a walk finds, so
+    an offline branch costs a verdict rather than an entry ([[data-model#checksums]]).
+
+    **Test steps:**
+
+    * generate over both files, then take the archive's branch offline
+    * verify
+    * check the video matched, the archive is unreadable rather than missing, and its entry stands
+    """
+    generate_checksums(INFO_PATH)
+    recorded = disk.entries[ARCHIVE]
+    disk.offline_directories.add(DIRECTORY / "extras")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses == {VIDEO: "matched"}
+    assert report.unreadable == (ARCHIVE,)
+    assert report.unreadable_directories == ("extras",)
+    assert disk.entries[ARCHIVE] == recorded
+
+
+def test_a_run_over_a_readable_tree_reports_no_unreadable_directories(disk: FakeDisk) -> None:
+    """The resting state of the new report member, so *nothing unread* keeps meaning something.
+
+    **Test steps:**
+
+    * generate, then verify, over an entirely readable resource
+    * check neither run named an unreadable directory
+    """
+    assert not generate_checksums(INFO_PATH).unreadable_directories
+    assert not verify_checksums(INFO_PATH).unreadable_directories
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+
+
+def test_the_size_scan_refuses_the_same_tree_the_checksums_carry_entries_over(disk: FakeDisk) -> None:
+    """The two callers of the one enumeration (#226) must not drift: over the same offline branch a
+    checksum run carries and reports, while a size refuses outright, and both answers are deliberate --
+    a record entry is a description that survives, a size is a number that would simply be wrong (#245).
+
+    **Test steps:**
+
+    * take the archive's branch offline
+    * measure the size on disk, and generate
+    * check the size refused naming the branch, and the generate reported the same branch
+    """
+    disk.offline_directories.add(DIRECTORY / "extras")
+
+    with raises(ContentUnreachableError, match="extras"):
+        content_size_on_disk(INFO_PATH)
+
+    assert generate_checksums(INFO_PATH).unreadable_directories == ("extras",)
 
 
 # endregion

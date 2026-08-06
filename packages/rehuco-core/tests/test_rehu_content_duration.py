@@ -18,6 +18,8 @@ from rehuco_core import (
     DURATION_PROBES,
     INFO_REHU_FILENAME,
     VIDEO_EXTENSIONS,
+    ContentEnumeration,
+    ContentUnreachableError,
     DurationProbe,
     DurationProbeError,
     FfprobeDurationProbe,
@@ -69,7 +71,16 @@ def mock_content_files(mocker: MockerFixture, filenames: list[str]) -> None:
     :param mocker: pytest-mock fixture.
     :param filenames: the content file names to answer with.
     """
-    mocker.patch(f"{MODULE}.enumerate_content_files", return_value=[DIRECTORY / name for name in filenames])
+    mocker.patch(f"{MODULE}.enumerate_content_files", return_value=readable_enumeration(filenames))
+
+
+def readable_enumeration(filenames: list[str]) -> ContentEnumeration:
+    """A complete walk over ``filenames`` -- every directory listed, nothing unread.
+
+    :param filenames: the content file names, relative to :data:`DIRECTORY`.
+    :returns: what the enumeration would have answered.
+    """
+    return ContentEnumeration(DIRECTORY, [DIRECTORY / name for name in filenames])
 
 
 # endregion
@@ -144,8 +155,8 @@ def test_a_custom_extension_set_changes_what_is_summed(mocker: MockerFixture) ->
 
 
 def test_a_tutorial_with_no_video_measures_zero(mocker: MockerFixture) -> None:
-    """No video is a genuine ``0``, not an error -- a resource may hold none, and the enumeration
-    already reports a missing or unreadable directory as *nothing found*.
+    """No video is a genuine ``0``, not an error -- a resource may hold none. An unreachable resource is
+    a different answer, and refuses rather than totalling one (#245).
 
     **Test steps:**
 
@@ -155,6 +166,25 @@ def test_a_tutorial_with_no_video_measures_zero(mocker: MockerFixture) -> None:
     mock_content_files(mocker, ["notes.pdf"])
 
     assert content_duration(REHU_PATH, FakeProbe()) == 0
+
+
+def test_a_resource_that_will_not_read_in_full_is_refused_rather_than_totalled(mocker: MockerFixture) -> None:
+    """A runtime summed over the branches that happened to answer is not this tutorial's runtime, and it
+    reads exactly like one -- the same refusal the size scan makes over the same walk (#245).
+
+    **Test steps:**
+
+    * make the enumeration answer with one video and a branch it could not list
+    * measure
+    * verify it refused, naming the branch, rather than totalling the video alone
+    """
+    mocker.patch(
+        f"{MODULE}.enumerate_content_files",
+        return_value=ContentEnumeration(DIRECTORY, [DIRECTORY / "a.mp4"], (DIRECTORY / "offline",)),
+    )
+
+    with raises(ContentUnreachableError, match="offline"):
+        content_duration(REHU_PATH, FakeProbe({"a.mp4": 10.0}))
 
 
 def test_an_unreadable_file_costs_its_own_seconds_and_no_more(mocker: MockerFixture) -> None:
@@ -202,7 +232,7 @@ def test_the_excluded_patterns_reach_the_shared_enumeration(mocker: MockerFixtur
     * measure with a custom pattern list
     * verify the enumeration was called with that list and the resource's path
     """
-    enumerate_content_files = mocker.patch(f"{MODULE}.enumerate_content_files", return_value=[])
+    enumerate_content_files = mocker.patch(f"{MODULE}.enumerate_content_files", return_value=readable_enumeration([]))
 
     content_duration(REHU_PATH, FakeProbe(), excluded_patterns=("*.tmp",))
 

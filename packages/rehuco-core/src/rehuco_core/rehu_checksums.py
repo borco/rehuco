@@ -21,6 +21,12 @@ digest has been computed and compared, and the record is written **once, at the 
 atomic writer -- so a stop between chunks leaves the previous record intact, and can never manufacture
 a mismatch.
 
+**An unreachable resource is neither an empty one nor a resource without checksums** (#245). A run over
+a directory that will not list refuses with a
+:class:`~rehuco_core.ContentUnreachableError` before it looks for a record, and a full generate over a
+tree with an offline *branch* carries that branch's entries rather than dropping them -- a baseline
+describes what is, and a walk that could not see a directory establishes nothing about it.
+
 Which files are content is :func:`~rehuco_core.enumerate_content_files`'s answer (#226), shared with the
 size scan; reads go through :func:`~rehuco_core.read_content_chunks` (#241), so a rename can land
 mid-verify and the run follows the resource. The record's *format* -- entries, statuses, load and save --
@@ -80,17 +86,23 @@ class ChecksumReport:
         cannot read.
     :param skipped: the names left alone because they were verified within ``stale_after`` -- what a
         sweep (#242) counts to say how much recent work it saved.
-    :param unreadable: the names whose file exists but could not be read (a permission refusal, a mount
-        that went away mid-run) -- deliberately **not** ``missing`` and not recorded: an I/O failure is
-        not a verdict about the bytes, so the entry is carried untouched and reported here instead.
+    :param unreadable: the names the run could not read -- the file refused (a permission refusal, a
+        mount that went away mid-run), or its directory would not list at all (#245). Deliberately
+        **not** ``missing`` and not recorded: an I/O failure is not a verdict about the bytes, so the
+        entry is carried untouched and reported here instead.
     :param unnamed_malformed: how many entries could not even be named -- reportable only as a count,
         since a name is exactly what they lack.
+    :param unreadable_directories: the directories under the resource that would not list, by
+        record-relative name (#245). A run over a tree with an offline branch is **not** a clean run,
+        and this is what says so even when the record listed nothing under that branch -- there was
+        nothing to report as unreadable, and silence would have read as *all present*.
     """
 
     statuses: dict[str, ChecksumStatus] = field(default_factory=dict)
     skipped: tuple[str, ...] = ()
     unreadable: tuple[str, ...] = ()
     unnamed_malformed: int = 0
+    unreadable_directories: tuple[str, ...] = ()
 
 
 class ChecksumRun:  # pylint: disable=too-many-instance-attributes
@@ -148,6 +160,11 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__checkpoint: Final = checkpoint
         self.__now: Final = datetime.now(UTC)
         self.__stamp: Final = verified_stamp(self.__now)
+        # the walk before the record, and its reachability before anything else: *the mount is away*
+        # outranks *this resource has no checksums*, which is the sentence an unreachable resource used
+        # to get (or, with ``create_if_missing``, a clean report over an empty record it invented) (#245)
+        self.__enumeration: Final = enumerate_content_files(self.__rehu_location.path, self.__excluded_patterns)
+        self.__enumeration.require_reachable()
         self.__record: Final[dict[str, Any]] = self.__load()
         self.__entries: Final[list[Any]] = self.__record[CHECKSUM_FILES_KEY]
         self.__content: Final = self.__content_locations()
@@ -244,7 +261,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         rehu_path = self.__rehu_location.path
         return {
             path.relative_to(rehu_path.parent).as_posix(): self.__coordinator.track(path)
-            for path in enumerate_content_files(rehu_path, self.__excluded_patterns)
+            for path in self.__enumeration.files
         }
 
     def __locate(self, name: str) -> ResourceLocation:
@@ -389,6 +406,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
     def __generate_baseline(self) -> list[Any]:
         """A full baseline: one fresh entry per content file, in enumeration order.
 
+        **A baseline describes what is, and only what it could see** ([[data-model#checksums]], #245).
+        Dropping an entry the walk did not find is safe exactly when the walk was complete, so entries
+        under a directory that would not list are carried through untouched and reported unreadable
+        instead: the alternative deletes the only description of what those files were supposed to be,
+        on the strength of a branch being offline for a minute.
+
         :returns: the new record's entries; a fresh (``stale_after``) entry is carried instead of
             re-hashed, and a file that cannot be read keeps its old entry, if any, untouched.
         """
@@ -414,7 +437,26 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             entry = self.__baseline_file(name, location, existing)
             if entry is not None:
                 rewritten.append(entry)
+        rewritten.extend(self.__carried_from_unreadable(carried))
         return rewritten
+
+    def __carried_from_unreadable(self, carried: dict[str, Any]) -> list[Any]:
+        """The recorded entries a full baseline may not drop, because it never saw their directory.
+
+        :param carried: the record's entries as loaded, by name, in the record's own order.
+        :returns: those under a directory that would not list, untouched and in that same order --
+            reported unreadable on the way past, since not being re-baselined is what happened to them.
+        """
+        prefixes = self.__unreadable_prefixes()
+        if not prefixes:
+            return []
+        kept: list[Any] = []
+        for name, raw in carried.items():
+            if name in self.__content or not name.startswith(prefixes):
+                continue
+            self.__unreadable.append(name)
+            kept.append(raw)
+        return kept
 
     def __generate_targeted(self, only: frozenset[str]) -> list[Any]:
         """Re-baseline exactly the named entries; carry every other byte-for-byte.
@@ -485,6 +527,24 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
     def __selected(self, name: str) -> bool:
         """Whether ``only`` lets this name through -- everything, when there is no selection."""
         return self.__only is None or name in self.__only
+
+    def __unreadable_prefixes(self) -> tuple[str, ...]:
+        """The directories that would not list, as record-relative name prefixes.
+
+        :returns: one ``"branch/"`` per unreadable directory -- never the resource's own, which the
+            constructor already refused (:meth:`~rehuco_core.ContentEnumeration.require_reachable`).
+        """
+        return tuple(f"{name}/" for name in self.__unreadable_directories())
+
+    def __unreadable_directories(self) -> tuple[str, ...]:
+        """The directories that would not list, by record-relative POSIX name -- the record's spelling.
+
+        Relative to the directory the *walk* read, not to the location as it stands now: a rename that
+        lands mid-run moves the resource, and a branch is being named here by where it sat when the
+        listing failed (#241).
+        """
+        directory = self.__enumeration.directory
+        return tuple(branch.relative_to(directory).as_posix() for branch in self.__enumeration.unreadable)
 
     def __fresh(self, entry: ChecksumEntry | None) -> bool:
         """Whether ``stale_after`` says this entry was verified recently enough to leave alone.
@@ -597,6 +657,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             skipped=tuple(self.__skipped),
             unreadable=tuple(self.__unreadable),
             unnamed_malformed=self.__unnamed_malformed,
+            unreadable_directories=self.__unreadable_directories(),
         )
 
     # endregion
@@ -635,6 +696,9 @@ def generate_checksums(  # pylint: disable=too-many-arguments
     :raises FileNotFoundError: no record and ``create_if_missing`` is off.
     :raises ChecksumRecordError: a record file this build cannot read at all.
     :raises ValueError: an algorithm this build does not ship.
+    :raises ContentUnreachableError: the resource's directory would not list -- checked before the
+        record is looked for, so *the mount is away* is never reported as *there are no checksums* and
+        never quietly baselines an empty resource (#245).
     :raises OSError: the record could not be written.
     """
     return ChecksumRun(
@@ -689,6 +753,9 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     :raises FileNotFoundError: no record and ``create_if_missing`` is off.
     :raises ChecksumRecordError: a record file this build cannot read at all.
     :raises ValueError: an algorithm this build does not ship.
+    :raises ContentUnreachableError: the resource's directory would not list -- checked before the
+        record is looked for, so an away mount raises this rather than reporting a clean empty run
+        (#245).
     :raises OSError: the record could not be re-written.
     """
     return ChecksumRun(

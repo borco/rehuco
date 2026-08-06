@@ -265,19 +265,23 @@ def content_duration(
         a user's list (#225) reaches this without core learning what a settings page is.
     :param excluded_patterns: filename globs to leave out of the walk, passed straight through to
         :func:`~rehuco_core.rehu_content_files.enumerate_content_files`.
-    :returns: the total duration in whole seconds; ``0`` when the resource holds no video at all, and
-        for a missing or unreadable directory -- the enumeration already reports that as *nothing
-        found*. A file that cannot be read costs its own seconds and nothing more.
+    :returns: the total duration in whole seconds; ``0`` when the resource holds no video at all. A file
+        that cannot be *probed* costs its own seconds and nothing more.
     :raises DurationProbeError: if ``probe`` cannot run here at all. Deliberately not a ``0``: a
         misconfigured backend and a tutorial with no video would otherwise be the same answer.
+    :raises ContentUnreachableError: some directory under the resource would not list (#245) -- the same
+        refusal for the same reason, one step earlier: a total over the branches that happened to answer
+        is not this resource's runtime.
     """
     probe = probe if probe is not None else DURATION_PROBES[DEFAULT_DURATION_PROBE]()
     unavailable = probe.unavailable_reason()
     if unavailable is not None:
         raise DurationProbeError(unavailable)
     suffixes = tuple(extension.lower() for extension in video_extensions)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration.require_complete()
     total = 0.0
-    for path in enumerate_content_files(rehu_path, excluded_patterns):
+    for path in enumeration.files:
         if path.suffix.lower() not in suffixes:
             continue
         duration = probe.probe(path)

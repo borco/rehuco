@@ -5,6 +5,12 @@ generate/verify. A file summed by one and skipped by the other is a bug waiting 
 reporting an *unexpected new file* the size the user was shown already counted -- so the answer is
 computed once, here, and both read it.
 
+**A walk says what it could not see** (#245). An unreadable branch and an empty one are not the same
+answer, and a walk that returned only its files made them one -- which is how a size over an offline
+mount under-reported silently and a checksum baseline deleted the hashes for a branch it could not list.
+The walk still never raises: it reports the directories that would not list
+([[mounts-and-storage#offline-mounts]]), and what that costs is each caller's to decide.
+
 The counterpart of `rehuco_core.rehu_content_images`, one level out: that module lists the images
 *inside* a reference-images resource's archives, this one lists the files the resource *is*. Core-side
 and GUI-free; the caller supplies the excluded-name patterns rather than this module reading a setting.
@@ -13,6 +19,7 @@ and GUI-free; the caller supplies the excluded-name patterns rather than this mo
 import fnmatch
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -23,6 +30,82 @@ from .constants import (
     INFO_REHU_FILENAME,
     REHU_SUFFIX,
 )
+
+MAX_NAMED_UNREADABLE: Final = 3
+"""How many unreadable directories an error names before it counts the rest.
+
+A tree that went away wholesale has one unreadable directory per branch, and a sentence listing forty of
+them says less than one listing three."""
+
+
+class ContentUnreachableError(OSError):
+    """A resource whose content could not be read in full -- a mount that is away, a branch that refuses
+    to list ([[mounts-and-storage#offline-mounts]], #245).
+
+    An :class:`OSError`, because that is what it is, and deliberately **not** a
+    :class:`FileNotFoundError`: *the mount is away* and *this resource has nothing/no record* are
+    different sentences, and the second one is the lie this exists to stop telling.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ContentEnumeration:
+    """What one content walk found, and what it could not see (#226, #245).
+
+    Reported rather than raised, because the cost differs per caller: a verify carries on over a branch
+    it cannot list -- it checks what the record lists, not what a walk finds -- while a size that
+    under-reports and a baseline that drops the branch's entries are both wrong. Each caller asks for
+    the guarantee it needs, through :meth:`require_reachable` or :meth:`require_complete`.
+
+    :param directory: the resource's directory, which the walk started from.
+    :param files: the content file paths, in a stable order.
+    :param unreadable: the directories that would not list, :attr:`directory` itself included when the
+        walk never started at all.
+    """
+
+    directory: Path
+    files: list[Path]
+    unreadable: tuple[Path, ...] = ()
+
+    @property
+    def reachable(self) -> bool:
+        """Whether the resource's own directory listed -- the difference between *empty* and *away*."""
+        return self.directory not in self.unreadable
+
+    @property
+    def complete(self) -> bool:
+        """Whether every directory under the resource listed, so :attr:`files` is the whole content."""
+        return not self.unreadable
+
+    def require_reachable(self) -> None:
+        """Refuse when the resource itself could not be read.
+
+        :raises ContentUnreachableError: the resource's directory would not list.
+        """
+        if not self.reachable:
+            raise ContentUnreachableError(f"The resource's directory could not be read: {self.directory}")
+
+    def require_complete(self) -> None:
+        """Refuse when any part of the resource could not be read.
+
+        What a measurement over the whole resource needs: a total summed over the branches that happened
+        to answer is not this resource's total, and reporting it as one is indistinguishable from the
+        truth ([[mounts-and-storage#offline-mounts]]).
+
+        :raises ContentUnreachableError: some directory under the resource would not list.
+        """
+        self.require_reachable()
+        if self.unreadable:
+            raise ContentUnreachableError(f"Part of the resource could not be read: {self.unreadable_text()}")
+
+    def unreadable_text(self) -> str:
+        """The unreadable directories, for a sentence a reader can act on.
+
+        :returns: up to :data:`MAX_NAMED_UNREADABLE` of them, and a count of whatever is left.
+        """
+        named = ", ".join(str(directory) for directory in self.unreadable[:MAX_NAMED_UNREADABLE])
+        remaining = len(self.unreadable) - MAX_NAMED_UNREADABLE
+        return named if remaining <= 0 else f"{named} (and {remaining} more)"
 
 
 class ContentFileScanner:  # pylint: disable=too-few-public-methods
@@ -83,25 +166,30 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         self.__excluded_patterns: Final = tuple(pattern.lower() for pattern in excluded_patterns)
         self.__slug: Final = rehu_path.stem.lower()
 
-    def scan(self) -> list[Path]:
-        """Enumerate :attr:`rehu_path`'s content files.
+    def scan(self) -> ContentEnumeration:
+        """Enumerate :attr:`rehu_path`'s content files, and the directories that would not list.
 
-        :returns: the content file paths; see :func:`enumerate_content_files` for the full order and
+        :returns: what the walk found; see :func:`enumerate_content_files` for the full order and
             failure-handling contract.
         """
         directory = self.__rehu_path.parent
+        unreadable: list[Path] = []
         if self.__rehu_path.name == INFO_REHU_FILENAME:
-            return self.__scan_directory(directory)
-        return self.__scan_siblings(directory)
+            files = self.__scan_directory(directory, unreadable)
+        else:
+            files = self.__scan_siblings(directory, unreadable)
+        return ContentEnumeration(directory, files, tuple(unreadable))
 
-    def __scan_siblings(self, directory: Path) -> list[Path]:
+    def __scan_siblings(self, directory: Path, unreadable: list[Path]) -> list[Path]:
         """List the same-stem siblings a file-scoped resource describes.
 
         :param directory: the resource's directory.
-        :returns: the matching paths sorted by name, or empty when ``directory`` is missing/unreadable
-            (e.g. an offline mount, [[mounts-and-storage#offline-mounts]]).
+        :param unreadable: the walk's record of what would not list, appended to in place -- for a
+            file-scoped resource that can only ever be ``directory`` itself (e.g. an offline mount,
+            [[mounts-and-storage#offline-mounts]]).
+        :returns: the matching paths sorted by name, or empty when ``directory`` is missing/unreadable.
         """
-        filenames = self.__read_directory(directory, [])
+        filenames = self.__read_directory(directory, [], unreadable)
         records = self.__record_names(filenames) | {self.__slug}
         matches = sorted(
             filename
@@ -110,7 +198,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         )
         return [directory / filename for filename in matches]
 
-    def __scan_directory(self, directory: Path) -> list[Path]:
+    def __scan_directory(self, directory: Path, unreadable: list[Path]) -> list[Path]:
         """List everything under a directory-scoped resource's directory that both tiers let through.
 
         One directory at a time, descending: read a directory, take the records *it* holds, keep the
@@ -123,16 +211,18 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         instead of the whole tree.
 
         A subdirectory that cannot be read is skipped rather than fatal: an offline branch of a mount
-        ([[mounts-and-storage#offline-mounts]]) costs its own contents, not the whole measurement.
+        ([[mounts-and-storage#offline-mounts]]) costs its own contents, not the whole walk -- and it is
+        named in ``unreadable``, so a caller for whom that *is* fatal can say so (#245).
 
         :param directory: the resource's directory.
+        :param unreadable: the walk's record of what would not list, appended to in place.
         :returns: the matching paths sorted by path, or empty when ``directory`` is missing/unreadable.
         """
         matches: list[Path] = []
         pending = [directory]
         while pending:
             current = pending.pop()
-            filenames = self.__read_directory(current, pending)
+            filenames = self.__read_directory(current, pending, unreadable)
             records = self.__record_names(filenames)
             if current == self.__rehu_path.parent:
                 records.add(self.__slug)
@@ -144,7 +234,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         return sorted(matches, key=str)
 
     @staticmethod
-    def __read_directory(directory: Path, pending: list[Path]) -> list[str]:
+    def __read_directory(directory: Path, pending: list[Path], unreadable: list[Path]) -> list[str]:
         """Read one directory, appending its subdirectories to ``pending`` for later.
 
         :func:`os.scandir` rather than :meth:`~pathlib.Path.iterdir`: it answers ``is_dir``/``is_file``
@@ -156,10 +246,17 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         A symlink to a file counts as that file; a symlink to a directory is skipped entirely rather
         than descended (see the loop-guard comment below), so linked-in trees are never measured.
 
+        A directory that will not list is recorded rather than swallowed, **whatever the reason** --
+        including a :class:`FileNotFoundError`, which for the resource's own directory is exactly the
+        unmapped drive this distinction exists for, and for a subdirectory means the walk's own listing
+        is already out of date. A directory takes its whole subtree with it either way, and there is no
+        verdict to reach about files nobody can name (#245).
+
         :param directory: the directory to read.
         :param pending: the walk's stack of directories still to visit, appended to in place.
+        :param unreadable: the walk's record of what would not list, appended to in place.
         :returns: the directory's filenames, or empty when it cannot be read -- an unreadable branch
-            costs its own contents, not the whole measurement.
+            costs its own contents, not the whole walk.
         """
         filenames: list[str] = []
         try:
@@ -173,6 +270,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
                     elif entry.is_file():
                         filenames.append(entry.name)
         except OSError:
+            unreadable.append(directory)
             return []
         return filenames
 
@@ -224,7 +322,9 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         return any(fnmatch.fnmatchcase(lowered, pattern) for pattern in self.__excluded_patterns)
 
 
-def enumerate_content_files(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> list[Path]:
+def enumerate_content_files(
+    rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+) -> ContentEnumeration:
     """Enumerate ``rehu_path``'s content files: what it is a record *of*, never its own bookkeeping.
 
     :param rehu_path: the resource's ``.rehu`` file.
@@ -233,9 +333,10 @@ def enumerate_content_files(rehu_path: Path, excluded_patterns: tuple[str, ...] 
         (:data:`~rehuco_core.constants.EXCLUDED_FILE_PATTERNS` by default), so the size scan and the
         checksums are handed the same answer instead of each deciding one. Ignored for a file-scoped
         resource, whose content is a whitelist of one.
-    :returns: the content file paths, in a stable order (by name for a file-scoped resource, by full path
-        for a directory-scoped one). A missing or unreadable directory contributes nothing rather than
-        raising -- a document-level condition, not a crash.
+    :returns: the files, in a stable order (by name for a file-scoped resource, by full path for a
+        directory-scoped one), **and the directories that would not list**. A missing or unreadable
+        directory contributes nothing rather than raising -- a document-level condition, not a crash --
+        but it is named, so no caller has to mistake it for an empty resource (#245).
     """
     return ContentFileScanner(rehu_path, excluded_patterns).scan()
 
@@ -253,20 +354,29 @@ def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = E
     properties of the filesystem it happens to sit on, so the same content would measure differently per
     host and the number would stop being comparable.
 
+    **A partial measurement is refused rather than reported low** (#245). A total summed over the
+    branches that happened to answer is not this resource's size, and a number that reads as authority
+    is worse than no number: the caller is told what could not be read and can measure again when the
+    mount is back ([[mounts-and-storage#offline-mounts]]).
+
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs to leave out of the directory-scoped walk, passed straight
         through to :func:`enumerate_content_files`.
-    :returns: the total size in whole bytes; ``0`` when the resource has no content files at all, and
-        for a missing or unreadable directory -- the enumeration already reports that as *nothing found*
-        rather than raising, and a size scan has nothing to add to it.
+    :returns: the total size in whole bytes; ``0`` when the resource has content files nowhere -- there
+        is content and there is none of it, which is now a different answer from *unreachable*.
+    :raises ContentUnreachableError: some directory under the resource would not list, or a content file
+        that was listed refused to be measured.
     """
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration.require_complete()
     total = 0
-    for path in enumerate_content_files(rehu_path, excluded_patterns):
+    for path in enumeration.files:
         try:
             total += path.stat().st_size
-        except OSError:
-            # a file listed a moment ago and unreadable now -- deleted mid-scan, or a mount that went
-            # away ([[mounts-and-storage#offline-mounts]]). It costs its own bytes, not the whole
-            # measurement, the same way an unreadable directory costs only its own contents.
+        except FileNotFoundError:
+            # deleted between the listing and the stat: genuinely not there any more, and absent bytes
+            # weigh nothing. Distinct from the refusal below, which says nothing about the file at all
             continue
+        except OSError as error:
+            raise ContentUnreachableError(f"A content file could not be measured: {path}") from error
     return total

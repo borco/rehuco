@@ -588,8 +588,21 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
         ),
         (ChecksumReport(skipped=(VIDEO,), unreadable=(ARCHIVE,)), "1 skipped, 1 unreadable"),
         (ChecksumReport(unnamed_malformed=2), "2 unnamed malformed"),
+        (ChecksumReport(unreadable_directories=("extras",)), "1 unreadable directory"),
+        (
+            ChecksumReport(statuses={VIDEO: "matched"}, unreadable_directories=("extras", "raw")),
+            "1 matched, 2 unreadable directories",
+        ),
     ],
-    ids=["nothing", "all matched", "verdicts", "skipped and unreadable", "unnamed"],
+    ids=[
+        "nothing",
+        "all matched",
+        "verdicts",
+        "skipped and unreadable",
+        "unnamed",
+        "one unreadable directory",
+        "several unreadable directories",
+    ],
 )
 def test_a_summary_counts_what_a_run_established(report: ChecksumReport, expected: str) -> None:
     """The line a log record and a banner both carry says how many of what.

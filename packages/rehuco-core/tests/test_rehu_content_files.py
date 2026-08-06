@@ -2,18 +2,22 @@
 for the size-on-disk sum over it (#223).
 """
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
 
+from pytest import raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     INFO_REHU_FILENAME,
+    ContentUnreachableError,
     content_size_on_disk,
     enumerate_content_files,
 )
+from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
 
 DIRECTORY: Final = Path("/fake/resource")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
@@ -125,6 +129,19 @@ def mock_siblings(mocker: MockerFixture, filenames: list[str]) -> None:
     mock_tree(mocker, filenames)
 
 
+def content_files(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> list[Path]:
+    """The walk's files alone, for the tests that are about the two exclusion tiers.
+
+    What a walk could not read is its own group of tests below (#245); everywhere else the files are the
+    subject, and going through the enumeration's other member each time would say nothing.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param excluded_patterns: the junk globs, defaulting the way the real call does.
+    :returns: the content file paths.
+    """
+    return enumerate_content_files(rehu_path, excluded_patterns).files
+
+
 def names(paths: list[Path]) -> list[str]:
     """The paths' names, for asserting on a scan's result without repeating :data:`DIRECTORY`.
 
@@ -149,7 +166,7 @@ def test_file_scoped_takes_only_its_own_same_stem_siblings(mocker: MockerFixture
     """
     mock_siblings(mocker, ["foo.zip", "info.rehu", "info00.jpg", "bar00.jpg", "bar.zip"])
 
-    assert names(enumerate_content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
+    assert names(content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
 
 
 def test_file_scoped_is_unaffected_by_an_empty_pattern_list(mocker: MockerFixture) -> None:
@@ -163,7 +180,7 @@ def test_file_scoped_is_unaffected_by_an_empty_pattern_list(mocker: MockerFixtur
     """
     mock_siblings(mocker, ["foo.zip", "info.rehu", "info00.jpg", "bar00.jpg", "bar.zip"])
 
-    assert names(enumerate_content_files(FILE_SCOPED_PATH, ())) == ["foo.zip"]
+    assert names(content_files(FILE_SCOPED_PATH, ())) == ["foo.zip"]
 
 
 def test_file_scoped_drops_its_own_record_screenshots_and_manifest(mocker: MockerFixture) -> None:
@@ -178,7 +195,7 @@ def test_file_scoped_drops_its_own_record_screenshots_and_manifest(mocker: Mocke
     """
     mock_siblings(mocker, ["foo.rehu", "foo.zip", "foo00.jpg", "foo01.png", "foo.sfv"])
 
-    assert names(enumerate_content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
+    assert names(content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
 
 
 def test_file_scoped_takes_every_same_stem_sibling_whatever_its_format(mocker: MockerFixture) -> None:
@@ -192,7 +209,7 @@ def test_file_scoped_takes_every_same_stem_sibling_whatever_its_format(mocker: M
     """
     mock_siblings(mocker, ["foo.zip", "foo.rehu", "foo.mp4"])
 
-    assert names(enumerate_content_files(FILE_SCOPED_PATH)) == ["foo.mp4", "foo.zip"]
+    assert names(content_files(FILE_SCOPED_PATH)) == ["foo.mp4", "foo.zip"]
 
 
 def test_file_scoped_matches_its_stem_case_insensitively(mocker: MockerFixture) -> None:
@@ -206,7 +223,7 @@ def test_file_scoped_matches_its_stem_case_insensitively(mocker: MockerFixture) 
     """
     mock_siblings(mocker, ["FOO.ZIP"])
 
-    assert names(enumerate_content_files(FILE_SCOPED_PATH)) == ["FOO.ZIP"]
+    assert names(content_files(FILE_SCOPED_PATH)) == ["FOO.ZIP"]
 
 
 def test_file_scoped_reports_an_unreadable_directory_as_empty(mocker: MockerFixture) -> None:
@@ -220,7 +237,7 @@ def test_file_scoped_reports_an_unreadable_directory_as_empty(mocker: MockerFixt
     """
     mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
 
-    assert enumerate_content_files(FILE_SCOPED_PATH) == []
+    assert not content_files(FILE_SCOPED_PATH)
 
 
 # endregion
@@ -261,7 +278,7 @@ def test_every_rehu_in_the_tree_takes_its_own_bookkeeping_with_it(mocker: Mocker
         directories=["bar"],
     )
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4", "baz.zip"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4", "baz.zip"]
 
 
 def test_a_pattern_only_excludes_where_a_matching_record_sits_beside_it(mocker: MockerFixture) -> None:
@@ -297,7 +314,7 @@ def test_a_pattern_only_excludes_where_a_matching_record_sits_beside_it(mocker: 
         directories=["bar", "baz"],
     )
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["bar/info00.jpg", "xxx00.jpg", "yyy.sfv"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/info00.jpg", "xxx00.jpg", "yyy.sfv"]
 
 
 def test_screenshots_and_manifests_without_a_record_are_content(mocker: MockerFixture) -> None:
@@ -314,7 +331,7 @@ def test_screenshots_and_manifests_without_a_record_are_content(mocker: MockerFi
     """
     mock_tree(mocker, ["info.rehu", "lesson01.jpg", "pack.sfv"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["lesson01.jpg", "pack.sfv"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["lesson01.jpg", "pack.sfv"]
 
 
 def test_deleting_a_record_turns_its_screenshots_back_into_content(mocker: MockerFixture) -> None:
@@ -330,10 +347,10 @@ def test_deleting_a_record_turns_its_screenshots_back_into_content(mocker: Mocke
     * verify the first scan excluded the pair and the second counted it
     """
     mock_tree(mocker, ["info.rehu", "baz.rehu", "baz00.jpg", "baz.sfv"])
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == []
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == []
 
     mock_tree(mocker, ["info.rehu", "baz00.jpg", "baz.sfv"])
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["baz.sfv", "baz00.jpg"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["baz.sfv", "baz00.jpg"]
 
 
 def test_directory_scoped_drops_the_record_screenshots_and_manifest_by_slug(mocker: MockerFixture) -> None:
@@ -347,7 +364,7 @@ def test_directory_scoped_drops_the_record_screenshots_and_manifest_by_slug(mock
     """
     mock_tree(mocker, ["info.rehu", "info00.jpg", "info01.png", "info.sfv", "video.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_directory_scoped_drops_every_manifest_extension(mocker: MockerFixture) -> None:
@@ -375,7 +392,7 @@ def test_directory_scoped_drops_every_manifest_extension(mocker: MockerFixture) 
     ]
     mock_tree(mocker, [*manifests, "video.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_structural_exclusions_survive_an_empty_pattern_list(mocker: MockerFixture) -> None:
@@ -389,7 +406,7 @@ def test_structural_exclusions_survive_an_empty_pattern_list(mocker: MockerFixtu
     """
     mock_tree(mocker, ["info.rehu", "info00.jpg", "info.sfv", "video.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH, ())) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH, ())) == ["video.mp4"]
 
 
 def test_a_numbered_sibling_that_is_not_an_image_is_content(mocker: MockerFixture) -> None:
@@ -403,7 +420,7 @@ def test_a_numbered_sibling_that_is_not_an_image_is_content(mocker: MockerFixtur
     """
     mock_tree(mocker, ["info00.jpg", "info01.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["info01.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["info01.mp4"]
 
 
 def test_a_differently_shaped_numbered_name_is_content(mocker: MockerFixture) -> None:
@@ -417,7 +434,7 @@ def test_a_differently_shaped_numbered_name_is_content(mocker: MockerFixture) ->
     """
     mock_tree(mocker, ["info1.jpg", "info001.jpg", "lesson01.jpg", "info00.jpg"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["info001.jpg", "info1.jpg", "lesson01.jpg"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["info001.jpg", "info1.jpg", "lesson01.jpg"]
 
 
 def test_structural_exclusions_apply_at_every_depth(mocker: MockerFixture) -> None:
@@ -431,7 +448,7 @@ def test_structural_exclusions_apply_at_every_depth(mocker: MockerFixture) -> No
     """
     mock_tree(mocker, ["part1/info.rehu", "part1/info00.jpg", "part1/video.mp4"], directories=["part1"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
 
 
 def test_directory_scoped_skips_anything_that_is_not_a_regular_file(mocker: MockerFixture) -> None:
@@ -445,7 +462,7 @@ def test_directory_scoped_skips_anything_that_is_not_a_regular_file(mocker: Mock
     """
     mock_tree(mocker, ["info.rehu", "video.mp4"], irregular=["dangling.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_directory_scoped_skips_directories(mocker: MockerFixture) -> None:
@@ -459,7 +476,7 @@ def test_directory_scoped_skips_directories(mocker: MockerFixture) -> None:
     """
     mock_tree(mocker, ["part1/video.mp4"], directories=["part1"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
 
 
 # endregion
@@ -478,7 +495,7 @@ def test_the_default_patterns_drop_the_os_residue(mocker: MockerFixture) -> None
     """
     mock_tree(mocker, ["Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store", "._video.mp4", "video.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_patterns_match_case_insensitively(mocker: MockerFixture) -> None:
@@ -492,7 +509,7 @@ def test_patterns_match_case_insensitively(mocker: MockerFixture) -> None:
     """
     mock_tree(mocker, ["Thumbs.db", "THUMBS.DB", "thumbs.db"])
 
-    assert enumerate_content_files(DIRECTORY_SCOPED_PATH) == []
+    assert not content_files(DIRECTORY_SCOPED_PATH)
 
 
 def test_a_glob_pattern_matches_a_prefix(mocker: MockerFixture) -> None:
@@ -506,7 +523,7 @@ def test_a_glob_pattern_matches_a_prefix(mocker: MockerFixture) -> None:
     """
     mock_tree(mocker, ["._foo.mp4", "foo.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["foo.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["foo.mp4"]
 
 
 def test_patterns_match_the_file_name_not_the_path(mocker: MockerFixture) -> None:
@@ -521,7 +538,7 @@ def test_patterns_match_the_file_name_not_the_path(mocker: MockerFixture) -> Non
     """
     mock_tree(mocker, ["thumbs.db/video.mp4", "thumbs.db/Thumbs.db"], directories=["thumbs.db"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["thumbs.db/video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["thumbs.db/video.mp4"]
 
 
 def test_the_measured_set_changes_with_the_pattern_list(mocker: MockerFixture) -> None:
@@ -535,8 +552,8 @@ def test_the_measured_set_changes_with_the_pattern_list(mocker: MockerFixture) -
     """
     mock_tree(mocker, ["notes.txt", "video.mp4"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["notes.txt", "video.mp4"]
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH, (*EXCLUDED_FILE_PATTERNS, "*.txt"))) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["notes.txt", "video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH, (*EXCLUDED_FILE_PATTERNS, "*.txt"))) == ["video.mp4"]
 
 
 def test_a_directory_symlink_is_never_descended(mocker: MockerFixture) -> None:
@@ -554,11 +571,12 @@ def test_a_directory_symlink_is_never_descended(mocker: MockerFixture) -> None:
     """
     mock_tree(mocker, ["info.rehu", "video.mp4"], directory_links=["loop"])
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_directory_scoped_reports_an_unreadable_directory_as_empty(mocker: MockerFixture) -> None:
-    """An offline mount reports as empty here too, rather than raising out of the walk.
+    """An offline mount answers with no files rather than raising out of the walk -- what it *says* about
+    the directory is the next region's subject (#245); here it is only that nothing escapes.
 
     **Test steps:**
 
@@ -568,7 +586,7 @@ def test_directory_scoped_reports_an_unreadable_directory_as_empty(mocker: Mocke
     """
     mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
 
-    assert enumerate_content_files(DIRECTORY_SCOPED_PATH) == []
+    assert not content_files(DIRECTORY_SCOPED_PATH)
 
 
 def test_an_unreadable_subdirectory_costs_only_its_own_contents(mocker: MockerFixture) -> None:
@@ -590,7 +608,120 @@ def test_an_unreadable_subdirectory_costs_only_its_own_contents(mocker: MockerFi
         unreadable=["offline"],
     )
 
-    assert names(enumerate_content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+# endregion
+
+
+# region what the walk could not read
+
+
+def test_a_walk_over_a_readable_tree_reports_nothing_unreadable(mocker: MockerFixture) -> None:
+    """The ordinary case, pinned so *complete* means something: a tree that listed is reachable, complete,
+    and names no branch (#245).
+
+    **Test steps:**
+
+    * mock a readable tree with a subdirectory
+    * enumerate ``info.rehu``'s content
+    * verify it is reachable and complete, with an empty unreadable list
+    """
+    mock_tree(mocker, ["info.rehu", "video.mp4", "part1/lesson.mp4"], directories=["part1"])
+
+    enumeration = enumerate_content_files(DIRECTORY_SCOPED_PATH)
+
+    assert enumeration.reachable
+    assert enumeration.complete
+    assert not enumeration.unreadable
+    enumeration.require_complete()
+
+
+def test_a_resource_whose_own_directory_will_not_list_is_unreachable(mocker: MockerFixture) -> None:
+    """*Away* is not *empty* (#245): the walk still answers rather than raising, but it says which it is,
+    and the resource's own directory is named as the one that would not list.
+
+    **Test steps:**
+
+    * mock ``os.scandir`` to raise
+    * enumerate ``info.rehu``'s content
+    * verify it came back empty and unreachable, and that both guards refuse
+    """
+    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
+
+    enumeration = enumerate_content_files(DIRECTORY_SCOPED_PATH)
+
+    assert not enumeration.files
+    assert not enumeration.reachable
+    assert enumeration.unreadable == (DIRECTORY,)
+    with raises(ContentUnreachableError, match=re.escape(str(DIRECTORY))):
+        enumeration.require_reachable()
+    with raises(ContentUnreachableError, match=re.escape(str(DIRECTORY))):
+        enumeration.require_complete()
+
+
+def test_a_file_scoped_resource_whose_directory_will_not_list_is_unreachable(mocker: MockerFixture) -> None:
+    """The whitelist of one is still read from a directory, so it is unreachable for the same reason.
+
+    **Test steps:**
+
+    * mock ``os.scandir`` to raise
+    * enumerate ``foo.rehu``'s content
+    * verify the directory is reported unreadable rather than the resource reading as empty
+    """
+    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
+
+    enumeration = enumerate_content_files(FILE_SCOPED_PATH)
+
+    assert not enumeration.files
+    assert enumeration.unreadable == (DIRECTORY,)
+
+
+def test_an_offline_branch_is_reachable_but_incomplete(mocker: MockerFixture) -> None:
+    """The distinction the two guards exist for: a verify carries on over a branch it cannot see, while a
+    measurement over the whole resource must not (#245).
+
+    **Test steps:**
+
+    * mock a tree with a readable root and a branch whose listing raises
+    * enumerate ``info.rehu``'s content
+    * verify the root's file came back, the resource is reachable, and only completeness is refused
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "video.mp4", "offline/hidden.mp4"],
+        directories=["offline"],
+        unreadable=["offline"],
+    )
+
+    enumeration = enumerate_content_files(DIRECTORY_SCOPED_PATH)
+
+    assert names(enumeration.files) == ["video.mp4"]
+    assert enumeration.reachable
+    assert not enumeration.complete
+    assert enumeration.unreadable == (DIRECTORY / "offline",)
+    enumeration.require_reachable()
+    with raises(ContentUnreachableError, match="offline"):
+        enumeration.require_complete()
+
+
+def test_the_refusal_names_a_few_branches_and_counts_the_rest(mocker: MockerFixture) -> None:
+    """A tree that went away wholesale has one unreadable directory per branch, and a sentence listing
+    forty says less than one listing three.
+
+    **Test steps:**
+
+    * mock a tree whose four subdirectories all refuse to list
+    * enumerate ``info.rehu``'s content
+    * verify the text names three of them and counts the fourth
+    """
+    branches = ["a", "b", "c", "d"]
+    mock_tree(mocker, ["info.rehu"], directories=branches, unreadable=branches)
+
+    text = enumerate_content_files(DIRECTORY_SCOPED_PATH).unreadable_text()
+
+    assert text.count(str(DIRECTORY)) == MAX_NAMED_UNREADABLE
+    assert text.endswith("(and 1 more)")
 
 
 # endregion
@@ -599,20 +730,31 @@ def test_an_unreadable_subdirectory_costs_only_its_own_contents(mocker: MockerFi
 # region size on disk
 
 
-def mock_sizes(mocker: MockerFixture, sizes: dict[str, int], *, unreadable: list[str] | None = None) -> None:
+def mock_sizes(
+    mocker: MockerFixture,
+    sizes: dict[str, int],
+    *,
+    unreadable: list[str] | None = None,
+    missing: list[str] | None = None,
+) -> None:
     """Mock ``Path.stat`` so each fake path reports the size the test gave it.
 
     :param mocker: pytest-mock fixture.
     :param sizes: fake paths relative to :data:`DIRECTORY`, ``/``-separated, mapped to their byte size.
-    :param unreadable: fake paths whose ``stat`` should raise ``OSError`` -- a file listed a moment ago
-        and gone now, which the sum must survive.
+    :param unreadable: fake paths whose ``stat`` should refuse -- a share that will not answer for a
+        file it listed, which says nothing about the file's size and so takes the total down (#245).
+    :param missing: fake paths whose ``stat`` should raise ``FileNotFoundError`` -- deleted between the
+        listing and the measurement, which is a positive answer: it weighs nothing.
     """
-    gone = {DIRECTORY / name for name in unreadable or []}
+    refusing = {DIRECTORY / name for name in unreadable or []}
+    gone = {DIRECTORY / name for name in missing or []}
     sized = {DIRECTORY / name: size for name, size in sizes.items()}
 
     def stat(path: Path, **_kwargs: object) -> SimpleNamespace:
-        if path in gone:
+        if path in refusing:
             raise PermissionError(path)
+        if path in gone:
+            raise FileNotFoundError(path)
         return SimpleNamespace(st_size=sized[path])
 
     mocker.patch.object(Path, "stat", autospec=True, side_effect=stat)
@@ -699,35 +841,77 @@ def test_a_file_scoped_resource_weighs_its_own_archive_alone(mocker: MockerFixtu
     assert content_size_on_disk(FILE_SCOPED_PATH, ()) == 256
 
 
-def test_an_unreadable_directory_measures_zero_without_raising(mocker: MockerFixture) -> None:
-    """An offline mount is a document-level condition, not a crash: the enumeration already reports it as
-    *nothing found* ([[mounts-and-storage#offline-mounts]]), and the sum has nothing to add.
+def test_an_unreadable_resource_is_refused_rather_than_measured_as_empty(mocker: MockerFixture) -> None:
+    """An away mount and an empty resource used to be the same answer, ``0`` (#245): the sum now says it
+    could not read the resource instead of quoting a size nothing supports.
 
     **Test steps:**
 
     * mock ``os.scandir`` to raise
     * measure ``info.rehu``'s size on disk
-    * verify it is ``0`` and nothing was raised
+    * verify it refused, naming the directory
     """
     mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=OSError)
 
-    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 0
+    with raises(ContentUnreachableError, match=re.escape(str(DIRECTORY))):
+        content_size_on_disk(DIRECTORY_SCOPED_PATH)
 
 
-def test_a_file_that_vanishes_mid_scan_costs_only_its_own_bytes(mocker: MockerFixture) -> None:
-    """A file listed a moment ago and unreadable now -- deleted mid-scan, or a mount that went away --
-    drops out of the total rather than taking the whole measurement down.
+def test_a_size_over_a_partly_unreadable_tree_is_refused_rather_than_reported_low(
+    mocker: MockerFixture,
+) -> None:
+    """A total summed over the branches that happened to answer is not the resource's size, and a number
+    that reads as authority is worse than no number (#245).
 
     **Test steps:**
 
-    * mock a tree of two videos, one of which raises on ``stat``
+    * mock a tree of two branches, one of which will not list, each holding a sized video
+    * measure ``info.rehu``'s size on disk
+    * verify it refused, naming the branch it could not read rather than returning the other's bytes
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "a/here.mp4", "b/away.mp4"],
+        directories=["a", "b"],
+        unreadable=["b"],
+    )
+    mock_sizes(mocker, {"a/here.mp4": 64})
+
+    with raises(ContentUnreachableError, match="b"):
+        content_size_on_disk(DIRECTORY_SCOPED_PATH)
+
+
+def test_a_file_that_vanishes_mid_scan_costs_only_its_own_bytes(mocker: MockerFixture) -> None:
+    """A file listed a moment ago and gone now weighs nothing: absent bytes are a positive answer about
+    the file, unlike a refusal, which says nothing about it at all.
+
+    **Test steps:**
+
+    * mock a tree of two videos, one of which raises ``FileNotFoundError`` on ``stat``
     * measure ``info.rehu``'s size on disk
     * verify the readable one's bytes came back and nothing was raised
     """
     mock_tree(mocker, ["info.rehu", "here.mp4", "gone.mp4"])
-    mock_sizes(mocker, {"here.mp4": 64, "gone.mp4": 1024}, unreadable=["gone.mp4"])
+    mock_sizes(mocker, {"here.mp4": 64, "gone.mp4": 1024}, missing=["gone.mp4"])
 
     assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 64
+
+
+def test_a_file_that_refuses_to_be_measured_takes_the_measurement_down(mocker: MockerFixture) -> None:
+    """A share that refuses one file mid-scan makes the total wrong by that file's unknown size, so it is
+    refused rather than quoted short (#245).
+
+    **Test steps:**
+
+    * mock a tree of two videos, one of which raises ``PermissionError`` on ``stat``
+    * measure ``info.rehu``'s size on disk
+    * verify it refused, naming the file
+    """
+    mock_tree(mocker, ["info.rehu", "here.mp4", "locked.mp4"])
+    mock_sizes(mocker, {"here.mp4": 64, "locked.mp4": 1024}, unreadable=["locked.mp4"])
+
+    with raises(ContentUnreachableError, match="locked.mp4"):
+        content_size_on_disk(DIRECTORY_SCOPED_PATH)
 
 
 def test_a_resource_with_no_content_weighs_zero(mocker: MockerFixture) -> None:
