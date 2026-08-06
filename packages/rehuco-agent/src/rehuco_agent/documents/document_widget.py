@@ -863,10 +863,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         neither tracks the model on the per-keystroke path while hidden: `SavePreviewView` defers its
         re-serialization until next shown, and `OnDiskView` only re-reads at file-touching seams
         regardless of visibility. Each is stacked into the viewer area so revealing it lands among the
-        viewer tabs, then hidden --
-        which, since a just-added dock opens as the current tab, would leave an arbitrary viewer tab
-        current, so the first viewer tab (the main viewer) is re-selected once both are placed, matching
-        :meth:`__add_docks`'s own choice.
+        viewer tabs, then hidden -- and the main viewer is put back as the current tab by
+        :meth:`__add_hidden_inspection_dock` itself, matching :meth:`__add_docks`'s own choice.
 
         :param model: the view-model both inspection views render from.
         :returns: the ``(save_preview, on_disk)`` docks (both hidden), for the toolbar to add their
@@ -883,8 +881,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         on_disk = self.__add_hidden_inspection_dock(
             ON_DISK_DOCK_NAME, ON_DISK_DOCK_TITLE, ON_DISK_ICON_RESOURCE, OnDiskView(model, self), viewer_area
         )
-        if self.__viewer_docks:
-            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
         return save_preview, on_disk
 
     def __add_log_dock(self, model: RehuDocumentModel) -> QtAds.CDockWidget:
@@ -907,11 +903,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         dock = self.__add_hidden_inspection_dock(
             LOG_DOCK_NAME, LOG_DOCK_TITLE, LOG_VIEW_ICON_RESOURCE, self.__log_widget, viewer_area
         )
-        if self.__viewer_docks:
-            # a just-added dock opens as the current tab; put the main viewer back, as
-            # __add_inspection_docks does for its own pair
-            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
-
         self.__log_scope = model.path
         if self.__log_scope is not None:
             self.__log_widget.attach_to(shared_log_bridge(), self.__log_scope)
@@ -936,10 +927,6 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         dock = self.__add_hidden_inspection_dock(
             CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, "", ChecksumView(model, actions, self), viewer_area
         )
-        if self.__viewer_docks:
-            # a just-added dock opens as the current tab; put the main viewer back, as the two helpers
-            # above do for their own docks
-            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
         return dock
 
     def __on_log_scope_changed(self, path: Path | None) -> None:
@@ -1011,6 +998,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             dock.toggleView(False)
         finally:
             self.__restoring_layout = False
+        # a just-added dock opens as the current tab, which would leave an arbitrary viewer tab current;
+        # put the main viewer back. Done here rather than by each caller, which is what every one of them
+        # used to do with its own copy of this guard
+        if self.__viewer_docks:
+            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
         return dock
 
     def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:

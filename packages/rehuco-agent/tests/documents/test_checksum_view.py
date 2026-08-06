@@ -448,3 +448,23 @@ def test_a_hidden_dock_walks_nothing_until_it_is_opened(
     settle(qtbot, view)
 
     assert rows.call_count == 1
+
+
+def test_re_showing_a_fresh_dock_walks_nothing_again(qtbot: QtBot, view: ChecksumView, rows: Any) -> None:
+    """Switching back to a tab whose table is already current costs no walk (#244).
+
+    The deferral is about work not yet done, not about redoing it: only a refresh asked for *while
+    hidden* leaves anything to catch up on.
+
+    **Test steps:**
+
+    * hide and re-show a view whose first read has already landed, asking for no refresh in between
+    * check the table was not read a second time
+    """
+    assert rows.call_count == 1
+
+    view.hide()
+    view.show()
+    qtbot.wait(50)
+
+    assert rows.call_count == 1
