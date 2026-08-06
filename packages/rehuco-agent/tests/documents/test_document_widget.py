@@ -60,7 +60,14 @@ from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
-from rehuco_core import CURRENT_FORMAT_VERSION, LockReason, LockReasonKind, RehuDocument
+from rehuco_core import (
+    CURRENT_FORMAT_VERSION,
+    ChecksumReport,
+    LockReason,
+    LockReasonKind,
+    RehuDocument,
+    TaskQueue,
+)
 
 TC_PATH: Final = Path("/fake/info.tc")
 TARGET_PATH: Final = Path("/fake/info.rehu")
@@ -2851,6 +2858,79 @@ def test_a_layout_saved_before_the_log_dock_existed_is_rejected(widget: Document
     values[STATE_VERSION_KEY] = 4
 
     assert widget.restore_state(cbor2.dumps(values)) is False
+
+
+# endregion
+
+
+# region checksum actions (#204)
+
+
+def test_a_document_built_with_no_queue_offers_no_checksum_actions(widget: DocumentWidget) -> None:
+    """Neither action exists where there is nothing to put a gigabyte-scale hash on.
+
+    **Test steps:**
+
+    * check the widget the plain fixture builds has no checksum pair
+    """
+    assert widget.checksum_actions is None
+
+
+def test_the_toolbar_carries_verify_and_generate(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Given a queue, both actions sit on the document's own toolbar, beside Save and Revert.
+
+    **Test steps:**
+
+    * build a widget over a real queue
+    * check the toolbar carries both actions
+    """
+    queue = TaskQueue()
+    widget = DocumentWidget(model, task_queue=queue)
+    qtbot.addWidget(widget)
+    try:
+        actions = widget.checksum_actions
+        assert actions is not None
+        toolbar = widget.findChildren(QToolBar)[0]
+        assert actions.verify_action in toolbar.actions()
+        assert actions.generate_action in toolbar.actions()
+    finally:
+        widget.detach()
+        queue.shutdown()
+
+
+def test_a_checksum_finding_lands_in_the_inline_strip(
+    qtbot: QtBot, mocker: MockerFixture, model: RehuDocumentModel
+) -> None:
+    """A run's summary reports through the same banner every other finding uses (#94).
+
+    **Test steps:**
+
+    * run a verify reporting a mismatch, through a real queue
+    * verify the banner shows the summary, on a row marked ``warning``
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={"lesson1.mp4": "mismatched"}),
+    )
+    model.path = TARGET_PATH
+    queue = TaskQueue()
+    widget = DocumentWidget(model, task_queue=queue)
+    qtbot.addWidget(widget)
+    actions = widget.checksum_actions
+    assert actions is not None
+    try:
+        with qtbot.waitSignal(actions.finding_changed, timeout=5000):
+            actions.verify_action.trigger()
+        strip = banner(widget)
+        texts = {label.text() for label in strip.findChildren(QLabel)}
+        severities = {row.property("severity") for row in strip.findChildren(QWidget)}
+    finally:
+        widget.detach()
+        queue.shutdown()
+
+    assert "Checksums verified: 1 mismatched." in texts
+    assert "warning" in severities
 
 
 # endregion

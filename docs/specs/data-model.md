@@ -125,6 +125,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#226: feat: excluded-files settings page — one pattern list shared by the size scan and checksums](https://github.com/borco/rehuco/issues/226)
 - [#203: feat: the .checksum record — per-file hash, verification date and status, generate and verify](https://github.com/borco/rehuco/issues/203)
 - [#241: feat: rename-aware jobs — a rename never waits for a scan, and a job follows the resource it moved](https://github.com/borco/rehuco/issues/241)
+- [#204: feat: checksum actions — generate/verify from the app as task-queue jobs](https://github.com/borco/rehuco/issues/204)
 - [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 - [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
 
@@ -263,14 +264,26 @@ What a **reference-images** resource's content *is* was settled by #197: content
   ([[architecture-design#components]]), and multi-selecting many resources serializes the work rather than running it
   all at once. **Core ships generate and verify as plain callables** (#203) taking a progress callback and a
   checkpoint that is called between chunks and never caught, so a job's pause and cancel travel out untouched and core
-  never learns a queue exists ([[appendices.task-queue#job-responsibility]]). The job class wrapping them is #204's
-  and the settings page that chooses an algorithm is #242's. Progress counts **bytes, not files** — a tutorial is
+  never learns a queue exists ([[appendices.task-queue#job-responsibility]]). **The job class wrapping them is
+  `ChecksumJob`** (#204), one subclass per run, each a registered kind so a queued run survives a restart
+  ([[appendices.task-queue#lifetime]]); the document's toolbar carries Verify and Generate, a run's summary reports
+  through the same inline strip every other finding uses, and the detail lands on the resource's own log
+  ([[appendices.logging#scopes]]). The settings page that chooses an algorithm is #242's. Progress counts
+  **bytes, not files** — a tutorial is
   three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
 - **A cancelled run reports nothing it did not establish.** A verdict is only produced once a file's whole digest has
   been computed and compared, and a stop leaves through the checkpoint rather than returning a half-filled report, so
   a cancel can never manufacture a mismatch. A generate writes its record **once, at the end**, through the atomic
   writer: a stopped or crashed run leaves the previous record intact rather than a truncated one that a later verify
   would read as authority for half the resource.
+- **Asking twice is not asking again** (#204). A resource that already has an unfinished job of the same kind waiting
+  is left alone rather than given a second one: the queue is serial, so a duplicate would only make the first take
+  longer to matter, and two identical runs over the same terabyte is never what was meant. Matched on the row a reader
+  can see — the job's label and its source — rather than on an identity the surface would have to keep, which is what
+  keeps it true for a job restored from the last session.
+- **A verify never creates the record it is checking against** (#204). A resource with no manifest is offered
+  *Generate*, and a verify enqueued against one refuses at validation with a sentence naming the record rather than
+  quietly adopting every file it finds. Adopting everything stays deliberate — it is what the sweep (#242) turns on.
 - **Execution location is a dispatch decision, not fixed.** A checksum job can run: (a) on the node that owns the files
   (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
   directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,

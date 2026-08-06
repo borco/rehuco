@@ -7,6 +7,14 @@ from .checksum_algorithms import (
     ChecksumAlgorithm,
     ChecksumDigest,
 )
+from .checksum_jobs import (
+    CHECKSUM_GENERATE_KIND,
+    CHECKSUM_VERIFY_KIND,
+    ChecksumJob,
+    GenerateChecksumsJob,
+    VerifyChecksumsJob,
+    checksum_report_summary,
+)
 from .checksum_record import (
     ChecksumEntry,
     ChecksumRecordError,
@@ -100,6 +108,7 @@ from .rehu_rename import (
 )
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rename_coordination import (
+    DEFAULT_RENAME_COORDINATOR,
     DEFAULT_RENAME_YIELD_TIMEOUT,
     RenameCoordinator,
     RenameYieldTimeout,
@@ -145,9 +154,11 @@ __all__ = [
     "AuthorEntry",
     "BUILTIN_PLUGINS",
     "CHECKSUM_ALGORITHMS",
+    "CHECKSUM_GENERATE_KIND",
     "CHECKSUM_MANIFEST_EXTENSIONS",
     "CHECKSUM_READ_CHUNK_SIZE",
     "CHECKSUM_RECORD_SUFFIX",
+    "CHECKSUM_VERIFY_KIND",
     "COLLECTION_PLUGIN",
     "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
@@ -159,6 +170,7 @@ __all__ = [
     "ChecksumCheckpoint",
     "ChecksumDigest",
     "ChecksumEntry",
+    "ChecksumJob",
     "ChecksumProgress",
     "ChecksumRecordError",
     "ChecksumReport",
@@ -170,6 +182,7 @@ __all__ = [
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
+    "DEFAULT_RENAME_COORDINATOR",
     "DEFAULT_RENAME_YIELD_TIMEOUT",
     "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_TASK_JOB_REGISTRY",
@@ -181,6 +194,7 @@ __all__ = [
     "FINISHED_JOB_STATES",
     "FORMAT_VERSION_KEY",
     "FfprobeDurationProbe",
+    "GenerateChecksumsJob",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
     "JobCancelled",
@@ -226,12 +240,14 @@ __all__ = [
     "TcDocument",
     "TcScreenshotScanner",
     "USERS_KEY",
+    "VerifyChecksumsJob",
     "VIDEO_EXTENSIONS",
     "__version__",
     "author_name",
     "authors_comma_editable",
     "checksum_entry_name",
     "checksum_record_path",
+    "checksum_report_summary",
     "collection_entries",
     "collection_records",
     "content_duration",

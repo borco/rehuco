@@ -35,6 +35,7 @@ from rehuco_core import (
     LockReasonKind,
     RehuDocument,
     RenameCoordinator,
+    TaskQueue,
 )
 
 FAKE_PATH: Final = Path.cwd() / "fake" / "tutorials" / "sculpting" / "info.rehu"
@@ -92,6 +93,16 @@ def dock_for(dock: DocumentsDock, widget: object) -> QtAds.CDockWidget:
     """
     docks = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     return next(d for d, w in docks.items() if w is widget)
+
+
+def listeners_of(queue: TaskQueue) -> list[object]:
+    """Return the queue's attached listeners (private by design -- the queue exposes attach/detach
+    only, and what this asserts is that a closed document is no longer among them, #204).
+
+    :param queue: the queue to inspect.
+    :returns: its listeners, as they now stand.
+    """
+    return queue._TaskQueue__listeners  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def managers_of(dock: DocumentsDock) -> list[QtAds.CDockManager]:
@@ -371,6 +382,33 @@ def test_closing_a_dock_removes_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     cdock.requestCloseDockWidget()
 
     assert not dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_closing_a_dock_stops_it_listening_to_the_task_queue(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A closed document lets go of the queue before it is destroyed (#204).
+
+    The engine calls its listeners on the worker thread, so one arriving after the document's C++
+    objects have gone would reach a deleted ``QObject``.
+
+    **Test steps:**
+
+    * open a document over a real queue, then request its dock's close
+    * verify the queue has no listeners left
+    """
+    load_document(mocker)
+    queue = TaskQueue()
+    dock = DocumentsDock(task_queue=queue)
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    cdock = dock_for(dock, widget)
+    try:
+        assert len(listeners_of(queue)) == 1
+
+        cdock.requestCloseDockWidget()
+
+        assert not listeners_of(queue)
+    finally:
+        queue.shutdown()
 
 
 def test_closing_a_dock_destroys_its_model(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -8,6 +8,7 @@ from typing import Final
 import PySide6QtAds as QtAds
 from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QWidget
+from rehuco_core import TaskQueue
 
 from .document_widget import DocumentWidget
 from .rehu_document_model import RehuDocumentModel
@@ -48,6 +49,8 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
     :param stylesheet_host: passed straight through to this document's :class:`DocumentWidget` -- the
         widget carrying the dock styling for the whole nest (see
         :class:`~rehuco_agent.documents.documents_dock.DocumentsDock`).
+    :param task_queue: the app-wide queue this document's slow work goes on (#204), passed straight
+        through; ``None`` builds a document that offers no such work at all.
     """
 
     def __init__(
@@ -55,11 +58,12 @@ class DocumentDock(QtAds.CDockWidget):  # pylint: disable=too-few-public-methods
         dock_manager: QtAds.CDockManager,
         model: RehuDocumentModel,
         stylesheet_host: QWidget | None = None,
+        task_queue: TaskQueue | None = None,
     ) -> None:
         super().__init__(dock_manager, "")
         model.setParent(self)
         self.__model: Final = model
-        self.__widget: Final = DocumentWidget(model, self, stylesheet_host=stylesheet_host)
+        self.__widget: Final = DocumentWidget(model, self, stylesheet_host=stylesheet_host, task_queue=task_queue)
 
         self.setObjectName(self.__object_name(model.path))
         dock_features = QtAds.CDockWidget.DockWidgetFeature

@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
-from rehuco_core import FINISHED_JOB_STATES, JobState, RenameCoordinator, TaskQueue
+from rehuco_core import DEFAULT_RENAME_COORDINATOR, FINISHED_JOB_STATES, JobState, TaskQueue
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -148,11 +148,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # files tracks its locations in it, so a rename asks the running work to stand aside for one
         # chunk instead of waiting for it to finish (#241). Its notification drives the queue's own
         # re-read, which is how a moved job's row stops naming a folder that no longer exists.
-        self.__rename_coordinator: Final = RenameCoordinator()
+        # The process-wide one rather than this window's own (#204): a job the registry rebuilt from
+        # the saved queue has no window to be handed anything, and a job reading through a coordinator
+        # nobody renames through would hold a directory open against the rename it must stand aside for.
+        self.__rename_coordinator: Final = DEFAULT_RENAME_COORDINATOR
         self.__rename_coordinator.add_rename_listener(self.__task_queue.resync_sources)
 
         self.__documents_dock: Final = DocumentsDock(
-            self, stylesheet_host=self.__dock_manager, rename_coordinator=self.__rename_coordinator
+            self,
+            stylesheet_host=self.__dock_manager,
+            rename_coordinator=self.__rename_coordinator,
+            task_queue=self.__task_queue,
         )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
@@ -632,6 +638,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         ``job_updated`` for each job it cancels, and each would otherwise schedule a wake-up whose
         dispatch runs against a widget already being torn down.
         """
+        # the coordinator is process-wide and outlives this window (#204), so its listener has to be
+        # taken back rather than left pointing at a queue that is about to be shut down
+        self.__rename_coordinator.remove_rename_listener(self.__task_queue.resync_sources)
         self.__task_queue.pause()
         if not self.__task_queue.wait_until_idle():
             LOG.warning("The task queue did not settle before quitting; the unfinished job may be lost.")

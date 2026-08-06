@@ -375,6 +375,31 @@ record that is not shaped like one at all, since what arrives came off a disk an
 startup operation; making it merge invites a subtler question about identity and order that nobody has
 asked.
 
+**A rebuilt job has no window to be handed anything, which is why the rename coordinator is
+process-wide** ([#204](https://github.com/borco/rehuco/issues/204)). The registry's factory takes no
+arguments by design — a job is rebuilt from its own saved state and nothing else — so a job that needs a
+collaborator can only reach one that the *process* has. `DEFAULT_RENAME_COORDINATOR` is that, for the
+same reason `DEFAULT_TASK_JOB_REGISTRY` is one: there is a single filesystem and a single answer to *is a
+rename waiting*, and a job reading through a coordinator nobody renames through would hold a directory
+open against the very rename it exists to stand aside for (§3.2, [#241](https://github.com/borco/rehuco/issues/241)).
+
+### 6.4 The first jobs, and what they showed
+
+[[[appendices.task-queue#first-jobs]]]
+
+- [#204: feat: checksum actions — generate/verify from the app as task-queue jobs](https://github.com/borco/rehuco/issues/204)
+
+`ChecksumJob` and its two subclasses are the first real clients, and they exercise the protocol exactly as
+§3.2 predicted: they are **safely interruptible** (the record is written once, at the end, atomically, so a
+stop leaves the previous one untouched) and they **start over** on resume — the *supported answer, not a
+defect* the section describes, since the sweep that genuinely resumes ([#242](https://github.com/borco/rehuco/issues/242))
+will do it from the records it has already written rather than from a cursor.
+
+One thing they needed that the engine deliberately does not provide: **a run's findings**. `JobControl`
+carries progress and nothing else, and a status carries an outcome — so the surface that *built* the job
+reads the report off it once it has finished, which is the same discipline `capture_state` is under. The
+engine stays free of a payload type it would have to know the shape of.
+
 ## 7. Teardown is a courtesy with a deadline
 
 [[[appendices.task-queue#teardown]]]
