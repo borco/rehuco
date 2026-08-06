@@ -235,6 +235,19 @@ def test_a_verify_with_no_record_refuses_before_reading_anything(mocker: MockerF
     assert GenerateChecksumsJob(INFO_PATH).validate() is None
 
 
+def test_a_verify_that_may_create_the_record_does_not_refuse_a_missing_one(mocker: MockerFixture) -> None:
+    """With *Create missing checksum on verify* set, no record is the starting state, not a fault (#242).
+
+    **Test steps:**
+
+    * make the ``.rehu`` present and the ``.checksum`` absent
+    * check a verify allowed to create the record validates
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
+
+    assert VerifyChecksumsJob(INFO_PATH, create_if_missing=True).validate() is None
+
+
 def test_a_job_with_no_resource_at_all_refuses() -> None:
     """The path-less job the registry builds before a state arrives is not runnable.
 
@@ -298,19 +311,59 @@ def test_a_run_hands_its_progress_and_its_checkpoint_to_the_run(
 def test_a_verify_run_never_creates_the_record_it_is_checking_against(
     mocker: MockerFixture, control: FakeControl, present: None
 ) -> None:
-    """A verify leaves ``create_if_missing`` alone, so adopting everything stays a deliberate act.
+    """A verify creates no record unless the caller says so, so adopting stays a deliberate act (#242).
 
     **Test steps:**
 
-    * run a verify job with the underlying callable mocked
-    * check it was not asked to create a record
+    * run a verify job nobody handed a creation choice, with the underlying callable mocked
+    * check it was asked not to create a record
     """
     del present
     verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
 
     VerifyChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
 
-    assert "create_if_missing" not in verify.call_args.kwargs
+    assert verify.call_args.kwargs["create_if_missing"] is False
+
+
+def test_a_verify_carries_the_two_choices_the_settings_page_owns(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """The migration target and the creation choice are resolved by the caller and passed in (#242).
+
+    **Test steps:**
+
+    * run a verify built with both choices, with the underlying callable mocked
+    * check both reached the run
+    """
+    del present
+    verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
+
+    job = VerifyChecksumsJob(INFO_PATH, create_if_missing=True, migrate_to="crc32")
+
+    job.run(control)  # pyright: ignore[reportArgumentType]
+
+    assert verify.call_args.kwargs["create_if_missing"] is True
+    assert verify.call_args.kwargs["migrate_to"] == "crc32"
+
+
+def test_a_generate_creates_the_record_it_is_for_and_migrates_nothing(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """Creating the record is a first generate's purpose, and it re-baselines rather than migrates.
+
+    **Test steps:**
+
+    * run a generate job with the underlying callable mocked
+    * check it was asked to create the record, and was never handed a migration target
+    """
+    del present
+    generate = mocker.patch("rehuco_core.checksum_jobs.generate_checksums", return_value=ChecksumReport())
+
+    GenerateChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert generate.call_args.kwargs["create_if_missing"] is True
+    assert "migrate_to" not in generate.call_args.kwargs
 
 
 def test_a_finished_run_holds_its_findings_for_whoever_enqueued_it(
@@ -403,6 +456,8 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "algorithm": DEFAULT_CHECKSUM_ALGORITHM,
         "only": [VIDEO, ARCHIVE],
         "excluded_patterns": ["Thumbs.db"],
+        "create_if_missing": True,
+        "migrate_to": None,
     }
 
 
@@ -414,7 +469,9 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
     * restore a fresh job from another's captured state
     * check what it will run over
     """
-    captured = VerifyChecksumsJob(INFO_PATH, only=[ARCHIVE], excluded_patterns=("*.tmp",)).capture_state()
+    captured = VerifyChecksumsJob(
+        INFO_PATH, only=[ARCHIVE], excluded_patterns=("*.tmp",), create_if_missing=True, migrate_to="crc32"
+    ).capture_state()
     restored = VerifyChecksumsJob()
 
     restored.restore_state(captured)
@@ -422,7 +479,32 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
     assert restored.source == INFO_PATH
     assert restored.only == (ARCHIVE,)
     assert restored.excluded_patterns == ("*.tmp",)
+    assert restored.create_if_missing
+    assert restored.migrate_to == "crc32"
     assert restored.label == "Verify checksums - sculpting"
+
+
+@mark.parametrize(
+    ("job_class", "creates"),
+    [(GenerateChecksumsJob, True), (VerifyChecksumsJob, False)],
+    ids=["generate", "verify"],
+)
+def test_a_state_written_before_the_two_choices_existed_restores_the_run_it_described(
+    job_class: type[ChecksumJob], creates: bool
+) -> None:
+    """A queue saved by a build that predates #242 must come back as exactly the run it was.
+
+    **Test steps:**
+
+    * restore each kind from a state carrying neither new key
+    * check each kept its own creation behaviour and migrates nothing
+    """
+    job = job_class()
+
+    job.restore_state({"path": str(INFO_PATH)})
+
+    assert job.create_if_missing is creates
+    assert job.migrate_to is None
 
 
 @mark.parametrize(
@@ -432,8 +514,9 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
         {"path": ""},
         {"path": str(INFO_PATH), "algorithm": "rot13"},
         {"path": str(INFO_PATH), "only": "lesson1.mp4"},
+        {"path": str(INFO_PATH), "migrate_to": "rot13"},
     ],
-    ids=["no path", "empty path", "unknown algorithm", "selection is not a list"],
+    ids=["no path", "empty path", "unknown algorithm", "selection is not a list", "unknown migration target"],
 )
 def test_a_state_that_does_not_describe_a_runnable_job_is_refused(state: dict[str, Any]) -> None:
     """A hand-edited file costs its own item rather than the app's start.

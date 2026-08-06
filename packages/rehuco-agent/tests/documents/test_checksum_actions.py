@@ -19,6 +19,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.documents.checksum_actions import PROGRESS_COALESCING_BYTES, ChecksumActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_core import ChecksumReport, JobState, JobStatus, RehuDocument, TaskQueue
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -174,6 +175,24 @@ def test_a_resource_with_no_record_is_offered_generate_and_not_verify(
     assert not actions.verify_action.isEnabled()
 
 
+def test_a_resource_with_no_record_is_offered_verify_once_a_verify_may_create_one(
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+) -> None:
+    """*Create missing checksum on verify* makes the record's absence the starting state (#242).
+
+    **Test steps:**
+
+    * set the toggle and build the actions over a resource whose ``.checksum`` is absent
+    * check Verify is offered anyway
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
+    shared_checksum_settings().create_missing_on_verify = True
+
+    actions = ChecksumActions(model, queue)
+
+    assert actions.verify_action.isEnabled()
+
+
 def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> None:
     """A document bound to no path has nothing on disk to hash.
 
@@ -256,6 +275,30 @@ def test_the_run_is_handed_the_excluded_files_the_user_configured(
     qtbot.waitUntil(lambda: queue.jobs()[0].state is JobState.DONE, timeout=TIMEOUT)
 
     assert generate.call_args.kwargs["excluded_patterns"] == ("*.tmp",)
+
+
+def test_the_run_is_handed_the_checksum_choices_the_user_configured(
+    qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, queue: TaskQueue
+) -> None:
+    """The algorithm and both verify choices are resolved at enqueue -- core never reads a setting (#242).
+
+    **Test steps:**
+
+    * configure the algorithm and both toggles, then trigger Verify
+    * check the run was handed all three
+    """
+    settings = shared_checksum_settings()
+    settings.algorithm = "crc32"
+    settings.migrate_on_verify = True
+    settings.create_missing_on_verify = True
+    verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
+
+    actions.verify_action.trigger()
+    qtbot.waitUntil(lambda: queue.jobs()[0].state is JobState.DONE, timeout=TIMEOUT)
+
+    assert verify.call_args.kwargs["algorithm"] == "crc32"
+    assert verify.call_args.kwargs["migrate_to"] == "crc32"
+    assert verify.call_args.kwargs["create_if_missing"] is True
 
 
 def test_asking_twice_does_not_queue_the_same_work_twice(

@@ -9,11 +9,15 @@ from .checksum_algorithms import (
 )
 from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
+    CHECKSUM_SWEEP_KIND,
     CHECKSUM_VERIFY_KIND,
     ChecksumJob,
     GenerateChecksumsJob,
+    SweepChecksumsJob,
+    SweepTally,
     VerifyChecksumsJob,
     checksum_report_summary,
+    sweep_summary,
 )
 from .checksum_record import (
     ChecksumEntry,
@@ -164,6 +168,7 @@ __all__ = [
     "CHECKSUM_MANIFEST_EXTENSIONS",
     "CHECKSUM_READ_CHUNK_SIZE",
     "CHECKSUM_RECORD_SUFFIX",
+    "CHECKSUM_SWEEP_KIND",
     "CHECKSUM_VERIFY_KIND",
     "COLLECTION_PLUGIN",
     "CONTENT_IMAGE_EXTENSIONS",
@@ -237,6 +242,8 @@ __all__ = [
     "ResourceLocation",
     "ScreenshotRename",
     "StopRequest",
+    "SweepChecksumsJob",
+    "SweepTally",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
     "TaskJob",
@@ -284,6 +291,7 @@ __all__ = [
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "save_checksum_record",
+    "sweep_summary",
     "tc_to_rehu_data",
     "verify_checksums",
     "learning_path_records_by_scope",

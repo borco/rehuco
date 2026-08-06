@@ -21,7 +21,6 @@ from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction
 from rehuco_core import (
-    FINISHED_JOB_STATES,
     ChecksumJob,
     ChecksumReport,
     GenerateChecksumsJob,
@@ -33,7 +32,9 @@ from rehuco_core import (
     checksum_report_summary,
 )
 
+from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..tasks.already_queued import job_already_queued
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -228,28 +229,23 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         path = self.__model.path
         if path is None:
             return
+        checksums = shared_checksum_settings()
         job = job_class(
             path,
+            algorithm=checksums.algorithm,
+            # the setting can only ever turn adoption *on*: left off, each job keeps its own answer, so
+            # a generate still creates the record it is for while a verify still refuses to (#242)
+            create_if_missing=True if checksums.create_missing_on_verify else None,
+            migrate_to=checksums.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             label=f"{job_class.verb} checksums - {self.__model.label}",
         )
-        if self.__already_queued(job):
+        if job_already_queued(self.__queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
             return
         self.__pending.append(job)
         with LogScope.open(path):
             self.__queue.enqueue(job)
-
-    def __already_queued(self, job: ChecksumJob) -> bool:
-        """Whether an unfinished job doing this same work is in the queue already.
-
-        :param job: the job about to be enqueued.
-        :returns: whether one like it is already waiting or running.
-        """
-        return any(
-            status.state not in FINISHED_JOB_STATES and status.label == job.label and status.source == job.source
-            for status in self.__queue.jobs()
-        )
 
     # endregion
 
@@ -361,10 +357,17 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         [[data-model#checksums]] states as *a resource with no manifest offers Generate*. The record is
         one ``stat``, re-taken whenever the queue moves, so a first generate turns Verify on without
         the document having to be reopened.
+
+        Unless *Create missing checksum on verify* is set (#242), which makes a verify over a resource
+        with no record a legitimate run rather than a refusal. The setting is re-read here rather than
+        watched: this runs on every path change and every queue movement, which is soon enough after a
+        Save, and one checkbox does not earn a reactive settings object.
         """
         path = self.__model.path
         self.__generate_action.setEnabled(path is not None)
-        self.__verify_action.setEnabled(path is not None and self.__record_exists(path))
+        self.__verify_action.setEnabled(
+            path is not None and (shared_checksum_settings().create_missing_on_verify or self.__record_exists(path))
+        )
 
     @staticmethod
     def __record_exists(rehu_path: Path) -> bool:
