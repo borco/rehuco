@@ -124,6 +124,16 @@ you already have; which one is a setting.
 Which panels you had open, how you'd arranged them, and which file was in front are remembered per
 resource and restored when you open it again.
 
+Work that takes minutes runs on a **task queue** rather than in the window: one job at a time, each row
+showing its progress, pausable, cancellable, reorderable, and written down so it survives quitting. What
+uses it today is **checksums**. Beside each resource sits a `.checksum` record of *when each of its files
+was last checked and what the answer was* — not a manifest for an external tool, which is what lets a run
+skip a file checked recently instead of re-hashing a terabyte to learn nothing. A document's toolbar
+generates and verifies its own resource; `File` > `Sweep checksums…` points a run at a folder, finds every
+resource under it, and checks only what has gone stale. Because each record is written as its resource
+finishes, a sweep interrupted halfway carries on from where it was the next time it runs, with nothing
+kept in memory to lose. How long a check stays good for, and which hash is used, are settings.
+
 ## Where the pieces live
 
 ```text
@@ -150,8 +160,10 @@ never writes `.tc` — the older format is read-only here.
 Everything above is implemented. None of the following is, and the design documents discuss all of it at
 length, which is exactly why this section is here:
 
-**No database, no scanning, no search.** rehuco opens files you point it at, one at a time. There is no
-library view. `.rehudb` is a name in the design, not a file any code writes.
+**No database and no search.** rehuco opens files you point it at, one at a time. There is no library
+view. `.rehudb` is a name in the design, not a file any code writes. One recursive walk does exist — the
+checksum sweep, over a folder you hand it — but it verifies as it goes and remembers nothing about what
+it found.
 
 **No network, in any form.** No node, no REST API, no discovery, no sync between machines, no accounts
 or access rules, no web or tablet interface. `rehuco-node` is an empty package holding its name.
