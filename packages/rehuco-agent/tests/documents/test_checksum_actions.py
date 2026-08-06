@@ -365,6 +365,29 @@ def test_a_verify_with_mismatches_surfaces_them(qtbot: QtBot, mocker: MockerFixt
     assert not actions.finding_clean
 
 
+def test_a_run_that_could_not_list_part_of_the_tree_does_not_read_as_clean(
+    qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions
+) -> None:
+    """Every verdict clean over the part that answered is not a clean run (#245): a branch that would not
+    list has no files to give a verdict about, which is exactly why the row has to say so.
+
+    **Test steps:**
+
+    * run a verify whose verdicts are all ``matched`` but which names a directory it could not read
+    * check the finding counts the branch and does not read as clean
+    """
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(statuses={VIDEO: "matched"}, unreadable_directories=("extras",)),
+    )
+
+    with qtbot.waitSignal(actions.finding_changed, timeout=TIMEOUT):
+        actions.verify_action.trigger()
+
+    assert actions.finding == "Checksums verified: 1 matched, 1 unreadable directory."
+    assert not actions.finding_clean
+
+
 def test_a_second_run_replaces_the_first_s_finding(
     qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions
 ) -> None:

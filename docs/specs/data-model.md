@@ -126,6 +126,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#203: feat: the .checksum record — per-file hash, verification date and status, generate and verify](https://github.com/borco/rehuco/issues/203)
 - [#241: feat: rename-aware jobs — a rename never waits for a scan, and a job follows the resource it moved](https://github.com/borco/rehuco/issues/241)
 - [#204: feat: checksum actions — generate/verify from the app as task-queue jobs](https://github.com/borco/rehuco/issues/204)
+- [#245: bug: an unreachable resource reads as an empty one — a clean verify, and a generate that drops entries](https://github.com/borco/rehuco/issues/245)
 - [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 - [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
 
@@ -257,6 +258,22 @@ What a **reference-images** resource's content *is* was settled by #197: content
   files the record does not cover, which is advisory and never makes a resource dirty. So a changed junk list can move
   a file in and out of that advisory list and can never turn a match into a mismatch. Storing it would buy an
   exactness nothing needs, at the cost of a record that disagrees with the setting the user is looking at.
+- **An unreachable resource is neither an empty one nor a resource without checksums** (#245). The walk
+  reports the directories that would not list rather than answering *nothing found*, because the two
+  readings had become one: a verify over an away mount reported a clean run against a record it had
+  invented, and a full generate over a partly-offline tree **deleted** the hashes for the branch it could
+  not see. Three answers fall out of one enumeration, and they differ because the callers do:
+  - **A run over a resource whose own directory will not list refuses**, before it looks for a record —
+    *the mount is away* outranks *this resource has no checksums*, and a job (#204) can then say the
+    first rather than the second.
+  - **A full generate may drop an entry only where the walk was complete.** Dropping what a walk did not
+    find is safe exactly when the walk could see, so entries under an unreadable branch are carried
+    untouched and reported. A verify was never exposed: it checks what the record lists rather than what
+    a walk finds, which is the property that saved it.
+  - **A measurement over the whole resource refuses rather than reporting low.** A size or a duration
+    summed over the branches that happened to answer is not this resource's, and a number that reads as
+    authority is worse than no number — the same rule as *a backend that cannot run reports that rather
+    than measuring `0`* ([[field-schema#duration-size]]), one step earlier in the same walk.
 - **Excluded files are never reported as unexpected**, in either tier — that list comes from the same enumeration the
   record was generated over (#226), so a `Thumbs.db` a Windows browse dropped into the directory, and an edited or
   newly added screenshot, all leave a verify clean.

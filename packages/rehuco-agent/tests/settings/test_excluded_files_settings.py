@@ -325,8 +325,8 @@ def test_the_shared_set_is_what_a_content_scan_leaves_out(mocker: MockerFixture,
     shared.patterns = (*EXCLUDED_FILE_PATTERNS, "*.txt")
     after = enumerate_content_files(DIRECTORY_SCOPED_PATH, shared.excluded_file_patterns)
 
-    assert [path.name for path in before] == ["notes.txt", "video.mp4"]
-    assert [path.name for path in after] == ["video.mp4"]
+    assert [path.name for path in before.files] == ["notes.txt", "video.mp4"]
+    assert [path.name for path in after.files] == ["video.mp4"]
 
 
 # endregion

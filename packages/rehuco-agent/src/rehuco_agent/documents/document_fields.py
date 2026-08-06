@@ -12,6 +12,7 @@ from typing import Any, Final, NamedTuple
 
 from rehuco_core import (
     CORE_FIELD_NAMES,
+    ContentUnreachableError,
     DurationProbeError,
     PluginRegistry,
     content_duration,
@@ -352,13 +353,19 @@ def build_document_form(
         Runs on a worker thread (`~rehuco_agent.fields.background_measurement.BackgroundMeasurement`), so
         it touches nothing but plain Python state and the filesystem.
 
-        :returns: the total size in bytes, or ``None`` when the document has no path yet -- there is
-            nothing on disk to measure, which is not the same as measuring zero.
+        :returns: the total size in bytes, or ``None`` when there is nothing to measure -- a document
+            with no path yet, or a resource part of which will not read (#245). Neither is a ``0``, and
+            the second is deliberately not a smaller number either: core refuses a partial sum rather
+            than reporting it, because an offline branch and a resource that shed those files would
+            otherwise be the same answer.
         """
         path = model.path
         if path is None:
             return None
-        return content_size_on_disk(path, shared_excluded_files_settings().excluded_file_patterns)
+        try:
+            return content_size_on_disk(path, shared_excluded_files_settings().excluded_file_patterns)
+        except ContentUnreachableError:
+            return None
 
     def measure_duration() -> int | None:
         """Sum how long this resource's videos run ([[field-schema#duration-size]], #224).
@@ -372,9 +379,10 @@ def build_document_form(
         it touches nothing but plain Python state, the filesystem, and the probe.
 
         :returns: the total in whole seconds, or ``None`` when there is nothing to measure -- a document
-            with no path yet, or a probe backend that cannot run here at all. The second case is
-            deliberately not a ``0``: core raises rather than totalling one, because a misconfigured
-            backend and a tutorial holding no video would otherwise be the same answer.
+            with no path yet, a probe backend that cannot run here at all, or a resource part of which
+            will not read (#245). Neither of the last two is a ``0``: core raises rather than totalling
+            one, because a misconfigured backend, an offline branch and a tutorial holding no video
+            would otherwise be the same answer.
         """
         path = model.path
         if path is None:
@@ -387,7 +395,7 @@ def build_document_form(
                 video_extensions=videos.video_extensions,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             )
-        except DurationProbeError:
+        except DurationProbeError, ContentUnreachableError:
             return None
 
     description_field = DescriptionField(

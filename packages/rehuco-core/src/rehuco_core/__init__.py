@@ -89,7 +89,12 @@ from .rehu_content_duration import (
     MediaInfoDurationProbe,
     content_duration,
 )
-from .rehu_content_files import content_size_on_disk, enumerate_content_files
+from .rehu_content_files import (
+    ContentEnumeration,
+    ContentUnreachableError,
+    content_size_on_disk,
+    enumerate_content_files,
+)
 from .rehu_content_images import ContentImageEntry, enumerate_content_images
 from .rehu_document import (
     AuthorEntry,
@@ -176,7 +181,9 @@ __all__ = [
     "ChecksumReport",
     "ChecksumStatus",
     "CollectionEntry",
+    "ContentEnumeration",
     "ContentImageEntry",
+    "ContentUnreachableError",
     "DEFAULT_CHECKSUM_ALGORITHM",
     "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",

@@ -184,6 +184,8 @@ class ChecksumJob(TaskJobBase):
 
         :param control: the engine's face to this job.
         :raises FileNotFoundError: the record is missing and this run may not create one.
+        :raises ContentUnreachableError: the resource's directory would not list (#245) -- the failure
+            row then says the mount is away, which is a different thing to retry than a missing record.
         :raises ChecksumRecordError: a record this build cannot read at all.
         :raises OSError: the record could not be written.
         """
@@ -378,6 +380,11 @@ def checksum_report_summary(report: ChecksumReport) -> str:
         parts.append(f"{len(report.unreadable)} unreadable")
     if report.unnamed_malformed:
         parts.append(f"{report.unnamed_malformed} unnamed malformed")
+    if report.unreadable_directories:
+        # the one part that is not a count of files: a branch that would not list has no files to
+        # count, which is exactly why it has to be said out loud (#245)
+        count = len(report.unreadable_directories)
+        parts.append(f"{count} unreadable director{'y' if count == 1 else 'ies'}")
     return ", ".join(parts) if parts else "nothing to check"
 
 

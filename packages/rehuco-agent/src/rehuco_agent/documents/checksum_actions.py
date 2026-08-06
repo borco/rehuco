@@ -348,6 +348,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
             all(status in CLEAN_STATUSES for status in report.statuses.values())
             and not report.unreadable
             and not report.unnamed_malformed
+            # a run that could not list part of the tree is not a clean run, whether or not the record
+            # happened to hold entries under the branch it could not see (#245)
+            and not report.unreadable_directories
         )
 
     def __update_enabled(self) -> None:

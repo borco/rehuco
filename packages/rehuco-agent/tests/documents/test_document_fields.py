@@ -1,5 +1,9 @@
 """Tests for the document's field composition ([[plugins#field-toolkit]])."""
 
+# every record field's composition, and every measure row's wiring, belong to one subject -- one
+# cohesive module reads better than an arbitrary split, so the module-length cap is lifted here
+# pylint: disable=too-many-lines
+
 from pathlib import Path
 from typing import cast
 
@@ -42,6 +46,7 @@ from rehuco_core import (
     BUILTIN_PLUGINS,
     CORE_FIELD_NAMES,
     TUTORIAL_PLUGIN,
+    ContentUnreachableError,
     DurationProbeError,
     MediaInfoDurationProbe,
     RehuDocument,
@@ -594,6 +599,33 @@ def test_size_compute_measures_nothing_for_a_document_with_no_path(qtbot: QtBot,
     assert editor.computed is None
 
 
+def test_a_resource_that_will_not_read_computes_nothing_rather_than_a_short_size(
+    qtbot: QtBot, mocker: MockerFixture
+) -> None:
+    """Core refuses a partial sum rather than reporting it (#245), and this surface reports *nothing
+    measured* for it -- a smaller number would be copied over a real ``original_size`` as though the
+    resource had shed those files.
+
+    **Test steps:**
+
+    * build the editor over a document whose size scan refuses with ``ContentUnreachableError``
+    * press Compute
+    * verify nothing was computed, and the stored size is untouched
+    """
+    mocker.patch(
+        "rehuco_agent.documents.document_fields.content_size_on_disk",
+        side_effect=ContentUnreachableError("Part of the resource could not be read: Z:/pack/extras"),
+    )
+    model = RehuDocumentModel(RehuDocument({"core": {"type": "tutorial", "original_size": 8192}}, PACK_PATH))
+    grid = main_editor(qtbot, model)
+    editor = size_editor(grid)
+
+    compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
+
+    assert editor.computed is None
+    assert model.original_size == 8192
+
+
 def test_the_two_size_rows_accept_one_measurement_independently(qtbot: QtBot, mocker: MockerFixture) -> None:
     """One scan fills both rows, and each row's copy stores it into that field alone: ``original_size``
     is the footprint when complete, the denominator for *how much is left*
@@ -698,6 +730,32 @@ def test_a_probe_that_cannot_run_computes_nothing_rather_than_zero(qtbot: QtBot,
     mocker.patch(
         "rehuco_agent.documents.document_fields.content_duration",
         side_effect=DurationProbeError("ffprobe was not found on PATH, and no path is configured."),
+    )
+    model = RehuDocumentModel(
+        RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100}}, PACK_PATH)
+    )
+    grid = main_editor(qtbot, model)
+    editor = duration_editor(grid)
+
+    compute(qtbot, editor, DURATION_COMPUTE_TOOLTIP)
+
+    assert editor.computed is None
+    assert model.original_duration == 8100
+
+
+def test_a_resource_that_will_not_read_computes_no_duration_either(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """The same refusal reaches the duration pair through the same walk, and reads the same way here: a
+    runtime totalled over the branches that answered is not this tutorial's (#245).
+
+    **Test steps:**
+
+    * build the editor over a tutorial whose duration scan refuses with ``ContentUnreachableError``
+    * press Compute
+    * verify nothing was computed, and the stored duration is untouched
+    """
+    mocker.patch(
+        "rehuco_agent.documents.document_fields.content_duration",
+        side_effect=ContentUnreachableError("Part of the resource could not be read: Z:/pack/extras"),
     )
     model = RehuDocumentModel(
         RehuDocument({"core": {"type": "tutorial"}, "tutorial": {"original_duration": 8100}}, PACK_PATH)
