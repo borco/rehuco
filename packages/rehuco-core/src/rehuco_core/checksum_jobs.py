@@ -110,6 +110,10 @@ class ChecksumJob(TaskJobBase):
         caller -- core never reads a setting.
     :param create_if_missing: whether a run may create the record it works over, or ``None`` for this
         job's own answer (#242's *Create missing checksum on verify*, resolved by the caller).
+    :param stale_after: skip entries verified more recently than this, or ``None`` to check everything
+        -- which is how #203 spells *force*, and what every run of this job was before #244 gave the
+        document's main action a *Verify Old* that names the window it would use. Meaningless to a
+        generate, which re-baselines exactly what it was asked for.
     :param migrate_to: what a verify re-keys matched entries to, or ``None`` to migrate nothing (#242's
         *Update checksums on verify*, resolved by the caller). Meaningless to a generate, which
         re-baselines under ``algorithm`` whatever an entry carried.
@@ -137,6 +141,7 @@ class ChecksumJob(TaskJobBase):
         only: Collection[str] | None = None,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
         create_if_missing: bool | None = None,
+        stale_after: timedelta | None = None,
         migrate_to: str | None = None,
         label: str | None = None,
     ) -> None:
@@ -147,6 +152,7 @@ class ChecksumJob(TaskJobBase):
         self.only: tuple[str, ...] | None = None if only is None else tuple(only)
         self.excluded_patterns = excluded_patterns
         self.create_if_missing = self.creates_by_default if create_if_missing is None else create_if_missing
+        self.stale_after = stale_after
         self.migrate_to = migrate_to
         self.label = label if label is not None else self.__derived_label()
         self.__report: ChecksumReport | None = None
@@ -291,6 +297,7 @@ class ChecksumJob(TaskJobBase):
             STATE_ONLY_KEY: None if self.only is None else list(self.only),
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
             STATE_CREATE_IF_MISSING_KEY: self.create_if_missing,
+            STATE_STALE_DAYS_KEY: None if self.stale_after is None else self.stale_after.days,
             STATE_MIGRATE_TO_KEY: self.migrate_to,
         }
 
@@ -322,11 +329,15 @@ class ChecksumJob(TaskJobBase):
             raise ValueError(f"A saved checksum task migrates to an unknown algorithm: {migrate_to!r}")
         excluded = state.get(STATE_EXCLUDED_PATTERNS_KEY)
         create_if_missing = state.get(STATE_CREATE_IF_MISSING_KEY, self.creates_by_default)
+        stale_days = state.get(STATE_STALE_DAYS_KEY)
+        if stale_days is not None and not isinstance(stale_days, int):
+            raise ValueError("A saved checksum task's staleness window is not a number of days.")
         self.__location = self.__coordinator.track(Path(path))
         self.algorithm = algorithm
         self.only = None if only is None else tuple(only)
         self.migrate_to = migrate_to
         self.create_if_missing = bool(create_if_missing)
+        self.stale_after = None if stale_days is None else timedelta(days=stale_days)
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
         self.label = self.__derived_label()
@@ -369,6 +380,9 @@ class GenerateChecksumsJob(ChecksumJob):
         :param control: the engine's face to this job.
         :returns: what the run established.
         """
+        # ``stale_after`` is deliberately not passed: a generate is asked for on purpose, over a
+        # selection, and skipping part of it because those entries were verified recently would make a
+        # deliberate re-baseline quietly partial (#244)
         return generate_checksums(
             self.resource_path(),
             coordinator=self.coordinator,
@@ -404,6 +418,7 @@ class VerifyChecksumsJob(ChecksumJob):
             coordinator=self.coordinator,
             algorithm=self.algorithm,
             only=self.only,
+            stale_after=self.stale_after,
             create_if_missing=self.create_if_missing,
             migrate_to=self.migrate_to,
             excluded_patterns=self.excluded_patterns,

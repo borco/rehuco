@@ -30,6 +30,7 @@ from rehuco_core import (
     checksum_entry_name,
     checksum_record_path,
     content_size_on_disk,
+    forget_checksums,
     generate_checksums,
     parse_checksum_entry,
     verify_checksums,
@@ -1672,3 +1673,136 @@ def test_the_default_algorithm_is_the_measured_one() -> None:
 
 
 # endregion
+
+
+# region Forgetting entries
+
+
+def test_forgetting_drops_exactly_the_named_entries(disk: FakeDisk) -> None:
+    """The named entries go and every other one stays (#244).
+
+    **Test steps:**
+
+    * generate a record over both content files, then forget one of them
+    * check the other is untouched and the dropped name came back
+    """
+    generate_checksums(INFO_PATH)
+    before = disk.entries[ARCHIVE]
+
+    dropped = forget_checksums(INFO_PATH, only=[VIDEO])
+
+    assert dropped == (VIDEO,)
+    assert set(disk.entries) == {ARCHIVE}
+    assert disk.entries[ARCHIVE] == before
+
+
+def test_forgetting_carries_every_unknown_key_byte_for_byte(disk: FakeDisk) -> None:
+    """A record's own top-level keys, and another build's entry keys, survive a forget (#244).
+
+    **Test steps:**
+
+    * seed a record carrying an unknown top-level key and an entry with an unknown key
+    * forget an unrelated entry
+    * check both are still there exactly as written
+    """
+    disk.files[RECORD_PATH] = (
+        json.dumps(
+            {
+                "version": 1,
+                "annotations": {"by": "another build"},
+                "files": [entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES, note="kept")],
+            },
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+    forget_checksums(INFO_PATH, only=[VIDEO])
+
+    assert disk.record["annotations"] == {"by": "another build"}
+    assert disk.entries[ARCHIVE]["note"] == "kept"
+
+
+def test_forgetting_a_name_the_record_never_held_writes_nothing(disk: FakeDisk) -> None:
+    """A name that is already forgotten is not an error, and not a write either (#244).
+
+    **Test steps:**
+
+    * generate, forget the counters, then forget a name the record does not hold
+    * check nothing came back and the record was not rewritten
+    """
+    generate_checksums(INFO_PATH)
+    disk.forget()
+
+    dropped = forget_checksums(INFO_PATH, only=["nowhere/at/all.mp4"])
+
+    assert not dropped
+    assert disk.writes == 0
+
+
+def test_forgetting_never_drops_an_entry_it_cannot_name(disk: FakeDisk) -> None:
+    """An entry with no readable name cannot be selected, so it is carried (#244).
+
+    **Test steps:**
+
+    * seed a record holding an unnamed entry beside a named one
+    * forget the named one
+    * check the unnamed entry is still there
+    """
+    disk.seed_record([{"crc32": "deadbeef"}, entry(VIDEO, VIDEO_BYTES)])
+
+    forget_checksums(INFO_PATH, only=[VIDEO])
+
+    assert disk.record["files"] == [{"crc32": "deadbeef"}]
+
+
+def test_forgetting_over_a_resource_with_no_record_refuses(disk: FakeDisk) -> None:
+    """There is nothing to forget from, and saying so beats inventing an empty record (#244).
+
+    **Test steps:**
+
+    * forget over a resource that has never been checksummed
+    * check it raises and wrote nothing
+    """
+    with raises(FileNotFoundError):
+        forget_checksums(INFO_PATH, only=[VIDEO])
+
+    assert RECORD_PATH not in disk.files
+
+
+def test_a_forgotten_entry_is_adopted_again_by_the_next_verify(disk: FakeDisk) -> None:
+    """Forgetting the entry of a file that is still there achieves nothing, which is why the surface
+    that offers it is scoped to ``missing`` rows ([[data-model#checksums]], #244).
+
+    **Test steps:**
+
+    * generate, forget one entry whose file is still on disk, then verify
+    * check the file came straight back, recorded matched
+    """
+    generate_checksums(INFO_PATH)
+    forget_checksums(INFO_PATH, only=[VIDEO])
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[VIDEO] == "unexpected"
+    assert disk.entries[VIDEO]["status"] == "matched"
+
+
+# endregion
+
+
+def test_forgetting_a_duplicated_name_reports_it_once(disk: FakeDisk) -> None:
+    """A hand-edited record can hold one name twice; both entries go and the name is said once (#244).
+
+    **Test steps:**
+
+    * seed a record listing the video twice
+    * forget it
+    * check both entries went and the name came back a single time
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+
+    dropped = forget_checksums(INFO_PATH, only=[VIDEO])
+
+    assert dropped == (VIDEO,)
+    assert set(disk.entries) == {ARCHIVE}

@@ -27,6 +27,7 @@ from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
 from .checksum_actions import ChecksumActions
+from .checksum_view import ChecksumView
 from .document_fields import build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -34,7 +35,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 5
+STATE_VERSION: Final = 6
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -45,7 +46,9 @@ Bumped to 4 when the read-only inspection docks were added (#111): an older (v3)
 them, so ``restoreState`` would restore cleanly yet leave each new dock in whatever default state QtAds
 invents for an unknown dock, rather than the deliberately-hidden-by-default one this widget builds.
 
-Bumped to 5 when this resource's own log dock was added (#200), for exactly the same reason."""
+Bumped to 5 when this resource's own log dock was added (#200), for exactly the same reason.
+
+Bumped to 6 when the per-file checksum dock was added (#244), likewise."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -68,13 +71,16 @@ ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
 ON_DISK_DOCK_NAME: Final = "on_disk"
 LOG_DOCK_NAME: Final = "log"
-"""Object names of the read-only inspection docks (#111) and this resource's own log (#200);
+CHECKSUM_DOCK_NAME: Final = "checksums"
+"""Object names of the read-only inspection docks (#111), this resource's own log (#200) and its
+per-file checksum table (#244);
 namespaced apart from the ``viewer:``/``editor:`` docks, and the keys `restore_state` restores their
 hidden-by-default visibility under."""
 
 SAVE_PREVIEW_DOCK_TITLE: Final = "Save Preview"
 ON_DISK_DOCK_TITLE: Final = "On Disk"
 LOG_DOCK_TITLE: Final = "Log"
+CHECKSUM_DOCK_TITLE: Final = "Checksums"
 """Tab titles of the read-only inspection docks (#111) -- the live model serialization (what a Save would
 write) and the verbatim on-disk file -- and of this resource's own log (#200)."""
 
@@ -249,6 +255,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         )
         self.__save_preview_dock, self.__on_disk_dock = self.__add_inspection_docks(model)
         self.__log_dock: Final = self.__add_log_dock(model)
+        self.__checksum_dock: QtAds.CDockWidget | None = None
 
         self.__save_action: Final = QAction("&Save", self)
         self.__save_action.setShortcut(QKeySequence.StandardKey.Save)
@@ -303,6 +310,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         self.__checksums: Final = ChecksumActions(model, task_queue, self) if task_queue is not None else None
         if self.__checksums is not None:
             self.__checksums.finding_changed.connect(self.__on_checksum_finding_changed)
+            # the per-file dock exists only where the actions do, for the same reason they do: it is a
+            # surface for enqueuing runs, and a widget built with no queue has nothing to enqueue onto
+            self.__checksum_dock = self.__add_checksum_dock(model, self.__checksums)
 
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
@@ -319,9 +329,13 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
         if self.__checksums is not None:
-            toolbar.addAction(self.__checksums.verify_action)
+            # Verify Old carries Verify All as its menu, so one button offers both -- and Generate is
+            # visible only while there is no record for it to overwrite (#244)
+            toolbar.addAction(self.__checksums.verify_old_action)
             toolbar.addAction(self.__checksums.generate_action)
         inspection_docks = (self.__save_preview_dock, self.__on_disk_dock, self.__log_dock)
+        if self.__checksum_dock is not None:
+            inspection_docks = (*inspection_docks, self.__checksum_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
 
@@ -906,6 +920,28 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         settings.app_limit_changed.connect(self.__on_resource_log_limit_changed)  # type: ignore[attr-defined]
         return dock
 
+    def __add_checksum_dock(self, model: RehuDocumentModel, actions: ChecksumActions) -> QtAds.CDockWidget:
+        """Build the per-file checksum dock, stacked with the inspection docks and hidden (#244).
+
+        The same shape and the same place as the #111 pair: hidden by default, its toggle on this
+        document's own toolbar. It carries no icon of its own -- ``icons.afdesign`` has no
+        ``checksum_view`` export yet, and a toggle wearing the Verify action's icon beside that very
+        action would read as a second Verify.
+
+        :param model: the view-model whose record the table shows.
+        :param actions: the document's checksum actions, whose checking pair the dock's toolbar shares.
+        :returns: the dock, hidden.
+        """
+        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
+        dock = self.__add_hidden_inspection_dock(
+            CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, "", ChecksumView(model, actions, self), viewer_area
+        )
+        if self.__viewer_docks:
+            # a just-added dock opens as the current tab; put the main viewer back, as the two helpers
+            # above do for their own docks
+            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
+        return dock
+
     def __on_log_scope_changed(self, path: Path | None) -> None:
         """Re-scope this resource's log surface when its path changes (#52's landmine, for a log).
 
@@ -953,7 +989,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param name: the dock's object name.
         :param title: the dock's tab title.
-        :param icon: the SVG resource its toggle action is themed from.
+        :param icon: the SVG resource its toggle action is themed from, or ``""`` for a toggle that
+            shows its title instead -- what a dock with no icon exported yet gets.
         :param content: the view widget the dock hosts.
         :param viewer_area: the viewer dock area to stack into; ``None`` opens a fresh right-side area
             (only when there are no viewer docks at all).
@@ -964,7 +1001,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, viewer_area)
         else:
             self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
-        ActionIconThemeHandler(dock.toggleViewAction(), icon)
+        if icon:
+            ActionIconThemeHandler(dock.toggleViewAction(), icon)
         # hidden by default: a first-run layout shows every other dock but these. Guarded like a layout
         # restore -- this programmatic hide isn't a user toggle, so __on_view_toggled must not stash the
         # (zero, area-collapsed) sizes it would see and later re-apply when the dock is shown.

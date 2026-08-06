@@ -20,6 +20,7 @@ from .checksum_jobs import (
     sweep_summary,
 )
 from .checksum_record import (
+    CHECKSUM_FILES_KEY,
     ChecksumEntry,
     ChecksumRecordError,
     ChecksumStatus,
@@ -90,6 +91,7 @@ from .rehu_checksums import (
     ChecksumCheckpoint,
     ChecksumProgress,
     ChecksumReport,
+    forget_checksums,
     generate_checksums,
     verify_checksums,
 )
@@ -172,6 +174,7 @@ __all__ = [
     "AuthorEntry",
     "BUILTIN_PLUGINS",
     "CHECKSUM_ALGORITHMS",
+    "CHECKSUM_FILES_KEY",
     "CHECKSUM_GENERATE_KIND",
     "CHECKSUM_MANIFEST_EXTENSIONS",
     "CHECKSUM_READ_CHUNK_SIZE",
@@ -285,6 +288,7 @@ __all__ = [
     "enumerate_catalog_resources",
     "enumerate_content_files",
     "enumerate_content_images",
+    "forget_checksums",
     "generate_checksums",
     "legacy_manifest_candidates",
     "legacy_manifest_for",

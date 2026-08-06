@@ -10,6 +10,10 @@ legitimately repacked; or corruption with no backup, where keeping a checksum th
 helps nobody), then re-baseline just those files with a targeted generate -- without re-reading the
 terabyte that was fine.
 
+**Forgetting is the third operation** (:func:`forget_checksums`, #244), and the only one that removes.
+It hashes nothing, so it is one load and one atomic write rather than a queued run -- and it takes
+names rather than a status, leaving *which* entries deserve dropping to the surface that can see them.
+
 **Core ships these as plain callables** ([[data-model#checksums]]): progress and a checkpoint are
 parameters, the checkpoint is called between chunks and never caught, so a job's pause and cancel travel
 out untouched and this module never learns a queue exists
@@ -823,3 +827,49 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         progress=progress,
         checkpoint=checkpoint,
     ).verify()
+
+
+def forget_checksums(rehu_path: Path, *, only: Collection[str]) -> tuple[str, ...]:
+    """Drop the named entries from ``rehu_path``'s record, carrying every other one (#244).
+
+    The third operation over a record, beside generate and verify, and the only one that **removes**.
+    It takes the same ``only`` selection they take -- and takes **names, never a status**: which entries
+    should go is the caller's judgement, made against what it is showing, and this stays the place that
+    knows the format rather than the place that knows the policy. The surface that offers it scopes
+    itself to ``missing`` rows ([[data-model#checksums]], #244), because dropping the entry of a file
+    that is still on disk achieves nothing -- the next verify adopts it straight back.
+
+    **Nothing is read and nothing is hashed**, so unlike a run this happens in place rather than on the
+    queue: one load, one filter, one atomic write. Every entry not named is carried byte-for-byte, as is
+    every top-level key this build does not know (:func:`~rehuco_core.save_checksum_record`), so
+    forgetting one entry can never rewrite another.
+
+    An entry whose name this build cannot read is never dropped: it cannot be *named*, so it cannot be
+    selected, and guessing which unreadable entry a caller meant is exactly the kind of inference a
+    record reader must not make.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param only: the record-relative, POSIX-separated names to drop. A name the record does not hold is
+        not an error -- it is already forgotten.
+    :returns: the names actually dropped, in the record's own order, deduplicated -- what a caller
+        reports, and what tells *nothing matched* from *nothing was asked for*.
+    :raises FileNotFoundError: there is no record to forget anything from.
+    :raises ChecksumRecordError: a record file this build cannot read at all.
+    :raises OSError: the record could not be re-written.
+    """
+    record = load_checksum_record(checksum_record_path(rehu_path))
+    entries: list[Any] = record[CHECKSUM_FILES_KEY]
+    wanted = frozenset(only)
+    kept: list[Any] = []
+    dropped: list[str] = []
+    for raw in entries:
+        name = checksum_entry_name(raw)
+        if name is not None and name in wanted:
+            if name not in dropped:
+                dropped.append(name)
+            continue
+        kept.append(raw)
+    if dropped:
+        record[CHECKSUM_FILES_KEY] = kept
+        save_checksum_record(checksum_record_path(rehu_path), record)
+    return tuple(dropped)

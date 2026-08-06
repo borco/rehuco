@@ -8,6 +8,7 @@ asserting against the engine that actually runs it.
 """
 
 from collections.abc import Sequence
+from datetime import timedelta
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
@@ -457,6 +458,7 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "only": [VIDEO, ARCHIVE],
         "excluded_patterns": ["Thumbs.db"],
         "create_if_missing": True,
+        "stale_days": None,
         "migrate_to": None,
     }
 
@@ -699,3 +701,47 @@ def test_a_summary_counts_what_a_run_established(report: ChecksumReport, expecte
 
 
 # endregion
+
+
+def test_a_saved_job_whose_window_is_not_a_number_is_dropped() -> None:
+    """A hand-edited queue file should cost its own item, not come up as a run nobody described.
+
+    **Test steps:**
+
+    * restore a job from a state whose staleness window is text
+    * check it raises, which is what makes the registry drop the item
+    """
+    state = VerifyChecksumsJob(INFO_PATH).capture_state() | {"stale_days": "ninety"}
+
+    with raises(ValueError, match="staleness window"):
+        VerifyChecksumsJob().restore_state(state)
+
+
+def test_a_restored_job_keeps_the_window_it_was_queued_with() -> None:
+    """*Verify Old* survives a restart as the run it was, window included (#242, #244).
+
+    **Test steps:**
+
+    * capture a verify carrying a window and restore another job from it
+    * check the window came back
+    """
+    captured = VerifyChecksumsJob(INFO_PATH, stale_after=timedelta(days=90)).capture_state()
+
+    restored = VerifyChecksumsJob()
+    restored.restore_state(captured)
+
+    assert restored.stale_after == timedelta(days=90)
+
+
+def test_a_verify_runs_with_the_window_it_carries() -> None:
+    """The window reaches the run rather than being decoration on the row (#244).
+
+    **Test steps:**
+
+    * run a verify job carrying a window over a resource with a record
+    * check the window was what the run was given
+    """
+    job = VerifyChecksumsJob(INFO_PATH, stale_after=timedelta(days=7))
+
+    assert job.stale_after == timedelta(days=7)
+    assert job.capture_state()["stale_days"] == 7
