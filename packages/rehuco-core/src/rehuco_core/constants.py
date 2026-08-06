@@ -52,7 +52,12 @@ each file's hash, when it was last verified and what the answer was -- which no 
 format can express. The rest are what a predecessor or an external checker such as ``cfv`` leaves beside
 a resource, listed here so a catalog that already carries them never counts one as content. Recognizing
 more than is written is the safe direction; the reverse would make a size scan and a verify disagree
-about the same directory."""
+about the same directory.
+
+**Deliberately wider than :data:`~rehuco_core.CHECKSUM_ALGORITHMS`**, and not to be trimmed to match it:
+this list is about files that exist on a disk, that one is about hashes this build can compute. A
+``foo.sha1`` sitting beside ``foo.rehu`` is bookkeeping whether or not anything here can still verify
+SHA-1, and dropping it from here would silently turn it into content the size scan counts."""
 
 CONTENT_IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".webp", ".avif")
 """Default image extensions to recognize inside a reference-images resource's archive(s), case-insensitively

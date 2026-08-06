@@ -895,6 +895,7 @@ def test_a_verify_naming_one_file_leaves_the_rest_alone(disk: FakeDisk, freezer:
         ({"name": VIDEO, "xxh3": "z" * 16}, "the right length, but not hex"),
         ({"name": VIDEO, "xxh3": digest_of(VIDEO_BYTES), "crc32": "42342424"}, "two hash keys at once"),
         ({"name": VIDEO, "blake3": "42342424"}, "an algorithm this build does not know"),
+        ({"name": VIDEO, "sha1": "a" * 40}, "an algorithm this build used to ship"),
         ({"name": VIDEO, "xxh3": 42}, "a hash that is not a string"),
     ],
 )

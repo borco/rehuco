@@ -144,9 +144,9 @@ What a **reference-images** resource's content *is* was settled by #197: content
   | **XXH3-64** | **2.94** | **22.9 GB/s** |
   | CRC-32 | 7.14 | 9.4 GB/s |
   | BLAKE3 | 14.40 | 4.7 GB/s (measured, not shipped) |
-  | SHA-1 | 29.41 | 2.3 GB/s |
+  | SHA-1 | 29.41 | 2.3 GB/s (measured, not shipped) |
   | SHA-256 | 31.48 | 2.1 GB/s |
-  | SHA-512 / SHA-384 | 68.6 | 0.98 GB/s |
+  | SHA-512 | 68.6 | 0.98 GB/s (SHA-384 measures the same; not shipped) |
   | MD5 | 70.52 | 0.95 GB/s |
 
   **XXH3 is the default.** Nothing outside this app reads a checksum record, so there is no interop to trade the speed
@@ -154,6 +154,17 @@ What a **reference-images** resource's content *is* was settled by #197: content
   is not a mistake in the table: SHA-2 has hardware acceleration on this CPU and MD5 has none. Every candidate is far
   above any disk this reads from, so a sweep is I/O-bound whichever is chosen — what the choice buys is headroom for
   the day the storage is not the bottleneck.
+
+  **Five ship, and only five**: XXH3 for what is written, and CRC-32, MD5, SHA-256 and SHA-512 because those are the
+  spellings a legacy manifest is realistically written in, so an entry seeded from one (#243) stays checkable. SHA-1,
+  SHA-224 and SHA-384 were **dropped from the shipped set** — nothing writes them, they are not what the legacy
+  catalog's manifests hold, and every offered algorithm is a row in a radio group about a question most users never
+  ask. Naming an algorithm
+  costs a line; *offering* it costs the reader's attention, and a longer list makes the one that matters harder to
+  find. Dropping one is safe because the record already answers for it: an entry whose hash sits under a key this
+  build has no algorithm for is **`malformed`** — reported, and carried through byte-for-byte. It is never re-hashed
+  under the current algorithm, which would replace a claim that was never checked with one that trivially passes.
+  That is the same rule as *a new hash is only ever kept for a matched file*, reached from the other direction.
 
   **`gxhash` was measured and rejected** (0.7.0, MIT). At **23.3 GB/s (64-bit) / 28.9 GB/s (128-bit)** one-shot it is
   the fastest thing tested, and it is unusable here: upstream states plainly that *"GxHash is not an incremental

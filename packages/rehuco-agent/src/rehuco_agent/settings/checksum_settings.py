@@ -47,9 +47,11 @@ def read_algorithm(value: object) -> str:
 
     An unrecognized name is the ordinary consequence of an ``.ini`` written by a newer version, or of an
     algorithm dropped from a build; it selects :data:`~rehuco_core.DEFAULT_CHECKSUM_ALGORITHM` rather
-    than raising, the way `VideosSettings` already treats an unknown ``engine``. Nothing recorded is lost
-    by that: the record tags every entry with its own algorithm, so an entry written under the missing
-    one is simply verified under it (#203).
+    than raising, the way `VideosSettings` already treats an unknown ``engine``.
+
+    This only chooses what *new* hashes are written under. Entries already recorded under the missing
+    algorithm are not silently re-baselined under this one: core reports such an entry ``malformed`` and
+    carries it through untouched (#203), since re-hashing it would replace a claim nothing checked.
 
     :param value: the raw stored value.
     :returns: the name of an algorithm in :data:`~rehuco_core.CHECKSUM_ALGORITHMS`.
