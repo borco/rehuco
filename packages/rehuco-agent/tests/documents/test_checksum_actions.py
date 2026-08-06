@@ -17,15 +17,21 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
-from rehuco_agent.documents.checksum_actions import ChecksumActions
+from rehuco_agent.documents.checksum_actions import PROGRESS_COALESCING_BYTES, ChecksumActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import ChecksumReport, JobState, RehuDocument, TaskQueue
+from rehuco_core import ChecksumReport, JobState, JobStatus, RehuDocument, TaskQueue
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
 RECORD_PATH: Final = DIRECTORY / "info.checksum"
 
 VIDEO: Final = "lesson1.mp4"
+
+READ_CHUNK: Final = 1024 * 1024
+"""One read chunk -- 1 MB, which is how often a run reports its progress."""
+
+WINDOW_CHUNKS: Final = PROGRESS_COALESCING_BYTES // READ_CHUNK
+"""How many of those reports fit in one coalescing window."""
 
 TIMEOUT: Final = 5000
 """How long a test waits for the worker thread, in milliseconds."""
@@ -51,6 +57,29 @@ class ScopeRecordingHandler(logging.Handler):
         :param record: the record handled.
         """
         self.__scopes.append(LogScope.of(record))
+
+
+def marshaller_of(actions: ChecksumActions) -> ChecksumActions.Marshaller:
+    """Return the actions' private marshaller, whose signal is the wake the coalescing is about.
+
+    Private by design -- nothing outside the class has a reason to emit one -- but it is the only place
+    a wake is observable, and *how often it fires* is exactly what these tests are for.
+
+    :param actions: the actions to inspect.
+    :returns: the marshaller.
+    """
+    return actions._ChecksumActions__marshaller  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def snapshot(serial: int, done: int, state: JobState = JobState.RUNNING) -> JobStatus:
+    """One engine snapshot, of the shape a run's progress produces.
+
+    :param serial: the job's identity.
+    :param done: bytes hashed so far.
+    :param state: where the job is.
+    :returns: the status a listener is handed.
+    """
+    return JobStatus(serial=serial, label="Verify checksums - sculpting/", state=state, done=done)
 
 
 # region fixtures
@@ -104,6 +133,22 @@ def fixture_actions(qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, re
     """
     del qtbot, recorded
     return ChecksumActions(model, queue)
+
+
+@fixture(name="wakes")
+def fixture_wakes(actions: ChecksumActions) -> list[object]:
+    """Count the wakes the actions post to the GUI thread.
+
+    Connected directly rather than through the queued connection the class uses on itself: this
+    connection is made on the thread that emits, so a wake is counted as it happens rather than on the
+    next turn of an event loop these tests never run.
+
+    :param actions: the actions under test.
+    :returns: a list gaining one entry per wake.
+    """
+    counted: list[object] = []
+    marshaller_of(actions).queue_changed.connect(lambda: counted.append(None))
+    return counted
 
 
 # endregion
@@ -429,6 +474,97 @@ def test_a_resource_whose_record_cannot_be_read_is_offered_generate(
     actions = ChecksumActions(model, queue)
 
     assert not actions.verify_action.isEnabled()
+
+
+# endregion
+
+
+# region Waking the GUI thread
+
+
+def test_a_run_s_chunk_by_chunk_progress_does_not_wake_the_gui_thread(
+    actions: ChecksumActions, wakes: list[object]
+) -> None:
+    """Hashing is reported every 1 MB, and none of those reports can change what this surface says.
+
+    **Test steps:**
+
+    * report progress a chunk at a time, stopping one chunk short of the coalescing window
+    * check the GUI thread was never woken
+    """
+    actions.job_updated(snapshot(1, 0))
+    wakes.clear()
+
+    for chunk in range(1, WINDOW_CHUNKS):
+        actions.job_updated(snapshot(1, chunk * READ_CHUNK))
+
+    assert not wakes
+
+
+def test_progress_wakes_the_gui_thread_once_per_window(actions: ChecksumActions, wakes: list[object]) -> None:
+    """200 MB of hashing costs two wakes rather than two hundred.
+
+    **Test steps:**
+
+    * report two windows' worth of progress, a chunk at a time
+    * check one wake was posted per window
+    """
+    actions.job_updated(snapshot(1, 0))
+    wakes.clear()
+
+    for chunk in range(1, WINDOW_CHUNKS * 2 + 1):
+        actions.job_updated(snapshot(1, chunk * READ_CHUNK))
+
+    assert len(wakes) == 2
+
+
+def test_a_run_ending_is_never_coalesced(actions: ChecksumActions, wakes: list[object]) -> None:
+    """A finding must not wait behind a byte count that the finished run will never reach.
+
+    **Test steps:**
+
+    * report a single chunk of progress, then the same job as done
+    * check the progress was held back and the ending was not
+    """
+    actions.job_updated(snapshot(1, 0))
+    wakes.clear()
+
+    actions.job_updated(snapshot(1, READ_CHUNK))
+    assert not wakes
+
+    actions.job_updated(snapshot(1, READ_CHUNK, JobState.DONE))
+
+    assert len(wakes) == 1
+
+
+def test_the_next_run_starting_is_never_coalesced(actions: ChecksumActions, wakes: list[object]) -> None:
+    """The queue is serial, so one resource's run beginning is the news that the last one is over.
+
+    **Test steps:**
+
+    * enqueue two jobs, then let the second start
+    * check the state change woke the GUI thread on its own
+    """
+    actions.job_enqueued(snapshot(1, 0, JobState.QUEUED), 0)
+    actions.job_enqueued(snapshot(2, 0, JobState.QUEUED), 1)
+    wakes.clear()
+
+    actions.job_updated(snapshot(2, 0, JobState.RUNNING))
+
+    assert len(wakes) == 1
+
+
+def test_each_job_is_first_heard_of_as_a_change(actions: ChecksumActions, wakes: list[object]) -> None:
+    """A job this surface has never seen is news whatever state it arrives in -- including a restored one.
+
+    **Test steps:**
+
+    * hand the actions a job they have not seen before
+    * check the GUI thread was woken
+    """
+    actions.job_updated(snapshot(7, 0, JobState.PAUSED))
+
+    assert len(wakes) == 1
 
 
 # endregion

@@ -25,6 +25,7 @@ from rehuco_core import (
     ChecksumJob,
     ChecksumReport,
     GenerateChecksumsJob,
+    JobState,
     JobStatus,
     TaskQueue,
     VerifyChecksumsJob,
@@ -58,6 +59,18 @@ CLEAN_STATUSES: Final = frozenset({"matched", "unexpected"})
 adopted the file and recorded it ``matched`` -- so a resource whose only news is an adopted screenshot
 has come back clean."""
 
+PROGRESS_COALESCING_BYTES: Final = 100 * 1024 * 1024
+"""How much hashing may go by unreported before this surface wakes the GUI thread again.
+
+A run reports once per read chunk -- 1 MB (:data:`~rehuco_core.CHECKSUM_READ_CHUNK_SIZE`) -- so a single
+8 GB video posts eight thousand notifications, and every one of them would otherwise cost a queued
+GUI-thread dispatch that re-``stat``s the record, in every open document, to re-answer a question no
+progress report can change. 100 MB turns that into eighty.
+
+**Progress is the only thing coalesced.** A run starting, ending or stopping is a state change, and
+state changes are passed straight through -- what the strip says depends entirely on them, and a finding
+that waited for the next 100 MB of a run that has already finished would never arrive at all."""
+
 
 class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     """One document's Generate and Verify actions, and what becomes of their runs (#204).
@@ -80,6 +93,11 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     ([[appendices.task-queue#observation]]), and touching a ``QAction`` there would be a plain
     thread-safety bug.
 
+    **Progress is sampled, state is not.** A hash reports every 1 MB and says nothing this surface
+    can act on, so those wake the GUI thread once per :data:`PROGRESS_COALESCING_BYTES`; a job starting,
+    finishing or stopping wakes it immediately, because that is the only kind of change the strip and
+    the two actions are actually about.
+
     :param model: the document these actions are about.
     :param queue: the app-wide queue to enqueue into.
     :param parent: optional Qt parent.
@@ -97,8 +115,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         """
 
         queue_changed = Signal()
-        """Fires when the queue changed. Carries nothing: the payload is whatever the queue and the
-        jobs this class is holding say by the time the slot runs."""
+        """Fires when the queue changed in a way worth reading back -- every state change, and one
+        progress report in each :data:`PROGRESS_COALESCING_BYTES`. Carries nothing: the payload is
+        whatever the queue and the jobs this class is holding say by the time the slot runs."""
 
     def __init__(self, model: RehuDocumentModel, queue: TaskQueue, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -111,6 +130,17 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         run reach a surface at all. The engine carries progress and an outcome, deliberately not a
         payload ([[appendices.task-queue#job-responsibility]]), so the report is read off the job
         object by whoever built it, once it has finished."""
+
+        self.__seen: Final[dict[int, tuple[JobState, int]]] = {}
+        """Where each job the queue has mentioned was, and how far it had got, when last heard about --
+        what :meth:`__observe` compares against to tell a state change from mere progress.
+
+        Keyed by serial, which the engine never reuses, so an entry that outlives the row it describes
+        is stale rather than wrong; it is dropped when the document detaches. Written only from the
+        engine's own callbacks, which arrive under the queue's lock and are therefore serialized."""
+
+        self.__unreported = 0
+        """Bytes of progress seen since the GUI thread was last woken ([[appendices.task-queue#observation]])."""
 
         self.__marshaller: Final = ChecksumActions.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
@@ -171,6 +201,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         """
         self.__queue.remove_listener(self)
         self.__pending.clear()
+        self.__seen.clear()
 
     # endregion
 
@@ -226,13 +257,12 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
 
     def job_enqueued(self, status: JobStatus, index: int) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
-        del status, index
-        self.__marshaller.queue_changed.emit()
+        del index
+        self.__observe(status)
 
     def job_updated(self, status: JobStatus) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
-        del status
-        self.__marshaller.queue_changed.emit()
+        self.__observe(status)
 
     def jobs_reordered(self, serials: Sequence[int]) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
@@ -247,6 +277,40 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         del paused
 
     # endregion
+
+    def __observe(self, status: JobStatus) -> None:
+        """Decide whether what the engine has just said is worth waking the GUI thread for.
+
+        **A state change always is.** A run starting, finishing, failing or being stopped is the only
+        kind of news that can change what the strip says or which action is offerable, so it is passed
+        straight through -- a finding must never wait behind a byte count.
+
+        **Progress almost never is**, and there is a great deal of it: a run reports every 1 MB,
+        and each wake costs a queued dispatch that re-reads the queue and re-``stat``s the record in
+        every open document, only to conclude that a job which is still running is still running. They
+        are added up instead, and one wake is posted per :data:`PROGRESS_COALESCING_BYTES`.
+
+        Called on whichever thread the change happened on and under the queue's own lock
+        ([[appendices.task-queue#observation]]), so this stays arithmetic: no widget is touched here,
+        and the engine's serialization is what makes the bookkeeping safe.
+
+        :param status: the job as the engine has just seen it.
+        """
+        previous = self.__seen.get(status.serial)
+        self.__seen[status.serial] = (status.state, status.done)  # pylint: disable=unsupported-assignment-operation
+        if previous is None or previous[0] is not status.state:
+            self.__wake()
+            return
+        # a retry rewinds `done` to zero, which is not negative progress -- and it changes the state
+        # too, so the branch above has already woken for it
+        self.__unreported += max(0, status.done - previous[1])
+        if self.__unreported >= PROGRESS_COALESCING_BYTES:
+            self.__wake()
+
+    def __wake(self) -> None:
+        """Ask the GUI thread to read the queue back, and start counting bytes again."""
+        self.__unreported = 0
+        self.__marshaller.queue_changed.emit()
 
     def __on_queue_changed(self) -> None:
         """Read back whichever of this document's jobs have finished, on the GUI thread.
