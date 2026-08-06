@@ -3,11 +3,11 @@ for the size-on-disk sum over it (#223).
 """
 
 import re
-from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
 
+from fake_directories import FakeDirEntry, FakeScandir
 from pytest import raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
@@ -22,48 +22,6 @@ from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
 DIRECTORY: Final = Path("/fake/resource")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
 DIRECTORY_SCOPED_PATH: Final = DIRECTORY / INFO_REHU_FILENAME
-
-
-class FakeDirEntry:
-    """A stand-in for :class:`os.DirEntry`, which cannot be constructed outside a real directory read.
-
-    Only the three members the scanner touches: the entry's name, and whether it is a directory or a
-    regular file -- answered from how the test declared it, exactly as a real ``DirEntry`` answers from
-    what reading the directory returned.
-    """
-
-    def __init__(self, name: str, *, directory: bool = False, regular: bool = True, link: bool = False) -> None:
-        self.name: Final = name
-        self.__directory: Final = directory
-        self.__regular: Final = regular
-        self.__link: Final = link
-
-    def is_dir(self, *, follow_symlinks: bool = True) -> bool:
-        """Whether the test declared this entry a directory -- through the link only when asked to.
-
-        Mirrors :meth:`os.DirEntry.is_dir`'s contract: a symlink *to* a directory answers ``True`` when
-        ``follow_symlinks`` (the default), ``False`` when not -- the distinction the scanner's
-        loop guard turns on.
-        """
-        return self.__directory and (follow_symlinks or not self.__link)
-
-    def is_file(self, *, follow_symlinks: bool = True) -> bool:
-        """Whether the test declared this entry a regular file (through the link, per the default)."""
-        del follow_symlinks
-        return self.__regular
-
-
-class FakeScandir:
-    """What :func:`os.scandir` returns: an iterator that is also a context manager."""
-
-    def __init__(self, entries: list[FakeDirEntry]) -> None:
-        self.__entries: Final = entries
-
-    def __enter__(self) -> Iterator[FakeDirEntry]:
-        return iter(self.__entries)
-
-    def __exit__(self, *_exception: object) -> None:
-        return None
 
 
 def mock_tree(  # pylint: disable=too-many-arguments

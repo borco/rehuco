@@ -6,6 +6,7 @@ that owns the file, decides when it is written, and hands what it read back to t
 ([[appendices.task-queue#lifetime]]) -- plus the pure view over it ([[appendices.task-queue#observation]]).
 """
 
+from .already_queued import job_already_queued
 from .task_progress_delegate import TaskProgressDelegate
 from .task_queue_model import TaskQueueModel
 from .task_queue_store import TASK_QUEUE_FILENAME, TaskQueueStore, task_queue_path
@@ -17,5 +18,6 @@ __all__ = [
     "TaskQueueModel",
     "TaskQueueStore",
     "TaskQueueWidget",
+    "job_already_queued",
     "task_queue_path",
 ]

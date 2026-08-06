@@ -86,19 +86,27 @@ CHECKSUM_ALGORITHMS: Final[dict[str, ChecksumAlgorithm]] = {
         # usedforsecurity=False on all of them: these detect a corrupted download or a bad disk, and
         # never authenticate anything. It is also what lets MD5 build at all on a FIPS-enforcing build.
         ChecksumAlgorithm("md5", "MD5", 32, partial(hashlib.md5, usedforsecurity=False)),
-        ChecksumAlgorithm("sha1", "SHA-1", 40, partial(hashlib.sha1, usedforsecurity=False)),
-        ChecksumAlgorithm("sha224", "SHA-224", 56, partial(hashlib.sha224, usedforsecurity=False)),
         ChecksumAlgorithm("sha256", "SHA-256", 64, partial(hashlib.sha256, usedforsecurity=False)),
-        ChecksumAlgorithm("sha384", "SHA-384", 96, partial(hashlib.sha384, usedforsecurity=False)),
         ChecksumAlgorithm("sha512", "SHA-512", 128, partial(hashlib.sha512, usedforsecurity=False)),
         ChecksumAlgorithm("xxh3", "XXH3 (64-bit)", 16, xxhash.xxh3_64),
     )
 }
 """Every algorithm this build can hash with, by :attr:`ChecksumAlgorithm.name`.
 
-What a recorded hash's key resolves through, and what the settings page (#242) offers. The SHA-2 family
-and MD5 are here for nothing but the cost of naming them: they are what a legacy ``.md5``/``.sha256``
-manifest holds, so an entry seeded from one stays checkable."""
+What a recorded hash's key resolves through, and what the settings page (#242) offers. **Five, and each
+earns its row**: XXH3 is what new hashes are written under, and CRC-32, MD5, SHA-256 and SHA-512 are the
+spellings a legacy ``.sfv``/``.md5``/``.sha256``/``.sha512`` manifest actually holds, so an entry seeded
+from one stays checkable.
+
+SHA-1, SHA-224 and SHA-384 were dropped: nothing writes them, they are not what the legacy catalog's
+manifests are written in, and every offered algorithm is a row in a radio group about a choice most users
+never think about. Naming one costs little, but *offering* it costs the reader's attention -- and a
+longer list makes the one that matters harder to find.
+
+Dropping one is safe because the record answers for it: an entry whose hash sits under a key this build
+has no algorithm for is reported ``malformed`` and carried through byte-for-byte
+(`rehuco_core.checksum_record.parse_checksum_entry`), never re-hashed under the current algorithm. Adding
+one back is a line of code, and any entry recorded under it becomes checkable again the moment it is."""
 
 DEFAULT_CHECKSUM_ALGORITHM: Final = "xxh3"
 """The algorithm used when a caller names none, and what a migrating verify moves entries onto.

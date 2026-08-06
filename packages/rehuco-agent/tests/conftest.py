@@ -9,6 +9,7 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.settings import (
+    checksum_settings,
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
@@ -17,6 +18,7 @@ from rehuco_agent.settings import (
     reference_images_settings,
     videos_settings,
 )
+from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -142,6 +144,21 @@ def isolate_shared_excluded_files_settings(mocker: MockerFixture) -> Iterator[No
     mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_excluded_files_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_checksum_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ChecksumSettings` singleton (#242).
+
+    Same rationale as :func:`isolate_shared_excluded_files_settings`, with one more reason to insist:
+    this singleton decides which algorithm a run records under, whether a verify may create a record,
+    and -- through ``last_sweep_root`` -- writes back to storage. A test that reached the developer's
+    real ``.ini`` would both read their catalog's settings and overwrite the folder they last swept.
+    """
+    shared_checksum_settings.cache_clear()
+    mocker.patch.object(checksum_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_checksum_settings.cache_clear()
 
 
 @fixture(autouse=True)

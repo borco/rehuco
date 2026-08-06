@@ -38,6 +38,8 @@
     <addaction name="open_recents_menu"/>
     <addaction name="save_all_action"/>
     <addaction name="separator"/>
+    <addaction name="sweep_checksums_action"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="view_menu">
     <property name="title">
@@ -95,6 +97,14 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Shift+S</string>
+   </property>
+  </action>
+  <action name="sweep_checksums_action">
+   <property name="text">
+    <string>S&amp;weep checksums...</string>
+   </property>
+   <property name="toolTip">
+    <string>Verify every resource under a folder, skipping what was checked recently.</string>
    </property>
   </action>
   <action name="settings_action">

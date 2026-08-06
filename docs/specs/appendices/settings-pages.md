@@ -69,8 +69,16 @@ row under that group's row, creating the group's row on first use; `add_page(pag
 top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
 Files" (`ExcludedFilesPage`, #226), "Images" (`ImagesPage`) and "Videos" (`VideosPage`, #225) —
 registered in that alphabetical
-order — and "System Integration" (`RegistryPage`) is top-level. Group names are plural — a group holds
-pages, and **Plugins** is where a resource type's own settings go.
+order. Group names are plural — a group holds pages, and **Plugins** is where a resource type's own
+settings go.
+
+**Top-level is for what is about the app rather than about a resource type**: "Identity"
+(`IdentityPage`, #99), "Logs" (`LogsPage`, #200), "Tasks" (`TasksPage`, #202), "Checksums"
+(`ChecksumsPage`, #242), and the platform-gated "System Integration" (`RegistryPage` on Windows,
+`DesktopIntegrationPage` on Linux). The test each of them passes is the same: a reader looking for it has
+no plugin name to guess. Checksums govern every resource type and the sweep that reads them is reached
+from `File` rather than from a document, so filing them under a plugin would hide them behind a word the
+reader never thought of.
 
 **One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
 owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
@@ -272,6 +280,13 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   not in the `.ui`: the current `pyside6-uic` mistranslates a box-layout `stretch` property. A page adds
   no scroll area of its own — `add_page` already gives it one, handing it the viewport's width and as
   much height as it asks for (§Overview).
+- A control offering **one choice per entry of a registry core owns** is built in the page's `__init__`
+  from that registry, into an empty mount widget declared in the `.ui` — `ChecksumsPage`'s algorithm
+  radios over `CHECKSUM_ALGORITHMS` (#242) are the first. Hand-listing them in the `.ui` drifts silently
+  the moment core edits its set, and an algorithm added there would simply be unofferable. **Build them
+  before the page is registered**: `SettingsFrameFilter` gathers a frame's searchable text once, at
+  `add_page`, so a control created later is invisible to the filter. A `__init__`-built control is fine;
+  one built on first show is not.
 - Use `StringListEditor` (`borco_pyside.widgets`) to edit a list of strings, rather than building a list
   and a column of buttons by hand — or, worse, a comma-separated `QLineEdit`, which cannot hold a value
   containing the separator and makes changing one entry mean retyping the lot (#231). It is the list plus

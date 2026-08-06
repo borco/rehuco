@@ -388,17 +388,31 @@ open against the very rename it exists to stand aside for (§3.2, [#241](https:/
 [[[appendices.task-queue#first-jobs]]]
 
 - [#204: feat: checksum actions — generate/verify from the app as task-queue jobs](https://github.com/borco/rehuco/issues/204)
+- [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 
 `ChecksumJob` and its two subclasses are the first real clients, and they exercise the protocol exactly as
 §3.2 predicted: they are **safely interruptible** (the record is written once, at the end, atomically, so a
 stop leaves the previous one untouched) and they **start over** on resume — the *supported answer, not a
-defect* the section describes, since the sweep that genuinely resumes ([#242](https://github.com/borco/rehuco/issues/242))
-will do it from the records it has already written rather than from a cursor.
+defect* the section describes.
 
 One thing they needed that the engine deliberately does not provide: **a run's findings**. `JobControl`
 carries progress and nothing else, and a status carries an outcome — so the surface that *built* the job
 reads the report off it once it has finished, which is the same discipline `capture_state` is under. The
 engine stays free of a payload type it would have to know the shape of.
+
+`SweepChecksumsJob` (#242) is the third, and it is what §3.1 was written for — **a job whose cursor is its
+own output**. It keeps nothing at all: re-entering `run` walks the folder again and skips every resource the
+last pass finished, because that pass wrote each record's dates as it went. Two things fell out of building
+it that were not obvious in the abstract:
+
+- **`resumes_where_it_stopped` had to become a property.** It is true with a staleness window and false
+  without one, since a window of zero leaves nothing fresh and the sweep genuinely starts over. The bit
+  exists so a surface can say what pausing costs; one that claimed the work was kept at exactly the setting
+  where pausing is expensive would be worse than not having it.
+- **The sweep counts a different unit.** `JobControl.report` is unit-free (§5), and this is the client that
+  proves it was right to be: a catalog's byte total is not knowable without `stat`-ing everything first, so
+  the sweep reports resources against resources while its own per-resource verifies count bytes. Nothing in
+  the engine had to change; the row's label is what tells a reader which it is looking at.
 
 ## 7. Teardown is a courtesy with a deadline
 

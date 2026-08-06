@@ -7,7 +7,9 @@
 
 import logging
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
+from threading import Event
 from typing import Any, Final
 
 from borco_pyside.dialogs import DockableDialogManager
@@ -26,11 +28,13 @@ from rehuco_agent.main_window import (
     TASK_QUEUE_DOCK_OBJECT_NAME,
     MainWindow,
 )
+from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
+from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
@@ -39,7 +43,14 @@ from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueWidget
-from rehuco_core import JobState, JobStatus, TaskQueue
+from rehuco_core import JobState, JobStatus, SweepChecksumsJob, TaskQueue
+
+SWEEP_ROOT: Final = Path("/fake/library")
+"""The folder a sweep test points the chooser at -- never read, since no sweep here does real work."""
+
+SWEEP_TIMEOUT: Final = 5.0
+"""How long a held sweep waits to be released, in seconds -- generous, since it only ever expires when
+something is genuinely wrong."""
 
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
@@ -356,6 +367,27 @@ def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None
         "Images",
         "Videos",
     ]
+
+
+def test_registers_the_checksums_page_at_the_top_level(qtbot: QtBot) -> None:
+    """Checksums govern every resource type rather than one plugin's, so the page is not in Plugins (#242).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the page stack holds a `ChecksumsPage` and the category tree lists it at the top level
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, ChecksumsPage) for page in pages)
+
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
 
 
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
@@ -874,6 +906,101 @@ def test_save_all_shows_a_critical_dialog_when_a_save_fails(mocker: MockerFixtur
     window._MainWindow__ui.save_all_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     critical.assert_called_once()
+
+
+def test_sweep_checksums_action_queues_a_sweep_over_the_chosen_folder(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Sweep checksums...`` queues one sweep carrying the settings it resolved (#242).
+
+    **Test steps:**
+
+    * configure the checksum settings and mock the folder picker to report a chosen folder
+    * trigger ``sweep_checksums_action``
+    * verify one `SweepChecksumsJob` was enqueued carrying every resolved choice
+    """
+    settings = shared_checksum_settings()
+    settings.algorithm = "crc32"
+    settings.migrate_on_verify = True
+    settings.create_missing_on_verify = True
+    settings.stale_days = 30
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value=str(SWEEP_ROOT))
+    built = mocker.patch("rehuco_agent.main_window.SweepChecksumsJob", wraps=SweepChecksumsJob)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.sweep_checksums_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert [status.source for status in queue.jobs()] == [SWEEP_ROOT]
+    assert built.call_args.args == (SWEEP_ROOT,)
+    assert built.call_args.kwargs["algorithm"] == "crc32"
+    assert built.call_args.kwargs["migrate_to"] == "crc32"
+    assert built.call_args.kwargs["create_if_missing"] is True
+    assert built.call_args.kwargs["stale_after"] == timedelta(days=30)
+
+
+def test_sweep_checksums_action_remembers_the_folder_it_was_pointed_at(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A catalog is swept repeatedly, so re-navigating to it every time is the whole friction (#242).
+
+    **Test steps:**
+
+    * record a previously swept folder, then mock the picker and trigger the action
+    * verify the dialog was seeded with the remembered folder and the new one replaced it
+    """
+    shared_checksum_settings().last_sweep_root = "/fake/elsewhere"
+    dialog = mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value=str(SWEEP_ROOT))
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.sweep_checksums_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert dialog.call_args.args[2] == "/fake/elsewhere"
+    assert shared_checksum_settings().last_sweep_root == str(SWEEP_ROOT)
+    window._MainWindow__task_queue.pause()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_sweep_checksums_action_does_nothing_when_dialog_is_cancelled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A cancelled chooser must neither queue work nor overwrite the remembered folder (#242).
+
+    **Test steps:**
+
+    * mock the folder picker to report no chosen path
+    * trigger ``sweep_checksums_action``
+    * verify nothing was queued and the remembered folder is unchanged
+    """
+    shared_checksum_settings().last_sweep_root = "/fake/elsewhere"
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value="")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.sweep_checksums_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window._MainWindow__task_queue.jobs() == ()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert shared_checksum_settings().last_sweep_root == "/fake/elsewhere"
+
+
+def test_sweeping_the_same_folder_twice_does_not_queue_it_twice(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Asking twice is not asking again -- the same rule the document actions follow (#204).
+
+    **Test steps:**
+
+    * hold the first sweep inside its run, then trigger the action twice over the same folder
+    * verify only one row was added
+    """
+    mocker.patch("rehuco_agent.main_window.QFileDialog.getExistingDirectory", return_value=str(SWEEP_ROOT))
+    mocker.patch.object(SweepChecksumsJob, "validate", return_value=None)
+    release = Event()
+    mocker.patch.object(SweepChecksumsJob, "run", side_effect=lambda _control: release.wait(SWEEP_TIMEOUT))
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    try:
+        window._MainWindow__ui.sweep_checksums_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        window._MainWindow__ui.sweep_checksums_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    finally:
+        release.set()
+
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert len(queue.jobs()) == 1
 
 
 def test_quit_action_closes_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:

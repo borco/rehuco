@@ -144,9 +144,9 @@ What a **reference-images** resource's content *is* was settled by #197: content
   | **XXH3-64** | **2.94** | **22.9 GB/s** |
   | CRC-32 | 7.14 | 9.4 GB/s |
   | BLAKE3 | 14.40 | 4.7 GB/s (measured, not shipped) |
-  | SHA-1 | 29.41 | 2.3 GB/s |
+  | SHA-1 | 29.41 | 2.3 GB/s (measured, not shipped) |
   | SHA-256 | 31.48 | 2.1 GB/s |
-  | SHA-512 / SHA-384 | 68.6 | 0.98 GB/s |
+  | SHA-512 | 68.6 | 0.98 GB/s (SHA-384 measures the same; not shipped) |
   | MD5 | 70.52 | 0.95 GB/s |
 
   **XXH3 is the default.** Nothing outside this app reads a checksum record, so there is no interop to trade the speed
@@ -154,6 +154,17 @@ What a **reference-images** resource's content *is* was settled by #197: content
   is not a mistake in the table: SHA-2 has hardware acceleration on this CPU and MD5 has none. Every candidate is far
   above any disk this reads from, so a sweep is I/O-bound whichever is chosen — what the choice buys is headroom for
   the day the storage is not the bottleneck.
+
+  **Five ship, and only five**: XXH3 for what is written, and CRC-32, MD5, SHA-256 and SHA-512 because those are the
+  spellings a legacy manifest is realistically written in, so an entry seeded from one (#243) stays checkable. SHA-1,
+  SHA-224 and SHA-384 were **dropped from the shipped set** — nothing writes them, they are not what the legacy
+  catalog's manifests hold, and every offered algorithm is a row in a radio group about a question most users never
+  ask. Naming an algorithm
+  costs a line; *offering* it costs the reader's attention, and a longer list makes the one that matters harder to
+  find. Dropping one is safe because the record already answers for it: an entry whose hash sits under a key this
+  build has no algorithm for is **`malformed`** — reported, and carried through byte-for-byte. It is never re-hashed
+  under the current algorithm, which would replace a claim that was never checked with one that trivially passes.
+  That is the same rule as *a new hash is only ever kept for a matched file*, reached from the other direction.
 
   **`gxhash` was measured and rejected** (0.7.0, MIT). At **23.3 GB/s (64-bit) / 28.9 GB/s (128-bit)** one-shot it is
   the fastest thing tested, and it is unusable here: upstream states plainly that *"GxHash is not an incremental
@@ -285,9 +296,39 @@ What a **reference-images** resource's content *is* was settled by #197: content
   `ChecksumJob`** (#204), one subclass per run, each a registered kind so a queued run survives a restart
   ([[appendices.task-queue#lifetime]]); the document's toolbar carries Verify and Generate, a run's summary reports
   through the same inline strip every other finding uses, and the detail lands on the resource's own log
-  ([[appendices.logging#scopes]]). The settings page that chooses an algorithm is #242's. Progress counts
+  ([[appendices.logging#scopes]]). Progress counts
   **bytes, not files** — a tutorial is
   three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
+- **`Settings > Checksums` is the one place the checksum defaults live** (#242), and they reach every run: the
+  **default algorithm** new hashes are recorded under, **Update checksums to {default} on verify** (the label is
+  rebuilt when the algorithm changes, so it always names what it would migrate to), **Create missing checksum on
+  verify**, and the **staleness window** in days, 0–1000, default 90. Both toggles ship **off**: migration rewrites
+  records nobody asked to change — the first sweep over a catalog seeded from legacy manifests (#243) would re-key
+  all of it — and adoption is the decision the bullet below keeps deliberate. **A window of 0 days means nothing is
+  ever fresh**, so every sweep re-reads everything; the page has to say so out loud, since `0` reads just as naturally
+  as *never*. The agent resolves all four when a run is enqueued and captures them into the job — core never reads a
+  setting, and a restored job is *the job that was queued*.
+- **A sweep verifies a folder recursively, skipping what was checked recently** (#242). The user points it at a
+  folder, a walk finds every `.rehu` under it, and each resource is verified with the staleness window in force —
+  which is what makes a multi-terabyte library checkable more than once. Four things follow:
+  - **The records it writes are its cursor.** A sweep keeps nothing between runs: paused, quit or restarted, it walks
+    again and every resource the last pass finished is skipped file by file, because their recorded dates are now
+    inside the window. That is the resumability [[appendices.task-queue#cursor]] asks for, obtained from the job's own
+    output — and it is *better* than a saved list of paths, which would send a resumed sweep at files that have moved.
+    The granularity is the resource, since a verify writes its record once at the end of one.
+  - **The walk finds every record at any depth, and a nested resource's content is verified twice.** A nested record
+    is not a scan boundary ([[data-model#resource-scoping]]), and under #226 its content is also its parent's — so a
+    file beneath both is hashed into both records. Accepted deliberately: letting the inner record claim the bytes
+    would leave the outer record's entry for them permanently unverified, which is a hole in a verification record
+    rather than a saving.
+  - **The walk excludes nothing.** The junk list is a rule about *content* files; no `.rehu` can match one, and
+    letting the list decide which resources a sweep can see would let an unrelated settings edit hide a resource from
+    verification. The list goes to each resource's run, where it means something.
+  - **One bad resource costs itself.** A branch that will not list, a refused read or a record this build cannot parse
+    is counted and logged and the sweep carries on; a resource with no record is counted as such rather than as a
+    failure. The one refusal is the folder itself — a root that will not list means the run has nothing to say (#245).
+    Progress counts **resources**, not bytes: a catalog's byte total is not knowable without `stat`-ing every file
+    under it first, and the resource count is exact and free once the walk has run.
 - **A cancelled run reports nothing it did not establish.** A verdict is only produced once a file's whole digest has
   been computed and compared, and a stop leaves through the checkpoint rather than returning a half-filled report, so
   a cancel can never manufacture a mismatch. A generate writes its record **once, at the end**, through the atomic
@@ -298,9 +339,12 @@ What a **reference-images** resource's content *is* was settled by #197: content
   longer to matter, and two identical runs over the same terabyte is never what was meant. Matched on the row a reader
   can see — the job's label and its source — rather than on an identity the surface would have to keep, which is what
   keeps it true for a job restored from the last session.
-- **A verify never creates the record it is checking against** (#204). A resource with no manifest is offered
-  *Generate*, and a verify enqueued against one refuses at validation with a sentence naming the record rather than
-  quietly adopting every file it finds. Adopting everything stays deliberate — it is what the sweep (#242) turns on.
+- **A verify never creates the record it is checking against, unless it was told it may** (#204, #242). By default a
+  resource with no manifest is offered *Generate*, and a verify enqueued against one refuses at validation with a
+  sentence naming the record rather than quietly adopting every file it finds. *Create missing checksum on verify*
+  is what lifts that, and it ships off: it reaches the document's own Verify as well as the sweep, so turning it on
+  makes every Verify a Generate for a resource that has no record — which is a decision, and is why it is a setting
+  rather than a default.
 - **Execution location is a dispatch decision, not fixed.** A checksum job can run: (a) on the node that owns the files
   (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
   directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,
