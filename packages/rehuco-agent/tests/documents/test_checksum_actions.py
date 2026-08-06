@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Final
 
+import pytest
 from borco_pyside.logging import LogScope
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -682,3 +683,210 @@ def test_a_closed_document_stops_listening_without_stopping_its_work(
 
 
 # endregion
+
+
+# region The #244 action set
+
+
+def test_verify_old_names_the_window_it_would_use(actions: ChecksumActions) -> None:
+    """The main action says which window it runs with, so nobody has to remember the setting (#244).
+
+    **Test steps:**
+
+    * set a staleness window and rebuild the actions
+    * check the label names it
+    """
+    assert "90 days" in actions.verify_old_action.text()
+
+
+def test_verify_old_says_so_when_nothing_is_ever_fresh(
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, recorded: None, mocker: MockerFixture
+) -> None:
+    """A window of zero days leaves nothing fresh, so *Verify Old* checks everything (#242, #244).
+
+    **Test steps:**
+
+    * set the window to zero and build the actions
+    * check the tooltip says the window is what makes it check everything
+    """
+    del qtbot, recorded
+    mocker.patch.object(shared_checksum_settings(), "stale_days", 0)
+
+    actions = ChecksumActions(model, queue)
+
+    assert "0 days" in actions.verify_old_action.text()
+    assert "nothing is ever fresh" in actions.verify_old_action.toolTip()
+
+
+def test_verify_old_runs_with_the_window_and_verify_all_without_it(
+    qtbot: QtBot, actions: ChecksumActions, mocker: MockerFixture
+) -> None:
+    """The two differ in exactly one parameter, which is the whole of the distinction (#203, #244).
+
+    **Test steps:**
+
+    * trigger each of the two checking actions
+    * check the first ran with the configured window and the second with none
+    """
+    verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
+
+    actions.verify_old_action.trigger()
+    qtbot.waitUntil(lambda: verify.called, timeout=TIMEOUT)
+    assert verify.call_args.kwargs["stale_after"] == shared_checksum_settings().stale_after
+
+    verify.reset_mock()
+    actions.verify_action.trigger()
+    qtbot.waitUntil(lambda: verify.called, timeout=TIMEOUT)
+    assert verify.call_args.kwargs["stale_after"] is None
+
+
+def test_generate_is_offered_only_while_there_is_no_record(
+    qtbot: QtBot, model: RehuDocumentModel, queue: TaskQueue, mocker: MockerFixture
+) -> None:
+    """A blanket re-baseline is reachable only where there is no recorded hash to overwrite (#244).
+
+    **Test steps:**
+
+    * build the actions over a resource with no record, then over one with a record
+    * check Generate is visible in the first case and hidden in the second
+    """
+    del qtbot
+    exists = mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
+    mocker.patch("rehuco_agent.documents.checksum_actions.legacy_manifest_for", return_value=None)
+
+    assert ChecksumActions(model, queue).generate_action.isVisible()
+
+    exists.side_effect = lambda self: True
+
+    assert not ChecksumActions(model, queue).generate_action.isVisible()
+
+
+def test_forgetting_entries_says_the_record_changed(
+    qtbot: QtBot, actions: ChecksumActions, mocker: MockerFixture
+) -> None:
+    """A forget writes the record without producing a finding, so the view needs its own signal (#244).
+
+    **Test steps:**
+
+    * forget one entry
+    * check core was asked and the record-changed signal fired
+    """
+    del qtbot
+    forget = mocker.patch("rehuco_agent.documents.checksum_actions.forget_checksums", return_value=(VIDEO,))
+    fired: list[int] = []
+    actions.record_changed.connect(lambda: fired.append(1))
+
+    dropped = actions.forget([VIDEO])
+
+    forget.assert_called_once_with(INFO_PATH, only=[VIDEO])
+    assert dropped == (VIDEO,)
+    assert fired == [1]
+
+
+def test_forgetting_nothing_touches_neither_the_record_nor_the_view(
+    actions: ChecksumActions, mocker: MockerFixture
+) -> None:
+    """An empty selection is not a reason to rewrite a file (#244).
+
+    **Test steps:**
+
+    * forget an empty selection
+    * check core was never asked and nothing was announced
+    """
+    forget = mocker.patch("rehuco_agent.documents.checksum_actions.forget_checksums")
+    fired: list[int] = []
+    actions.record_changed.connect(lambda: fired.append(1))
+
+    assert actions.forget([]) == ()
+
+    forget.assert_not_called()
+    assert not fired
+
+
+def test_a_record_that_cannot_be_written_is_a_log_line_not_a_crash(
+    actions: ChecksumActions, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A refused write is a finding about the disk, and the document stays perfectly usable (#244).
+
+    **Test steps:**
+
+    * make the forget raise and call it
+    * check it answered empty and said so in the log
+    """
+    mocker.patch(
+        "rehuco_agent.documents.checksum_actions.forget_checksums", side_effect=PermissionError("read-only share")
+    )
+    caplog.set_level(logging.WARNING, logger="rehuco_agent.documents.checksum_actions")
+
+    assert actions.forget([VIDEO]) == ()
+
+    assert "read-only share" in caplog.text
+
+
+# endregion
+
+
+def test_an_empty_selection_queues_nothing(actions: ChecksumActions, queue: TaskQueue) -> None:
+    """A run over no files is not a run (#244).
+
+    **Test steps:**
+
+    * ask for a verify and a generate over an empty selection
+    * check the queue stayed empty
+    """
+    actions.verify_selection([])
+    actions.generate_selection([])
+
+    assert not queue.jobs()
+
+
+def test_forgetting_nothing_that_was_there_says_nothing(actions: ChecksumActions, mocker: MockerFixture) -> None:
+    """A selection the record does not hold is already forgotten, so there is nothing to announce (#244).
+
+    **Test steps:**
+
+    * make core report that nothing was dropped
+    * check the view was not told to refresh
+    """
+    mocker.patch("rehuco_agent.documents.checksum_actions.forget_checksums", return_value=())
+    fired: list[int] = []
+    actions.record_changed.connect(lambda: fired.append(1))
+
+    assert actions.forget([VIDEO]) == ()
+
+    assert not fired
+
+
+def test_two_different_selection_runs_are_different_work(actions: ChecksumActions, queue: TaskQueue) -> None:
+    """A selection's label carries a count, not an identity, so it must not be the dedup key (#244).
+
+    *Verify a.mp4* and *Verify b.mp4* both read ``Verify checksums (1 file)``, and refusing the second
+    would silently break the accept-one-change loop the dock exists for.
+
+    **Test steps:**
+
+    * hold the queue and enqueue two single-file verifies over different files
+    * check both rows were queued
+    """
+    queue.pause()
+
+    actions.verify_selection(["a.mp4"])
+    actions.verify_selection(["b.mp4"])
+
+    assert len(queue.jobs()) == 2
+
+
+def test_the_whole_resource_runs_still_refuse_a_second_ask(actions: ChecksumActions, queue: TaskQueue) -> None:
+    """The dedup the selection runs opt out of still guards the buttons it was built for (#204).
+
+    **Test steps:**
+
+    * hold the queue and trigger the same whole-resource verify twice
+    * check only one row was queued
+    """
+    queue.pause()
+
+    actions.verify()
+    actions.verify()
+
+    assert len(queue.jobs()) == 1

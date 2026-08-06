@@ -12,7 +12,8 @@ inline banner row for the summary (#94's shape) and the detail in the resource's
 """
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
@@ -20,8 +21,10 @@ from borco_pyside.logging import LogScope
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QMenu
 from rehuco_core import (
     ChecksumJob,
+    ChecksumRecordError,
     ChecksumReport,
     GenerateChecksumsJob,
     JobState,
@@ -30,6 +33,7 @@ from rehuco_core import (
     VerifyChecksumsJob,
     checksum_record_path,
     checksum_report_summary,
+    forget_checksums,
     legacy_manifest_for,
 )
 
@@ -44,7 +48,22 @@ GENERATE_ICON_RESOURCE: Final = ":/icons/checksum_generate.svg"
 VERIFY_ICON_RESOURCE: Final = ":/icons/checksum_verify.svg"
 
 GENERATE_TOOLTIP: Final = "Hash this resource's content and record it as the baseline."
-VERIFY_TOOLTIP: Final = "Check this resource's content against its recorded checksums."
+VERIFY_OLD_TOOLTIP: Final = "Check the files that have not been checked in the last {days}."
+VERIFY_ALL_TOOLTIP: Final = "Check every file, however recently it was last checked."
+VERIFY_EVERY_TIME_TOOLTIP: Final = "Check every file — the staleness window is set to 0 days, so nothing is ever fresh."
+"""What *Verify Old* says at a window of zero days.
+
+Zero is a real setting rather than an unset one ([[data-model#checksums]], #242): a window of no length
+leaves nothing fresh, so the action would read as *check the old ones* while checking all of them. It
+says which instead, the way #242's own page has to."""
+
+VERIFY_OLD_LABEL: Final = "&Verify Old ({days})"
+VERIFY_ALL_LABEL: Final = "Verify &All"
+"""What the two checking actions are called.
+
+**The main one names the window it would use** (#244), the way #242's migrate checkbox names the
+algorithm it would migrate to -- rebuilt whenever the setting is read, so it can never name a window
+that is no longer set."""
 
 VERIFY_FINDING: Final = "Checksums verified: {summary}."
 GENERATE_FINDING: Final = "Checksums recorded: {summary}."
@@ -108,6 +127,14 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     finding_changed = Signal()
     """Fires on the GUI thread when :attr:`finding` changes -- what the document's banner rebuilds on."""
 
+    record_changed = Signal()
+    """Fires on the GUI thread when this resource's ``.checksum`` may have changed -- one of these
+    jobs finished, or entries were forgotten (#244).
+
+    What the per-file view refreshes on. Deliberately separate from :attr:`finding_changed`: a run
+    that established nothing worth a banner row still rewrote dates, and a forget writes the record
+    without producing a finding at all."""
+
     class Marshaller(QObject):
         """Carries "one of our jobs may have moved" across the thread boundary, and nothing else.
 
@@ -152,10 +179,20 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         ActionIconThemeHandler(self.__generate_action, GENERATE_ICON_RESOURCE)
         self.__generate_action.triggered.connect(self.generate)
 
-        self.__verify_action: Final = QAction("&Verify Checksums", self)
-        self.__verify_action.setToolTip(VERIFY_TOOLTIP)
+        self.__verify_action: Final = QAction(VERIFY_ALL_LABEL, self)
+        self.__verify_action.setToolTip(VERIFY_ALL_TOOLTIP)
         ActionIconThemeHandler(self.__verify_action, VERIFY_ICON_RESOURCE)
         self.__verify_action.triggered.connect(self.verify)
+
+        self.__verify_old_action: Final = QAction(self)
+        ActionIconThemeHandler(self.__verify_old_action, VERIFY_ICON_RESOURCE)
+        self.__verify_old_action.triggered.connect(self.verify_old)
+        # the main action carries the other as its menu, so one toolbar button offers both and the
+        # dock toolbar, the document toolbar and the context menu all reach the same two QActions --
+        # three surfaces that can never drift because there is nothing to keep in step (#244)
+        self.__verify_menu: Final = QMenu()
+        self.__verify_menu.addAction(self.__verify_action)
+        self.__verify_old_action.setMenu(self.__verify_menu)
 
         model.path_changed.connect(self.__update_enabled)  # type: ignore[attr-defined]
         self.__update_enabled()
@@ -170,9 +207,18 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
 
     @property
     def verify_action(self) -> QAction:
-        """Checks this resource's content against its record, on the queue. Disabled while there is no
-        record: a resource with no manifest is offered Generate ([[data-model#checksums]], #204)."""
+        """Checks **every** file against the record, on the queue -- ``stale_after=None``, which is how
+        #203 spells *force*. Reached through :attr:`verify_old_action`'s menu, and directly from the
+        dock's context menu."""
         return self.__verify_action
+
+    @property
+    def verify_old_action(self) -> QAction:
+        """Checks the files last checked longer ago than the staleness window (#242, #244).
+
+        The main checking action, and the one that carries the other as a menu. Its label names the
+        window it would use, so a reader never has to remember what the setting says."""
+        return self.__verify_old_action
 
     @property
     def finding(self) -> str:
@@ -210,14 +256,74 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
     # region Enqueuing
 
     def generate(self) -> None:
-        """Enqueue a full baseline over this resource."""
+        """Enqueue a full baseline over this resource.
+
+        **Not reachable from any toolbar over a resource that already has a record** (#244): a blanket
+        re-baseline records whatever is on disk as correct, including bytes a verify has just called
+        ``mismatched``, which is corruption laundered into a record that then looks clean forever. It
+        stays here for the one case where there is nothing to launder -- a resource with no record at
+        all, where every hash is new -- and re-baselining anything else is *Generate Selection*.
+        """
         self.__enqueue(GenerateChecksumsJob)
 
     def verify(self) -> None:
-        """Enqueue a verify over this resource."""
+        """Enqueue a verify over every file in this resource, however recently it was checked."""
         self.__enqueue(VerifyChecksumsJob)
 
-    def __enqueue(self, job_class: type[ChecksumJob]) -> None:
+    def verify_old(self) -> None:
+        """Enqueue a verify that skips what was checked inside the staleness window (#242, #244)."""
+        self.__enqueue(VerifyChecksumsJob, stale_after=shared_checksum_settings().stale_after)
+
+    def verify_selection(self, names: Collection[str]) -> None:
+        """Enqueue a verify over exactly ``names``.
+
+        :param names: the record-relative names to check; nothing happens for an empty selection.
+        """
+        if names:
+            self.__enqueue(VerifyChecksumsJob, only=tuple(names))
+
+    def generate_selection(self, names: Collection[str]) -> None:
+        """Enqueue a re-baseline over exactly ``names`` -- how a genuine change is accepted (#203).
+
+        Needs no confirmation, and deliberately: it takes a selection, which *is* the deliberate act,
+        and the verify-inspect-accept loop it serves would be unusable behind a prompt.
+
+        :param names: the record-relative names to re-baseline; nothing happens for an empty selection.
+        """
+        if names:
+            self.__enqueue(GenerateChecksumsJob, only=tuple(names))
+
+    def forget(self, names: Collection[str]) -> tuple[str, ...]:
+        """Drop ``names`` from the record, in place (#244).
+
+        **Not a queue job**: nothing is read and nothing is hashed, so this is one small atomic write,
+        and putting it behind the queue would make an instant edit wait behind a terabyte of hashing.
+
+        :param names: the record-relative names to forget.
+        :returns: the names actually dropped, empty when there was nothing to drop or no record to drop
+            it from -- a resource with no record has already forgotten everything.
+        """
+        path = self.__model.path
+        if path is None or not names:
+            return ()
+        with LogScope.open(path):
+            try:
+                dropped = forget_checksums(path, only=names)
+            except (OSError, ChecksumRecordError) as error:
+                LOG.warning("The checksum record could not be updated: %s", error)
+                return ()
+        if dropped:
+            LOG.info("Forgot %d checksum entr%s.", len(dropped), "y" if len(dropped) == 1 else "ies")
+            self.record_changed.emit()
+        return dropped
+
+    def __enqueue(
+        self,
+        job_class: type[ChecksumJob],
+        *,
+        only: tuple[str, ...] | None = None,
+        stale_after: timedelta | None = None,
+    ) -> None:
         """Build one job and hand it to the queue, unless the same work is already waiting.
 
         The enqueue happens **inside this document's log scope**, so the records the run makes on the
@@ -226,6 +332,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         detail behind the banner readable at all.
 
         :param job_class: which of the two runs to queue.
+        :param only: the names to work on, or ``None`` for the whole resource.
+        :param stale_after: the window to skip recently-checked entries by, or ``None`` to check
+            everything.
         """
         path = self.__model.path
         if path is None:
@@ -234,19 +343,41 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         job = job_class(
             path,
             algorithm=checksums.algorithm,
+            only=only,
+            stale_after=stale_after,
             # the setting can only ever turn adoption *on*: left off, each job keeps its own answer, so
             # a generate still creates the record it is for while a verify still refuses to (#242)
             create_if_missing=True if checksums.create_missing_on_verify else None,
             migrate_to=checksums.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-            label=f"{job_class.verb} checksums - {self.__model.label}",
+            label=self.__label_for(job_class, only),
         )
-        if job_already_queued(self.__queue, label=job.label, source=job.source):
+        # *asking twice is not asking again* holds for the whole-resource runs, where a second ask is
+        # always the same work (#204) -- and deliberately not for a selection: its label carries a
+        # count, not an identity, so label-matching cannot tell *Verify a.mp4* from *Verify b.mp4*, and
+        # silently refusing the second would break the very accept-one-change loop the dock is for
+        # (#244). A duplicated selection run re-reads a few files; a swallowed one loses real work.
+        if only is None and job_already_queued(self.__queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
             return
         self.__pending.append(job)
         with LogScope.open(path):
             self.__queue.enqueue(job)
+
+    def __label_for(self, job_class: type[ChecksumJob], only: tuple[str, ...] | None) -> str:
+        """What a queued run is called in the Tasks dock.
+
+        A selection-scoped run says how many files it is about, which is also what keeps *asking twice
+        is not asking again* honest: two verifies over the same resource collide only when they cover
+        the same thing, and a run over three files is not the run over all of them
+        ([[appendices.task-queue#lifetime]], #204).
+
+        :param job_class: which run.
+        :param only: the names it covers, or ``None`` for the whole resource.
+        :returns: the label.
+        """
+        scope = "" if only is None else f" ({len(only)} file{'' if len(only) == 1 else 's'})"
+        return f"{job_class.verb} checksums{scope} - {self.__model.label}"
 
     # endregion
 
@@ -320,11 +451,13 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         """
         reported = ""
         clean = True
+        finished = False
         for job in list(self.__pending):
             report = job.report
             if report is None:
                 continue
             self.__pending.remove(job)
+            finished = True
             template = VERIFY_FINDING if isinstance(job, VerifyChecksumsJob) else GENERATE_FINDING
             reported = template.format(summary=checksum_report_summary(report))
             clean = ChecksumActions.__nothing_wrong(report)
@@ -333,6 +466,9 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
             self.__finding_clean = clean
             self.finding_changed.emit()
         self.__update_enabled()
+        if finished:
+            # after __update_enabled, so a view refreshing on this already sees the settled actions
+            self.record_changed.emit()
 
     @staticmethod
     def __nothing_wrong(report: ChecksumReport) -> bool:
@@ -365,10 +501,31 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         Save, and one checkbox does not earn a reactive settings object.
         """
         path = self.__model.path
+        checksums = shared_checksum_settings()
+        has_record = path is not None and self.__has_something_to_verify(path)
         self.__generate_action.setEnabled(path is not None)
-        self.__verify_action.setEnabled(
-            path is not None
-            and (shared_checksum_settings().create_missing_on_verify or self.__has_something_to_verify(path))
+        # the one place a full re-baseline is offered from a toolbar: a resource with no record, where
+        # there is no recorded hash for it to overwrite, so nothing can be laundered (#244). Once there
+        # is a record, re-baselining is Generate Selection and nothing else
+        self.__generate_action.setVisible(path is not None and not has_record)
+        verifiable = path is not None and (checksums.create_missing_on_verify or has_record)
+        self.__verify_action.setEnabled(verifiable)
+        self.__verify_old_action.setEnabled(verifiable)
+        self.__name_the_window(checksums.stale_days)
+
+    def __name_the_window(self, stale_days: int) -> None:
+        """Put the staleness window on the main action's own label (#242, #244).
+
+        Re-read on every update rather than watched: this already runs on every path change and every
+        queue movement, which is soon enough after a settings Save, and the alternative is a reactive
+        settings object for one spin box.
+
+        :param stale_days: the window, in whole days.
+        """
+        days = f"{stale_days} day{'' if stale_days == 1 else 's'}"
+        self.__verify_old_action.setText(VERIFY_OLD_LABEL.format(days=days))
+        self.__verify_old_action.setToolTip(
+            VERIFY_EVERY_TIME_TOOLTIP if stale_days == 0 else VERIFY_OLD_TOOLTIP.format(days=days)
         )
 
     @staticmethod

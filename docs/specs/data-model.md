@@ -129,6 +129,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#245: bug: an unreachable resource reads as an empty one — a clean verify, and a generate that drops entries](https://github.com/borco/rehuco/issues/245)
 - [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 - [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
+- [#244: feat: checksum viewer dock — per-file status and date, with verify/generate actions](https://github.com/borco/rehuco/issues/244)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -340,6 +341,44 @@ What a **reference-images** resource's content *is* was settled by #197: content
   ([[appendices.logging#scopes]]). Progress counts
   **bytes, not files** — a tutorial is
   three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.
+
+- **The per-file surface is a dock on the document** (#244), hidden by default beside the two inspection docks
+  (#111): one row per file, holding the path as the record spells it, the recorded status, and when that status was
+  recorded — the record's UTC rendered in local time, which is not what anyone wants to read off a table. It exists
+  because a verify over two hundred videos reports three mismatches into a log line, and deciding which of them is a
+  legitimate repack and accepting *just that one* is the loop the targeted generate was built for. Six decisions:
+  - **Rows come from the record *and* from the content enumeration.** An entry shows its status and date; a content
+    file the record does not cover shows its path with both cells empty, which is what *not checked yet* honestly
+    looks like — and is what makes the dock worth opening on a resource that has never been checksummed.
+  - **The row number is the vertical header, not a column**, so it always numbers what is on screen: sorting by
+    status renumbers `1..N` instead of carrying stale numbers down the view. A summary line under the table —
+    `214 files · 210 matched · 2 mismatched · 1 not recorded` — answers *how many of what*, which the numbering
+    cannot.
+  - **The toolbar only checks; changing the record needs a selection.** *Verify Old* (the staleness window, named on
+    the action's own label) and *Verify All* (`stale_after=None`, force) are the whole of the toolbar; *Verify
+    Selection*, *Generate Selection* and *Delete Missing* live behind a right-click, where the selection is itself
+    the deliberate act — so none of them needs a confirmation, and the accept-a-change loop stays unprompted.
+  - **There is no blanket re-baseline over a record that already exists.** It would record whatever is on disk as
+    correct, including bytes a verify has just called `mismatched` — corruption laundered into a record that then
+    looks clean forever, which is the outcome the migration rule already forbids from the other direction.
+    Generate stays reachable for exactly one case, a resource with **no** record, where there is no recorded hash to
+    overwrite and it is the honest name for what a first run does; the toolbar shows it only then. Re-baselining
+    anything else is `Ctrl+A` plus *Generate Selection*.
+  - **Delete Missing is scoped to `missing` rows**, and means *the missing ones among what you selected*. Dropping
+    the entry of a file that is still on disk achieves nothing — the next verify adopts it straight back, since
+    `unexpected` is a report state rather than a resting one — so scoping the action removes that trap instead of
+    explaining it. It hashes nothing, so it is one atomic write in place rather than a queued run: forgetting
+    entries is core's third operation over a record, taking **names** rather than a status, because which entries
+    deserve dropping is the view's judgement and the format is core's.
+  - **An unreachable resource greys every action**, decided at the enumeration rather than from the rows: the record
+    lives beside the files and shares their fate, so *this resource is not reachable right now* is the honest thing
+    to draw, where an empty table would look exactly like a resource with no files (#245). The read itself is a
+    directory walk and never runs on the GUI thread.
+
+  Two more things it deliberately does not do. **The table shows the record, not the last run's report** — the two
+  differ on purpose, and a view of the report would go stale the moment anything else touched the resource; the
+  transient summary is the inline strip's and the log's. And **there is no progress bar here**, because the queue
+  dock already shows progress per job, in bytes.
 - **`Settings > Checksums` is the one place the checksum defaults live** (#242), and they reach every run: the
   **default algorithm** new hashes are recorded under, **Update checksums to {default} on verify** (the label is
   rebuilt when the algorithm changes, so it always names what it would migrate to), **Create missing checksum on

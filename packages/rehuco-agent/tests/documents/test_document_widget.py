@@ -20,7 +20,7 @@ import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
@@ -30,7 +30,7 @@ from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMessageBox, QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QWidget
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -2876,13 +2876,13 @@ def test_a_document_built_with_no_queue_offers_no_checksum_actions(widget: Docum
     assert widget.checksum_actions is None
 
 
-def test_the_toolbar_carries_verify_and_generate(qtbot: QtBot, model: RehuDocumentModel) -> None:
-    """Given a queue, both actions sit on the document's own toolbar, beside Save and Revert.
+def test_the_toolbar_carries_the_checking_action_and_reaches_the_other(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """Given a queue, the main checking action sits on the toolbar and carries the other as its menu.
 
     **Test steps:**
 
     * build a widget over a real queue
-    * check the toolbar carries both actions
+    * check the toolbar carries Verify Old and Generate, and that Verify All hangs off the first
     """
     queue = TaskQueue()
     widget = DocumentWidget(model, task_queue=queue)
@@ -2891,8 +2891,9 @@ def test_the_toolbar_carries_verify_and_generate(qtbot: QtBot, model: RehuDocume
         actions = widget.checksum_actions
         assert actions is not None
         toolbar = widget.findChildren(QToolBar)[0]
-        assert actions.verify_action in toolbar.actions()
+        assert actions.verify_old_action in toolbar.actions()
         assert actions.generate_action in toolbar.actions()
+        assert actions.verify_action in cast(QMenu, actions.verify_old_action.menu()).actions()
     finally:
         widget.detach()
         queue.shutdown()
