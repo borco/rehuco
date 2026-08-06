@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ChecksumsPage</class>
+ <widget class="QWidget" name="ChecksumsPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="algorithm_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="algorithm_frame_layout">
+      <item>
+       <widget class="QLabel" name="algorithm_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Default checksum</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="algorithm_buttons" native="true">
+        <layout class="QVBoxLayout" name="algorithm_buttons_layout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="algorithm_note_label">
+        <property name="text">
+         <string>What new checksums are recorded under. Each recorded file keeps the algorithm it was hashed with, so changing this leaves everything already recorded verifiable.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="verify_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="verify_frame_layout">
+      <item>
+       <widget class="QLabel" name="verify_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>On verify</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="migrate_check_box">
+        <property name="toolTip">
+         <string>A file recorded under another algorithm is read once and hashed with both, so migrating costs no extra read. A file that fails its recorded checksum keeps it and gains no new one.</string>
+        </property>
+        <property name="text">
+         <string>Update checksums to the default on verify</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="create_missing_check_box">
+        <property name="toolTip">
+         <string>Verifying a resource with no checksum record records every one of its content files as correct. Off, a resource with no record is reported rather than baselined.</string>
+        </property>
+        <property name="text">
+         <string>Create missing checksum on verify</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="staleness_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="staleness_frame_layout">
+      <item>
+       <widget class="QLabel" name="staleness_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Staleness window</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="stale_days_layout">
+        <item>
+         <widget class="QLabel" name="stale_days_label">
+          <property name="text">
+           <string>Re-check a file after:</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QSpinBox" name="stale_days_spin_box">
+          <property name="toolTip">
+           <string>How long a recorded check stays good for. A sweep skips a file checked more recently than this without reading it.</string>
+          </property>
+          <property name="specialValueText">
+           <string>Nothing is ever fresh</string>
+          </property>
+          <property name="suffix">
+           <string> days</string>
+          </property>
+          <property name="minimum">
+           <number>0</number>
+          </property>
+          <property name="maximum">
+           <number>1000</number>
+          </property>
+          <property name="value">
+           <number>90</number>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="stale_days_spacer">
+          <property name="orientation">
+           <enum>Qt::Orientation::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="staleness_note_label">
+        <property name="text">
+         <string>Only sweeps use this. Verifying a file, a selection or one resource on demand always reads it, however recently it was checked. At 0 days nothing counts as fresh, so every sweep re-reads everything.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>0</width>
+       <height>0</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

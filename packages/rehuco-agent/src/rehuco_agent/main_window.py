@@ -38,6 +38,7 @@ from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
+from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
@@ -415,6 +416,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(LogsPage())
         # same reasoning, for the task queue's restart choices (#202)
         self.__settings_dialog.add_page(TasksPage())
+        # and again for the checksum defaults (#242): they govern every resource type rather than one
+        # plugin's, and the sweep that reads them is reached from File rather than from a document
+        self.__settings_dialog.add_page(ChecksumsPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
