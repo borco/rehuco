@@ -31,6 +31,7 @@ from typing import Any, Final
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_record import ChecksumRecordError, checksum_record_path
+from .checksum_seeding import legacy_manifest_for
 from .constants import EXCLUDED_FILE_PATTERNS, INFO_REHU_FILENAME
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
@@ -222,7 +223,26 @@ class ChecksumJob(TaskJobBase):
         """
         report = self.perform(control)
         self.__report = report
+        self.__log_seed(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
+
+    @staticmethod
+    def __log_seed(report: ChecksumReport) -> None:
+        """Say line by line what a legacy manifest did not contribute (#243).
+
+        The summary carries the counts; this is where a reader finds out *which* line and *why*, on the
+        resource's own log ([[appendices.logging#scopes]]). It runs once in a resource's life, so the
+        detail costs nothing on any later verify.
+
+        :param report: what the run established.
+        """
+        seed = report.seed
+        if seed is None:
+            return
+        for manifest in seed.ignored:
+            LOG.info("%s was not read: %s is the manifest this record was seeded from.", manifest, seed.manifest.name)
+        for drop in seed.dropped:
+            LOG.warning("%s: dropped %r -- %s.", seed.manifest, drop.line, drop.reason)
 
     def perform(self, control: JobControl) -> ChecksumReport:
         """Make the run this job is for.
@@ -399,6 +419,11 @@ class VerifyChecksumsJob(ChecksumJob):
         the reader never asked about. Unless this run may create the record (#242), in which case a
         missing one is the ordinary starting state rather than a refusal.
 
+        **A legacy manifest counts as a record to verify against** (#243), because the run will seed
+        one from it: refusing here would send the reader at a Generate, which is precisely the throwing
+        away of the old claim that seeding exists to prevent. One directory listing rather than a
+        ``stat``, and only on the path where there is no ``.checksum``.
+
         :returns: ``None`` when the run can start, else what is wrong.
         """
         reason = super().validate()
@@ -406,8 +431,9 @@ class VerifyChecksumsJob(ChecksumJob):
             return reason
         if self.create_if_missing:
             return None
-        record = checksum_record_path(self.resource_path())
-        if not record.exists():
+        path = self.resource_path()
+        record = checksum_record_path(path)
+        if not record.exists() and legacy_manifest_for(path) is None:
             return f"This resource has no checksum record yet: {record}"
         return None
 
@@ -433,6 +459,16 @@ def checksum_report_summary(report: ChecksumReport) -> str:
         parts.append(f"{len(report.unreadable)} unreadable")
     if report.unnamed_malformed:
         parts.append(f"{report.unnamed_malformed} unnamed malformed")
+    if report.seed is not None:
+        # named rather than counted, because a seed happens once in a resource's life and which file
+        # it came from is the thing a reader wants back later (#243)
+        parts.append(f"seeded {len(report.seed.entries)} from {report.seed.manifest.name}")
+        if report.seed.dropped:
+            count = len(report.seed.dropped)
+            parts.append(f"{count} seed line{'' if count == 1 else 's'} dropped")
+        if report.seed.ignored:
+            count = len(report.seed.ignored)
+            parts.append(f"{count} manifest{'' if count == 1 else 's'} ignored")
     if report.unreadable_directories:
         # the one part that is not a count of files: a branch that would not list has no files to
         # count, which is exactly why it has to be said out loud (#245)

@@ -227,6 +227,47 @@ What a **reference-images** resource's content *is* was settled by #197: content
 
 - **A sweep adopts** a content file with no recorded hash — hash it, date it, record it `matched` — so `unexpected` is
   a report state rather than a resting one.
+
+- **A resource checksummed before this app existed is verified, not baselined** (#243). The catalog carries `.sfv`
+  files written by tutcatalog4 and by external checkers, with `.md5`/`.sha*` here and there. Those suffixes were
+  already recognized as bookkeeping so they never count as content, and nothing writes one — but nothing *read* one
+  either, so a resource checksummed for years read to this app as a resource with no checksums, and its first verify
+  would have recorded today's bytes as `matched` about bytes nobody ever compared. The old file is a **claim, made
+  when the files were known good**, and it can still be checked today. A verify that finds no `.checksum` and does
+  find a **same-stem** manifest beside it — `info.sfv` next to `info.rehu` — seeds its entries from that file and
+  behaves as a verify against them, writing the `.checksum` once at the end. Five decisions carry it:
+  - **Seeding produces entries, not a second kind of run.** Each line becomes `{name, <algorithm>: <digest>}` with no
+    date and no status, which is a shape verify already knows: present files are hashed and compared under the
+    algorithm the *suffix* named, an absent one is `missing` and **keeps its recorded hash** so the claim survives the
+    file's return, and content the manifest never listed is adopted exactly as any unlisted file is. `only`, the
+    staleness window, the progress denominator and the migration therefore compose for free — a seeded `crc32` entry
+    read with *Update checksums on verify* on is checked as `crc32` and re-recorded as XXH3 from the same single read,
+    and the corruption rule is unchanged.
+  - **Seeding is finding a record, not creating one**, so it happens with *Create missing checksum on verify* off.
+    That setting means *start from an empty record when there is nothing at all to start from*, and a resource with a
+    `.sfv` has something. A manifest that yields no usable entry yields no record either, and the run refuses as it
+    would have before — the setting's meaning is untouched.
+  - **Only content is seeded, and *not there* is not the same as *excluded*.** A name that resolves to a file today's
+    enumeration leaves out — a screenshot, a `Thumbs.db`, another record's bookkeeping — is dropped, because a
+    predecessor was free to checksum files this app deliberately does not, and carrying such an entry would make every
+    screenshot edit a permanent `mismatched` in a record that can never come clean. A name with nothing there at all
+    is the opposite case and is kept: it is the claim about a file that has gone.
+  - **One manifest is read, by a fixed suffix precedence** — `sha512`, `sha384`, `sha256`, `sha224`, `sha1`, `md5`,
+    `sfv` — and the others beside it are reported ignored. Merging several is not worth the ambiguity about which one
+    wins per file, and a silent pick would be worse than a stated one. A suffix naming an algorithm the shipped five
+    omit is passed over rather than chosen and then failed, so a readable `.md5` is not shadowed by a `.sha1`.
+  - **A line this build cannot read costs itself** — reported, and the rest of the file still seeds — the same rule a
+    malformed record entry is under. Names are normalized to POSIX `/` (these files mix separators freely) and must
+    land *inside* the resource; an absolute name, a drive letter or an escaping `..` is dropped and never resolved.
+    Encoding is UTF-8 falling back to cp1252, since a non-ASCII filename in a file a Windows tool wrote years ago is
+    a cp1252 byte sequence rather than invalid UTF-8 to give up on.
+
+  It is **one-way and it happens once**: from then on there is a `.checksum`, so the next verify reads that and the
+  legacy file is never consulted again. **It is not deleted** — it is somebody else's data, it costs nothing, it stays
+  out of the content set either way, and deleting it would make the step unrepeatable if the new record were lost.
+  Normalization lives in the conversion, which is the seam that knows the file came from a Windows tool; the record
+  reader stays strict and is **not** taught to normalize, since a reader that did would make one `.checksum` mean
+  different things to a Windows agent and a Linux node.
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the
   `infoXX.*` images, which are designed to be freely editable.
 - **What a resource's content *is* is computed once and shared** (#226) — `rehuco_core.rehu_content_files` resolves it

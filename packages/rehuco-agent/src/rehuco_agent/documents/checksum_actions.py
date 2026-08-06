@@ -30,6 +30,7 @@ from rehuco_core import (
     VerifyChecksumsJob,
     checksum_record_path,
     checksum_report_summary,
+    legacy_manifest_for,
 )
 
 from ..settings.checksum_settings import shared_checksum_settings
@@ -353,10 +354,10 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         """Offer each action exactly while it means something.
 
         Neither is offered for a document with no path -- a never-saved one has nothing on disk to
-        hash -- and Verify is offered only once there is a record to verify against, which is the rule
-        [[data-model#checksums]] states as *a resource with no manifest offers Generate*. The record is
-        one ``stat``, re-taken whenever the queue moves, so a first generate turns Verify on without
-        the document having to be reopened.
+        hash -- and Verify is offered only once there is a record to verify against, or a legacy
+        manifest to seed one from (#243), which is the rule [[data-model#checksums]] states as *a
+        resource with no manifest offers Generate*. The record is one ``stat``, re-taken whenever the
+        queue moves, so a first generate turns Verify on without the document having to be reopened.
 
         Unless *Create missing checksum on verify* is set (#242), which makes a verify over a resource
         with no record a legitimate run rather than a refusal. The setting is re-read here rather than
@@ -366,19 +367,27 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         path = self.__model.path
         self.__generate_action.setEnabled(path is not None)
         self.__verify_action.setEnabled(
-            path is not None and (shared_checksum_settings().create_missing_on_verify or self.__record_exists(path))
+            path is not None
+            and (shared_checksum_settings().create_missing_on_verify or self.__has_something_to_verify(path))
         )
 
     @staticmethod
-    def __record_exists(rehu_path: Path) -> bool:
-        """Whether this resource has a ``.checksum`` yet.
+    def __has_something_to_verify(rehu_path: Path) -> bool:
+        """Whether this resource has a record, or the makings of one.
+
+        A legacy ``.sfv``/``.md5``/``.sha*`` beside it counts (#243): a verify seeds a record from it
+        and checks that, so greying Verify out here would offer Generate instead -- which throws away
+        the one claim the old file is good for. Looked for only where there is no ``.checksum``, so a
+        resource that has been verified once is back to the single ``stat`` this used to be.
 
         :param rehu_path: the resource's ``.rehu`` file.
-        :returns: whether the record is there. An unreadable mount answers ``False``, which offers
-            Generate over a resource that may well have one -- the honest fix for that is the one
-            #245 tracks, where core stops reading *unreachable* as *empty*.
+        :returns: whether a verify has something to check against. An unreadable mount answers
+            ``False``, which offers Generate over a resource that may well have one -- the honest fix
+            for that is the one #245 tracks, where core stops reading *unreachable* as *empty*.
         """
         try:
-            return checksum_record_path(rehu_path).exists()
+            if checksum_record_path(rehu_path).exists():
+                return True
         except OSError:
             return False
+        return legacy_manifest_for(rehu_path) is not None

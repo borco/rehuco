@@ -30,6 +30,14 @@ from .checksum_record import (
     parse_checksum_entry,
     save_checksum_record,
 )
+from .checksum_seeding import (
+    LEGACY_MANIFEST_ALGORITHMS,
+    LegacyDrop,
+    LegacySeed,
+    legacy_manifest_candidates,
+    legacy_manifest_for,
+    seed_from_legacy_manifest,
+)
 from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
@@ -217,7 +225,10 @@ __all__ = [
     "JobPaused",
     "JobState",
     "JobStatus",
+    "LEGACY_MANIFEST_ALGORITHMS",
     "LearningPathEntry",
+    "LegacyDrop",
+    "LegacySeed",
     "LockReason",
     "LockReasonKind",
     "MOVABLE_JOB_STATES",
@@ -275,6 +286,8 @@ __all__ = [
     "enumerate_content_files",
     "enumerate_content_images",
     "generate_checksums",
+    "legacy_manifest_candidates",
+    "legacy_manifest_for",
     "load_checksum_record",
     "load_tc",
     "migrate_block_data",
@@ -291,6 +304,7 @@ __all__ = [
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "save_checksum_record",
+    "seed_from_legacy_manifest",
     "sweep_summary",
     "tc_to_rehu_data",
     "verify_checksums",

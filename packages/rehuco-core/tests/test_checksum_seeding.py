@@ -1,0 +1,817 @@
+"""Tests for seeding a ``.checksum`` from a legacy ``.sfv``/``.md5``/``.sha*`` manifest (#243).
+
+The run underneath is the **real** verify, not a mocked one: what this module is about is that a seeded
+entry is an ordinary entry, so the claims worth testing -- a seeded hash decides a verdict, a missing
+file keeps the hash it was recorded with, migration re-keys a seeded entry from one read -- can only be
+made by letting #203's verify do its own work over the seed.
+
+The disk is a hand-written fake, `test_rehu_checksums`' near-verbatim, with one addition: it counts
+**manifest** reads separately from content reads, because *the legacy file is out of the loop after the
+first verify* is the claim that has to be measured rather than stated.
+"""
+
+import json
+import logging
+from io import BytesIO
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
+from typing import Any, Final
+
+import pytest
+from fake_directories import FakeDirEntry, FakeScandir
+from freezegun.api import FrozenDateTimeFactory
+from pytest import fixture, raises
+from pytest_mock import MockerFixture
+from rehuco_core import (
+    CHECKSUM_ALGORITHMS,
+    DEFAULT_CHECKSUM_ALGORITHM,
+    ChecksumReport,
+    VerifyChecksumsJob,
+    checksum_report_summary,
+    generate_checksums,
+    verify_checksums,
+)
+
+DIRECTORY: Final = Path("/fake/library/sculpting")
+INFO_PATH: Final = DIRECTORY / "info.rehu"
+RECORD_PATH: Final = DIRECTORY / "info.checksum"
+SFV_PATH: Final = DIRECTORY / "info.sfv"
+MD5_PATH: Final = DIRECTORY / "info.md5"
+
+VIDEO: Final = "lesson1.mp4"
+ARCHIVE: Final = "extras/pack.zip"
+
+VIDEO_BYTES: Final = bytes(range(256)) * 12
+ARCHIVE_BYTES: Final = bytes(range(255, -1, -1)) * 7
+
+CORRUPTED_VIDEO_BYTES: Final = b"\xff" + VIDEO_BYTES[1:]
+"""The video with one byte flipped, and **the same length** -- so nothing but the hash can tell."""
+
+NOW: Final = "2026-08-05T12:00:00Z"
+
+
+# region Fakes
+
+
+# the filesystem faces below are `test_rehu_checksums.FakeDisk`'s, near-verbatim -- kept as a separate
+# copy rather than shared, matching this codebase's fake-disk convention
+# pylint: disable=duplicate-code
+class FakeDisk:
+    """Every file under :data:`DIRECTORY`, and a record of what was read and written.
+
+    :param files: the resource's files, keyed by name relative to the ``.rehu``, POSIX-separated.
+    """
+
+    def __init__(self, files: dict[str, bytes]) -> None:
+        self.files: Final[dict[Path, bytes]] = {
+            DIRECTORY / PurePosixPath(name): payload for name, payload in files.items()
+        }
+        self.reads: list[str] = []
+        """Every content file opened for reading, in order, by record-relative name."""
+        self.manifest_reads: list[Path] = []
+        """Every file read whole as bytes -- which is only ever a legacy manifest (#243)."""
+        self.writes = 0
+        """How many times the record has been written."""
+        self.refused: Final[set[Path]] = set()
+        """The paths that answer neither *is it there* nor *what is in it* -- a share that says no,
+        which is the one condition a test cannot arrange by editing :attr:`files`."""
+
+    # region Filesystem faces
+
+    def scandir(self, directory: Path | str) -> FakeScandir:
+        """List one directory, derived from the current file set.
+
+        :param directory: the directory to read.
+        :returns: its entries -- files directly in it, and one entry per immediate subdirectory.
+        :raises FileNotFoundError: nothing lives at or under ``directory``.
+        """
+        directory = Path(directory)
+        entries: list[FakeDirEntry] = []
+        subdirectories: set[str] = set()
+        for path in self.files:
+            if path.parent == directory:
+                entries.append(FakeDirEntry(path.name))
+            elif directory in path.parents:
+                subdirectories.add(path.relative_to(directory).parts[0])
+        if not entries and not subdirectories and directory != DIRECTORY:
+            raise FileNotFoundError(str(directory))
+        entries.extend(FakeDirEntry(name, directory=True) for name in sorted(subdirectories))
+        return FakeScandir(entries)
+
+    def open(self, path: Path) -> BytesIO:
+        """Serve a content file's bytes, counting the read.
+
+        :param path: the file to open.
+        :returns: a fresh reader over its bytes.
+        :raises FileNotFoundError: nothing lives there.
+        """
+        payload = self.__payload(path)
+        self.reads.append(self.name_of(path))
+        return BytesIO(payload)
+
+    def stat(self, path: Path) -> SimpleNamespace:
+        """Answer a file's size.
+
+        :param path: the file to measure.
+        :returns: an object carrying ``st_size``.
+        :raises FileNotFoundError: nothing lives at ``path``.
+        """
+        return SimpleNamespace(st_size=len(self.__payload(path)))
+
+    def exists(self, path: Path) -> bool:
+        """Whether anything lives at ``path`` -- what a job's validation asks.
+
+        :param path: the candidate.
+        :returns: whether the disk holds it.
+        :raises PermissionError: the path is refused.
+        """
+        if Path(path) in self.refused:
+            raise PermissionError(str(path))
+        return Path(path) in self.files
+
+    def read_text(self, path: Path) -> str:
+        """Read a file as UTF-8 text -- how the record is loaded.
+
+        :param path: the file to read.
+        :returns: its decoded contents.
+        :raises FileNotFoundError: nothing lives at ``path``.
+        """
+        return self.__payload(path).decode("utf-8")
+
+    def read_bytes(self, path: Path) -> bytes:
+        """Read a file whole, counting it -- how a legacy manifest is read.
+
+        :param path: the file to read.
+        :returns: its bytes.
+        :raises PermissionError: the path is refused.
+        :raises FileNotFoundError: nothing lives at ``path``.
+        """
+        if Path(path) in self.refused:
+            raise PermissionError(str(path))
+        payload = self.__payload(path)
+        self.manifest_reads.append(Path(path))
+        return payload
+
+    def write_text(self, path: Path | str, text: str) -> None:
+        """Replace a file's contents -- how the record is saved.
+
+        :param path: the file to write.
+        :param text: what to write.
+        """
+        self.writes += 1
+        self.files[Path(path)] = text.encode("utf-8")
+
+    # endregion
+
+    # region Test-side conveniences
+
+    def name_of(self, path: Path) -> str:
+        """A path's record-relative, POSIX-separated name.
+
+        :param path: a path under :data:`DIRECTORY`.
+        :returns: the name a record entry would carry.
+        """
+        return path.relative_to(DIRECTORY).as_posix()
+
+    def put(self, name: str, payload: bytes) -> None:
+        """Add or replace one file.
+
+        :param name: its name relative to the ``.rehu``, POSIX-separated.
+        :param payload: its bytes.
+        """
+        self.files[DIRECTORY / PurePosixPath(name)] = payload
+
+    def remove(self, name: str) -> None:
+        """Delete one file.
+
+        :param name: its name relative to the ``.rehu``, POSIX-separated.
+        """
+        del self.files[DIRECTORY / PurePosixPath(name)]
+
+    @property
+    def record(self) -> dict[str, Any]:
+        """The record as it now stands on disk.
+
+        :returns: the parsed record object.
+        """
+        return json.loads(self.files[RECORD_PATH].decode("utf-8"))
+
+    @property
+    def entries(self) -> dict[str, dict[str, Any]]:
+        """The record's entries by name.
+
+        :returns: name to entry.
+        """
+        return {entry["name"]: entry for entry in self.record["files"]}
+
+    def forget(self) -> None:
+        """Clear the counters, so a second run's reads are counted on their own."""
+        self.reads = []
+        self.manifest_reads = []
+        self.writes = 0
+
+    # endregion
+
+    def __payload(self, path: Path) -> bytes:
+        """One file's bytes.
+
+        :param path: the file.
+        :returns: its contents.
+        :raises FileNotFoundError: nothing lives at ``path``.
+        """
+        payload = self.files.get(Path(path))
+        if payload is None:
+            raise FileNotFoundError(str(path))
+        return payload
+
+
+# pylint: enable=duplicate-code
+
+
+class FakeControl:  # pylint: disable=too-few-public-methods  # the protocol has exactly one method
+    """A stand-in for the engine's :class:`~rehuco_core.JobControl`, recording what it was told."""
+
+    def __init__(self) -> None:
+        self.reports: list[tuple[int, int | None]] = []
+
+    def report(self, done: int, total: int | None = None) -> None:
+        """Record one progress report.
+
+        :param done: bytes hashed so far.
+        :param total: bytes expected in all.
+        """
+        self.reports.append((done, total))
+
+
+def digest_of(payload: bytes, algorithm: str = DEFAULT_CHECKSUM_ALGORITHM) -> str:
+    """Hash bytes the way the record records them.
+
+    :param payload: the bytes to hash.
+    :param algorithm: which algorithm to hash under.
+    :returns: the hex digest.
+    """
+    digest = CHECKSUM_ALGORITHMS[algorithm].new_digest()
+    digest.update(payload)
+    return digest.hexdigest()
+
+
+VIDEO_CRC: Final = digest_of(VIDEO_BYTES, "crc32").upper()
+"""The video's CRC-32 in the uppercase hex a ``.sfv`` is written in -- which the comparison has to
+tolerate, since a recorded hash is compared case-insensitively (#203)."""
+
+ARCHIVE_CRC: Final = digest_of(ARCHIVE_BYTES, "crc32").upper()
+
+
+@fixture(name="disk")
+def fixture_disk(mocker: MockerFixture, freezer: FrozenDateTimeFactory) -> FakeDisk:
+    """A resource holding a video, an archive in a subfolder, and its own bookkeeping.
+
+    No ``.checksum`` -- every test here is about the run that has to find one somewhere else.
+
+    :param mocker: pytest-mock fixture.
+    :param freezer: the frozen clock, started at :data:`NOW` so a written stamp is predictable.
+    :returns: the disk under the code's feet.
+    """
+    freezer.move_to(NOW)
+    disk = FakeDisk(
+        {
+            "info.rehu": b'{"format_version": 2}',
+            "info00.jpg": b"a screenshot",
+            "Thumbs.db": b"a thumbnail cache",
+            VIDEO: VIDEO_BYTES,
+            ARCHIVE: ARCHIVE_BYTES,
+        }
+    )
+    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=disk.scandir)
+    mocker.patch("rehuco_core.checksum_seeding.os.scandir", side_effect=disk.scandir)
+    mocker.patch("rehuco_core.content_reading.shared_read_open", side_effect=disk.open)
+    mocker.patch("rehuco_core.checksum_record.atomic_write_text", side_effect=disk.write_text)
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=lambda self, **_kwargs: disk.stat(self))
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=disk.exists)
+    mocker.patch.object(Path, "read_text", autospec=True, side_effect=lambda self, **_kwargs: disk.read_text(self))
+    mocker.patch.object(Path, "read_bytes", autospec=True, side_effect=disk.read_bytes)
+    return disk
+
+
+def put_sfv(disk: FakeDisk, *lines: str, name: str = "info.sfv") -> None:
+    """Write a ``.sfv``-shaped manifest beside the record.
+
+    :param disk: the disk to write it to.
+    :param lines: its lines, without terminators.
+    :param name: the manifest's filename.
+    """
+    disk.put(name, ("\r\n".join(lines) + "\r\n").encode("utf-8"))
+
+
+# endregion
+
+
+# region Seeding a verify
+
+
+def test_a_sfv_seeds_the_first_verify(disk: FakeDisk) -> None:
+    """A resource with no record verifies against the ``.sfv`` beside it, and writes a record.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming both content files, mixing ``\\`` and ``/`` in the same file
+    * verify
+    * check both came back matched, the written names are POSIX, and the seed names the manifest
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras\\pack.zip {ARCHIVE_CRC}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+    assert report.seed is not None
+    assert report.seed.manifest == SFV_PATH
+    assert not report.seed.dropped
+
+
+def test_a_seeded_entry_is_recorded_under_the_suffix_algorithm(disk: FakeDisk) -> None:
+    """The manifest's suffix decides the algorithm, not the configured default.
+
+    **Test steps:**
+
+    * verify against a ``.sfv``, with the default algorithm left at XXH3
+    * check the written entry holds a ``crc32`` hash and carries this run's stamp
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+
+    verify_checksums(INFO_PATH)
+
+    assert disk.entries[VIDEO] == {
+        "name": VIDEO,
+        "crc32": VIDEO_CRC,
+        "verified": NOW,
+        "status": "matched",
+    }
+
+
+def test_a_seeded_entry_over_changed_bytes_is_mismatched(disk: FakeDisk) -> None:
+    """The old claim is *checked*, which is the whole point: changed bytes fail it.
+
+    **Test steps:**
+
+    * put a ``.sfv`` recorded when the files were good, then corrupt the video
+    * verify
+    * check the video is mismatched and still holds the hash it failed against
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+    disk.put(VIDEO, CORRUPTED_VIDEO_BYTES)
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[VIDEO] == "mismatched"
+    assert disk.entries[VIDEO]["crc32"] == VIDEO_CRC
+
+
+def test_a_seeded_entry_for_a_deleted_file_keeps_its_hash(disk: FakeDisk) -> None:
+    """A file that is gone is ``missing`` and keeps its hash, so the claim survives its return.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming both files, then delete the archive
+    * verify
+    * check the archive is missing and its recorded hash is still there
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+    disk.remove(ARCHIVE)
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[ARCHIVE] == "missing"
+    assert disk.entries[ARCHIVE]["crc32"] == ARCHIVE_CRC
+
+
+def test_content_the_manifest_never_listed_is_adopted(disk: FakeDisk) -> None:
+    """A file the old manifest does not name is adopted in the same run, as any unlisted file is.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming only the video
+    * verify
+    * check the archive was reported unexpected and recorded matched under the default algorithm
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "unexpected"}
+    assert disk.entries[ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
+    assert disk.entries[ARCHIVE]["status"] == "matched"
+
+
+def test_the_second_verify_never_opens_the_manifest(disk: FakeDisk) -> None:
+    """Seeding is one-way: the record it writes is what every later verify reads.
+
+    **Test steps:**
+
+    * verify against a ``.sfv``, then forget the counters and verify again
+    * check the second run read no manifest at all, and the ``.sfv`` is still on disk
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+    verify_checksums(INFO_PATH)
+    disk.forget()
+
+    report = verify_checksums(INFO_PATH)
+
+    assert disk.manifest_reads == []
+    assert report.seed is None
+    assert SFV_PATH in disk.files
+
+
+def test_seeding_happens_even_when_a_run_may_not_create_a_record(disk: FakeDisk) -> None:
+    """Finding a record is not creating one, so ``create_if_missing`` does not gate a seed.
+
+    **Test steps:**
+
+    * verify with ``create_if_missing`` off, against a resource holding only a ``.sfv``
+    * check it ran rather than raising
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    report = verify_checksums(INFO_PATH, create_if_missing=False)
+
+    assert report.statuses[VIDEO] == "matched"
+
+
+def test_a_verify_with_nothing_to_seed_from_still_refuses(disk: FakeDisk) -> None:
+    """No record and no manifest is the case ``create_if_missing`` was always about.
+
+    **Test steps:**
+
+    * verify a resource with neither, with ``create_if_missing`` off
+    * check it raises
+    """
+    with raises(FileNotFoundError):
+        verify_checksums(INFO_PATH, create_if_missing=False)
+
+    assert RECORD_PATH not in disk.files
+
+
+def test_a_generate_never_seeds(disk: FakeDisk) -> None:
+    """A generate re-baselines what it is handed, so a seed would buy it nothing and cost the claim.
+
+    **Test steps:**
+
+    * put a ``.sfv`` whose hash for the video is wrong, then generate
+    * check the record was baselined under the default algorithm and reported nothing seeded
+    """
+    put_sfv(disk, f"{VIDEO} {'0' * 8}")
+
+    report = generate_checksums(INFO_PATH)
+
+    assert report.seed is None
+    assert disk.entries[VIDEO][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(VIDEO_BYTES)
+
+
+def test_a_seeded_entry_migrates_from_one_read(disk: FakeDisk) -> None:
+    """*Update checksums on verify* composes with a seed, at no extra read.
+
+    **Test steps:**
+
+    * verify against a ``.sfv`` with ``migrate_to`` set to the default algorithm
+    * check the entry ends holding only the new hash, and its file was read once
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+
+    report = verify_checksums(INFO_PATH, migrate_to=DEFAULT_CHECKSUM_ALGORITHM)
+
+    assert report.statuses[VIDEO] == "matched"
+    assert disk.entries[VIDEO][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(VIDEO_BYTES)
+    assert "crc32" not in disk.entries[VIDEO]
+    assert disk.reads.count(VIDEO) == 1
+
+
+# endregion
+
+
+# region What a seed refuses to carry
+
+
+def test_a_name_outside_the_resource_is_dropped(disk: FakeDisk) -> None:
+    """Nothing outside the resource is ever hashed on the strength of a line in a legacy file.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming an escaping relative path, an absolute path and a drive letter
+    * verify
+    * check only the one legitimate file was read, and the three were reported dropped
+    """
+    put_sfv(
+        disk,
+        f"{VIDEO} {VIDEO_CRC}",
+        f"..\\..\\elsewhere\\secrets.zip {VIDEO_CRC}",
+        f"/etc/passwd {VIDEO_CRC}",
+        f"C:\\Windows\\system32\\cmd.exe {VIDEO_CRC}",
+    )
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.seed is not None
+    assert len(report.seed.dropped) == 3
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+    assert set(disk.reads) == {VIDEO, ARCHIVE}
+
+
+def test_a_name_that_is_not_content_is_dropped(disk: FakeDisk) -> None:
+    """A predecessor was free to checksum files this app deliberately does not.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming a screenshot and a ``Thumbs.db`` alongside the video
+    * verify
+    * check neither was seeded, so no screenshot edit can ever make this record dirty
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"info00.jpg {VIDEO_CRC}", f"Thumbs.db {VIDEO_CRC}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.seed is not None
+    assert {drop.line.split(" ")[0] for drop in report.seed.dropped} == {"info00.jpg", "Thumbs.db"}
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+
+
+def test_a_line_this_build_cannot_read_costs_itself(disk: FakeDisk) -> None:
+    """A malformed line is reported, and the rest of the file still seeds.
+
+    **Test steps:**
+
+    * put a ``.sfv`` with a comment, a blank line, a hash of the wrong length and a shapeless line
+    * verify
+    * check the two good lines seeded and the two bad ones were reported
+    """
+    put_sfv(
+        disk,
+        "; generated by some checker, 2019",
+        "",
+        f"{VIDEO} {VIDEO_CRC}",
+        "extras/pack.zip NOTAHASH",
+        "a line with no hash at all",
+        f"extras/pack.zip {ARCHIVE_CRC}",
+    )
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+    assert report.seed is not None
+    assert [drop.line for drop in report.seed.dropped] == ["extras/pack.zip NOTAHASH", "a line with no hash at all"]
+
+
+def test_a_name_listed_twice_is_seeded_once(disk: FakeDisk) -> None:
+    """Two claims about one file cannot both be the record's, so the first wins and the second is said.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming the video twice, the second time with a hash that would fail
+    * verify
+    * check the video matched and the duplicate was reported
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"{VIDEO} {'0' * 8}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[VIDEO] == "matched"
+    assert report.seed is not None
+    assert [drop.line for drop in report.seed.dropped] == [f"{VIDEO} {'0' * 8}"]
+
+
+def test_a_line_no_codec_reads_is_one_dropped_entry(disk: FakeDisk) -> None:
+    """A name that survives neither codec costs itself, not the seed.
+
+    **Test steps:**
+
+    * put a ``.sfv`` whose second line carries bytes cp1252 has no character for
+    * verify
+    * check the first line still seeded and the second was reported
+    """
+    disk.put("info.sfv", f"{VIDEO} {VIDEO_CRC}\r\n".encode() + b"\x81\x8d.mp4 " + VIDEO_CRC.encode() + b"\r\n")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[VIDEO] == "matched"
+    assert report.seed is not None
+    assert [drop.reason for drop in report.seed.dropped] == ["neither UTF-8 nor cp1252"]
+
+
+def test_a_name_whose_existence_cannot_be_answered_is_carried(disk: FakeDisk) -> None:
+    """A refusal is not an answer, so the claim is kept and the file reported missing.
+
+    **Test steps:**
+
+    * put a ``.sfv`` naming a file the disk refuses to answer for at all
+    * verify
+    * check the entry was seeded, came back missing, and still holds its hash
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"gone.mp4 {VIDEO_CRC}")
+    disk.refused.add(DIRECTORY / "gone.mp4")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses["gone.mp4"] == "missing"
+    assert disk.entries["gone.mp4"]["crc32"] == VIDEO_CRC
+
+
+def test_a_manifest_that_will_not_read_leaves_the_run_where_it_was(disk: FakeDisk) -> None:
+    """Finding a manifest is not reading one; a refusal is the same as having none.
+
+    **Test steps:**
+
+    * put a ``.sfv`` and make the disk refuse to open it
+    * verify with ``create_if_missing`` off
+    * check it refused the way a resource with no manifest does
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.refused.add(SFV_PATH)
+
+    with raises(FileNotFoundError):
+        verify_checksums(INFO_PATH, create_if_missing=False)
+
+
+def test_a_cp1252_name_survives(disk: FakeDisk) -> None:
+    """These files were written by Windows tools years ago; a non-ASCII name is cp1252, not garbage.
+
+    **Test steps:**
+
+    * add a file whose name carries a ``é``, and a ``.sfv`` naming it in cp1252 bytes
+    * verify
+    * check the name was read and the file matched
+    """
+    name = "resumé.mp4"
+    disk.put(name, VIDEO_BYTES)
+    disk.put("info.sfv", f"{name} {VIDEO_CRC}\r\n".encode("cp1252"))
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.statuses[name] == "matched"
+
+
+# endregion
+
+
+# region Which manifest is read
+
+
+def test_a_coreutils_manifest_seeds_the_same_names_either_way(disk: FakeDisk) -> None:
+    """The binary marker and the second separator space are noise; the names are what matter.
+
+    **Test steps:**
+
+    * seed once from a ``.sha256`` written with two spaces and a ``*``, and once without either
+    * check both produced the same record entries
+    """
+    sha_video = digest_of(VIDEO_BYTES, "sha256")
+    sha_archive = digest_of(ARCHIVE_BYTES, "sha256")
+    disk.put("info.sha256", f"{sha_video}  *{VIDEO}\n{sha_archive}  *extras/pack.zip\n".encode())
+    verify_checksums(INFO_PATH)
+    marked = disk.entries
+    disk.files.pop(RECORD_PATH)
+    disk.put("info.sha256", f"{sha_video} {VIDEO}\n{sha_archive} extras/pack.zip\n".encode())
+
+    verify_checksums(INFO_PATH)
+
+    assert disk.entries == marked
+    assert disk.entries[VIDEO]["sha256"] == sha_video
+
+
+def test_the_stronger_manifest_wins_and_the_other_is_reported(disk: FakeDisk) -> None:
+    """One manifest is read, by a fixed precedence, and the rest are said out loud.
+
+    **Test steps:**
+
+    * put both a ``.sfv`` and a ``.md5`` beside the record
+    * verify
+    * check the ``.md5`` seeded the entries and the ``.sfv`` was reported ignored and never read
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\n".encode())
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.seed is not None
+    assert report.seed.manifest == MD5_PATH
+    assert report.seed.ignored == (SFV_PATH,)
+    assert disk.manifest_reads == [MD5_PATH]
+    assert "md5" in disk.entries[VIDEO]
+
+
+def test_a_manifest_this_build_cannot_hash_is_not_seeded_from(disk: FakeDisk) -> None:
+    """A ``.sha1`` names an algorithm this build dropped, so it is passed over rather than failed.
+
+    **Test steps:**
+
+    * put a ``.sha1`` beside the record and verify with ``create_if_missing`` off
+    * check it refused the way a resource with no manifest at all does
+    """
+    disk.put("info.sha1", f"{'a' * 40} *{VIDEO}\n".encode())
+
+    with raises(FileNotFoundError):
+        verify_checksums(INFO_PATH, create_if_missing=False)
+
+
+def test_an_unrelated_manifest_is_not_this_record_s(disk: FakeDisk) -> None:
+    """Same-stem is what makes a manifest this record's; anything else is an ordinary file.
+
+    **Test steps:**
+
+    * put a ``random.sfv`` naming the video, with no ``random.rehu`` anywhere
+    * verify with ``create_if_missing`` off
+    * check it refused, since nothing was this record's manifest
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", name="random.sfv")
+
+    with raises(FileNotFoundError):
+        verify_checksums(INFO_PATH, create_if_missing=False)
+
+
+# endregion
+
+
+# region Around the run
+
+
+def test_a_verify_job_accepts_a_resource_that_has_only_a_manifest(disk: FakeDisk) -> None:
+    """Refusing here would send the reader at a Generate, throwing the old claim away.
+
+    **Test steps:**
+
+    * validate a verify job over a resource with a ``.sfv`` and no ``.checksum``
+    * check it passes, and that removing the manifest makes it refuse again
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    job = VerifyChecksumsJob(INFO_PATH)
+
+    assert job.validate() is None
+
+    disk.remove("info.sfv")
+
+    assert job.validate() == f"This resource has no checksum record yet: {RECORD_PATH}"
+
+
+def test_the_summary_names_the_manifest_a_run_was_seeded_from(disk: FakeDisk) -> None:
+    """A seed happens once in a resource's life, so which file it came from is what a reader wants.
+
+    **Test steps:**
+
+    * verify against a ``.md5`` holding one good line and one unusable one, with a ``.sfv`` beside it
+    * check the summary line names the manifest and counts what it dropped and ignored
+    """
+    disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\nNOTAHASH *extras/pack.zip\n".encode())
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert checksum_report_summary(report) == (
+        "1 matched, 1 unexpected, seeded 1 from info.md5, 1 seed line dropped, 1 manifest ignored"
+    )
+
+
+def test_a_clean_seed_says_only_what_it_seeded(disk: FakeDisk) -> None:
+    """With nothing dropped and nothing ignored, the summary carries one clause, not three.
+
+    **Test steps:**
+
+    * verify against a ``.sfv`` naming both content files, cleanly
+    * check the summary names the manifest and says no more
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert checksum_report_summary(report) == "2 matched, seeded 2 from info.sfv"
+
+
+def test_a_verify_job_logs_what_the_manifest_did_not_contribute(
+    disk: FakeDisk, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The summary carries the counts; the resource's own log is where *which* and *why* land.
+
+    **Test steps:**
+
+    * run a verify job over a resource with a ``.md5`` holding one unusable line and a ``.sfv`` beside it
+    * check the log names the ignored manifest and the dropped line's reason
+    """
+    disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\nabcdef *extras/pack.zip\n".encode())
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    caplog.set_level(logging.INFO, logger="rehuco_core.checksum_jobs")
+
+    VerifyChecksumsJob(INFO_PATH).run(FakeControl())
+
+    assert f"{SFV_PATH} was not read: info.md5 is the manifest this record was seeded from." in caplog.text
+    assert "dropped 'abcdef *extras/pack.zip' -- not a MD5 hash." in caplog.text
+
+
+def test_a_report_carries_no_seed_by_default() -> None:
+    """Every run that did not seed says so by carrying nothing, so a surface can read the field plainly.
+
+    **Test steps:**
+
+    * build an empty report
+    * check its seed is absent
+    """
+    assert ChecksumReport().seed is None
+
+
+# endregion
