@@ -510,6 +510,26 @@ def test_a_first_generate_turns_verify_on(
     assert actions.finding == "Checksums recorded: 1 matched."
 
 
+def test_a_resource_with_only_a_legacy_manifest_is_offered_verify(
+    mocker: MockerFixture, model: RehuDocumentModel, queue: TaskQueue
+) -> None:
+    """A ``.sfv`` beside the record is something to verify against, so Verify is not greyed out (#243).
+
+    **Test steps:**
+
+    * build the actions over a resource with no ``.checksum`` but a legacy manifest beside it
+    * check Verify is offered, and that it is not once the manifest is gone too
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self != RECORD_PATH)
+    manifest = mocker.patch("rehuco_agent.documents.checksum_actions.legacy_manifest_for", return_value=Path("a.sfv"))
+
+    assert ChecksumActions(model, queue).verify_action.isEnabled()
+
+    manifest.return_value = None
+
+    assert not ChecksumActions(model, queue).verify_action.isEnabled()
+
+
 def test_a_reorder_or_a_removal_elsewhere_in_the_queue_says_nothing(actions: ChecksumActions) -> None:
     """Only a job *moving state* can carry a finding, so the other three notifications are no-ops.
 

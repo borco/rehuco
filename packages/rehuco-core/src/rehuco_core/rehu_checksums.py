@@ -27,6 +27,12 @@ a directory that will not list refuses with a
 tree with an offline *branch* carries that branch's entries rather than dropping them -- a baseline
 describes what is, and a walk that could not see a directory establishes nothing about it.
 
+**A resource checksummed before this app existed is verified, not baselined** (#243). A verify that
+finds no ``.checksum`` but does find a same-stem legacy ``.sfv``/``.md5``/``.sha*`` beside the record
+seeds its entries from that file (:mod:`rehuco_core.checksum_seeding`) and checks them -- so the first
+run tests a claim made when the files were known good, rather than recording today's bytes as matched.
+It happens once: the record it writes is what every later verify reads.
+
 Which files are content is :func:`~rehuco_core.enumerate_content_files`'s answer (#226), shared with the
 size scan; reads go through :func:`~rehuco_core.read_content_chunks` (#241), so a rename can land
 mid-verify and the run follows the resource. The record's *format* -- entries, statuses, load and save --
@@ -55,6 +61,7 @@ from .checksum_record import (
     save_checksum_record,
     verified_stamp,
 )
+from .checksum_seeding import LegacySeed, seed_from_legacy_manifest
 from .constants import EXCLUDED_FILE_PATTERNS
 from .content_reading import read_content_chunks
 from .rehu_content_files import enumerate_content_files
@@ -92,6 +99,9 @@ class ChecksumReport:
         entry is carried untouched and reported here instead.
     :param unnamed_malformed: how many entries could not even be named -- reportable only as a count,
         since a name is exactly what they lack.
+    :param seed: what a legacy ``.sfv``/``.md5``/``.sha*`` manifest contributed, when this run was the
+        one that found it (#243) -- ``None`` for every run before and after, since a seed happens once
+        in a resource's life and the ``.checksum`` it writes is what the next verify reads.
     :param unreadable_directories: the directories under the resource that would not list, by
         record-relative name (#245). A run over a tree with an offline branch is **not** a clean run,
         and this is what says so even when the record listed nothing under that branch -- there was
@@ -102,6 +112,7 @@ class ChecksumReport:
     skipped: tuple[str, ...] = ()
     unreadable: tuple[str, ...] = ()
     unnamed_malformed: int = 0
+    seed: LegacySeed | None = None
     unreadable_directories: tuple[str, ...] = ()
 
 
@@ -123,6 +134,9 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         which is how *force* is expressed.
     :param create_if_missing: whether a resource with no ``.checksum`` yet starts from an empty record
         rather than raising.
+    :param seed_legacy: whether a resource with no ``.checksum`` may start from the legacy manifest
+        beside it (#243) -- a verify's business, since seeding produces *entries to check* and a
+        generate re-baselines whatever it is handed.
     :param migrate_to: re-record matched entries under this algorithm (*Update checksums on verify*),
         or ``None`` to leave every entry on its own; verify-only, see :meth:`verify`.
     :param excluded_patterns: filename globs the content walk leaves out, passed straight through to
@@ -140,6 +154,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         only: Collection[str] | None,
         stale_after: timedelta | None,
         create_if_missing: bool,
+        seed_legacy: bool,
         migrate_to: str | None,
         excluded_patterns: tuple[str, ...],
         progress: ChecksumProgress | None,
@@ -154,6 +169,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__only: Final[frozenset[str] | None] = None if only is None else frozenset(only)
         self.__stale_after: Final = stale_after
         self.__create_if_missing: Final = create_if_missing
+        self.__seed_legacy: Final = seed_legacy
         self.__migrate_to: Final = migrate_to
         self.__excluded_patterns: Final = excluded_patterns
         self.__progress: Final = progress
@@ -165,9 +181,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         # to get (or, with ``create_if_missing``, a clean report over an empty record it invented) (#245)
         self.__enumeration: Final = enumerate_content_files(self.__rehu_location.path, self.__excluded_patterns)
         self.__enumeration.require_reachable()
+        # the content before the record, because a seed may only carry names that are content today
+        # (#243) -- and because the walk it reads has already happened either way
+        self.__content: Final = self.__content_locations()
+        self.__seed: LegacySeed | None = None
         self.__record: Final[dict[str, Any]] = self.__load()
         self.__entries: Final[list[Any]] = self.__record[CHECKSUM_FILES_KEY]
-        self.__content: Final = self.__content_locations()
         self.__done = 0
         self.__total: int | None = 0
         self.__statuses: Final[dict[str, ChecksumStatus]] = {}
@@ -193,8 +212,13 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         The exclusion set never touches a verdict: entries are checked whatever it says, and it only
         decides which unlisted files exist to be adopted ([[data-model#checksums]]).
 
+        **A resource with no record but a legacy manifest beside it is verified against that** (#243):
+        the seeded entries carry a hash and no date, so every rule above applies to them unchanged --
+        which is the whole point of seeding entries rather than writing a second kind of run.
+
         :returns: what the run established.
-        :raises FileNotFoundError: no record and ``create_if_missing`` is off.
+        :raises FileNotFoundError: no record, nothing to seed one from, and ``create_if_missing`` is
+            off.
         :raises ChecksumRecordError: a record file this build cannot read at all.
         :raises OSError: the record could not be re-written at the end.
         """
@@ -237,14 +261,30 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
     # region Setup
 
     def __load(self) -> dict[str, Any]:
-        """Read the record whole, or start a fresh one where ``create_if_missing`` allows.
+        """Read the record whole, seed one from a legacy manifest, or start a fresh one.
+
+        In that order, and the order is the decision (#243): **seeding is finding a record, not
+        creating one**, so it happens even with ``create_if_missing`` off -- that flag means *start
+        from an empty record when there is nothing at all to start from*, and a resource with a
+        ``.sfv`` beside it has something. A manifest that yields no entry at all yields no record
+        either, and the run is back where it was.
+
+        The legacy file is looked for **only** when there is no ``.checksum``, which is what makes this
+        one-way: the first verify writes a record, and every verify after it reads that.
 
         :returns: the record object, entries included.
-        :raises FileNotFoundError: no record and creating one was not asked for.
+        :raises FileNotFoundError: no record, nothing to seed one from, and creating one was not asked
+            for.
         """
         try:
             return load_checksum_record(checksum_record_path(self.__rehu_location.path))
         except FileNotFoundError:
+            if self.__seed_legacy:
+                self.__seed = seed_from_legacy_manifest(self.__rehu_location.path, self.__content)
+            if self.__seed is not None and self.__seed.entries:
+                seeded = new_checksum_record()
+                seeded[CHECKSUM_FILES_KEY] = list(self.__seed.entries)
+                return seeded
             if self.__create_if_missing:
                 return new_checksum_record()
             raise
@@ -640,13 +680,17 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         Any name asked for that the run never met is reported ``missing`` first, so a typo in a
         targeted call answers plainly instead of silently doing nothing.
 
+        **A seeded run always writes**, even where the entries came out identical to what it was
+        handed: the record's existence is what makes the legacy manifest one-way (#243), and a run that
+        skipped the write would read the old file again next time.
+
         :param rewritten: the record's entries as this run leaves them.
         """
         if self.__only is not None:
             for name in self.__only:
                 if name not in self.__statuses and name not in self.__skipped and name not in self.__unreadable:
                     self.__statuses[name] = "missing"
-        if rewritten != self.__entries:
+        if rewritten != self.__entries or self.__seed is not None:
             self.__record[CHECKSUM_FILES_KEY] = rewritten
             save_checksum_record(checksum_record_path(self.__rehu_location.path), self.__record)
 
@@ -657,6 +701,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             skipped=tuple(self.__skipped),
             unreadable=tuple(self.__unreadable),
             unnamed_malformed=self.__unnamed_malformed,
+            seed=self.__seed,
             unreadable_directories=self.__unreadable_directories(),
         )
 
@@ -708,6 +753,9 @@ def generate_checksums(  # pylint: disable=too-many-arguments
         only=only,
         stale_after=stale_after,
         create_if_missing=create_if_missing,
+        # a generate re-baselines whatever it is handed, so seeded entries would be overwritten where
+        # it is full and silently imported unchecked where it is targeted -- neither is a seed's point
+        seed_legacy=False,
         migrate_to=None,
         excluded_patterns=excluded_patterns,
         progress=progress,
@@ -734,6 +782,10 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     algorithms, unlisted content is adopted and reported ``unexpected``, and ``migrate_to`` moves
     matched entries onto a new algorithm from the same single read.
 
+    A resource with no record but a legacy ``.sfv``/``.md5``/``.sha*`` manifest beside it is **seeded
+    from that manifest and verified against it** (:mod:`rehuco_core.checksum_seeding`, #243) --
+    including with ``create_if_missing`` off, since finding a record is not creating one.
+
     :param rehu_path: the resource's ``.rehu`` file.
     :param coordinator: the rename barrier to read through (#241), or ``None`` for a private one.
     :param algorithm: what an adopted file's hash is recorded under.
@@ -750,7 +802,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     :param progress: told how far the run has got, in bytes.
     :param checkpoint: the run's place to stop, called between chunks and never caught.
     :returns: what the run established.
-    :raises FileNotFoundError: no record and ``create_if_missing`` is off.
+    :raises FileNotFoundError: no record, nothing to seed one from, and ``create_if_missing`` is off.
     :raises ChecksumRecordError: a record file this build cannot read at all.
     :raises ValueError: an algorithm this build does not ship.
     :raises ContentUnreachableError: the resource's directory would not list -- checked before the
@@ -765,6 +817,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         only=only,
         stale_after=stale_after,
         create_if_missing=create_if_missing,
+        seed_legacy=True,
         migrate_to=migrate_to,
         excluded_patterns=excluded_patterns,
         progress=progress,
