@@ -73,6 +73,7 @@ from .plugins import (
     PluginRegistry,
     PluginSpec,
 )
+from .rehu_catalog import CatalogCheckpoint, CatalogEnumeration, enumerate_catalog_resources
 from .rehu_checksums import (
     ChecksumCheckpoint,
     ChecksumProgress,
@@ -171,6 +172,8 @@ __all__ = [
     "CORE_PLUGIN",
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
+    "CatalogCheckpoint",
+    "CatalogEnumeration",
     "ChecksumAlgorithm",
     "ChecksumCheckpoint",
     "ChecksumDigest",
@@ -261,6 +264,7 @@ __all__ = [
     "content_size_on_disk",
     "convert_tc",
     "current_block_version",
+    "enumerate_catalog_resources",
     "enumerate_content_files",
     "enumerate_content_images",
     "generate_checksums",
