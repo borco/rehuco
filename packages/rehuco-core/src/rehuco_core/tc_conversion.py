@@ -16,6 +16,7 @@ from uuid import uuid4
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
+from .tc_conversion_backups import backup_path, restore_backup
 from .tc_description import rewrite_description_images
 from .tc_document import TcDocument
 from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
@@ -59,8 +60,6 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     :param overwrite: whether an existing target ``.rehu`` may be replaced.
     :param username: the identity the imported per-user flags are filed under; see :func:`convert_tc`.
     """
-
-    __BACKUP_SUFFIX: Final = ".orig"
 
     def __init__(self, tc_path: Path, *, keep_backups: bool, overwrite: bool, username: str) -> None:
         self.__tc_path: Final = tc_path
@@ -150,7 +149,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         :raises FileExistsError: a ``.orig`` sibling already exists.
         """
         for original in originals:
-            backup = self.__backup_path(original)
+            backup = backup_path(original)
             if backup.exists():
                 raise FileExistsError(backup)
 
@@ -163,7 +162,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         backups: dict[Path, Path] = {}
         try:
             for original in originals:
-                backup = self.__backup_path(original)
+                backup = backup_path(original)
                 original.rename(backup)
                 backups[original] = backup
         except Exception:
@@ -198,12 +197,13 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         self.__restore(backups)
 
     def __restore(self, backups: dict[Path, Path]) -> None:
-        """Rename every backup back to its original name.
+        """Rename every backup back to its original name, through the same rename-back an
+        after-the-fact revert runs (:func:`~rehuco_core.tc_conversion_backups.restore_backup`, #190).
 
         :param backups: this conversion's ``{original: backup}`` map.
         """
-        for original, backup in backups.items():
-            backup.rename(original)
+        for backup in backups.values():
+            restore_backup(backup)
 
     def __delete_backups(self, backups: dict[Path, Path]) -> None:
         """Delete every backup after a fully successful conversion.
@@ -212,11 +212,3 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         """
         for backup in backups.values():
             backup.unlink(missing_ok=True)
-
-    def __backup_path(self, original: Path) -> Path:
-        """The ``.orig`` sibling for ``original``.
-
-        :param original: the file being backed up.
-        :returns: ``original`` with :data:`__BACKUP_SUFFIX` appended to its full name.
-        """
-        return original.with_name(original.name + self.__BACKUP_SUFFIX)
