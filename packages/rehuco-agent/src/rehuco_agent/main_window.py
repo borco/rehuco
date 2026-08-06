@@ -7,7 +7,7 @@ from typing import Final, override
 
 import PySide6QtAds as QtAds
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
-from borco_pyside.logging import LogWidget
+from borco_pyside.logging import LogScope, LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent
@@ -20,7 +20,13 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
-from rehuco_core import DEFAULT_RENAME_COORDINATOR, FINISHED_JOB_STATES, JobState, TaskQueue
+from rehuco_core import (
+    DEFAULT_RENAME_COORDINATOR,
+    FINISHED_JOB_STATES,
+    JobState,
+    SweepChecksumsJob,
+    TaskQueue,
+)
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
@@ -31,7 +37,9 @@ from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
 from .main_window_ui import Ui_MainWindow
+from .settings.checksum_settings import shared_checksum_settings
 from .settings.document_session_settings import DocumentSessionSettings
+from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
@@ -47,7 +55,7 @@ from .settings.ui.logs_page import LogsPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
-from .tasks import TaskQueueStore, TaskQueueWidget
+from .tasks import TaskQueueStore, TaskQueueWidget, job_already_queued
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -319,11 +327,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit`` separator are
         appended later, in :meth:`__setup_docking_system`, once the settings dock's own toggle
         action exists to reuse.
+
+        ``Sweep checksums...`` (#242) lives here rather than in a menu of its own: ``File`` is where
+        every *point at something on disk and act on it* entry already is, and a sweep is a folder
+        chooser plus an enqueue. A ``Tools`` menu becomes worth having when the second catalog-wide
+        operation lands -- the cache scan the same walk was built for ([[data-model#scan-and-staleness]])
+        -- and both should move there together rather than one arriving alone.
         """
         self.__ui.open_rehu_action.triggered.connect(self.__on_open_rehu)
         self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
         self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
+        self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.quit_action.triggered.connect(self.close)
         self.__ui.open_recents_menu.aboutToShow.connect(self.__populate_recents_menu)
         # settings_action's checked state can go stale without emitting toggled (see
@@ -365,6 +380,43 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for model in self.__documents_dock.open_document_models():
             if model.dirty and not save_or_prompt_retry(self, model):
                 return
+
+    def __on_sweep_checksums(self) -> None:
+        """Prompt for a folder and queue a sweep over it (``File`` > ``Sweep checksums...``, #242).
+
+        **A folder per run, not a configured library.** Where a machine's folder roots live is
+        [[mounts-and-storage#rehuco-scope]]'s `.rehuco` question and nothing writes one yet, so a sweep
+        is pointed at a folder the way ``Open folder...`` is -- with the last one remembered, since a
+        catalog is swept repeatedly and re-navigating to it every time would be the whole friction.
+
+        The settings are resolved here, at enqueue, and captured into the job: core never reads a
+        setting, and a restored sweep is meant to be *the sweep that was queued*
+        ([[appendices.task-queue#lifetime]]).
+
+        Enqueued inside the folder's own log scope, so the sweep's records are attributable to what it
+        was over ([[appendices.task-queue#scopes]]) -- no document is open on that scope, so the detail
+        reads in the app-wide Log dock.
+        """
+        settings = shared_checksum_settings()
+        chosen = QFileDialog.getExistingDirectory(self, "Sweep Checksums", settings.last_sweep_root)
+        if not chosen:
+            return
+        root = Path(chosen)
+        settings.last_sweep_root = str(root)
+        settings.save(persistent_settings())
+        job = SweepChecksumsJob(
+            root,
+            algorithm=settings.algorithm,
+            stale_after=settings.stale_after,
+            create_if_missing=settings.create_missing_on_verify,
+            migrate_to=settings.migrate_target,
+            excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+        )
+        if job_already_queued(self.__task_queue, label=job.label, source=job.source):
+            LOG.info("%s is already in the task queue; it was not queued again.", job.label)
+            return
+        with LogScope.open(root):
+            self.__task_queue.enqueue(job)
 
     def __populate_recents_menu(self) -> None:
         """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).
