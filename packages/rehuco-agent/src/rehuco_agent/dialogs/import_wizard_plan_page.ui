@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImportWizardPlanPage</class>
+ <widget class="QWidget" name="ImportWizardPlanPage">
+  <layout class="QVBoxLayout" name="main_layout">
+   <item>
+    <widget class="QLabel" name="summary_label">
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLineEdit" name="filter_edit">
+     <property name="placeholderText">
+      <string>Filter by path or flag...</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableView" name="plan_table_view">
+     <property name="selectionMode">
+      <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+     </property>
+     <property name="sortingEnabled">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

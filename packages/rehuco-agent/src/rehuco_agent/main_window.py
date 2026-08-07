@@ -30,6 +30,7 @@ from rehuco_core import (
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
+from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
@@ -40,6 +41,7 @@ from .main_window_ui import Ui_MainWindow
 from .settings.checksum_settings import shared_checksum_settings
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
+from .settings.identity_settings import shared_identity_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
@@ -339,6 +341,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
+        self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
         self.__ui.quit_action.triggered.connect(self.close)
         self.__ui.open_recents_menu.aboutToShow.connect(self.__populate_recents_menu)
         # settings_action's checked state can go stale without emitting toggled (see
@@ -417,6 +420,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             return
         with LogScope.open(root):
             self.__task_queue.enqueue(job)
+
+    def __on_import_legacy_catalog(self) -> None:
+        """Open the bulk `.tc` import wizard (``File`` > ``Import Legacy Catalog...``, #192).
+
+        Filed under the **unknown** identity, the same rule an in-app `.tc` open already follows
+        (``DocumentsDock``): the per-user flags a legacy file carries were not set by this install's
+        own identity ([[field-schema#per-user-shared]], #109).
+        """
+        wizard = ImportLegacyCatalogWizard(
+            self.__task_queue, username=shared_identity_settings().unknown_username, parent=self
+        )
+        wizard.exec()
 
     def __populate_recents_menu(self) -> None:
         """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).

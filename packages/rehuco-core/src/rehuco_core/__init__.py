@@ -179,6 +179,7 @@ from .tc_conversion_plan import (
 )
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
+from .tc_import_job import INFO_TC_FILENAME, TC_IMPORT_KIND, TcImportJob
 from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshot_files, scan_tc_screenshots
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
 
@@ -250,6 +251,7 @@ __all__ = [
     "GenerateChecksumsJob",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
+    "INFO_TC_FILENAME",
     "JobCancelled",
     "JobControl",
     "JobPaused",
@@ -286,6 +288,7 @@ __all__ = [
     "StopRequest",
     "SweepChecksumsJob",
     "SweepTally",
+    "TC_IMPORT_KIND",
     "TUTORIAL_FIELD_NAMES",
     "TUTORIAL_PLUGIN",
     "TaskJob",
@@ -300,6 +303,7 @@ __all__ = [
     "TcConverter",
     "TcDescriptionRewriter",
     "TcDocument",
+    "TcImportJob",
     "TcScreenshotScanner",
     "USERS_KEY",
     "VerifyChecksumsJob",

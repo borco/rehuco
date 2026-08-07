@@ -39,6 +39,7 @@
     <addaction name="save_all_action"/>
     <addaction name="separator"/>
     <addaction name="sweep_checksums_action"/>
+    <addaction name="import_legacy_catalog_action"/>
     <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="view_menu">
@@ -105,6 +106,14 @@
    </property>
    <property name="toolTip">
     <string>Verify every resource under a folder, skipping what was checked recently.</string>
+   </property>
+  </action>
+  <action name="import_legacy_catalog_action">
+   <property name="text">
+    <string>&amp;Import Legacy Catalog...</string>
+   </property>
+   <property name="toolTip">
+    <string>Bulk-convert a folder tree of legacy .tc resources to .rehu.</string>
    </property>
   </action>
   <action name="settings_action">
