@@ -900,23 +900,36 @@ def test_a_revert_with_nothing_edited_says_nothing_about_edits(
 
 
 def test_cancelling_a_run_stops_the_jobs_still_queued(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, queue: TaskQueue, mocker: MockerFixture
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """Neither operation is safely interruptible, so *cancel stops after the current resource* is the
     only honest meaning -- the queued ones are dropped without ever starting.
 
     **Test steps:**
 
-    * pause the queue, discard the selection, cancel, then let the queue run
+    * hold the first job inside the worker, discard the selection, cancel, then let it finish
     * verify rows came back cancelled and fewer resources were touched than were selected
     """
     del answer_yes
-    discard = mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", return_value=())
-    queue.pause()
+    # Holding the first job is what leaves the other two demonstrably queued when Cancel is clicked.
+    # `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job` applied to the
+    # jobs *already enqueued* ([[appendices.task-queue#pause-concept]]), never a gate a later enqueue
+    # passes through, so all three raced the click and a fast runner finished them first.
+    running = Event()
+    release = Event()
+
+    def hold_the_worker(*_args: Any, **_kwargs: Any) -> Sequence[Path]:
+        """Park the worker inside the first resource until the test has cancelled the rest."""
+        running.set()
+        assert release.wait(TIMEOUT / 1000)
+        return ()
+
+    discard = mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=hold_the_worker)
 
     ui_of(dialog).discard_button.click()
+    assert running.wait(TIMEOUT / 1000)
     ui_of(dialog).cancel_button.click()
-    queue.resume()
+    release.set()
     wait_for_outcomes(qtbot, dialog)
 
     outcomes = [row.outcome for row in dialog.model.rows()]

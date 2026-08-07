@@ -9,6 +9,7 @@ reader.
 import json
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+from threading import Event
 from types import SimpleNamespace
 from typing import Any, Final
 
@@ -76,6 +77,12 @@ VIDEO: Final = "lesson1.mp4"
 ARCHIVE: Final = "extras/pack.zip"
 
 PATTERNS: Final = ("Thumbs.db",)
+
+SETTLE: Final = 5.0
+"""How long a test waits for the loader's pool thread to reach a state, in seconds.
+
+Far above anything the read needs and far below a suite that looks hung, so a wait that runs out is a
+genuine failure rather than a slow runner -- the same meaning `tests/concurrency.py` gives it core-side."""
 
 STAMP: Final = "2026-08-05T12:00:00Z"
 
@@ -500,17 +507,35 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
 
     **Test steps:**
 
-    * start two reads answering differently
+    * start a read, hold it inside the walk, and start a second one over it
     * check only the second one's answer is ever delivered
     """
-    answers = [ChecksumRows(rows=(ChecksumRow("first.mp4"),)), ChecksumRows(rows=(ChecksumRow("second.mp4"),))]
-    mocker.patch("rehuco_agent.documents.checksum_rows.read_checksum_rows", side_effect=answers)
+    first = ChecksumRows(rows=(ChecksumRow("first.mp4"),))
+    second = ChecksumRows(rows=(ChecksumRow("second.mp4"),))
+    answers = iter((first, second))
+    reached = Event()
+    release = Event()
+
+    def read(*_args: Any) -> ChecksumRows:
+        """Park the first walk until the test has superseded it; answer the second at once."""
+        answer = next(answers)
+        if answer is first:
+            reached.set()
+            assert release.wait(SETTLE)
+        return answer
+
+    mocker.patch("rehuco_agent.documents.checksum_rows.read_checksum_rows", side_effect=read)
     loader = ChecksumRowsLoader()
     delivered: list[ChecksumRows] = []
     loader.loaded.connect(delivered.append)
 
+    # the first read has to still be *out* when the second start supersedes it: two starts back to
+    # back leave a window in which the pool thread finishes the first and delivers it before the
+    # second start ever runs, which is a legitimate delivery and asserts nothing about generations
     loader.start(INFO_PATH, PATTERNS)
+    assert reached.wait(SETTLE)
     loader.start(INFO_PATH, PATTERNS)
+    release.set()
 
     qtbot.waitUntil(lambda: bool(delivered), timeout=5000)
     qtbot.wait(50)

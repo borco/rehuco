@@ -121,6 +121,10 @@ class SteppedReader:
 
         :param chunks: how many chunks to allow.
         """
+        # cleared *before* releasing, so the flag a caller waits on next is the one this step's chunk
+        # sets rather than the one still standing from the last; clearing afterwards would race the
+        # reader and could wipe a park that had already happened
+        self.parked.clear()
         for _ in range(chunks):
             self.__permits.release()
 
@@ -143,6 +147,14 @@ def rename_while_parked(reader: SteppedReader, coordinator: RenameCoordinator, p
     :param path: the resource's ``.rehu``.
     :param new_name: what to rename it to.
     """
+    # Wait for the reader to be parked -- which is to say *holding* -- before asking for the rename.
+    # Between letting go of one name and re-opening under the next it holds nothing, and a rename
+    # started in that window finds no reader to wait for and completes without ever raising the flag,
+    # leaving `wait_until` below polling for something that will not come back. Harmless for a single
+    # rename, which starts from `SteppedReader.start`'s own park; renaming twice in a row is what
+    # exposes it, and only where the threads interleave that way -- hence green on Windows and flaky
+    # on Linux and macOS.
+    assert reader.parked.wait(SETTLE)
     landed = Event()
 
     def rename() -> None:
