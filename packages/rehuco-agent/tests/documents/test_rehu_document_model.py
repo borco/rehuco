@@ -29,7 +29,9 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_l
 from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    DEFAULT_UNKNOWN_USERNAME,
     FORMAT_VERSION_KEY,
+    ConversionBackups,
     LearningPathEntry,
     LockReasonKind,
     RehuDocument,
@@ -40,6 +42,24 @@ from rehuco_core import (
     scan_tc_screenshot_files,
     visible_learning_paths,
 )
+
+
+def backups_restoring(legacy: Path) -> ConversionBackups:
+    """What a completed revert reports it put back, for a test mocking the core operation.
+
+    :param legacy: where the backed-up ``.tc`` landed -- the file ``revert_conversion`` then adopts.
+    :returns: a plausible inventory.
+    """
+    return ConversionBackups(
+        rehu_path=legacy.with_suffix(".rehu"),
+        backups=(legacy.with_name(legacy.name + ".orig"),),
+        total_bytes=1000,
+        written=(legacy.with_suffix(".rehu"),),
+        obstructions=(),
+        legacy_restored=legacy,
+        edited_since=False,
+        converted="2023-11-14T22:13:20Z",
+    )
 
 
 def lister_of(scanner: RehuDocumentImageScanner) -> object:
@@ -1490,6 +1510,138 @@ def test_convert_reassigns_a_fresh_rehu_scanner(mocker: MockerFixture) -> None:
     assert isinstance(model.image_scanner, RehuDocumentImageScanner)
     assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
     assert model.image_scanner is not original_scanner
+
+
+def test_revert_conversion_adopts_the_restored_tc_in_place(mocker: MockerFixture) -> None:
+    """``revert_conversion()`` is ``convert()``'s exact mirror: the same dock keeps showing the same
+    resource, now a locked legacy ``.tc`` again, with no reopen round-trip (#193).
+
+    **Test steps:**
+
+    * build a model over a converted ``.rehu``
+    * mock the core revert to report the restored ``.tc``, and ``load_tc`` to a legacy document
+    * call ``model.revert_conversion()``
+    * verify the model now stands for the ``.tc``, locked and clean, with a fresh tc scanner
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    original_scanner = model.image_scanner
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.revert_conversion",
+        return_value=backups_restoring(Path("/fake/info.tc")),
+    )
+    restored = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "Legacy Title", "primary": True}]},
+        Path("/fake/info.tc"),
+        legacy_tc=True,
+    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.load_tc", return_value=restored)
+
+    model.revert_conversion()
+
+    assert model.document is restored
+    assert model.path == Path("/fake/info.tc")
+    assert model.title == "Legacy Title"
+    assert model.dirty is False
+    assert model.locked is True
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    assert lister_of(model.image_scanner) is scan_tc_screenshot_files
+    assert model.image_scanner is not original_scanner
+
+
+def test_revert_conversion_reads_the_restored_tc_under_the_unknown_identity(mocker: MockerFixture) -> None:
+    """A revert puts back exactly the file that was there before, whose per-user flags were not set by
+    this install's identity -- the same rule every ``.tc`` open follows (#109).
+
+    **Test steps:**
+
+    * revert a conversion with ``load_tc`` mocked
+    * verify it was handed the unknown username
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.revert_conversion",
+        return_value=backups_restoring(Path("/fake/info.tc")),
+    )
+    load = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
+    )
+
+    model.revert_conversion()
+
+    load.assert_called_once_with(Path("/fake/info.tc"), username=DEFAULT_UNKNOWN_USERNAME)
+
+
+def test_revert_conversion_emits_the_file_seam_and_rebuilds_the_form(mocker: MockerFixture) -> None:
+    """It replaces the file the model stands for, and adopts one that may have diverged -- so it raises
+    both ``reloaded`` and ``active_block_changed`` (#174, #83).
+
+    **Test steps:**
+
+    * record both signals, then revert a conversion
+    * verify each fired once
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.revert_conversion",
+        return_value=backups_restoring(Path("/fake/info.tc")),
+    )
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
+    )
+    reloaded: list[None] = []
+    rebuilt: list[None] = []
+    model.reloaded.connect(lambda: reloaded.append(None))
+    model.active_block_changed.connect(lambda: rebuilt.append(None))
+
+    model.revert_conversion()
+
+    assert reloaded == [None]
+    assert rebuilt == [None]
+
+
+def test_revert_conversion_refusal_leaves_the_model_untouched(mocker: MockerFixture) -> None:
+    """The core operation refuses rather than half-reverts, so a refusal must leave this model standing
+    for exactly the document it was.
+
+    **Test steps:**
+
+    * make the core revert raise, and record ``reloaded``
+    * verify the error propagates, the document is unchanged, and no seam was crossed
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.revert_conversion",
+        side_effect=FileNotFoundError("/fake/info.tc.orig"),
+    )
+    fired: list[None] = []
+    model.reloaded.connect(lambda: fired.append(None))
+
+    with raises(FileNotFoundError):
+        model.revert_conversion()
+
+    assert model.document is document
+    assert model.path == Path("/fake/info.rehu")
+    assert not fired
+
+
+def test_revert_conversion_without_a_path_raises(mocker: MockerFixture) -> None:
+    """A never-saved document has no conversion to undo, and nothing on disk to ask about.
+
+    **Test steps:**
+
+    * call ``revert_conversion`` on a path-less document
+    * verify ``ValueError``, and that the core operation was never reached
+    """
+    revert = mocker.patch("rehuco_agent.documents.rehu_document_model.revert_conversion")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+    with raises(ValueError, match="no conversion to revert"):
+        model.revert_conversion()
+
+    revert.assert_not_called()
 
 
 def test_revert_leaves_the_image_scanner_untouched(mocker: MockerFixture) -> None:

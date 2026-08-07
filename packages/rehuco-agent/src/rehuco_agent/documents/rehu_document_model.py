@@ -18,16 +18,20 @@ from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
+    DEFAULT_UNKNOWN_USERNAME,
     FORMAT_VERSION_KEY,
     INFO_REHU_FILENAME,
+    LEGACY_SUFFIX,
     USERS_KEY,
     AuthorEntry,
     LockReason,
     RehuDocument,
     RenameCoordinator,
     convert_tc,
+    load_tc,
     rehu_rename_conflict,
     rename_rehu_resource,
+    revert_conversion,
     scan_rehu_screenshot_files,
     scan_tc_screenshot_files,
 )
@@ -659,6 +663,60 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         self.lock_reasons = list(self.__document.lock_reasons)
         self.image_scanner = self.__make_image_scanner()
         self.unknown_fields_changed.emit()
+        self.reloaded.emit()
+        self.__recompute_upgradable()
+        self.__log_document_state()
+
+    def revert_conversion(self) -> None:
+        """Undo this document's conversion from its retained backups, in place (#193,
+        [[acquisition-tooling#convert-mechanics]]).
+
+        The exact mirror of :meth:`convert`: the file-system work is
+        :func:`rehuco_core.revert_conversion`'s, and the restored legacy ``.tc`` is then adopted as this
+        model's document -- so the same dock keeps showing the same resource, now a locked legacy `.tc`
+        again, with no reopen round-trip and the convert actions back on the toolbar. The dock's
+        persisted identity resyncs off :attr:`path` moving, exactly as it does forward.
+
+        **A revert deletes the written ``.rehu``**, so any edit saved since the conversion goes with it
+        (:func:`rehuco_core.revert_conversion`); warning about that is the caller's, before this is
+        called at all. In-memory edits go too, and for the same reason -- there is no file left for
+        them to be saved into.
+
+        The restored document is read under the **unknown** identity, the rule every ``.tc`` open
+        follows (`DocumentsDock`, #109): the per-user flags a legacy file carries were not set by this
+        install's own identity, and a revert puts back exactly the file that was there before.
+
+        Emits :attr:`reloaded` on success -- the same file seam :meth:`revert` and :meth:`convert`
+        raise, since this too replaces the file the model stands for (#174).
+
+        :raises ValueError: this document has no path.
+        :raises FileNotFoundError: no backed-up ``.tc`` sits beside the resource -- this is not a
+            conversion to undo. Nothing on disk is touched, and this model is left as it was.
+        :raises FileExistsError: a restore target is occupied, or a leftover staging file from an
+            interrupted revert is in the way; likewise nothing is touched.
+        """
+        if self.path is None:
+            raise ValueError("no conversion to revert -- document was not loaded from a file")
+        with LogScope.open(self.path):
+            LOG.info("Reverting the conversion of %s", self.path)
+            revert_conversion(self.path)
+            # where the restored `.tc` lands is the `.rehu`'s own stem, which is how the conversion
+            # named it in the first place -- and a revert that could not put one there raised above
+            legacy = self.path.with_suffix(LEGACY_SUFFIX)
+            self.__document = load_tc(legacy, username=DEFAULT_UNKNOWN_USERNAME)
+            LOG.info("Restored %s", legacy)
+        self.__seed_from_document()
+        self.dirty = False
+        self.rename_error = ""
+        self.lock_reasons = list(self.__document.lock_reasons)
+        self.image_scanner = self.__make_image_scanner()
+        self.unknown_fields_changed.emit()
+        # unlike convert(), which adopts a document derived from the one in hand, this adopts a *file*
+        # that may have diverged -- the `.tc` still says whatever it said, while the `.rehu` being
+        # deleted may have had its type switched and saved since. That is a structural change only a
+        # full form rebuild re-wires, so this follows revert()'s unconditional emit rather than
+        # convert()'s silence (#83)
+        self.active_block_changed.emit()
         self.reloaded.emit()
         self.__recompute_upgradable()
         self.__log_document_state()

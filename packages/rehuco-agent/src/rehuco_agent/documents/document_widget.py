@@ -28,6 +28,7 @@ from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
+from .conversion_backup_actions import ConversionBackupActions
 from .document_fields import build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
@@ -314,6 +315,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             # surface for enqueuing runs, and a widget built with no queue has nothing to enqueue onto
             self.__checksum_dock = self.__add_checksum_dock(model, self.__checksums)
 
+        # unlike the checksum pair, these need no queue: both operations are a handful of renames over
+        # one directory, run inline the way `RehuDocumentModel.convert` -- their exact mirror -- is
+        # (#193). Built before the first __banner_rows call below, which asks what they found.
+        self.__conversion_backups: Final = ConversionBackupActions(model, self)
+        self.__conversion_backups.changed.connect(self.__on_conversion_backups_changed)
+
         self.__set_editors_locked(model.locked)
         self.__update_write_action_visibility()
         self.__banner.set_rows(self.__banner_rows())
@@ -328,6 +335,10 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
+        # the reverse pair, offered exactly while the conversion they undo still has its backups --
+        # the same visible-while-the-condition-holds shape the two convert actions above have (#193)
+        toolbar.addAction(self.__conversion_backups.revert_action)
+        toolbar.addAction(self.__conversion_backups.discard_action)
         if self.__checksums is not None:
             # Verify Old carries Verify All as its menu, so one button offers both -- and Generate is
             # visible only while there is no record for it to overwrite (#244)
@@ -368,6 +379,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This document's Generate/Verify pair (#204), or ``None`` when it was built with no queue to
         put their work on."""
         return self.__checksums
+
+    @property
+    def conversion_backup_actions(self) -> ConversionBackupActions:
+        """This document's Revert Conversion / Discard Backups pair (#193), offered exactly while the
+        resource still holds retained backups."""
+        return self.__conversion_backups
 
     def detach(self) -> None:
         """Let go of everything app-wide this document is attached to, before it is destroyed.
@@ -568,6 +585,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         self.__banner.set_rows(self.__banner_rows())
 
+    def __on_conversion_backups_changed(self) -> None:
+        """Rebuild the inline notice strip as this resource's retained backups appear or go (#193).
+
+        The banner half of :meth:`__on_upgradable_changed`'s shape with no toolbar half here: the two
+        actions hide and show themselves off the same condition, so there is nothing left for this to
+        swap -- only something to say.
+        """
+        self.__banner.set_rows(self.__banner_rows())
+
     def __on_rename_error_changed(self) -> None:
         """Rebuild the inline notice strip as a failed rename is reported or cleared (#162).
 
@@ -661,6 +687,14 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         if self.__checksums is not None and self.__checksums.finding:
             severity = MessageBannerSeverity.INFO if self.__checksums.finding_clean else MessageBannerSeverity.WARNING
             rows.append(MessageBannerRow(severity, self.__checksums.finding))
+        if self.__conversion_backups.notice:
+            # a warning once a save has made a revert cost real edits, information until then: retained
+            # backups are insurance, and only their divergence from the record is a state worth an
+            # amber row (#193)
+            severity = (
+                MessageBannerSeverity.WARNING if self.__conversion_backups.edited_since else MessageBannerSeverity.INFO
+            )
+            rows.append(MessageBannerRow(severity, self.__conversion_backups.notice))
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

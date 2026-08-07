@@ -1032,6 +1032,32 @@ def test_import_legacy_catalog_action_opens_the_wizard_over_the_unknown_identity
     wizard.exec.assert_called_once()
 
 
+def test_conversion_backups_action_opens_the_manager(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``File > Conversion Backups...`` opens the backups manager over the app-wide queue (#193).
+
+    Takes no identity, unlike the import wizard: reverting and discarding move and delete files and file
+    them under nobody, so there are no per-user flags for an identity to belong to.
+
+    **Test steps:**
+
+    * mock the dialog class
+    * trigger ``conversion_backups_action``
+    * verify the dialog was built over the app-wide queue and shown modally
+    """
+    dialog = mocker.MagicMock()
+    built = mocker.patch("rehuco_agent.main_window.ConversionBackupsDialog", return_value=dialog)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.conversion_backups_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    built.assert_called_once_with(
+        window._MainWindow__task_queue,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        parent=window,
+    )
+    dialog.exec.assert_called_once()
+
+
 def test_quit_action_closes_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``File > Quit`` closes the window, letting the existing close guard take over (#64).
 

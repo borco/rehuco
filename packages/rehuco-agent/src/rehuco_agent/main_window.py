@@ -30,6 +30,7 @@ from rehuco_core import (
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from .archives import ARCHIVE_EXTENSIONS
+from .dialogs.conversion_backups_dialog import ConversionBackupsDialog
 from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
@@ -342,6 +343,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
+        self.__ui.conversion_backups_action.triggered.connect(self.__on_conversion_backups)
         self.__ui.quit_action.triggered.connect(self.close)
         self.__ui.open_recents_menu.aboutToShow.connect(self.__populate_recents_menu)
         # settings_action's checked state can go stale without emitting toggled (see
@@ -432,6 +434,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__task_queue, username=shared_identity_settings().unknown_username, parent=self
         )
         wizard.exec()
+
+    def __on_conversion_backups(self) -> None:
+        """Open the conversion-backups manager (``File`` > ``Conversion Backups...``, #193).
+
+        Takes no identity, unlike :meth:`__on_import_legacy_catalog`: reverting and discarding move and
+        delete files, and file them under nobody -- there are no per-user flags being read or written
+        here for an identity to belong to.
+        """
+        dialog = ConversionBackupsDialog(self.__task_queue, parent=self)
+        dialog.exec()
 
     def __populate_recents_menu(self) -> None:
         """Rebuild ``Open recents`` with the most-recently-opened paths, newest first (#64).
