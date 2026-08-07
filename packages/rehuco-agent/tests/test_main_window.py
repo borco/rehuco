@@ -289,6 +289,38 @@ def test_registers_the_desktop_integration_page_on_linux(qtbot: QtBot, mocker: M
     assert any(isinstance(page, DesktopIntegrationPage) for page in pages)
 
 
+def test_registers_no_system_integration_page_on_other_platforms(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Everywhere else the slot stays empty: neither page is registered rather than one standing in for
+    the other, since each is about a desktop the platform does not have.
+
+    Faked rather than skipped, like its Linux sibling above, so the assertion runs the same on every CI
+    leg -- and it is the only test that builds the window on a platform that is neither, which is what
+    exercises both guards' *other* branch.
+
+    **Test steps:**
+
+    * force ``sys.platform`` to macOS, then construct a real ``MainWindow``
+    * verify the settings dialog's page stack holds neither platform's page
+    """
+    from rehuco_agent.settings.ui.desktop_integration_page import (  # pylint: disable=import-outside-toplevel
+        DesktopIntegrationPage,
+    )
+
+    mocker.patch("rehuco_agent.main_window.sys.platform", "darwin")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    # each page is shown through a scroll area of its own (#229), so read it back out of one
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert not any(isinstance(page, DesktopIntegrationPage) for page in pages)
+    # by name rather than by class: importing the Windows page pulls in `winreg`, which is the very
+    # thing this platform does not have
+    assert not any(type(page).__name__ == "RegistryPage" for page in pages)
+
+
 def test_registers_the_identity_page(qtbot: QtBot) -> None:
     """The Identity settings page (#99) is registered into the settings dialog, on every platform.
 

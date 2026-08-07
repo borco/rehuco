@@ -272,7 +272,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__begin_scan()
         elif current is self.__plan_page:
             self.__begin_import([row.plan.tc_path for row in self.__model.checked_rows()])
-        elif current is self.__result_page:
+        # Next is disabled on the scan and import steps (`__update_nav`), so the three handled here are
+        # the only pages it can be clicked on -- there is no fall-through case to answer for.
+        elif current is self.__result_page:  # pragma: no branch
             self.accept()
         self.__update_nav()
 
@@ -308,7 +310,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             forward.setText("Import")
         elif current is self.__import_page:
             forward.setEnabled(False)
-        elif current is self.__result_page:
+        elif current is self.__result_page:  # pragma: no branch  (the stack holds these five and no others)
             forward.setEnabled(True)
             forward.setText("Close")
 
@@ -330,7 +332,10 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     def __on_recent_root_chosen(self, index: int) -> None:
         root = self.__root_page.ui.recent_roots_combo.itemData(index)
-        if root is not None:
+        # `activated` carries an item the user picked, and every item this combo holds was added with a
+        # root as its data (`__populate_recent_roots`) -- unlike `currentIndexChanged`, it does not fire
+        # for the -1 a `clear()` leaves behind, which is the only index that would answer with nothing.
+        if root is not None:  # pragma: no branch
             self.__set_root(Path(root))
 
     def __set_root(self, root: Path) -> None:
@@ -344,7 +349,10 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     def __begin_scan(self) -> None:
         root = self.__root
-        if root is None:
+        # Next stays disabled on the root step until a root is chosen (`__update_nav`), so this cannot
+        # be reached without one; the guard is here to narrow `Path | None` for `_ScanWorker` rather
+        # than to answer a case the UI allows.
+        if root is None:  # pragma: no cover
             return
         self.__ui.page_stack.setCurrentWidget(self.__scan_page)
         self.__scan_page.ui.status_label.setText("Scanning…")
@@ -367,7 +375,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     def __on_scan_finished(self, plan: TcConversionTreePlan) -> None:
         self.__scan_worker = None
-        if self.__root is not None:
+        # A scan only starts from a root and nothing clears one, so the recording always happens; the
+        # check narrows `Path | None` for `record_root`.
+        if self.__root is not None:  # pragma: no branch
             self.__settings.record_root(self.__root)
             self.__settings.save(persistent_settings())
             self.__populate_recent_roots()
@@ -501,7 +511,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     def __on_copy(self) -> None:
         clipboard = QGuiApplication.clipboard()
-        if clipboard is not None:
+        # Optional in the binding, never absent in a running GUI application -- the same shape
+        # `settings_dialog` answers the same way.
+        if clipboard is not None:  # pragma: no branch
             clipboard.setText(self.__result_text())
 
     def __on_save(self) -> None:

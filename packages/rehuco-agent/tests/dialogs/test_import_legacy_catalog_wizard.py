@@ -765,6 +765,32 @@ def test_copy_and_save_write_the_same_result_text(
     write.assert_called_once_with(Path("/fake/report.txt"), clipboard_text, encoding="utf-8")
 
 
+def test_the_report_carries_a_failure_s_message_beside_its_outcome(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
+) -> None:
+    """A failed row's line carries *why*, which is the one thing "failed" cannot say on its own -- and
+    the reason the report is worth copying at all when something went wrong.
+
+    **Test steps:**
+
+    * import one resource whose conversion raises
+    * click Copy
+    * verify its line names the resource, the outcome and the message, one field each
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", side_effect=FileExistsError(CLEAN_A.tc_path))
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (CLEAN_A,)))
+    pages(wizard).next_button.click()
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+
+    pages(wizard).result.ui.copy_button.click()
+
+    path, outcome, message = QGuiApplication.clipboard().text().split("\t")
+    assert path == str(CLEAN_A.tc_path)
+    assert outcome == "failed"
+    assert "FileExistsError" in message
+
+
 def test_save_with_no_chosen_path_writes_nothing(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
 ) -> None:
