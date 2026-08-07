@@ -22,6 +22,33 @@ from .tc_document import TcDocument
 from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
 
 
+def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[ScreenshotRename]) -> list[Path]:
+    """Every original file a conversion of ``tc_path`` must back up before writing anything new.
+
+    Shared between :class:`TcConverter`, which runs it, and
+    :mod:`~rehuco_core.tc_conversion_plan` (#191), which only needs to read it to decide whether a
+    stale ``.orig`` sibling would block the conversion.
+
+    :param tc_path: the ``.tc`` file the conversion reads.
+    :param target: the destination ``.rehu`` path.
+    :param renames: the conversion's screenshot scan.
+    :returns: ``tc_path``, every recognized legacy image (winners and losers alike), ``target`` itself
+        when it already exists, and any pre-existing file already sitting at a ``<stem>NN`` install
+        destination -- invisible to the legacy scan, yet about to be overwritten, so it too must be
+        backed up first.
+    """
+    directory = tc_path.parent
+    originals = [tc_path]
+    if target.exists():
+        originals.append(target)
+    for rename in renames:
+        originals.extend(directory / name for name in rename.recognized_filenames)
+        destination = directory / rename.new_name
+        if destination.exists():
+            originals.append(destination)
+    return list(dict.fromkeys(originals))
+
+
 def convert_tc(
     tc_path: Path, *, keep_backups: bool, overwrite: bool = False, username: str = DEFAULT_UNKNOWN_USERNAME
 ) -> RehuDocument:
@@ -78,7 +105,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             raise FileExistsError(target)
         renames = scan_tc_screenshots(self.__tc_path.parent, self.__tc_path.stem)
         data = self.__built_rehu_data(renames)
-        originals = self.__originals_to_back_up(target, renames)
+        originals = originals_to_back_up(self.__tc_path, target, renames)
         self.__check_no_stale_backups(originals)
         backups = self.__backed_up(originals)
         installed: list[Path] = []
@@ -119,27 +146,6 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         """
         mtime = self.__tc_path.stat().st_mtime
         return datetime.fromtimestamp(mtime, tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-    def __originals_to_back_up(self, target: Path, renames: Sequence[ScreenshotRename]) -> list[Path]:
-        """Every original file this conversion must back up before writing anything new.
-
-        :param target: the destination ``.rehu`` path.
-        :param renames: this conversion's screenshot scan.
-        :returns: ``tc_path``, every recognized legacy image (winners and losers alike), ``target``
-            itself when overwriting an existing ``.rehu``, and any pre-existing file already sitting
-            at a ``<stem>NN`` install destination -- invisible to the legacy scan, yet about to be
-            overwritten by :meth:`__install_images`, so it too must be backed up first.
-        """
-        directory = self.__tc_path.parent
-        originals = [self.__tc_path]
-        if target.exists():
-            originals.append(target)
-        for rename in renames:
-            originals.extend(directory / name for name in rename.recognized_filenames)
-            destination = directory / rename.new_name
-            if destination.exists():
-                originals.append(destination)
-        return list(dict.fromkeys(originals))
 
     def __check_no_stale_backups(self, originals: Sequence[Path]) -> None:
         """Refuse to proceed if any ``.orig`` sibling already exists for an original about to be

@@ -155,7 +155,7 @@ from .tasks import (
     TaskQueueItem,
     TaskQueueListener,
 )
-from .tc_conversion import TcConverter, convert_tc
+from .tc_conversion import TcConverter, convert_tc, originals_to_back_up
 from .tc_conversion_backups import (
     BACKUP_SUFFIX,
     STAGED_SUFFIX,
@@ -167,6 +167,15 @@ from .tc_conversion_backups import (
     original_path,
     restore_backup,
     revert_conversion,
+)
+from .tc_conversion_plan import (
+    CLUSTER_MIN_SIZE,
+    CLUSTER_WINDOW_SECONDS,
+    CONSUMED_TC_KEYS,
+    TcConversionPlan,
+    TcConversionPlanner,
+    TcConversionTreePlan,
+    plan_tc_conversion,
 )
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
@@ -194,7 +203,10 @@ __all__ = [
     "CHECKSUM_RECORD_SUFFIX",
     "CHECKSUM_SWEEP_KIND",
     "CHECKSUM_VERIFY_KIND",
+    "CLUSTER_MIN_SIZE",
+    "CLUSTER_WINDOW_SECONDS",
     "COLLECTION_PLUGIN",
+    "CONSUMED_TC_KEYS",
     "CONTENT_IMAGE_EXTENSIONS",
     "CORE_BLOCK_KEY",
     "CORE_FIELD_NAMES",
@@ -282,6 +294,9 @@ __all__ = [
     "TaskQueue",
     "TaskQueueItem",
     "TaskQueueListener",
+    "TcConversionPlan",
+    "TcConversionPlanner",
+    "TcConversionTreePlan",
     "TcConverter",
     "TcDescriptionRewriter",
     "TcDocument",
@@ -318,7 +333,9 @@ __all__ = [
     "migrate_rehu_data",
     "new_checksum_record",
     "original_path",
+    "originals_to_back_up",
     "parse_checksum_entry",
+    "plan_tc_conversion",
     "read_content_chunks",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",

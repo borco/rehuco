@@ -98,6 +98,17 @@ discipline is a strict **never-overwrite, never-delete-then-write** contract:
 The I/O failure of a convert surfaces through the same Retry/Cancel discipline as a save ([[data-model#write-integrity]]),
 as a "Conversion Failed" dialog.
 
+Before a bulk import over a folder tree runs, a **dry-run plan** reports what it would do without writing
+anything: the mapped `.rehu` payload and screenshot rename plan for every `.tc` found, and per-resource flags
+naming why a human might want to look — a screenshot tie-break, a target `.rehu` or stale backup that would
+block the resource, a size/duration string that failed to parse or stayed merely advisory, a `.tc` key the
+mapper does not consume, or an mtime sitting in a run's worth of near-identical ones (the signature of a NAS
+restore, bulk copy, or archive extraction clobbering it, [[data-model#stable-identity]]) that would otherwise
+seed `created`/`updated` from a lie. A directory holding a `.tc` is a resource and is not descended past, the
+same one-resource-one-directory assumption the backups above are built on. A directory that will not list or a
+`.tc` that will not read or parse costs its own entry and is named, never the whole plan — the walk says what
+it could not see, the discipline the checksum sweep already follows ([[mounts-and-storage#offline-mounts]]).
+
 Retained backups stay usable **after** a run, not only during one: a completed conversion can be **reverted** — the
 written `.rehu` and the `<stem>NN` screenshots it installed are deleted and every `.orig` renamed back — or its backups
 **discarded**, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every
