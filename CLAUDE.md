@@ -36,8 +36,14 @@ working editor teaches readers to discount the status line, which is what makes 
 ### Labels
 
 - `spike` — throwaway exploration answering one sharp question (keep the lesson, delete the code).
-- `pending-cleanup` — work done; issue open only to track a gated teardown (e.g. deleting retained spike code).
+- `pending cleanup` — work done; issue open only to track a gated teardown (e.g. deleting retained spike code).
   Not `deferred` (that's for work not started).
+- **Size**, one per issue — `XS` (≤30 min agent time), `S` (30–60 min), `M` (1–2 h), `L` (2–4 h), `XL`
+  (>4 h — split before starting). `retro-sized` marks a size inferred from the description afterwards
+  rather than estimated at filing.
+- **Model**, one per issue — `sonnet`, `opusplan`, `opus`, `fable`. Work needing two of them is two
+  issues, split along the core/agent seam rather than mixed into one. The issue body closes with a
+  `## Model` section saying which and why.
 
 ### Milestones
 

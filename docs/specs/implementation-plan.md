@@ -231,6 +231,17 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   (LocalEdit7) over a dry-run plan, with backups retained by default and an in-app revert/discard surface replacing the
   file-manager round-trip ([[acquisition-tooling#tc-to-rehu]]). This is the one-time migration of an existing tc4
   catalog, and doing it here is what keeps `.tc` out of CacheDB's scanner entirely.
+- **LocalEdit9 — Migration correctness.** What pointing LocalEdit8's wizard at a real catalog surfaced, and the scoping
+  rule it forced. The `.tc` walk halts at the first record it finds, so a template at a tree root — or any tc4
+  **collection**, which *is* a parent record over member directories — hides everything beneath it. Conversion backups
+  count as a resource's own content, so a bulk import bakes each resource's `.orig` into its first baseline and every
+  measured size shrinks the moment the backups are discarded. And content scoping **overlaps** by design: a nested
+  record's files are counted by its ancestors too, which makes a library's size unsummable from its records — the
+  aggregation CacheDB exists to do. So content becomes **exclusive** — a record counts only what it covers — a verify
+  prunes what it no longer covers and moves the claim to whichever record now does, and a legacy `.sfv` is retired once
+  its claim is in the `.checksum` instead of shadowing it forever ([[data-model#resource-scoping]],
+  [[data-model#checksums]]). Carries the task dock's own polish alongside it, and is where a `.tc`-era resource stops
+  being a special case anywhere but the importer.
 - **LocalEditX — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences. Last in the
   milestone by construction: the catch-all polish slice, named like an audit run because it is never "next", only "after
   everything else".
