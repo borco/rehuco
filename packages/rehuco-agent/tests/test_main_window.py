@@ -30,6 +30,7 @@ from rehuco_agent.main_window import (
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
+from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
@@ -1001,6 +1002,34 @@ def test_sweeping_the_same_folder_twice_does_not_queue_it_twice(mocker: MockerFi
 
     queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert len(queue.jobs()) == 1
+
+
+def test_import_legacy_catalog_action_opens_the_wizard_over_the_unknown_identity(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """``File > Import Legacy Catalog...`` opens the wizard filed under the unknown identity (#109,
+    #192), the same rule an in-app `.tc` open already follows.
+
+    **Test steps:**
+
+    * mock the wizard class and the identity settings
+    * trigger ``import_legacy_catalog_action``
+    * verify the wizard was built over the app-wide queue and the unknown username, and shown modally
+    """
+    shared_identity_settings().unknown_username = "legacy"
+    wizard = mocker.MagicMock()
+    built = mocker.patch("rehuco_agent.main_window.ImportLegacyCatalogWizard", return_value=wizard)
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._MainWindow__ui.import_legacy_catalog_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    built.assert_called_once_with(
+        window._MainWindow__task_queue,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        username="legacy",
+        parent=window,
+    )
+    wizard.exec.assert_called_once()
 
 
 def test_quit_action_closes_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:

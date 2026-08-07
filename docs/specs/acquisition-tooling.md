@@ -109,6 +109,23 @@ same one-resource-one-directory assumption the backups above are built on. A dir
 `.tc` that will not read or parse costs its own entry and is named, never the whole plan — the walk says what
 it could not see, the discipline the checksum sweep already follows ([[mounts-and-storage#offline-mounts]]).
 
+`File ▸ Import Legacy Catalog…` is the wizard that runs the plan and then acts on it, over as many
+resources as the folder holds — thousands, for a real catalog. Five steps: choose a root (remembering
+recent ones); run the scan on a worker thread, cancellable; show the plan as a checkbox table, one row per
+resource, sortable and filterable by flag, with a header summary (*"9,847 clean · 153 flagged · 12
+blocked"*) and the `suspect_mtime` count named on its own line when it is not zero, since a wall of
+clobbered timestamps is a reason to stop and look rather than one flag among six; enqueue one
+`TcImportJob` per checked resource onto the app-wide task queue and watch them finish; then a result table
+with an outcome per row and **Retry Failed**. **No per-item review gate** — the conversion offers no
+choices to confirm, so a per-resource pass over thousands of items would be ceremony nobody would ever
+finish. Safety is the backups and the revert above, plus every resource keeping its backups
+unconditionally on this path (the discard variant is never offered here — that is the backups manager,
+afterwards, deliberately). A blocked row starts unchecked; checking one **is** the explicit per-row
+opt-in `rehu_exists` needs to proceed with `overwrite`, and the only such opt-in offered — a
+`stale_backup` row cannot be unblocked this way, so checking one simply enqueues a job that fails with a
+message. Cancelling mid-import cancels every job still queued outright and lets the one already running
+finish on its own, so a resource is never left half-converted.
+
 Retained backups stay usable **after** a run, not only during one: a completed conversion can be **reverted** — the
 written `.rehu` and the `<stem>NN` screenshots it installed are deleted and every `.orig` renamed back — or its backups
 **discarded**, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every

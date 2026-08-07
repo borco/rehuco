@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ImportWizardRootPage</class>
+ <widget class="QWidget" name="ImportWizardRootPage">
+  <layout class="QVBoxLayout" name="main_layout">
+   <item>
+    <widget class="QLabel" name="instructions_label">
+     <property name="text">
+      <string>Choose the folder holding the legacy .tc catalog to import. Nothing is written until the last step, and every conversion keeps its backups.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="root_layout">
+     <item>
+      <widget class="QLineEdit" name="root_edit">
+       <property name="readOnly">
+        <bool>true</bool>
+       </property>
+       <property name="placeholderText">
+        <string>No folder chosen</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="browse_button">
+       <property name="text">
+        <string>Browse…</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="recent_label">
+     <property name="text">
+      <string>Recent folders</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QComboBox" name="recent_roots_combo"/>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
