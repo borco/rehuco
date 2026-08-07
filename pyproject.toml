@@ -98,15 +98,18 @@ disable = ["fixme", "redefined-outer-name"]
 enable = ["useless-suppression"]
 
 [tool.pylint.typecheck]
-# winreg is Windows-only; on a macOS/Linux qa run pylint can't import it and would raise
-# import-error. A per-line disable can't be used here -- useless-suppression (enabled above)
-# would flag it on Windows, where the import resolves fine. Ignoring the module is platform-safe.
-ignored-modules = ["winreg"]
-# The mirror case: os.chown is POSIX-only, so a Windows run raises no-member on the guarded
-# call in borco_core.atomic_write while a POSIX run resolves it fine -- a per-line disable is
-# correct on exactly one platform and useless on the other. Declaring the member is what makes
-# the same source pass on all three runners; the runtime hasattr guard is what makes it correct.
-generated-members = ["os.chown"]
+# winreg and msvcrt are Windows-only; on a macOS/Linux qa run pylint can't import them and would
+# raise import-error. A per-line disable can't be used here -- useless-suppression (enabled above)
+# would flag it on Windows, where the import resolves fine. Ignoring the modules is platform-safe.
+ignored-modules = ["msvcrt", "winreg"]
+# The mirror case: os.chown is POSIX-only and os.O_BINARY Windows-only, so each raises no-member on
+# the platform that lacks it -- the guarded call in borco_core.atomic_write on Windows, the
+# Windows-only opener in borco_core.platforms.windows.shared_read on POSIX -- while resolving fine on
+# the other. A per-line disable is correct on exactly one platform and useless on the other; declaring
+# the members is what makes the same source pass on all three runners. What makes each *correct* is
+# unchanged: a runtime hasattr guard for os.chown, and shared_read only ever being imported inside
+# borco_core.shared_read_open's `sys.platform == "win32"` branch.
+generated-members = ["os.chown", "os.O_BINARY"]
 
 [tool.pytest.ini_options]
 addopts = "--strict-markers"
