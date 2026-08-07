@@ -501,26 +501,42 @@ def test_a_queued_job_is_cancelled_outright_rather_than_started(mocker: MockerFi
 
     **Test steps:**
 
-    * pause the queue, enqueue a revert, cancel it, then let the queue run
-    * check the operation never ran and the job is reported cancelled
+    * hold a first revert inside the operation, enqueue a second behind it and cancel that one
+    * release the first and check only it ran, with the second reported cancelled
     """
     del present
-    revert = mocker.patch("rehuco_core.tc_backups_jobs.revert_conversion")
+    # Holding the first job is what leaves the second demonstrably *waiting its turn* when it is
+    # cancelled. `queue.pause()` cannot arrange it and used to be asked to: pausing is `pause_job`
+    # applied to the jobs already enqueued ([[appendices.task-queue#pause-concept]]), never a gate a
+    # later enqueue passes through, so the lone job raced the cancel and a fast runner reverted it
+    # first -- the same latent flake `test_tc_import_job`'s copy of this test turned red on Windows.
+    running = Event()
+    release = Event()
+
+    def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
+        """Park the worker inside the first revert until the test has cancelled the second."""
+        running.set()
+        assert release.wait(TIMEOUT)
+
+    revert = mocker.patch("rehuco_core.tc_backups_jobs.revert_conversion", side_effect=hold_the_worker)
     queue = TaskQueue()
-    settled = FinishedListener(1)
+    settled = FinishedListener(2)
     queue.add_listener(settled)
     try:
-        queue.pause()
+        queue.enqueue(RevertConversionJob(FILE_SCOPED_REHU_PATH))
+        assert running.wait(TIMEOUT)
         serial = queue.enqueue(RevertConversionJob(REHU_PATH))
         queue.cancel(serial)
-        queue.resume()
+        release.set()
         assert settled.wait()
-        (status,) = queue.jobs()
+        (status,) = (job for job in queue.jobs() if job.serial == serial)
     finally:
         queue.shutdown()
 
     assert status.state is JobState.CANCELLED
-    revert.assert_not_called()
+    # the held job reverted; the cancelled one never reached `revert_conversion` at all
+    revert.assert_called_once()
+    assert revert.call_args.args == (FILE_SCOPED_REHU_PATH,)
 
 
 # endregion
