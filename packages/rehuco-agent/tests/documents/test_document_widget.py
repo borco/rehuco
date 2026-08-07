@@ -63,6 +63,7 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     ChecksumReport,
+    ConversionBackups,
     LockReason,
     LockReasonKind,
     RehuDocument,
@@ -1233,6 +1234,92 @@ def test_the_banner_rebuilds_as_lock_reasons_change(widget: DocumentWidget, mode
     model.lock_reasons = []
 
     assert banner(widget).findChildren(QLabel) == []
+
+
+def converted_backups(*, edited_since: bool) -> ConversionBackups:
+    """An inventory reporting retained conversion backups over the sample resource (#193).
+
+    :param edited_since: whether the ``.rehu`` has been saved again since the conversion.
+    :returns: the inventory.
+    """
+    directory = Path("/fake")
+    return ConversionBackups(
+        rehu_path=directory / "info.rehu",
+        backups=(directory / "info.tc.orig",),
+        total_bytes=14_000_000,
+        written=(directory / "info.rehu",),
+        obstructions=(),
+        legacy_restored=directory / "info.tc",
+        edited_since=edited_since,
+        converted="2023-11-14T22:13:20Z",
+    )
+
+
+def test_retained_conversion_backups_show_a_banner_row_and_two_toolbar_actions(
+    qtbot: QtBot, mocker: MockerFixture, model: RehuDocumentModel
+) -> None:
+    """The remedy sits on this widget's own toolbar and the strip only says what is true, the same
+    message-only discipline every other row here follows (#193).
+
+    **Test steps:**
+
+    * build a widget over a resource whose inventory reports retained backups
+    * verify the strip says so and both actions are offered
+    """
+    mocker.patch(
+        "rehuco_agent.documents.conversion_backup_actions.conversion_backups",
+        return_value=converted_backups(edited_since=False),
+    )
+    model.path = Path("/fake/info.rehu")
+
+    built = DocumentWidget(model)
+    qtbot.addWidget(built)
+
+    texts = {label.text() for label in banner(built).findChildren(QLabel)}
+    assert any("conversion backups" in text for text in texts)
+    actions = built.conversion_backup_actions
+    assert actions.revert_action.isVisible()
+    assert actions.discard_action.isVisible()
+
+
+def test_a_resource_edited_since_its_conversion_warns_rather_than_informs(
+    qtbot: QtBot, mocker: MockerFixture, model: RehuDocumentModel
+) -> None:
+    """Retained backups are insurance; only their divergence from the record is a state worth an amber
+    row, because reverting has started costing real work (#193).
+
+    **Test steps:**
+
+    * build a widget over a resource the inventory reports as edited since
+    * verify the row says what a revert would now discard
+    """
+    mocker.patch(
+        "rehuco_agent.documents.conversion_backup_actions.conversion_backups",
+        return_value=converted_backups(edited_since=True),
+    )
+    model.path = Path("/fake/info.rehu")
+
+    built = DocumentWidget(model)
+    qtbot.addWidget(built)
+
+    texts = {label.text() for label in banner(built).findChildren(QLabel)}
+    assert any("discard those edits" in text for text in texts)
+    assert built.conversion_backup_actions.edited_since is True
+
+
+def test_a_resource_without_backups_shows_neither_the_row_nor_the_actions(widget: DocumentWidget) -> None:
+    """A document that was never converted says nothing and offers nothing -- rather than two controls
+    that would refuse.
+
+    **Test steps:**
+
+    * build a widget over the clean sample model
+    * verify the strip is empty and neither action is offered
+    """
+    assert banner(widget).findChildren(QLabel) == []
+    actions = widget.conversion_backup_actions
+    assert not actions.revert_action.isVisible()
+    assert not actions.discard_action.isVisible()
 
 
 def test_a_successful_convert_clears_the_banner(

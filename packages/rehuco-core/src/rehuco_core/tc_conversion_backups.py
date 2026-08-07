@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from .constants import IMAGE_EXTENSIONS
 from .rehu_document import RehuDocument, RehuFormatError
 from .rehu_screenshots import scan_rehu_screenshot_files
 
@@ -74,7 +75,7 @@ def restore_backup(backup: Path) -> Path:
 
 
 @dataclass(frozen=True, slots=True)
-class ConversionBackups:
+class ConversionBackups:  # pylint: disable=too-many-instance-attributes
     """What one directory's retained backups would restore, read without touching anything (#190).
 
     :param rehu_path: the converted ``.rehu`` a revert would delete.
@@ -88,6 +89,9 @@ class ConversionBackups:
         here -- in which case this directory holds no revertible conversion, whatever else it holds.
     :param edited_since: whether the ``.rehu`` has been written again since the conversion wrote it,
         i.e. whether reverting discards real edits.
+    :param converted: when the conversion wrote the ``.rehu``, read off its ``created`` stamp
+        ([[field-schema#record-timestamps]]) -- empty when the file is gone or will not read. A
+        conversion mints that stamp, so it dates the conversion and not the resource.
     """
 
     rehu_path: Path
@@ -97,6 +101,24 @@ class ConversionBackups:
     obstructions: tuple[Path, ...]
     legacy_restored: Path | None
     edited_since: bool
+    converted: str
+
+    @property
+    def dropped_screenshots(self) -> int:
+        """How many recognized legacy screenshots the conversion backed up and never installed -- the
+        losers of a tie-break ([[acquisition-tooling#screenshot-schemes]]).
+
+        Derived from what is already here rather than re-scanned: every recognized screenshot is backed
+        up, winners and losers alike, and only a winner is installed under its ``<stem>NN`` name, so the
+        difference between the two counts *is* the drop. Re-running
+        :func:`~rehuco_core.scan_tc_screenshots` could not answer it anyway -- after a conversion the
+        legacy names all end in :data:`BACKUP_SUFFIX`, which no scheme recognizes.
+
+        :returns: the number of dropped screenshots, ``0`` when the tie-break dropped nothing.
+        """
+        backed_up = sum(1 for backup in self.backups if original_path(backup).suffix.lower() in IMAGE_EXTENSIONS)
+        installed = sum(1 for path in self.written if path != self.rehu_path)
+        return max(0, backed_up - installed)
 
     @property
     def revertible(self) -> bool:
@@ -158,6 +180,11 @@ class ConversionReverter:
     :param rehu_path: the converted ``.rehu``.
     """
 
+    __UNREADABLE_UPDATED: Final = "?"
+    """Stands in for the ``updated`` of a ``.rehu`` that is there but will not read, so
+    :meth:`__timestamps` reports a pair that has drifted while leaving ``created`` empty -- the caller
+    warns before reverting, and shows no conversion date it cannot actually vouch for."""
+
     def __init__(self, rehu_path: Path) -> None:
         self.__rehu_path: Final = rehu_path
 
@@ -170,6 +197,7 @@ class ConversionReverter:
         written = self.__written()
         legacy = self.__rehu_path.with_suffix(LEGACY_SUFFIX)
         restores = [original_path(backup) for backup in backups]
+        created, updated = self.__timestamps()
         return ConversionBackups(
             rehu_path=self.__rehu_path,
             backups=backups,
@@ -177,7 +205,8 @@ class ConversionReverter:
             written=written,
             obstructions=tuple(path for path in restores if path.exists() and path not in written),
             legacy_restored=legacy if legacy in restores else None,
-            edited_since=self.__edited_since(),
+            edited_since=created != updated,
+            converted=created,
         )
 
     def revert(self) -> ConversionBackups:
@@ -248,25 +277,29 @@ class ConversionReverter:
         except OSError:
             return 0
 
-    def __edited_since(self) -> bool:
-        """Whether the ``.rehu`` has been saved again since the conversion wrote it.
+    def __timestamps(self) -> tuple[str, str]:
+        """The ``.rehu``'s ``created`` and ``updated`` stamps, in one read.
 
         A conversion seeds ``created`` and ``updated`` with the same stamp
         ([[field-schema#record-timestamps]]) and a changed save refreshes ``updated`` alone (#142), so the
         two having drifted apart *is* the edit -- no mtime comparison, which a backup's preserved mtime
         could not answer anyway.
 
-        :returns: ``True`` when the pair has drifted, or when the file cannot be read at all (unreadable
-            is not *unedited*, and the caller's warning is the cheaper mistake); ``False`` when the
-            ``.rehu`` is not there, since a revert then deletes nothing.
+        Both answers come from the one load, so :attr:`ConversionBackups.converted` costs nothing beyond
+        the read :attr:`~ConversionBackups.edited_since` already needed.
+
+        :returns: ``(created, updated)``. Two empty strings when the ``.rehu`` is not there, since a
+            revert then deletes nothing and there is no conversion date to name; a drifted **pair of
+            sentinels** when it is there but will not read, so the caller still warns -- unreadable is
+            not *unedited*, and warning is the cheaper mistake.
         """
         try:
             document = RehuDocument.load(self.__rehu_path)
         except FileNotFoundError:
-            return False
+            return "", ""
         except OSError, RehuFormatError:
-            return True
-        return document.created != document.updated
+            return "", self.__UNREADABLE_UPDATED
+        return document.created, document.updated
 
     def __staged(self, written: tuple[Path, ...]) -> dict[Path, Path]:
         """Move every file the conversion wrote aside, to a :data:`STAGED_SUFFIX` sibling.

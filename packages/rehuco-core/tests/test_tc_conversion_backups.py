@@ -244,6 +244,75 @@ def test_an_absent_rehu_reads_as_unedited(mocker: MockerFixture) -> None:
     assert inventory.revertible is True
 
 
+def test_the_conversion_date_is_the_rehus_created_stamp(mocker: MockerFixture) -> None:
+    """A conversion mints ``created``, so it dates the conversion rather than the resource -- which is
+    what a backups manager lists in its *converted* column (#193).
+
+    **Test steps:**
+
+    * mock a directory holding a completed keep-backups conversion
+    * read the inventory
+    * verify it reports the seeded stamp, and reports no edit
+    """
+    mock_environment(mocker)
+
+    inventory = conversion_backups(REHU_PATH)
+
+    assert inventory.converted == SEEDED_STAMP
+    assert inventory.edited_since is False
+
+
+@pytest.mark.parametrize("load_side_effect", [RehuFormatError("not JSON"), OSError("mount away")])
+def test_an_unreadable_rehu_names_no_conversion_date(mocker: MockerFixture, load_side_effect: Exception) -> None:
+    """A ``.rehu`` that will not read still warns before a revert, but it cannot vouch for a conversion
+    date -- so it shows none rather than one it made up (#193).
+
+    **Test steps:**
+
+    * mock the document read failing
+    * read the inventory
+    * verify the conversion date is empty while the edit warning still stands
+    """
+    mock_environment(mocker, load_side_effect=load_side_effect)
+
+    inventory = conversion_backups(REHU_PATH)
+
+    assert inventory.converted == ""
+    assert inventory.edited_since is True
+
+
+def test_a_tie_breaks_losers_count_as_dropped_screenshots(mocker: MockerFixture) -> None:
+    """Every recognized legacy screenshot is backed up and only a slot's winner is installed, so the
+    difference between the two counts *is* what the tie-break dropped -- the rows #193 exists to review.
+
+    **Test steps:**
+
+    * mock a conversion whose three recognized screenshots landed on two slots
+    * read the inventory
+    * verify it reports the one loser, without re-scanning for legacy names
+    """
+    mock_environment(mocker)
+
+    assert conversion_backups(REHU_PATH).dropped_screenshots == 1
+
+
+def test_a_conversion_that_installed_every_screenshot_dropped_none(mocker: MockerFixture) -> None:
+    """No tie-break means every recognized screenshot was installed, so there is nothing to review -- and
+    the non-image backups (the ``.tc`` itself) must not be miscounted as dropped screenshots.
+
+    **Test steps:**
+
+    * mock a conversion whose two recognized screenshots landed on two slots
+    * read the inventory
+    * verify nothing is reported as dropped
+    """
+    mock_environment(
+        mocker, listing=("info.rehu", "info00.jpg", "info01.jpg", "info.tc.orig", "cover.jpg.orig", "file-1.png.orig")
+    )
+
+    assert conversion_backups(REHU_PATH).dropped_screenshots == 0
+
+
 def test_a_backup_that_vanishes_mid_inventory_counts_as_no_bytes(mocker: MockerFixture) -> None:
     """A backup deleted between the listing and the measurement contributes nothing rather than failing
     the inventory -- the total is what a caller offers to reclaim, not an answer worth refusing over.

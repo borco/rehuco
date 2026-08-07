@@ -3,6 +3,8 @@
         <file alias="fonts/Phosphor-Bold.ttf">../../../../design/fonts/Phosphor-Bold.ttf</file>
         <file alias="fonts/Phosphor-Fill.ttf">../../../../design/fonts/Phosphor-Fill.ttf</file>
         <file alias="icons/app_settings.svg">../../../../design/icons/app_settings.svg</file>
+        <file alias="icons/backup_delete.svg">../../../../design/icons/backup_delete.svg</file>
+        <file alias="icons/backup_restore.svg">../../../../design/icons/backup_restore.svg</file>
         <file alias="icons/banner_error.svg">../../../../design/icons/banner_error.svg</file>
         <file alias="icons/banner_info.svg">../../../../design/icons/banner_info.svg</file>
         <file alias="icons/banner_warning.svg">../../../../design/icons/banner_warning.svg</file>

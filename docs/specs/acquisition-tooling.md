@@ -145,7 +145,34 @@ item can be undone one at a time. The same discipline applies as to the forward 
   resources tc4 catalogs are made of, and why a revert names a directory rather than a file.
 
 Reading what a revert *would* do — how many files, how many bytes, under what names, and whether it is possible at all
-— is a separate query that writes nothing, so a surface can list retained backups without performing anything.
+— is a separate query that writes nothing, so a surface can list retained backups without performing anything. Run
+over a folder tree it becomes a **scan**, composed of that same per-resource query and the catalog walk the checksum
+sweep already uses: only resources that still hold backups are reported, how many were examined survives alongside
+them, and an unreadable branch is named rather than reducing the answer.
+
+`File ▸ Conversion Backups…` is the manager over both, **grouped per resource, not per file** — six `.orig` files are
+one decision, and six rows would put five of them in front of a reader who cannot act on any one alone. A row names
+the resource, the date its conversion minted, what its backups amount to (*"6 files, 14 MB"*), and the flags worth a
+look: a screenshot **tie-break**, a `.rehu` **edited since** the conversion, or a resource **not revertible** at all.
+The header leads with the reclaimable total across the current selection, since that is the number the decision turns
+on. Filtering by a flag's own word is how the review pass the bulk import deliberately skipped is actually done —
+narrow to the tie-breaks, revert the few that went wrong, then select-all-discard the rest. *Select all* acts on the
+filtered view, because having filtered, selecting all of *those* and selecting the whole scan are different asks.
+Every action from here goes on the task queue, one job per resource whatever the selection size, so cancelling stops
+after the current resource. A revert the inventory already knows cannot run is **refused on its row with the reason**
+rather than enqueued to fail later, and a revert that can run is confirmed **per resource** about the edits it would
+discard — never as a blanket disclaimer, which a reader can only agree to blindly. Discard, the one irreversible step
+in the whole import flow, names the resource count and the byte total.
+
+The same two remedies sit on an open converted document, as toolbar actions visible exactly while its backups are
+retained — the mirror of the convert actions' own visible-while-`legacy_tc` rule — with the inline notice strip saying
+what is true and nothing more ([[plugins#viewer-editor-both]]'s message-only banner discipline). Both run inline
+there: one resource is a handful of renames, and the forward conversion is already inline. **A revert adopts the
+restored `.tc` in place**, the exact mirror of a convert: the same dock keeps showing the same resource, now a locked
+legacy document again, re-convertible without a reopen round-trip. **A save never discards the backups** — the
+divergence it creates is detectable ([[field-schema#record-timestamps]]) and is *warned about*, since discarding is
+deliberate and confirmed or it is not discarding at all, and the `.orig` set is also the only copy of the original
+`.tc` and of the tie-break's losers.
 
 ### §15.3.2 The five legacy screenshot naming schemes
 
