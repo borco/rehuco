@@ -1675,6 +1675,172 @@ def test_the_default_algorithm_is_the_measured_one() -> None:
 # endregion
 
 
+# region Pruning what was never content
+
+
+def test_a_verify_drops_an_entry_for_a_retained_conversion_backup(disk: FakeDisk) -> None:
+    """A ``.orig`` adopted under the old coverage rule is dropped, reported, and never read (#254, #253).
+
+    This is the state a bulk import leaves every converted resource in: backups retained, and the first
+    sweep adopted each resource's own ``info.tc.orig`` into its baseline.
+
+    **Test steps:**
+
+    * put a retained backup on the disk and seed a record that already lists it
+    * verify
+    * check the entry is gone, reported pruned as structural, and its bytes were never hashed
+    """
+    disk.files[DIRECTORY / "info.tc.orig"] = b"the record as tc4 wrote it"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("info.tc.orig", b"the record as tc4 wrote it")])
+    disk.forget()
+
+    report = verify_checksums(INFO_PATH)
+
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+    assert report.pruned == {"info.tc.orig": "structural"}
+    assert "info.tc.orig" not in disk.reads
+
+
+def test_a_verify_drops_an_entry_matching_a_junk_glob(disk: FakeDisk) -> None:
+    """The other exclusion tier prunes too, and says which one it was (#254, #226).
+
+    **Test steps:**
+
+    * put a ``Thumbs.db`` on the disk and seed a record listing it beside real content
+    * verify
+    * check it is gone and reported under the junk tier
+    """
+    disk.files[DIRECTORY / "Thumbs.db"] = b"thumbnail cache"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("Thumbs.db", b"thumbnail cache")])
+
+    report = verify_checksums(INFO_PATH)
+
+    assert "Thumbs.db" not in disk.entries
+    assert report.pruned == {"Thumbs.db": "junk"}
+
+
+def test_a_verify_keeps_an_entry_a_nested_record_now_covers(disk: FakeDisk) -> None:
+    """A claim with somewhere to go is not destroyed here -- moving it is #257's work (#254).
+
+    The archive stops being this record's content the moment a nested ``info.rehu`` appears beside it,
+    but its digest, algorithm and verification date exist nowhere else, so the entry stays and is
+    checked exactly as before.
+
+    **Test steps:**
+
+    * seed a record over both content files, then drop a nested ``info.rehu`` beside the archive
+    * verify
+    * check nothing was pruned and the archive still verified
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[DIRECTORY / "extras" / "info.rehu"] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH)
+
+    assert not report.pruned
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+
+
+def test_a_verify_keeps_a_missing_entry_rather_than_pruning_it(disk: FakeDisk) -> None:
+    """*Deleted* and *excluded* look identical to a disk walk, so absence is never what drops an entry.
+
+    **Test steps:**
+
+    * seed a record naming a file that is not on the disk
+    * verify
+    * check nothing was pruned and the entry is still there, ``missing`` and holding its hash
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("gone.mp4", b"once here")])
+
+    report = verify_checksums(INFO_PATH)
+
+    assert not report.pruned
+    assert report.statuses["gone.mp4"] == "missing"
+    assert disk.entries["gone.mp4"][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(b"once here")
+
+
+def test_freshness_does_not_protect_an_entry_from_pruning(disk: FakeDisk) -> None:
+    """``stale_after`` buys a skipped read, and an entry that was never content has nothing to read.
+
+    Without this a sweep's 90-day window would leave a catalog's stale entries in place indefinitely,
+    since every one of them was dated by the run that adopted it.
+
+    **Test steps:**
+
+    * put a retained backup on the disk and seed a record listing it, dated now
+    * verify with a staleness window that would ordinarily skip it
+    * check it was pruned rather than skipped
+    """
+    disk.files[DIRECTORY / "info.tc.orig"] = b"the record as tc4 wrote it"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("info.tc.orig", b"x", verified=NOW)])
+
+    report = verify_checksums(INFO_PATH, stale_after=WEEK)
+
+    assert report.pruned == {"info.tc.orig": "structural"}
+    assert "info.tc.orig" not in report.skipped
+
+
+def test_a_malformed_entry_is_pruned_when_its_name_says_it_was_never_content(disk: FakeDisk) -> None:
+    """The name is readable even where the hash is not, and the name is what coverage turns on (#254).
+
+    Carrying a malformed entry through byte-for-byte exists so a build never writes into one it cannot
+    read; dropping one that no resource's content could include is a different act.
+
+    **Test steps:**
+
+    * seed a record whose backup entry carries a hash this build cannot read
+    * verify
+    * check it was pruned rather than reported malformed
+    """
+    disk.files[DIRECTORY / "info.tc.orig"] = b"the record as tc4 wrote it"
+    disk.seed_record([{"name": "info.tc.orig", DEFAULT_CHECKSUM_ALGORITHM: "not hex"}, entry(VIDEO, VIDEO_BYTES)])
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.pruned == {"info.tc.orig": "structural"}
+    assert "info.tc.orig" not in report.statuses
+
+
+def test_a_targeted_verify_prunes_only_what_it_was_asked_about(disk: FakeDisk) -> None:
+    """*Verify Selection* over three rows may not quietly rewrite the two hundred it was not shown.
+
+    **Test steps:**
+
+    * put a retained backup on the disk and seed a record listing it beside the video
+    * verify the video alone
+    * check the backup's entry survived untouched
+    """
+    disk.files[DIRECTORY / "info.tc.orig"] = b"the record as tc4 wrote it"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("info.tc.orig", b"the record as tc4 wrote it")])
+
+    report = verify_checksums(INFO_PATH, only=[VIDEO])
+
+    assert not report.pruned
+    assert "info.tc.orig" in disk.entries
+
+
+def test_a_pruned_name_asked_for_by_name_is_not_reported_missing(disk: FakeDisk) -> None:
+    """A selected entry that was pruned answers *pruned*, not *missing* -- the file is right there.
+
+    **Test steps:**
+
+    * put a retained backup on the disk and seed a record listing it
+    * verify that name alone
+    * check the run reports it pruned and reports no status for it at all
+    """
+    disk.files[DIRECTORY / "info.tc.orig"] = b"the record as tc4 wrote it"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("info.tc.orig", b"the record as tc4 wrote it")])
+
+    report = verify_checksums(INFO_PATH, only=["info.tc.orig"])
+
+    assert report.pruned == {"info.tc.orig": "structural"}
+    assert not report.statuses
+
+
+# endregion
+
+
 # region Forgetting entries
 
 

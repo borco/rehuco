@@ -193,6 +193,16 @@ class FakeCatalog:
                 entry["verified"] = verified
         self.files[rehu_path.with_suffix(".checksum")] = json.dumps(record).encode("utf-8")
 
+    def add_entry(self, rehu_path: Path, entry: dict[str, Any]) -> None:
+        """Append a raw entry to one resource's record, as an older coverage rule would have left it.
+
+        :param rehu_path: the resource's ``.rehu`` file.
+        :param entry: the raw entry to append.
+        """
+        record = self.record_of(rehu_path)
+        record["files"].append(entry)
+        self.files[rehu_path.with_suffix(".checksum")] = json.dumps(record).encode("utf-8")
+
     def forget(self) -> None:
         """Clear the counters, so one run's reads and writes are counted on their own."""
         self.reads = []
@@ -485,6 +495,34 @@ def test_a_resource_with_no_record_is_counted_rather_than_failed(
     assert job.tally.verified == 2
 
 
+def test_a_sweep_counts_the_entries_it_pruned_across_the_catalog(
+    catalog: FakeCatalog, freezer: FrozenDateTimeFactory
+) -> None:
+    """A catalog swept for the first time under exclusive coverage cleans up as it goes (#254).
+
+    This is the state a bulk import leaves a whole library in: every converted resource's own
+    ``info.tc.orig`` adopted into its baseline, and every one of them dropped by the next sweep.
+
+    **Test steps:**
+
+    * put a retained backup in two resources and add an entry for each to their records
+    * sweep with everything already stale
+    * check both were dropped from their records and counted once in the tally
+    """
+    freezer.move_to(MUCH_LATER)
+    for rehu_path in (SCULPTING, PAINTING):
+        catalog.files[rehu_path.parent / "info.tc.orig"] = b"the record as tc4 wrote it"
+        catalog.add_entry(rehu_path, {"name": "info.tc.orig", "xxh3": "0" * 16, "verified": NOW, "status": "matched"})
+
+    job = sweep(stale_after=WEEK)
+    run(job)
+
+    assert job.tally is not None
+    assert job.tally.pruned == 2
+    assert "info.tc.orig" not in catalog.entries_of(SCULPTING)
+    assert "info.tc.orig" not in catalog.entries_of(PAINTING)
+
+
 def test_a_sweep_allowed_to_create_records_baselines_the_resource_that_had_none(
     catalog: FakeCatalog, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -750,8 +788,9 @@ def test_a_retry_drops_the_last_sweep_s_findings(catalog: FakeCatalog) -> None:
         (SweepTally(resources=2, without_record=1, failed=1), "2 resources, 1 without a record, 1 failed"),
         (SweepTally(resources=0, unreadable_branches=2), "0 resources, 2 unreadable directories"),
         (SweepTally(resources=0, unreadable_branches=1), "0 resources, 1 unreadable directory"),
+        (SweepTally(resources=2, statuses={"matched": 4}, pruned=3), "2 resources, 4 matched, 3 pruned"),
     ],
-    ids=["one resource", "verdicts", "not checked", "branches", "one branch"],
+    ids=["one resource", "verdicts", "not checked", "branches", "one branch", "pruned"],
 )
 def test_a_summary_says_what_a_sweep_established(tally: SweepTally, expected: str) -> None:
     """One line, in :func:`~rehuco_core.checksum_report_summary`'s voice.

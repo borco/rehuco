@@ -94,11 +94,13 @@ class CatalogScanner:  # pylint: disable=too-few-public-methods
     collection does not ([[data-model#scan-and-staleness]]) -- would mean reading every record to decide
     where to stop, and belongs with the catalog cache that has somewhere to keep what it read.
 
-    **A nested resource's content is verified twice, and that is the accepted answer.** Under #226 a
-    ``sub/info.rehu``'s content is also the enclosing ``info.rehu``'s content, so a sweep that finds both
-    records hashes ``sub/video.mp4`` into each of them. The alternative -- letting the inner record claim
-    the bytes -- would leave the outer record's entry for them permanently unverified, which is a hole in
-    a verification record rather than a saving.
+    **A nested resource's content is verified once, by the record that covers it** (#254). Under #226 a
+    ``sub/info.rehu``'s content used to be the enclosing ``info.rehu``'s as well, so a sweep that found both
+    records hashed ``sub/video.mp4`` into each of them. Scanning and *covering* are different questions:
+    this walk still descends past a record, because the sweep is asked to find the nested one, while the
+    content walk stops there, because that record covers its own directory. What made the overlap
+    defensible was that the outer record already held an entry for those bytes and leaving it unverified
+    would be a hole -- and under exclusive coverage it holds none.
 
     **It excludes nothing.** ``EXCLUDED_FILE_PATTERNS`` is a rule about *content* files, matched against
     junk a browser or a Mac left behind; no ``.rehu`` can match one, and letting the pattern list decide

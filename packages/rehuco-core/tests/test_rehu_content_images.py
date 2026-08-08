@@ -180,22 +180,47 @@ def test_directory_scoped_sums_every_archive_recursively(mocker: MockerFixture) 
     ]
 
 
-def test_directory_scoped_includes_a_subdirectory_with_its_own_info_rehu(mocker: MockerFixture) -> None:
-    """A nested ``info.rehu`` is not a boundary -- its directory's archives still sum into the parent.
+def test_directory_scoped_excludes_a_subdirectory_with_its_own_info_rehu(mocker: MockerFixture) -> None:
+    """A nested ``info.rehu`` covers its own directory, so its archives are not the parent's (#254).
+
+    The same rule the size scan and the checksums apply: adding up what each record counts has to
+    answer a library's total, which it cannot while a nested pack is counted once for itself and again
+    for every ancestor above it.
 
     **Test steps:**
 
-    * mock the tree to hold a nested ``info.rehu`` alongside a nested archive
+    * mock the tree to hold a nested ``info.rehu`` alongside a nested archive, and one archive at the
+      root the parent still owns
     * enumerate the parent ``info.rehu``'s content images
-    * verify the nested archive's entries are included
+    * verify only the root archive's entries came back
     """
     nested_archive = DIRECTORY / "child" / "images.zip"
-    mock_tree(mocker, [DIRECTORY / "child" / INFO_REHU_FILENAME, nested_archive])
-    mock_archives(mocker, {nested_archive: [zip_info("page01.jpg")]})
+    own_archive = DIRECTORY / "own.zip"
+    mock_tree(mocker, [DIRECTORY / "child" / INFO_REHU_FILENAME, nested_archive, own_archive])
+    mock_archives(mocker, {nested_archive: [zip_info("page01.jpg")], own_archive: [zip_info("cover.jpg")]})
 
     entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
 
-    assert entries == [ContentImageEntry(nested_archive, "page01.jpg")]
+    assert entries == [ContentImageEntry(own_archive, "cover.jpg")]
+
+
+def test_directory_scoped_excludes_an_archive_a_file_scoped_record_claims(mocker: MockerFixture) -> None:
+    """An archive beside a same-stem ``foo.rehu`` is that record's content, not the directory's (#254).
+
+    **Test steps:**
+
+    * mock the tree to hold ``foo.rehu`` beside ``foo.zip``, and an unclaimed archive
+    * enumerate the parent ``info.rehu``'s content images
+    * verify only the unclaimed archive's entries came back
+    """
+    claimed = DIRECTORY / "foo.zip"
+    unclaimed = DIRECTORY / "bar.zip"
+    mock_tree(mocker, [DIRECTORY / "foo.rehu", claimed, unclaimed])
+    mock_archives(mocker, {claimed: [zip_info("page01.jpg")], unclaimed: [zip_info("page02.jpg")]})
+
+    entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
+
+    assert entries == [ContentImageEntry(unclaimed, "page02.jpg")]
 
 
 def test_a_legacy_info_tc_is_directory_scoped_too(mocker: MockerFixture) -> None:

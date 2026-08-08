@@ -35,6 +35,7 @@ from .checksum_seeding import legacy_manifest_for
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
+from .rehu_content_files import ContentExclusionTier
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
 from .resource_scoping import resource_name
 from .tasks import (
@@ -46,6 +47,16 @@ from .tasks import (
 )
 
 LOG: Final = logging.getLogger(__name__)
+
+PRUNE_REASONS: Final[dict[ContentExclusionTier, str]] = {
+    "structural": "it is a record's own bookkeeping, which is never a resource's content",
+    "junk": "its name matches an excluded-files pattern",
+}
+"""How each exclusion tier reads in the log line naming a dropped entry (#254).
+
+The sentence lives here rather than in :mod:`rehuco_core.rehu_content_files`, which answers *which tier*
+and has no reader to address; a tier a build does not know cannot occur, since both ends read the same
+:data:`~rehuco_core.ContentExclusionTier`."""
 
 CHECKSUM_GENERATE_KIND: Final = "checksum-generate"
 CHECKSUM_VERIFY_KIND: Final = "checksum-verify"
@@ -231,6 +242,7 @@ class ChecksumJob(TaskJobBase):
         report = self.perform(control)
         self.__report = report
         self.__log_seed(report)
+        self.__log_pruned(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
 
     @staticmethod
@@ -250,6 +262,21 @@ class ChecksumJob(TaskJobBase):
             LOG.info("%s was not read: %s is the manifest this record was seeded from.", manifest, seed.manifest.name)
         for drop in seed.dropped:
             LOG.warning("%s: dropped %r -- %s.", seed.manifest, drop.line, drop.reason)
+
+    @staticmethod
+    def __log_pruned(report: ChecksumReport) -> None:
+        """Name every entry the run removed from the record, and why (#254).
+
+        The summary carries the count; this is where a reader finds out *which* entry went, on the
+        resource's own log ([[appendices.logging#scopes]]) -- the same division a legacy seed's dropped
+        lines already use, and for the stronger reason: a seed declines to add something, while this
+        takes something away. ``info`` rather than ``warning``, because a record catching up with the
+        coverage rule is housekeeping working, not a fault to look into.
+
+        :param report: what the run established.
+        """
+        for name, tier in report.pruned.items():
+            LOG.info("Dropped %r from the record: %s.", name, PRUNE_REASONS[tier])
 
     def perform(self, control: JobControl) -> ChecksumReport:
         """Make the run this job is for.
@@ -485,6 +512,10 @@ def checksum_report_summary(report: ChecksumReport) -> str:
         if report.seed.ignored:
             count = len(report.seed.ignored)
             parts.append(f"{count} manifest{'' if count == 1 else 's'} ignored")
+    if report.pruned:
+        # counted here and named in the log (:meth:`ChecksumJob.__log_pruned`), because this is the one
+        # part of a run that takes something away and a reader has to be able to find out what (#254)
+        parts.append(f"{len(report.pruned)} pruned")
     if report.unreadable_directories:
         # the one part that is not a count of files: a branch that would not list has no files to
         # count, which is exactly why it has to be said out loud (#245)
@@ -521,6 +552,11 @@ class SweepTally:
     statuses: dict[str, int] = field(default_factory=dict)
     """Every verdict the sweep collected, summed across resources."""
 
+    pruned: int = 0
+    """How many entries the sweep dropped from the records it wrote (#254) -- a catalog verified for the
+    first time under *a record counts only what it covers* cleans up as it goes, and this is what says
+    how much. Which entries those were is each resource's own log."""
+
     unreadable_branches: int = 0
     """How many directories under the root would not list, from the catalog walk itself -- distinct
     from a resource that failed, since these are branches whose resources were never even named."""
@@ -538,6 +574,8 @@ def sweep_summary(tally: SweepTally) -> str:
         parts.append(f"{tally.without_record} without a record")
     if tally.failed:
         parts.append(f"{tally.failed} failed")
+    if tally.pruned:
+        parts.append(f"{tally.pruned} pruned")
     if tally.unreadable_branches:
         count = tally.unreadable_branches
         parts.append(f"{count} unreadable director{'y' if count == 1 else 'ies'}")
@@ -716,6 +754,9 @@ class SweepChecksumsJob(TaskJobBase):
             LOG.warning("%s could not be verified: %s", rehu_path, error)
             return
         tally.verified += 1
+        tally.pruned += len(report.pruned)
+        for name, tier in report.pruned.items():
+            LOG.info("%s: dropped %r from the record: %s.", rehu_path, name, PRUNE_REASONS[tier])
         for status in report.statuses.values():
             tally.statuses[status] = tally.statuses.get(status, 0) + 1
 

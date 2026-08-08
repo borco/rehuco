@@ -79,6 +79,7 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 - [#198: feat: compute the content-image count — advertised_count / current_count with a measure/apply
   row](https://github.com/borco/rehuco/issues/198)
 - [#250: fix: info.tc is a directory-scoped resource](https://github.com/borco/rehuco/issues/250)
+- [#254: feat: a record counts only what it covers](https://github.com/borco/rehuco/issues/254)
 
 Two patterns for what a `.rehu` describes:
 
@@ -105,6 +106,17 @@ Two patterns for what a `.rehu` describes:
   `info.tc` and a `Verify checksums` that hashed the `.tc` file rather than the resource it describes, writing an
   `info.checksum` whose baseline was one small YAML file. A named `foo.tc` behaves as `foo.rehu` does, unchanged —
   the rule is about the one filename, not the extension.
+- **A record counts only what it covers** (#254). Coverage is decided by **the records present**, never by what is on
+  disk, and it is exclusive: a subdirectory holding an `info.rehu`/`info.tc` is out of every ancestor's content
+  **wholesale** — files, subtree and all — because that record covers its own directory; a file-scoped `foo.rehu` takes
+  its same-stem siblings out of the enclosing record's content, because those siblings are the whole of what it
+  describes; and whatever no record claims belongs to the nearest enclosing directory-scoped record, at any depth.
+  This reverses the overlap the rest of this document used to record as accepted, on one argument: **summing every
+  record's measured size has to answer a library's**, which is the aggregation the catalog cache exists to do
+  ([[data-model#scan-and-staleness]]), and under an overlap it cannot — a nested resource was counted once for itself
+  and again for each of its ancestors. Everything downstream of the walk follows: sizes, content-image counts and
+  checksums alike, since they are all one enumeration (#226). The stem is compared **whole**, so `foo.part2.zip` is
+  not `foo.rehu`'s.
 - **A legacy document keeps its checksum actions.** Verifying an unconverted resource against the `.sfv` a predecessor
   left beside it is the case #243 exists for, and the record it seeds is the one the converted resource inherits.
   Refusing the actions while a document is locked would have been the cheaper fix and throws that away.
@@ -115,10 +127,12 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - File-scoped `foo.rehu` → the single same-stem archive (`foo.zip`/`foo.cbz`) **and nothing else**. Siblings in the
   same directory belong to other resources or to none, and are never opened — a whitelist of one, not a directory walk
   with filters.
-- Directory-scoped `info.rehu` of type `reference_images` → **every** archive under its directory, root and
-  subdirectories, recursively. A nested `info.rehu` is not a boundary: a subdirectory carrying its own document is
-  just another resource, handled per its own type, while the parent's recursive sum still includes that subdirectory's
-  archives. The overlap is accepted, not resolved.
+- Directory-scoped `info.rehu` of type `reference_images` → every archive under its directory **that no other record
+  covers**, root and
+  subdirectories, recursively. A nested `info.rehu` **is** a boundary (#254): a subdirectory carrying its own document
+  is another resource, handled per its own type, and its archives are counted there rather than here — as is an archive
+  sitting beside a same-stem `foo.rehu` of its own. The overlap this used to accept is resolved by the coverage rule
+  above, for the reason it gives.
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
 - **Which archive entries count as images is the user's to set** — the enumeration takes the recognized extension set
@@ -143,6 +157,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently](https://github.com/borco/rehuco/issues/242)
 - [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
 - [#244: feat: checksum viewer dock — per-file status and date, with verify/generate actions](https://github.com/borco/rehuco/issues/244)
+- [#254: feat: a record counts only what it covers](https://github.com/borco/rehuco/issues/254)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -321,8 +336,9 @@ What a **reference-images** resource's content *is* was settled by #197: content
   editable, and the reason is mutability rather than ownership: a record, its screenshots and its manifest can
   change at any moment, so a size or a manifest that counted them would need recomputing every time anyone edited a
   description or added a screenshot. Excluding them is what lets a measurement stay valid until the *content*
-  changes. A nested record's real content still counts — a nested resource is not a boundary
-  ([[data-model#resource-scoping]]), only its bookkeeping is skipped. **Junk** — `Thumbs.db`,
+  changes. A nested record's real content leaves too, but under the coverage rule rather than this one (#254): the
+  subdirectory holding it is out wholesale, and a file-scoped record's same-stem siblings are its own
+  ([[data-model#resource-scoping]]). **Junk** — `Thumbs.db`,
   `ehthumbs.db`, `desktop.ini`, `.DS_Store`, `._*` by default — is the tier the `Excluded Files` settings page
   (#226) edits, as filename globs matched case-insensitively. `Thumbs.db` earns its place because Windows still
   writes per-folder thumbnail caches on network shares ([[packaging-deployment#ts230-as-nas]]), and `._*` is the
@@ -358,6 +374,24 @@ What a **reference-images** resource's content *is* was settled by #197: content
     summed over the branches that happened to answer is not this resource's, and a number that reads as
     authority is worse than no number — the same rule as *a backend that cannot run reports that rather
     than measuring `0`* ([[field-schema#duration-size]]), one step earlier in the same walk.
+- **A verify drops the entries the coverage rule says were never content** (#254), and says how many and why. A verify
+  otherwise only ever *adds*, so a record written before *a record counts only what it covers* would carry its
+  resource's own `info.tc.orig` backups, a `Thumbs.db` a Windows browse dropped in, and a nested record's bookkeeping
+  forever — every one of them adopted, hashed and dated by an earlier run. Four decisions:
+  - **What goes is decided by the name, never by absence.** The enumeration is a disk walk, so *deleted* and *excluded*
+    look identical to it; an entry is dropped for what it **is**, which is why a file that is merely gone keeps its
+    entry and its hash as the `missing` it has always been.
+  - **An entry another record now covers is left alone.** Those bytes are still somebody's content, and dropping the
+    entry would destroy a real claim — its digest, its algorithm, and the date saying when the file was last known
+    good. It **moves** to the record that now covers it instead, which is #257's work and which this must not land
+    ahead of.
+  - **Freshness does not protect an entry from pruning.** The staleness window buys a skipped *read*, and an entry that
+    was never content has nothing to read; a 90-day window would otherwise leave a catalog's stale entries in place
+    indefinitely.
+  - **The selection is respected, and the run reports what it dropped.** *Verify Selection* over three rows may not
+    quietly rewrite the two hundred it was not shown. The count joins the run's summary line and each dropped name and
+    reason lands on the resource's own log ([[appendices.logging#scopes]]), the same division a legacy seed's dropped
+    lines already use — entries vanishing silently is the failure mode this is written against.
 - **Excluded files are never reported as unexpected**, in either tier — that list comes from the same enumeration the
   record was generated over (#226), so a `Thumbs.db` a Windows browse dropped into the directory, and an edited or
   newly added screenshot, all leave a verify clean.
@@ -427,11 +461,13 @@ What a **reference-images** resource's content *is* was settled by #197: content
     inside the window. That is the resumability [[appendices.task-queue#cursor]] asks for, obtained from the job's own
     output — and it is *better* than a saved list of paths, which would send a resumed sweep at files that have moved.
     The granularity is the resource, since a verify writes its record once at the end of one.
-  - **The walk finds every record at any depth, and a nested resource's content is verified twice.** A nested record
-    is not a scan boundary ([[data-model#resource-scoping]]), and under #226 its content is also its parent's — so a
-    file beneath both is hashed into both records. Accepted deliberately: letting the inner record claim the bytes
-    would leave the outer record's entry for them permanently unverified, which is a hole in a verification record
-    rather than a saving.
+  - **The walk finds every record at any depth, and each one's content is hashed exactly once** (#254). A nested
+    record is not a *scan* boundary — the sweep is asked to find it — but it **is** a coverage boundary
+    ([[data-model#resource-scoping]]), so the bytes beneath it belong to the inner record alone and no ancestor holds
+    an entry for them. This reverses the double-verify this section used to record as accepted; the worry it was
+    accepted against, that the outer record's entry for those bytes would go permanently unverified, does not arise
+    once the outer record has no such entry. What such an entry becomes for a record written earlier is the pruning
+    rule below.
   - **The walk excludes nothing.** The junk list is a rule about *content* files; no `.rehu` can match one, and
     letting the list decide which resources a sweep can see would let an unrelated settings edit hide a resource from
     verification. The list goes to each resource's run, where it means something.

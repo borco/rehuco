@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
+from unittest.mock import MagicMock
 
 from fake_directories import FakeDirEntry, FakeScandir
 from pytest import raises
@@ -22,6 +23,7 @@ from rehuco_core import (
     ContentUnreachableError,
     content_size_on_disk,
     enumerate_content_files,
+    excluded_content_names,
 )
 from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
 
@@ -39,7 +41,7 @@ def mock_tree(  # pylint: disable=too-many-arguments
     unreadable: list[str] | None = None,
     irregular: list[str] | None = None,
     directory_links: list[str] | None = None,
-) -> None:
+) -> MagicMock:
     """Mock a directory tree under :data:`DIRECTORY`, read one directory at a time via ``os.scandir``.
 
     Each directory answers with its own entries, because the scan descends rather than flattening -- a
@@ -58,6 +60,7 @@ def mock_tree(  # pylint: disable=too-many-arguments
         ``True`` through the link and ``False`` with ``follow_symlinks=False``, which is what the
         scanner's loop guard asks. Their target's listing is deliberately not modeled: a test proves the
         walk never descends by the target's contents not appearing.
+    :returns: the patched ``os.scandir``, for the tests that count how many directories were listed.
     """
     offline = {DIRECTORY / name for name in unreadable or []}
     listing: dict[Path, list[FakeDirEntry]] = {DIRECTORY: []}
@@ -82,7 +85,7 @@ def mock_tree(  # pylint: disable=too-many-arguments
             raise FileNotFoundError(directory)
         return FakeScandir(listing[Path(directory)])
 
-    mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=scandir)
+    return mocker.patch("rehuco_core.rehu_content_files.os.scandir", side_effect=scandir)
 
 
 def mock_siblings(mocker: MockerFixture, filenames: list[str]) -> None:
@@ -215,21 +218,23 @@ def test_every_rehu_in_the_tree_takes_its_own_bookkeeping_with_it(mocker: Mocker
 
     A record, its screenshots and its manifest can all change at any moment, so counting any of them
     would make a size or a checksum need recomputing after an ordinary metadata edit
-    ([[data-model#checksums]]). Their *content* is untouched by this: ``baz.zip`` and ``bar/video.mp4``
-    still count, because a nested record is not a boundary ([[data-model#resource-scoping]]).
+    ([[data-model#checksums]]). Their *content* leaves too, but under the coverage rule rather than this
+    one (#254): ``bar/video.mp4`` is the nested record's and ``baz.zip`` is ``baz.rehu``'s, so the root
+    is left with the one file nothing else claims.
 
     **Test steps:**
 
     * mock a tree holding the scanning ``info.rehu``, a nested ``bar/info.rehu`` and a file-scoped
-      ``baz.rehu``, each with its own screenshots and manifests, plus real content beside them
+      ``baz.rehu``, each with its own screenshots and manifests, plus a video only the root can claim
     * enumerate ``info.rehu``'s content files
-    * verify only the content came back
+    * verify only that video came back
     """
     mock_tree(
         mocker,
         [
             "info.rehu",
             "info00.jpg",
+            "video.mp4",
             "bar/info.rehu",
             "bar/info00.jpg",
             "bar/video.mp4",
@@ -243,7 +248,7 @@ def test_every_rehu_in_the_tree_takes_its_own_bookkeeping_with_it(mocker: Mocker
         directories=["bar"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4", "baz.zip"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_a_pattern_only_excludes_where_a_matching_record_sits_beside_it(mocker: MockerFixture) -> None:
@@ -402,18 +407,95 @@ def test_a_differently_shaped_numbered_name_is_content(mocker: MockerFixture) ->
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["info001.jpg", "info1.jpg", "lesson01.jpg"]
 
 
-def test_structural_exclusions_apply_at_every_depth(mocker: MockerFixture) -> None:
-    """A nested resource's record and screenshots are somebody else's editable files, and are dropped too.
+def test_a_record_less_subdirectory_is_the_enclosing_resources_at_every_depth(mocker: MockerFixture) -> None:
+    """A subdirectory carrying no record of its own is still the enclosing resource's, at any depth.
+
+    The coverage rule turns on a record, not on a level: ``part1`` has none, so everything in it that
+    the root's own bookkeeping rules do not claim is the root's -- while ``part1/deep/info00.jpg`` is
+    still a normal file, because the root's record does not reach down to name it.
 
     **Test steps:**
 
-    * mock the tree to hold a nested ``part1/info.rehu``, ``part1/info00.jpg`` and ``part1/video.mp4``
+    * mock the tree to hold a record-less ``part1`` two levels deep, holding a video and a name shaped
+      like a screenshot that no record beside it claims
     * enumerate the parent ``info.rehu``'s content files
-    * verify only the nested video came back
+    * verify both came back
     """
-    mock_tree(mocker, ["part1/info.rehu", "part1/info00.jpg", "part1/video.mp4"], directories=["part1"])
+    mock_tree(
+        mocker,
+        ["info.rehu", "part1/video.mp4", "part1/deep/info00.jpg"],
+        directories=["part1", "part1/deep"],
+    )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/deep/info00.jpg", "part1/video.mp4"]
+
+
+def test_a_nested_record_takes_its_whole_directory_out(mocker: MockerFixture) -> None:
+    """A subdirectory holding an ``info.rehu`` is that record's, wholesale -- files, subtree and all
+    (#254).
+
+    Not just its bookkeeping: the ancestor stops at the directory rather than descending and dropping
+    the record's own files, which is what makes summing every record's size answer a library's instead
+    of counting every nested resource once more for each ancestor above it.
+
+    **Test steps:**
+
+    * mock the tree to hold a nested ``part1/info.rehu`` over a video and a deeper subdirectory of its
+      own, beside a video the root still owns
+    * enumerate the parent ``info.rehu``'s content files
+    * verify only the root's video came back
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "video.mp4", "part1/info.rehu", "part1/info00.jpg", "part1/lesson.mp4", "part1/deep/extra.mp4"],
+        directories=["part1", "part1/deep"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+def test_a_nested_legacy_record_takes_its_whole_directory_out(mocker: MockerFixture) -> None:
+    """An unconverted ``info.tc`` is a directory-scoped record, so it draws the same boundary (#250, #254).
+
+    Without that, converting the nested resource would move its files from the parent's content into
+    its own for a reason that has nothing to do with what either of them holds -- and a claim seeded
+    from the old ``.sfv`` (#243) would describe a resource that had changed underneath it.
+
+    **Test steps:**
+
+    * mock the tree to hold a nested ``part1/info.tc`` over its own manifest and video, beside a video
+      the root still owns
+    * enumerate the parent ``info.rehu``'s content files
+    * verify only the root's video came back
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "video.mp4", "part1/info.tc", "part1/info.sfv", "part1/lesson.mp4"],
+        directories=["part1"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+def test_a_file_scoped_neighbour_takes_its_same_stem_siblings_out(mocker: MockerFixture) -> None:
+    """A named ``foo.rehu`` describes its same-stem siblings, so they are its and not the directory's
+    (#254).
+
+    Every ``foo.*`` goes, not only the archive: a file-scoped record's content is the whole same-stem
+    set, and both walks have to draw that set the same way or a file lands in neither record or in
+    both. The stem is compared whole, so ``foo.part2.zip`` -- stem ``foo.part2`` -- is not ``foo.rehu``'s
+    and stays where it was.
+
+    **Test steps:**
+
+    * mock the directory to hold ``info.rehu`` beside a file-scoped ``foo.rehu`` with two same-stem
+      files, a third that only shares a prefix, and one file sharing nothing
+    * enumerate ``info.rehu``'s content files
+    * verify only the unclaimed file came back
+    """
+    mock_tree(mocker, ["info.rehu", "foo.rehu", "foo.zip", "foo.pdf", "foo.part2.zip", "readme.txt"])
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["foo.part2.zip", "readme.txt"]
 
 
 def test_a_conversions_retained_backups_are_not_the_resources_content(mocker: MockerFixture) -> None:
@@ -426,9 +508,9 @@ def test_a_conversions_retained_backups_are_not_the_resources_content(mocker: Mo
     **Test steps:**
 
     * mock a converted tree: the written record and screenshot, the backed-up ``.tc`` and legacy
-      screenshots, and a nested resource holding backups of its own, beside real content
+      screenshots, and a second converted resource file-scoped beside it, all around one real video
     * enumerate ``info.rehu``'s content files
-    * verify only the content came back
+    * verify only the video came back
     """
     mock_tree(
         mocker,
@@ -438,14 +520,13 @@ def test_a_conversions_retained_backups_are_not_the_resources_content(mocker: Mo
             "info.tc.orig",
             "cover.jpg.orig",
             "video.mp4",
-            "part1/info.rehu",
-            "part1/info.tc.orig",
-            "part1/lesson.mp4",
+            "pack.rehu",
+            "pack.tc.orig",
+            "pack.zip",
         ],
-        directories=["part1"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/lesson.mp4", "video.mp4"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_any_orig_sibling_is_a_backup_whatever_it_backs_up(mocker: MockerFixture) -> None:
@@ -572,23 +653,23 @@ def test_a_nested_legacy_record_is_bookkeeping_to_the_resource_above_it(mocker: 
 
     The same rule every ``.rehu`` in the tree is under, and for the same reason: without it, converting
     the nested resource would change its parent's content set for a reason that has nothing to do with
-    what the parent holds. The nested resource's real content still counts -- a nested record is not a
-    boundary ([[data-model#resource-scoping]]).
+    what the parent holds. Its real content leaves with it under the coverage rule (#254): a
+    directory-scoped ``bar/info.tc`` claims ``bar`` and a file-scoped ``baz.tc`` claims ``baz.zip``.
 
     **Test steps:**
 
     * mock a tree holding a nested ``bar/info.tc`` with its own manifest and content, and a file-scoped
-      ``baz.tc`` at the root beside the archive it describes
+      ``baz.tc`` at the root beside the archive it describes, around one video the root still owns
     * enumerate the root ``info.rehu``'s content files
-    * verify both records and both manifests are out, and both contents are in
+    * verify only that video came back
     """
     mock_tree(
         mocker,
-        ["info.rehu", "bar/info.tc", "bar/info.sfv", "bar/video.mp4", "baz.tc", "baz.sfv", "baz.zip"],
+        ["info.rehu", "video.mp4", "bar/info.tc", "bar/info.sfv", "bar/lesson.mp4", "baz.tc", "baz.sfv", "baz.zip"],
         directories=["bar"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4", "baz.zip"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
 def test_a_legacy_record_claims_its_screenshots_by_scheme(mocker: MockerFixture) -> None:
@@ -625,18 +706,24 @@ def test_a_legacy_screenshot_name_is_content_where_no_legacy_record_sits(mocker:
 
     **Test steps:**
 
-    * mock a tree whose root holds ``info.rehu`` over legacy-shaped image names, and a subdirectory
-      holding a ``.tc`` over the same names
+    * mock a tree whose root holds ``info.rehu`` over legacy-shaped image names, and a record-less
+      subdirectory holding the same names
     * enumerate ``info.rehu``'s content files
-    * verify the root's images count and the legacy subdirectory's do not
+    * verify every one of them counted
     """
     mock_tree(
         mocker,
-        ["info.rehu", "01.jpg", "cover.jpg", "bar/info.tc", "bar/01.jpg", "bar/cover.jpg", "bar/video.mp4"],
+        ["info.rehu", "01.jpg", "cover.jpg", "bar/01.jpg", "bar/cover.jpg", "bar/video.mp4"],
         directories=["bar"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["01.jpg", "bar/video.mp4", "cover.jpg"]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == [
+        "01.jpg",
+        "bar/01.jpg",
+        "bar/cover.jpg",
+        "bar/video.mp4",
+        "cover.jpg",
+    ]
 
 
 def test_a_named_legacy_record_stays_file_scoped(mocker: MockerFixture) -> None:
@@ -900,6 +987,145 @@ def test_the_refusal_names_a_few_branches_and_counts_the_rest(mocker: MockerFixt
 
     assert text.count(str(DIRECTORY)) == MAX_NAMED_UNREADABLE
     assert text.endswith("(and 1 more)")
+
+
+# endregion
+
+
+# region names that were never content
+
+
+def test_excluded_names_reports_each_structural_kind(mocker: MockerFixture) -> None:
+    """The structural tier, asked from names rather than from a walk (#254).
+
+    Every kind a record claims: the record itself, its screenshots, its manifest, and a retained
+    conversion backup -- the four an older coverage rule adopted into records that still hold them.
+
+    **Test steps:**
+
+    * mock a tree holding all four beside real content
+    * ask which of their names were never content
+    * verify all four came back structural and the content did not come back at all
+    """
+    mock_tree(mocker, ["info.rehu", "info00.jpg", "info.sfv", "info.tc.orig", "video.mp4"])
+
+    excluded = excluded_content_names(
+        DIRECTORY_SCOPED_PATH, ["info.rehu", "info00.jpg", "info.sfv", "info.tc.orig", "video.mp4"]
+    )
+
+    assert excluded == {
+        "info.rehu": "structural",
+        "info00.jpg": "structural",
+        "info.sfv": "structural",
+        "info.tc.orig": "structural",
+    }
+
+
+def test_excluded_names_reports_a_junk_glob_under_its_own_tier(mocker: MockerFixture) -> None:
+    """The two tiers are told apart, because one of them is the user's and the other is not (#226).
+
+    **Test steps:**
+
+    * mock a tree holding a ``Thumbs.db``
+    * ask about it
+    * verify it came back under the junk tier
+    """
+    mock_tree(mocker, ["info.rehu", "Thumbs.db"])
+
+    assert excluded_content_names(DIRECTORY_SCOPED_PATH, ["Thumbs.db"]) == {"Thumbs.db": "junk"}
+
+
+def test_excluded_names_decides_on_the_name_not_on_the_file_being_there(mocker: MockerFixture) -> None:
+    """A deleted file and an excluded one look identical to a walk, so absence decides nothing (#254).
+
+    A record's entry for a file that is merely gone must stay ``missing`` and keep its hash, while one
+    for a backup that has since been discarded is still a backup and still goes.
+
+    **Test steps:**
+
+    * mock a tree holding neither name
+    * ask about a deleted video and a discarded backup
+    * verify only the backup came back
+    """
+    mock_tree(mocker, ["info.rehu"])
+
+    assert excluded_content_names(DIRECTORY_SCOPED_PATH, ["gone.mp4", "info.tc.orig"]) == {"info.tc.orig": "structural"}
+
+
+def test_excluded_names_leaves_out_a_name_another_record_now_covers(mocker: MockerFixture) -> None:
+    """Content that moved to another record is not *excluded* -- it is somebody's, and its claim moves
+    with it (#257).
+
+    Both halves of the coverage rule: a nested directory-scoped record, and a file-scoped record's
+    same-stem sibling. Neither name comes back, so a verify keeps both entries.
+
+    **Test steps:**
+
+    * mock a tree with a nested ``bar/info.rehu`` and a file-scoped ``baz.rehu``, each over its content
+    * ask about both contents, and about the nested record's own screenshot
+    * verify only the screenshot came back, since it was never anybody's content
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "bar/info.rehu", "bar/info00.jpg", "bar/video.mp4", "baz.rehu", "baz.zip"],
+        directories=["bar"],
+    )
+
+    excluded = excluded_content_names(DIRECTORY_SCOPED_PATH, ["bar/video.mp4", "baz.zip", "bar/info00.jpg"])
+
+    assert excluded == {"bar/info00.jpg": "structural"}
+
+
+def test_excluded_names_reads_each_directory_once(mocker: MockerFixture) -> None:
+    """A record naming two hundred files in three directories costs three listings, not two hundred.
+
+    **Test steps:**
+
+    * mock a tree of two subdirectories, and count the listings
+    * ask about four names spread over the root and both of them
+    * verify one listing per distinct directory
+    """
+    scandir = mock_tree(mocker, ["info.rehu", "a/one.mp4", "a/two.mp4", "b/three.mp4"], directories=["a", "b"])
+
+    excluded_content_names(DIRECTORY_SCOPED_PATH, ["info.tc.orig", "a/one.mp4", "a/two.mp4", "b/three.mp4"])
+
+    assert scandir.call_count == 3
+
+
+def test_a_file_scoped_resources_entries_are_never_junk_pruned(mocker: MockerFixture) -> None:
+    """A file-scoped record's content is a whitelist no pattern reaches, in both directions (#226).
+
+    ``foo.tmp`` beside ``foo.rehu`` is that resource's content however the junk list is spelled, so a
+    verify may not drop its entry on a glob the walk never applies.
+
+    **Test steps:**
+
+    * mock the directory to hold ``foo.tmp`` beside ``foo.rehu``
+    * ask about it with a pattern that matches its name
+    * verify nothing came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.tmp"])
+
+    assert not excluded_content_names(FILE_SCOPED_PATH, ["foo.tmp"], ("*.tmp",))
+
+
+def test_excluded_names_over_an_unreadable_directory_keeps_what_it_cannot_judge(mocker: MockerFixture) -> None:
+    """A branch that will not list claims nothing, so only the name-only rules can still fire.
+
+    A ``.orig`` is a backup by its name alone and still goes; a ``bar/info00.jpg`` needs a record beside
+    it to be a screenshot, and with no listing there is no such evidence -- so the entry stays.
+
+    **Test steps:**
+
+    * mock a tree whose ``bar`` refuses to list
+    * ask about a backup and a screenshot-shaped name inside it
+    * verify only the backup came back
+    """
+    mock_tree(mocker, ["info.rehu"], directories=["bar"], unreadable=["bar"])
+
+    excluded = excluded_content_names(DIRECTORY_SCOPED_PATH, ["bar/info.tc.orig", "bar/info00.jpg"])
+
+    assert excluded == {"bar/info.tc.orig": "structural"}
 
 
 # endregion
