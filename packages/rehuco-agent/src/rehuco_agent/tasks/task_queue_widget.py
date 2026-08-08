@@ -18,6 +18,7 @@ TASK_RUN_ICON: Final = ":/icons/task_run.svg"
 TASK_CANCEL_ICON: Final = ":/icons/task_cancel.svg"
 ITEMS_RESTORE_ICON: Final = ":/icons/items_restore.svg"
 ITEMS_DELETE_ICON: Final = ":/icons/items_delete.svg"
+TASK_CLEAR_DONE_ICON: Final = ":/icons/task_clear_done.svg"
 ITEMS_TOP_ICON: Final = ":/icons/items_top.svg"
 ITEMS_UP_ICON: Final = ":/icons/items_up.svg"
 ITEMS_DOWN_ICON: Final = ":/icons/items_down.svg"
@@ -102,6 +103,10 @@ class TaskQueueWidget(QWidget):
         toolbar.addActions([ui.pause_action, ui.resume_action, ui.cancel_action, ui.retry_action])
         toolbar.addSeparator()
         toolbar.addActions([ui.move_to_top_action, ui.move_up_action, ui.move_down_action, ui.move_to_bottom_action])
+        toolbar.addSeparator()
+        # acts on the whole queue rather than the selection, so it gets its own trailing slot rather
+        # than joining the per-selection run above (#249)
+        toolbar.addAction(ui.clear_done_action)
         ui.main_layout.insertWidget(0, toolbar)
 
         for action, icon in (
@@ -112,6 +117,7 @@ class TaskQueueWidget(QWidget):
             (ui.cancel_action, TASK_CANCEL_ICON),
             (ui.retry_action, ITEMS_RESTORE_ICON),
             (ui.clear_action, ITEMS_DELETE_ICON),
+            (ui.clear_done_action, TASK_CLEAR_DONE_ICON),
             (ui.move_to_top_action, ITEMS_TOP_ICON),
             (ui.move_up_action, ITEMS_UP_ICON),
             (ui.move_down_action, ITEMS_DOWN_ICON),

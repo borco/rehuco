@@ -21,7 +21,7 @@ from time import monotonic, sleep
 from typing import Final
 
 from PySide6.QtCore import QItemSelectionModel, QPoint
-from PySide6.QtWidgets import QMessageBox
+from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -329,6 +329,29 @@ def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(
         status.serial for status in queue.jobs()
     ]
     assert widget_status(widget, 0).label == "running"
+
+
+# endregion
+
+
+# region the toolbar
+
+
+def test_clear_done_is_the_toolbar_s_last_action(widget: TaskQueueWidget) -> None:
+    """*Clear Done* acts on the whole queue rather than the selection, so it sits in its own trailing
+    slot after the reorder group -- the last action on the toolbar, not folded into the per-selection
+    run above it (#249).
+
+    **Test steps:**
+
+    * read the toolbar's own action list
+    * verify it ends with a separator followed by Clear Done
+    """
+    toolbar = widget.findChildren(QToolBar)[0]
+    actions = toolbar.actions()
+
+    assert actions[-1] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
+    assert actions[-2].isSeparator()
 
 
 # endregion
