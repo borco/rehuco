@@ -1,0 +1,2955 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/settings-pages/">
+      
+      
+        <link rel="prev" href="../release-runbook/">
+      
+      
+        <link rel="next" href="../task-queue/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Settings Pages - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#settings-pages-managing-app-wide-configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Settings Pages
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-category-groups-76" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Category groups (#76)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-savedrop-what-the-toolbar-actions-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Save/Drop: what the toolbar actions do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-how-a-page-persists-its-own-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. How a page persists its own changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-adding-a-new-settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Adding a new settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-making-the-rest-of-the-app-react-to-a-saved-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Making the rest of the app react to a saved change
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-category-groups-76" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Category groups (#76)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-savedrop-what-the-toolbar-actions-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Save/Drop: what the toolbar actions do
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-how-a-page-persists-its-own-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. How a page persists its own changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-adding-a-new-settings-page" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Adding a new settings page
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-making-the-rest-of-the-app-react-to-a-saved-change" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Making the rest of the app react to a saved change
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="settings-pages-managing-app-wide-configuration">Settings Pages — Managing App-Wide Configuration</h1>
+<p><span class="slug-ref">[[[appendices.settings-pages]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#overview]]]</span></p>
+<p><code>SettingsDialog</code> (<code>rehuco_agent/settings/ui/settings_dialog.py</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/47" title="GitHub Issue: borco/rehuco #47">#47</a>) is a VLC-preferences-style
+shell: a filterable category tree on the left, the selected category's page on the right, and a
+toolbar with Save all / Save current page / Drop all / Drop current page. It holds no settings
+content itself — every category is a <code>SettingsPage</code> (<code>settings/ui/settings_page.py</code>), a
+<code>@runtime_checkable</code> <code>Protocol</code> an ordinary <code>.ui</code>-backed <code>QWidget</code> satisfies structurally, the same
+style already used for the field toolkit's <code>StatefulWidget</code>/<code>FieldModel</code> (<span class="slug-ref">[[plugins#field-toolkit]]</span>):</p>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">SettingsPage</span><span class="p">(</span><span class="n">Protocol</span><span class="p">):</span>
+    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">is_dirty</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span> <span class="o">...</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save_changes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">drop_changes</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</code></pre></div>
+<p><strong>Two-level filtering (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/67" title="GitHub Issue: borco/rehuco #67">#67</a>).</strong> The one filter box drives two nested filters off the same text, and a
+page implements <em>neither</em> — both are the dialog's job, driven by a <code>SettingsFrameFilter</code>
+(<code>settings/ui/settings_frame_filter.py</code>) the dialog builds for each page in <code>add_page</code>:</p>
+<ul>
+<li><strong>Page level</strong> (<code>CategoryFilterProxyModel</code>) — the category tree shows every page whose <code>title</code> or
+  any frame's gathered text contains the filter text (and, per the group rules in
+  <span class="slug-ref">[[appendices.settings-pages#category-groups]]</span>, every page of a matching group).</li>
+<li><strong>Frame level</strong> — a page groups its controls into labeled <code>QFrame</code>s; the currently-shown page hides
+  every frame not matching the text, so a crowded page collapses to just the group being searched
+  for. <strong>The frame is the smallest unit shown or hidden</strong> — never a single control inside one.</li>
+</ul>
+<p><code>SettingsFrameFilter</code> <strong>discovers</strong> a page's top-level <code>QFrame</code>s and <strong>gathers</strong> each one's searchable
+text by introspection — walking its child widgets for user-visible captions (<code>QLabel</code> text, button
+text, <code>QGroupBox</code> titles) once, at construction. So a page needs no hand-maintained term list: the
+filter tracks whatever the <code>.ui</code> actually says, including renamed labels and translations, and never
+recomputes per keystroke. (Only exact-type <code>QFrame</code>s count as groups, so a <code>QFrame</code> subclass like a
+decorative rule isn't mistaken for one.)</p>
+<p>A <strong>"Show full page if title matches"</strong> <code>WrappingCheckBox</code> (<code>borco_pyside.widgets</code>) sits under the
+filter box. When checked, text matching a page's title shows that page in full — every frame —
+regardless of which individual frames also match; when unchecked, the title is ignored for frame
+visibility and only the frames whose text matches are shown (so a title-only match shows no frames).
+Either way, a page still appears in the tree on a title <em>or</em> frame match. The dialog re-runs the
+current page's frame filter whenever the filter text or the toggle changes, and whenever a different
+page becomes current.</p>
+<p><strong>Only the pages scroll (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/229" title="GitHub Issue: borco/rehuco #229">#229</a>).</strong> <code>add_page</code> wraps each page in a widget-resizable <code>QScrollArea</code> of its
+own and stacks <em>that</em>, so a tall page scrolls while a short one sits still. <strong>One per page, not one
+around the stack</strong>: a <code>QStackedWidget</code> reports its tallest page's height as its own, so a shared scroll
+area would scroll a two-row page by the longest page's length. Everything around the stack — the
+toolbar, the filter box, both toggles and the category tree — is chrome that stays put however small the
+dialog gets, since a control the user cannot reach is a setting they cannot change. The tree is not
+wrapped either: a <code>QTreeView</code> already is a scroll area, and nesting them gives two sets of scrollbars
+and a tree that can be scrolled out of its own viewport.</p>
+<p><code>MainWindow.__register_settings_pages</code> constructs each page and calls
+<code>SettingsDialog.add_page(page)</code>; the dialog itself lives inside a floating-first, dockable
+<code>DockableDialog</code> on the outer <code>CDockManager</code> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/47" title="GitHub Issue: borco/rehuco #47">#47</a>'s dockable-dialog framework — out of scope here).</p>
+<h2 id="1-category-groups-76">1. Category groups (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/76" title="GitHub Issue: borco/rehuco #76">#76</a>)</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#category-groups]]]</span></p>
+<p>The category tree is <strong>two levels deep at most</strong>: <code>add_page(page, group="Plugins")</code> nests the page's
+row under that group's row, creating the group's row on first use; <code>add_page(page)</code> leaves it a
+top-level row of its own. Today <strong>Plugins</strong> holds "Descriptions" (<code>DescriptionsPage</code>), "Excluded
+Files" (<code>ExcludedFilesPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>), "Images" (<code>ImagesPage</code>) and "Videos" (<code>VideosPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/225" title="GitHub Issue: borco/rehuco #225">#225</a>) —
+registered in that alphabetical
+order. Group names are plural — a group holds pages, and <strong>Plugins</strong> is where a resource type's own
+settings go.</p>
+<p><strong>Top-level is for what is about the app rather than about a resource type</strong>: "Identity"
+(<code>IdentityPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/99" title="GitHub Issue: borco/rehuco #99">#99</a>), "Logs" (<code>LogsPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/200" title="GitHub Issue: borco/rehuco #200">#200</a>), "Tasks" (<code>TasksPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/202" title="GitHub Issue: borco/rehuco #202">#202</a>), "Checksums"
+(<code>ChecksumsPage</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>), and the platform-gated "System Integration" (<code>RegistryPage</code> on Windows,
+<code>DesktopIntegrationPage</code> on Linux). The test each of them passes is the same: a reader looking for it has
+no plugin name to guess. Checksums govern every resource type and the sweep that reads them is reached
+from <code>File</code> rather than from a document, so filing them under a plugin would hide them behind a word the
+reader never thought of.</p>
+<p><strong>One page per subject, not per owner.</strong> "Images" gathers every image-shaped setting whichever object
+owns it: the viewer surface and thumbnail strips (<code>ImageViewerSettings</code>), the width cap on an image
+embedded in a description (<code>MarkdownRenderingSettings</code>), and which archive entries a reference-images
+resource counts as its images (<code>ReferenceImagesSettings</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/222" title="GitHub Issue: borco/rehuco #222">#222</a>). The last two arrived from elsewhere —
+the cap was a block on Descriptions, the extension list a "Reference Images" page holding nothing but
+that list. Both were filed where the <em>code</em> owned them, so finding either meant knowing which plugin
+or settings object to look under, when what the reader had was the word "images". A page whose one
+block is a list is also a tree row that costs a click to learn it holds one thing.</p>
+<p>A group row <strong>carries no page of its own</strong> — it is a header. Selecting it shows everything under it at
+once, in one scrolling column, each page's contribution under its own title as a heading — since the
+tree selection no longer names what you are looking at once several pages are shown together (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/230" title="GitHub Issue: borco/rehuco #230">#230</a>).</p>
+<p><strong>The column takes blocks, not pages</strong> (<code>SettingsBlockColumn</code>, <code>settings/ui/settings_block_column.py</code>).
+The block — a page's top-level labelled <code>QFrame</code>, the same unit the filter shows and hides — is the
+row here, and a page is simply the view that shows its own blocks when its own row is selected. Two
+things fall out of that which the alternative had to be patched into:</p>
+<ul>
+<li><strong>A heading follows its blocks.</strong> A page the filter empties contributes nothing, so there is no
+  heading left standing over a gap promising settings that filtered out. <code>sync_headings</code> shows a
+  heading exactly while some block under it is visible.</li>
+<li><strong>Nothing spreads.</strong> A page's layout is written for being shown alone — zero margins, a trailing
+  spacer, and sometimes one block stretched to fill what is left (<span class="slug-ref">[[appendices.settings-pages#adding-a-page]]</span>).
+  Carrying whole pages into the column brought all of that with them: each page's spacer claimed a share
+  of the height and pushed the pages apart, and the stretch had to be argued back down with a size
+  policy. Taking only the blocks leaves that layout where it is right — on the page's own view — and the
+  column supplies the single trailing stretch itself.</li>
+</ul>
+<p>So <strong>a block fills when alone and packs when it isn't</strong>, without either view knowing about the other:
+<code>DescriptionsPage</code> stretches its engine block so the CSS editor fills the page, and in a group column
+that same block takes its natural height. The dialog reads that stretch once at registration
+(<code>__record_blocks</code>) and re-applies it when the block comes home, because a box layout keeps stretch per
+item and a widget taken out leaves its factor behind.</p>
+<p>A block has one parent, so moving between the two views is always a move, never a copy. Everything
+that walks pages (Save all / Drop all, and Save/Drop <em>current page</em> on a selected group row) recurses
+one level into groups, so a grouped page is never skipped.</p>
+<p>A <strong>second <code>WrappingCheckBox</code>, "Show full group if title matches"</strong>, sits under the page-level one and
+makes the tree filter group-aware:</p>
+<ul>
+<li><strong>checked</strong> — text matching a <em>group's own title</em> shows every page under it, even pages whose own
+  title/fields don't match;</li>
+<li><strong>unchecked</strong> — filtering stays page-scoped: a group's title has no say in its pages' visibility (so
+  a group-title-only match shows nothing at all).</li>
+</ul>
+<p>A page matching the filter on its own merits is shown either way, whatever its group. A group row is
+shown exactly when at least one page under it is: Qt hides a rejected parent's whole subtree, so
+<code>CategoryFilterProxyModel.filterAcceptsRow</code> <strong>accepts a group row on its children's behalf</strong> (a group
+can never be shown empty, and a page can never be hidden by its group alone). A filtered-out group row
+takes its leaves' expansion state with it, so the dialog re-expands the tree after every re-filter —
+otherwise a page could survive the filter yet stay unseen.</p>
+<p><strong>The whole filter state persists</strong> across restarts — the filter text and both toggles — via
+<code>SettingsDialogSettings</code> (<code>settings/settings_dialog_settings.py</code>). The dialog restores it in
+<code>__init__</code>, <em>before</em> wiring the widgets' signals up, so seeding them doesn't immediately re-save what
+was just loaded; the proxy is seeded by hand for the same reason (no signal to ride in on). Each
+page's own frame filter needs no seeding: a page is frame-filtered when it becomes current, and the
+first page added becomes current immediately.</p>
+<p>Saving is <code>SettingsDialog.save_filter_state()</code>, called from <code>MainWindow.closeEvent</code> alongside the
+app's other at-shutdown saves (window state, session, recent files, theme) — the dialog lives in a
+dock, so it has no close/done path of its own to save from the way <code>UnsavedChangesDialog</code> (a real
+<code>QDialog</code>) does from <code>done()</code>. Saving per keystroke instead would mean one ini write per character
+typed into the filter box, for no gain.</p>
+<p><strong>Testing note:</strong> because construction alone touches persistent storage, the autouse
+<code>isolate_settings_dialog_settings</code> fixture in <code>packages/rehuco-agent/tests/conftest.py</code> patches the
+dialog's <code>persistent_settings()</code> — otherwise any test building one (directly, or via <code>MainWindow</code>)
+would read and overwrite the developer's real settings file, and leak toggle state into later tests.</p>
+<h2 id="2-savedrop-what-the-toolbar-actions-do">2. Save/Drop: what the toolbar actions do</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#save-drop-actions]]]</span></p>
+<p>The dialog shell dispatches, it never interprets:</p>
+<ul>
+<li><strong>Save all</strong> / <strong>Drop all</strong> — call <code>save_changes()</code> / <code>drop_changes()</code> on every registered page,
+  in tree order (a group's pages together, at the group's own position).</li>
+<li><strong>Save current page</strong> / <strong>Drop current page</strong> — call it on the selected leaf page, or on every page
+  under a selected group row (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/230" title="GitHub Issue: borco/rehuco #230">#230</a>) — the same one-level recursion Save all / Drop all already do,
+  now also driven by what the tree's current row is rather than always every page.</li>
+</ul>
+<p>What "saved" or "dropped" actually <em>means</em> is entirely up to each page. Two shapes exist today:</p>
+<ul>
+<li><strong>Staged-edit pages</strong> (<code>DescriptionsPage</code>, "Descriptions"; <code>ImagesPage</code>, "Images";
+  <code>ExcludedFilesPage</code>, "Excluded Files"; <code>VideosPage</code>, "Videos") — edits live in
+  local widget/draft state until <code>save_changes()</code> pushes them somewhere permanent; <code>drop_changes()</code>
+  discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
+  <code>ImagesPage</code> is the one page writing <strong>three</strong> settings objects, one per block, each saved whole
+  because that is the unit its own <code>save()</code> takes. Writing <code>MarkdownRenderingSettings</code> there
+  re-persists the engine and CSS unchanged: what the shared object holds is already the last-saved
+  pair, so a <code>DescriptionsPage</code> edit still staged is neither picked up nor clobbered.
+  <code>ImagesPage</code> writes a <strong>reactive</strong> singleton (<code>ImageViewerSettings</code>, §5's recipe), because applying
+  it has to show its own effect on what is already on screen: every open document's image strip
+  resizes and takes up the chosen layout — one row or wrapped (<span class="slug-ref">[[plugins#tutorial-plugin]]</span>) — and
+  every open maximized viewer resizes and shows or hides its own thumbnail row. Only
+  <code>mode</code> stays read-at-open-time — it decides where the <em>next</em> viewer is built, and nothing already up
+  can follow a change to it.
+  One of its values is deliberately only a <strong>starting point</strong>: <code>strip_visible</code> decides whether a
+  maximized screenshot opens with its thumbnail row <em>the first time</em> a document shows one
+  (<span class="slug-ref">[[plugins#tutorial-plugin]]</span>). Toggling that row inside a viewer never writes back here — it is that
+  document's own view state, and lives in its saved layout beside which tabs it has open — because a
+  shared setting would let one document's toggle decide how every other document's viewer opens.
+  Applying it does reach the viewers <em>currently open</em>, so the effect is visible where the user is
+  looking, and each of those documents then remembers the applied value as if its toggle had been
+  clicked by hand. A document with no viewer open resolves the setting afresh whenever it opens one,
+  so it is never seeded with a stale default from whenever it happened to be constructed.</li>
+<li><strong>Immediate-effect pages</strong> (<code>RegistryPage</code>, "System Integration") — its buttons
+  (Register/Unregister) already took effect on the OS the moment they were clicked; nothing is
+  staged, so <code>save_changes()</code>/<code>drop_changes()</code> are no-ops and <code>is_dirty()</code> always returns <code>False</code>.</li>
+</ul>
+<p><code>is_dirty()</code> is reserved for a later dirty-badging slice on the category tree — declared on the
+protocol, but not yet read by <code>SettingsDialog</code> itself.</p>
+<h2 id="3-how-a-page-persists-its-own-changes">3. How a page persists its own changes</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#persisting-changes]]]</span></p>
+<p>There is no generic persistence layer in the dialog shell — persisting is entirely each page's own
+job, via whatever <code>save_changes()</code> does. <code>DescriptionsPage</code>'s flow is the concrete pattern to
+follow for a new staged-edit page:</p>
+<ol>
+<li><code>__sync_current_css_draft()</code> folds the visible CSS editor's text into whichever draft slot
+   (<code>__markdown_css_draft</code>/<code>__mistletoe_css_draft</code>) matches the currently-selected engine radio —
+   the two engines' CSS stay independent even though they share one editor widget.</li>
+<li>The staged values (engine, both CSS drafts, image-width) are written onto the shared
+   <code>MarkdownRenderingSettings</code> singleton (§5 below).</li>
+<li><code>settings.save(persistent_settings())</code> writes the now-current values to the on-disk <code>QSettings</code>
+   ini.</li>
+</ol>
+<p><code>ExcludedFilesPage</code> adds a fourth step to that flow, because saving can <em>change</em> what it saved: blank and
+duplicate patterns are dropped, and an emptied list resolves back to the shipped defaults
+(<span class="slug-ref">[[data-model#checksums]]</span>). It therefore reloads itself from the saved set afterwards — a page still
+showing what was typed would disagree with what every scan actually reads, which is the same
+one-predicate discipline the field locks follow. A page whose <code>save_changes()</code> normalizes owes the user
+the normalized result on screen.</p>
+<p><code>ImagesPage</code>'s extension block does the same, over the same <code>StringListEditor</code>, and the two are worth
+reading side by side because <strong>what each of them normalizes is different</strong>: a <em>pattern</em> is matched
+verbatim, so only blanks and duplicates go; a <em>format</em> also loses its leading dot and its casing, so
+<code>BMP</code> comes back <code>.bmp</code>. Both rules live on the settings object, never in the widget — the widget holds
+what was typed, which is what lets one editor serve two blocks that disagree (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/231" title="GitHub Issue: borco/rehuco #231">#231</a>).</p>
+<p>It also lost a Default/Custom radio pair in the same slice, whose flag said which half was in effect. The
+pair went because the empty-list fallback already draws that distinction — a list naming nothing <em>is</em>
+"whatever this app ships", and the editor's Reset fills the list with that set on request. The old keys
+are simply not read: an installation that had set a custom list gets the shipped formats back and sets it
+again, which was the cheaper trade than carrying a compatibility path for a preference two clicks deep.</p>
+<p><code>VideosPage</code> reloads itself after saving for the same reason, over the same rule: its video-extension
+list normalizes exactly as the reference-images one does, and the two share it
+(<code>settings/extension_lists.py</code>) rather than each restating a rule that differs only in which set an
+emptied list falls back to. Its other block is the <strong>duration probe</strong> (<span class="slug-ref">[[field-schema#duration-size]]</span>),
+which adds two things neither list page needs. First, <strong>each backend's own settings are stored side by
+side</strong> — an <code>engine</code> key naming a registry member, and <code>ffprobe_executable</code> kept whether or not ffprobe
+is the selected backend — so switching to MediaInfo and back does not lose a path that was typed; that is
+the <code>markdown_css</code>/<code>mistletoe_css</code> arrangement, and the page keeps both halves too, disabling the path
+row under the other backend rather than hiding or clearing it. An <code>engine</code> naming a backend this build
+does not have (an <code>.ini</code> written by a newer version) selects the default rather than raising, the way
+<code>ImageViewerSettings</code> already treats an unrecognized <code>mode</code>. Second, <strong>the page reports whether the
+selected backend can actually run</strong>, asking the probe itself (<code>unavailable_reason</code>) about the <em>staged</em>
+choice as it is typed: a scan under an unusable backend raises rather than measuring <code>0</code>
+(<span class="slug-ref">[[field-schema#duration-size]]</span>), so an ffprobe path pointing at nothing has to be visible here rather
+than surfacing as a row that refuses to compute.</p>
+<p><code>RegistryPage</code> has no local settings dataclass at all: Register/Unregister write straight to the
+Windows registry via <code>rehuco_agent.windows_registration</code> when clicked, so there is nothing left for
+<code>save_changes()</code> to do.</p>
+<h2 id="4-adding-a-new-settings-page">4. Adding a new settings page</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#adding-a-page]]]</span></p>
+<ul>
+<li>One <code>.ui</code> + one <code>.py</code> per page, flat under <code>rehuco_agent/settings/ui/</code> (no further subdirectory —
+  matches the one-file-per-unit convention already used for <code>fields/*.py</code>).</li>
+<li>Implement <code>SettingsPage</code> structurally: an ordinary <code>.ui</code>-backed <code>QWidget</code> subclass
+  (<span class="slug-ref">[[appendices.code-conventions]]</span>), no base class to inherit.</li>
+<li>Register it in <code>MainWindow.__register_settings_pages</code> via <code>self.__settings_dialog.add_page(...)</code>
+  — the <em>first</em> page added becomes the initially-selected one. Pass <code>group="..."</code> to nest it under a
+  category group (<span class="slug-ref">[[appendices.settings-pages#category-groups]]</span>); leave it off for a top-level row.</li>
+<li>A platform-gated page (like <code>RegistryPage</code> — "System Integration", Windows-only) is imported
+  lazily inside the <code>if sys.platform == "win32":</code> branch, and takes whatever app-level data it needs
+  (e.g. <code>ARCHIVE_EXTENSIONS</code>) as a constructor parameter rather than importing it back from
+  <code>main_window.py</code> — <code>main_window.py</code> already imports the page module (even if lazily) to construct
+  it, so a module-level import the other way round is a cyclic import (confirmed empirically the
+  first time <code>RegistryPage</code> tried it).</li>
+<li>Group the page's controls into labeled top-level <code>QFrame</code>s in the <code>.ui</code> (a bold header <code>QLabel</code>
+  plus the controls). That is <em>all</em> a page does for filtering — the dialog discovers the frames and
+  gathers their searchable text by introspection (§Overview), so a page implements no <code>field_labels</code>
+  or <code>apply_filter</code> and keeps no term list. The frame is the smallest filterable unit — don't split a
+  group's controls across separate frames expecting them to hide independently.</li>
+<li>Give the page's root layout zero margins (the stack already provides padding) and end it with a
+  vertical spacer so frames stack at the top rather than stretching to fill. If one frame holds a
+  control that should grow (e.g. <code>DescriptionsPage</code>'s CSS editor), stretch that frame's layout
+  item so it — not the spacer — takes the slack when shown, while the spacer keeps a lone remaining
+  frame top-aligned. Set that stretch in the controller after <code>setupUi()</code> (<code>main_layout.setStretch</code>),
+  not in the <code>.ui</code>: the current <code>pyside6-uic</code> mistranslates a box-layout <code>stretch</code> property. A page adds
+  no scroll area of its own — <code>add_page</code> already gives it one, handing it the viewport's width and as
+  much height as it asks for (§Overview).</li>
+<li>A control offering <strong>one choice per entry of a registry core owns</strong> is built in the page's <code>__init__</code>
+  from that registry, into an empty mount widget declared in the <code>.ui</code> — <code>ChecksumsPage</code>'s algorithm
+  radios over <code>CHECKSUM_ALGORITHMS</code> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>) are the first. Hand-listing them in the <code>.ui</code> drifts silently
+  the moment core edits its set, and an algorithm added there would simply be unofferable. <strong>Build them
+  before the page is registered</strong>: <code>SettingsFrameFilter</code> gathers a frame's searchable text once, at
+  <code>add_page</code>, so a control created later is invisible to the filter. A <code>__init__</code>-built control is fine;
+  one built on first show is not.</li>
+<li>Use <code>StringListEditor</code> (<code>borco_pyside.widgets</code>) to edit a list of strings, rather than building a list
+  and a column of buttons by hand — or, worse, a comma-separated <code>QLineEdit</code>, which cannot hold a value
+  containing the separator and makes changing one entry mean retyping the lot (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/231" title="GitHub Issue: borco/rehuco #231">#231</a>). It is the list plus
+  two action columns: insert/edit/delete/reset and top/up/down/bottom, each with a key (<code>Ins</code>, <code>F2</code>,
+  <code>Del</code>, <code>Ctrl+Home</code>/<code>Up</code>/<code>Down</code>/<code>End</code>), armed on the view alone so an open in-place editor keeps its own
+  <code>Del</code>. <code>with_ordering=False</code> (or <code>set_ordering_visible</code>) hides the ordering half for a list whose order
+  carries nothing. It ships <strong>no icons</strong>: call <code>apply_item_action_icons</code>
+  (<code>rehuco_agent/item_action_icons.py</code>) to dress it in this app's set, and set its <code>defaults</code> to
+  whatever Reset should restore. It holds what was typed and normalizes nothing — that stays on the
+  settings object, where two pages can (and do) normalize differently (§3). It is a <code>QStringListModel</code>
+  under <code>ItemListEditor</code>, the shared machinery the <code>authors</code> record rows are built on too (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/97" title="GitHub Issue: borco/rehuco #97">#97</a>), which is
+  why a list edited on a settings page and one edited in a document behave identically.</li>
+<li>Use <code>ContentSizedListView</code> (<code>borco_pyside.widgets</code>) for any <em>other</em> list, not a plain <code>QListView</code>
+  (<code>StringListEditor</code> already uses one inside, over a <code>QStringListModel</code>). A list
+  that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to
+  scroll <em>to</em> before they can scroll <em>in</em>; this one is sized to its rows (one row as the floor) and lets
+  the page's scroll area do the scrolling (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/229" title="GitHub Issue: borco/rehuco #229">#229</a>).</li>
+<li>Use <code>WrappingLabel</code> (<code>borco_pyside.widgets</code>) for a paragraph of explanatory text, not a <code>QLabel</code> with
+  <code>wordWrap</code> on. A plain wrapping <code>QLabel</code> hints as though its text were one wide line, and the frame
+  around it is sized from that hint — so the paragraph paints past the border (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>, fixed in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/229" title="GitHub Issue: borco/rehuco #229">#229</a>).</li>
+</ul>
+<h2 id="5-making-the-rest-of-the-app-react-to-a-saved-change">5. Making the rest of the app react to a saved change</h2>
+<p><span class="slug-ref">[[[appendices.settings-pages#reacting-to-changes]]]</span></p>
+<p>A page's <code>save_changes()</code> only updates its own data (in memory and on disk) — it has no idea who
+else in the app cares, and it never reaches into <code>DocumentsDock</code> or a specific viewer directly. The
+live-update wiring instead lives on the settings <em>data</em> side:</p>
+<ul>
+<li>Unlike every other settings section in this app (<code>MainWindowSettings</code>, <code>DocumentSessionSettings</code>,
+  … — plain <code>@dataclass</code>es with <code>load</code>/<code>save</code>), <code>MarkdownRenderingSettings</code> is a reactive <code>QObject</code>
+  built from <code>borco_pyside.core.SimpleProperty</code> fields, each paired with a <code>&lt;name&gt;_changed</code> <code>Signal</code>
+  (<code>engine_changed</code>, <code>markdown_css_changed</code>, <code>mistletoe_css_changed</code>, <code>max_image_width_changed</code>).</li>
+<li><code>shared_markdown_rendering_settings()</code> (<code>functools.lru_cache(maxsize=1)</code>) is the single,
+  process-wide instance every reader <em>and</em> writer uses. Constructing a fresh
+  <code>MarkdownRenderingSettings()</code> per consumer would give each an independently-updating copy,
+  defeating the whole point — there would be nothing left to "share."</li>
+<li>A consumer that needs to track live changes — <code>DescriptionField.__wire_rendering_settings</code>,
+  wired from <code>make_viewer</code> — connects to every relevant <code>_changed</code> signal and re-applies the full
+  current state in one call (<code>MarkdownView.apply_rendering_settings</code>) on any of them, so a Save
+  touching several fields at once re-renders exactly once, not once per changed field.</li>
+<li><code>save_changes()</code> assigning <code>settings.engine = ...</code> etc. on the shared singleton is what actually
+  fires these signals (<code>SimpleProperty</code> only emits when a value genuinely changes). Persisting to
+  disk (<code>settings.save(persistent_settings())</code>) is a separate step <em>after</em> that — the live update to
+  already-open viewers doesn't depend on, or wait for, the <code>QSettings</code> write.</li>
+</ul>
+<p><strong>Recipe for a new page that needs this same "already-open X reacts to Save" behavior:</strong> give its
+settings a reactive <code>QObject</code> (not a plain dataclass) with <code>SimpleProperty</code> fields and matching
+<code>_changed</code> signals, expose it through one module-level <code>functools.lru_cache(maxsize=1)</code>-wrapped
+accessor, and have consumers subscribe to the signals they care about instead of re-reading the
+value on every use. Not every block needs this at all — <code>ImagesPage</code>'s extension list is read
+only when an enumeration runs, and <code>ExcludedFilesPage</code>'s pattern list only when a size scan or a checksum
+run does, so a plain dataclass carries each and there is nothing to watch either change;
+<code>RegistryPage</code>'s actions land directly on the OS, so there is no other part of the app that needs to be
+told a save happened.</p>
+<p><strong>Testing note:</strong> the <code>lru_cache</code>d singleton persists across test functions within one process, and
+would otherwise leak state between tests (or read the developer's real on-disk settings) — see the
+autouse <code>isolate_shared_markdown_rendering_settings</code> fixture in
+<code>packages/rehuco-agent/tests/conftest.py</code>, which clears the cache and mocks <code>persistent_settings()</code>
+around every test. A new page with its own shared settings object needs the equivalent, reactive or
+not — <code>isolate_shared_image_viewer_settings</code> is the second reactive one, and
+<code>isolate_shared_identity_settings</code> / <code>isolate_shared_reference_images_settings</code> /
+<code>isolate_shared_excluded_files_settings</code> / <code>isolate_shared_videos_settings</code> the plain-dataclass
+counterparts, all sitting right beside it.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../release-runbook/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Release Runbook">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Release Runbook
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../task-queue/" class="md-footer__link md-footer__link--next" aria-label="Next: Task Queue">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Task Queue
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,3405 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/appendices/briefcase-packaging/">
+      
+      
+        <link rel="prev" href="../../diagrams/sequence-open-document/">
+      
+      
+        <link rel="next" href="../code-conventions/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Briefcase Packaging - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#briefcase-packaging-native-app-builds-file-association-and-app-identity" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Briefcase Packaging
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_18" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_18" id="__nav_2_18_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_18_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_18">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-briefcase-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Briefcase config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-app-side-wiring-it-relies-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The app-side wiring it relies on
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-build-and-iterate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Build and iterate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-windows-what-the-msi-registers-and-what-it-does-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Windows: what the MSI registers, and what it does not
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-hurdles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Hurdles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Hurdles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#min_os_version-must-be-the-pyside6-wheels-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        min_os_version must be ≥ the PySide6 wheel's floor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-universal2-build-needs-an-x86_64-wheel-for-every-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A universal2 build needs an x86_64 wheel for every dependency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#std-nslog-version-tracks-the-template-not-an-old-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        std-nslog version tracks the template, not an old pin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#briefcases-license-selection-keys-are-strict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Briefcase's license selection keys are strict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-verification-recipe-macos-terminal-driven-no-gui-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Verification recipe, macOS (terminal-driven, no GUI session)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-what-the-13-spike-confirmed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. What the #13 spike confirmed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-linux-what-the-backends-actually-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Linux: what the backends actually do
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Linux: what the backends actually do">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#building-the-appimage-without-briefcase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the AppImage without Briefcase
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-the-briefcase-config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. The Briefcase config
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-the-app-side-wiring-it-relies-on" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. The app-side wiring it relies on
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-build-and-iterate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Build and iterate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-windows-what-the-msi-registers-and-what-it-does-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Windows: what the MSI registers, and what it does not
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-hurdles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. Hurdles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Hurdles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#min_os_version-must-be-the-pyside6-wheels-floor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        min_os_version must be ≥ the PySide6 wheel's floor
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#a-universal2-build-needs-an-x86_64-wheel-for-every-dependency" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A universal2 build needs an x86_64 wheel for every dependency
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#std-nslog-version-tracks-the-template-not-an-old-pin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        std-nslog version tracks the template, not an old pin
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#briefcases-license-selection-keys-are-strict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Briefcase's license selection keys are strict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-verification-recipe-macos-terminal-driven-no-gui-session" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Verification recipe, macOS (terminal-driven, no GUI session)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-what-the-13-spike-confirmed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. What the #13 spike confirmed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-linux-what-the-backends-actually-do" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Linux: what the backends actually do
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Linux: what the backends actually do">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#building-the-appimage-without-briefcase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Building the AppImage without Briefcase
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="briefcase-packaging-native-app-builds-file-association-and-app-identity">Briefcase Packaging — Native App Builds, File Association, and App Identity</h1>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#overview]]]</span></p>
+<p>How rehuco uses <a href="https://briefcase.readthedocs.io/">Briefcase</a> to build <code>rehuco-agent</code> into a
+native, double-clickable application with OS-registered file association and app identity — the
+<em>how-to and the hurdles</em>, complementing <span class="slug-ref">[[packaging-deployment#app-identity]]</span> (which records the <em>decision</em> to use
+Briefcase over
+PyInstaller and <em>why</em>).</p>
+<p>This appendix starts from the macOS half of the file-association spike
+(<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a>, macOS; the Windows half closed in <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/1" title="GitHub Issue: borco/rehuco #1">#1</a>) and is meant to <strong>evolve</strong> as production Briefcase
+config lands in <code>packages/rehuco-agent/</code> and as Windows and Linux packaging are wired up. Where a
+detail is still spike-proven rather than production-shipped, it says so.</p>
+<h2 id="1-status">1. Status</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#status]]]</span></p>
+<ul>
+<li><strong>macOS file association + <code>QFileOpenEvent</code> delivery + single-instance routing</strong> — proven end to
+  end on current versions by the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike (<span class="slug-ref">[[appendices.briefcase-packaging#verification]]</span>). The <code>rehuco-agent</code> app
+  code it depends on
+  (<code>Application.event()</code>'s <code>QFileOpenEvent</code> branch, <code>ApplicationSingleton</code>) already exists and
+  needs no macOS-specific changes.</li>
+<li><strong>Windows ProgID / AUMID default-handler + taskbar identity</strong> — proven by <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/1" title="GitHub Issue: borco/rehuco #1">#1</a>; the dev-time story
+  and its hurdles live in <span class="slug-ref">[[appendices.windows-dev-launcher#overview]]</span> (the C launcher). Briefcase is the confirmed
+  end-user packager
+  there too.</li>
+<li><strong>Production Briefcase config in <code>packages/rehuco-agent/pyproject.toml</code></strong> — <strong>landed</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/206" title="GitHub Issue: borco/rehuco #206">#206</a>), for
+  Windows and macOS (<span class="slug-ref">[[appendices.briefcase-packaging#briefcase-config]]</span>), driven by the <code>make agent-dist-build</code> /
+  <code>agent-dist-package</code> targets (<span class="slug-ref">[[appendices.briefcase-packaging#build-and-iterate]]</span>). <strong>Both halves are built and
+  verified</strong>: Windows through a real install, with the association, <code>.tc</code> and all three shell verbs landing under one
+  identity (<span class="slug-ref">[[appendices.briefcase-packaging#windows]]</span>); macOS on Apple silicon through the LaunchServices recipe below
+  — UTI claimed, <code>open</code> routed, a second open handled in the same instance. <code>uv tool install</code> stays the
+  developer channel either way (<span class="slug-ref">[[packaging-deployment#pypi-publishing]]</span>).</li>
+<li><strong>Linux packaging</strong> — answered, and the answer is <strong>none of Briefcase's backends</strong>
+  (<span class="slug-ref">[[packaging-deployment#linux-format]]</span>): Linux ships through <code>uv tool install</code> with the desktop entry written by the
+  app itself (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/209" title="GitHub Issue: borco/rehuco #209">#209</a>), since that is the whole of Linux integration. What the backends do and
+  do not give is in <span class="slug-ref">[[appendices.briefcase-packaging#linux-backends]]</span> — notably, none of them registers a file
+  association, so Briefcase's <code>document_type</code> config is macOS/Windows-only in effect.</li>
+<li><strong>Code-signing / notarization, auto-update</strong> — not yet done (<span class="slug-ref">[[packaging-deployment#auto-update]]</span>,
+  <span class="slug-ref">[[appendices.open-questions#still-open]]</span>).</li>
+</ul>
+<h2 id="2-the-briefcase-config">2. The Briefcase config</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#briefcase-config]]]</span></p>
+<p>Briefcase reads everything from <code>pyproject.toml</code>; no per-OS manifest is hand-maintained —
+<strong>and 0.4.4 merges the <code>[project]</code> table into its own</strong>, so version (resolved through hatchling even
+though it is <code>dynamic</code>), description, license, <code>license-files</code>, url, author and every <code>dependencies</code>
+entry are taken from there rather than restated. What <code>rehuco-agent</code>'s config adds is only what has
+no PEP 621 equivalent — condensed here, with the reasoning in the file's own comments:</p>
+<div class="highlight"><pre><span></span><code><span class="k">[tool.briefcase]</span>
+<span class="n">project_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Rehuco&quot;</span>
+<span class="n">bundle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;io.github.borco&quot;</span><span class="w">                 </span><span class="c1"># + the app name -&gt; bundle identifier, macOS UTI, Windows ProgID</span>
+
+<span class="k">[tool.briefcase.app.rehuco-agent]</span>
+<span class="n">formal_name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Rehuco&quot;</span><span class="w">                     </span><span class="c1"># Rehuco.exe / Rehuco.app, Start-menu entry, install folder</span>
+<span class="n">icon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;../../design/icons/rehuco-agent&quot;</span><span class="w">   </span><span class="c1"># basename only: .ico on Windows, .icns on macOS</span>
+<span class="n">sources</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;src/rehuco_agent&quot;</span><span class="p">]</span>
+<span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;../rehuco-core&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../borco-core&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../borco-pyside&quot;</span><span class="p">]</span>
+
+<span class="k">[tool.briefcase.app.rehuco-agent.macOS]</span>
+<span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;std-nslog~=2.0.0&quot;</span><span class="p">]</span>
+<span class="c1"># PySide6&#39;s macOS wheel is macosx_13_0_universal2; Briefcase&#39;s 11.0 default is too low (see &quot;Hurdles&quot; below).</span>
+<span class="n">min_os_version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;13.0&quot;</span>
+
+<span class="c1"># Under macOS, not at app level: on Windows this would add a second, competing ProgID (see below).</span>
+<span class="k">[tool.briefcase.app.rehuco-agent.macOS.document_type.rehu]</span>
+<span class="n">description</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;Rehuco Resource&quot;</span><span class="w">            </span><span class="c1"># matches the Windows FRIENDLY_NAME the app registers</span>
+<span class="n">extension</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;rehu&quot;</span>
+<span class="n">icon</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;../../design/icons/rehuco-agent&quot;</span><span class="w">   </span><span class="c1"># no dedicated document icon in the design master yet</span>
+<span class="n">url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;https://borco.github.io/rehuco/&quot;</span>
+<span class="n">mime_type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;application/x-rehuco&quot;</span><span class="w">         </span><span class="c1"># also what #209&#39;s Linux MIME package must register</span>
+
+<span class="k">[tool.briefcase.app.rehuco-agent.windows]</span>
+<span class="n">system_installer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">false</span><span class="w">                   </span><span class="c1"># per-user: no UAC, matching the app&#39;s own HKCU registration</span>
+<span class="n">post_install_script</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;installer/post_install.bat&quot;</span><span class="w">    </span><span class="c1"># calls Rehuco.exe --register</span>
+<span class="n">pre_uninstall_script</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;installer/pre_uninstall.bat&quot;</span><span class="w">   </span><span class="c1"># calls Rehuco.exe --unregister</span>
+</code></pre></div>
+<p>From the <code>document_type</code> table Briefcase generates <strong>both</strong> halves of a macOS document-type
+declaration, with no hand-edited <code>Info.plist</code>:</p>
+<ul>
+<li><code>CFBundleDocumentTypes</code> — so Finder / LaunchServices treat the extension as a document type
+  owned by this app, with the right icon.</li>
+<li><code>UTExportedTypeDeclarations</code> — so <code>mdls</code>, Spotlight, and any UTI-aware API resolve the extension
+  to a concrete Uniform Type Identifier (<code>&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;</code>, so <code>io.github.borco.rehuco-agent.rehu</code>).</li>
+</ul>
+<p>Windows gets its own half of the same table — a WiX <code>ProgId</code>/<code>Extension</code>/<code>Verb</code> triple in the MSI,
+<span class="slug-ref">[[appendices.briefcase-packaging#windows]]</span>.</p>
+<p>Workspace dependencies need one more line each. They arrive from <code>[project].dependencies</code> as bare
+names, but Briefcase builds the bundle by pip-installing into it and cannot see the uv workspace, so
+each also needs a <strong>direct reference</strong> — a path relative to the app's <code>pyproject.toml</code>, which
+Briefcase absolutizes. pip then resolves the bare name to that reference, which is what keeps
+<code>rehuco-core</code> off PyPI (where it is still a <code>0.0.0</code> stub) and lets the unpublished <code>borco-*</code> resolve
+at all:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># in [tool.briefcase.app.rehuco-agent], alongside the bare names [project].dependencies contributes</span>
+<span class="n">requires</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;../rehuco-core&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../borco-core&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;../borco-pyside&quot;</span><span class="p">]</span>
+</code></pre></div>
+<h2 id="3-the-app-side-wiring-it-relies-on">3. The app-side wiring it relies on</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#app-side-wiring]]]</span></p>
+<p>Briefcase only produces the bundle and its registration; the app must still handle the two macOS
+delivery mechanics. Both already exist in <code>rehuco-agent</code> and needed no change for macOS.</p>
+<p>macOS does <strong>not</strong> pass a double-clicked path as <code>argv</code> — it arrives as a Cocoa-originated
+<code>QFileOpenEvent</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtCore</span><span class="w"> </span><span class="kn">import</span> <span class="n">QEvent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtGui</span><span class="w"> </span><span class="kn">import</span> <span class="n">QFileOpenEvent</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">PySide6.QtWidgets</span><span class="w"> </span><span class="kn">import</span> <span class="n">QApplication</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">Application</span><span class="p">(</span><span class="n">QApplication</span><span class="p">):</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">event</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">event</span><span class="p">:</span> <span class="n">QEvent</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">event</span><span class="p">,</span> <span class="n">QFileOpenEvent</span><span class="p">):</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">open_path</span><span class="p">(</span><span class="n">event</span><span class="o">.</span><span class="n">file</span><span class="p">())</span>
+            <span class="k">return</span> <span class="kc">True</span>
+        <span class="k">return</span> <span class="nb">super</span><span class="p">()</span><span class="o">.</span><span class="n">event</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+</code></pre></div>
+<p><code>main()</code> still also reads <code>sys.argv[1:]</code>, for parity with Windows' <code>argv</code>-based forwarding (<span class="slug-ref">[[nodes#single-instance]]</span>)
+and for <code>python -m ... &lt;path&gt;</code> during development.</p>
+<p>Single-instance routing uses the same <code>QLocalServer</code>/<code>QLocalSocket</code> mechanism as every platform
+(<span class="slug-ref">[[nodes#single-instance]]</span>) — no macOS-specific code. See <span class="slug-ref">[[appendices.briefcase-packaging#verification]]</span> for <em>when</em>
+this path actually fires on macOS (it is a
+fallback there, not the primary route).</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">borco_pyside.core.application_singleton</span><span class="w"> </span><span class="kn">import</span> <span class="n">ApplicationSingleton</span>
+
+<span class="n">app</span> <span class="o">=</span> <span class="n">Application</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span>
+<span class="n">singleton</span> <span class="o">=</span> <span class="n">ApplicationSingleton</span><span class="p">()</span>
+<span class="k">if</span> <span class="ow">not</span> <span class="n">singleton</span><span class="o">.</span><span class="n">setup</span><span class="p">(</span><span class="n">APP_ID</span><span class="p">):</span>   <span class="c1"># False -&gt; forwarded argv to the existing primary; exit</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+<span class="n">singleton</span><span class="o">.</span><span class="n">other_instance_run</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">open_forwarded</span><span class="p">)</span>
+</code></pre></div>
+<h2 id="4-build-and-iterate">4. Build and iterate</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#build-and-iterate]]]</span></p>
+<p><strong>Icons first, and <code>make icons</code> builds them</strong> (<span class="slug-ref">[[packaging-deployment#design-resources]]</span>): the <code>.ico</code> by
+downscaling the 1024-px PNG master with ImageMagick, and — <strong>only on macOS</strong> — the <code>.icns</code> through <code>sips</code>
+and <code>iconutil</code>, platform tools with no cross-platform equivalent that produces a real multi-resolution
+icon set (ImageMagick's ICNS writer emits one resolution, which Finder and the Dock then rescale badly).
+Both are gitignored, so a fresh checkout needs that target before any bundle can be built. The Briefcase
+targets depend on it, and on <code>make uis</code>: Briefcase copies <code>src/rehuco_agent</code> verbatim, so the generated
+<code>*_ui.py</code>/<code>*_rc.py</code> must already exist, or the bundle dies on its first import.</p>
+<p><strong>The build sequence — the same on Windows and macOS</strong>, since Briefcase picks the host platform itself:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># One-time per platform: create + build the bundle. Downloads a Python support package and</span>
+<span class="c1"># pip-installs the whole Qt stack into it -- minutes, and ~700 MB under packages/rehuco-agent/build/.</span>
+make<span class="w"> </span>agent-dist-build<span class="w">    </span><span class="c1"># -&gt; build/rehuco-agent/windows/app/src/Rehuco.exe</span>
+<span class="w">                         </span><span class="c1">#    build/rehuco-agent/macos/app/Rehuco.app on macOS</span>
+
+<span class="c1"># Iterate on app code: re-syncs src/ into the existing bundle, seconds rather than minutes.</span>
+make<span class="w"> </span>agent-dist-update
+
+<span class="c1"># The shippable artifact. Downloads the WiX toolset on first use.</span>
+make<span class="w"> </span>agent-dist-package<span class="w">  </span><span class="c1"># -&gt; packages/rehuco-agent/dist/Rehuco-&lt;version&gt;.msi</span>
+<span class="w">                         </span><span class="c1">#    on macOS a .dmg -- with `BRIEFCASE_ARGS=--adhoc-sign` until signing is filed</span>
+make<span class="w"> </span>agent-dist-clean<span class="w">    </span><span class="c1"># drop build/ and dist/</span>
+</code></pre></div>
+<p>Each target is one <code>uv run</code> around <code>briefcase</code>, and the two uv flags in it are both load-bearing:</p>
+<div class="highlight"><pre><span></span><code>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>packaging<span class="w"> </span>--directory<span class="w"> </span>packages/rehuco-agent<span class="w"> </span>--project<span class="w"> </span>../..<span class="w"> </span>briefcase<span class="w"> </span>build
+
+<span class="c1"># --directory: Briefcase reads the pyproject of the *current* directory, so it must run there.</span>
+<span class="c1"># --project:   uv must still resolve against the workspace root. Letting it discover the member</span>
+<span class="c1">#              instead syncs the shared .venv down to that member&#39;s own dependencies, evicting</span>
+<span class="c1">#              pytest/ruff/mkdocs. `packaging` is opt-in, so a later plain `uv sync` prunes it again.</span>
+</code></pre></div>
+<p>Briefcase itself is <strong>not</strong> a workspace dependency of the agent: it lives in the root's opt-in
+<code>packaging</code> dependency group, so the ~30 packages it drags in (cookiecutter, GitPython, requests,
+rich) stay out of a plain <code>make sync</code>'s environment.</p>
+<h2 id="5-windows-what-the-msi-registers-and-what-it-does-not">5. Windows: what the MSI registers, and what it does not</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#windows]]]</span></p>
+<p>Read off real <code>make agent-dist-package</code> runs on 2026-07-28 — Briefcase 0.4.4, WiX 6, the Python 3.14.4
+embedded support package, PySide6 6.11.1. The first build produced a 215 MB <code>dist/Rehuco-0.0.1.msi</code> from a 699 MB
+bundle — of which <strong>437 MB was <code>PySide6-Addons</code></strong>, measured from its own wheel <code>RECORD</code>, and nothing
+here imports a single module of it. Dropping it (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/211" title="GitHub Issue: borco/rehuco #211">#211</a>) took the very same build to <strong>80.6 MB from a
+264 MB bundle</strong> — a 62% cut, and by far the largest change to the artifact in this issue. All that
+survives of QtWebEngine is three <code>.pyi</code> stubs totalling 96 KB, since Essentials ships type stubs for
+the whole API surface; there is not one WebEngine DLL (<span class="slug-ref">[[packaging-deployment#channels]]</span>).</p>
+<p><strong>The launcher owns the window's process — the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/1" title="GitHub Issue: borco/rehuco #1">#1</a> finding, now confirmed on a packaged build.</strong>
+<code>Rehuco.exe</code> is Briefcase's stub binary with the app's identity stamped into it by <code>rcedit</code>:</p>
+<table>
+<thead>
+<tr>
+<th>PE field</th>
+<th>Value</th>
+<th>Comes from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ProductName</code>, <code>FileDescription</code></td>
+<td><code>Rehuco</code></td>
+<td><code>formal_name</code></td>
+</tr>
+<tr>
+<td><code>CompanyName</code></td>
+<td><code>Ioan Calin</code></td>
+<td><code>[project].authors[0].name</code></td>
+</tr>
+<tr>
+<td><code>ProductVersion</code>, <code>FileVersion</code></td>
+<td><code>0.0.1</code></td>
+<td>the <code>dynamic</code> <code>[project]</code> version</td>
+</tr>
+<tr>
+<td><code>InternalName</code></td>
+<td><code>rehuco_agent</code></td>
+<td>the module name</td>
+</tr>
+<tr>
+<td>icon</td>
+<td><code>design/icons/rehuco-agent.ico</code></td>
+<td><code>icon</code></td>
+</tr>
+</tbody>
+</table>
+<p>Launched, it runs as a process named <code>Rehuco</code> that owns its own window — no <code>python.exe</code> subprocess —
+which is the precondition for the AUMID the app sets at startup to bind to the right HWND
+(<span class="slug-ref">[[packaging-deployment#app-identity]]</span>). One cosmetic gap: <code>LegalCopyright</code> still reads the stub's own
+<code>Copyright (C) 2022</code>, and Briefcase exposes no key for it.</p>
+<p><strong>The installer's chrome is ours, not WiX's.</strong> Left unset, <code>installer_background</code> and
+<code>installer_banner</code> fall through to the WiX Toolset's own red bitmaps — someone else's branding on a
+shipped installer, and easy to miss because nothing warns about it. Both are generated by
+<code>make icons</code> from the same PNG master as the icons: a 493×312 background whose left 164 px (all WiX
+leaves uncovered) is the brand slate, and a 493×58 banner. The icon's own rounded square is exactly
+that slate, so it dissolves into the strip and only its three bars read. WiX accepts <strong>only</strong> BMP,
+with no alpha — hence <code>BMP3:</code> and <code>-alpha remove</code> in the rule.</p>
+<p><strong>The MSI does not register the file association — it asks the app to.</strong> Declaring <code>document_type</code>
+here would emit a WiX <code>ProgId</code>/<code>Extension</code>/<code>Verb</code> component under
+<code>Id="io.github.borco.rehuco-agent.rehu"</code>, and that is a <strong>different identity from the one the app
+uses</strong>: <code>--register</code> writes <code>Rehuco.Document</code> covering <code>.rehu</code> <em>and</em> <code>.tc</code> plus the folder,
+folder-background and archive verbs (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/43" title="GitHub Issue: borco/rehuco #43">#43</a>), where the generated component covers <code>.rehu</code> alone. Both
+are valid registrations of one extension, the later one wins, and the app's own Registry settings
+page (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/47" title="GitHub Issue: borco/rehuco #47">#47</a>) — which looks for <code>Rehuco.Document</code> — reports <strong>"Not registered" after every MSI install,
+forever</strong>, because the two sets never intersect. Observed on the first packaged build, before the
+config changed.</p>
+<p>So <code>document_type</code> is declared under the <strong>macOS</strong> block only (verified: Windows then resolves
+<code>document_type = None</code>), and the MSI delegates instead — <code>post_install_script</code> runs
+<code>Rehuco.exe --register</code>, <code>pre_uninstall_script</code> runs <code>--unregister</code> while the exe still exists. One
+identity, <code>.tc</code> and the shell verbs included, and an uninstall that strands nothing. macOS keeps the
+declarative route because it has no <code>--register</code> equivalent: only the bundle can claim a UTI.</p>
+<p>Two contract details the scripts must respect, both from the generated <code>.wxs</code>: the custom actions are
+<code>Return="check"</code>, so <strong>a non-zero exit rolls the whole install back</strong> — the scripts end in <code>exit /b 0</code>
+so a failed association can never fail an installation; and they run from <code>[INSTALLFOLDER]\_installer\</code>,
+so the exe is one directory up. The generated <code>run_post_install.bat</code> sets <code>ALLUSERS</code>,
+<code>INSTALLER_PATH</code> and <code>INSTALLER_UNATTENDED</code> in the environment and passes <strong>no</strong> arguments.</p>
+<p><strong>Scope.</strong> <code>system_installer = false</code> drops WiX's install-scope dialog from the UI flow, leaving the
+generated <code>WixAppFolder = WixPerUserFolder</code> to stand — so the install is per-user into
+<code>%LOCALAPPDATA%\Programs\&lt;author&gt;\&lt;formal name&gt;\</code> with no elevation, and the author name becomes a
+folder level because WiX uses <code>Manufacturer</code> that way. It does <strong>not</strong> narrow the package: the
+template hardcodes <code>Scope="perUserOrMachine"</code> regardless, so <code>msiexec ALLUSERS=1</code> can still install
+per-machine. Nothing in the UI offers it.</p>
+<p><strong>The uninstall cleans up, and this was checked on the delegated path itself.</strong> On the first build —
+before the scripts existed — the MSI removed its own generated ProgID and left <code>.rehu</code> as an empty
+key rather than a handler pointing at a deleted <code>Rehuco.exe</code> — the failure <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/206" title="GitHub Issue: borco/rehuco #206">#206</a> names. The delegated
+path was then verified in its own right on 2026-07-28: uninstalling a build that carries
+<code>pre_uninstall_script</code> removed <strong>all six</strong> registrations — <code>Rehuco.Document</code>, the <code>.rehu</code> and <code>.tc</code>
+defaults, and the folder, folder-background and archive verbs — together with the files, the
+Start-menu entry and the ARP row, leaving nothing aimed at the deleted exe.</p>
+<h2 id="6-hurdles">6. Hurdles</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#hurdles]]]</span></p>
+<p>Recorded in the order they bite when building a Briefcase macOS bundle for a PySide6 app.</p>
+<h3 id="min_os_version-must-be-the-pyside6-wheels-floor"><code>min_os_version</code> must be ≥ the PySide6 wheel's floor</h3>
+<p><strong>Symptom:</strong> <code>briefcase build macOS</code> fails during dependency install with
+<code>No matching distribution found for PySide6&gt;=6.9</code> / <code>Could not find a version that satisfies the
+requirement PySide6</code>, even though PySide6 installs fine into a normal venv.</p>
+<p><strong>Cause:</strong> PySide6's macOS wheel is tagged <code>macosx_13_0_universal2</code>. Briefcase pins the bundle's
+minimum macOS to its own default (<code>11.0</code>) and asks pip for a wheel compatible with <em>that</em> floor —
+no <code>13.0</code>-tagged wheel qualifies, so pip reports "no matching distribution."</p>
+<p><strong>Fix:</strong> set <code>min_os_version = "13.0"</code> under <code>[tool.briefcase.app.&lt;name&gt;.macOS]</code>. Carry this into
+<code>rehuco-agent</code>'s production config; revisit only if PySide6 lowers its wheel floor.</p>
+<h3 id="a-universal2-build-needs-an-x86_64-wheel-for-every-dependency">A universal2 build needs an x86_64 wheel for <em>every</em> dependency</h3>
+<p><strong>Symptom:</strong> the arm64 pass installs cleanly, then <code>Installing binary app requirements for x86_64...
+errored</code> with <code>No matching distribution found for cbor2==6.1.3</code> — while that exact version installed
+seconds earlier.</p>
+<p><strong>Cause:</strong> Briefcase's default macOS build is universal2, so it installs the dependency set twice,
+once per architecture, <strong>pinned to the versions the first pass resolved</strong> so the two halves match.
+<code>cbor2</code> publishes no x86_64 macOS wheel at 6.x (that platform stops at 5.9.0), so the pin is
+unsatisfiable. Any dependency that drops Intel macOS wheels does the same thing.</p>
+<p><strong>Fix:</strong> <code>universal_build = false</code> under <code>[tool.briefcase.app.&lt;name&gt;.macOS]</code> — the app becomes
+Apple-silicon-only. Briefcase's own error message suggests it. The alternative, pinning the app down
+to <code>cbor2</code> 5.x to suit the packager, gets the dependency direction backwards. Revisit only if Intel
+Macs become a target, which would mean holding every dependency to an x86_64-capable version.</p>
+<h3 id="std-nslog-version-tracks-the-template-not-an-old-pin"><code>std-nslog</code> version tracks the template, not an old pin</h3>
+<p><code>[tool.briefcase.app.&lt;name&gt;.macOS].requires</code> needs <code>std-nslog</code> (Briefcase's macOS stdout/stderr →
+unified-log shim). The current Briefcase template (<code>v0.4.3</code>) pins <code>std-nslog~=2.0.0</code>; an earlier
+Windows-spike commit referenced <code>&gt;=1.0.3</code>. Use the version the active template expects, or the
+build resolver complains.</p>
+<h3 id="briefcases-license-selection-keys-are-strict">Briefcase's <code>license</code> selection keys are strict</h3>
+<p><code>briefcase new</code> (and config validation) expect an SPDX-style key like <code>MIT</code>, not a prose string
+like <code>"MIT license"</code> — the latter fails validation with an "invalid override value" error. Minor,
+but wastes a scaffolding round-trip if hit.</p>
+<h2 id="7-verification-recipe-macos-terminal-driven-no-gui-session">7. Verification recipe, macOS (terminal-driven, no GUI session)</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#verification]]]</span></p>
+<p><code>open</code> and <code>lsregister</code> drive the <em>exact same</em> LaunchServices path Finder uses for a double-click,
+so the whole flow is verifiable over SSH with no screen attached — how the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike was checked.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Register the built .app with LaunchServices (Finder does this automatically on first copy/launch):</span>
+<span class="nv">LSREG</span><span class="o">=</span>/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-f<span class="w"> </span><span class="s2">&quot;build/&lt;app&gt;/macos/app/&lt;Formal Name&gt;.app&quot;</span>
+
+<span class="c1"># Confirm the UTI is claimed and our .app is the Owner:</span>
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-dump<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-A6<span class="w"> </span><span class="s2">&quot;com.&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;&quot;</span>
+
+<span class="c1"># Confirm a fresh file resolves to our UTI:</span>
+<span class="nb">echo</span><span class="w"> </span><span class="nb">test</span><span class="w"> </span>&gt;<span class="w"> </span>/tmp/test.&lt;ext&gt;
+mdls<span class="w"> </span>-name<span class="w"> </span>kMDItemContentType<span class="w"> </span>/tmp/test.&lt;ext&gt;<span class="w">   </span><span class="c1"># -&gt; com.&lt;bundle&gt;.&lt;app&gt;.&lt;ext&gt;</span>
+
+<span class="c1"># Open it exactly like a Finder double-click would (extension alone, no -a):</span>
+open<span class="w"> </span>/tmp/test.&lt;ext&gt;
+
+<span class="c1"># Watch QFileOpenEvent delivery and single-instance routing live:</span>
+log<span class="w"> </span>stream<span class="w"> </span>--style<span class="w"> </span>compact<span class="w"> </span>--predicate<span class="w"> </span><span class="s1">&#39;process == &quot;&lt;Formal Name&gt;&quot;&#39;</span>
+
+<span class="c1"># Clean up the throwaway registration when done:</span>
+<span class="s2">&quot;</span><span class="nv">$LSREG</span><span class="s2">&quot;</span><span class="w"> </span>-u<span class="w"> </span><span class="s2">&quot;build/&lt;app&gt;/macos/app/&lt;Formal Name&gt;.app&quot;</span>
+</code></pre></div>
+<h2 id="8-what-the-13-spike-confirmed">8. What the <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/13" title="GitHub Issue: borco/rehuco #13">#13</a> spike confirmed</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#spike-confirmed]]]</span></p>
+<p>Tested on Python 3.14.6, PySide6 6.11.1, Briefcase 0.4.3, macOS 26.5.1 (2026-07-02). All three of
+the spike's acceptance criteria passed:</p>
+<table>
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Mechanism</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.app</code> registered as default opener for the extension (UTI + <code>CFBundleDocumentTypes</code>)</td>
+<td>Briefcase <code>document_type</code> config</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Double-click delivers the path via <code>QFileOpenEvent</code>, not <code>argv</code></td>
+<td><code>Application.event()</code> override (already in <code>rehuco_agent/app.py</code>)</td>
+<td>✓</td>
+</tr>
+<tr>
+<td>Second double-click routes to the existing instance</td>
+<td>macOS app-uniquing (primary) + <code>ApplicationSingleton</code>/<code>QLocalServer</code> (fallback)</td>
+<td>✓</td>
+</tr>
+</tbody>
+</table>
+<p>Two behaviours are worth keeping in mind for the production wiring:</p>
+<ul>
+<li><strong>macOS's own app-uniquing — not <code>ApplicationSingleton</code> — routes a second Finder double-click.</strong>
+  LaunchServices sees the bundle is already running and delivers the second file as another
+  <code>QFileOpenEvent</code> to the same process, without launching a competitor. This <em>confirms</em> the <span class="slug-ref">[[packaging-deployment#app-identity]]</span>
+  note that "a bundled <code>.app</code> is already kept single-instance by the OS, so the local-server
+  forwarding mainly earns its keep on Windows/Linux." <code>ApplicationSingleton</code>'s <code>QLocalServer</code>
+  fallback still works when exercised directly (invoking the bundle executable, bypassing
+  LaunchServices) — which is exactly the path that matters on Linux and for non-LaunchServices
+  launches.</li>
+<li><strong>A benign teardown warning on the forwarding path.</strong> When the <code>QLocalServer</code> fallback <em>does</em>
+  fire, the exiting secondary logs two <code>QAbstractSocket::waitForBytesWritten() is not allowed in
+  UnconnectedState</code> warnings before <code>primary already running ... forwarded argv and exiting</code>. The
+  forward still succeeds (the primary receives the path), so this is a harmless race in
+  <code>ApplicationSingleton</code>'s write-then-disconnect teardown, not a functional bug — noted for
+  whoever next touches that (kept, tested) class.</li>
+</ul>
+<h2 id="9-linux-what-the-backends-actually-do">9. Linux: what the backends actually do</h2>
+<p><span class="slug-ref">[[[appendices.briefcase-packaging#linux-backends]]]</span></p>
+<p>Read against <strong>Briefcase 0.4.4</strong> and its published cookiecutter templates on 2026-07-28, because the
+format decision (<span class="slug-ref">[[packaging-deployment#linux-format]]</span>) turns on facts the feature tables do not
+state — and two of them contradict what a reader would assume from the macOS half of this appendix.</p>
+<table>
+<thead>
+<tr>
+<th>Backend</th>
+<th>Exists</th>
+<th>Interpreter</th>
+<th>Emits a <code>.rehu</code> association</th>
+<th>Verdict for this app</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>linux system</code> — <code>.deb</code>, <code>.rpm</code>, <code>.pkg.tar.zst</code></td>
+<td>yes</td>
+<td>the target distro's <code>/usr/bin/python3</code></td>
+<td>no</td>
+<td>usable only where the distro's <code>python3</code> is a version the dependency set has wheels for</td>
+</tr>
+<tr>
+<td><code>linux appimage</code></td>
+<td>yes</td>
+<td>bundled</td>
+<td>no</td>
+<td>ruled out — upstream discourages it and names PySide</td>
+</tr>
+<tr>
+<td><code>linux flatpak</code></td>
+<td>yes</td>
+<td>the Flatpak runtime's (freedesktop SDK 25.08: Python 3.13)</td>
+<td>no</td>
+<td>ruled out — sandboxed, and its runtime is below the app's floor</td>
+</tr>
+<tr>
+<td><code>linux snap</code></td>
+<td><strong>no</strong></td>
+<td>—</td>
+<td>—</td>
+<td><code>briefcase/platforms/linux/snap.py</code> is one line: <code># A Snap implementation would go here!</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>1. No Linux backend registers a file association.</strong> The <code>.desktop</code> file each template generates
+carries <code>Type</code>/<code>Name</code>/<code>Exec</code>/<code>Icon</code>/<code>Comment</code> (plus <code>StartupWMClass</code> for system and AppImage) and
+<strong>no <code>MimeType=</code> line</strong>; none of the three template repositories contains a MIME package <code>.xml</code> at
+all. So the <code>document_type</code> table (<span class="slug-ref">[[appendices.briefcase-packaging#briefcase-config]]</span>) — which on
+macOS generates both halves of the document-type declaration — produces <em>nothing</em> on Linux beyond a
+document-type icon. Registering <code>.rehu</code> there is the app's own job (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/209" title="GitHub Issue: borco/rehuco #209">#209</a>), whatever the format.</p>
+<p><strong>2. The system backend takes the distro's interpreter, not a bundled one.</strong> <code>platforms/linux/system.py</code>
+reads the target image's <code>python3</code> version, keeps it as <code>python_version_tag</code>, refuses a version below
+Briefcase's own floor, warns when it differs from the host's, and adds <code>libpython3.X</code> to the package's
+<code>Depends:</code>. The docs state it plainly — "<em>the app will use the system Python install, and the standard
+library provided by the system</em>", and "<em>It is therefore necessary to build a different system package
+for every distribution you want to target</em>", with Docker target images as the way to do that. Windows
+and macOS bundle a support-package interpreter; <strong>Linux is the exception</strong>, and that single fact is what
+makes the per-distro matrix appear.</p>
+<p><strong>3. Which distributions that leaves.</strong> Only one floor applies, and it is <strong>ours</strong>: the agent declares
+<code>requires-python = "&gt;=3.14"</code>. The Qt stack imposes none of its own — <code>PySide6</code> (<code>cp310-abi3</code>),
+<code>pyside6-qtads</code> (<code>cp310-abi3</code>) and <code>pyside6-scintilla</code> (<code>cp311-abi3</code> from 5.6.3.6) all publish
+limited-API wheels that any newer CPython accepts, for <code>manylinux_2_34_x86_64</code> <strong>and</strong>
+<code>manylinux_2_38_aarch64</code> — so <strong>both architectures are packageable</strong>, with the aarch64 wheels wanting
+glibc ≥ 2.38. A system package is therefore buildable wherever the target's <code>python3</code> is 3.14 or newer:</p>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>system <code>python3</code></th>
+<th>Buildable</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ubuntu 26.04 LTS (resolute)</td>
+<td>3.14.3</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Ubuntu 24.04 LTS (noble)</td>
+<td>3.12.3</td>
+<td>no</td>
+</tr>
+<tr>
+<td>Debian 13 (trixie)</td>
+<td>3.13.5</td>
+<td>no</td>
+</tr>
+<tr>
+<td>freedesktop SDK 25.08 (the Flatpak runtime)</td>
+<td>3.13.x</td>
+<td>no</td>
+</tr>
+</tbody>
+</table>
+<p>Versions read from <code>packages.ubuntu.com</code> / <code>packages.debian.org</code> and, for 24.04, from the machine in
+use, on 2026-07-28. Because the floor is the agent's own declaration rather than an upstream limit,
+lowering it is a lever this project holds — at the cost of the Python 3.14 semantics the code relies on
+(<span class="slug-ref">[[appendices.code-conventions#python]]</span>).</p>
+<p><strong>AppImage, in upstream's own words</strong> — the warning banner <code>platforms/linux/appimage.py</code> prints on every
+build: "<em>Briefcase supports AppImage in a best-effort capacity. It has proven to be highly unreliable as
+a distribution platform. AppImages cannot use pre-compiled binary wheels, and has significant problems
+with most commonly used GUI toolkits (including GTK and PySide).</em>" The documentation matches it — "<em>we
+strongly discourage the use of AppImages for distribution</em>", and "<em>the core team does not consider
+addressing AppImage bugs a priority</em>". A PySide6 app is the case they are warning about, so the
+"universal fallback" AppImage looked like on paper is not one here.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Flatpak also cannot be built inside Docker or on an NFS-mounted drive (it builds in its own sandbox),
+so it would constrain the release CI host as well as the runtime.</p>
+</div>
+<h3 id="building-the-appimage-without-briefcase">Building the AppImage without Briefcase</h3>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/210">#210: feat: build the Linux AppImage for rehuco-agent with python-appimage</a></li>
+</ul>
+<p>Since the AppImage <em>format</em> is fine and only <code>linuxdeploy</code> is not
+(<span class="slug-ref">[[packaging-deployment#linux-format]]</span> point 5), the Linux artifact is built with
+<a href="https://github.com/niess/python-appimage">python-appimage</a> instead: it extracts a relocatable CPython
+from a manylinux image and installs wheels into it untouched, so <code>auditwheel</code>'s work is never redone.
+A recipe is a folder holding <code>requirements.txt</code>, a <code>*.desktop</code> file and an icon named after its <code>Icon=</code>
+value; the build must run where the wheels are installable (glibc ≥ 2.34 for x86_64, ≥ 2.38 for
+aarch64). <strong>The desktop file must not be named <code>entrypoint.desktop</code></strong> — python-appimage globs
+<code>entrypoint.*</code> for the <em>shell script</em> half of the recipe, and matched the desktop file instead the one
+time this repo's own recipe was named that way, silently turning the packaged app's <code>AppRun</code> into an
+attempt to execute a <code>.desktop</code> file as shell (<code>packages/rehuco-agent/appimage/rehuco-agent.desktop</code>,
+found by actually running the build rather than by reading the upstream source).</p>
+<p><strong>What's built (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/210" title="GitHub Issue: borco/rehuco #210">#210</a>):</strong> <code>packages/rehuco-agent/appimage/</code> holds <code>rehuco-agent.desktop</code> and
+<code>entrypoint.sh</code> (checked in); <code>make agent-appimage-build</code> copies the icon in from the design master and
+generates <code>requirements.txt</code> with <strong>absolute paths</strong> to the four workspace packages, in dependency order
+(<code>borco-core</code>, <code>rehuco-core</code>, <code>borco-pyside</code>, <code>rehuco-agent</code>) — python-appimage <code>pip install</code>s each
+<code>requirements.txt</code> line <em>separately</em>, so a bare package name would resolve against PyPI's own unrelated
+<strong>0.0.1 stub</strong> releases of the same four names rather than this checkout's code. <code>rehuco-agent</code> installing
+last then finds the first three already satisfied locally and reaches PyPI only for its real third-party
+dependencies (<code>PySide6-Essentials</code>, etc.). <code>python-appimage build app -p 3.14</code> (a release-tag version,
+"3.14" — not the patch version "3.14.6" the resolved runtime turns out to be) auto-selected the more
+portable <code>manylinux2014_x86_64</code> base over the <code>manylinux_2_28</code> this repo's docs otherwise reference,
+since python-appimage's own release picks the lowest compatible manylinux tag published for that Python
+version; either way the <em>build host</em> still needs glibc ≥ 2.34 to install the Qt stack into it.</p>
+<p><strong>A hatchling gap this surfaced, unrelated to the AppImage format itself:</strong> hatchling's default file
+selection follows VCS tracking, so <code>packages/rehuco-agent</code>'s gitignored <code>*_ui.py</code>/<code>*_rc.py</code>
+(pyside6-uic/-rcc output, <code>make uis</code>) were silently dropped from every wheel build — confirmed with a
+bare <code>uv build --package rehuco-agent</code>, which produced a wheel importing cleanly until the first Qt
+resource read, then <code>ImportError: cannot import name 'main_rc'</code>. Briefcase never hit this (it copies
+<code>src/rehuco_agent</code> verbatim, no wheel build) and neither does a plain <code>uv sync</code> (an editable install has
+no file-selection step) — a real <code>pip install &lt;path&gt;</code>, which is exactly what the AppImage recipe's
+<code>requirements.txt</code> does, was the first thing to actually build a wheel from this package. Fixed by adding
+<code>[tool.hatch.build] artifacts = ["*_ui.py", "*_rc.py"]</code> to <code>packages/rehuco-agent/pyproject.toml</code>, which
+force-includes matching files regardless of VCS status — so this was latent in the PyPI-publishable wheel
+all along, not something this issue introduced.</p>
+<p>What the runtime gives the app, read from <code>type2-runtime</code>'s <code>runtime.c</code> on 2026-07-28 — these are the
+facts the self-registration path (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/209" title="GitHub Issue: borco/rehuco #209">#209</a>) depends on:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>APPIMAGE</code></td>
+<td>absolute path of the <code>.AppImage</code> file the user launched — <strong>the only correct <code>Exec=</code> target</strong></td>
+</tr>
+<tr>
+<td><code>APPDIR</code></td>
+<td>the temporary mount (<code>/tmp/.mount_XXXXXX</code>), gone when the process exits</td>
+</tr>
+<tr>
+<td><code>ARGV0</code></td>
+<td>the name the file was invoked as</td>
+</tr>
+<tr>
+<td><code>OWD</code></td>
+<td>the working directory the launch happened in</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>Exec=</code> must come from <code>APPIMAGE</code></strong>, never from <code>sys.executable</code> or <code>__file__</code> — both point inside
+  <code>APPDIR</code>, which is a mount that disappears, so an entry written from them is dead on the next boot.</li>
+<li><strong>Own-namespace arguments only.</strong> The runtime intercepts <code>--appimage-extract</code>,
+  <code>--appimage-extract-and-run</code>, <code>--appimage-mount</code>, <code>--appimage-offset</code>, <code>--appimage-portable-home</code>,
+  <code>--appimage-portable-config</code>, <code>--appimage-signature</code>, <code>--appimage-updateinfo[rmation]</code>,
+  <code>--appimage-version</code> and <code>--appimage-help</code>, and errors on any <em>other</em> <code>appimage-</code>-prefixed argument.
+  Everything else is forwarded verbatim, so <code>--register</code>, <code>--unregister</code> and a <code>.rehu</code> path arrive as
+  normal <code>argv</code>.</li>
+<li><strong>System libraries are not bundled.</strong> Python and the wheels are; Qt's X/Wayland/GL/font dependencies
+  are the host's problem, which is the one thing to verify in a bare container before calling the
+  artifact "download and run".</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../../diagrams/sequence-open-document/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Sequence: Open a Path">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Sequence: Open a Path
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../code-conventions/" class="md-footer__link md-footer__link--next" aria-label="Next: Code Conventions">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Code Conventions
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
