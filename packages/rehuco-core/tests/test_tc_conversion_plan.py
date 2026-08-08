@@ -117,21 +117,63 @@ def test_a_tree_of_tc_resources_produces_one_plan_record_each_and_touches_nothin
     mocks["unlink"].assert_not_called()
 
 
-def test_a_directory_holding_a_tc_is_not_descended_past(mocker: MockerFixture) -> None:
-    """A directory containing a `.tc` is a resource and is not descended past, matching the forward
-    converter's directory-scoped assumption.
+def test_a_directory_holding_a_tc_is_still_descended_past(mocker: MockerFixture) -> None:
+    """A directory containing a `.tc` is a resource, but a nested `.tc` beneath it is not a scan
+    boundary and is still found -- matching `rehuco_core.rehu_catalog.CatalogScanner` (#252).
 
     **Test steps:**
 
     * mock a resource directory whose own subdirectory also holds a `.tc`
     * plan the tree
-    * verify only the outer resource is found -- the nested one is never reached
+    * verify both the outer and the nested resource are found
     """
     mock_environment(mocker, tc_files=["a/info.tc", "a/sub/nested.tc"], directories=["a", "a/sub"])
 
     plan = plan_tc_conversion(ROOT)
 
-    assert [r.tc_path for r in plan.resources] == [ROOT / "a/info.tc"]
+    assert [r.tc_path for r in plan.resources] == [ROOT / "a/info.tc", ROOT / "a/sub/nested.tc"]
+
+
+def test_a_tc_at_the_root_still_plans_the_tree_beneath_it(mocker: MockerFixture) -> None:
+    """A `.tc` sitting at the walk's own root -- a template stub, say -- does not stop the walk from
+    finding every resource beneath it (#252).
+
+    **Test steps:**
+
+    * mock a `.tc` at the root and another resource in a subdirectory
+    * plan the tree
+    * verify both are found
+    """
+    mock_environment(mocker, tc_files=["info.tc", "a/info.tc"], directories=["a"])
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert [r.tc_path for r in plan.resources] == [ROOT / "a/info.tc", ROOT / "info.tc"]
+
+
+def test_a_collection_plans_the_parent_and_every_member(mocker: MockerFixture) -> None:
+    """A tc4 collection -- a parent record over member directories -- plans the parent **and** every
+    member, since a collection is the one structure in tc4 that nests by design (#252).
+
+    **Test steps:**
+
+    * mock a collection `.tc` with two member directories, each holding their own `.tc`
+    * plan the tree
+    * verify the parent and both members are all found
+    """
+    mock_environment(
+        mocker,
+        tc_files=["Foo/info.tc", "Foo/Part 1/info.tc", "Foo/Part 2/info.tc"],
+        directories=["Foo", "Foo/Part 1", "Foo/Part 2"],
+    )
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert {r.tc_path for r in plan.resources} == {
+        ROOT / "Foo/info.tc",
+        ROOT / "Foo/Part 1/info.tc",
+        ROOT / "Foo/Part 2/info.tc",
+    }
 
 
 def test_an_unrelated_file_is_neither_a_resource_nor_a_reason_to_stop(mocker: MockerFixture) -> None:

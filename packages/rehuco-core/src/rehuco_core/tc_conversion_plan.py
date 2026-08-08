@@ -8,9 +8,10 @@ and :func:`~rehuco_core.tc_conversion.originals_to_back_up` -- so a plan can nev
 actual conversion would do. This is the module `rehuco_agent`'s bulk import wizard (#192) runs before
 asking for confirmation; nothing here writes, renames, or deletes anything.
 
-**Directory-scoped, matching the forward converter's own assumption**: a directory holding a `.tc` is
-one resource and is not descended past, the same "one resource, one directory" shape
-`rehuco_core.tc_conversion_backups` documents for tc4 catalogs.
+**Every `.tc` found is a conversion target, at any depth.** A directory holding one is a resource, but a
+nested `.tc` is not a scan boundary ([[data-model#resource-scoping]], matching
+`rehuco_core.rehu_catalog.CatalogScanner`): a tc4 **collection** is a parent record over member
+directories, and stopping at the first `.tc` would plan the parent and drop every member.
 
 **Not a cache.** A plan is built on demand and discarded after the run; it has nothing to do with
 `.rehudb`, and this module never writes one.
@@ -205,9 +206,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
                 unreadable.append(directory)
                 continue
             tc_files, subdirectories = listing
-            if not tc_files:
-                pending.extend(subdirectories)
-                continue
+            pending.extend(subdirectories)
             for tc_path in sorted(tc_files):
                 try:
                     entries.append(self.__planned(tc_path))
@@ -228,11 +227,11 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
     def __listed(directory: Path) -> tuple[list[Path], list[Path]] | None:
         """List one directory's `.tc` files and subdirectories, without descending into either.
 
-        `.tc` files stop the walk from descending further ([[data-model#resource-scoping]]'s
-        directory-scoped assumption): a directory holding one is a resource, not a branch to keep
-        walking. A directory symlink is never descended, matching
-        `rehuco_core.rehu_catalog.CatalogScanner`, for the same reason -- one pointing at an ancestor
-        would loop forever, one pointing sideways would plan the same resource twice.
+        Every subdirectory is walked regardless of whether this directory holds a `.tc`: a nested `.tc`
+        is not a scan boundary ([[data-model#resource-scoping]]), matching
+        `rehuco_core.rehu_catalog.CatalogScanner`. A directory symlink is never descended, for the same
+        reason that scanner gives -- one pointing at an ancestor would loop forever, one pointing
+        sideways would plan the same resource twice.
 
         :param directory: the directory to read.
         :returns: ``(tc_files, subdirectories)``, or ``None`` when the directory would not list (an
