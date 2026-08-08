@@ -12,6 +12,13 @@ step enqueues one :class:`~rehuco_core.TcImportJob` per selected resource onto t
 watches them the way `rehuco_agent.documents.checksum_actions.ChecksumActions` watches its own --
 attached as a :class:`~rehuco_core.TaskQueueListener`, marshalled onto the GUI thread, reading each
 job's own outcome once it has finished rather than carrying a payload through the engine.
+
+**The one import option is whether to read the content** (#256). Every conversion carries the resource's
+legacy `.sfv` into a `.checksum` regardless -- that costs no bytes and the job does it itself -- so the
+checkbox buys only the check: a second job per resource, verifying the seeded record where a manifest
+made a claim and baselining from disk where none did. Off by default, because on it reads the whole
+library; and self-healing either way, since a seeded entry carries no date and a dateless entry is never
+fresh, so the next sweep checks every resource this import left unread.
 """
 
 import logging
@@ -26,14 +33,19 @@ from PySide6.QtWidgets import QDialog, QFileDialog, QWidget
 from rehuco_core import (
     DEFAULT_UNKNOWN_USERNAME,
     FINISHED_JOB_STATES,
+    ChecksumJob,
+    GenerateChecksumsJob,
     JobState,
     JobStatus,
     TaskQueue,
+    TcConversionPlan,
     TcConversionTreePlan,
     TcImportJob,
+    VerifyChecksumsJob,
     plan_tc_conversion,
 )
 
+from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.import_legacy_catalog_wizard_settings import ImportLegacyCatalogWizardSettings
 from ..settings.persistent_settings import persistent_settings
@@ -56,6 +68,7 @@ SUSPECT_MTIME_WARNING: Final = (
     "\n⚠ {count:,} resource(s) share near-identical timestamps — check before importing (#191's suspect_mtime)."
 )
 UNREADABLE_WARNING: Final = "\n{count} folder(s) could not be read and were left out."
+CHECKS_QUEUED_NOTE: Final = "\n{count:,} content check(s) were queued — the Tasks dock is where they finish."
 
 
 class _ScanCancelled(Exception):
@@ -175,6 +188,13 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         after it finished (the engine may notify more than once) is not double-counted."""
         self.__completed = 0
         self.__selected_total = 0
+        self.__checks: Final[list[int]] = []
+        """The serials of the content checks the last import queued (#256).
+
+        Serials and nothing more, where a conversion is held as a whole job: their outcome is not a
+        conversion's and belongs on no row of this table, and they outlive the dialog by hours, which is
+        what the Tasks dock is for. What is still owed them here is Cancel -- somebody stopping an import
+        mid-run means the hashing too."""
 
         self.__marshaller: Final = ImportLegacyCatalogWizard.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
@@ -285,7 +305,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__scan_worker.cancel()
             return
         if current is self.__import_page:
-            for serial in self.__jobs:
+            # the checks too (#256): stopping an import means stopping the hashing it queued, and a
+            # check left behind would go on reading the library for hours after the wizard said stop
+            for serial in (*self.__jobs, *self.__checks):
                 self.__queue.cancel(serial)
             return
         self.reject()
@@ -427,6 +449,11 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         here with only the failed rows, and stamping the rest *skipped* would overwrite ``converted``
         on work that genuinely happened -- a result table that lies about the catalog's own state.
 
+        With *Check the content of every converted resource* ticked, each conversion is followed onto the
+        queue by its own checksum job (:meth:`__enqueue_check`, #256) -- **a second job, never more work
+        in the first**: a conversion is not safely interruptible, and folding a multi-hour read into one
+        would make a catalog-wide import unstoppable.
+
         :param tc_paths: the `.tc` paths to convert -- the checked rows' own, or Retry Failed's.
         """
         self.__jobs.clear()
@@ -434,6 +461,8 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__reported.clear()
         self.__completed = 0
         self.__selected_total = len(tc_paths)
+        self.__checks.clear()
+        check_content = self.__plan_page.ui.verify_content_check.isChecked()
         wanted = set(tc_paths)
         for row in self.__model.rows():
             if row.plan.tc_path not in wanted:
@@ -451,10 +480,50 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             with LogScope.open(row.plan.tc_path):
                 serial = self.__queue.enqueue(job)
             self.__jobs[serial] = job  # pylint: disable=unsupported-assignment-operation
+            if check_content:
+                self.__enqueue_check(row.plan)
         self.__import_page.ui.import_progress_bar.setRange(0, max(self.__selected_total, 1))
         self.__import_page.ui.import_progress_bar.setValue(0)
         self.__import_page.ui.status_label.setText(f"0 / {self.__selected_total}")
         self.__ui.page_stack.setCurrentWidget(self.__import_page)
+
+    def __enqueue_check(self, plan: TcConversionPlan) -> None:
+        """Queue the content check that follows one conversion (#256).
+
+        Which of the two runs it is was decided by the scan, from a listing it read anyway
+        (:attr:`~rehuco_core.TcConversionPlan.legacy_manifest`): with a manifest the conversion seeded a
+        record from, this **verifies** that record and is forbidden to seed or create one -- the claim is
+        already in there, and seeding twice would spend the resource's one seed on a file it has read.
+        With no manifest there is nothing to check against, so it **generates**, which is the honest name
+        for adopting today's bytes as the baseline.
+
+        Neither is tracked by this wizard. They are not conversions, so an outcome of theirs on a
+        conversion's row would say the wrong thing about the catalog; they run long after this dialog is
+        closed; and the Tasks dock is where a run measured in hours is watched, paused and retried.
+
+        Ordering needs no arranging: the queue runs what it was handed in the order it was handed, so a
+        check follows its own conversion. One that somehow does not -- a conversion that failed -- costs
+        a ``stat`` and fails its validation with a sentence, which Retry answers.
+
+        :param plan: the resource's scan plan, for the `.rehu` the conversion writes and the manifest
+            beside it.
+        """
+        checksums = shared_checksum_settings()
+        excluded = shared_excluded_files_settings().excluded_file_patterns
+        job: ChecksumJob
+        if plan.legacy_manifest is not None:
+            job = VerifyChecksumsJob(
+                plan.rehu_path,
+                algorithm=checksums.algorithm,
+                create_if_missing=False,
+                seed_legacy=False,
+                migrate_to=checksums.migrate_target,
+                excluded_patterns=excluded,
+            )
+        else:
+            job = GenerateChecksumsJob(plan.rehu_path, algorithm=checksums.algorithm, excluded_patterns=excluded)
+        with LogScope.open(plan.rehu_path):
+            self.__checks.append(self.__queue.enqueue(job))
 
     def __on_queue_changed(self) -> None:
         """Read back whichever of this wizard's jobs have finished, on the GUI thread.
@@ -496,12 +565,20 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         return "failed", status.error
 
     def __result_summary_text(self) -> str:
-        """The result step's header line, counting each outcome across every row."""
+        """The result step's header line, counting each outcome across every row.
+
+        The queued checks are named on their own line when there are any (#256): the conversions are
+        finished and these are not, so leaving them out would read as *the import is done* over hours of
+        hashing still to run.
+        """
         rows = self.__model.rows()
         converted = sum(1 for row in rows if row.outcome == "converted")
         failed = sum(1 for row in rows if row.outcome == "failed")
         skipped = sum(1 for row in rows if row.outcome in ("skipped", "cancelled"))
-        return f"{converted:,} converted · {failed:,} failed · {skipped:,} skipped"
+        text = f"{converted:,} converted · {failed:,} failed · {skipped:,} skipped"
+        if self.__checks:
+            text += CHECKS_QUEUED_NOTE.format(count=len(self.__checks))
+        return text
 
     # endregion
 

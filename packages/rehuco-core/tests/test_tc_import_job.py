@@ -6,11 +6,13 @@ the job is registered so a saved queue can rebuild it. One test runs a job throu
 :class:`~rehuco_core.TaskQueue`, the same discipline `test_checksum_jobs` follows for the same reason.
 """
 
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
 
+import pytest
 from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
@@ -20,6 +22,8 @@ from rehuco_core import (
     TC_IMPORT_KIND,
     JobState,
     JobStatus,
+    LegacyDrop,
+    LegacySeed,
     RehuDocument,
     TaskJobRegistry,
     TaskQueue,
@@ -290,6 +294,75 @@ def test_a_conversion_failure_escapes_the_run(mocker: MockerFixture, control: Fa
 
     with raises(FileExistsError):
         TcImportJob(TC_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+
+def test_a_run_carries_the_legacy_manifest_into_the_new_record(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """Converting a resource converts its checksums too (#256), over the `.rehu` the conversion wrote.
+
+    **Test steps:**
+
+    * run a job with both the conversion and the seed mocked
+    * check the seed was asked about the target `.rehu`, with the job's own exclusion set
+    """
+    del present
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock(spec=RehuDocument))
+    seed = mocker.patch("rehuco_core.tc_import_job.seed_checksum_record", return_value=None)
+
+    TcImportJob(TC_PATH, excluded_patterns=("*.tmp",)).run(control)  # pyright: ignore[reportArgumentType]
+
+    seed.assert_called_once_with(DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",))
+
+
+def test_a_seed_says_what_it_carried_and_what_it_dropped(
+    mocker: MockerFixture, control: FakeControl, present: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A seed happens once in a resource's life, so which manifest it came from is what a reader wants
+    back later -- and the lines it could not use are on the resource's own log beside it.
+
+    **Test steps:**
+
+    * run a job whose seed carries one entry and drops one line
+    * check the log names the manifest, the count, and the dropped line's reason
+    """
+    del present
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock(spec=RehuDocument))
+    mocker.patch(
+        "rehuco_core.tc_import_job.seed_checksum_record",
+        return_value=LegacySeed(
+            DIRECTORY / "info.sfv",
+            entries=({"name": "lesson1.mp4", "crc32": "deadbeef"},),
+            dropped=(LegacyDrop("nonsense", "not this manifest's line shape"),),
+        ),
+    )
+    caplog.set_level(logging.INFO, logger="rehuco_core")
+
+    TcImportJob(TC_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert "Seeded 1 checksum entry from info.sfv." in caplog.text
+    assert "dropped 'nonsense' -- not this manifest's line shape." in caplog.text
+
+
+def test_a_seed_that_fails_costs_itself_rather_than_the_conversion(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """The conversion has already landed and is not rolled back for this; a later verify seeds instead.
+
+    **Test steps:**
+
+    * make the seed raise, with the conversion succeeding
+    * check the run finished and still answers the converted document
+    """
+    del present
+    document = mocker.MagicMock(spec=RehuDocument)
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=document)
+    mocker.patch("rehuco_core.tc_import_job.seed_checksum_record", side_effect=PermissionError("read-only share"))
+    job = TcImportJob(TC_PATH)
+
+    job.run(control)  # pyright: ignore[reportArgumentType]
+
+    assert job.document is document
 
 
 # endregion

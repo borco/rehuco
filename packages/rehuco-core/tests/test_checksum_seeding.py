@@ -10,8 +10,14 @@ The disk is a hand-written fake, `test_rehu_checksums`' near-verbatim, with one 
 first verify* is the claim that has to be measured rather than stated.
 """
 
+# seeding on the way past a verify and seeding on its own (#256) are one subject, and only read against
+# each other: what one establishes is exactly what the other's mode then refuses to establish twice. So
+# the module-length cap is lifted here rather than splitting the pair apart.
+# pylint: disable=too-many-lines
+
 import json
 import logging
+from datetime import timedelta
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
@@ -26,9 +32,11 @@ from rehuco_core import (
     CHECKSUM_ALGORITHMS,
     DEFAULT_CHECKSUM_ALGORITHM,
     ChecksumReport,
+    ContentUnreachableError,
     VerifyChecksumsJob,
     checksum_report_summary,
     generate_checksums,
+    seed_checksum_record,
     verify_checksums,
 )
 
@@ -72,6 +80,10 @@ class FakeDisk:
         """Every file read whole as bytes -- which is only ever a legacy manifest (#243)."""
         self.writes = 0
         """How many times the record has been written."""
+        self.offline_directories: Final[set[Path]] = set()
+        """The directories whose listing refuses -- an away mount, or a branch of one
+        ([[mounts-and-storage#offline-mounts]]). Their files stay in :attr:`files`, because that is the
+        point: they exist, and this run cannot see them (#245)."""
         self.refused: Final[set[Path]] = set()
         """The paths that answer neither *is it there* nor *what is in it* -- a share that says no,
         which is the one condition a test cannot arrange by editing :attr:`files`."""
@@ -83,9 +95,12 @@ class FakeDisk:
 
         :param directory: the directory to read.
         :returns: its entries -- files directly in it, and one entry per immediate subdirectory.
+        :raises PermissionError: the directory is in :attr:`offline_directories`.
         :raises FileNotFoundError: nothing lives at or under ``directory``.
         """
         directory = Path(directory)
+        if directory in self.offline_directories:
+            raise PermissionError(str(directory))
         entries: list[FakeDirEntry] = []
         subdirectories: set[str] = set()
         for path in self.files:
@@ -795,7 +810,9 @@ def test_a_verify_job_logs_what_the_manifest_did_not_contribute(
     """
     disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\nabcdef *extras/pack.zip\n".encode())
     put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
-    caplog.set_level(logging.INFO, logger="rehuco_core.checksum_jobs")
+    # the seed's own detail is `rehuco_core.checksum_seeding`'s, shared with the import that seeds
+    # without verifying (#256); the summary beside it is the job's
+    caplog.set_level(logging.INFO, logger="rehuco_core")
 
     VerifyChecksumsJob(INFO_PATH).run(FakeControl())
 
@@ -812,6 +829,220 @@ def test_a_report_carries_no_seed_by_default() -> None:
     * check its seed is absent
     """
     assert ChecksumReport().seed is None
+
+
+# endregion
+
+
+# region Seeding without verifying (#256)
+
+
+def test_a_seed_only_call_writes_the_record_and_reads_no_content(disk: FakeDisk) -> None:
+    """The whole of a bulk import's default path: the claim is carried, and no byte is hashed.
+
+    **Test steps:**
+
+    * seed a resource holding a ``.sfv`` for both its files
+    * check the record carries both claims and that nothing was opened for reading
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"{ARCHIVE} {ARCHIVE_CRC}")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.manifest == SFV_PATH
+    assert disk.entries[VIDEO]["crc32"] == VIDEO_CRC
+    assert disk.entries[ARCHIVE]["crc32"] == ARCHIVE_CRC
+    assert disk.reads == []
+
+
+def test_a_seeded_entry_lands_dateless_so_a_later_verify_checks_it(disk: FakeDisk) -> None:
+    """No date is what makes the import self-healing: nothing is fresh, so the next sweep reads it.
+
+    **Test steps:**
+
+    * seed the record, then verify it with a staleness window wide enough to skip anything dated
+    * check the seeded entry carried no date, and that the verify checked it anyway
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    seed_checksum_record(INFO_PATH)
+
+    assert "verified" not in disk.entries[VIDEO]
+
+    report = verify_checksums(INFO_PATH, stale_after=timedelta(days=365))
+
+    assert report.statuses[VIDEO] == "matched"
+    assert not report.skipped
+
+
+def test_a_seed_only_call_leaves_an_existing_record_alone(disk: FakeDisk) -> None:
+    """Seeding is one-way: the record supersedes the manifest, and re-seeding would undo that.
+
+    **Test steps:**
+
+    * verify a resource into a dated record, then put a manifest claiming something else and seed
+    * check nothing was written and the recorded hash is the one the verify established
+    """
+    verify_checksums(INFO_PATH, create_if_missing=True)
+    put_sfv(disk, f"{VIDEO} {'0' * 8}")
+    disk.forget()
+
+    assert seed_checksum_record(INFO_PATH) is None
+    assert disk.writes == 0
+    assert disk.entries[VIDEO][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(VIDEO_BYTES)
+
+
+def test_a_seed_only_call_with_no_manifest_writes_nothing(disk: FakeDisk) -> None:
+    """No ``.sfv`` and no check asked for means no record: inventing a baseline is a generate's job.
+
+    **Test steps:**
+
+    * seed a resource with no manifest beside it
+    * check nothing came back and no record was written
+    """
+    assert seed_checksum_record(INFO_PATH) is None
+    assert RECORD_PATH not in disk.files
+
+
+def test_a_seed_only_call_over_an_away_mount_refuses(disk: FakeDisk) -> None:
+    """An unreachable resource is not an empty one (#245): every claim would read as a gone file.
+
+    **Test steps:**
+
+    * make the resource's own directory refuse to list, then seed
+    * check it raises rather than writing a record
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.offline_directories.add(DIRECTORY)
+
+    with raises(ContentUnreachableError):
+        seed_checksum_record(INFO_PATH)
+
+    assert RECORD_PATH not in disk.files
+
+
+def test_a_seed_only_call_carries_only_content(disk: FakeDisk) -> None:
+    """The same rule a verify's seed is under: a name today's enumeration leaves out is dropped.
+
+    **Test steps:**
+
+    * seed from a manifest also claiming the screenshot and the ``Thumbs.db`` beside the record
+    * check the record holds the video alone, and both other lines were reported dropped
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"info00.jpg {'a' * 8}", f"Thumbs.db {'b' * 8}")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert list(disk.entries) == [VIDEO]
+    assert [drop.reason for drop in seed.dropped] == ["a file this resource's content excludes"] * 2
+
+
+def test_a_verify_that_does_not_seed_checks_what_was_recorded(disk: FakeDisk) -> None:
+    """The import's second job: the claim is already in the record, and the manifest is not read again.
+
+    **Test steps:**
+
+    * seed the record, forget the counters, then verify with ``seed_legacy`` off
+    * check the verify made its verdict and opened no manifest
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    seed_checksum_record(INFO_PATH)
+    disk.forget()
+
+    report = verify_checksums(INFO_PATH, seed_legacy=False)
+
+    assert report.statuses[VIDEO] == "matched"
+    assert report.seed is None
+    assert disk.manifest_reads == []
+
+
+def test_a_verify_that_does_not_seed_refuses_where_there_is_no_record(disk: FakeDisk) -> None:
+    """A check that arrives before its own conversion costs a ``stat``, not a walk.
+
+    **Test steps:**
+
+    * verify with ``seed_legacy`` off over a resource holding only a ``.sfv``
+    * check it raises and read neither the manifest nor any content
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    with raises(FileNotFoundError):
+        verify_checksums(INFO_PATH, seed_legacy=False)
+
+    assert disk.manifest_reads == []
+    assert disk.reads == []
+
+
+def test_a_verify_may_not_create_a_record_while_ignoring_the_manifest(disk: FakeDisk) -> None:
+    """The fourth combination adopts today's bytes with a good claim sitting unread beside them.
+
+    **Test steps:**
+
+    * ask for a verify that creates a missing record and does not seed
+    * check it refuses, and wrote nothing
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    with raises(ValueError):
+        verify_checksums(INFO_PATH, create_if_missing=True, seed_legacy=False)
+
+    assert RECORD_PATH not in disk.files
+
+
+def test_a_verify_job_that_does_not_seed_refuses_a_resource_with_only_a_manifest(disk: FakeDisk) -> None:
+    """The manifest is not this job's to read, so *no record yet* is the honest answer -- and retryable.
+
+    **Test steps:**
+
+    * validate a non-seeding verify job over a resource with a ``.sfv`` and no ``.checksum``
+    * check it refuses, and that it accepts once the record has been seeded
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    job = VerifyChecksumsJob(INFO_PATH, seed_legacy=False)
+
+    assert job.validate() == f"This resource has no checksum record yet: {RECORD_PATH}"
+
+    seed_checksum_record(INFO_PATH)
+
+    assert job.validate() is None
+
+
+def test_a_verify_job_refuses_the_combination_core_refuses(disk: FakeDisk) -> None:
+    """A hand-edited queue item fails as a row rather than as an exception out of the run.
+
+    **Test steps:**
+
+    * validate a verify job that would create a record without seeding
+    * check it answers with a sentence
+    """
+    del disk
+
+    job = VerifyChecksumsJob(INFO_PATH, create_if_missing=True, seed_legacy=False)
+
+    assert job.validate() == "A verify that creates a missing record may not ignore the legacy manifest beside it."
+
+
+def test_a_job_writes_down_whether_it_seeds(disk: FakeDisk) -> None:
+    """A restored check is the check that was queued, and one written before the key defaults to on.
+
+    **Test steps:**
+
+    * round-trip a non-seeding job's state, then restore one from a state that never carried the key
+    * check the first came back non-seeding and the second seeding
+    """
+    del disk
+    state = VerifyChecksumsJob(INFO_PATH, seed_legacy=False).capture_state()
+
+    restored = VerifyChecksumsJob()
+    restored.restore_state(state)
+
+    assert restored.seed_legacy is False
+
+    older = VerifyChecksumsJob()
+    older.restore_state({key: value for key, value in state.items() if key != "seed_legacy"})
+
+    assert older.seed_legacy is True
 
 
 # endregion

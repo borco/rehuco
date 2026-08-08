@@ -9,6 +9,11 @@ own correctness is `test_tc_conversion_plan`'s subject. The import step always r
 that would actually run it.
 """
 
+# five wizard steps over one dialog, and the later ones are only meaningful read against the earlier:
+# what Import enqueues depends on what the plan step checked, and what Retry Failed re-enqueues on what
+# the result step recorded. One cohesive module per subject, so the length cap is lifted here.
+# pylint: disable=too-many-lines
+
 from collections.abc import Iterator
 from pathlib import Path
 from threading import Event
@@ -22,7 +27,16 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from rehuco_agent.dialogs.tc_conversion_plan_table_model import CHECKED_COLUMN
 from rehuco_agent.settings.import_legacy_catalog_wizard_settings import ImportLegacyCatalogWizardSettings
-from rehuco_core import JobState, TaskQueue, TcConversionPlan, TcConversionTreePlan
+from rehuco_core import (
+    ChecksumJob,
+    ChecksumReport,
+    GenerateChecksumsJob,
+    JobState,
+    TaskQueue,
+    TcConversionPlan,
+    TcConversionTreePlan,
+    VerifyChecksumsJob,
+)
 
 ROOT: Final = Path("/fake/library")
 
@@ -61,6 +75,9 @@ def plan(name: str, **flags: Any) -> TcConversionPlan:
 CLEAN_A: Final = plan("a")
 CLEAN_B: Final = plan("b")
 BLOCKED: Final = plan("c", rehu_exists=True)
+WITH_MANIFEST: Final = plan("m", legacy_manifest=ROOT / "m" / "info.sfv")
+"""A resource carrying the legacy `.sfv` its conversion would seed a record from (#256) -- which is what
+decides whether checking it means verifying a claim or baselining today's bytes."""
 
 
 # the core walk's own fake -- kept as a separate copy rather than shared, this codebase's
@@ -239,6 +256,40 @@ def go_to_plan(
     wizard._ImportLegacyCatalogWizard__set_root(ROOT)  # type: ignore[attr-defined]  # pylint: disable=protected-access
     widgets.next_button.click()
     qtbot.waitUntil(lambda: widgets.stack.currentWidget() is widgets.plan_, timeout=TIMEOUT)
+
+
+def drive_checked_import(
+    mocker: MockerFixture,
+    qtbot: QtBot,
+    wizard: ImportLegacyCatalogWizard,
+    queue: TaskQueue,
+    *resources: TcConversionPlan,
+) -> list[ChecksumJob]:
+    """Import ``resources`` with *Check the content of every converted resource* ticked (#256).
+
+    Both runs are mocked away -- what this is about is which job the wizard built and how, not what
+    hashing a mocked filesystem would establish -- while the queue itself stays real, so the jobs come
+    back off an engine that would have run them.
+
+    :param mocker: pytest-mock fixture.
+    :param qtbot: pytest-qt fixture, for waiting on the queue.
+    :param wizard: the wizard to drive.
+    :param queue: the queue it enqueues into.
+    :param resources: the plan records to import; every row is checked by default.
+    :returns: the check jobs, in the order they were enqueued.
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock())
+    mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
+    mocker.patch("rehuco_core.checksum_jobs.generate_checksums", return_value=ChecksumReport())
+    enqueue = mocker.patch.object(queue, "enqueue", wraps=queue.enqueue)
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, resources))
+    pages(wizard).plan_.ui.verify_content_check.setChecked(True)
+
+    pages(wizard).next_button.click()
+
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+    return [call.args[0] for call in enqueue.call_args_list if isinstance(call.args[0], ChecksumJob)]
 
 
 # endregion
@@ -633,6 +684,123 @@ def test_cancel_mid_import_leaves_every_resource_converted_or_untouched(
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
     assert by_path[CLEAN_B.tc_path].outcome == "cancelled"
     assert by_path[third.tc_path].outcome == "cancelled"
+
+
+# endregion
+
+
+# region Step 4 -- the content check (#256)
+
+
+def test_no_check_is_queued_unless_the_option_is_ticked(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """Off is the default, because on reads the whole library -- the conversion still carries the claim.
+
+    **Test steps:**
+
+    * import one resource that has a manifest, with the option left alone
+    * verify the queue holds the conversion and nothing else
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock())
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (WITH_MANIFEST,)))
+
+    pages(wizard).next_button.click()
+
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+    assert len(queue.jobs()) == 1
+
+
+def test_a_ticked_import_verifies_where_a_manifest_made_a_claim(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """The conversion seeded the record from the manifest, so the check tests that record and no more.
+
+    **Test steps:**
+
+    * tick the option and import one resource whose plan names a manifest
+    * verify the second job is a verify over the `.rehu`, forbidden to seed or to create
+    """
+    checks = drive_checked_import(mocker, qtbot, wizard, queue, WITH_MANIFEST)
+
+    assert len(checks) == 1
+    job = checks[0]
+    assert isinstance(job, VerifyChecksumsJob)
+    assert job.source == WITH_MANIFEST.rehu_path
+    assert job.seed_legacy is False
+    assert job.create_if_missing is False
+
+
+def test_a_ticked_import_baselines_where_no_manifest_made_one(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """With nothing to check against, adopting today's bytes is what it is -- and it says so.
+
+    **Test steps:**
+
+    * tick the option and import one resource whose plan names no manifest
+    * verify the second job is a generate over the `.rehu`
+    """
+    checks = drive_checked_import(mocker, qtbot, wizard, queue, CLEAN_A)
+
+    assert len(checks) == 1
+    assert isinstance(checks[0], GenerateChecksumsJob)
+    assert checks[0].source == CLEAN_A.rehu_path
+
+
+def test_the_result_summary_says_the_checks_outlive_the_wizard(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """The conversions are done and these are not; silence would read as *the import is finished*.
+
+    **Test steps:**
+
+    * tick the option and import two resources
+    * verify the result summary names how many checks were queued
+    """
+    drive_checked_import(mocker, qtbot, wizard, queue, CLEAN_A, CLEAN_B)
+
+    assert "2 content check(s) were queued" in pages(wizard).result.ui.summary_label.text()
+
+
+def test_cancelling_an_import_cancels_the_checks_it_queued(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """Stopping an import means stopping the hashing too, or it reads the library for hours afterwards.
+
+    **Test steps:**
+
+    * block the first conversion, tick the option, import two resources, then cancel mid-run
+    * verify no check ever ran and every one of them is cancelled
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    verify = mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport())
+    entered = Event()
+    release = Event()
+
+    def slow_convert(*_args: Any, **_kwargs: Any) -> Any:
+        entered.set()
+        assert release.wait(5.0)
+        return mocker.MagicMock()
+
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", side_effect=slow_convert)
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (WITH_MANIFEST, CLEAN_B)))
+    pages(wizard).plan_.ui.verify_content_check.setChecked(True)
+
+    pages(wizard).next_button.click()
+    assert entered.wait(TIMEOUT / 1000)
+    pages(wizard).cancel_button.click()
+    release.set()
+
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+    verify.assert_not_called()
+    serials = {status.serial for status in queue.jobs() if not str(status.label).startswith("Import")}
+    assert len(serials) == 2
+    qtbot.waitUntil(
+        lambda: all(status.state is JobState.CANCELLED for status in queue.jobs() if status.serial in serials),
+        timeout=TIMEOUT,
+    )
 
 
 # endregion

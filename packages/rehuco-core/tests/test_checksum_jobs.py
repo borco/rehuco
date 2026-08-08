@@ -534,6 +534,7 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "create_if_missing": True,
         "stale_days": None,
         "migrate_to": None,
+        "seed_legacy": True,
     }
 
 

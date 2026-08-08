@@ -159,6 +159,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#244: feat: checksum viewer dock — per-file status and date, with verify/generate actions](https://github.com/borco/rehuco/issues/244)
 - [#254: feat: a record counts only what it covers](https://github.com/borco/rehuco/issues/254)
 - [#257: feat: a pruned claim moves to the record that now covers it](https://github.com/borco/rehuco/issues/257)
+- [#256: feat: import options — convert the .sfv, and optionally verify](https://github.com/borco/rehuco/issues/256)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -298,6 +299,37 @@ What a **reference-images** resource's content *is* was settled by #197: content
   Normalization lives in the conversion, which is the seam that knows the file came from a Windows tool; the record
   reader stays strict and is **not** taught to normalize, since a reader that did would make one `.checksum` mean
   different things to a Windows agent and a Linux node.
+
+- **Seeding is also an operation of its own, and it hashes nothing** (#256). The step above happens *on the way past*
+  a verify, which then reads every file — fine for one resource a person is looking at, useless for a catalog-wide
+  migration, which would have to read the whole library to carry claims it has not been asked to check. So a
+  **seed-only** call writes the record from the manifest and stops. It is what a bulk import runs, once per converted
+  resource, and it is **not optional**: there is no version of *converted* that leaves a years-old claim behind as a
+  file nothing reads. Two things make it safe to stop there. The entries land **dateless**, and a dateless entry is
+  never fresh whatever the staleness window, so the next sweep checks every one of them with no force asked for and
+  nobody tracking which resources were done — a converted-but-unread catalog is **self-healing** rather than a state
+  to remember. And a resource that already has a `.checksum` is **left alone**, the same one-way rule: the record is
+  what supersedes the manifest, and re-seeding over it would replace dated verdicts with an old claim. An unreachable
+  resource refuses (#245) rather than seeding a record whose every line would read as a claim about a file that has
+  gone.
+
+- **A verify has three modes, not two, and the fourth is refused** (#256). Two independent choices — may this run
+  *create* a record, and may it *seed* one — make four combinations, and one of them is incoherent:
+
+  | create | seed | |
+  | --- | --- | --- |
+  | off | on | the ordinary verify — seed from a manifest, else refuse (#243) |
+  | off | **off** | **check what is recorded** — refuse where nothing is |
+  | on | on | the sweep with *Create missing checksum on verify* (#242) |
+  | on | off | **refused** |
+
+  The middle one is what a run queued *behind* a seed asks for: the claim is already in the record, and seeding again
+  would spend the resource's one seed on a file that has been read. It also dissolves an ordering question rather than
+  answering it — a check that somehow runs before its record exists costs a `stat`, refuses with a sentence, and Retry
+  is the recovery, so nothing has to arrange the two. The last combination would adopt every file on disk as a fresh
+  baseline while a perfectly good manifest sat beside it unread, which is precisely the throwing away of an old claim
+  seeding exists to prevent; a **generate** says that honestly and is what a caller who means it should ask for.
+
 - Checksums cover only **immutable original content** — the actual tutorial/resource files — never `.rehu` or the
   `infoXX.*` images, which are designed to be freely editable.
 - **What a resource's content *is* is computed once and shared** (#226) — `rehuco_core.rehu_content_files` resolves it

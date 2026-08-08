@@ -31,7 +31,7 @@ from typing import Any, Final
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_record import ChecksumRecordError, checksum_record_path
-from .checksum_seeding import legacy_manifest_for
+from .checksum_seeding import legacy_manifest_for, log_legacy_seed
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
@@ -73,6 +73,7 @@ STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
 STATE_CREATE_IF_MISSING_KEY: Final = "create_if_missing"
 STATE_MIGRATE_TO_KEY: Final = "migrate_to"
 STATE_STALE_DAYS_KEY: Final = "stale_days"
+STATE_SEED_LEGACY_KEY: Final = "seed_legacy"
 """The keys one of these jobs writes itself down under.
 
 Read back by the class that wrote them and by nothing else ([[appendices.task-queue#lifetime]]) -- the
@@ -82,7 +83,8 @@ The exclusion set is captured with the rest rather than re-resolved from the set
 restored job is meant to be *the job that was queued*, and the list decides which unlisted files a run
 adopts, which is part of what was asked for. The two verify choices (#242) are captured for the same
 reason, and read back with today's behaviour as their default, so a queue saved by a build that had
-neither key restores exactly the run it described."""
+neither key restores exactly the run it described. Seeding (#256) is captured the same way and defaults
+to on, which is what every job written before that key existed meant."""
 
 
 # a job's members *are* its run's parameters, and #203's callables take that many; collapsing them into
@@ -122,6 +124,10 @@ class ChecksumJob(TaskJobBase):
     :param migrate_to: what a verify re-keys matched entries to, or ``None`` to migrate nothing (#242's
         *Update checksums on verify*, resolved by the caller). Meaningless to a generate, which
         re-baselines under ``algorithm`` whatever an entry carried.
+    :param seed_legacy: whether a verify with no record may seed one from the legacy manifest beside it
+        (#243). Off is the *check what is already recorded* mode a bulk import queues (#256), where the
+        seeding has already happened without reading a byte. Meaningless to a generate, which never
+        seeds.
     :param label: how the job is named to a reader, or ``None`` for one derived from the path.
     """
 
@@ -155,6 +161,7 @@ class ChecksumJob(TaskJobBase):
         create_if_missing: bool | None = None,
         stale_after: timedelta | None = None,
         migrate_to: str | None = None,
+        seed_legacy: bool = True,
         label: str | None = None,
     ) -> None:
         super().__init__()
@@ -166,6 +173,7 @@ class ChecksumJob(TaskJobBase):
         self.create_if_missing = self.creates_by_default if create_if_missing is None else create_if_missing
         self.stale_after = stale_after
         self.migrate_to = migrate_to
+        self.seed_legacy = seed_legacy
         self.label = label if label is not None else self.__derived_label()
         self.__report: ChecksumReport | None = None
 
@@ -241,28 +249,11 @@ class ChecksumJob(TaskJobBase):
         """
         report = self.perform(control)
         self.__report = report
-        self.__log_seed(report)
+        if report.seed is not None:
+            log_legacy_seed(report.seed)
         self.__log_pruned(report)
         self.__log_moved(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
-
-    @staticmethod
-    def __log_seed(report: ChecksumReport) -> None:
-        """Say line by line what a legacy manifest did not contribute (#243).
-
-        The summary carries the counts; this is where a reader finds out *which* line and *why*, on the
-        resource's own log ([[appendices.logging#scopes]]). It runs once in a resource's life, so the
-        detail costs nothing on any later verify.
-
-        :param report: what the run established.
-        """
-        seed = report.seed
-        if seed is None:
-            return
-        for manifest in seed.ignored:
-            LOG.info("%s was not read: %s is the manifest this record was seeded from.", manifest, seed.manifest.name)
-        for drop in seed.dropped:
-            LOG.warning("%s: dropped %r -- %s.", seed.manifest, drop.line, drop.reason)
 
     @staticmethod
     def __log_pruned(report: ChecksumReport) -> None:
@@ -342,6 +333,7 @@ class ChecksumJob(TaskJobBase):
             STATE_CREATE_IF_MISSING_KEY: self.create_if_missing,
             STATE_STALE_DAYS_KEY: None if self.stale_after is None else self.stale_after.days,
             STATE_MIGRATE_TO_KEY: self.migrate_to,
+            STATE_SEED_LEGACY_KEY: self.seed_legacy,
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -353,7 +345,8 @@ class ChecksumJob(TaskJobBase):
         names raises, and the registry logs and drops the item ([[appendices.task-queue#lifetime]]).
 
         The two verify choices (#242) default to this job's own behaviour when the state does not carry
-        them, so an item written by a build that predates them restores as the run it was.
+        them, and seeding (#256) to on, so an item written by a build that predates any of them restores
+        as the run it was.
 
         :param state: whatever this class's own :meth:`capture_state` wrote.
         :raises ValueError: the state does not describe a runnable job.
@@ -380,6 +373,7 @@ class ChecksumJob(TaskJobBase):
         self.only = None if only is None else tuple(only)
         self.migrate_to = migrate_to
         self.create_if_missing = bool(create_if_missing)
+        self.seed_legacy = bool(state.get(STATE_SEED_LEGACY_KEY, True))
         self.stale_after = None if stale_days is None else timedelta(days=stale_days)
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
@@ -445,6 +439,11 @@ class VerifyChecksumsJob(ChecksumJob):
     fails with a sentence naming the record rather than quietly adopting every file: a surface offers
     Generate for that case (#204). Adopting everything is what *Create missing checksum on verify*
     (#242) turns on, deliberately, and it is the mode the sweep runs in when it is set.
+
+    ``seed_legacy`` is **on** unless the caller says otherwise, so a resource with a legacy manifest and
+    no record is verified against that manifest rather than refused (#243). Off is the third mode: check
+    what is already recorded, seed nothing, and refuse where there is no record -- what a bulk import
+    queues behind each conversion, having seeded the record itself without reading a byte (#256).
     """
 
     kind = CHECKSUM_VERIFY_KIND
@@ -463,6 +462,7 @@ class VerifyChecksumsJob(ChecksumJob):
             only=self.only,
             stale_after=self.stale_after,
             create_if_missing=self.create_if_missing,
+            seed_legacy=self.seed_legacy,
             migrate_to=self.migrate_to,
             excluded_patterns=self.excluded_patterns,
             progress=control.report,
@@ -480,20 +480,31 @@ class VerifyChecksumsJob(ChecksumJob):
         **A legacy manifest counts as a record to verify against** (#243), because the run will seed
         one from it: refusing here would send the reader at a Generate, which is precisely the throwing
         away of the old claim that seeding exists to prevent. One directory listing rather than a
-        ``stat``, and only on the path where there is no ``.checksum``.
+        ``stat``, and only on the path where there is no ``.checksum``. **Unless this run does not
+        seed** (#256), where the manifest is not this job's to read: a bulk import carries it into the
+        record itself and queues this to check what landed, so a run that arrives before its own
+        conversion has to refuse here -- one ``stat``, no bytes, no walk -- rather than seed a second
+        time from a claim already recorded. Retry is exactly the recovery, and the ordering question
+        needs no answer beyond it.
 
         :returns: ``None`` when the run can start, else what is wrong.
         """
         reason = super().validate()
         if reason is not None:
             return reason
+        # the combination :func:`~rehuco_core.verify_checksums` refuses outright, said as a sentence
+        # here so a hand-edited queue item fails as a row rather than as an exception out of the run
+        if self.create_if_missing and not self.seed_legacy:
+            return "A verify that creates a missing record may not ignore the legacy manifest beside it."
         if self.create_if_missing:
             return None
         path = self.resource_path()
         record = checksum_record_path(path)
-        if not record.exists() and legacy_manifest_for(path) is None:
-            return f"This resource has no checksum record yet: {record}"
-        return None
+        if record.exists():
+            return None
+        if self.seed_legacy and legacy_manifest_for(path) is not None:
+            return None
+        return f"This resource has no checksum record yet: {record}"
 
 
 def checksum_report_summary(report: ChecksumReport) -> str:
