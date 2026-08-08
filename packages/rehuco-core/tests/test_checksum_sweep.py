@@ -22,6 +22,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CHECKSUM_SWEEP_KIND,
     DEFAULT_TASK_JOB_REGISTRY,
+    PROGRESS_UNIT_RESOURCES,
     ContentUnreachableError,
     JobPaused,
     SweepChecksumsJob,
@@ -555,6 +556,20 @@ def test_progress_counts_resources_and_names_the_total_before_the_first_read(cat
     control = run(sweep(stale_after=WEEK))
 
     assert control.reports == [(0, 3), (1, 3), (2, 3), (3, 3)]
+
+
+def test_a_sweep_declares_that_it_counts_resources(catalog: FakeCatalog) -> None:
+    """The numbers above are resources where a verify's are bytes, and the declaration is what makes
+    the two tellable apart downstream (#248).
+
+    **Test steps:**
+
+    * build a sweep
+    * check the unit it declares
+    """
+    del catalog
+
+    assert sweep(stale_after=WEEK).progress_unit == PROGRESS_UNIT_RESOURCES
 
 
 def test_a_sweep_names_the_folder_it_is_over(catalog: FakeCatalog) -> None:

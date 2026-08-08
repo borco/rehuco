@@ -47,11 +47,16 @@
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
         <file alias="icons/task_cancel.svg">../../../../design/icons/task_cancel.svg</file>
+        <file alias="icons/task_canceled.svg">../../../../design/icons/task_canceled.svg</file>
+        <file alias="icons/task_canceling.svg">../../../../design/icons/task_canceling.svg</file>
         <file alias="icons/task_clear_done.svg">../../../../design/icons/task_clear_done.svg</file>
         <file alias="icons/task_done.svg">../../../../design/icons/task_done.svg</file>
         <file alias="icons/task_failed.svg">../../../../design/icons/task_failed.svg</file>
         <file alias="icons/task_pause.svg">../../../../design/icons/task_pause.svg</file>
+        <file alias="icons/task_paused.svg">../../../../design/icons/task_paused.svg</file>
+        <file alias="icons/task_pausing.svg">../../../../design/icons/task_pausing.svg</file>
         <file alias="icons/task_run.svg">../../../../design/icons/task_run.svg</file>
+        <file alias="icons/task_running.svg">../../../../design/icons/task_running.svg</file>
         <file alias="icons/task_scheduled.svg">../../../../design/icons/task_scheduled.svg</file>
         <file alias="icons/task_view.svg">../../../../design/icons/task_view.svg</file>
         <file alias="icons/tc_convert_with_backup.svg">../../../../design/icons/tc_convert_with_backup.svg</file>

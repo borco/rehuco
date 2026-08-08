@@ -108,7 +108,7 @@ class TaskQueue:
         done: int
         total: int | None
 
-    # Fifteen, and each is a distinct fact about one job: its identity and label, the job itself, the
+    # Sixteen, and each is a distinct fact about one job: its identity and label, the job itself, the
     # context it was enqueued in, what it declared about itself, where it has got to, what it
     # reported, why it failed, what it was asked, and what it last gave the queue to write down.
     # `resume_requested` alone stays off the status: it exists for one gap -- a pause taken back too
@@ -132,6 +132,7 @@ class TaskQueue:
         source: Path | None = None
         safely_interruptible: bool = True
         resumes_where_it_stopped: bool = False
+        progress_unit: str = ""
         persistable: bool = False
         captured: TaskQueue.Captured | None = None
         state: JobState = JobState.QUEUED
@@ -152,6 +153,7 @@ class TaskQueue:
                 state=self.state,
                 done=self.done,
                 total=self.total,
+                progress_unit=self.progress_unit,
                 error=self.error,
                 stop_requested=self.stop_requested,
                 source=self.source,
@@ -281,8 +283,9 @@ class TaskQueue:
 
         The job's declarations -- :attr:`~rehuco_core.tasks.TaskJob.label`,
         :attr:`~rehuco_core.tasks.TaskJob.source`,
-        :attr:`~rehuco_core.tasks.TaskJob.safely_interruptible` and
-        :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped` -- are read here and carried on
+        :attr:`~rehuco_core.tasks.TaskJob.safely_interruptible`,
+        :attr:`~rehuco_core.tasks.TaskJob.resumes_where_it_stopped` and
+        :attr:`~rehuco_core.tasks.TaskJob.progress_unit` -- are read here and carried on
         every status from now on. All but one are read *only* here, because each answers a question
         about the row a reader is looking at, and an answer that changed while the job ran would
         rewrite it. ``source`` is the exception: it names where the work is rather than describing it,
@@ -708,6 +711,7 @@ class TaskQueue:
             source=job.source,
             safely_interruptible=job.safely_interruptible,
             resumes_where_it_stopped=job.resumes_where_it_stopped,
+            progress_unit=job.progress_unit,
             persistable=isinstance(job, PersistableTaskJob),
             state=state,
             done=done,

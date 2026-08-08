@@ -15,9 +15,9 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.tasks.task_queue_model import (
     COLUMN_COUNT,
     COLUMN_TITLES,
+    INFO_COLUMN,
     LABEL_COLUMN,
     NOT_SAVED_HINT,
-    PROGRESS_COLUMN,
     RESUMES_HINT,
     STARTS_OVER_HINT,
     STATE_COLUMN,
@@ -404,7 +404,7 @@ def test_the_columns_draw_label_state_and_nothing_for_progress(queue: TaskQueue,
 
     assert model.data(model.index(0, LABEL_COLUMN)) == "my job"
     assert model.data(model.index(0, STATE_COLUMN)) == "Done"
-    assert model.data(model.index(0, PROGRESS_COLUMN)) is None
+    assert model.data(model.index(0, INFO_COLUMN)) is None
 
 
 def test_a_row_answers_nothing_for_a_role_it_has_no_opinion_about(
@@ -475,13 +475,14 @@ def test_a_persistable_rows_tooltip_does_not_warn_about_being_lost(
     assert STARTS_OVER_HINT in tooltip
 
 
-def test_a_failed_rows_tooltip_leads_with_the_reason(queue: TaskQueue, deliver: Callable[[], None]) -> None:
-    """The progress column elides a failure reason, so the tooltip carries it in full.
+def test_a_failed_rows_tooltip_names_the_state_then_the_reason(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+    """The state column is icons now (#248), so the tooltip leads with the word that glyph stands for
+    -- and the info column elides a failure reason, so the tooltip carries that in full after it.
 
     **Test steps:**
 
     * run a job that raises, and let the snapshot land
-    * verify the tooltip's first line is the reason
+    * verify the tooltip names the state first and the reason second
     """
     model = TaskQueueModel(queue)
     model.attach_to()
@@ -491,7 +492,7 @@ def test_a_failed_rows_tooltip_leads_with_the_reason(queue: TaskQueue, deliver: 
 
     tooltip = model.data(model.index(0, 0), Qt.ItemDataRole.ToolTipRole)
 
-    assert tooltip.splitlines()[0] == "ValueError: nope"
+    assert tooltip.splitlines()[:2] == ["Failed", "ValueError: nope"]
 
 
 def test_the_headers_are_the_column_titles(queue: TaskQueue) -> None:

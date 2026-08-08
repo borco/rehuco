@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from typing import Final
 
 from borco_pyside.logging import BAND_TINT_ALPHA
-from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, Qt
+from PySide6.QtCore import QModelIndex, QObject, QPersistentModelIndex, QRect, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 from rehuco_core import JobState
@@ -40,13 +40,25 @@ class TaskRowDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self.__state_colors: dict[JobState, QColor] = dict(state_colors or {})
 
+    def color_for(self, state: JobState) -> QColor | None:
+        """The caller's color for ``state``, at full strength.
+
+        What :meth:`tint_for` waters down for a background, and what anything wanting the state's own
+        color to *read* -- a status glyph, a progress bar's filled part -- asks for instead.
+
+        :param state: the state to look up.
+        :returns: the color, or ``None`` when this state was given none.
+        """
+        color = self.__state_colors.get(state)
+        return QColor(color) if color is not None else None
+
     def tint_for(self, state: JobState) -> QColor | None:
         """The color this delegate fills ``state``'s rows with, alpha already applied.
 
         :param state: the state to look up.
         :returns: the tint, or ``None`` when ``state`` is drawn plain.
         """
-        color = self.__state_colors.get(state)
+        color = self.color_for(state)
         if color is None:
             return None
         tint = QColor(color)
@@ -72,7 +84,13 @@ class TaskRowDelegate(QStyledItemDelegate):
             painter.setPen(pen)
 
     @staticmethod
-    def paint_text(painter: QPainter, option: QStyleOptionViewItem, text: str) -> None:
+    def paint_text(
+        painter: QPainter,
+        cell: QRect,
+        text: str,
+        *,
+        alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignLeft,
+    ) -> None:
         """Draw ``text``, elided to the cell's width, with the painter's current pen.
 
         Drawn with the painter directly rather than handed to the style: the style picks its own
@@ -84,9 +102,11 @@ class TaskRowDelegate(QStyledItemDelegate):
         text.
 
         :param painter: the painter to draw with.
-        :param option: the item's rect and font metrics.
+        :param cell: the rect to draw in -- the whole item's, or a slot within it.
         :param text: the text to draw.
+        :param alignment: how to place it horizontally; vertically it is always centred. A progress
+            bar's label is centred on its cell, a label or a failure reason starts at the left.
         """
-        rect = option.rect.adjusted(TEXT_HPADDING, 0, -TEXT_HPADDING, 0)
+        rect = cell.adjusted(TEXT_HPADDING, 0, -TEXT_HPADDING, 0)
         elided = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, rect.width())
-        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, elided)
+        painter.drawText(rect, alignment | Qt.AlignmentFlag.AlignVCenter, elided)

@@ -25,6 +25,8 @@ Nothing here imports Qt, and nothing here knows what any job does
 from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
     FINISHED_JOB_STATES,
+    PROGRESS_UNIT_BYTES,
+    PROGRESS_UNIT_RESOURCES,
     JobCancelled,
     JobControl,
     JobPaused,
@@ -48,6 +50,8 @@ __all__ = [
     "DEFAULT_TASK_JOB_REGISTRY",
     "FINISHED_JOB_STATES",
     "MOVABLE_JOB_STATES",
+    "PROGRESS_UNIT_BYTES",
+    "PROGRESS_UNIT_RESOURCES",
     "RESTORED_UNFINISHED_STATES",
     "JobCancelled",
     "JobControl",

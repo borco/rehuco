@@ -7,13 +7,14 @@ from typing import Final, cast
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QItemSelectionModel, QPoint
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QMenu, QMessageBox, QToolBar, QWidget
+from PySide6.QtWidgets import QHeaderView, QMenu, QMessageBox, QToolBar, QWidget
 from rehuco_core import FINISHED_JOB_STATES, MOVABLE_JOB_STATES, JobState, JobStatus, StopRequest, TaskQueue
 
 from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
-from .task_progress_delegate import TaskProgressDelegate
-from .task_queue_model import LABEL_COLUMN, PROGRESS_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
+from .task_info_delegate import TaskInfoDelegate
+from .task_queue_model import INFO_COLUMN, LABEL_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
 from .task_queue_widget_ui import Ui_TaskQueueWidget
+from .task_state_delegate import STATE_COLUMN_WIDTH, TaskStateDelegate
 from .task_text_delegate import TaskTextDelegate
 
 TASK_PAUSE_ICON: Final = ":/icons/task_pause.svg"
@@ -84,12 +85,20 @@ class TaskQueueWidget(QWidget):
         self.__ui: Final = Ui_TaskQueueWidget()
         self.__ui.setupUi(self)
         self.__ui.task_view.setModel(self.__model)
-        text_delegate = TaskTextDelegate(self, state_colors=TASK_STATE_COLORS)
-        self.__ui.task_view.setItemDelegateForColumn(LABEL_COLUMN, text_delegate)
-        self.__ui.task_view.setItemDelegateForColumn(STATE_COLUMN, text_delegate)
         self.__ui.task_view.setItemDelegateForColumn(
-            PROGRESS_COLUMN, TaskProgressDelegate(self, state_colors=TASK_STATE_COLORS)
+            LABEL_COLUMN, TaskTextDelegate(self, state_colors=TASK_STATE_COLORS)
         )
+        self.__ui.task_view.setItemDelegateForColumn(
+            STATE_COLUMN, TaskStateDelegate(self, state_colors=TASK_STATE_COLORS)
+        )
+        self.__ui.task_view.setItemDelegateForColumn(
+            INFO_COLUMN, TaskInfoDelegate(self, state_colors=TASK_STATE_COLORS)
+        )
+        # fixed, and to the header rather than the contents: the state cells hold one 16px glyph and
+        # would collapse to a letter of their own title (#248)
+        header = self.__ui.task_view.horizontalHeader()
+        header.setSectionResizeMode(STATE_COLUMN, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(STATE_COLUMN, STATE_COLUMN_WIDTH)
         # selectionModel() is None only before a model is set (setModel just did)
         self.__selection_model: Final = cast(QItemSelectionModel, self.__ui.task_view.selectionModel())
 

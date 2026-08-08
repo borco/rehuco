@@ -14,9 +14,12 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 
 LABEL_COLUMN: Final = 0
 STATE_COLUMN: Final = 1
-PROGRESS_COLUMN: Final = 2
+INFO_COLUMN: Final = 2
 COLUMN_COUNT: Final = 3
-COLUMN_TITLES: Final = ("Task", "State", "Progress")
+COLUMN_TITLES: Final = ("Task", "State", "Info")
+"""*Info* rather than *Progress* (#248): the cell holds a byte count, a resource count, a failure
+reason, or nothing, and only one of those four is progress. (*Notes* was the alternative and reads as
+something a user wrote; this is machine-reported.)"""
 
 STATE_LABELS: Final = {
     JobState.QUEUED: "Queued",
@@ -306,8 +309,8 @@ class TaskQueueModel(QAbstractTableModel):
 
     @staticmethod
     def __display(status: JobStatus, column: int) -> str | None:
-        """What a cell's plain text is -- the label and state columns; the progress column is drawn by
-        :class:`~rehuco_agent.tasks.task_progress_delegate.TaskProgressDelegate`, not read as text.
+        """What a cell's plain text is -- the label and state columns; the info column is drawn by
+        :class:`~rehuco_agent.tasks.task_info_delegate.TaskInfoDelegate`, not read as text.
         """
         if column == LABEL_COLUMN:
             return status.label
@@ -317,10 +320,16 @@ class TaskQueueModel(QAbstractTableModel):
 
     @staticmethod
     def __tooltip(status: JobStatus) -> str:
-        """The full story a cell's text elides: the failure reason in full, the resume cost, and
-        whether this row is about to be lost at quit.
+        """The full story the row's cells do not spell out: what state it is in, the failure reason in
+        full, the resume cost, and whether this row is about to be lost at quit.
+
+        **The state leads, because the column showing it is icons now** (#248): a glyph is faster to
+        scan and slower to learn, so the sentence it stands for has to be one hover away rather than
+        gone. :func:`state_text` is what writes it, so the icon and the words can only ever agree.
         """
-        lines = [status.error] if status.error else []
+        lines = [state_text(status)]
+        if status.error:
+            lines.append(status.error)
         lines.append(resume_hint(status))
         if not status.persistable:
             lines.append(NOT_SAVED_HINT)
