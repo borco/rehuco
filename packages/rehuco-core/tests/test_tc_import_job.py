@@ -15,6 +15,7 @@ from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
+    EXCLUDED_FILE_PATTERNS,
     FINISHED_JOB_STATES,
     TC_IMPORT_KIND,
     JobState,
@@ -225,11 +226,13 @@ def test_a_run_hands_its_parameters_to_the_conversion(
     del present
     document = mocker.MagicMock(spec=RehuDocument)
     convert = mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=document)
-    job = TcImportJob(TC_PATH, overwrite=True, username="alice")
+    job = TcImportJob(TC_PATH, overwrite=True, username="alice", excluded_patterns=("*.tmp",))
 
     job.run(control)  # pyright: ignore[reportArgumentType]
 
-    convert.assert_called_once_with(TC_PATH, keep_backups=True, overwrite=True, username="alice")
+    convert.assert_called_once_with(
+        TC_PATH, keep_backups=True, overwrite=True, username="alice", excluded_patterns=("*.tmp",)
+    )
 
 
 def test_a_run_reports_only_start_and_finish(mocker: MockerFixture, control: FakeControl, present: None) -> None:
@@ -303,13 +306,14 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
     * capture a job built with overwrite on and an explicit username
     * check every value is a JSON primitive
     """
-    job = TcImportJob(TC_PATH, overwrite=True, username="alice")
+    job = TcImportJob(TC_PATH, overwrite=True, username="alice", excluded_patterns=("*.tmp",))
 
     assert job.capture_state() == {
         "path": str(TC_PATH),
         "overwrite": True,
         "keep_backups": True,
         "username": "alice",
+        "excluded_patterns": ["*.tmp"],
     }
 
 
@@ -321,7 +325,9 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
     * restore a fresh job from another's captured state
     * check what it will run over
     """
-    captured = TcImportJob(TC_PATH, overwrite=True, keep_backups=False, username="alice").capture_state()
+    captured = TcImportJob(
+        TC_PATH, overwrite=True, keep_backups=False, username="alice", excluded_patterns=("*.tmp",)
+    ).capture_state()
     restored = TcImportJob()
 
     restored.restore_state(captured)
@@ -330,6 +336,7 @@ def test_a_restored_job_is_the_job_that_was_queued() -> None:
     assert restored.overwrite is True
     assert restored.keep_backups is False
     assert restored.username == "alice"
+    assert restored.excluded_patterns == ("*.tmp",)
     assert restored.label == "Import legacy catalog - sculpting"
 
 
@@ -348,6 +355,22 @@ def test_a_state_written_before_keep_backups_was_optional_restores_true() -> Non
 
     assert job.keep_backups is True
     assert job.overwrite is False
+
+
+def test_a_state_written_before_excluded_patterns_was_optional_restores_the_default() -> None:
+    """A queue saved by a build that predates this key must come back with the built-in exclusion
+    set, matching :class:`~rehuco_core.ChecksumJob`'s own tolerant restore.
+
+    **Test steps:**
+
+    * restore from a state carrying only a path
+    * check the exclusion set falls back to the default
+    """
+    job = TcImportJob()
+
+    job.restore_state({"path": str(TC_PATH)})
+
+    assert job.excluded_patterns == EXCLUDED_FILE_PATTERNS
 
 
 @mark.parametrize(

@@ -38,6 +38,7 @@ from rehuco_core import (
 
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
@@ -665,7 +666,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         with LogScope.open(self.path):
             LOG.info("Converting %s, %s", self.path, "keeping backups" if keep_backups else "discarding originals")
             self.__document = convert_tc(
-                self.path, keep_backups=keep_backups, overwrite=overwrite, username=self.__document.username
+                self.path,
+                keep_backups=keep_backups,
+                overwrite=overwrite,
+                username=self.__document.username,
+                excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             )
             LOG.info("Converted to %s", self.__document.path)
         self.__seed_from_document()
