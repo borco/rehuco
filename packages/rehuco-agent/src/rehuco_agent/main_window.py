@@ -245,11 +245,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.statusBar().showMessage(text)
 
     def __add_open_documents(self, menu: QMenu) -> None:
-        """Rebuild ``menu`` with Close All / Close Missing Files and every currently open document,
-        alphabetically by title (#61, #96).
+        """Rebuild ``menu`` with every currently open document, alphabetically by title (#61).
 
         Listed directly under ``View``, below the three static theme entries and their trailing
-        separator (#57) -- not mixed into them. Rebuilt fresh on every ``aboutToShow`` rather than
+        separator (#57) -- not mixed into them. ``Close All``/``Close Missing Files`` used to lead
+        this same tail (#96); they moved to ``File``, grouped below ``Close`` (#247), once both
+        needed a keyboard shortcut and a menu rebuilt from scratch on every show is not where a
+        shortcut-bearing action wants to live. Rebuilt fresh on every ``aboutToShow`` rather than
         kept in sync incrementally -- the open set, titles, paths, and lock reasons all change
         independently (open/close/rename/save-as/revert), and a menu only actually needs to be
         correct while it's showing. Only :attr:`__dynamic_view_menu_actions` -- this method's own
@@ -266,18 +268,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widgets = sorted(
             self.__documents_dock.open_document_widgets(), key=lambda widget: widget.model.label.casefold()
         )
-
-        close_all_action = menu.addAction("Close All")
-        close_all_action.setEnabled(bool(widgets))
-        close_all_action.triggered.connect(self.__documents_dock.close_all)
-        self.__dynamic_view_menu_actions.append(close_all_action)
-
-        close_missing_action = menu.addAction("Close Missing Files")
-        close_missing_action.setEnabled(self.__documents_dock.has_missing_documents())
-        close_missing_action.triggered.connect(self.__documents_dock.close_missing)
-        self.__dynamic_view_menu_actions.append(close_missing_action)
-
-        self.__dynamic_view_menu_actions.append(menu.addSeparator())
 
         if not widgets:
             placeholder = menu.addAction("No Open Docks")
@@ -344,6 +334,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
         self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
         self.__ui.close_action.triggered.connect(self.__documents_dock.close_focused_document)
+        self.__ui.close_missing_action.triggered.connect(self.__documents_dock.close_missing)
+        self.__ui.close_all_action.triggered.connect(self.__documents_dock.close_all)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
@@ -355,6 +347,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # it's seen, same as __populate_docks_menu/__populate_recents_menu rebuild fresh on every
         # aboutToShow (#64)
         self.__ui.file_menu.aboutToShow.connect(self.__settings_action_icon_handler.resync_companion_checked_state)
+        # close_missing_action/close_all_action moved here from the View menu's own dynamic rebuild
+        # (#96, #247) -- resynced the same lazy way that rebuild always read them: fresh right before
+        # the menu holding them shows, since the open set and which of it is missing both change
+        # independently of any signal narrower than that
+        self.__ui.file_menu.aboutToShow.connect(self.__resync_close_actions_enabled)
+
+    def __resync_close_actions_enabled(self) -> None:
+        """Recompute ``Close Missing Files``/``Close All``'s enabled state (#96, #247).
+
+        Read fresh off the documents dock every time, mirroring :meth:`__add_open_documents`'s own
+        reasoning for its dynamic tail: the open set and which of it is missing both change
+        independently (open/close/rename/revert), and a menu only actually needs to be correct while
+        it's showing.
+        """
+        self.__ui.close_missing_action.setEnabled(self.__documents_dock.has_missing_documents())
+        self.__ui.close_all_action.setEnabled(bool(self.__documents_dock.open_document_widgets()))
 
     def __on_open_rehu(self) -> None:
         """Prompt for a ``.rehu`` file and open it (``File`` > ``Open rehu...``, #64)."""

@@ -16,7 +16,7 @@ from borco_pyside.dialogs import DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from PySide6.QtCore import QByteArray, Qt
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QScrollArea, QWidget
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
@@ -100,13 +100,14 @@ def discard_unsaved_changes_on_close(mocker: MockerFixture) -> Any:
 @fixture
 def dock_entries() -> Callable[[MainWindow], list[Any]]:
     """Factory returning ``window``'s current per-document ``View`` menu entries (#57) -- the
-    trailing part of the dynamic tail ``__add_open_documents`` rebuilds, excluding the static theme
-    entries/separator above it as well as Close All / Close Missing Files and their own trailing
-    separator (#96) -- so docks-menu tests can assert on the per-document list alone.
+    whole dynamic tail ``__add_open_documents`` rebuilds, excluding the static theme entries and
+    their trailing separator above it -- so docks-menu tests can assert on the per-document list
+    alone. ``Close All``/``Close Missing Files`` used to lead this same tail (#96); they moved to
+    ``File`` (#247), so the tail is nothing but the per-document list (or its placeholder) now.
     """
 
     def factory(window: MainWindow) -> list[Any]:
-        return list(window._MainWindow__dynamic_view_menu_actions)[3:]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        return list(window._MainWindow__dynamic_view_menu_actions)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     return factory
 
@@ -2298,80 +2299,95 @@ def test_docks_menu_entry_triggering_focuses_that_document(
     focus_document.assert_called_once_with(widget)
 
 
-def test_close_all_and_close_missing_files_actions_are_added_before_the_document_list(qtbot: QtBot) -> None:
-    """``Close All`` and ``Close Missing Files``, plus their trailing separator, are added before
-    the per-document list and tracked in ``__dynamic_view_menu_actions`` (#96).
+def test_close_actions_are_grouped_below_close_in_the_file_menu(qtbot: QtBot) -> None:
+    """``Close Missing Files`` and ``Close All`` sit right below ``Close`` in ``File``, in that
+    order, and precede ``Save all`` (#96, moved from ``View`` by #247).
 
     **Test steps:**
 
-    * construct ``MainWindow`` with nothing open and populate the docks menu
-    * verify the first three tracked actions are Close All, Close Missing Files, and a separator
+    * construct ``MainWindow``
+    * read ``File``'s actions in order
+    * verify Close, Close Missing Files and Close All are adjacent, in that order, before Save all
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    actions = ui.file_menu.actions()
 
-    actions = window._MainWindow__dynamic_view_menu_actions  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert [action.text() for action in actions[:2]] == ["Close All", "Close Missing Files"]
-    assert actions[2].isSeparator()
+    assert actions.index(ui.close_action) + 1 == actions.index(ui.close_missing_action)
+    assert actions.index(ui.close_missing_action) + 1 == actions.index(ui.close_all_action)
+    assert actions.index(ui.close_all_action) < actions.index(ui.save_all_action)
 
 
-def test_close_all_action_is_enabled_iff_a_document_is_open(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``Close All`` is enabled iff any document is open (#96).
+def test_close_all_action_shortcut_is_ctrl_shift_w(qtbot: QtBot) -> None:
+    """``Close All`` (``File``, #247) carries ``Ctrl+Shift+W``.
 
     **Test steps:**
 
-    * construct ``MainWindow`` with nothing open and populate the docks menu
+    * construct ``MainWindow``
+    * verify ``close_all_action``'s shortcut
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert ui.close_all_action.shortcut() == QKeySequence("Ctrl+Shift+W")
+
+
+def test_close_all_action_is_enabled_iff_a_document_is_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``Close All`` (``File``, moved from ``View`` by #247) is enabled iff any document is open
+    (#96), resynced fresh right before ``File`` shows -- the same laziness its old home in ``View``
+    already relied on.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` with nothing open and show ``File``
     * verify Close All is disabled
-    * stand in one open document and repopulate
+    * stand in one open document and show ``File`` again
     * verify Close All is now enabled
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[])
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    close_all_action = window._MainWindow__dynamic_view_menu_actions[0]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert not close_all_action.isEnabled()  # pylint: disable=no-member
+    ui.file_menu.aboutToShow.emit()
+    assert not ui.close_all_action.isEnabled()
 
     widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
     widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
     mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    close_all_action = window._MainWindow__dynamic_view_menu_actions[0]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert close_all_action.isEnabled()  # pylint: disable=no-member
+    ui.file_menu.aboutToShow.emit()
+    assert ui.close_all_action.isEnabled()
 
 
 def test_close_missing_files_action_is_enabled_iff_a_document_is_missing(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``Close Missing Files`` is enabled iff ``DocumentsDock.has_missing_documents`` reports a
-    missing document (#93, #96).
+    """``Close Missing Files`` (``File``, moved from ``View`` by #247) is enabled iff
+    ``DocumentsDock.has_missing_documents`` reports a missing document (#93, #96).
 
     **Test steps:**
 
-    * construct ``MainWindow``, stand in no missing documents, and populate the docks menu
+    * construct ``MainWindow``, stand in no missing documents, and show ``File``
     * verify Close Missing Files is disabled
-    * stand in a missing document and repopulate
+    * stand in a missing document and show ``File`` again
     * verify Close Missing Files is now enabled
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     mocker.patch.object(documents_dock, "has_missing_documents", return_value=False)
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    close_missing_action = window._MainWindow__dynamic_view_menu_actions[1]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert not close_missing_action.isEnabled()  # pylint: disable=no-member
+    ui.file_menu.aboutToShow.emit()
+    assert not ui.close_missing_action.isEnabled()
 
     mocker.patch.object(documents_dock, "has_missing_documents", return_value=True)
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    close_missing_action = window._MainWindow__dynamic_view_menu_actions[1]  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-
-    assert close_missing_action.isEnabled()  # pylint: disable=no-member
+    ui.file_menu.aboutToShow.emit()
+    assert ui.close_missing_action.isEnabled()
 
 
 def test_close_all_action_triggering_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2379,20 +2395,19 @@ def test_close_all_action_triggering_delegates_to_the_documents_dock(mocker: Moc
 
     **Test steps:**
 
-    * populate the docks menu with one open document, so Close All is enabled
-    * trigger the Close All action
-    * verify ``DocumentsDock.close_all`` was called
+    * construct ``MainWindow``
+    * mock ``DocumentsDock.close_all``
+    * trigger ``close_all_action``
+    * verify it was called
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
-    widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
-    mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
     close_all = mocker.patch.object(documents_dock, "close_all")
+    ui.close_all_action.setEnabled(True)  # a disabled action's trigger() is a no-op; a document is open in practice
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    window._MainWindow__dynamic_view_menu_actions[0].trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access,no-member
+    ui.close_all_action.trigger()
 
     close_all.assert_called_once_with()
 
@@ -2404,18 +2419,19 @@ def test_close_missing_files_action_triggering_delegates_to_the_documents_dock(
 
     **Test steps:**
 
-    * populate the docks menu with a missing document standing in, so Close Missing Files is enabled
-    * trigger the Close Missing Files action
-    * verify ``DocumentsDock.close_missing`` was called
+    * construct ``MainWindow``
+    * mock ``DocumentsDock.close_missing``
+    * trigger ``close_missing_action``
+    * verify it was called
     """
     window = MainWindow()
     qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    mocker.patch.object(documents_dock, "has_missing_documents", return_value=True)
     close_missing = mocker.patch.object(documents_dock, "close_missing")
+    ui.close_missing_action.setEnabled(True)  # a disabled action's trigger() is a no-op; a document would be missing
 
-    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    window._MainWindow__dynamic_view_menu_actions[1].trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access,no-member
+    ui.close_missing_action.trigger()
 
     close_missing.assert_called_once_with()
 

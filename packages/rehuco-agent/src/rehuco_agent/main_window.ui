@@ -38,6 +38,8 @@
     <addaction name="open_recents_menu"/>
     <addaction name="separator"/>
     <addaction name="close_action"/>
+    <addaction name="close_missing_action"/>
+    <addaction name="close_all_action"/>
     <addaction name="save_all_action"/>
     <addaction name="separator"/>
     <addaction name="sweep_checksums_action"/>
@@ -104,6 +106,25 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+W</string>
+   </property>
+  </action>
+  <action name="close_missing_action">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close &amp;Missing Files</string>
+   </property>
+  </action>
+  <action name="close_all_action">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>Close &amp;All</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+W</string>
    </property>
   </action>
   <action name="save_all_action">
