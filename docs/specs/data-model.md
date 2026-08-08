@@ -78,10 +78,13 @@ conflict resolution is scoped to the relevant sub-block *within* the one file ([
 - [#222: feat: Plugin > Reference Images settings page — configurable content-image extension list](https://github.com/borco/rehuco/issues/222)
 - [#198: feat: compute the content-image count — advertised_count / current_count with a measure/apply
   row](https://github.com/borco/rehuco/issues/198)
+- [#250: fix: info.tc is a directory-scoped resource](https://github.com/borco/rehuco/issues/250)
 
 Two patterns for what a `.rehu` describes:
 
-- **Directory-scoped**: `info.rehu`, alongside `infoXX.jpg/png/gif/webp` images and an `info.checksum` record
+- **Directory-scoped**: `info.rehu` — or the legacy `info.tc` a conversion has not reached yet, which tc4 wrote one
+  of per resource directory and which is therefore directory-scoped in exactly the same sense (#250) — alongside
+  `infoXX.jpg/png/gif/webp` images and an `info.checksum` record
   ([[data-model#checksums]]). Covers tutorials (flat or nested) and folder-based resources generally. The record covers
   everything in the directory **except** `info.rehu` and the `infoXX.*` images, so description/images stay freely
   editable without invalidating integrity checks.
@@ -95,6 +98,16 @@ Two patterns for what a `.rehu` describes:
   `*.rehu` entries (normally this shouldn't happen — it's meant to be one or the other). Rather than forbid this
   outright, the app caches and displays all such entries and flags the situation with a warning, leaving resolution to
   the user.
+- **The rule is stated once and every layer reads it** (#250). *Which* filenames mean *this record describes its
+  directory* is one predicate — `is_directory_scoped` — asked by the content walk, the content-image walk, the rename
+  plan, every job label and the agent's tab title. It used to be spelled out at each of those eight places, all of them
+  agreeing on `info.rehu` and all of them blind to `info.tc`: a catalog opened before conversion got five tabs titled
+  `info.tc` and a `Verify checksums` that hashed the `.tc` file rather than the resource it describes, writing an
+  `info.checksum` whose baseline was one small YAML file. A named `foo.tc` behaves as `foo.rehu` does, unchanged —
+  the rule is about the one filename, not the extension.
+- **A legacy document keeps its checksum actions.** Verifying an unconverted resource against the `.sfv` a predecessor
+  left beside it is the case #243 exists for, and the record it seeds is the one the converted resource inherits.
+  Refusing the actions while a document is locked would have been the cheaper fix and throws that away.
 
 What a **reference-images** resource's content *is* was settled by #197: content lives inside archives — `.zip` or
 `.cbz`, a comic-book zip being the same container under another name — never as loose image files beside the `.rehu`.
@@ -275,7 +288,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
   from the `.rehu` path, and both the size-on-disk scan and checksum generate/verify read that one answer. A file
   summed by one and skipped by the other is a bug with no honest resolution: a verify would report an
   *unexpected new file* the size the user was shown already counted.
-- **Two tiers of exclusion, and only one is the user's.** **Structural** — **every** `.rehu` a scan meets, at any
+- **Two tiers of exclusion, and only one is the user's.** **Structural** — **every record** a scan meets, at any
   depth, together with the files that belong to it: its `<record>NN` screenshots (`<record>NN` plus an image
   extension, the same shape [[data-model#image-meanings]] defines, so a numbered *video* stays content) and its
   `<record>.checksum` record -- and the legacy manifest suffixes a predecessor or an external checker may have left
@@ -286,7 +299,17 @@ What a **reference-images** resource's content *is* was settled by #197: content
   `info.rehu` does not reach down and claim a `bar/info00.jpg` that has no `bar/info.rehu`, while a
   `baz/info00.jpg` beside `baz/info.rehu` is skipped. And **the record has to exist** — a name is bookkeeping
   because a record claims it, never because of its shape, so `xxx00.jpg` with no `xxx.rehu` and `yyy.sfv` with no
-  `yyy.rehu` are ordinary files that merely look like bookkeeping. **A retained `.orig` conversion backup is
+  `yyy.rehu` are ordinary files that merely look like bookkeeping. **A record is a `.rehu` or a legacy `.tc`**
+  (#250) — so an unconverted `info.tc` is its directory's bookkeeping and claims the `info.sfv`, `info.checksum` and
+  `infoNN` siblings beside it, exactly as the `info.rehu` replacing it will. Otherwise the same directory measures a
+  different set the moment it is converted, for a reason that has nothing to do with its content, and a claim seeded
+  from the old manifest (#243) would describe a resource that no longer exists. **A legacy record claims its
+  screenshots by scheme rather than by stem** — `01.jpg`, `cover.jpg`, `sample-01.jpg`, `file(2).jpg`, `file-01.jpg`
+  ([[acquisition-tooling#screenshot-schemes]]), none of them named after the record, so the `<record>NN` rule cannot
+  reach them and only a `.tc` in the same directory says whose they are. What is skipped is exactly what a conversion
+  renames aside, winners and losing variants alike; where no `.tc` sits, a `01.jpg` is an ordinary file and stays
+  counted.
+  **A retained `.orig` conversion backup is
   structural as well** (#253), and is the one exception to that last condition: a backup belongs to the directory it
   sits in rather than to a stem — a legacy screenshot is named `cover.jpg`, carrying nothing that ties it to its
   resource ([[acquisition-tooling#convert-mechanics]]) — so there is no record to look it up against, and **any**

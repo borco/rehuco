@@ -27,10 +27,10 @@ from .constants import (
     CHECKSUM_MANIFEST_EXTENSIONS,
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
-    INFO_REHU_FILENAME,
-    REHU_SUFFIX,
 )
+from .resource_scoping import is_directory_scoped, is_legacy_record_name, is_record_name
 from .tc_conversion_backups import is_conversion_backup
+from .tc_screenshots import is_legacy_screenshot
 
 MAX_NAMED_UNREADABLE: Final = 3
 """How many unreadable directories an error names before it counts the rest.
@@ -112,17 +112,22 @@ class ContentEnumeration:
 class ContentFileScanner:  # pylint: disable=too-few-public-methods
     """Enumerates one resource's content files ([[data-model#resource-scoping]]).
 
-    File-scoped (``rehu_path.name != "info.rehu"``): the same-stem siblings and nothing else -- a
+    Which of the two it is comes from :func:`~rehuco_core.resource_scoping.is_directory_scoped` rather
+    than from a name compared here (#250): the size scan and the checksums may not disagree with the tab
+    title about what a record describes, and a legacy ``info.tc`` is directory-scoped in exactly the sense
+    ``info.rehu`` is.
+
+    File-scoped (a named ``foo.rehu``/``foo.tc``): the same-stem siblings and nothing else -- a
     whitelist named by the ``.rehu`` itself, never a directory walk. An unrelated ``info.rehu``,
     ``bar00.jpg`` or ``bar.zip`` in the same directory belongs to another resource or to none, and is out
     of scope *before* any exclusion is consulted; no pattern can reach it, and emptying the pattern list
     cannot change it.
 
-    Directory-scoped (``info.rehu``): everything under the directory, recursively, minus two tiers of
-    exclusion.
+    Directory-scoped (``info.rehu``/``info.tc``): everything under the directory, recursively, minus two
+    tiers of exclusion.
 
-    **Structural** -- every ``.rehu`` the walk finds, at any depth, together with the files that belong to
-    it: its ``<record>NN`` screenshots and its ``<record>.checksum`` record -- together with the legacy
+    **Structural** -- every **record** the walk finds, at any depth, together with the files that belong
+    to it: its ``<record>NN`` screenshots and its ``<record>.checksum`` record -- together with the legacy
     manifest suffixes an external checker may have left beside it ([[data-model#checksums]]). Not just
     the scanning resource's own: a nested ``bar/info.rehu`` and a file-scoped ``baz.rehu`` sitting in the
     tree bring their own bookkeeping. [[data-model#checksums]] and [[data-model#image-meanings]] define
@@ -132,6 +137,20 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
     manifest stay valid until the *content* actually changes. The nested resource's real content still
     counts (``baz.zip``, ``bar/video.mp4``): a nested record is not a boundary
     ([[data-model#resource-scoping]]), only its bookkeeping is skipped.
+
+    **A legacy ``.tc`` is a record** (#250), so it is bookkeeping wherever it sits and it claims the
+    ``info.sfv``/``info.checksum``/``infoNN`` siblings beside it exactly as the ``info.rehu`` that
+    replaces it will. Without that, an unconverted resource's content was *the ``.tc`` file and its own
+    manifest* -- and the same directory measured a different set the moment it was converted, for a reason
+    that has nothing to do with its content. What makes one is
+    :data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`, the same answer the scope question comes from.
+
+    **And it claims its screenshots by scheme.** tc4 named them ``01.jpg``, ``cover.jpg``,
+    ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the record -- so the
+    ``<record>NN`` rule cannot reach them and only a directory holding a ``.tc`` can say whose they are.
+    :func:`~rehuco_core.tc_screenshots.is_legacy_screenshot` is asked, the same recognition a conversion
+    renames by, so what this walk skips is exactly what
+    :func:`~rehuco_core.originals_to_back_up` moves aside.
 
     **A record claims only its own directory.** Screenshots and manifests are a record's siblings by
     definition ([[data-model#resource-scoping]]), so ``baz00.jpg`` is bookkeeping where ``baz.rehu`` sits
@@ -184,7 +203,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         """
         directory = self.__rehu_path.parent
         unreadable: list[Path] = []
-        if self.__rehu_path.name == INFO_REHU_FILENAME:
+        if is_directory_scoped(self.__rehu_path):
             files = self.__scan_directory(directory, unreadable)
         else:
             files = self.__scan_siblings(directory, unreadable)
@@ -201,10 +220,12 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         """
         filenames = self.__read_directory(directory, [], unreadable)
         records = self.__record_names(filenames) | {self.__slug}
+        legacy = self.__holds_legacy_record(filenames)
         matches = sorted(
             filename
             for filename in filenames
-            if os.path.splitext(filename)[0].lower() == self.__slug and not self.__is_bookkeeping(filename, records)
+            if os.path.splitext(filename)[0].lower() == self.__slug
+            and not self.__is_bookkeeping(filename, records, legacy)
         )
         return [directory / filename for filename in matches]
 
@@ -236,10 +257,11 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
             records = self.__record_names(filenames)
             if current == self.__rehu_path.parent:
                 records.add(self.__slug)
+            legacy = self.__holds_legacy_record(filenames)
             matches.extend(
                 current / filename
                 for filename in filenames
-                if not self.__is_bookkeeping(filename, records) and not self.__is_excluded(filename)
+                if not self.__is_bookkeeping(filename, records, legacy) and not self.__is_excluded(filename)
             )
         return sorted(matches, key=str)
 
@@ -289,37 +311,65 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         """Take the record names out of one directory's listing -- the first of the two passes.
 
         :param filenames: one directory's filenames.
-        :returns: the stems of the ``.rehu`` files among them, lower-cased.
+        :returns: the stems of the record files among them -- ``.rehu`` and legacy ``.tc`` alike
+            ([[data-model#resource-scoping]], #250) -- lower-cased.
         """
-        stems = (os.path.splitext(filename) for filename in filenames)
-        return {stem.lower() for stem, suffix in stems if suffix.lower() == REHU_SUFFIX}
+        stems = (os.path.splitext(filename)[0] for filename in filenames if is_record_name(filename))
+        return {stem.lower() for stem in stems}
 
-    def __is_bookkeeping(self, filename: str, records: set[str]) -> bool:
+    @staticmethod
+    def __holds_legacy_record(filenames: list[str]) -> bool:
+        """Whether one directory's listing includes a ``.tc`` -- the second of the two passes.
+
+        A directory rather than a stem, for the reason :mod:`rehuco_core.tc_conversion_backups` gives
+        about the backups it leaves: a legacy screenshot is named ``cover.jpg`` or ``01.jpg`` and carries
+        nothing tying it back to the record it belongs to, so the record it belongs to is *whichever one
+        this directory holds* (#250).
+
+        :param filenames: one directory's filenames.
+        :returns: whether a legacy record sits among them.
+        """
+        return any(is_legacy_record_name(filename) for filename in filenames)
+
+    def __is_bookkeeping(self, filename: str, records: set[str], legacy: bool) -> bool:
         """Whether ``filename`` is a resource record, one of the files that belong to one, or a
         conversion backup held on one's behalf.
 
-        Every ``.rehu`` counts, wherever it sits -- the scanning resource's, a nested one's, a
-        file-scoped neighbour's. A screenshot or a manifest counts only where a record of that name sits
+        Every record counts, wherever it sits and whichever format it is (#250) -- the scanning
+        resource's, a nested one's, a file-scoped neighbour's, and the legacy ``.tc`` a conversion has not
+        reached yet. A screenshot or a manifest counts only where a record of that name sits
         beside it, so the same ``info00.jpg`` is bookkeeping next to an ``info.rehu`` and a normal file
         in a directory that has none. A ``.orig`` backup counts wherever it sits and against no record at
         all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
         :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here.
 
         :param filename: the candidate's file name.
+        **A legacy record's screenshots are named by scheme, not by stem** (#250): tc4 wrote ``01.jpg``,
+        ``cover.jpg``, ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg``, none of which carries the
+        record's name, so the ``<record>NN`` rule below cannot see them and they would otherwise be the
+        only bookkeeping a conversion renames that this walk still counted. Recognized through
+        :func:`~rehuco_core.tc_screenshots.is_legacy_screenshot` and only where a ``.tc`` sits in the same
+        directory, which keeps the set skipped here identical to the set
+        :func:`~rehuco_core.originals_to_back_up` moves aside -- so converting a resource does not change
+        what it is measured to hold. Without the directory condition a live tutorial's own ``01.jpg``
+        would vanish from the measurement meant to cover it.
+
+        :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, one of a record's screenshots, a record's checksum manifest, or
-            a retained conversion backup.
+        :param legacy: whether that directory holds a ``.tc``, from :meth:`__holds_legacy_record`.
+        :returns: whether it is a record, one of a record's screenshots -- ``<record>NN`` or a legacy
+            scheme -- a record's checksum manifest, or a retained conversion backup.
         """
-        if is_conversion_backup(filename):
+        if is_conversion_backup(filename) or is_record_name(filename):
             return True
         stem, suffix = os.path.splitext(filename)
         suffix = suffix.lower()
-        if suffix == REHU_SUFFIX:
-            return True
         stem = stem.lower()
         if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
             return stem in records
         if suffix in IMAGE_EXTENSIONS:
+            if legacy and is_legacy_screenshot(filename):
+                return True
             screenshot = self.__SCREENSHOT_NAME_PATTERN.match(stem)
             return screenshot is not None and screenshot["record"] in records
         return False

@@ -48,6 +48,8 @@ from .constants import (
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
     INFO_REHU_FILENAME,
+    INFO_TC_FILENAME,
+    LEGACY_SUFFIX,
     REHU_SUFFIX,
     VIDEO_EXTENSIONS,
 )
@@ -134,6 +136,14 @@ from .rename_coordination import (
     RenameYieldTimeout,
     ResourceLocation,
 )
+from .resource_scoping import (
+    DIRECTORY_SCOPED_FILENAMES,
+    RECORD_SUFFIXES,
+    is_directory_scoped,
+    is_legacy_record_name,
+    is_record_name,
+    resource_name,
+)
 from .storage_traits import readers_must_yield_for_directory_rename
 from .tasks import (
     DEFAULT_SHUTDOWN_TIMEOUT,
@@ -167,7 +177,6 @@ from .tc_backups_jobs import (
 from .tc_conversion import TcConverter, convert_tc, originals_to_back_up
 from .tc_conversion_backups import (
     BACKUP_SUFFIX,
-    LEGACY_SUFFIX,
     STAGED_SUFFIX,
     ConversionBackups,
     ConversionReverter,
@@ -196,8 +205,14 @@ from .tc_conversion_plan import (
 )
 from .tc_description import TcDescriptionRewriter, rewrite_description_images
 from .tc_document import TcDocument, load_tc, tc_to_rehu_data
-from .tc_import_job import INFO_TC_FILENAME, TC_IMPORT_KIND, TcImportJob
-from .tc_screenshots import ScreenshotRename, TcScreenshotScanner, scan_tc_screenshot_files, scan_tc_screenshots
+from .tc_import_job import TC_IMPORT_KIND, TcImportJob
+from .tc_screenshots import (
+    ScreenshotRename,
+    TcScreenshotScanner,
+    is_legacy_screenshot,
+    scan_tc_screenshot_files,
+    scan_tc_screenshots,
+)
 from .titled_index import INDEX_KEY, TITLE_KEY, titled_index, with_titled_index
 
 __version__ = "0.1.0"
@@ -261,6 +276,7 @@ __all__ = [
     "DEFAULT_SHUTDOWN_TIMEOUT",
     "DEFAULT_TASK_JOB_REGISTRY",
     "DEFAULT_UNKNOWN_USERNAME",
+    "DIRECTORY_SCOPED_FILENAMES",
     "DURATION_PROBES",
     "DiscardBackupsJob",
     "DurationProbe",
@@ -295,6 +311,7 @@ __all__ = [
     "PluginBlock",
     "PluginRegistry",
     "PluginSpec",
+    "RECORD_SUFFIXES",
     "REFERENCE_IMAGES_FIELD_NAMES",
     "REFERENCE_IMAGES_PLUGIN",
     "REHU_SUFFIX",
@@ -357,6 +374,10 @@ __all__ = [
     "forget_checksums",
     "generate_checksums",
     "is_conversion_backup",
+    "is_directory_scoped",
+    "is_legacy_record_name",
+    "is_legacy_screenshot",
+    "is_record_name",
     "legacy_manifest_candidates",
     "legacy_manifest_for",
     "load_checksum_record",
@@ -373,6 +394,7 @@ __all__ = [
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
     "rename_rehu_resource",
+    "resource_name",
     "restore_backup",
     "revert_conversion",
     "rewrite_description_images",

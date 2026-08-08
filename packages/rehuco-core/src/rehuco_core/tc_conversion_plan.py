@@ -23,12 +23,12 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
-from .constants import REHU_SUFFIX
+from .constants import LEGACY_SUFFIX, REHU_SUFFIX
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuFormatError
 from .rehu_format import CORE_BLOCK_KEY
 from .tc_conversion import originals_to_back_up
-from .tc_conversion_backups import LEGACY_SUFFIX, backup_path
+from .tc_conversion_backups import backup_path
 from .tc_document import TcDocument
 from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
 

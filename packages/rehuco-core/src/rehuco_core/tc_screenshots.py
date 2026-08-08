@@ -6,6 +6,7 @@ already expects. Stays core-side and GUI-free: callers resolve ``stem`` however 
 ``RehuDocumentModel.current_name``) and pass it in as a plain string.
 """
 
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -58,6 +59,25 @@ def scan_tc_screenshot_files(directory: Path, stem: str) -> list[Path]:
     :returns: each slot winner's absolute path, sorted by slot index.
     """
     return [directory / rename.source_filename for rename in scan_tc_screenshots(directory, stem)]
+
+
+def is_legacy_screenshot(filename: str) -> bool:
+    """Whether ``filename`` is one of tc4's screenshot names -- a slot winner or a losing variant.
+
+    The classification alone, with none of the ranking: this reads a name and opens nothing, where
+    :func:`scan_tc_screenshots` compares pixel dimensions to decide which of several files claims a slot.
+
+    Asked by the content walk (:mod:`rehuco_core.rehu_content_files`), which excludes a legacy record's
+    screenshots the way it excludes an ``infoNN.jpg`` beside an ``info.rehu`` (#250). Answering here
+    rather than restating the schemes there is what keeps the set that walk skips identical to the set
+    :func:`~rehuco_core.originals_to_back_up` renames aside -- *every* recognized image, winners and
+    losers alike -- so a directory's content is the same set before and after it is converted.
+
+    :param filename: a file's name, not its path.
+    :returns: whether it is a recognized legacy screenshot.
+    """
+    stem, suffix = os.path.splitext(filename)
+    return suffix.lower() in IMAGE_EXTENSIONS and TcScreenshotScanner.slot_index(stem) is not None
 
 
 class TcScreenshotScanner:  # pylint: disable=too-few-public-methods
@@ -117,7 +137,7 @@ class TcScreenshotScanner:  # pylint: disable=too-few-public-methods
         """
         slots: dict[int, list[str]] = {}
         for filename in self.__recognized_images():
-            index = self.__slot_index(Path(filename).stem)
+            index = self.slot_index(Path(filename).stem)
             if index is not None:
                 slots.setdefault(index, []).append(filename)
         return slots
@@ -134,21 +154,25 @@ class TcScreenshotScanner:  # pylint: disable=too-few-public-methods
             return []
         return [entry.name for entry in entries if entry.suffix.lower() in IMAGE_EXTENSIONS]
 
-    def __slot_index(self, file_stem: str) -> int | None:
+    @classmethod
+    def slot_index(cls, file_stem: str) -> int | None:
         """Classify one filename's stem against the five patterns.
+
+        Public, and a classmethod, because the recognition is worth asking without a scan: the content
+        walk has to know whether a name is a screenshot and has no directory to rank (#250).
 
         :param file_stem: the filename without its extension.
         :returns: the slot index it belongs to, or ``None`` if it matches no recognized pattern.
         """
-        if match := self.__BARE_NUMERIC_RE.match(file_stem):
+        if match := cls.__BARE_NUMERIC_RE.match(file_stem):
             return int(match.group(1))
-        if match := self.__SAMPLE_RE.match(file_stem):
+        if match := cls.__SAMPLE_RE.match(file_stem):
             return int(match.group(1))
-        if match := self.__FILE_SERIES_RE.match(file_stem):
+        if match := cls.__FILE_SERIES_RE.match(file_stem):
             return int(match.group(1)) if match.group(1) else 0
-        if self.__COVER_RE.match(file_stem):
+        if cls.__COVER_RE.match(file_stem):
             return 0
-        if match := self.__FILE_SMALL_RE.match(file_stem):
+        if match := cls.__FILE_SMALL_RE.match(file_stem):
             return int(match.group(1))
         return None
 

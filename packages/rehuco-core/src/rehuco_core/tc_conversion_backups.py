@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from .constants import IMAGE_EXTENSIONS
+from .constants import IMAGE_EXTENSIONS, LEGACY_SUFFIX
 from .rehu_document import RehuDocument, RehuFormatError
 from .rehu_screenshots import scan_rehu_screenshot_files
 
@@ -34,9 +34,6 @@ STAGED_SUFFIX: Final = ".reverting"
 ``info.rehu.reverting``). Nothing is deleted until every backup is back under its original name, so a
 revert that fails part-way can put the converted state back exactly as it found it -- and a restore
 target the conversion had itself overwritten is free by the time its backup needs it."""
-
-LEGACY_SUFFIX: Final = ".tc"
-"""The source format a conversion consumes; its backup is what marks a directory as revertible."""
 
 
 def is_conversion_backup(filename: str) -> bool:

@@ -144,10 +144,14 @@ def fixture_present(mocker: MockerFixture) -> None:
     [
         (INFO_PATH, "Verify checksums - sculpting"),
         (ARCHIVE_REHU_PATH, "Verify checksums - pack.rehu"),
+        (DIRECTORY / "info.tc", "Verify checksums - sculpting"),
     ],
 )
 def test_a_job_names_the_resource_rather_than_its_record(path: Path, expected: str) -> None:
-    """A label names the directory for an ``info.rehu`` and the file otherwise.
+    """A label names the directory for a directory-scoped record and the file otherwise.
+
+    A legacy ``info.tc`` is one of those (#250) -- a verify against the ``.sfv`` beside it is a run this
+    build offers (#243), and a queue of fifty of them may not read ``info.tc`` fifty times over.
 
     **Test steps:**
 

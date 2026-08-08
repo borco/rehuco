@@ -24,9 +24,9 @@ from typing import Any, Final
 
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
+from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
 from .tc_conversion import convert_tc
-from .tc_conversion_backups import LEGACY_SUFFIX
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -34,28 +34,12 @@ TC_IMPORT_KIND: Final = "tc-import"
 """What a saved queue spells this job as ([[appendices.task-queue#lifetime]]) -- a promise once written
 into a user's queue file, never casually renamed."""
 
-INFO_TC_FILENAME: Final = f"info{LEGACY_SUFFIX}"
-"""A directory-scoped `.tc` resource's filename, the legacy counterpart of
-:data:`~rehuco_core.INFO_REHU_FILENAME` -- what :func:`resource_name` tells apart from a file-scoped one."""
-
 STATE_PATH_KEY: Final = "path"
 STATE_OVERWRITE_KEY: Final = "overwrite"
 STATE_KEEP_BACKUPS_KEY: Final = "keep_backups"
 STATE_USERNAME_KEY: Final = "username"
 """The keys this job writes itself down under, read back by this class and nothing else
 ([[appendices.task-queue#lifetime]])."""
-
-
-def resource_name(tc_path: Path) -> str:
-    """How a `.tc` resource is named in a job's label -- the directory for ``info.tc``, else the filename.
-
-    The legacy-scoping rule ([[data-model#resource-scoping]]) applied to a label, the same shape
-    :func:`~rehuco_core.checksum_jobs.resource_name` follows for a converted ``.rehu``.
-
-    :param tc_path: the resource's `.tc` file.
-    :returns: the display name.
-    """
-    return tc_path.parent.name if tc_path.name == INFO_TC_FILENAME else tc_path.name
 
 
 class TcImportJob(TaskJobBase):

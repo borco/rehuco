@@ -668,10 +668,15 @@ def test_rename_location_goes_straight_to_disk_without_a_coordinator(mocker: Moc
     [
         param("C:/tutorials/some_folder/info.rehu", "some_folder", id="info.rehu-uses-parent-dir"),
         param("C:/tutorials/my_tutorial.rehu", "my_tutorial", id="standalone-uses-file-stem"),
+        param("C:/tutorials/some_folder/info.tc", "some_folder", id="info.tc-uses-parent-dir"),
+        param("C:/tutorials/my_tutorial.tc", "my_tutorial", id="standalone-tc-uses-file-stem"),
     ],
 )
 def test_current_name_is_the_rename_target(path: str, expected: str) -> None:
-    """``current_name`` is the folder name for ``info.rehu``, the file stem otherwise.
+    """``current_name`` is the folder name for a directory-scoped record, the file stem otherwise.
+
+    A legacy ``info.tc`` is one of those (#250), so the name a rename suggestion offers to replace is the
+    same one the tab shows and the same one :class:`~rehuco_core.RehuRenamer` would move.
 
     **Test steps:**
 
@@ -1759,6 +1764,22 @@ def test_path_label_uses_the_bare_filename_for_a_non_info_rehu() -> None:
     * verify it returns that file's bare name
     """
     assert path_label(Path("/fake/sculpting/sculpting.rehu")) == "sculpting.rehu"
+
+
+def test_path_label_names_the_directory_for_a_legacy_info_tc() -> None:
+    """`path_label` labels an ``info.tc`` by its folder too -- tc4 wrote one per resource directory (#250).
+
+    Keying on ``info.rehu`` alone gave a catalog opened before conversion a tab strip reading ``info.tc``
+    all the way across, with nothing to tell five documents apart -- which is the failure the label rule
+    exists to prevent. A named ``foo.tc`` keeps its filename, the way ``foo.rehu`` does.
+
+    **Test steps:**
+
+    * call ``path_label`` on an ``info.tc`` path and on a named ``.tc``
+    * verify the first names its folder and the second its own file
+    """
+    assert path_label(Path("/fake/sculpting/info.tc")) == "sculpting/"
+    assert path_label(Path("/fake/sculpting/sculpting.tc")) == "sculpting.tc"
 
 
 def test_bind_resolves_the_current_value_and_a_stable_changed_signal(model: RehuDocumentModel) -> None:

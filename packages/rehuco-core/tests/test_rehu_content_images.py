@@ -6,7 +6,13 @@ from typing import Final
 from unittest.mock import MagicMock
 
 from pytest_mock import MockerFixture
-from rehuco_core import INFO_REHU_FILENAME, ContentImageEntry, enumerate_content_images, scan_rehu_screenshot_files
+from rehuco_core import (
+    INFO_REHU_FILENAME,
+    INFO_TC_FILENAME,
+    ContentImageEntry,
+    enumerate_content_images,
+    scan_rehu_screenshot_files,
+)
 
 DIRECTORY: Final = Path("/fake/refimages")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
@@ -190,6 +196,29 @@ def test_directory_scoped_includes_a_subdirectory_with_its_own_info_rehu(mocker:
     entries = enumerate_content_images(DIRECTORY_SCOPED_PATH)
 
     assert entries == [ContentImageEntry(nested_archive, "page01.jpg")]
+
+
+def test_a_legacy_info_tc_is_directory_scoped_too(mocker: MockerFixture) -> None:
+    """An unconverted ``info.tc`` counts the archives its directory holds (#250).
+
+    The scope comes from :func:`~rehuco_core.is_directory_scoped`, so this walk and the content-file
+    walk cannot disagree about the same record. Taking the file-scoped branch would have looked for an
+    ``info.zip`` that a tc4 catalog never had.
+
+    **Test steps:**
+
+    * mock the tree to hold a root archive and a nested one
+    * enumerate ``info.tc``'s content images
+    * verify both archives' entries came back
+    """
+    root_zip = DIRECTORY / "a.zip"
+    nested_cbz = DIRECTORY / "sub" / "b.cbz"
+    mock_tree(mocker, [root_zip, nested_cbz])
+    mock_archives(mocker, {root_zip: [zip_info("page01.jpg")], nested_cbz: [zip_info("page02.jpg")]})
+
+    entries = enumerate_content_images(DIRECTORY / INFO_TC_FILENAME)
+
+    assert entries == [ContentImageEntry(root_zip, "page01.jpg"), ContentImageEntry(nested_cbz, "page02.jpg")]
 
 
 # endregion
