@@ -213,6 +213,19 @@ class DocumentsDock(QMainWindow):
         for dock in list(self.__document_docks):
             self.__remove_dock(dock)
 
+    def close_focused_document(self) -> None:
+        """Close the currently focused document, prompting first if it is dirty (``File`` >
+        ``Close``, ``Ctrl+W``, #247).
+
+        Goes through the same per-document guard a tab's own close button does
+        (:meth:`__close_dock`), not the batch guard :meth:`close_all` uses -- there is exactly one
+        document to confirm. A no-op with no document dock focused; the action driving this is
+        disabled then, so this only guards a stale trigger.
+        """
+        current = self.__tracker.current_dock
+        if current is not None:
+            self.__close_dock(current)
+
     def close_missing(self) -> None:
         """Close every open document locked with the ``MISSING`` reason (#93, #96).
 
