@@ -18,7 +18,9 @@ from rehuco_agent.tasks.task_progress_delegate import PROGRESS_MAXIMUM, TaskProg
 from rehuco_agent.tasks.task_queue_model import TaskQueueModel
 from rehuco_core import JobState, JobStatus
 
-CELL: Final = QRect(0, 0, 120, 20)
+CELL: Final = QRect(0, 0, 400, 20)
+"""Wide enough that the reason text below is never elided -- a narrower cell is its own concern,
+covered by ``test_task_row_delegate.py``'s own elision test."""
 
 
 # region fixtures
@@ -68,6 +70,10 @@ def painter(qapp: Any) -> Iterator[QPainter]:
 def style(mocker: MockerFixture) -> Any:
     """Stand in for ``QApplication.style()`` so the drawn control and its option can be read back.
 
+    Only the progress bar goes through the style -- the failure reason's text is drawn directly by
+    :meth:`~.task_row_delegate.TaskRowDelegate.paint_text` (#251), covered separately in
+    ``test_task_row_delegate.py``.
+
     :returns: the fake style whose ``drawControl`` records what the delegate asked for.
     """
     fake_application = mocker.patch.object(delegate_module, "QApplication")
@@ -83,7 +89,9 @@ def paint(status: Any, painter: QPainter) -> None:
     :param painter: the painter to draw with.
     """
     model = OneRowModel(status)
-    TaskProgressDelegate().paint(painter, QStyleOptionViewItem(), model.index(0, 0))
+    option = QStyleOptionViewItem()
+    option.rect = CELL
+    TaskProgressDelegate().paint(painter, option, model.index(0, 0))
 
 
 def drawn(style: Any) -> tuple[Any, Any]:
@@ -181,38 +189,36 @@ def test_progress_past_the_total_clamps_the_bar_but_prints_the_disagreement(pain
     assert option.text == "9/4"
 
 
-def test_a_failed_job_draws_its_reason_instead_of_a_bar(painter: QPainter, style: Any) -> None:
+def test_a_failed_job_draws_its_reason_instead_of_a_bar(painter: QPainter, style: Any, mocker: MockerFixture) -> None:
     """The progress column carries nothing useful for a failed row, so it carries the reason.
 
     **Test steps:**
 
     * paint a failed job carrying an error
-    * verify an item (not a bar) was drawn, holding the reason as its text
+    * verify the reason was drawn, and no bar was
     """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
     status = JobStatus(serial=1, label="job", state=JobState.FAILED, error="ValueError: nope")
 
     paint(status, painter)
 
-    element, option = drawn(style)
-
-    assert element == QStyle.ControlElement.CE_ItemViewItem
-    assert option.text == "ValueError: nope"
+    assert "ValueError: nope" in [call.args[-1] for call in drawn_text.call_args_list]
+    style.drawControl.assert_not_called()
 
 
-def test_a_failed_job_with_no_reason_draws_an_empty_cell(painter: QPainter, style: Any) -> None:
+def test_a_failed_job_with_no_reason_draws_an_empty_cell(painter: QPainter, mocker: MockerFixture) -> None:
     """A failed row is drawn as text whether or not a reason came with it -- never as a bar.
 
     **Test steps:**
 
     * paint a failed job with no error string
-    * verify an item was drawn, with empty text
+    * verify empty text was drawn rather than nothing at all
     """
+    drawn_text = mocker.patch.object(QPainter, "drawText")
+
     paint(JobStatus(serial=1, label="job", state=JobState.FAILED), painter)
 
-    element, option = drawn(style)
-
-    assert element == QStyle.ControlElement.CE_ItemViewItem
-    assert option.text == ""
+    assert "" in [call.args[-1] for call in drawn_text.call_args_list]
 
 
 def test_a_row_that_is_not_a_job_is_left_to_the_base_delegate(painter: QPainter, style: Any) -> None:

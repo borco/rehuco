@@ -20,3 +20,11 @@ ERROR_COLOR: Final = "#C62828"
 """A deeper red than :data:`WARNING_COLOR`'s orange-leaning coral, so the two read as distinct
 severities at a glance rather than the same color with a different icon. The inline notice banner's
 ``error`` severity."""
+
+QUEUED_COLOR: Final = "#FFB300"
+"""Material Amber 600 -- the task queue's ``QUEUED`` row tint (#251), distinct from :data:`INFO_COLOR`'s
+blue ``RUNNING`` tint so queued and running read apart at a glance, the pair a reader scans for most."""
+
+DONE_COLOR: Final = "#43A047"
+"""Material Green 600 -- the task queue's ``DONE`` row tint (#251); the first token here marking
+something that finished rather than something to watch."""

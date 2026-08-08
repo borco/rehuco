@@ -6,12 +6,15 @@ from typing import Final, cast
 
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QItemSelectionModel, QPoint
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMenu, QMessageBox, QToolBar, QWidget
 from rehuco_core import FINISHED_JOB_STATES, MOVABLE_JOB_STATES, JobState, JobStatus, StopRequest, TaskQueue
 
+from ..fields.colors import DONE_COLOR, ERROR_COLOR, INFO_COLOR, QUEUED_COLOR
 from .task_progress_delegate import TaskProgressDelegate
-from .task_queue_model import PROGRESS_COLUMN, STARTS_OVER_HINT, TaskQueueModel
+from .task_queue_model import LABEL_COLUMN, PROGRESS_COLUMN, STARTS_OVER_HINT, STATE_COLUMN, TaskQueueModel
 from .task_queue_widget_ui import Ui_TaskQueueWidget
+from .task_text_delegate import TaskTextDelegate
 
 TASK_PAUSE_ICON: Final = ":/icons/task_pause.svg"
 TASK_RUN_ICON: Final = ":/icons/task_run.svg"
@@ -30,6 +33,22 @@ RETRIABLE_STATES: Final = frozenset({JobState.FAILED, JobState.CANCELLED})
 ``DONE`` is deliberately absent: retrying it is not *wrong*, but offering it as a control invites
 re-running work that succeeded ([[appendices.task-queue#kept]] frames retry as the recovery for a
 failure or a cancellation)."""
+
+TASK_STATE_COLORS: Final[dict[JobState, QColor]] = {
+    JobState.QUEUED: QColor(QUEUED_COLOR),
+    JobState.RUNNING: QColor(INFO_COLOR),
+    JobState.DONE: QColor(DONE_COLOR),
+    JobState.FAILED: QColor(ERROR_COLOR),
+    JobState.CANCELLED: QColor(ERROR_COLOR),
+}
+"""What a task row is tinted by (#251), from the same tokens the log dock and the inline notice banner
+use (`rehuco_agent.fields.colors`) -- ``FAILED``/``CANCELLED`` sharing :data:`~.fields.colors.ERROR_COLOR`
+by decision: both are *did not finish*, and what separates a job that broke from one that was stopped
+on purpose is left to the state column's text.
+
+``JobState.PAUSED`` is deliberately absent, which paints it plain, the same way
+:attr:`~borco_pyside.logging.LogLevelBand.DEBUGS` is left out of the log dock's own map -- there is
+nothing to draw attention to about a job someone parked."""
 
 PAUSE_TOOLTIP: Final = "Ask the selected jobs to pause."
 STARTS_OVER_SOME_TOOLTIP: Final = "Some of them start again from the beginning when resumed."
@@ -65,7 +84,12 @@ class TaskQueueWidget(QWidget):
         self.__ui: Final = Ui_TaskQueueWidget()
         self.__ui.setupUi(self)
         self.__ui.task_view.setModel(self.__model)
-        self.__ui.task_view.setItemDelegateForColumn(PROGRESS_COLUMN, TaskProgressDelegate(self))
+        text_delegate = TaskTextDelegate(self, state_colors=TASK_STATE_COLORS)
+        self.__ui.task_view.setItemDelegateForColumn(LABEL_COLUMN, text_delegate)
+        self.__ui.task_view.setItemDelegateForColumn(STATE_COLUMN, text_delegate)
+        self.__ui.task_view.setItemDelegateForColumn(
+            PROGRESS_COLUMN, TaskProgressDelegate(self, state_colors=TASK_STATE_COLORS)
+        )
         # selectionModel() is None only before a model is set (setModel just did)
         self.__selection_model: Final = cast(QItemSelectionModel, self.__ui.task_view.selectionModel())
 

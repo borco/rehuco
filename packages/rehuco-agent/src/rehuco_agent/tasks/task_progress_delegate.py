@@ -4,25 +4,24 @@
 
 from typing import Final, override
 
-from PySide6.QtCore import QModelIndex, QPersistentModelIndex, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QApplication, QStyle, QStyledItemDelegate, QStyleOptionProgressBar, QStyleOptionViewItem
+from PySide6.QtWidgets import QApplication, QStyle, QStyleOptionProgressBar, QStyleOptionViewItem
 from rehuco_core import JobState, JobStatus
 
 from .task_queue_model import TaskQueueModel
-
-type ModelIndex = QModelIndex | QPersistentModelIndex
-"""What Qt hands a delegate method; the persistent form arrives from a view holding onto an index."""
+from .task_row_delegate import ModelIndex, TaskRowDelegate
 
 PROGRESS_MAXIMUM: Final = 1000
 """The bar's own scale, independent of a job's ``total`` -- a percentage with three decimal digits of
 resolution, which is plenty for any ``done``/``total`` pair a job reports."""
 
 
-class TaskProgressDelegate(QStyledItemDelegate):
+class TaskProgressDelegate(TaskRowDelegate):
     """Paints :attr:`~rehuco_agent.tasks.task_queue_model.PROGRESS_COLUMN`: a bar for a job still doing
     something, its failure reason -- elided, with the full text on the row's tooltip -- for one that
-    is not.
+    is not, over the row's selection fill and state tint (:class:`~.task_row_delegate.TaskRowDelegate`,
+    #251).
 
     **Indeterminate is drawn honestly, not guessed at.** ``total is None`` (a job that cannot estimate
     one) and ``total == 0`` both draw a busy bar rather than a stalled one at either extreme, and
@@ -35,6 +34,7 @@ class TaskProgressDelegate(QStyledItemDelegate):
     `LogLevelDelegate` shows a foreign model.
 
     :param parent: optional Qt parent.
+    :param state_colors: the tint per state; states absent from it are drawn plain.
     """
 
     @override
@@ -43,25 +43,15 @@ class TaskProgressDelegate(QStyledItemDelegate):
         if not isinstance(status, JobStatus):
             super().paint(painter, option, index)
             return
-        if status.state == JobState.FAILED:
-            self.__paint_reason(painter, option, status)
-            return
-        self.__paint_bar(painter, option, status)
-
-    @staticmethod
-    def __paint_reason(painter: QPainter, option: QStyleOptionViewItem, status: JobStatus) -> None:
-        """Draw the failure reason as elided text -- the base delegate's own elision, over this row's
-        real display text.
-
-        :param painter: the painter to draw with.
-        :param option: the item's rect, palette and state.
-        :param status: the failed job.
-        """
-        text_option = QStyleOptionViewItem(option)
-        text_option.text = status.error or ""
-        style = QApplication.style()
-        if style is not None:
-            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, text_option, painter)
+        painter.save()
+        try:
+            self.paint_background(painter, option, status.state)
+            if status.state == JobState.FAILED:
+                self.paint_text(painter, option, status.error or "")
+                return
+            self.__paint_bar(painter, option, status)
+        finally:
+            painter.restore()
 
     @staticmethod
     def __paint_bar(painter: QPainter, option: QStyleOptionViewItem, status: JobStatus) -> None:
