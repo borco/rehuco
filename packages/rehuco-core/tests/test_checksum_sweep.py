@@ -523,6 +523,36 @@ def test_a_sweep_counts_the_entries_it_pruned_across_the_catalog(
     assert "info.tc.orig" not in catalog.entries_of(PAINTING)
 
 
+def test_a_sweep_moves_a_claim_to_the_record_that_covers_it_now(
+    catalog: FakeCatalog, freezer: FrozenDateTimeFactory
+) -> None:
+    """The other half of catching up with exclusive coverage, over a whole catalog (#257).
+
+    A nested record appearing under a resource that was already checksummed is the common shape: the
+    archive's claim exists only in the record above it, and the sweep hands it down. **Which order the
+    two resources are swept in does not matter** -- the nested one is walked first here, so the claim
+    arrives after its own verify has run and is checked on the next sweep, which is exactly what a
+    dateless entry is for.
+
+    **Test steps:**
+
+    * drop a nested ``info.rehu`` beside a resource's archive, after both records were written
+    * sweep with everything already stale
+    * check the entry left the enclosing record, arrived in the nested one, and was counted once
+    """
+    freezer.move_to(MUCH_LATER)
+    nested = ROOT / "sculpting" / "extras" / "info.rehu"
+    catalog.files[nested] = b'{"format_version": 2}'
+
+    job = sweep(stale_after=WEEK)
+    run(job)
+
+    assert job.tally is not None
+    assert job.tally.moved == 1
+    assert "extras/pack.zip" not in catalog.entries_of(SCULPTING)
+    assert "pack.zip" in catalog.entries_of(nested)
+
+
 def test_a_sweep_allowed_to_create_records_baselines_the_resource_that_had_none(
     catalog: FakeCatalog, freezer: FrozenDateTimeFactory
 ) -> None:
@@ -789,8 +819,9 @@ def test_a_retry_drops_the_last_sweep_s_findings(catalog: FakeCatalog) -> None:
         (SweepTally(resources=0, unreadable_branches=2), "0 resources, 2 unreadable directories"),
         (SweepTally(resources=0, unreadable_branches=1), "0 resources, 1 unreadable directory"),
         (SweepTally(resources=2, statuses={"matched": 4}, pruned=3), "2 resources, 4 matched, 3 pruned"),
+        (SweepTally(resources=2, statuses={"matched": 4}, moved=1), "2 resources, 4 matched, 1 moved"),
     ],
-    ids=["one resource", "verdicts", "not checked", "branches", "one branch", "pruned"],
+    ids=["one resource", "verdicts", "not checked", "branches", "one branch", "pruned", "moved"],
 )
 def test_a_summary_says_what_a_sweep_established(tally: SweepTally, expected: str) -> None:
     """One line, in :func:`~rehuco_core.checksum_report_summary`'s voice.
