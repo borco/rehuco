@@ -209,7 +209,7 @@ def test_selected_text_uses_the_same_highlighted_pen_the_fill_used(
     pens_when_drawn: list[QColor] = []
     mocker.patch.object(QPainter, "drawText", side_effect=lambda *args: pens_when_drawn.append(painter.pen().color()))
 
-    delegate.paint_text(painter, option, "boom")
+    delegate.paint_text(painter, option.rect, "boom")
     painter.end()
 
     assert pens_when_drawn == [option.palette.highlightedText().color()]
@@ -230,13 +230,38 @@ def test_long_text_is_elided_to_the_cells_width(
     drawn = mocker.patch.object(QPainter, "drawText")
 
     original = "a label so long it cannot possibly fit in a narrow task-queue column"
-    delegate.paint_text(painter, option, original)
+    delegate.paint_text(painter, option.rect, original)
     painter.end()
 
     drawn.assert_called_once()
     elided = drawn.call_args.args[-1]
     assert elided != original
     assert len(elided) < len(original)
+
+
+def test_text_can_be_drawn_into_a_slot_of_the_cell_rather_than_the_whole_of_it(
+    delegate: TaskRowDelegate, option: QStyleOptionViewItem, mocker: MockerFixture
+) -> None:
+    """The rect is the caller's, which is what lets the info column put a bar and a figure side by
+    side in one cell (#248) -- and the alignment goes with it, since a figure is centred on its slot
+    where a label starts at the left.
+
+    **Test steps:**
+
+    * draw into the right-hand half of the cell, aligned right
+    * assert the rect drawn into is that half, and the alignment was carried through
+    """
+    image = QImage(option.rect.size(), QImage.Format.Format_ARGB32)
+    painter = QPainter(image)
+    drawn = mocker.patch.object(QPainter, "drawText")
+    slot = QRect(option.rect.center().x(), option.rect.top(), option.rect.width() // 2, option.rect.height())
+
+    delegate.paint_text(painter, slot, "9/4", alignment=Qt.AlignmentFlag.AlignRight)
+    painter.end()
+
+    rect, alignment, _text = drawn.call_args.args
+    assert slot.contains(rect)
+    assert alignment & Qt.AlignmentFlag.AlignRight
 
 
 # endregion

@@ -78,6 +78,17 @@ class StopRequest(StrEnum):
     """Stop for good. Whatever the job undoes on the way out is the job's own business."""
 
 
+PROGRESS_UNIT_BYTES: Final = "bytes"
+"""What a job counting the bytes it has read or written declares (#248).
+
+**Names rather than an enumeration**, so that a job this package has never heard of can declare a unit
+of its own and a surface that does not recognize it still draws something honest. The two below are
+what the jobs shipped here count, and they exist so that neither side spells the string by hand."""
+
+PROGRESS_UNIT_RESOURCES: Final = "resources"
+"""What a job counting whole resources declares (#248)."""
+
+
 class JobCancelled(Exception):
     """Raised out of a job to report that it obeyed a cancel.
 
@@ -117,7 +128,9 @@ class JobControl(Protocol):
     def report(self, done: int, total: int | None = None) -> None:
         """Say how far this job has got.
 
-        :param done: units finished so far, in whatever unit this job counts.
+        :param done: units finished so far, in whatever unit this job counts -- **which unit that is,
+            the job says once**, in :attr:`TaskJob.progress_unit` (#248). Nothing here converts,
+            labels or scales it.
         :param total: units expected in all, or ``None`` when the job cannot say -- a scan that
             discovers as it walks genuinely does not know, and an honest *indeterminate* is what a
             view can draw. Deliberately not a percentage: only the job knows what it is counting.
@@ -201,6 +214,27 @@ class TaskJob(Protocol):
         manifest it checks against is correct; pausing and resuming it is wasteful rather than wrong.
         """
 
+    @property
+    def progress_unit(self) -> str:  # pyright: ignore[reportReturnType]
+        """What this job's :meth:`JobControl.report` counts, e.g. :data:`PROGRESS_UNIT_BYTES` -- or
+        ``""`` for a job with no progress worth showing (#248).
+
+        **The job is what knows.** ``done`` and ``total`` are bare numbers, so a run hashing four
+        gigabytes and a sweep over forty resources are indistinguishable to anything downstream; a
+        surface handed both would have to guess, and would draw one of them wrong. This is the fact that
+        makes them tellable apart, and it is the job's own for the same reason ``source`` and
+        ``resumes_where_it_stopped`` are ([[appendices.task-queue#job-responsibility]]).
+
+        **A unit, not a rendering.** Nothing here says how wide a bar is, what a byte count is spelled
+        as, or whether anything is drawn at all -- this package has no view in it and gains no
+        formatting dependency ([[appendices.task-queue#home]]). It says what is being counted, and a
+        surface decides what to do about that. ``""`` is the honest answer for a job whose progress is
+        one step: a bar that jumps from empty to full says nothing a state column does not.
+
+        Read once at enqueue and carried on every :class:`JobStatus`, like every declaration here but
+        :attr:`source`.
+        """
+
     def run(self, control: JobControl) -> None:
         """Do the work, on the worker thread.
 
@@ -264,9 +298,9 @@ class TaskJob(Protocol):
         """
 
 
-# Eleven, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
-# it has got, what went wrong, what has been asked of it, what stopping it would cost, and whether it
-# will still be here tomorrow. The last four are the job's own declarations, copied here so that a
+# Twelve, and each is a distinct fact a reader of one row wants: who it is, what it is doing, how far
+# it has got and in what, what went wrong, what has been asked of it, what stopping it would cost, and
+# whether it will still be here tomorrow. The last five are the job's own declarations, copied here so that a
 # status answers without reaching back for the job object -- which a reader on another thread has no
 # business holding.
 @dataclass(frozen=True)
@@ -283,6 +317,9 @@ class JobStatus:
     :param state: where the job is now.
     :param done: units finished, as last reported.
     :param total: units expected, or ``None`` for indeterminate -- see :meth:`JobControl.report`.
+    :param progress_unit: the job's :attr:`TaskJob.progress_unit`, read once at enqueue -- what the two
+        numbers above are *in*, without which they cannot be drawn honestly (#248). ``""`` on a job with
+        no progress worth showing.
     :param error: why a :attr:`JobState.FAILED` job failed, as ``"TypeName: message"``, else ``None``.
         The text rather than the exception: the full traceback is written to the log, where it can be
         read, and a snapshot carrying a live exception invites a reader to re-raise it on a thread
@@ -311,6 +348,7 @@ class JobStatus:
     state: JobState
     done: int = 0
     total: int | None = None
+    progress_unit: str = ""
     error: str | None = None
     stop_requested: StopRequest | None = None
     source: Path | None = None

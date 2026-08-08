@@ -127,7 +127,9 @@ class TcImportJob(TaskJobBase):
         """Convert this job's `.tc`, reporting nothing but start and finish.
 
         One call, one file: :func:`~rehuco_core.convert_tc` divides no further, so there is nothing
-        finer than *not started* / *done* for :meth:`~rehuco_core.tasks.JobControl.report` to say.
+        finer than *not started* / *done* for :meth:`~rehuco_core.tasks.JobControl.report` to say --
+        which is why this job declares no :attr:`~rehuco_core.tasks.TaskJob.progress_unit` (#248): a
+        cell jumping from empty to full says nothing the state column does not already.
 
         :param control: the engine's face to this job.
         :raises FileExistsError: the target ``.rehu`` exists and :attr:`overwrite` is ``False``, or a

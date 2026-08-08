@@ -150,7 +150,21 @@ checks against is correct, and pausing it is *wasteful* rather than *wrong*. Req
 resume in place before it could be paused would be exactly the constraint-on-every-client this design
 keeps refusing.
 
-Two more declarations are read beside it at enqueue: `source`, the `.rehu` this job is about — the job's
+A second bit crosses on the same terms, and for the same reason: **`progress_unit`, what this job's
+`report` counts** ([#248](https://github.com/borco/rehuco/issues/248)). `done` and `total` are bare
+numbers, so a run hashing four gigabytes and a sweep over forty resources are one pair of integers to
+everything downstream; a surface handed both has to guess, and draws one of them wrong. The job is what
+knows, so the job says — once, at enqueue, like everything else here.
+
+It is a **unit, not a rendering**. Core says what is being counted and nothing about how wide a bar is,
+what a byte count is spelled as, or whether anything is drawn at all — §1 would be violated by any of
+the three, and the engine would gain a formatting dependency it has no use for. `""` is the honest
+answer for a job whose progress is one step, and it means *draw nothing*: a bar jumping from empty to
+full says less than the state column beside it. Which unit names exist is deliberately open rather than
+a closed set, so a job this package never heard of can declare its own; §8 says what a surface does
+with one it does not recognize.
+
+Two more declarations are read beside these at enqueue: `source`, the `.rehu` this job is about — the job's
 own declaration, so there is one answer and nothing to keep in step — and `safely_interruptible`,
 whether stopping it part-way leaves nothing behind. That last is **distinct from *revertible***: a
 conversion undoes itself on failure ([[acquisition-tooling#convert-mechanics]]) and is still not safely
@@ -412,7 +426,10 @@ it that were not obvious in the abstract:
 - **The sweep counts a different unit.** `JobControl.report` is unit-free (§5), and this is the client that
   proves it was right to be: a catalog's byte total is not knowable without `stat`-ing everything first, so
   the sweep reports resources against resources while its own per-resource verifies count bytes. Nothing in
-  the engine had to change; the row's label is what tells a reader which it is looking at.
+  the engine had to change — but leaving the numbers *undeclared* was the gap
+  [#248](https://github.com/borco/rehuco/issues/248) closed: the row's label was the only thing telling a
+  reader which of the two it was looking at, and a delegate given `3/5` cannot know. Each of these jobs now
+  declares its `progress_unit`, which is the smallest thing that had to cross (§3.2).
 
 ## 7. Teardown is a courtesy with a deadline
 
@@ -473,11 +490,61 @@ rather than a discipline someone has to remember.
 perform the move, contradicting a pure view; the engine clamps an out-of-range move, so a drop would
 visibly spring back; and buttons are the only usable gesture at thousands of rows.
 
-**A failed job's reason draws in the progress column**, elided, with the full string as the row's
-tooltip — that column carries nothing useful for a failed row, and a fourth column would be blank on
-nearly every row. Progress for a job that cannot estimate its total draws an honest indeterminate bar:
-`total is None` and `total == 0` both read as busy, and `done > total` clamps the bar to full while the
-numbers underneath still disagree, since the engine clamps nothing.
+**The third column is `Info`, and each job decides how its own progress reads there**
+([#248](https://github.com/borco/rehuco/issues/248)). Core declares the unit (§3.2) and the agent holds a
+renderer per unit — humanized bytes for a checksum run, `12 / 40 resources` for a sweep — so the cell can
+hold a byte count, a resource count, a failure reason, or nothing at all. *Progress* named one of those
+four, which is why the column is not called that; *Notes* was the alternative and reads as something a
+user wrote, where this is machine-reported. A unit no renderer is registered for falls back to the bare
+`done/total`, because a job declaring one this build never heard of still has honest figures.
+
+**Two things draw an empty cell, and a zero is neither of them.** A job that declares no unit never had
+a figure to show; and a job that *counted nothing and had nothing to count* — a verify whose files were
+all checked recently, a sweep over a folder holding no resources — reports `(0, 0)` honestly, where
+`0B` would read as *this ran and moved zero bytes* rather than *there was nothing here to do*. What such
+a run established is the log's to say (`"nothing to check"`), not a table cell's. A zero against a
+**real** total is not this case and still draws: `0 / 40 resources` is a job with forty resources ahead
+of it, which is worth a reader's attention.
+
+**The bar and its figure sit side by side, never on top of each other.** The figure keeps a fixed
+100px slot at the cell's right edge, right-aligned so two rows' numbers line up, and the bar takes what
+is left. Text centred *on* a bar was tried first and is worse than either half suggests: the color that
+reads over the filled part is the wrong one over the empty part, so one end always loses its text — and
+no single pen fixes it, because the surface under the text moves as the job runs. Two areas, each with
+one background, is the whole fix. It is also where DownThemAll ends up from the other direction: its bar
+has a column and its figures have columns of their own, and nothing is ever written over the bar. The
+slot is fixed rather than fitted to the text so a running row's digits do not walk left and right as
+they change; the largest catalogs' resource counts are the one figure that elides.
+
+**The bar is drawn by this delegate, not by the style.** `CE_ProgressBar` draws a groove that is opaque
+under some styles — Fusion fills the whole cell with one — so it covered the selection fill and state
+tint #251 had just painted, and it fills the cell's full height, which is what forced the figure on top
+of it in the first place. A rounded groove at the row's ink and a chunk in the **state's own color** —
+the same value that tints the row and colors the status glyph — costs twenty lines and buys a cell whose
+every pixel this delegate decided, identical on all three platforms. It is the same rule as #251's,
+applied to the one cell that had escaped it: **this table paints its own background, and a style-drawn
+box over the top is not a cell this table controls.**
+
+**The state column is icons, no words.** Eight glyphs cover every reading it ever had — the six states,
+plus *pausing* and *cancelling* for a job that has been asked to stop and has not reached its checkpoint
+(§3.3). Each takes the state's own color, so a row and its glyph are one signal seen twice; `PAUSED`,
+which #251 leaves untinted, draws in the row's own ink for the same reason it draws no tint. Losing the
+words is what lets the column shrink to the width of its own header and gives the eye something to scan
+a long queue by, and the sentence is not gone: `state_text` still writes it, the model still answers it
+as the display role, and it leads the row's tooltip — which is what an icon-only cell owes a reader who
+has not learned the glyphs yet.
+
+**A failed job's reason draws in that column too**, elided, with the full string as the row's tooltip —
+it carries nothing useful for a failed row, and a fourth column would be blank on nearly every row.
+`done > total` clamps the bar to full while the numbers underneath still disagree, since the engine
+clamps nothing.
+
+**There is no busy bar, and that is a reversal.** Until #248 a `total` of `None` or `0` drew
+`QStyleOptionProgressBar` with `maximum = 0`, on the reasoning that an honest *indeterminate* beats a bar
+stalled at either extreme. That was right about the alternatives and wrong about the medium: Qt's busy
+indicator is an **animation**, and a delegate repaints only when its row's data changes, so it never runs
+and the cell paints as garbage. A bar is drawn only where there is a fraction to draw; every other case
+is text, or nothing. This is recorded rather than merely deleted so the next reader does not restore it.
 
 **No force-start**, matching §3.3: the queue runs exactly one job at a time, so its order already is the
 answer to *what runs next*. Resuming a multi-selection schedules them all and the topmost starts; to run

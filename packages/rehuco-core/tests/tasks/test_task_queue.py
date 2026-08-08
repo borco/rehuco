@@ -27,6 +27,8 @@ from typing import Final
 import pytest
 from pytest import fixture
 from rehuco_core import (
+    PROGRESS_UNIT_BYTES,
+    PROGRESS_UNIT_RESOURCES,
     JobCancelled,
     JobControl,
     JobPaused,
@@ -366,6 +368,7 @@ class DeclaringJob(SampleJob):
     source = Path("/library/Sculpting Series/info.rehu")
     safely_interruptible = False
     resumes_where_it_stopped = True
+    progress_unit = PROGRESS_UNIT_BYTES
 
     def __init__(self, label: str = "declaring") -> None:
         super().__init__(label)
@@ -656,9 +659,9 @@ def test_what_a_job_declares_about_itself_is_read_once_and_carried_on_its_status
 
     **Test steps:**
 
-    * enqueue a job declaring a source, that it is unsafe to interrupt, and that it resumes
+    * enqueue a job declaring a source, that it is unsafe to interrupt, that it resumes, and a unit
     * change every declaration on the job object after the enqueue
-    * verify the enqueue notification already carried all three
+    * verify the enqueue notification already carried all four
     * wait for it to finish and verify the final status still carries what was declared at enqueue
     """
     job = DeclaringJob()
@@ -666,14 +669,21 @@ def test_what_a_job_declares_about_itself_is_read_once_and_carried_on_its_status
     job.source = None
     job.safely_interruptible = True
     job.resumes_where_it_stopped = False
+    job.progress_unit = PROGRESS_UNIT_RESOURCES
 
     assert wait_for_state(listener, serial, JobState.DONE)
 
     accepted = listener.enqueued[0][0]
-    assert (accepted.source, accepted.safely_interruptible, accepted.resumes_where_it_stopped) == (
+    assert (
+        accepted.source,
+        accepted.safely_interruptible,
+        accepted.resumes_where_it_stopped,
+        accepted.progress_unit,
+    ) == (
         Path("/library/Sculpting Series/info.rehu"),
         False,
         True,
+        PROGRESS_UNIT_BYTES,
     )
     assert queue.jobs()[0].resumes_where_it_stopped
 
@@ -681,20 +691,25 @@ def test_what_a_job_declares_about_itself_is_read_once_and_carried_on_its_status
 def test_a_job_that_says_nothing_about_itself_is_interruptible_and_starts_over(
     queue: TaskQueue, listener: RecordingListener
 ) -> None:
-    """The cautious defaults: no resource, nothing left behind, and no promise to carry on.
+    """The cautious defaults: no resource, nothing left behind, no promise to carry on, nothing to draw.
 
     **Test steps:**
 
     * enqueue a plain job that declares only a label
     * wait for it to finish
-    * verify its status reports no source, safely interruptible, and no resumption
+    * verify its status reports no source, safely interruptible, no resumption, and no progress unit
     """
     serial = queue.enqueue(RecordingJob("plain"))
 
     assert wait_for_state(listener, serial, JobState.DONE)
 
     status = queue.jobs()[0]
-    assert (status.source, status.safely_interruptible, status.resumes_where_it_stopped) == (None, True, False)
+    assert (status.source, status.safely_interruptible, status.resumes_where_it_stopped, status.progress_unit) == (
+        None,
+        True,
+        False,
+        "",
+    )
 
 
 def test_the_scope_open_at_enqueue_is_the_one_the_job_runs_in(queue: TaskQueue) -> None:

@@ -101,7 +101,8 @@ class TcBackupsJob(TaskJobBase):
         One call, one resource: neither underlying operation divides further, so there is nothing finer
         than *not started* / *done* for :meth:`~rehuco_core.tasks.JobControl.report` to say -- and with
         no division there is nothing for :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint` to interrupt,
-        which is what :attr:`safely_interruptible` reports.
+        which is what :attr:`safely_interruptible` reports. Nothing worth drawing either, so this job
+        declares no :attr:`~rehuco_core.tasks.TaskJob.progress_unit` (#248).
 
         :param control: the engine's face to this job.
         :raises OSError: whatever the operation refuses with; see each subclass's :meth:`perform`. The

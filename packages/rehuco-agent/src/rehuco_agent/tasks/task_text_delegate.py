@@ -16,7 +16,7 @@ from .task_row_delegate import ModelIndex, TaskRowDelegate
 class TaskTextDelegate(TaskRowDelegate):
     """Paints :attr:`~.task_queue_model.LABEL_COLUMN` and :attr:`~.task_queue_model.STATE_COLUMN`: the
     cell's own display text, over the row's selection fill and state tint -- the plain-text sibling to
-    :class:`~.task_progress_delegate.TaskProgressDelegate`, sharing
+    :class:`~.task_info_delegate.TaskInfoDelegate`, sharing
     :meth:`~.task_row_delegate.TaskRowDelegate.paint_background` and
     :meth:`~.task_row_delegate.TaskRowDelegate.paint_text` rather than duplicating either.
 
@@ -38,6 +38,6 @@ class TaskTextDelegate(TaskRowDelegate):
         try:
             self.paint_background(painter, option, status.state)
             text = index.data(Qt.ItemDataRole.DisplayRole)
-            self.paint_text(painter, option, text if isinstance(text, str) else "")
+            self.paint_text(painter, option.rect, text if isinstance(text, str) else "")
         finally:
             painter.restore()

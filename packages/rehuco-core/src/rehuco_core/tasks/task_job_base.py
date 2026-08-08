@@ -59,6 +59,13 @@ class TaskJobBase:
     resumes_where_it_stopped: bool = False
     """Whether pausing keeps the work done; overridden by a job that keeps a cursor."""
 
+    progress_unit: str = ""
+    """What this job's progress counts; overridden by a job with progress worth showing (#248).
+
+    Empty by default because that is the honest answer for a job that reports one step: most work is
+    either a single indivisible action or something the author has not yet decided how to count, and a
+    default naming a unit would put a made-up one on both."""
+
     def __init__(self) -> None:
         self.__lock: Final = RLock()
         self.__stop: StopRequest | None = None

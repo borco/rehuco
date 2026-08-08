@@ -36,7 +36,13 @@ from .constants import EXCLUDED_FILE_PATTERNS, INFO_REHU_FILENAME
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
-from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
+from .tasks import (
+    DEFAULT_TASK_JOB_REGISTRY,
+    PROGRESS_UNIT_BYTES,
+    PROGRESS_UNIT_RESOURCES,
+    JobControl,
+    TaskJobBase,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -122,6 +128,13 @@ class ChecksumJob(TaskJobBase):
 
     kind: str = ""
     """The stable saved name; set by each subclass, empty on this base, which is never registered."""
+
+    progress_unit = PROGRESS_UNIT_BYTES
+    """A run counts bytes, because #203's callables do (#248).
+
+    **Not files.** A tutorial is three eight-gigabyte videos, and a count that moved three times in
+    twenty minutes would say nothing -- which is the same reasoning
+    :mod:`~rehuco_core.rehu_checksums` gives for counting them that way in the first place."""
 
     verb: str = ""
     """What this job does, for the label and the log -- ``"Generate"`` or ``"Verify"``."""
@@ -580,6 +593,13 @@ class SweepChecksumsJob(TaskJobBase):
 
     kind = CHECKSUM_SWEEP_KIND
 
+    progress_unit = PROGRESS_UNIT_RESOURCES
+    """A sweep counts resources, where the verifies it calls count bytes (#248).
+
+    The difference is the whole reason a job declares this rather than a surface guessing: a catalog's
+    byte total is not knowable without ``stat``-ing everything under it first, so this run reports the
+    one figure it has exactly and for free (:meth:`run`)."""
+
     def __init__(  # pylint: disable=too-many-arguments
         self,
         root: Path | None = None,
@@ -656,10 +676,10 @@ class SweepChecksumsJob(TaskJobBase):
         **Progress counts resources, not bytes.** A catalog's byte total is not knowable without
         ``stat``-ing every file under it first, and the walk that would answer it is the expensive part
         of a sweep over an SMB mount; the resource count is exact and free, and the walk runs before the
-        first read so the denominator is there from the start. :meth:`~rehuco_core.JobControl.report`
-        is deliberately unit-free for this ([[appendices.task-queue#observation]]) -- each resource's
-        own byte progress is not forwarded, since a bar that reset per resource would say less than one
-        that advanced once per resource.
+        first read so the denominator is there from the start. The numbers themselves stay unit-free
+        ([[appendices.task-queue#observation]]); :attr:`progress_unit` is what says which of the two a
+        row is looking at (#248). Each resource's own byte progress is not forwarded, since a bar that
+        reset per resource would say less than one that advanced once per resource.
 
         :param control: the engine's face to this job.
         :raises ContentUnreachableError: the folder itself would not list (#245).

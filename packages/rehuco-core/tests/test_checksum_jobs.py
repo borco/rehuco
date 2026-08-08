@@ -21,6 +21,7 @@ from rehuco_core import (
     DEFAULT_CHECKSUM_ALGORITHM,
     DEFAULT_TASK_JOB_REGISTRY,
     FINISHED_JOB_STATES,
+    PROGRESS_UNIT_BYTES,
     ChecksumJob,
     ChecksumReport,
     GenerateChecksumsJob,
@@ -181,6 +182,18 @@ def test_a_job_declares_what_stopping_it_costs() -> None:
 
     assert job.safely_interruptible
     assert not job.resumes_where_it_stopped
+
+
+def test_a_run_declares_that_it_counts_bytes() -> None:
+    """A checksum run reports bytes, which is what lets a row draw them as bytes (#248).
+
+    **Test steps:**
+
+    * build one of each run
+    * check the unit both declare
+    """
+    assert GenerateChecksumsJob(INFO_PATH).progress_unit == PROGRESS_UNIT_BYTES
+    assert VerifyChecksumsJob(INFO_PATH).progress_unit == PROGRESS_UNIT_BYTES
 
 
 def test_a_job_follows_the_resource_it_moved(mocker: MockerFixture) -> None:
