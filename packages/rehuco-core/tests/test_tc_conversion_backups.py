@@ -12,6 +12,7 @@ from rehuco_core import (
     RehuFormatError,
     conversion_backups,
     discard_conversion_backups,
+    is_conversion_backup,
     original_path,
     revert_conversion,
 )
@@ -335,6 +336,29 @@ def test_a_backup_that_vanishes_mid_inventory_counts_as_no_bytes(mocker: MockerF
 
     assert inventory.total_bytes == BACKUP_SIZE * (len(BACKUPS) - 1)
     assert inventory.backups == BACKUPS
+
+
+def test_a_backup_is_any_orig_sibling_spelled_exactly(mocker: MockerFixture) -> None:
+    """The definition the inventory here and the content walk (#253) both read, pinned on names alone.
+
+    **Any** ``.orig``, whatever it is a backup of -- a stem carries nothing tying a legacy ``cover.jpg``
+    to its resource, which is why backups are enumerated per directory -- and matched exactly, so the
+    walk skips precisely the set a revert would restore rather than a wider one.
+
+    **Test steps:**
+
+    * ask the predicate about the names a conversion writes, names it never would, and one differing
+      only in case
+    * verify only the true ``.orig`` siblings answered yes
+    """
+    del mocker
+    candidates = ["info.tc.orig", "cover.jpg.orig", "render.blend.orig", "info.tc", "info.orig.tc", "info.tc.ORIG"]
+
+    assert [name for name in candidates if is_conversion_backup(name)] == [
+        "info.tc.orig",
+        "cover.jpg.orig",
+        "render.blend.orig",
+    ]
 
 
 def test_a_path_that_is_not_a_backup_has_no_original(mocker: MockerFixture) -> None:

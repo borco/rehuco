@@ -125,7 +125,8 @@ def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> No
     **Test steps:**
 
     * build the page
-    * verify the summary names the record, the screenshots and the manifest, written from the constants
+    * verify the summary names the record, the screenshots, the manifest and the conversion backups,
+      written from the constants
     * verify none of those shapes appears in the editable list
     """
     page = ExcludedFilesPage()
@@ -135,6 +136,7 @@ def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> No
     assert "<record>.rehu — every resource record found while scanning" in summary
     assert "<record>NN with .jpg, .jpeg, .png, .gif, .webp" in summary
     assert "<record> with .checksum, .md5, .sfv, .sha1, .sha224, .sha256, .sha384, .sha512" in summary
+    assert "anything ending in .orig — the backups a conversion keeps" in summary
     assert not any("rehu" in pattern or "sfv" in pattern for pattern in listed_patterns(page))
 
 

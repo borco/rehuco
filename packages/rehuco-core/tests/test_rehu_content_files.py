@@ -312,7 +312,7 @@ def test_deleting_a_record_turns_its_screenshots_back_into_content(mocker: Mocke
 
 
 def test_directory_scoped_drops_the_record_screenshots_and_manifest_by_slug(mocker: MockerFixture) -> None:
-    """The three structural exclusions, derived from the record's name, never count.
+    """The three record-derived structural exclusions never count.
 
     **Test steps:**
 
@@ -358,7 +358,7 @@ def test_structural_exclusions_survive_an_empty_pattern_list(mocker: MockerFixtu
 
     **Test steps:**
 
-    * mock the tree to hold the three structural files and ``video.mp4``
+    * mock the tree to hold the three record-derived structural files and ``video.mp4``
     * enumerate with no excluded patterns at all
     * verify only ``video.mp4`` came back
     """
@@ -407,6 +407,87 @@ def test_structural_exclusions_apply_at_every_depth(mocker: MockerFixture) -> No
     mock_tree(mocker, ["part1/info.rehu", "part1/info00.jpg", "part1/video.mp4"], directories=["part1"])
 
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
+
+
+def test_a_conversions_retained_backups_are_not_the_resources_content(mocker: MockerFixture) -> None:
+    """A backup is bookkeeping in the same sense the record it backs up is (#253).
+
+    A bulk import retains every ``.orig`` ([[acquisition-tooling#convert-mechanics]]), so counting them
+    would bake each converted resource's own backups into its first checksum baseline -- and discarding
+    them afterwards would report a missing file for every resource in the catalog.
+
+    **Test steps:**
+
+    * mock a converted tree: the written record and screenshot, the backed-up ``.tc`` and legacy
+      screenshots, and a nested resource holding backups of its own, beside real content
+    * enumerate ``info.rehu``'s content files
+    * verify only the content came back
+    """
+    mock_tree(
+        mocker,
+        [
+            "info.rehu",
+            "info00.jpg",
+            "info.tc.orig",
+            "cover.jpg.orig",
+            "video.mp4",
+            "part1/info.rehu",
+            "part1/info.tc.orig",
+            "part1/lesson.mp4",
+        ],
+        directories=["part1"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/lesson.mp4", "video.mp4"]
+
+
+def test_any_orig_sibling_is_a_backup_whatever_it_backs_up(mocker: MockerFixture) -> None:
+    """One definition of a backup, and it is the backups module's: **any** ``.orig`` sibling, matched on
+    no record and no stem (#253).
+
+    A legacy screenshot is named ``cover.jpg`` or ``sample-01.jpg`` and carries nothing tying it to the
+    resource it belongs to, which is why a revert enumerates a directory rather than a stem. Following a
+    narrower rule here would count files a revert is holding -- and would drop them again the moment the
+    backups were discarded.
+
+    **Test steps:**
+
+    * mock a tree holding a ``.orig`` no conversion would have written, beside a name that only looks
+      like one
+    * enumerate ``info.rehu``'s content files
+    * verify the ``.orig`` was skipped and the look-alike counted
+    """
+    mock_tree(mocker, ["info.rehu", "render.blend.orig", "notes.orig.txt"])
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["notes.orig.txt"]
+
+
+def test_backups_are_excluded_whatever_the_pattern_list_says(mocker: MockerFixture) -> None:
+    """Structural, not junk: emptying the editable list leaves the backups excluded (#253).
+
+    **Test steps:**
+
+    * mock a converted tree
+    * enumerate with no excluded patterns at all
+    * verify only the content came back
+    """
+    mock_tree(mocker, ["info.rehu", "info.tc.orig", "cover.jpg.orig", "video.mp4"])
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH, ())) == ["video.mp4"]
+
+
+def test_a_file_scoped_resource_skips_its_own_backups_too(mocker: MockerFixture) -> None:
+    """The structural tier reaches the whitelist as well: a same-stem ``.orig`` is still a backup (#253).
+
+    **Test steps:**
+
+    * mock the directory to hold ``foo.zip`` beside ``foo.rehu`` and a ``foo.orig`` backup
+    * enumerate ``foo.rehu``'s content files
+    * verify only ``foo.zip`` came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.zip", "foo.orig"])
+
+    assert names(content_files(FILE_SCOPED_PATH)) == ["foo.zip"]
 
 
 def test_directory_scoped_skips_anything_that_is_not_a_regular_file(mocker: MockerFixture) -> None:
@@ -746,6 +827,25 @@ def test_the_resources_own_bookkeeping_weighs_nothing(mocker: MockerFixture) -> 
     mock_tree(mocker, ["info.rehu", "info00.jpg", "info.sfv", "video.mp4"])
     mock_sizes(mocker, {"video.mp4": 4096})
 
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 4096
+
+
+def test_retained_conversion_backups_weigh_nothing(mocker: MockerFixture) -> None:
+    """A converted resource measures the same whether its backups are still there or already discarded
+    (#253) -- otherwise every size in the catalog shrinks the day the manager is used.
+
+    **Test steps:**
+
+    * give every file a size, mock a converted tree holding the backups, and measure
+    * mock the same tree with the backups discarded, and measure again
+    * verify both answers are the video's bytes alone
+    """
+    mock_sizes(mocker, {"info.tc.orig": 2048, "cover.jpg.orig": 1024, "video.mp4": 4096})
+
+    mock_tree(mocker, ["info.rehu", "info.tc.orig", "cover.jpg.orig", "video.mp4"])
+    assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 4096
+
+    mock_tree(mocker, ["info.rehu", "video.mp4"])
     assert content_size_on_disk(DIRECTORY_SCOPED_PATH) == 4096
 
 

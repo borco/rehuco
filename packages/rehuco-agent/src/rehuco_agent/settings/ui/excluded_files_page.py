@@ -3,7 +3,13 @@
 from typing import Final
 
 from PySide6.QtWidgets import QWidget
-from rehuco_core import CHECKSUM_MANIFEST_EXTENSIONS, EXCLUDED_FILE_PATTERNS, IMAGE_EXTENSIONS, REHU_SUFFIX
+from rehuco_core import (
+    BACKUP_SUFFIX,
+    CHECKSUM_MANIFEST_EXTENSIONS,
+    EXCLUDED_FILE_PATTERNS,
+    IMAGE_EXTENSIONS,
+    REHU_SUFFIX,
+)
 
 from ...item_action_icons import apply_item_action_icons
 from ..excluded_files_settings import normalize_patterns, shared_excluded_files_settings
@@ -21,10 +27,13 @@ class ExcludedFilesPage(QWidget):
 
     Two frames for the two tiers, because only one of them is the user's. **Always excluded** is a
     read-only summary of the structural set -- every record a scan meets, with its screenshots and its
-    checksum manifest, all derived inside core -- shown so the page tells the whole truth about what a
+    checksum manifest, and the ``.orig`` backups a conversion keeps (#253), all derived inside core --
+    shown so the page tells the whole truth about what a
     scan skips, and not offered as list entries because those files change at any moment: counting one
     would make every size and checksum need recomputing after an ordinary metadata edit
-    ([[data-model#checksums]]). **Excluded file patterns** is the editable junk list, a
+    ([[data-model#checksums]]). A backup is there for the other reason (#253): it is not the resource's
+    content, and counting it would put it in a baseline that a later discard then reports as a missing
+    file. **Excluded file patterns** is the editable junk list, a
     `StringListEditor` (#231) wearing this app's icons.
 
     Edits are staged in the editor until :meth:`save_changes` pushes them into the shared
@@ -76,7 +85,7 @@ class ExcludedFilesPage(QWidget):
         self.__ui.patterns_editor.values = shared_excluded_files_settings().excluded_file_patterns
 
     def __structural_summary(self) -> str:
-        """Describe the three structural exclusions, written from the constants rather than restated.
+        """Describe the four structural exclusions, written from the constants rather than restated.
 
         :returns: one line per exclusion, naming the record-derived shape and what it is.
         """
@@ -87,5 +96,6 @@ class ExcludedFilesPage(QWidget):
                 f"{RECORD_PLACEHOLDER}{REHU_SUFFIX} — every resource record found while scanning",
                 f"{RECORD_PLACEHOLDER}NN with {screenshots} — its screenshots",
                 f"{RECORD_PLACEHOLDER} with {manifests} — its checksum manifest",
+                f"anything ending in {BACKUP_SUFFIX} — the backups a conversion keeps",
             ]
         )

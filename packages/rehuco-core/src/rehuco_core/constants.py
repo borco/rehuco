@@ -96,6 +96,9 @@ macOS AppleDouble residue that appears for the same reason.
 
 What :func:`~rehuco_core.rehu_content_files.enumerate_content_files` falls back to when no set is given;
 the agent's ``ExcludedFilesSettings`` (#226) is what makes the set the user's to change. The *structural*
-exclusions -- the record, its screenshots, its checksum manifest -- are not listed here and are not the
-user's: :mod:`rehuco_core.rehu_content_files` derives them from *every* record it finds while scanning --
-the resource's own and any nested or neighboring one's -- and applies them whatever this set says."""
+exclusions -- the record, its screenshots, its checksum manifest, and the ``.orig`` backups a conversion
+retains (#253) -- are not listed here and are not the user's: :mod:`rehuco_core.rehu_content_files`
+derives them from *every* record it finds while scanning -- the resource's own and any nested or
+neighboring one's -- and the backups from
+:func:`~rehuco_core.tc_conversion_backups.is_conversion_backup`, so the set a walk skips stays the set a
+revert would restore. Both apply whatever this set says."""

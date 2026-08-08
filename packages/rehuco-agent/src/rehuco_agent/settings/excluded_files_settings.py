@@ -9,7 +9,10 @@ Only the **junk** tier is stored here. The structural exclusions -- every ``<rec
 with its ``<record>NN`` screenshots and its ``<record>.sfv``/``.md5``/``.sha256`` manifest -- are derived
 inside core and are deliberately not offered: [[data-model#checksums]] defines all three as editable at
 any moment, so counting them would make every size and checksum need recomputing after an ordinary
-metadata edit, and a user able to add the ``.rehu`` back could reintroduce exactly that.
+metadata edit, and a user able to add the ``.rehu`` back could reintroduce exactly that. The ``.orig``
+backups a conversion keeps are structural for a different reason (#253) -- they are not the resource's
+content at all -- but are equally not the user's to restore, since counting them would put each
+converted resource's own backups in its first checksum baseline.
 
 A plain ``@dataclass``, like `ReferenceImagesSettings` and for the same reason: the set is read only when
 a scan runs, so nothing on screen changes when it does and there is nothing to watch it change.
