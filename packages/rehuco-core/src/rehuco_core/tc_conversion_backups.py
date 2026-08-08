@@ -39,6 +39,31 @@ LEGACY_SUFFIX: Final = ".tc"
 """The source format a conversion consumes; its backup is what marks a directory as revertible."""
 
 
+def is_conversion_backup(filename: str) -> bool:
+    """Whether ``filename`` names one of a conversion's retained backups.
+
+    The one predicate both readers of that definition ask: the inventory here, listing what a revert
+    would restore, and the content walk (:mod:`rehuco_core.rehu_content_files`), keeping a resource's
+    backups out of the content they are backups *of* (#253). A bulk import retains them by default
+    ([[acquisition-tooling#convert-mechanics]]), so counting them would put each converted resource's own
+    ``info.tc.orig`` in its first checksum baseline, and discarding the backups afterwards -- the
+    encouraged cleanup step -- would then report a missing file for every resource in the catalog.
+
+    **Any ``.orig`` sibling**, never one matched against a record's stem, for the reason the module
+    docstring gives: a legacy screenshot is named ``cover.jpg`` or ``sample-01.jpg`` and carries nothing
+    tying it back to its resource. Following that one rule is what keeps the two sets identical by
+    construction -- what a revert holds is exactly what the content walk skips.
+
+    Matched exactly rather than case-insensitively, unlike the junk globs a content walk applies to names
+    *other* tools wrote: this suffix is one this app appends itself, and folding case would take a
+    ``render.blend.ORIG`` out of a measurement while leaving it to no revert at all.
+
+    :param filename: a file's name, not its path.
+    :returns: whether it is a retained backup.
+    """
+    return filename.endswith(BACKUP_SUFFIX)
+
+
 def backup_path(original: Path) -> Path:
     """The ``.orig`` sibling for ``original``.
 
@@ -254,7 +279,7 @@ class ConversionReverter:
             siblings = list(self.__rehu_path.parent.iterdir())
         except OSError:
             return ()
-        return tuple(sorted((s for s in siblings if s.name.endswith(BACKUP_SUFFIX)), key=lambda s: s.name))
+        return tuple(sorted((s for s in siblings if is_conversion_backup(s.name)), key=lambda s: s.name))
 
     def __written(self) -> tuple[Path, ...]:
         """What the conversion wrote: the ``.rehu`` and the ``<stem>NN`` screenshots it installed.

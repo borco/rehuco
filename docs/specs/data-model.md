@@ -286,7 +286,15 @@ What a **reference-images** resource's content *is* was settled by #197: content
   `info.rehu` does not reach down and claim a `bar/info00.jpg` that has no `bar/info.rehu`, while a
   `baz/info00.jpg` beside `baz/info.rehu` is skipped. And **the record has to exist** — a name is bookkeeping
   because a record claims it, never because of its shape, so `xxx00.jpg` with no `xxx.rehu` and `yyy.sfv` with no
-  `yyy.rehu` are ordinary files that merely look like bookkeeping. It is deliberately not
+  `yyy.rehu` are ordinary files that merely look like bookkeeping. **A retained `.orig` conversion backup is
+  structural as well** (#253), and is the one exception to that last condition: a backup belongs to the directory it
+  sits in rather than to a stem — a legacy screenshot is named `cover.jpg`, carrying nothing that ties it to its
+  resource ([[acquisition-tooling#convert-mechanics]]) — so there is no record to look it up against, and **any**
+  `.orig` counts. That definition is asked of the backups module rather than restated here, which is what keeps the
+  set a walk skips identical to the set a revert would restore. A bulk import retains every backup by default, so
+  counting them would bake each converted resource's own `info.tc.orig` into its first checksum baseline, and
+  discarding the backups afterwards — the encouraged cleanup — would then report a missing file for every resource in
+  the catalog. It is deliberately not
   editable, and the reason is mutability rather than ownership: a record, its screenshots and its manifest can
   change at any moment, so a size or a manifest that counted them would need recomputing every time anyone edited a
   description or added a screenshot. Excluding them is what lets a measurement stay valid until the *content*

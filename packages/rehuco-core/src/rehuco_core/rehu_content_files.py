@@ -30,6 +30,7 @@ from .constants import (
     INFO_REHU_FILENAME,
     REHU_SUFFIX,
 )
+from .tc_conversion_backups import is_conversion_backup
 
 MAX_NAMED_UNREADABLE: Final = 3
 """How many unreadable directories an error names before it counts the rest.
@@ -141,6 +142,15 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
     its shape: with no ``xxx.rehu`` beside it, ``xxx00.jpg`` is a normal file, and so is a ``yyy.sfv``
     with no ``yyy.rehu``. Excluding on shape alone would drop a tutorial's own ``lesson01.jpg``, and a
     pack shipping its own checksum file, from the very measurement meant to cover them.
+
+    **A retained ``.orig`` backup is structural too** (#253) -- and the one thing here excluded on its
+    name alone, because a backup belongs to the directory it sits in rather than to a stem, so there is
+    no record to look it up against. :func:`~rehuco_core.tc_conversion_backups.is_conversion_backup` is
+    asked rather than the suffix matched here, which keeps the set this walk skips identical to the set a
+    revert would restore ([[acquisition-tooling#convert-mechanics]]). A bulk import retains every backup,
+    so counting them would bake each converted resource's own ``info.tc.orig`` into its first checksum
+    baseline -- and discarding the backups, which is what the manager exists to offer, would then read as
+    a missing file in every resource in the catalog.
 
     A screenshot is further ``<record>NN`` plus an
     :data:`~rehuco_core.constants.IMAGE_EXTENSIONS` suffix -- the same predicate
@@ -285,17 +295,23 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         return {stem.lower() for stem, suffix in stems if suffix.lower() == REHU_SUFFIX}
 
     def __is_bookkeeping(self, filename: str, records: set[str]) -> bool:
-        """Whether ``filename`` is a resource record or one of the files that belong to one.
+        """Whether ``filename`` is a resource record, one of the files that belong to one, or a
+        conversion backup held on one's behalf.
 
         Every ``.rehu`` counts, wherever it sits -- the scanning resource's, a nested one's, a
         file-scoped neighbour's. A screenshot or a manifest counts only where a record of that name sits
         beside it, so the same ``info00.jpg`` is bookkeeping next to an ``info.rehu`` and a normal file
-        in a directory that has none.
+        in a directory that has none. A ``.orig`` backup counts wherever it sits and against no record at
+        all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
+        :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here.
 
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :returns: whether it is a record, one of a record's screenshots, or a record's checksum manifest.
+        :returns: whether it is a record, one of a record's screenshots, a record's checksum manifest, or
+            a retained conversion backup.
         """
+        if is_conversion_backup(filename):
+            return True
         stem, suffix = os.path.splitext(filename)
         suffix = suffix.lower()
         if suffix == REHU_SUFFIX:

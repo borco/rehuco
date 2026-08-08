@@ -143,6 +143,10 @@ item can be undone one at a time. The same discipline applies as to the forward 
 - **Backups are the directory's `.orig` siblings**, not a stem-scoped set: a legacy screenshot is named `cover.jpg` or
   `sample-01.jpg`, carrying nothing that ties it to the resource it belongs to. Exact for the directory-scoped
   resources tc4 catalogs are made of, and why a revert names a directory rather than a file.
+- **And a backup is never the resource's content** (#253): the same definition is what the content walk asks
+  ([[data-model#checksums]]), so the files a revert is holding are exactly the files a size scan and a checksum skip.
+  Otherwise a bulk import would bake each resource's own `info.tc.orig` into its first baseline, and the discard this
+  manager exists to offer would report a missing file for every resource in the catalog.
 
 Reading what a revert *would* do — how many files, how many bytes, under what names, and whether it is possible at all
 — is a separate query that writes nothing, so a surface can list retained backups without performing anything. Run
