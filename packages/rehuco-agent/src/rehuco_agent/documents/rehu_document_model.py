@@ -20,7 +20,6 @@ from rehuco_core import (
     DEFAULT_CURRENT_USERNAME,
     DEFAULT_UNKNOWN_USERNAME,
     FORMAT_VERSION_KEY,
-    INFO_REHU_FILENAME,
     LEGACY_SUFFIX,
     USERS_KEY,
     AuthorEntry,
@@ -28,6 +27,7 @@ from rehuco_core import (
     RehuDocument,
     RenameCoordinator,
     convert_tc,
+    is_directory_scoped,
     load_tc,
     rehu_rename_conflict,
     rename_rehu_resource,
@@ -124,14 +124,21 @@ for one, and every dialog that names a document falls back to this, so the wordi
 
 
 def path_label(path: Path) -> str:
-    """The `info.rehu`-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
-    directory's name, trailing-slashed, for `info.rehu`; the bare filename otherwise. Shared by
-    :attr:`RehuDocumentModel.label` and the recents menu (#117), so the rule lives in exactly one place.
+    """The scope-aware display label for ``path`` ([[data-model#resource-scoping]]): the parent
+    directory's name, trailing-slashed, for a directory-scoped record; the bare filename otherwise.
+    Shared by :attr:`RehuDocumentModel.label` and the recents menu (#117), so the rule lives in exactly
+    one place.
+
+    Which records those are is :func:`~rehuco_core.is_directory_scoped`'s answer rather than a name
+    matched here, so a legacy ``info.tc`` -- one per resource directory, which is what tc4 wrote -- names
+    its folder like the ``info.rehu`` that replaces it (#250). Keying on ``info.rehu`` alone gave a
+    catalog opened before conversion a tab strip reading ``info.tc`` all the way across, which is the one
+    failure this label exists to prevent.
 
     :param path: the file path to derive a label for.
     :returns: the label.
     """
-    return f"{path.parent.name}/" if path.name == INFO_REHU_FILENAME else path.name
+    return f"{path.parent.name}/" if is_directory_scoped(path) else path.name
 
 
 class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
@@ -467,8 +474,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
     @property
     def label(self) -> str:
-        """This document's display label: the parent directory's name, trailing-slashed, for
-        `info.rehu` ([[data-model#resource-scoping]]), the bare filename otherwise.
+        """This document's display label: the parent directory's name, trailing-slashed, for a
+        directory-scoped record ([[data-model#resource-scoping]]), the bare filename otherwise.
 
         :returns: the label, or an empty string when the document has no path yet.
         """
@@ -480,15 +487,19 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     @property
     def current_name(self) -> str:
         """The resource's current rename target name -- the name a rename suggestion would replace
-        ([[field-schema#field-mapping]]): the **parent directory** name for a directory-scoped
-        ``info.rehu`` ([[data-model#resource-scoping]]), the file **stem** (no extension) otherwise,
-        since a standalone ``foo.rehu`` renames its whole ``foo.*`` sibling set. Empty when the
-        document has no path yet.
+        ([[field-schema#field-mapping]]): the **parent directory** name for a directory-scoped record
+        ([[data-model#resource-scoping]]), the file **stem** (no extension) otherwise, since a
+        standalone ``foo.rehu`` renames its whole ``foo.*`` sibling set. Empty when the document has no
+        path yet.
+
+        Reads :func:`~rehuco_core.is_directory_scoped` rather than matching a name, so this and the
+        rename plan that would execute the suggestion (:class:`~rehuco_core.RehuRenamer`) cannot
+        disagree about which entry the name belongs to (#250).
         """
         path = self.path
         if path is None:
             return ""
-        return path.parent.name if path.name == INFO_REHU_FILENAME else path.stem
+        return path.parent.name if is_directory_scoped(path) else path.stem
 
     @property
     def sources(self) -> list[dict[str, Any]]:

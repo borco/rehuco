@@ -24,7 +24,7 @@ import logging
 from pathlib import Path
 from typing import Any, Final
 
-from .constants import INFO_REHU_FILENAME
+from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
 from .tc_conversion_backups import ConversionBackups, discard_conversion_backups, revert_conversion
 
@@ -38,20 +38,6 @@ into a user's queue file, never casually renamed."""
 STATE_PATH_KEY: Final = "path"
 """The key these jobs write themselves down under, read back by this module and nothing else
 ([[appendices.task-queue#lifetime]])."""
-
-
-def resource_name(rehu_path: Path) -> str:
-    """How a converted resource is named in a job's label -- the directory for ``info.rehu``, else the
-    filename.
-
-    The scoping rule ([[data-model#resource-scoping]]) applied to a label, the same shape
-    :func:`~rehuco_core.checksum_jobs.resource_name` and :func:`~rehuco_core.tc_import_job.resource_name`
-    follow for their own.
-
-    :param rehu_path: the resource's ``.rehu`` file.
-    :returns: the display name.
-    """
-    return rehu_path.parent.name if rehu_path.name == INFO_REHU_FILENAME else rehu_path.name
 
 
 class TcBackupsJob(TaskJobBase):

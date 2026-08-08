@@ -32,10 +32,11 @@ from typing import Any, Final
 from .checksum_algorithms import CHECKSUM_ALGORITHMS, DEFAULT_CHECKSUM_ALGORITHM
 from .checksum_record import ChecksumRecordError, checksum_record_path
 from .checksum_seeding import legacy_manifest_for
-from .constants import EXCLUDED_FILE_PATTERNS, INFO_REHU_FILENAME
+from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_catalog import enumerate_catalog_resources
 from .rehu_checksums import ChecksumReport, generate_checksums, verify_checksums
 from .rename_coordination import DEFAULT_RENAME_COORDINATOR, RenameCoordinator
+from .resource_scoping import resource_name
 from .tasks import (
     DEFAULT_TASK_JOB_REGISTRY,
     PROGRESS_UNIT_BYTES,
@@ -71,19 +72,6 @@ restored job is meant to be *the job that was queued*, and the list decides whic
 adopts, which is part of what was asked for. The two verify choices (#242) are captured for the same
 reason, and read back with today's behaviour as their default, so a queue saved by a build that had
 neither key restores exactly the run it described."""
-
-
-def resource_name(rehu_path: Path) -> str:
-    """How a resource is named in a job's label -- the directory for an ``info.rehu``, else the filename.
-
-    The ``.rehu``-scoping rule ([[data-model#resource-scoping]]) applied to a label: every
-    directory-scoped resource's record is called ``info.rehu``, so naming the file would give a queue of
-    fifty jobs fifty identical rows.
-
-    :param rehu_path: the resource's ``.rehu`` file.
-    :returns: the display name.
-    """
-    return rehu_path.parent.name if rehu_path.name == INFO_REHU_FILENAME else rehu_path.name
 
 
 # a job's members *are* its run's parameters, and #203's callables take that many; collapsing them into

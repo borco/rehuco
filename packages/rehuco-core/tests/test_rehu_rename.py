@@ -116,6 +116,26 @@ def test_directory_scoped_collision_is_refused_before_anything_moves(mocker: Moc
     mock_rename.assert_not_called()
 
 
+def test_a_legacy_info_tc_renames_its_directory_and_keeps_its_own_name(mocker: MockerFixture) -> None:
+    """An unconverted ``info.tc`` is directory-scoped, and the record it answers with is still a ``.tc``.
+
+    The scope comes from :func:`~rehuco_core.is_directory_scoped` (#250), so a rename suggestion offered
+    over a legacy document replaces the name its label showed. Answering with an ``info.rehu`` that no
+    conversion has written yet would point the caller at a file that is not there.
+
+    **Test steps:**
+
+    * rename a directory-scoped legacy resource
+    * verify the folder moved, and the record path handed back is the renamed folder's ``info.tc``
+    """
+    mock_rename = mock_environment(mocker)
+
+    result = rename_rehu_resource(FOLDER / "info.tc", NEW_NAME)
+
+    assert renames(mock_rename) == [(FOLDER, DIRECTORY / NEW_NAME)]
+    assert result == DIRECTORY / NEW_NAME / "info.tc"
+
+
 # endregion
 
 

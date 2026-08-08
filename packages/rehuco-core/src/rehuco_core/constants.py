@@ -7,12 +7,23 @@ REHU_SUFFIX: Final = ".rehu"
 rather than one of the files a resource is named after, which is the distinction a stem-wide sweep
 (:mod:`rehuco_core.rehu_rename`) turns on."""
 
+LEGACY_SUFFIX: Final = ".tc"
+"""A legacy tc4 record's file extension -- the source format a conversion consumes
+([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*
+(:data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`). Its ``.orig`` backup is what marks a directory
+as revertible (:mod:`rehuco_core.tc_conversion_backups`)."""
+
 INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]) -- the one name that says a
-``.rehu`` describes the directory it sits in rather than a file beside it. Shared by whatever must tell
-the two scopes apart: the agent's display label and rename-target name, and the rename plan
-(:mod:`rehuco_core.rehu_rename`), which renames a parent directory for this name and a sibling set for
-any other."""
+``.rehu`` describes the directory it sits in rather than a file beside it.
+
+Compared through :func:`~rehuco_core.resource_scoping.is_directory_scoped` rather than directly, so the
+scope question is asked in one voice and :data:`INFO_TC_FILENAME` gets the same answer (#250)."""
+
+INFO_TC_FILENAME: Final = f"info{LEGACY_SUFFIX}"
+"""A directory-scoped legacy resource's filename, the counterpart of :data:`INFO_REHU_FILENAME` -- tc4
+wrote one per resource directory, which is exactly what that name means here
+([[data-model#resource-scoping]])."""
 
 IMAGE_EXTENSIONS: Final = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 """Screenshot file extensions to recognize, case-insensitively -- shared by both the legacy ``.tc``

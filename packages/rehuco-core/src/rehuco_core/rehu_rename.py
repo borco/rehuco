@@ -26,7 +26,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Final
 
-from .constants import INFO_REHU_FILENAME, REHU_SUFFIX
+from .constants import REHU_SUFFIX
+from .resource_scoping import is_directory_scoped
 
 
 class PartialRenameError(OSError):
@@ -200,9 +201,10 @@ class RehuRenamer:
 
     @property
     def __directory_scoped(self) -> bool:
-        """Whether this resource is the directory it sits in (an ``info.rehu``,
-        [[data-model#resource-scoping]]) rather than a file beside its siblings."""
-        return self.__path.name == INFO_REHU_FILENAME
+        """Whether this resource is the directory it sits in (an ``info.rehu``, or the ``info.tc`` a
+        conversion has not reached yet, [[data-model#resource-scoping]]) rather than a file beside its
+        siblings -- asked of the one place that answers it (#250)."""
+        return is_directory_scoped(self.__path)
 
     @property
     def __current_name(self) -> str:
@@ -226,11 +228,11 @@ class RehuRenamer:
     def __new_document_path(self) -> Path:
         """Where this resource's ``.rehu`` ends up once the plan has run.
 
-        :returns: the renamed directory's ``info.rehu`` for a directory-scoped resource, the renamed
-            file for a file-scoped one.
+        :returns: the renamed directory's record, under the name it already had, for a directory-scoped
+            resource; the renamed file for a file-scoped one.
         """
         if self.__directory_scoped:
-            return self.__own_pair()[1] / INFO_REHU_FILENAME
+            return self.__own_pair()[1] / self.__path.name
         return self.__own_pair()[1]
 
     def __is_plain_name(self) -> bool:

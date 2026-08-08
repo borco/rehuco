@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Final
 
-from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS, INFO_REHU_FILENAME
+from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS
+from .resource_scoping import is_directory_scoped
 
 
 @dataclass(frozen=True)
@@ -33,10 +34,15 @@ class ContentImageEntry:
 class ContentImageScanner:  # pylint: disable=too-few-public-methods
     """Enumerates one reference-images resource's content images ([[data-model#resource-scoping]]).
 
-    File-scoped (``rehu_path.name != "info.rehu"``): only the sibling archive sharing its stem, ``.zip``
-    or ``.cbz`` -- a whitelist of one, never a directory walk. Directory-scoped (``info.rehu``): the sum
-    over every archive found recursively under ``rehu_path``'s directory, including subdirectories that
-    carry their own nested ``info.rehu`` -- a nested resource is not a boundary here.
+    File-scoped (a named ``foo.rehu``/``foo.tc``): only the sibling archive sharing its stem, ``.zip``
+    or ``.cbz`` -- a whitelist of one, never a directory walk. Directory-scoped
+    (``info.rehu``/``info.tc``): the sum over every archive found recursively under ``rehu_path``'s
+    directory, including subdirectories that carry their own nested record -- a nested resource is not a
+    boundary here.
+
+    Which of the two it is comes from :func:`~rehuco_core.resource_scoping.is_directory_scoped`, the one
+    place the rule is stated (#250), so an unconverted ``info.tc`` counts the archives its directory holds
+    rather than looking for an ``info.zip`` that was never there.
 
     :param rehu_path: the resource's ``.rehu`` file.
     :param extensions: the recognized image extensions, matched case-insensitively.
@@ -55,7 +61,7 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             for the full order/failure-handling contract.
         """
         directory = self.__rehu_path.parent
-        if self.__rehu_path.name == INFO_REHU_FILENAME:
+        if is_directory_scoped(self.__rehu_path):
             archives = self.__find_archives_under(directory)
         else:
             archives = self.__find_sibling_archives(directory, self.__rehu_path.stem)

@@ -2,6 +2,11 @@
 for the size-on-disk sum over it (#223).
 """
 
+# one walk answers for two features, two scopes, two exclusion tiers, both record formats and every way
+# a directory can refuse to list; splitting that along any of those axes would separate cases that only
+# make sense read against each other, so the module-length cap is lifted here instead.
+# pylint: disable=too-many-lines
+
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +18,7 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     INFO_REHU_FILENAME,
+    INFO_TC_FILENAME,
     ContentUnreachableError,
     content_size_on_disk,
     enumerate_content_files,
@@ -22,6 +28,7 @@ from rehuco_core.rehu_content_files import MAX_NAMED_UNREADABLE
 DIRECTORY: Final = Path("/fake/resource")
 FILE_SCOPED_PATH: Final = DIRECTORY / "foo.rehu"
 DIRECTORY_SCOPED_PATH: Final = DIRECTORY / INFO_REHU_FILENAME
+LEGACY_DIRECTORY_SCOPED_PATH: Final = DIRECTORY / INFO_TC_FILENAME
 
 
 def mock_tree(  # pylint: disable=too-many-arguments
@@ -516,6 +523,138 @@ def test_directory_scoped_skips_directories(mocker: MockerFixture) -> None:
     mock_tree(mocker, ["part1/video.mp4"], directories=["part1"])
 
     assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4"]
+
+
+# endregion
+
+# region legacy .tc records
+
+
+def test_an_info_tc_is_walked_as_the_directory_it_describes(mocker: MockerFixture) -> None:
+    """``info.tc`` is directory-scoped in exactly the sense ``info.rehu`` is (#250).
+
+    tc4 wrote one per resource directory, so taking the file-scoped branch collapsed a whole tutorial's
+    content to the ``.tc`` file itself -- which is what made ``Verify checksums`` on an unconverted
+    resource write a record whose baseline was one small YAML file.
+
+    **Test steps:**
+
+    * mock a tree holding ``info.tc`` over real content in the root and a subdirectory
+    * enumerate ``info.tc``'s content files
+    * verify the tree's content came back, the ``.tc`` itself excluded
+    """
+    mock_tree(mocker, ["info.tc", "video.mp4", "part1/video.mp4"], directories=["part1"])
+
+    assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == ["part1/video.mp4", "video.mp4"]
+
+
+def test_a_legacy_record_claims_the_same_bookkeeping_its_conversion_will(mocker: MockerFixture) -> None:
+    """An ``info.tc`` claims the ``info.*`` siblings beside it, as the ``info.rehu`` replacing it will.
+
+    This is what makes a resource's content set survive its own conversion: measure the directory
+    before, convert it, measure it again, and the answer is the same set for a directory whose content
+    nobody touched.
+
+    **Test steps:**
+
+    * mock a tree holding ``info.tc`` beside its ``info.sfv``, ``info.checksum`` and ``info00.jpg``,
+      plus the ``video.mp4`` that is the actual content
+    * enumerate ``info.tc``'s content files
+    * verify only the content came back
+    """
+    mock_tree(mocker, ["info.tc", "info.sfv", "info.checksum", "info00.jpg", "video.mp4"])
+
+    assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+def test_a_nested_legacy_record_is_bookkeeping_to_the_resource_above_it(mocker: MockerFixture) -> None:
+    """A ``.tc`` found in the tree is a record, wherever it sits -- never the enclosing resource's content.
+
+    The same rule every ``.rehu`` in the tree is under, and for the same reason: without it, converting
+    the nested resource would change its parent's content set for a reason that has nothing to do with
+    what the parent holds. The nested resource's real content still counts -- a nested record is not a
+    boundary ([[data-model#resource-scoping]]).
+
+    **Test steps:**
+
+    * mock a tree holding a nested ``bar/info.tc`` with its own manifest and content, and a file-scoped
+      ``baz.tc`` at the root beside the archive it describes
+    * enumerate the root ``info.rehu``'s content files
+    * verify both records and both manifests are out, and both contents are in
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "bar/info.tc", "bar/info.sfv", "bar/video.mp4", "baz.tc", "baz.sfv", "baz.zip"],
+        directories=["bar"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4", "baz.zip"]
+
+
+def test_a_legacy_record_claims_its_screenshots_by_scheme(mocker: MockerFixture) -> None:
+    """tc4's screenshot names are bookkeeping too -- they are what a conversion renames aside (#250).
+
+    None of them carries the record's name (``01.jpg``, ``cover.jpg``, ``sample-01.jpg``,
+    ``file(2).jpg``, ``file-01.jpg``), so the ``<record>NN`` rule cannot see them. Counting them would
+    make the same directory measure differently the moment it was converted, since a conversion backs up
+    every recognized image -- winners and losing variants alike -- and installs the winners under names
+    this walk already excludes.
+
+    **Test steps:**
+
+    * mock a tree holding ``info.tc`` over one file of every recognized scheme, plus real content
+    * enumerate ``info.tc``'s content files
+    * verify only the content came back
+    """
+    mock_tree(
+        mocker,
+        ["info.tc", "01.jpg", "cover.jpg", "sample-01.jpg", "file(2).jpg", "file-01.jpg", "video.mp4"],
+    )
+
+    assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
+
+
+def test_a_legacy_screenshot_name_is_content_where_no_legacy_record_sits(mocker: MockerFixture) -> None:
+    """The scheme alone proves nothing -- a live tutorial's own ``01.jpg`` is content, and stays counted.
+
+    The same condition every other structural exclusion is under: a name is bookkeeping *because a
+    record claims it*. Legacy screenshots are claimed by the directory rather than by a stem, for the
+    reason :mod:`rehuco_core.tc_conversion_backups` gives about the backups, so the claim needs a ``.tc``
+    in that directory -- and a converted resource, whose ``.tc`` is now an ``.orig``, makes no claim at
+    all.
+
+    **Test steps:**
+
+    * mock a tree whose root holds ``info.rehu`` over legacy-shaped image names, and a subdirectory
+      holding a ``.tc`` over the same names
+    * enumerate ``info.rehu``'s content files
+    * verify the root's images count and the legacy subdirectory's do not
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "01.jpg", "cover.jpg", "bar/info.tc", "bar/01.jpg", "bar/cover.jpg", "bar/video.mp4"],
+        directories=["bar"],
+    )
+
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["01.jpg", "bar/video.mp4", "cover.jpg"]
+
+
+def test_a_named_legacy_record_stays_file_scoped(mocker: MockerFixture) -> None:
+    """A named ``foo.tc`` behaves as ``foo.rehu`` does: its same-stem siblings, and not itself.
+
+    The rule is about the one filename that means *this record describes its directory*, not about the
+    extension -- so nothing here changes for a legacy record that was never directory-scoped.
+
+    **Test steps:**
+
+    * mock the directory to hold ``foo.tc`` beside its ``foo.zip`` and ``foo.sfv``, plus another
+      resource's files
+    * enumerate ``foo.tc``'s content files
+    * verify only ``foo.zip`` came back
+    """
+    mock_siblings(mocker, ["foo.tc", "foo.zip", "foo.sfv", "bar.tc", "bar.zip"])
+
+    assert names(content_files(DIRECTORY / "foo.tc")) == ["foo.zip"]
 
 
 # endregion

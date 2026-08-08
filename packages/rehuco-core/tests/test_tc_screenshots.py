@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Final
 
 from PIL import UnidentifiedImageError
+from pytest import mark, param
 from pytest_mock import MockerFixture
-from rehuco_core import ScreenshotRename, scan_tc_screenshot_files, scan_tc_screenshots
+from rehuco_core import ScreenshotRename, is_legacy_screenshot, scan_tc_screenshot_files, scan_tc_screenshots
 
 DIRECTORY: Final = Path("/fake/tutorial")
 STEM: Final = "info"
@@ -321,6 +322,46 @@ def test_screenshot_files_is_empty_for_a_missing_directory(mocker: MockerFixture
     mocker.patch.object(Path, "iterdir", side_effect=OSError)
 
     assert not scan_tc_screenshot_files(DIRECTORY, STEM)
+
+
+# endregion
+
+# region is_legacy_screenshot (the name-only view the content walk asks)
+
+
+@mark.parametrize(
+    ("filename", "expected"),
+    [
+        param("01.jpg", True, id="bare-numeric"),
+        param("sample-01.png", True, id="sample-series"),
+        param("file.jpg", True, id="file-alone"),
+        param("file(2).jpg", True, id="file-duplicate-suffix"),
+        param("COVER.JPG", True, id="cover-any-casing"),
+        param("file-01.gif", True, id="file-small-series"),
+        param("lesson1.jpg", False, id="an-ordinary-image"),
+        param("01.mp4", False, id="a-numbered-video"),
+        param("info00.jpg", False, id="a-converted-name"),
+    ],
+)
+def test_a_name_is_classified_without_opening_anything(mocker: MockerFixture, filename: str, expected: bool) -> None:
+    """Every scheme is recognized from the name alone -- no listing, no image opened (#250).
+
+    What the content walk asks of a name it already has, so that a legacy record's screenshots are
+    skipped the way an ``infoNN.jpg`` beside an ``info.rehu`` is. All five schemes answer here, winners
+    and losing variants alike, because a conversion backs up all of them: ranking decides which one is
+    *installed*, never which ones are screenshots. A numbered *video* is not one, the same distinction
+    ``<record>NN`` plus an image extension draws for a converted record.
+
+    **Test steps:**
+
+    * make any attempt to list a directory or open an image raise
+    * classify a filename
+    * verify the answer, and that nothing on disk was touched
+    """
+    mocker.patch.object(Path, "iterdir", side_effect=OSError("nothing may be listed"))
+    mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=OSError("nothing may be opened"))
+
+    assert is_legacy_screenshot(filename) is expected
 
 
 # endregion
