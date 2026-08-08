@@ -15,7 +15,17 @@ REPO_ROOT_FONT: Final = Path(__file__).resolve().parents[4] / "design" / "fonts"
 platform has no real system fonts to look up by name (only a tofu-box fallback), but genuinely
 renders a font explicitly loaded this way, same as the app does at startup (``app.py``). The
 ``-Fill`` (solid) weight specifically, not the outline default -- a test asserting a glyph's fill
-color needs a genuinely solid shape, not an outline whose interior stays transparent."""
+color needs a genuinely solid shape, not an outline whose interior stays transparent.
+
+> [!WARNING]
+> Loading this **changes what plain text measures, for the rest of the process.** The offscreen
+> platform's font database starts empty, so an icon font added to it becomes the fallback for
+> ordinary strings too -- a 68-character label measures 816px before this fixture runs and 72px
+> after, about a pixel per character. ``removeApplicationFont`` does not undo it (measured: the
+> metrics stay at 72px), so there is nothing to clean up in a teardown and no test ordering that
+> avoids it. **Any test asserting on text width must size itself from its own
+> ``fontMetrics()``**, never from a constant -- see ``test_task_row_delegate.py``'s elision test,
+> which this silently broke."""
 
 
 @fixture

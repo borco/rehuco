@@ -220,17 +220,26 @@ def test_long_text_is_elided_to_the_cells_width(
 ) -> None:
     """Text too long for the cell is elided rather than overflowing it.
 
+    **The cell is sized from what this run's font actually measures**, never from a guess about how
+    wide 68 characters are. The offscreen test platform ships no fonts at all, so whichever family
+    happens to be in the database is the one every string is measured in -- and once
+    ``borco-pyside``'s theming tests load an *icon* font into that empty database it becomes the
+    fallback for plain text too, at roughly a pixel per character, permanently (``removeApplicationFont``
+    does not undo it). A fixed cell width therefore asserts nothing in one test order and the premise
+    in another; half the string's own measured width is too narrow for it under any font.
+
     **Test steps:**
 
-    * paint text much longer than the cell
+    * measure the text, then paint it into a cell half that wide
     * assert the drawn string is shorter than the original
     """
     image = QImage(option.rect.size(), QImage.Format.Format_ARGB32)
     painter = QPainter(image)
+    original = "a label so long it cannot possibly fit in a narrow task-queue column"
+    too_narrow = QRect(0, 0, painter.fontMetrics().horizontalAdvance(original) // 2, option.rect.height())
     drawn = mocker.patch.object(QPainter, "drawText")
 
-    original = "a label so long it cannot possibly fit in a narrow task-queue column"
-    delegate.paint_text(painter, option.rect, original)
+    delegate.paint_text(painter, too_narrow, original)
     painter.end()
 
     drawn.assert_called_once()
