@@ -897,6 +897,73 @@ def test_closing_a_non_current_dock_leaves_the_current_dock_unchanged(mocker: Mo
     assert dock.focused_document_path() == OTHER_PATH
 
 
+def test_close_focused_document_closes_the_current_clean_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_focused_document`` (``Ctrl+W``, #247) closes the currently focused document without
+    prompting, and leaves the other one open.
+
+    **Test steps:**
+
+    * open two documents (the second, opened last, is the current one)
+    * call ``close_focused_document``
+    * verify only the second is gone, and the first is still focused
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    first_widget = dock.open_document(FAKE_PATH)
+    dock.open_document(OTHER_PATH)
+    assert dock.focused_document_path() == OTHER_PATH
+
+    dock.close_focused_document()
+
+    remaining = dock._DocumentsDock__document_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert list(remaining.values()) == [first_widget]
+    assert dock.focused_document_path() == FAKE_PATH
+
+
+def test_close_focused_document_prompts_for_a_dirty_current_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_focused_document`` goes through the same per-document dirty guard the tab's own close
+    button uses (:meth:`DocumentsDock.__close_dock`), not the batch guard ``close_all`` uses.
+
+    **Test steps:**
+
+    * open the fake path and dirty its model
+    * mock the confirmation dialog to answer Cancel
+    * call ``close_focused_document``
+    * verify the dialog was shown and the dock is still open
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    widget.model.title = "Changed"
+    warning = mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Cancel)
+
+    dock.close_focused_document()
+
+    warning.assert_called_once()
+    assert len(dock._DocumentsDock__document_docks) == 1  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_focused_document_is_a_no_op_with_no_document_focused(qtbot: QtBot) -> None:
+    """``close_focused_document`` does nothing when no document dock is focused -- the action driving
+    it is disabled then, so this only guards a stale trigger.
+
+    **Test steps:**
+
+    * construct an empty ``DocumentsDock``
+    * call ``close_focused_document``
+    * verify it raises nothing and nothing is focused
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.close_focused_document()
+
+    assert dock.focused_document_path() is None
+
+
 def test_opening_a_missing_file_opens_an_empty_locked_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A path whose file is gone opens as an empty, locked dock -- never a dialog, never ``None``
     ([[data-model#write-integrity]]); the ``MISSING`` kind is kept distinct so a "close vanished files"

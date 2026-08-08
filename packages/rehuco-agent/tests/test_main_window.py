@@ -521,6 +521,68 @@ def test_document_focus_changed_is_wired_to_the_window_title(mocker: MockerFixtu
     assert window.windowTitle() == f"bar - {base_title}"
 
 
+def test_close_action_is_disabled_with_no_document_focused(qtbot: QtBot) -> None:
+    """``File`` > ``Close`` (``Ctrl+W``, #247) starts disabled -- nothing is focused on construction.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * verify ``close_action`` is disabled
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window._MainWindow__ui.close_action.isEnabled()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_document_focus_changed_toggles_the_close_action(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``close_action`` is enabled iff a document is focused, read off the same
+    ``document_focus_changed`` signal that drives the window title (#247).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * emit ``document_focus_changed`` with a stand-in widget
+    * verify ``close_action`` is enabled
+    * emit it again with ``None``
+    * verify ``close_action`` is disabled again
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    docs_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    widget = mocker.MagicMock(model=mocker.MagicMock(label="bar"))
+
+    docs_dock.document_focus_changed.emit(widget)
+
+    assert window._MainWindow__ui.close_action.isEnabled()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    docs_dock.document_focus_changed.emit(None)
+
+    assert not window._MainWindow__ui.close_action.isEnabled()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_action_triggering_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Triggering ``close_action`` delegates straight to ``DocumentsDock.close_focused_document`` (#247).
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``DocumentsDock.close_focused_document``
+    * trigger ``close_action``
+    * verify it was called
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    close_focused_document = mocker.patch.object(documents_dock, "close_focused_document")
+    close_action = window._MainWindow__ui.close_action  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    close_action.setEnabled(True)  # a disabled action's trigger() is a no-op; a document is focused in practice
+
+    close_action.trigger()
+
+    close_focused_document.assert_called_once_with()
+
+
 def test_open_file_resolves_and_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``open_file`` resolves its path and hands it to the documents dock.
 

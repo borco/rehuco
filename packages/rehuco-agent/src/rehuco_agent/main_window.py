@@ -213,12 +213,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
-        """Reflect the newly-focused document's label in the window title, or the base title if none.
+        """Reflect the newly-focused document's label in the window title, or the base title if none,
+        and enable ``File`` > ``Close`` (``Ctrl+W``, #247) only while a document is actually focused --
+        the same condition, read off the same signal, so the two never disagree about whether one is.
 
         :param widget: the newly-focused document's widget, or ``None`` when no document is focused.
         """
         label = widget.model.label if widget is not None else ""
         self.setWindowTitle(f"{label} - {self.__base_window_title}" if label else self.__base_window_title)
+        self.__ui.close_action.setEnabled(widget is not None)
 
     def __on_status_message(self, text: str) -> None:
         """Show a document field's transient status message on this window's status bar, or clear it for
@@ -326,10 +329,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
 
     def __setup_file_menu(self) -> None:
-        """Wire ``File``'s static actions -- open dialogs, save all, quit -- and the ``Open recents``
-        submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit`` separator are
-        appended later, in :meth:`__setup_docking_system`, once the settings dock's own toggle
-        action exists to reuse.
+        """Wire ``File``'s static actions -- open dialogs, close, save all, quit -- and the ``Open
+        recents`` submenu's on-demand population (#64). ``Settings`` and the trailing ``Quit``
+        separator are appended later, in :meth:`__setup_docking_system`, once the settings dock's
+        own toggle action exists to reuse.
 
         ``Sweep checksums...`` (#242) lives here rather than in a menu of its own: ``File`` is where
         every *point at something on disk and act on it* entry already is, and a sweep is a folder
@@ -340,6 +343,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.open_rehu_action.triggered.connect(self.__on_open_rehu)
         self.__ui.open_folder_action.triggered.connect(self.__on_open_folder)
         self.__ui.open_companion_action.triggered.connect(self.__on_open_companion)
+        self.__ui.close_action.triggered.connect(self.__documents_dock.close_focused_document)
         self.__ui.save_all_action.triggered.connect(self.__on_save_all)
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)

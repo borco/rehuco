@@ -36,6 +36,8 @@
     <addaction name="open_folder_action"/>
     <addaction name="open_companion_action"/>
     <addaction name="open_recents_menu"/>
+    <addaction name="separator"/>
+    <addaction name="close_action"/>
     <addaction name="save_all_action"/>
     <addaction name="separator"/>
     <addaction name="sweep_checksums_action"/>
@@ -91,6 +93,17 @@
   <action name="open_companion_action">
    <property name="text">
     <string>Open &amp;companion...</string>
+   </property>
+  </action>
+  <action name="close_action">
+   <property name="enabled">
+    <bool>false</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Close</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+W</string>
    </property>
   </action>
   <action name="save_all_action">
