@@ -34,6 +34,7 @@ from rehuco_core import (
     plan_tc_conversion,
 )
 
+from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.import_legacy_catalog_wizard_settings import ImportLegacyCatalogWizardSettings
 from ..settings.persistent_settings import persistent_settings
 from .import_legacy_catalog_wizard_ui import Ui_ImportLegacyCatalogWizard
@@ -441,7 +442,11 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
                 continue
             self.__model.set_row_outcome(row.plan.tc_path, "pending")
             job = TcImportJob(
-                row.plan.tc_path, overwrite=row.plan.rehu_exists, keep_backups=True, username=self.__username
+                row.plan.tc_path,
+                overwrite=row.plan.rehu_exists,
+                keep_backups=True,
+                username=self.__username,
+                excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
             )
             with LogScope.open(row.plan.tc_path):
                 serial = self.__queue.enqueue(job)

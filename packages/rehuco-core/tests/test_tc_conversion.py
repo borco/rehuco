@@ -8,7 +8,14 @@ from uuid import UUID
 
 import pytest
 from pytest_mock import MockerFixture
-from rehuco_core import RehuDocument, ScreenshotRename, convert_tc, current_block_version
+from rehuco_core import (
+    EXCLUDED_FILE_PATTERNS,
+    ContentUnreachableError,
+    RehuDocument,
+    ScreenshotRename,
+    convert_tc,
+    current_block_version,
+)
 
 DIRECTORY: Final = Path("/fake/tutorial")
 TC_PATH: Final = DIRECTORY / "info.tc"
@@ -28,6 +35,8 @@ TC_YAML_WITH_MEMBERSHIPS: Final = (
     "  - Path A\n"
 )
 
+TC_YAML_WITH_SIZE: Final = "type: Tutorial\ntitle: Some Title\ncurrent_size: 500 MB\n"
+
 MTIME: Final = 1700000000.0
 SEEDED_TIMESTAMP: Final = "2023-11-14T22:13:20Z"
 
@@ -42,13 +51,14 @@ def backup_path(original: Path) -> Path:
     return original.with_name(original.name + ".orig")
 
 
-def mock_environment(
+def mock_environment(  # pylint: disable=too-many-arguments
     mocker: MockerFixture,
     *,
     existing: frozenset[Path] = frozenset(),
     renames: Sequence[ScreenshotRename] = RENAMES,
     copy_side_effect: Any = None,
     tc_yaml: str = TC_YAML,
+    measured_size: int | Exception = 0,
 ) -> dict[str, Any]:
     """Mock every filesystem touchpoint :class:`~rehuco_core.tc_conversion.TcConverter` uses.
 
@@ -57,6 +67,8 @@ def mock_environment(
     :param renames: the screenshot scan result to hand back.
     :param copy_side_effect: optional ``side_effect`` for the image-copy mock (e.g. to fail partway).
     :param tc_yaml: the ``.tc`` file's raw YAML text; defaults to :data:`TC_YAML`.
+    :param measured_size: what :func:`~rehuco_core.content_size_on_disk` answers, or an exception
+        instance (e.g. :class:`~rehuco_core.ContentUnreachableError`) for it to raise instead.
     :returns: the created mocks, keyed by what they stand in for.
     """
     mocker.patch.object(Path, "read_text", return_value=tc_yaml)
@@ -67,7 +79,17 @@ def mock_environment(
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
     mock_unlink = mocker.patch.object(Path, "unlink", autospec=True)
     mock_copy = mocker.patch("rehuco_core.tc_conversion.shutil.copy2", side_effect=copy_side_effect)
-    return {"write": mock_write, "rename": mock_rename, "unlink": mock_unlink, "copy": mock_copy}
+    if isinstance(measured_size, Exception):
+        mock_size = mocker.patch("rehuco_core.tc_conversion.content_size_on_disk", side_effect=measured_size)
+    else:
+        mock_size = mocker.patch("rehuco_core.tc_conversion.content_size_on_disk", return_value=measured_size)
+    return {
+        "write": mock_write,
+        "rename": mock_rename,
+        "unlink": mock_unlink,
+        "copy": mock_copy,
+        "content_size_on_disk": mock_size,
+    }
 
 
 def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None:
@@ -383,3 +405,62 @@ def test_losing_variants_are_backed_up_but_never_copied_forward(mocker: MockerFi
     assert mocks["copy"].call_args_list == [
         mocker.call(backup_path(DIRECTORY / "sample-00.png"), DIRECTORY / "info00.jpg")
     ]
+
+
+def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> None:
+    """The saved ``current_size`` is a fresh disk measurement, not the (possibly years-stale) legacy
+    string the ``.tc`` carried (#255).
+
+    **Test steps:**
+
+    * mock a `.tc` carrying a legacy ``current_size`` and the measurement answering a different number
+    * convert
+    * verify the saved ``current_size`` is the measured number, and the measurement ran over the `.tc`
+      path with the default exclusion patterns
+    """
+    mocks = mock_environment(mocker, tc_yaml=TC_YAML_WITH_SIZE, measured_size=123)
+
+    document = convert_tc(TC_PATH, keep_backups=True)
+
+    saved = json.loads(mocks["write"].call_args[0][1])
+    assert saved["core"]["current_size"] == 123
+    assert document.current_size == 123
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS)
+
+
+def test_an_unreachable_resource_stores_no_current_size(mocker: MockerFixture) -> None:
+    """A resource whose directory will not list is left without a stored ``current_size`` rather than
+    given a wrong one -- neither the failed measurement nor the untrusted legacy value is written
+    ([[mounts-and-storage#offline-mounts]], #255).
+
+    **Test steps:**
+
+    * mock a `.tc` carrying a legacy ``current_size`` and the measurement raising
+      ``ContentUnreachableError``
+    * convert
+    * verify the saved payload carries no ``current_size`` at all
+    """
+    mocks = mock_environment(
+        mocker, tc_yaml=TC_YAML_WITH_SIZE, measured_size=ContentUnreachableError("mount is offline")
+    )
+
+    convert_tc(TC_PATH, keep_backups=True)
+
+    saved = json.loads(mocks["write"].call_args[0][1])
+    assert "current_size" not in saved["core"]
+
+
+def test_current_size_measurement_uses_the_given_excluded_patterns(mocker: MockerFixture) -> None:
+    """A caller's exclusion patterns reach the measurement, the same discipline every other content
+    walk in this codebase is handed them under (#226).
+
+    **Test steps:**
+
+    * convert with an explicit ``excluded_patterns``
+    * verify the measurement was called with it, not the default
+    """
+    mocks = mock_environment(mocker)
+
+    convert_tc(TC_PATH, keep_backups=True, excluded_patterns=("*.tmp",))
+
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, ("*.tmp",))

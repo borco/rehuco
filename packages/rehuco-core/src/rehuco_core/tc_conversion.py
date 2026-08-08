@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import uuid4
 
+from .constants import EXCLUDED_FILE_PATTERNS
 from .plugins import DEFAULT_UNKNOWN_USERNAME
+from .rehu_content_files import ContentUnreachableError, content_size_on_disk
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
 from .tc_conversion_backups import backup_path, restore_backup
@@ -50,7 +52,12 @@ def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[Screensh
 
 
 def convert_tc(
-    tc_path: Path, *, keep_backups: bool, overwrite: bool = False, username: str = DEFAULT_UNKNOWN_USERNAME
+    tc_path: Path,
+    *,
+    keep_backups: bool,
+    overwrite: bool = False,
+    username: str = DEFAULT_UNKNOWN_USERNAME,
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
 ) -> RehuDocument:
     """Convert ``tc_path`` (and its recognized legacy screenshots) into a real, unlocked ``.rehu``.
 
@@ -64,11 +71,19 @@ def convert_tc(
         ([[field-schema#per-user-shared]], #109); defaults to
         :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME`, since a flag carried in from the ``.tc``
         was not set by this install's own identity.
+    :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out (#226),
+        resolved by the caller -- core never reads a setting.
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.
     """
-    return TcConverter(tc_path, keep_backups=keep_backups, overwrite=overwrite, username=username).convert()
+    return TcConverter(
+        tc_path,
+        keep_backups=keep_backups,
+        overwrite=overwrite,
+        username=username,
+        excluded_patterns=excluded_patterns,
+    ).convert()
 
 
 class TcConverter:  # pylint: disable=too-few-public-methods
@@ -86,13 +101,24 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
     :param overwrite: whether an existing target ``.rehu`` may be replaced.
     :param username: the identity the imported per-user flags are filed under; see :func:`convert_tc`.
+    :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out; see
+        :func:`convert_tc`.
     """
 
-    def __init__(self, tc_path: Path, *, keep_backups: bool, overwrite: bool, username: str) -> None:
+    def __init__(
+        self,
+        tc_path: Path,
+        *,
+        keep_backups: bool,
+        overwrite: bool,
+        username: str,
+        excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    ) -> None:
         self.__tc_path: Final = tc_path
         self.__keep_backups: Final = keep_backups
         self.__overwrite: Final = overwrite
         self.__username: Final = username
+        self.__excluded_patterns: Final = excluded_patterns
 
     def convert(self) -> RehuDocument:
         """Run the full plan-then-replace sequence.
@@ -122,7 +148,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         return document
 
     def __built_rehu_data(self, renames: Sequence[ScreenshotRename]) -> dict[str, Any]:
-        """Build the fresh ``.rehu`` JSON payload in memory, reading nothing but ``__tc_path``.
+        """Build the fresh ``.rehu`` JSON payload in memory, writing nothing.
 
         :param renames: this conversion's screenshot scan, consulted to rewrite embedded description
             image references and to mint each new ``id``.
@@ -135,7 +161,26 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         seeded = self.__seeded_timestamp()
         core["created"] = seeded
         core["updated"] = seeded
+        self.__put_measured_current_size(core)
         return data
+
+    def __put_measured_current_size(self, core: dict[str, Any]) -> None:
+        """Replace whatever ``current_size`` the ``.tc`` claimed with a fresh measurement of the
+        resource's content, through the same enumeration checksums use
+        ([[field-schema#duration-size]], #255) -- the legacy value may be years stale about a directory
+        that has since changed, and conversion is the one moment the resource is being handled anyway.
+
+        A resource whose directory will not list is left without a stored size rather than given a
+        wrong one ([[mounts-and-storage#offline-mounts]]): the key is omitted entirely, never filled
+        with the untrusted legacy value.
+
+        :param core: the core block being built, mutated in place.
+        """
+        core.pop("current_size", None)
+        try:
+            core["current_size"] = content_size_on_disk(self.__tc_path, self.__excluded_patterns)
+        except ContentUnreachableError:
+            pass
 
     def __seeded_timestamp(self) -> str:
         """The ``.tc`` file's mtime, as the UTC ISO-8601 string ``created``/``updated`` seed from

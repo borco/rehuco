@@ -22,6 +22,7 @@ import logging
 from pathlib import Path
 from typing import Any, Final
 
+from .constants import EXCLUDED_FILE_PATTERNS
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
 from .resource_scoping import resource_name
@@ -38,6 +39,7 @@ STATE_PATH_KEY: Final = "path"
 STATE_OVERWRITE_KEY: Final = "overwrite"
 STATE_KEEP_BACKUPS_KEY: Final = "keep_backups"
 STATE_USERNAME_KEY: Final = "username"
+STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
 """The keys this job writes itself down under, read back by this class and nothing else
 ([[appendices.task-queue#lifetime]])."""
 
@@ -56,12 +58,15 @@ class TcImportJob(TaskJobBase):
     :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
     :param username: the identity the imported per-user flags are filed under; see
         :func:`~rehuco_core.convert_tc`.
+    :param excluded_patterns: the filename globs the walk measuring ``current_size`` leaves out
+        (#226, #255), resolved by the caller -- core never reads a setting.
     :param label: how the job is named to a reader, or ``None`` for one derived from the path.
     """
 
     kind = TC_IMPORT_KIND
     safely_interruptible = False
 
+    # pylint: disable-next=too-many-arguments
     def __init__(
         self,
         tc_path: Path | None = None,
@@ -69,6 +74,7 @@ class TcImportJob(TaskJobBase):
         overwrite: bool = False,
         keep_backups: bool = True,
         username: str = DEFAULT_UNKNOWN_USERNAME,
+        excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
         label: str | None = None,
     ) -> None:
         super().__init__()
@@ -76,6 +82,7 @@ class TcImportJob(TaskJobBase):
         self.overwrite = overwrite
         self.keep_backups = keep_backups
         self.username = username
+        self.excluded_patterns = excluded_patterns
         self.label = label if label is not None else self.__derived_label()
         self.__document: RehuDocument | None = None
 
@@ -122,7 +129,11 @@ class TcImportJob(TaskJobBase):
         """
         control.report(0, 1)
         self.__document = convert_tc(
-            self.resource_path(), keep_backups=self.keep_backups, overwrite=self.overwrite, username=self.username
+            self.resource_path(),
+            keep_backups=self.keep_backups,
+            overwrite=self.overwrite,
+            username=self.username,
+            excluded_patterns=self.excluded_patterns,
         )
         control.report(1, 1)
         LOG.info("Converted %s.", self.resource_path())
@@ -149,6 +160,7 @@ class TcImportJob(TaskJobBase):
             STATE_OVERWRITE_KEY: self.overwrite,
             STATE_KEEP_BACKUPS_KEY: self.keep_backups,
             STATE_USERNAME_KEY: self.username,
+            STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -168,10 +180,13 @@ class TcImportJob(TaskJobBase):
         username = state.get(STATE_USERNAME_KEY, DEFAULT_UNKNOWN_USERNAME)
         if not isinstance(username, str):
             raise ValueError("A saved import task's username is not a string.")
+        excluded = state.get(STATE_EXCLUDED_PATTERNS_KEY)
         self.source = Path(path)
         self.overwrite = bool(overwrite)
         self.keep_backups = bool(keep_backups)
         self.username = username
+        if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
+            self.excluded_patterns = tuple(excluded)
         self.label = self.__derived_label()
 
     def __derived_label(self) -> str:

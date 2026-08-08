@@ -30,6 +30,7 @@ from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_UNKNOWN_USERNAME,
+    EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
     ConversionBackups,
     LearningPathEntry,
@@ -1406,7 +1407,9 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
 
     model.convert(keep_backups=False, overwrite=True)
 
-    mock_convert.assert_called_once_with(tc_path, keep_backups=False, overwrite=True, username="alice")
+    mock_convert.assert_called_once_with(
+        tc_path, keep_backups=False, overwrite=True, username="alice", excluded_patterns=EXCLUDED_FILE_PATTERNS
+    )
 
 
 def test_convert_raises_for_a_non_legacy_document(mocker: MockerFixture, model: RehuDocumentModel) -> None:
