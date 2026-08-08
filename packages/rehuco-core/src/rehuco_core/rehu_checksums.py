@@ -35,7 +35,9 @@ describes what is, and a walk that could not see a directory establishes nothing
 finds no ``.checksum`` but does find a same-stem legacy ``.sfv``/``.md5``/``.sha*`` beside the record
 seeds its entries from that file (:mod:`rehuco_core.checksum_seeding`) and checks them -- so the first
 run tests a claim made when the files were known good, rather than recording today's bytes as matched.
-It happens once: the record it writes is what every later verify reads.
+It happens once: the record it writes is what every later verify reads. A caller that has already carried
+the manifest into a record without reading a byte (:func:`~rehuco_core.seed_checksum_record`, #256) turns
+``seed_legacy`` off, so its verify checks what is recorded and refuses where nothing is.
 
 **A verify drops the entries today's coverage rule says were never content** (#254). A record written
 before *a record counts only what it covers* lists a resource's own ``info.tc.orig`` backups, a
@@ -912,6 +914,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     only: Collection[str] | None = None,
     stale_after: timedelta | None = None,
     create_if_missing: bool = False,
+    seed_legacy: bool = True,
     migrate_to: str | None = None,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
     progress: ChecksumProgress | None = None,
@@ -929,7 +932,10 @@ def verify_checksums(  # pylint: disable=too-many-arguments
 
     A resource with no record but a legacy ``.sfv``/``.md5``/``.sha*`` manifest beside it is **seeded
     from that manifest and verified against it** (:mod:`rehuco_core.checksum_seeding`, #243) --
-    including with ``create_if_missing`` off, since finding a record is not creating one.
+    including with ``create_if_missing`` off, since finding a record is not creating one. With
+    ``seed_legacy`` off it is not, and the run refuses: that is the mode a caller asks for when the
+    manifest has **already** been carried into a record it means to check
+    (:func:`~rehuco_core.seed_checksum_record`, #256).
 
     :param rehu_path: the resource's ``.rehu`` file.
     :param coordinator: the rename barrier to read through (#241), or ``None`` for a private one.
@@ -940,6 +946,10 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     :param create_if_missing: whether a resource with no record yet starts from an empty one -- off by
         default here, because verifying against a record that does not exist is usually a mistake worth
         hearing about; a sweep that means *adopt everything* switches it on.
+    :param seed_legacy: whether a resource with no record may start from the legacy manifest beside it
+        (#243). On by default, which is every interactive verify. Off is the *check what is already
+        recorded* mode (#256): a caller that has already seeded the record refuses rather than seeding a
+        second time, so a run that arrives before the record exists costs a ``stat`` and no bytes.
     :param migrate_to: re-record matched entries under this algorithm, from the same read; a failed
         entry stays ``mismatched`` under its old key with the new hash discarded.
     :param excluded_patterns: filename globs deciding only which unlisted files exist to adopt (#226);
@@ -949,12 +959,19 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     :returns: what the run established.
     :raises FileNotFoundError: no record, nothing to seed one from, and ``create_if_missing`` is off.
     :raises ChecksumRecordError: a record file this build cannot read at all.
-    :raises ValueError: an algorithm this build does not ship.
+    :raises ValueError: an algorithm this build does not ship, or ``create_if_missing`` with
+        ``seed_legacy`` off.
     :raises ContentUnreachableError: the resource's directory would not list -- checked before the
         record is looked for, so an away mount raises this rather than reporting a clean empty run
         (#245).
     :raises OSError: the record could not be re-written.
     """
+    # the fourth combination is refused rather than shipped (#256): it would adopt every file on disk as
+    # a fresh baseline while a perfectly good manifest sat beside it unread, which is precisely the
+    # throwing away of an old claim that seeding exists to prevent. A generate says the same thing
+    # honestly, and is what a caller who means it should ask for
+    if create_if_missing and not seed_legacy:
+        raise ValueError("A verify that creates a missing record may not ignore the legacy manifest beside it.")
     return ChecksumRun(
         rehu_path,
         coordinator=coordinator,
@@ -962,7 +979,7 @@ def verify_checksums(  # pylint: disable=too-many-arguments
         only=only,
         stale_after=stale_after,
         create_if_missing=create_if_missing,
-        seed_legacy=True,
+        seed_legacy=seed_legacy,
         migrate_to=migrate_to,
         excluded_patterns=excluded_patterns,
         progress=progress,

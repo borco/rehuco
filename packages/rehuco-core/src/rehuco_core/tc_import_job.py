@@ -22,7 +22,8 @@ import logging
 from pathlib import Path
 from typing import Any, Final
 
-from .constants import EXCLUDED_FILE_PATTERNS
+from .checksum_seeding import log_legacy_seed, seed_checksum_record
+from .constants import EXCLUDED_FILE_PATTERNS, REHU_SUFFIX
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
 from .resource_scoping import resource_name
@@ -51,6 +52,13 @@ class TcImportJob(TaskJobBase):
     offers the discard variant (#193's, deliberately, afterwards) -- retaining every backup is what
     makes an unattended bulk run safe at all, since nothing is deleted and any one resource can be
     reverted (#190) if the conversion made the wrong call.
+
+    **Converting a resource carries its checksums forward too** (#256): the `info.sfv` beside the `.tc`
+    is seeded into an `info.checksum` once the conversion has landed, hashing nothing. It is not an
+    option, because there is no version of *converted* that leaves a years-old claim behind as a file
+    nothing reads. Checking that claim **is** an option, and it is a separate job -- this one is not
+    safely interruptible, and folding a multi-hour read into it would make a catalog-wide import
+    unstoppable.
 
     :param tc_path: the `.tc` file to convert, or ``None`` for a job about to be handed a saved state.
     :param overwrite: whether an existing target ``.rehu`` may be replaced -- the wizard's per-row
@@ -115,12 +123,13 @@ class TcImportJob(TaskJobBase):
         self.__document = None
 
     def run(self, control: JobControl) -> None:
-        """Convert this job's `.tc`, reporting nothing but start and finish.
+        """Convert this job's `.tc` and carry its legacy manifest forward, reporting start and finish.
 
         One call, one file: :func:`~rehuco_core.convert_tc` divides no further, so there is nothing
         finer than *not started* / *done* for :meth:`~rehuco_core.tasks.JobControl.report` to say --
         which is why this job declares no :attr:`~rehuco_core.tasks.TaskJob.progress_unit` (#248): a
-        cell jumping from empty to full says nothing the state column does not already.
+        cell jumping from empty to full says nothing the state column does not already. The seed that
+        follows (:meth:`__seed_checksums`) reads no content, so it does not change that.
 
         :param control: the engine's face to this job.
         :raises FileExistsError: the target ``.rehu`` exists and :attr:`overwrite` is ``False``, or a
@@ -137,6 +146,35 @@ class TcImportJob(TaskJobBase):
         )
         control.report(1, 1)
         LOG.info("Converted %s.", self.resource_path())
+        self.__seed_checksums(self.resource_path().with_suffix(REHU_SUFFIX))
+
+    def __seed_checksums(self, rehu_path: Path) -> None:
+        """Carry the resource's legacy manifest into its `.checksum`, reading no content (#256).
+
+        The second half of what converting a resource means: the `.tc` becomes a `.rehu`, and the
+        `info.sfv` a predecessor left beside it -- a claim made when the files were known good -- becomes
+        record entries instead of a file nothing reads
+        (:func:`~rehuco_core.seed_checksum_record`). No bytes are hashed, so a catalog-wide import costs
+        the same as it did; the entries land dateless, and any later verify picks every one of them up.
+
+        **A seed that fails costs itself, not the conversion.** The conversion has already succeeded and
+        is not rolled back for this: the resource is converted either way, the manifest is still on disk,
+        and the first verify to reach the resource seeds it then (#243). Failing the job here would put a
+        `failed` row against work that genuinely happened, and send Retry at a conversion that would now
+        refuse over its own target.
+
+        :param rehu_path: the `.rehu` the conversion just wrote.
+        """
+        try:
+            seed = seed_checksum_record(rehu_path, excluded_patterns=self.excluded_patterns)
+        except OSError as error:
+            LOG.warning("The checksum record for %s could not be seeded: %s", rehu_path, error)
+            return
+        if seed is None:
+            return
+        count = len(seed.entries)
+        LOG.info("Seeded %d checksum entr%s from %s.", count, "y" if count == 1 else "ies", seed.manifest.name)
+        log_legacy_seed(seed)
 
     def resource_path(self) -> Path:
         """This job's `.tc` file, refusing a job that has none.

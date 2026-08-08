@@ -11,6 +11,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QCheckBox" name="verify_content_check">
+     <property name="text">
+      <string>Check the content of every converted resource</string>
+     </property>
+     <property name="toolTip">
+      <string>Queue a checksum job per resource after its conversion: verify against the legacy manifest where there is one, or baseline from disk where there is not. This reads every file, which takes hours over a large catalog. Left off, each resource still gets its manifest carried into a .checksum — dateless, so a later sweep checks it.</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLineEdit" name="filter_edit">
      <property name="placeholderText">
       <string>Filter by path or flag...</string>

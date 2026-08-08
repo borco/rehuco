@@ -16,6 +16,13 @@ named, an absent one is ``missing`` and **keeps its recorded hash**, and content
 listed is adopted the way any unlisted file is. ``only``, ``stale_after``, the progress denominator and
 ``migrate_to`` therefore compose for free -- there is no second code path for a seeded run.
 
+**Two ways in, and they establish the same thing.** A verify seeds on its way past
+(:meth:`~rehuco_core.rehu_checksums.ChecksumRun.verify`) and then hashes everything; :func:`seed_checksum_record`
+seeds and stops (#256), writing the record and reading no bytes at all. The second is what a bulk import
+runs, once per converted resource: a catalog-wide migration cannot afford to read the library to carry a
+claim forward, and it does not have to -- the entries land dateless, a dateless entry is never fresh, and
+the next sweep verifies every one of them with nobody tracking which.
+
 **Nothing here writes a legacy manifest, and nothing deletes one.** It is somebody else's data, it
 costs nothing, and it stays out of the content set either way; deleting it would also make this step
 unrepeatable if the new record were lost. The record's own suffix stays the only one written (#203).
@@ -25,15 +32,28 @@ mix ``\\`` and ``/`` freely, and a name that cannot be normalized into a name *i
 reported and dropped, never guessed at.
 """
 
+import logging
 import os
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 from .checksum_algorithms import CHECKSUM_ALGORITHMS
-from .checksum_record import CHECKSUM_NAME_KEY, HEX_DIGEST_PATTERN, checksum_entry_name
+from .checksum_record import (
+    CHECKSUM_FILES_KEY,
+    CHECKSUM_NAME_KEY,
+    HEX_DIGEST_PATTERN,
+    checksum_entry_name,
+    checksum_record_path,
+    new_checksum_record,
+    save_checksum_record,
+)
+from .constants import EXCLUDED_FILE_PATTERNS
+from .rehu_content_files import enumerate_content_files
+
+LOG: Final = logging.getLogger(__name__)
 
 LEGACY_MANIFEST_ALGORITHMS: Final[dict[str, str]] = {
     ".sha512": "sha512",
@@ -275,19 +295,36 @@ def legacy_manifest_candidates(rehu_path: Path) -> list[Path]:
         holds none or will not list -- an unreadable directory is the caller's business, and by the
         time this is asked a run has already refused over it (#245).
     """
-    stem = rehu_path.stem.lower()
-    found: dict[str, Path] = {}
     try:
         with os.scandir(rehu_path.parent) as entries:
-            for entry in entries:
-                if not entry.is_file():
-                    continue
-                name_stem, suffix = os.path.splitext(entry.name)
-                suffix = suffix.lower()
-                if name_stem.lower() == stem and suffix in LEGACY_MANIFEST_ALGORITHMS:
-                    found.setdefault(suffix, rehu_path.parent / entry.name)
+            names = [entry.name for entry in entries if entry.is_file()]
     except OSError:
         return []
+    return legacy_manifests_among(rehu_path.parent, rehu_path.stem, names)
+
+
+def legacy_manifests_among(directory: Path, stem: str, names: Iterable[str]) -> list[Path]:
+    """Pick ``stem``'s legacy manifests out of a directory listing somebody else already read.
+
+    The same rule :func:`legacy_manifest_candidates` applies, over names rather than over a fresh
+    ``scandir``: the bulk import's planner (#191) reads every directory in the tree anyway, so asking it
+    what a conversion would carry forward (#256) costs nothing, while a second listing per resource would
+    cost a catalog-sized walk over an SMB mount. One rule in one place, two ways of being handed the
+    names.
+
+    :param directory: the directory the names were read from, which the answers are built against.
+    :param stem: the record's stem -- ``info`` for ``info.rehu``, matched case-insensitively for the
+        reason the content walk gives: SMB and macOS both hand back casings Windows never wrote.
+    :param names: the directory's file names, as read.
+    :returns: the manifests, in :data:`LEGACY_MANIFEST_ALGORITHMS`' order.
+    """
+    wanted = stem.lower()
+    found: dict[str, Path] = {}
+    for name in names:
+        name_stem, suffix = os.path.splitext(name)
+        suffix = suffix.lower()
+        if name_stem.lower() == wanted and suffix in LEGACY_MANIFEST_ALGORITHMS:
+            found.setdefault(suffix, directory / name)
     return [found[suffix] for suffix in LEGACY_MANIFEST_ALGORITHMS if suffix in found]
 
 
@@ -340,3 +377,64 @@ def seed_from_legacy_manifest(rehu_path: Path, content_names: Collection[str]) -
     except OSError:
         return None
     return replace(seed, ignored=tuple(path for path in candidates if path != manifest))
+
+
+def seed_checksum_record(
+    rehu_path: Path, *, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+) -> LegacySeed | None:
+    """Write ``rehu_path``'s ``.checksum`` from the legacy manifest beside it, hashing nothing (#256).
+
+    The seed without the verify: the entries a run would have started from are written straight out, and
+    not one byte of content is read. That is what makes it the default step of a bulk import
+    ([[acquisition-tooling#tc-to-rehu]]) -- a catalog-wide migration that read every file to carry a
+    claim forward would take days, and it does not have to. **The record lands dateless**, which is
+    exactly the state a later verify is looking for: a seeded entry carries a hash and no date, a
+    dateless entry is never fresh whatever the staleness window, so the next sweep checks every one of
+    them with no force asked for and nobody tracking which resources were done.
+
+    **A resource that already has a ``.checksum`` is left alone**, the same one-way rule a verify's
+    seeding is under (#243): the record is what supersedes the manifest, and re-seeding over it would
+    replace dated verdicts with a years-old claim.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param excluded_patterns: filename globs the content walk leaves out (#226), resolved by the caller
+        -- only content is seeded, so this decides which of the manifest's lines are dropped as naming
+        something this app deliberately does not checksum.
+    :returns: what the manifest contributed, or ``None`` when there was nothing to do -- a record is
+        already there, or no manifest this build can read yielded an entry. Nothing is written in either
+        case.
+    :raises ContentUnreachableError: the resource's directory would not list -- refused before the
+        manifest is looked for, so an away mount never seeds a record whose every line reads as a claim
+        about a file that is gone (#245).
+    :raises OSError: the record could not be written.
+    """
+    record_path = checksum_record_path(rehu_path)
+    if record_path.exists():
+        return None
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration.require_reachable()
+    directory = enumeration.directory
+    content_names = [path.relative_to(directory).as_posix() for path in enumeration.files]
+    seed = seed_from_legacy_manifest(rehu_path, content_names)
+    if seed is None or not seed.entries:
+        return None
+    record = new_checksum_record()
+    record[CHECKSUM_FILES_KEY] = list(seed.entries)
+    save_checksum_record(record_path, record)
+    return seed
+
+
+def log_legacy_seed(seed: LegacySeed) -> None:
+    """Say line by line what a legacy manifest did not contribute (#243).
+
+    A summary carries the counts; this is where a reader finds out *which* line and *why*, on the
+    resource's own log ([[appendices.logging#scopes]]). It runs once in a resource's life -- whether the
+    seed came from a verify (#243) or from an import (#256) -- so the detail costs nothing afterwards,
+    and both callers say it the same way because it is the same event.
+
+    :param seed: what the manifest contributed.
+    """
+    for manifest in seed.ignored:
+        LOG.info("%s was not read: %s is the manifest this record was seeded from.", manifest, seed.manifest.name)
+    for drop in seed.dropped:
+        LOG.warning("%s: dropped %r -- %s.", seed.manifest, drop.line, drop.reason)

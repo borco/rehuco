@@ -533,3 +533,78 @@ def test_summary_counts_match_the_record_set(mocker: MockerFixture) -> None:
 
 
 # endregion
+
+# region The manifest a conversion would carry forward
+
+
+def test_a_same_stem_manifest_is_what_the_conversion_would_seed_from(mocker: MockerFixture) -> None:
+    """The wizard's *verify or baseline* answer, taken off a listing the walk already read (#256).
+
+    **Test steps:**
+
+    * mock a resource holding an `info.sfv` and one holding no manifest at all
+    * plan the tree
+    * verify only the first names a manifest
+    """
+    mock_environment(
+        mocker,
+        tc_files=["a/info.tc", "b/info.tc"],
+        directories=["a", "b"],
+        other_files=["a/info.sfv", "b/cover.jpg"],
+    )
+
+    by_path = {r.tc_path: r for r in plan_tc_conversion(ROOT).resources}
+
+    assert by_path[ROOT / "a/info.tc"].legacy_manifest == ROOT / "a/info.sfv"
+    assert by_path[ROOT / "b/info.tc"].legacy_manifest is None
+
+
+def test_an_entry_that_is_neither_a_file_nor_a_directory_is_passed_over(mocker: MockerFixture) -> None:
+    """The walk now reads every name rather than only the `.tc` ones, so what it skips is worth pinning.
+
+    **Test steps:**
+
+    * mock a root holding one entry that is neither a regular file nor a directory
+    * plan the tree
+    * verify it found no resource and reported nothing unreadable
+    """
+    mocker.patch(
+        "rehuco_core.tc_conversion_plan.os.scandir",
+        side_effect=lambda _directory: FakeScandir([FakeDirEntry("live.sock", regular=False)]),
+    )
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert not plan.resources
+    assert not plan.unreadable
+
+
+def test_a_manifest_under_another_stem_is_not_this_resource_s(mocker: MockerFixture) -> None:
+    """Same-stem is what makes it this record's, the rule the seed itself applies (#243).
+
+    **Test steps:**
+
+    * mock a resource whose directory holds a manifest under an unrelated stem
+    * plan the tree
+    * verify the resource names none
+    """
+    mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], other_files=["a/backup.sfv"])
+
+    assert plan_tc_conversion(ROOT).resources[0].legacy_manifest is None
+
+
+def test_the_strongest_readable_manifest_is_the_one_named(mocker: MockerFixture) -> None:
+    """One manifest is read, by a fixed suffix precedence -- and the plan says which before anything runs.
+
+    **Test steps:**
+
+    * mock a resource holding both an `info.sfv` and an `info.md5`
+    * plan the tree
+    * verify the stronger suffix is the one named
+    """
+    mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], other_files=["a/info.sfv", "a/info.md5"])
+
+    assert plan_tc_conversion(ROOT).resources[0].legacy_manifest == ROOT / "a/info.md5"
+
+
+# endregion

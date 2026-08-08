@@ -23,6 +23,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
+from .checksum_seeding import legacy_manifests_among, readable_legacy_manifest
 from .constants import LEGACY_SUFFIX, REHU_SUFFIX
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuFormatError
@@ -100,6 +101,11 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
     :param suspect_mtime: the mtime that would seed `created`/`updated` looks unreliable -- part of a
         wall of near-identical timestamps across this run, the signature of a NAS restore, bulk copy, or
         archive extraction clobbering it.
+    :param legacy_manifest: the same-stem `.sfv`/`.md5`/`.sha*` the conversion would seed the resource's
+        `.checksum` from (#243, #256), or `None` when there is none this build can read. **Not a flag** --
+        nothing about it wants a human's attention; it is what tells the wizard whether checking this
+        resource means verifying a claim or baselining today's bytes, answered here because the walk
+        reads the directory anyway.
     """
 
     tc_path: Path
@@ -113,6 +119,7 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
     duration_present: bool
     unmapped_keys: tuple[str, ...]
     suspect_mtime: bool
+    legacy_manifest: Path | None = None
 
     @property
     def blocked(self) -> bool:
@@ -205,11 +212,12 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             if listing is None:
                 unreadable.append(directory)
                 continue
-            tc_files, subdirectories = listing
+            file_names, subdirectories = listing
             pending.extend(subdirectories)
-            for tc_path in sorted(tc_files):
+            for name in sorted(name for name in file_names if os.path.splitext(name)[1].lower() == LEGACY_SUFFIX):
+                tc_path = directory / name
                 try:
-                    entries.append(self.__planned(tc_path))
+                    entries.append(self.__planned(tc_path, file_names))
                 except OSError, RehuFormatError:
                     # a `.tc` that will not read or parse costs its own record, not the whole plan --
                     # the single-document path refuses it into a locked stub, and a bulk dry-run has
@@ -224,8 +232,13 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         return TcConversionTreePlan(self.__root, sorted_resources, tuple(unreadable))
 
     @staticmethod
-    def __listed(directory: Path) -> tuple[list[Path], list[Path]] | None:
-        """List one directory's `.tc` files and subdirectories, without descending into either.
+    def __listed(directory: Path) -> tuple[list[str], list[Path]] | None:
+        """List one directory's file names and subdirectories, without descending into either.
+
+        Every name rather than only the `.tc` ones, because a resource's plan is about its whole
+        directory: which `.tc` files are there, and which legacy checksum manifest sits beside each of
+        them (#256). Two questions, one listing -- a second ``scandir`` per resource would cost a whole
+        extra walk of an SMB-mounted catalog to learn something this one already read.
 
         Every subdirectory is walked regardless of whether this directory holds a `.tc`: a nested `.tc`
         is not a scan boundary ([[data-model#resource-scoping]]), matching
@@ -234,26 +247,27 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         sideways would plan the same resource twice.
 
         :param directory: the directory to read.
-        :returns: ``(tc_files, subdirectories)``, or ``None`` when the directory would not list (an
+        :returns: ``(file_names, subdirectories)``, or ``None`` when the directory would not list (an
             offline mount branch, [[mounts-and-storage#offline-mounts]]).
         """
-        tc_files: list[Path] = []
+        file_names: list[str] = []
         subdirectories: list[Path] = []
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
                     if entry.is_dir(follow_symlinks=False):
                         subdirectories.append(directory / entry.name)
-                    elif entry.is_file() and os.path.splitext(entry.name)[1].lower() == LEGACY_SUFFIX:
-                        tc_files.append(directory / entry.name)
+                    elif entry.is_file():
+                        file_names.append(entry.name)
         except OSError:
             return None
-        return tc_files, subdirectories
+        return file_names, subdirectories
 
-    def __planned(self, tc_path: Path) -> tuple[TcConversionPlan, float]:
+    def __planned(self, tc_path: Path, file_names: Sequence[str]) -> tuple[TcConversionPlan, float]:
         """Build one resource's plan record and the mtime that would seed it, without writing anything.
 
         :param tc_path: the `.tc` file to plan.
+        :param file_names: every file name in ``tc_path``'s directory, as :meth:`__listed` read them.
         :returns: the plan (with :attr:`~TcConversionPlan.suspect_mtime` not yet decided -- that needs
             every resource's mtime, filled in by :meth:`__with_suspect_mtimes`) and its mtime.
         """
@@ -276,6 +290,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             duration_present="original_duration" in type_block,
             unmapped_keys=tuple(sorted(key for key in document.data if key not in CONSUMED_TC_KEYS)),
             suspect_mtime=False,
+            legacy_manifest=readable_legacy_manifest(legacy_manifests_among(tc_path.parent, tc_path.stem, file_names)),
         )
         return plan, tc_path.stat().st_mtime
 

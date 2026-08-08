@@ -126,6 +126,23 @@ opt-in `rehu_exists` needs to proceed with `overwrite`, and the only such opt-in
 message. Cancelling mid-import cancels every job still queued outright and lets the one already running
 finish on its own, so a resource is never left half-converted.
 
+**Converting a resource converts its checksums too** (#256). The `info.sfv` a predecessor left beside the `.tc` — a
+claim made when the files were known good — is seeded into an `info.checksum` as part of the conversion job, reading
+no content ([[data-model#checksums]]). It is not an option: leaving it as a file nothing reads is what the seeding
+step exists to end, and it costs nothing, so there is nothing to choose. No manifest means no record, and inventing
+a baseline from disk instead is what the one option is for.
+
+That option is **whether to check the content**, and it is **off by default** because on it reads the whole library.
+Ticked, it queues a **second job per resource** — verifying the just-seeded record where a manifest made a claim, and
+generating one from disk where none did. A second job rather than more work in the first: a conversion is not safely
+interruptible, since it is renaming files, and folding a multi-hour read into it would make a catalog-wide import
+unstoppable. As its own job the hashing is pausable, cancellable and retryable, and stopping between the pair is
+harmless — the resource is converted with a dateless record, which any later sweep settles. Cancelling the import
+cancels these too, or stopping it would leave the library being read for hours afterwards. They are otherwise **not
+the wizard's to report**: their outcome is not a conversion's and belongs on no row of its table, they outlive the
+dialog, and the task queue is where a run measured in hours is watched. The result step says how many were queued, so
+*the import is finished* is not read off a page with hours of hashing still to run.
+
 Retained backups stay usable **after** a run, not only during one: a completed conversion can be **reverted** — the
 written `.rehu` and the `<stem>NN` screenshots it installed are deleted and every `.orig` renamed back — or its backups
 **discarded**, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every
