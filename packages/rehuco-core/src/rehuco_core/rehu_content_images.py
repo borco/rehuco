@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Final
 
 from .constants import ARCHIVE_EXTENSIONS, CONTENT_IMAGE_EXTENSIONS
-from .resource_scoping import is_directory_scoped
+from .resource_scoping import is_directory_scoped, is_directory_scoped_name, is_record_name
 
 
 @dataclass(frozen=True)
@@ -37,8 +37,12 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
     File-scoped (a named ``foo.rehu``/``foo.tc``): only the sibling archive sharing its stem, ``.zip``
     or ``.cbz`` -- a whitelist of one, never a directory walk. Directory-scoped
     (``info.rehu``/``info.tc``): the sum over every archive found recursively under ``rehu_path``'s
-    directory, including subdirectories that carry their own nested record -- a nested resource is not a
-    boundary here.
+    directory that no other record covers (#254): a subdirectory carrying its own ``info.rehu``/``info.tc``
+    is that record's, wholesale, and an archive sitting beside a file-scoped ``foo.rehu`` of its own stem
+    is that one's. **A record counts only what it covers**, here for the same reason as in the size scan
+    and the checksums -- a count summed over a library has to be the sum of what each record already
+    knows, and the overlap this replaced counted a nested pack once for itself and again for every
+    ancestor above it.
 
     Which of the two it is comes from :func:`~rehuco_core.resource_scoping.is_directory_scoped`, the one
     place the rule is stated (#250), so an unconverted ``info.tc`` counts the archives its directory holds
@@ -94,7 +98,13 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
         return sorted(matches, key=lambda sibling: sibling.name)
 
     def __find_archives_under(self, directory: Path) -> list[Path]:
-        """List every archive found recursively under ``directory``, root and subdirectories alike.
+        """List the archives under ``directory`` that no other record covers (#254).
+
+        The records are read off the same flattened listing the archives come from, so the coverage
+        rule costs no second walk: a directory holding an ``info.rehu``/``info.tc`` takes its whole
+        subtree out, and a file-scoped ``foo.rehu`` takes the same-stem archive beside it. What the
+        rule is comes from :mod:`rehuco_core.resource_scoping`, the one place it is stated, so this
+        walk and `rehuco_core.rehu_content_files`'s cannot answer it differently.
 
         :param directory: the directory-scoped resource's directory.
         :returns: the matching absolute paths, sorted, or empty when ``directory`` is missing/unreadable.
@@ -103,7 +113,20 @@ class ContentImageScanner:  # pylint: disable=too-few-public-methods
             candidates = list(directory.rglob("*"))
         except OSError:
             return []
-        matches = [candidate for candidate in candidates if candidate.suffix.lower() in ARCHIVE_EXTENSIONS]
+        covered = {candidate.parent for candidate in candidates if is_directory_scoped_name(candidate.name)}
+        covered.discard(directory)
+        claimed = {
+            (candidate.parent, candidate.stem.lower())
+            for candidate in candidates
+            if is_record_name(candidate.name) and not is_directory_scoped_name(candidate.name)
+        }
+        matches = [
+            candidate
+            for candidate in candidates
+            if candidate.suffix.lower() in ARCHIVE_EXTENSIONS
+            and (candidate.parent, candidate.stem.lower()) not in claimed
+            and not covered.intersection(candidate.parents)
+        ]
         return sorted(matches, key=str)
 
     def __list_archive_images(self, archive: Path) -> list[ContentImageEntry]:

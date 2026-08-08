@@ -14,6 +14,13 @@ siblings it claims are recognized as its -- exactly as they would be after the c
 resource's content set is then the same set before and after it is converted, which is the property that
 lets a claim seeded from the old ``.sfv`` (#243) still describe the resource once the ``.rehu`` is there.
 
+**A record counts only what it covers** (#254), and this is where a walk asks what covers what. Coverage
+is decided by the records *present*, never by what is on disk: a subdirectory holding an
+``info.rehu``/``info.tc`` is out of every ancestor's content wholesale, a file-scoped ``foo.rehu`` takes
+its same-stem siblings out of the enclosing record's, and whatever no record claims belongs to the
+nearest enclosing directory-scoped record at any depth. :func:`is_directory_scoped_name` is what a walk
+holding a listing asks, where :func:`is_directory_scoped` is what a caller holding a path asks.
+
 Matched exactly rather than case-insensitively, which is what the eight call sites did and what
 :mod:`rehuco_core.rehu_rename` needs to keep meaning: a case-folded rule would make ``Info.rehu`` and
 ``info.rehu`` two spellings of one resource on a share that hands back either.
@@ -46,7 +53,21 @@ def is_directory_scoped(record_path: Path) -> bool:
     :param record_path: a resource record's path, ``.rehu`` or ``.tc``.
     :returns: whether it is directory-scoped; a named ``foo.rehu``/``foo.tc`` is not.
     """
-    return record_path.name in DIRECTORY_SCOPED_FILENAMES
+    return is_directory_scoped_name(record_path.name)
+
+
+def is_directory_scoped_name(filename: str) -> bool:
+    """Whether ``filename`` names a record that describes the directory it sits in.
+
+    The same rule :func:`is_directory_scoped` applies, asked of a name a listing handed back rather than
+    of a path -- which is all a walk has when it decides whether a subdirectory belongs to a record of
+    its own rather than to the resource above it (#254), and which spares it a
+    :class:`~pathlib.Path` per entry to ask.
+
+    :param filename: a file's name, not its path.
+    :returns: whether it is ``info.rehu`` or ``info.tc``; a named ``foo.rehu``/``foo.tc`` is not.
+    """
+    return filename in DIRECTORY_SCOPED_FILENAMES
 
 
 def is_record_name(filename: str) -> bool:

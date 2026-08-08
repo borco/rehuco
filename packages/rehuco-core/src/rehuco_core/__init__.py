@@ -11,6 +11,7 @@ from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
     CHECKSUM_SWEEP_KIND,
     CHECKSUM_VERIFY_KIND,
+    PRUNE_REASONS,
     ChecksumJob,
     GenerateChecksumsJob,
     SweepChecksumsJob,
@@ -108,9 +109,11 @@ from .rehu_content_duration import (
 )
 from .rehu_content_files import (
     ContentEnumeration,
+    ContentExclusionTier,
     ContentUnreachableError,
     content_size_on_disk,
     enumerate_content_files,
+    excluded_content_names,
 )
 from .rehu_content_images import ContentImageEntry, enumerate_content_images
 from .rehu_document import (
@@ -140,6 +143,7 @@ from .resource_scoping import (
     DIRECTORY_SCOPED_FILENAMES,
     RECORD_SUFFIXES,
     is_directory_scoped,
+    is_directory_scoped_name,
     is_legacy_record_name,
     is_record_name,
     resource_name,
@@ -259,6 +263,7 @@ __all__ = [
     "ChecksumStatus",
     "CollectionEntry",
     "ContentEnumeration",
+    "ContentExclusionTier",
     "ContentImageEntry",
     "ContentUnreachableError",
     "ConversionBackups",
@@ -305,6 +310,7 @@ __all__ = [
     "MediaInfoDurationProbe",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",
+    "PRUNE_REASONS",
     "PUBLIC_USERNAME",
     "PartialRenameError",
     "PersistableTaskJob",
@@ -370,11 +376,13 @@ __all__ = [
     "discard_conversion_backups",
     "enumerate_catalog_resources",
     "enumerate_content_files",
+    "excluded_content_names",
     "enumerate_content_images",
     "forget_checksums",
     "generate_checksums",
     "is_conversion_backup",
     "is_directory_scoped",
+    "is_directory_scoped_name",
     "is_legacy_record_name",
     "is_legacy_screenshot",
     "is_record_name",

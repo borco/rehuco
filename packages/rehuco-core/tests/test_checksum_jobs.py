@@ -22,6 +22,7 @@ from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
     FINISHED_JOB_STATES,
     PROGRESS_UNIT_BYTES,
+    PRUNE_REASONS,
     ChecksumJob,
     ChecksumReport,
     GenerateChecksumsJob,
@@ -430,6 +431,35 @@ def test_a_summary_is_logged_under_the_scope_the_job_was_enqueued_in(
     assert "1 matched, 1 mismatched" in caplog.text
 
 
+def test_every_pruned_entry_is_named_in_the_log_with_its_reason(
+    mocker: MockerFixture, control: FakeControl, present: None, caplog: Any
+) -> None:
+    """The summary counts what was dropped; the log says which entry and why (#254).
+
+    Entries vanishing silently is the failure mode the reporting is written against, and a count alone
+    would not let anyone find out what left.
+
+    **Test steps:**
+
+    * run a verify reporting one entry pruned under each tier
+    * check both names and both reasons reached the resource's log
+    """
+    del present
+    mocker.patch(
+        "rehuco_core.checksum_jobs.verify_checksums",
+        return_value=ChecksumReport(pruned={"info.tc.orig": "structural", "Thumbs.db": "junk"}),
+    )
+
+    with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
+        VerifyChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert "'info.tc.orig'" in caplog.text
+    assert PRUNE_REASONS["structural"] in caplog.text
+    assert "'Thumbs.db'" in caplog.text
+    assert PRUNE_REASONS["junk"] in caplog.text
+    assert "2 pruned" in caplog.text
+
+
 @mark.parametrize("request_stop", ["pause", "cancel"])
 def test_a_stop_travels_out_of_the_run_untouched(
     mocker: MockerFixture, control: FakeControl, present: None, request_stop: str
@@ -692,6 +722,10 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
         (ChecksumReport(unnamed_malformed=2), "2 unnamed malformed"),
         (ChecksumReport(unreadable_directories=("extras",)), "1 unreadable directory"),
         (
+            ChecksumReport(statuses={VIDEO: "matched"}, pruned={"info.tc.orig": "structural"}),
+            "1 matched, 1 pruned",
+        ),
+        (
             ChecksumReport(statuses={VIDEO: "matched"}, unreadable_directories=("extras", "raw")),
             "1 matched, 2 unreadable directories",
         ),
@@ -703,6 +737,7 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
         "skipped and unreadable",
         "unnamed",
         "one unreadable directory",
+        "pruned",
         "several unreadable directories",
     ],
 )

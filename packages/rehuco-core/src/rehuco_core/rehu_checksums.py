@@ -37,6 +37,15 @@ seeds its entries from that file (:mod:`rehuco_core.checksum_seeding`) and check
 run tests a claim made when the files were known good, rather than recording today's bytes as matched.
 It happens once: the record it writes is what every later verify reads.
 
+**A verify drops the entries today's coverage rule says were never content** (#254). A record written
+before *a record counts only what it covers* lists a resource's own ``info.tc.orig`` backups, a
+``Thumbs.db`` a browse dropped in, a nested record's bookkeeping -- adopted, hashed and dated by an
+earlier run, and kept forever otherwise, since a verify only ever adds. Those entries go, and the run
+says how many and under which tier. Two things it deliberately does **not** drop: an entry for a file
+**another record** now covers, whose claim has somewhere to go and gets there in #257 rather than being
+destroyed here; and an entry no record covers whose file is merely gone, which stays ``missing`` with its
+hash, because the enumeration is a disk walk and *deleted* and *excluded* look identical to one.
+
 Which files are content is :func:`~rehuco_core.enumerate_content_files`'s answer (#226), shared with the
 size scan; reads go through :func:`~rehuco_core.read_content_chunks` (#241), so a rename can land
 mid-verify and the run follows the resource. The record's *format* -- entries, statuses, load and save --
@@ -68,7 +77,7 @@ from .checksum_record import (
 from .checksum_seeding import LegacySeed, seed_from_legacy_manifest
 from .constants import EXCLUDED_FILE_PATTERNS
 from .content_reading import read_content_chunks
-from .rehu_content_files import enumerate_content_files
+from .rehu_content_files import ContentExclusionTier, enumerate_content_files, excluded_content_names
 from .rename_coordination import RenameCoordinator, ResourceLocation
 
 ChecksumProgress = Callable[[int, int | None], None]
@@ -106,6 +115,9 @@ class ChecksumReport:
     :param seed: what a legacy ``.sfv``/``.md5``/``.sha*`` manifest contributed, when this run was the
         one that found it (#243) -- ``None`` for every run before and after, since a seed happens once
         in a resource's life and the ``.checksum`` it writes is what the next verify reads.
+    :param pruned: the entries a verify **removed** because no resource's content could ever include
+        them, each with the tier that says why (#254) -- the one thing a run takes away, and reported
+        for exactly that reason: entries vanishing silently is the failure mode.
     :param unreadable_directories: the directories under the resource that would not list, by
         record-relative name (#245). A run over a tree with an offline branch is **not** a clean run,
         and this is what says so even when the record listed nothing under that branch -- there was
@@ -117,6 +129,7 @@ class ChecksumReport:
     unreadable: tuple[str, ...] = ()
     unnamed_malformed: int = 0
     seed: LegacySeed | None = None
+    pruned: dict[str, ContentExclusionTier] = field(default_factory=dict)
     unreadable_directories: tuple[str, ...] = ()
 
 
@@ -197,6 +210,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         self.__skipped: Final[list[str]] = []
         self.__unreadable: Final[list[str]] = []
         self.__unnamed_malformed = 0
+        self.__pruned: Final[dict[str, ContentExclusionTier]] = {}
 
     # region The two operations
 
@@ -216,6 +230,14 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         The exclusion set never touches a verdict: entries are checked whatever it says, and it only
         decides which unlisted files exist to be adopted ([[data-model#checksums]]).
 
+        **An entry no resource's content could ever include is dropped** (#254) -- a ``.orig`` backup, a
+        junk-glob match, a nested record's own bookkeeping, all of them adopted under the coverage rule
+        this replaced. Decided before anything is read, so a pruned entry is not hashed, not counted
+        towards the progress denominator, and not reported ``missing``; decided from the **name**, so a
+        file that is merely deleted keeps its entry. Freshness does not protect one either: skipping a
+        re-read is what ``stale_after`` is for, and an entry that was never content has nothing to
+        re-read. An entry another record now covers is left exactly where it is, for #257 to move.
+
         **A resource with no record but a legacy manifest beside it is verified against that** (#243):
         the seeded entries carry a hash and no date, so every rule above applies to them unchanged --
         which is the whole point of seeding entries rather than writing a second kind of run.
@@ -226,6 +248,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         :raises ChecksumRecordError: a record file this build cannot read at all.
         :raises OSError: the record could not be re-written at the end.
         """
+        self.__pruned.update(self.__prunable())
         recorded: set[str] = set()
         for raw in self.__entries:
             name = checksum_entry_name(raw)
@@ -233,7 +256,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
                 recorded.add(name)
         adoptees = [name for name in self.__content if name not in recorded and self.__selected(name)]
         self.__plan(self.__verify_reads() + [self.__content[name] for name in adoptees])
-        rewritten = [self.__verify_entry(raw) for raw in self.__entries]
+        rewritten = [entry for raw in self.__entries if (entry := self.__verify_entry(raw)) is not None]
         rewritten.extend(entry for entry in map(self.__adopt, adoptees) if entry is not None)
         self.__save(rewritten)
         return self.__report()
@@ -327,6 +350,28 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
 
     # region Verify
 
+    def __prunable(self) -> dict[str, ContentExclusionTier]:
+        """Which recorded names today's coverage rule says were never any resource's content (#254).
+
+        Only names the enumeration did **not** answer are asked about, which is nothing at all for a
+        record written under the current rule -- so the ordinary run pays one set lookup per entry and no
+        extra listing. The selection is honoured: *Verify Selection* over three rows may not quietly
+        rewrite the two hundred it was not shown, the same restraint a targeted generate keeps.
+
+        :returns: the names to drop, each with the tier that excluded it.
+        """
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for raw in self.__entries:
+            name = checksum_entry_name(raw)
+            if name is None or name in seen or name in self.__content or not self.__selected(name):
+                continue
+            seen.add(name)
+            candidates.append(name)
+        if not candidates:
+            return {}
+        return excluded_content_names(self.__rehu_location.path, candidates, self.__excluded_patterns)
+
     def __verify_reads(self) -> list[ResourceLocation]:
         """The locations :meth:`verify` will read, for the progress denominator.
 
@@ -336,22 +381,27 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         seen: set[str] = set()
         for raw in self.__entries:
             entry = parse_checksum_entry(raw)
-            if entry is None or entry.name in seen:
+            if entry is None or entry.name in seen or entry.name in self.__pruned:
                 continue
             if self.__selected(entry.name) and not self.__fresh(entry):
                 seen.add(entry.name)
                 reads.append(self.__locate(entry.name))
         return reads
 
-    def __verify_entry(self, raw: Any) -> Any:
+    def __verify_entry(self, raw: Any) -> Any | None:
         """Check one record entry, answering what replaces it -- the raw object itself when untouched.
 
         :param raw: the entry as loaded.
-        :returns: the rewritten entry, or ``raw`` carried through byte-for-byte.
+        :returns: the rewritten entry, ``raw`` carried through byte-for-byte, or ``None`` for an entry
+            this run pruned (#254). A pruned entry is answered before it is parsed: what excludes it is
+            its name, which is readable even in an entry this build otherwise cannot make sense of, and
+            an entry that was never content is worth no less dropping for being malformed.
         """
+        name = checksum_entry_name(raw)
+        if name is not None and name in self.__pruned:
+            return None
         entry = parse_checksum_entry(raw)
         if entry is None:
-            name = checksum_entry_name(raw)
             if name is None:
                 self.__unnamed_malformed += 1
             else:
@@ -692,7 +742,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         """
         if self.__only is not None:
             for name in self.__only:
-                if name not in self.__statuses and name not in self.__skipped and name not in self.__unreadable:
+                if (
+                    name not in self.__statuses
+                    and name not in self.__skipped
+                    and name not in self.__unreadable
+                    and name not in self.__pruned
+                ):
                     self.__statuses[name] = "missing"
         if rewritten != self.__entries or self.__seed is not None:
             self.__record[CHECKSUM_FILES_KEY] = rewritten
@@ -706,6 +761,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
             unreadable=tuple(self.__unreadable),
             unnamed_malformed=self.__unnamed_malformed,
             seed=self.__seed,
+            pruned=dict(self.__pruned),
             unreadable_directories=self.__unreadable_directories(),
         )
 
@@ -785,6 +841,10 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     See :meth:`ChecksumRun.verify` for the contract: recorded entries are checked under their own
     algorithms, unlisted content is adopted and reported ``unexpected``, and ``migrate_to`` moves
     matched entries onto a new algorithm from the same single read.
+
+    Entries for files no resource's content could ever include -- a ``.orig`` backup, a junk-glob match,
+    a nested record's bookkeeping -- are **dropped and reported** (#254); one another record now covers
+    is left alone, since destroying its claim is what #257 exists to prevent.
 
     A resource with no record but a legacy ``.sfv``/``.md5``/``.sha*`` manifest beside it is **seeded
     from that manifest and verified against it** (:mod:`rehuco_core.checksum_seeding`, #243) --

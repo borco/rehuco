@@ -11,6 +11,14 @@ mount under-reported silently and a checksum baseline deleted the hashes for a b
 The walk still never raises: it reports the directories that would not list
 ([[mounts-and-storage#offline-mounts]]), and what that costs is each caller's to decide.
 
+**A record counts only what it covers** (#254). Where a nested resource's files used to be its own
+record's content *and* every ancestor's, they are now only its own: a subdirectory holding an
+``info.rehu`` leaves an ancestor's walk wholesale, and a file-scoped ``foo.rehu`` takes its same-stem
+siblings out of the enclosing record's. The overlap made a library's size unanswerable by adding up what
+each record already knows, which is the one aggregation the catalog cache exists to do. Records written
+under the old rule still list files this walk no longer returns; :func:`excluded_content_names` is how a
+verify decides which of those were never any record's content and can simply be dropped.
+
 The counterpart of `rehuco_core.rehu_content_images`, one level out: that module lists the images
 *inside* a reference-images resource's archives, this one lists the files the resource *is*. Core-side
 and GUI-free; the caller supplies the excluded-name patterns rather than this module reading a setting.
@@ -19,16 +27,22 @@ and GUI-free; the caller supplies the excluded-name patterns rather than this mo
 import fnmatch
 import os
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from .constants import (
     CHECKSUM_MANIFEST_EXTENSIONS,
     EXCLUDED_FILE_PATTERNS,
     IMAGE_EXTENSIONS,
 )
-from .resource_scoping import is_directory_scoped, is_legacy_record_name, is_record_name
+from .resource_scoping import (
+    is_directory_scoped,
+    is_directory_scoped_name,
+    is_legacy_record_name,
+    is_record_name,
+)
 from .tc_conversion_backups import is_conversion_backup
 from .tc_screenshots import is_legacy_screenshot
 
@@ -37,6 +51,19 @@ MAX_NAMED_UNREADABLE: Final = 3
 
 A tree that went away wholesale has one unreadable directory per branch, and a sentence listing forty of
 them says less than one listing three."""
+
+ContentExclusionTier = Literal["structural", "junk"]
+"""Which of the two exclusion tiers takes a file out of every resource's content
+([[data-model#resource-scoping]], #226).
+
+``structural`` -- a record, one of the files a record claims (its ``<record>NN`` screenshots, its
+manifest, a legacy record's tc4-schemed screenshots), or a retained ``.orig`` conversion backup. ``junk``
+-- a caller's filename glob, the tier the ``Excluded Files`` page edits. Named rather than merely applied
+because a ``.checksum`` written under an older rule holds entries for such files, and a verify that drops
+one has to be able to say why (:func:`excluded_content_names`, #254).
+
+Neither tier covers a file **another record** now claims: those bytes are still somebody's content, and
+what happens to a record's entry for them is a migration rather than a deletion (#257)."""
 
 
 class ContentUnreachableError(OSError):
@@ -109,7 +136,7 @@ class ContentEnumeration:
         return named if remaining <= 0 else f"{named} (and {remaining} more)"
 
 
-class ContentFileScanner:  # pylint: disable=too-few-public-methods
+class ContentFileScanner:
     """Enumerates one resource's content files ([[data-model#resource-scoping]]).
 
     Which of the two it is comes from :func:`~rehuco_core.resource_scoping.is_directory_scoped` rather
@@ -134,9 +161,17 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
     *every* record and its screenshots as editable at any moment, so a measurement that counted them
     would need recomputing each time anyone edited a description or added a screenshot -- and a checksum
     that covered them would report a mismatch for the same. Excluding them is what makes a size and a
-    manifest stay valid until the *content* actually changes. The nested resource's real content still
-    counts (``baz.zip``, ``bar/video.mp4``): a nested record is not a boundary
-    ([[data-model#resource-scoping]]), only its bookkeeping is skipped.
+    manifest stay valid until the *content* actually changes.
+
+    **A record counts only what it covers** (#254). A subdirectory holding an ``info.rehu``/``info.tc``
+    leaves this walk **wholesale** -- its files, its subdirectories and all -- because that record covers
+    its own directory; and a file-scoped ``foo.rehu`` takes its same-stem siblings out of the enclosing
+    record's content, because those siblings are the whole of what it describes. Whatever no record
+    claims still belongs to the nearest enclosing directory-scoped record, at any depth, and coverage is
+    decided by **the records present** rather than by what is on disk
+    ([[data-model#resource-scoping]]). Adding up every record's measured size then answers a library's --
+    the aggregation the overlap this replaced made impossible, since it counted a nested resource once
+    for itself and again for each of its ancestors.
 
     **A legacy ``.tc`` is a record** (#250), so it is bookkeeping wherever it sits and it claims the
     ``info.sfv``/``info.checksum``/``infoNN`` siblings beside it exactly as the ``info.rehu`` that
@@ -218,7 +253,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
             [[mounts-and-storage#offline-mounts]]).
         :returns: the matching paths sorted by name, or empty when ``directory`` is missing/unreadable.
         """
-        filenames = self.__read_directory(directory, [], unreadable)
+        filenames, _ = self.__read_directory(directory, unreadable)
         records = self.__record_names(filenames) | {self.__slug}
         legacy = self.__holds_legacy_record(filenames)
         matches = sorted(
@@ -231,6 +266,12 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
 
     def __scan_directory(self, directory: Path, unreadable: list[Path]) -> list[Path]:
         """List everything under a directory-scoped resource's directory that both tiers let through.
+
+        **A subdirectory holding a record of its own never opens** (#254): that record covers its own
+        directory, so the branch is out of this resource's content wholesale -- its files, its own
+        subdirectories and everything below them. The listing is still read, since whether it holds a
+        record is the question, but nothing in it is collected and nothing under it is
+        queued. And a file a **file-scoped** record here claims is left where the same-stem rule puts it.
 
         One directory at a time, descending: read a directory, take the records *it* holds, keep the
         files none of them claims, then do the same for each subdirectory. Deliberately not a flattened
@@ -253,7 +294,11 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         pending = [directory]
         while pending:
             current = pending.pop()
-            filenames = self.__read_directory(current, pending, unreadable)
+            filenames, subdirectories = self.__read_directory(current, unreadable)
+            if current != self.__rehu_path.parent and self.__holds_directory_scoped_record(filenames):
+                continue
+            pending.extend(subdirectories)
+            claimed = self.__file_scoped_stems(filenames)
             records = self.__record_names(filenames)
             if current == self.__rehu_path.parent:
                 records.add(self.__slug)
@@ -261,13 +306,15 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
             matches.extend(
                 current / filename
                 for filename in filenames
-                if not self.__is_bookkeeping(filename, records, legacy) and not self.__is_excluded(filename)
+                if not self.__is_bookkeeping(filename, records, legacy)
+                and os.path.splitext(filename)[0].lower() not in claimed
+                and not self.__is_excluded(filename)
             )
         return sorted(matches, key=str)
 
     @staticmethod
-    def __read_directory(directory: Path, pending: list[Path], unreadable: list[Path]) -> list[str]:
-        """Read one directory, appending its subdirectories to ``pending`` for later.
+    def __read_directory(directory: Path, unreadable: list[Path]) -> tuple[list[str], list[Path]]:
+        """Read one directory, separating its files from the subdirectories under it.
 
         :func:`os.scandir` rather than :meth:`~pathlib.Path.iterdir`: it answers ``is_dir``/``is_file``
         from what reading the directory already returned, where ``iterdir`` would cost a ``stat`` per
@@ -284,13 +331,17 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         is already out of date. A directory takes its whole subtree with it either way, and there is no
         verdict to reach about files nobody can name (#245).
 
+        Handing the subdirectories back rather than queueing them is what lets the caller decline a whole
+        branch after seeing what it holds (#254): a directory carrying a record of its own is another
+        resource, and queueing it before that is known would be a decision made too early.
+
         :param directory: the directory to read.
-        :param pending: the walk's stack of directories still to visit, appended to in place.
         :param unreadable: the walk's record of what would not list, appended to in place.
-        :returns: the directory's filenames, or empty when it cannot be read -- an unreadable branch
-            costs its own contents, not the whole walk.
+        :returns: its filenames and its subdirectories, both empty when it cannot be read -- an unreadable
+            branch costs its own contents, not the whole walk.
         """
         filenames: list[str] = []
+        subdirectories: list[Path] = []
         try:
             with os.scandir(directory) as entries:
                 for entry in entries:
@@ -298,17 +349,18 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
                     # the walk forever, and one into a sibling would count that content twice (the
                     # rglob this walk replaced did not follow them either)
                     if entry.is_dir(follow_symlinks=False):
-                        pending.append(directory / entry.name)
+                        subdirectories.append(directory / entry.name)
                     elif entry.is_file():
                         filenames.append(entry.name)
         except OSError:
             unreadable.append(directory)
-            return []
-        return filenames
+            return [], []
+        return filenames, subdirectories
 
     @staticmethod
     def __record_names(filenames: list[str]) -> set[str]:
-        """Take the record names out of one directory's listing -- the first of the two passes.
+        """Take the record names out of one directory's listing -- who can claim a screenshot or a
+        manifest here.
 
         :param filenames: one directory's filenames.
         :returns: the stems of the record files among them -- ``.rehu`` and legacy ``.tc`` alike
@@ -319,7 +371,7 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
 
     @staticmethod
     def __holds_legacy_record(filenames: list[str]) -> bool:
-        """Whether one directory's listing includes a ``.tc`` -- the second of the two passes.
+        """Whether one directory's listing includes a ``.tc`` -- whose tc4-schemed screenshots these are.
 
         A directory rather than a stem, for the reason :mod:`rehuco_core.tc_conversion_backups` gives
         about the backups it leaves: a legacy screenshot is named ``cover.jpg`` or ``01.jpg`` and carries
@@ -330,6 +382,45 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         :returns: whether a legacy record sits among them.
         """
         return any(is_legacy_record_name(filename) for filename in filenames)
+
+    @staticmethod
+    def __holds_directory_scoped_record(filenames: list[str]) -> bool:
+        """Whether one directory's listing includes an ``info.rehu``/``info.tc`` -- whose directory this
+        is (#254).
+
+        The directory-level half of *a record counts only what it covers*: a subdirectory that answers
+        ``True`` is another resource's, wholesale, and the walk above it neither collects from it nor
+        descends into it. Asked of the *name* through
+        :func:`~rehuco_core.resource_scoping.is_directory_scoped_name`, the same rule the tab title and
+        the rename plan read (#250), so no walk can invent a second answer to what ``info.tc`` is.
+
+        :param filenames: one directory's filenames.
+        :returns: whether a directory-scoped record sits among them.
+        """
+        return any(is_directory_scoped_name(filename) for filename in filenames)
+
+    @staticmethod
+    def __file_scoped_stems(filenames: list[str]) -> set[str]:
+        """Take the *named* records out of one directory's listing -- who claims same-stem content here
+        (#254).
+
+        The file-level half of the same rule: a ``foo.rehu``'s content is its same-stem siblings
+        ([[data-model#resource-scoping]]), so ``foo.zip`` is that record's and not the enclosing
+        ``info.rehu``'s. Deliberately separate from :meth:`__is_bookkeeping`, which answers *never any
+        resource's content*: these bytes are still content, just not this record's, which is what makes
+        an existing entry for one a claim to move rather than to drop (#257).
+
+        :param filenames: one directory's filenames.
+        :returns: the stems of the file-scoped records among them, lower-cased; a directory-scoped
+            ``info.rehu`` claims its directory rather than the ``info.*`` siblings sitting in it, so it
+            is not one of these.
+        """
+        stems = (
+            os.path.splitext(filename)[0]
+            for filename in filenames
+            if is_record_name(filename) and not is_directory_scoped_name(filename)
+        )
+        return {stem.lower() for stem in stems}
 
     def __is_bookkeeping(self, filename: str, records: set[str], legacy: bool) -> bool:
         """Whether ``filename`` is a resource record, one of the files that belong to one, or a
@@ -387,6 +478,60 @@ class ContentFileScanner:  # pylint: disable=too-few-public-methods
         lowered = filename.lower()
         return any(fnmatch.fnmatchcase(lowered, pattern) for pattern in self.__excluded_patterns)
 
+    def excluded_names(self, names: Collection[str]) -> dict[str, ContentExclusionTier]:
+        """Say which of ``names`` no resource's content could ever include, and under which tier (#254).
+
+        The same two tiers :meth:`scan` applies, asked the other way round: :meth:`scan` starts from a
+        disk walk and answers *what is content*, while this starts from names somebody recorded and
+        answers *what was never content* -- which is what a record written under an older coverage rule
+        needs, since the files it names may no longer be there to walk to. **Absence is deliberately not
+        an input**: a deleted file and an excluded one look identical to a walk, so a name is dropped for
+        what it *is*, never for not turning up.
+
+        A name the answer omits is not thereby content: it may be a file another record now covers, or
+        one no record covers that has simply been deleted. Both keep their entry -- the first until the
+        claim can be moved (#257), the second as the ``missing`` it has always been.
+
+        One listing per distinct directory, read once and reused, so a record naming two hundred files in
+        five directories costs five listings rather than two hundred. A directory that will not list
+        claims nothing, which leaves every name under it to the name-only rules -- a record suffix, an
+        ``.orig`` backup, a junk glob -- and keeps the rest.
+
+        :param names: record-relative, POSIX-separated names, already validated as naming a file inside
+            the resource (:func:`~rehuco_core.checksum_entry_name`).
+        :returns: the excluded ones only, each with the tier that excluded it, in the order given.
+        """
+        directory_scoped = is_directory_scoped(self.__rehu_path)
+        listings: dict[Path, tuple[set[str], bool]] = {}
+        excluded: dict[str, ContentExclusionTier] = {}
+        for name in names:
+            parts = name.split("/")
+            directory = self.__rehu_path.parent.joinpath(*parts[:-1])
+            if directory not in listings:
+                listings[directory] = self.__claims_in(directory)
+            records, legacy = listings[directory]
+            if self.__is_bookkeeping(parts[-1], records, legacy):
+                excluded[name] = "structural"
+            elif directory_scoped and self.__is_excluded(parts[-1]):
+                # a file-scoped resource's content is a whitelist no pattern can reach, so a junk glob
+                # is not a reason to drop one of its entries either
+                excluded[name] = "junk"
+        return excluded
+
+    def __claims_in(self, directory: Path) -> tuple[set[str], bool]:
+        """What the records in one directory claim, for a name-driven read rather than a walk.
+
+        :param directory: the directory to read; need not be under the resource's own, and need not
+            exist.
+        :returns: the record names it holds and whether one of them is a ``.tc``, the same pair
+            :meth:`__scan_directory` computes per listing.
+        """
+        filenames, _ = self.__read_directory(directory, [])
+        records = self.__record_names(filenames)
+        if directory == self.__rehu_path.parent:
+            records.add(self.__slug)
+        return records, self.__holds_legacy_record(filenames)
+
 
 def enumerate_content_files(
     rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
@@ -405,6 +550,31 @@ def enumerate_content_files(
         but it is named, so no caller has to mistake it for an empty resource (#245).
     """
     return ContentFileScanner(rehu_path, excluded_patterns).scan()
+
+
+def excluded_content_names(
+    rehu_path: Path, names: Collection[str], excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+) -> dict[str, ContentExclusionTier]:
+    """Say which of ``names`` were never ``rehu_path``'s content, and under which tier (#254).
+
+    The reverse of :func:`enumerate_content_files`, for the one caller that starts from names rather than
+    from a disk walk: a ``.checksum`` written under an older coverage rule
+    (:meth:`~rehuco_core.rehu_checksums.ChecksumRun.verify`). Names, not paths, because a name is what a
+    record holds and the file behind it may be long gone -- and it is the *name* that decides, since a
+    walk cannot tell a deleted file from an excluded one.
+
+    Silence is not endorsement: a name left out is either content, or a file another record now covers
+    whose claim has somewhere to go (#257), or one that is simply missing.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param names: record-relative, POSIX-separated names, already validated as naming a file inside the
+        resource (:func:`~rehuco_core.checksum_entry_name`).
+    :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted for a
+        directory-scoped resource only, since a file-scoped one's content is a whitelist no pattern
+        reaches.
+    :returns: the excluded names only, each with the tier that excluded it, in the order given.
+    """
+    return ContentFileScanner(rehu_path, excluded_patterns).excluded_names(names)
 
 
 def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> int:
