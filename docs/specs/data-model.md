@@ -158,6 +158,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha\* manifest on first verify](https://github.com/borco/rehuco/issues/243)
 - [#244: feat: checksum viewer dock — per-file status and date, with verify/generate actions](https://github.com/borco/rehuco/issues/244)
 - [#254: feat: a record counts only what it covers](https://github.com/borco/rehuco/issues/254)
+- [#257: feat: a pruned claim moves to the record that now covers it](https://github.com/borco/rehuco/issues/257)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -381,10 +382,9 @@ What a **reference-images** resource's content *is* was settled by #197: content
   - **What goes is decided by the name, never by absence.** The enumeration is a disk walk, so *deleted* and *excluded*
     look identical to it; an entry is dropped for what it **is**, which is why a file that is merely gone keeps its
     entry and its hash as the `missing` it has always been.
-  - **An entry another record now covers is left alone.** Those bytes are still somebody's content, and dropping the
+  - **An entry another record now covers is not dropped.** Those bytes are still somebody's content, and dropping the
     entry would destroy a real claim — its digest, its algorithm, and the date saying when the file was last known
-    good. It **moves** to the record that now covers it instead, which is #257's work and which this must not land
-    ahead of.
+    good. It **moves** to the record that now covers it instead, which is the bullet below.
   - **Freshness does not protect an entry from pruning.** The staleness window buys a skipped *read*, and an entry that
     was never content has nothing to read; a 90-day window would otherwise leave a catalog's stale entries in place
     indefinitely.
@@ -392,6 +392,39 @@ What a **reference-images** resource's content *is* was settled by #197: content
     quietly rewrite the two hundred it was not shown. The count joins the run's summary line and each dropped name and
     reason lands on the resource's own log ([[appendices.logging#scopes]]), the same division a legacy seed's dropped
     lines already use — entries vanishing silently is the failure mode this is written against.
+- **A pruned claim moves to the record that now covers it** (#257) — the other half of the rule above, and the half
+  the pruning had to wait for. An entry for a file another record owns cannot simply be dropped: its digest, its
+  algorithm and the date the file was last known good exist nowhere else, and a later baseline on the covering record
+  would re-read from disk and record whatever is there **now**, including bytes that rotted before the split. That is
+  the argument #243 makes for a legacy manifest, reached from the other side — this is a seed from a `.checksum`
+  instead of from an `.sfv`. The entry is written into the covering record under the name *that* record spells it with
+  (`sub/movie.mp4` becomes `movie.mp4` under `sub/info.rehu`), and then pruned from the one that no longer covers it.
+  Five decisions:
+  - **The incoming claim wins**, and any resident entry of that name goes. **Provenance beats recency**: an
+    `.sfv`-seeded crc32 was recorded when the files were made, where a locally-baselined XXH3 entry recorded only
+    whatever was on disk the first time this app looked — so the arriving claim wins even when it is older and weaker.
+  - **The date is cleared, and the verdict with it.** Neither is true of a record that has never checked the file, and
+    clearing them is what makes everything downstream work with no special case: a dateless entry is never fresh, so
+    the next ordinary verify reads that file whatever the staleness window says — no force, no `stale_after=None` — and
+    checks it under its **own** recorded algorithm, with *Update checksums on verify* re-keying it only on a match.
+  - **The covering record is written first, and the losing one after.** A failure between the two leaves the claim in
+    both records, which the next run resolves; the other order loses it outright. A covering record that cannot be
+    written keeps its claims where they are, so one unwritable record never strands another resource's — as does one
+    that has no record yet but a legacy manifest beside it: seeding is one-way (#243), so a record created by a
+    hand-over would spend that resource's one seed on the arriving names and silence the manifest's claims for
+    everything else it covers. The move waits until that resource has seeded, and completes on a later run. Sweep order
+    does not matter either: a claim arriving after the covering resource has already been verified is dateless, so the
+    next sweep checks it.
+  - **A verify therefore writes a record it is not about**, which crosses the one-resource-at-a-time assumption the
+    rename barrier is built on (#241). The write happens inside that barrier's hold, so a rename of the covering
+    resource waits the milliseconds it takes rather than colliding with it, and the queue is serial
+    ([[appendices.task-queue#serial]]), so no second job can be verifying that record at the same moment. What is not
+    covered is another process, or this app's own in-place *Delete Missing*, touching it in the same instant — the
+    last-writer-wins window every record already has, one resource further away than usual.
+  - **The known cost is a false alarm, never a false clean.** An incoming claim that is itself stale — recorded before
+    a legitimate edit — makes the covering record's next verify report `mismatched` on a file that is fine, and
+    accepting it takes a targeted Generate. It fails in the safe direction: a false alarm rather than a clean-looking
+    record over bad bytes.
 - **Excluded files are never reported as unexpected**, in either tier — that list comes from the same enumeration the
   record was generated over (#226), so a `Thumbs.db` a Windows browse dropped into the directory, and an edited or
   newly added screenshot, all leave a verify clean.

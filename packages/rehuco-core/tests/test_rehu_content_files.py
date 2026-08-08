@@ -14,14 +14,16 @@ from typing import Final
 from unittest.mock import MagicMock
 
 from fake_directories import FakeDirEntry, FakeScandir
-from pytest import raises
+from pytest import mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     INFO_REHU_FILENAME,
     INFO_TC_FILENAME,
     ContentUnreachableError,
+    CoveringRecord,
     content_size_on_disk,
+    covering_content_records,
     enumerate_content_files,
     excluded_content_names,
 )
@@ -1126,6 +1128,271 @@ def test_excluded_names_over_an_unreadable_directory_keeps_what_it_cannot_judge(
     excluded = excluded_content_names(DIRECTORY_SCOPED_PATH, ["bar/info.tc.orig", "bar/info00.jpg"])
 
     assert excluded == {"bar/info.tc.orig": "structural"}
+
+
+# endregion
+
+
+# region which record covers a name now
+
+
+def test_a_nested_record_covers_a_name_under_it_and_respells_it(mocker: MockerFixture) -> None:
+    """The directory-level half of the rule, answered for a name the enclosing record still lists (#257).
+
+    The name has to come back as the *covering* record spells it, since that is what an entry moving
+    there will be keyed under: relative to ``bar/``, not to the resource above it.
+
+    **Test steps:**
+
+    * mock a tree with a nested ``bar/info.rehu`` over a video two levels down
+    * ask who covers the enclosing record's name for it
+    * verify the nested record came back, with the name rebased onto its own directory
+    """
+    mock_tree(mocker, ["info.rehu", "bar/info.rehu", "bar/sub/video.mp4"], directories=["bar", "bar/sub"])
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["bar/sub/video.mp4"])
+
+    assert covering == {"bar/sub/video.mp4": CoveringRecord(DIRECTORY / "bar" / INFO_REHU_FILENAME, "sub/video.mp4")}
+
+
+def test_the_deepest_record_along_the_path_is_the_one_that_covers(mocker: MockerFixture) -> None:
+    """Coverage is exclusive, so a record nested inside a nested one takes the file from both.
+
+    **Test steps:**
+
+    * mock a tree with an ``info.rehu`` at every level down to the file
+    * ask who covers the outermost record's name for it
+    * verify the innermost record came back
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "bar/info.rehu", "bar/sub/info.rehu", "bar/sub/video.mp4"],
+        directories=["bar", "bar/sub"],
+    )
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["bar/sub/video.mp4"])
+
+    assert covering == {
+        "bar/sub/video.mp4": CoveringRecord(DIRECTORY / "bar" / "sub" / INFO_REHU_FILENAME, "video.mp4")
+    }
+
+
+def test_a_file_scoped_neighbour_covers_its_same_stem_sibling(mocker: MockerFixture) -> None:
+    """The file-level half: a ``foo.rehu`` beside the file takes it, and spells it as it already is.
+
+    Narrower than the directory-scoped record in the same directory, which is why it wins over one.
+
+    **Test steps:**
+
+    * mock a directory holding ``baz.rehu`` beside ``baz.zip``, under the resource's own ``info.rehu``
+    * ask who covers ``baz.zip``
+    * verify the file-scoped record came back, under the same name
+    """
+    mock_siblings(mocker, ["info.rehu", "baz.rehu", "baz.zip"])
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["baz.zip"])
+
+    assert covering == {"baz.zip": CoveringRecord(DIRECTORY / "baz.rehu", "baz.zip")}
+
+
+def test_a_legacy_record_covers_what_it_will_cover_once_converted(mocker: MockerFixture) -> None:
+    """An ``info.tc`` is a record and covers its directory (#250), so a claim can move to it as well.
+
+    A catalog mid-conversion is the normal case rather than the exotic one, and refusing to move a claim
+    into an unconverted resource would strand it in the record above until somebody converted that one.
+
+    **Test steps:**
+
+    * mock a tree with a nested ``bar/info.tc`` over a video
+    * ask who covers the enclosing record's name for it
+    * verify the legacy record came back
+    """
+    mock_tree(mocker, ["info.rehu", "bar/info.tc", "bar/video.mp4"], directories=["bar"])
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["bar/video.mp4"])
+
+    assert covering == {"bar/video.mp4": CoveringRecord(DIRECTORY / "bar" / INFO_TC_FILENAME, "video.mp4")}
+
+
+def test_a_converted_record_wins_over_the_legacy_one_beside_it(mocker: MockerFixture) -> None:
+    """Both formats in one directory is a transient state, and the live record is the one to write to.
+
+    They share a ``.checksum`` either way, so this decides which path the move is *reported* under.
+
+    **Test steps:**
+
+    * mock a nested directory holding both an ``info.rehu`` and an ``info.tc``
+    * ask who covers a video in it
+    * verify the ``.rehu`` came back
+    """
+    mock_tree(mocker, ["info.rehu", "bar/info.rehu", "bar/info.tc", "bar/video.mp4"], directories=["bar"])
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["bar/video.mp4"])
+
+    assert covering == {"bar/video.mp4": CoveringRecord(DIRECTORY / "bar" / INFO_REHU_FILENAME, "video.mp4")}
+
+
+@mark.parametrize(
+    "listing",
+    [["baz.rehu", "baz.tc"], ["baz.tc", "baz.rehu"]],
+    ids=["converted first", "legacy first"],
+)
+def test_a_file_scoped_claimant_is_the_live_record_whichever_order_the_listing_gives(
+    mocker: MockerFixture, listing: list[str]
+) -> None:
+    """A half-converted stem answers the ``.rehu``, and a listing's order is nobody's guarantee.
+
+    SMB and macOS both hand entries back in orders Windows never wrote, so a rule that took the first
+    record it met would move a claim into the converted resource or the legacy one at random.
+
+    **Test steps:**
+
+    * mock a directory holding ``baz.rehu`` and ``baz.tc`` beside ``baz.zip``, in each order
+    * ask who covers the archive
+    * verify the ``.rehu`` came back both times
+    """
+    mock_siblings(mocker, ["info.rehu", *listing, "baz.zip"])
+
+    covering = covering_content_records(DIRECTORY_SCOPED_PATH, ["baz.zip"])
+
+    assert covering == {"baz.zip": CoveringRecord(DIRECTORY / "baz.rehu", "baz.zip")}
+
+
+def test_a_name_this_record_still_covers_is_covered_by_nobody_else(mocker: MockerFixture) -> None:
+    """Silence is the answer for content, so an ordinary record's entries never move (#257).
+
+    A directory-scoped record's own directory is not searched: itself is not somebody else, and its
+    ``.checksum`` is the one this run is already writing.
+
+    **Test steps:**
+
+    * mock a tree holding a record-less subdirectory and a video in it
+    * ask about that video and about one in the root
+    * verify nothing came back
+    """
+    mock_tree(mocker, ["info.rehu", "video.mp4", "bar/deeper.mp4"], directories=["bar"])
+
+    assert not covering_content_records(DIRECTORY_SCOPED_PATH, ["video.mp4", "bar/deeper.mp4"])
+
+
+def test_a_name_that_was_never_content_is_covered_by_nobody(mocker: MockerFixture) -> None:
+    """Bookkeeping and junk have no claim to hand on -- they are the exclusion answer's to drop (#254).
+
+    Moving them would only relocate the problem: the covering record's own next verify would prune what
+    it had just been given.
+
+    **Test steps:**
+
+    * mock a nested resource holding its own screenshot, its manifest and a ``Thumbs.db``
+    * ask who covers all three
+    * verify nothing came back
+    """
+    mock_tree(
+        mocker,
+        ["info.rehu", "bar/info.rehu", "bar/info00.jpg", "bar/info.sfv", "bar/Thumbs.db"],
+        directories=["bar"],
+    )
+
+    names_asked = ["bar/info00.jpg", "bar/info.sfv", "bar/Thumbs.db"]
+
+    assert not covering_content_records(DIRECTORY_SCOPED_PATH, names_asked)
+
+
+def test_a_file_scoped_resources_own_name_is_covered_by_nobody(mocker: MockerFixture) -> None:
+    """A record is not somebody else, so an entry for its own deleted file stays where it is.
+
+    The file-scoped claimant is looked up before the enclosing directory-scoped record, and finding
+    *itself* has to answer *nobody* rather than falling through to the ``info.rehu`` beside it -- which
+    would hand that record a claim over a file it does not cover.
+
+    **Test steps:**
+
+    * mock a directory holding ``foo.rehu`` and an ``info.rehu``, with ``foo.zip`` deleted
+    * ask who covers ``foo.zip``, from the file-scoped record's point of view
+    * verify nothing came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "info.rehu"])
+
+    assert not covering_content_records(FILE_SCOPED_PATH, ["foo.zip"])
+
+
+def test_a_file_scoped_record_hands_what_its_whitelist_does_not_name_to_the_directory(
+    mocker: MockerFixture,
+) -> None:
+    """A file-scoped record searches its own directory, because the ``info.rehu`` there is not itself.
+
+    Its content is a whitelist of same-stem siblings, so an entry for anything else was never its own --
+    and the record covering that file is the directory-scoped one sitting beside it.
+
+    **Test steps:**
+
+    * mock a directory holding ``foo.rehu``, an ``info.rehu`` and an unrelated video
+    * ask who covers the video, from the file-scoped record's point of view
+    * verify the directory-scoped record came back, under the same name
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.zip", "info.rehu", "video.mp4"])
+
+    covering = covering_content_records(FILE_SCOPED_PATH, ["video.mp4"])
+
+    assert covering == {"video.mp4": CoveringRecord(DIRECTORY_SCOPED_PATH, "video.mp4")}
+
+
+def test_a_file_scoped_records_junk_entry_is_covered_by_nobody(mocker: MockerFixture) -> None:
+    """A junk glob is a rule about the *covering* record's content, so it stops the move as well (#226).
+
+    The tier that would drop such an entry never fires for a file-scoped record (its content is a
+    whitelist), so without this the entry would be handed to the ``info.rehu`` beside it purely to be
+    pruned there.
+
+    **Test steps:**
+
+    * mock a directory holding ``foo.rehu``, an ``info.rehu`` and a ``Thumbs.db``
+    * ask who covers the ``Thumbs.db``
+    * verify nothing came back
+    """
+    mock_siblings(mocker, ["foo.rehu", "foo.zip", "info.rehu", "Thumbs.db"])
+
+    assert not covering_content_records(FILE_SCOPED_PATH, ["Thumbs.db"])
+
+
+def test_a_branch_that_will_not_list_covers_nothing(mocker: MockerFixture) -> None:
+    """A directory claiming nothing is the same answer the exclusion side gives (#245).
+
+    An away mount must not make a claim look homeless -- the entry stays where it is, and the next run
+    over a readable tree moves it.
+
+    **Test steps:**
+
+    * mock a tree whose ``bar`` refuses to list
+    * ask who covers a video inside it
+    * verify nothing came back
+    """
+    mock_tree(mocker, ["info.rehu"], directories=["bar"], unreadable=["bar"])
+
+    assert not covering_content_records(DIRECTORY_SCOPED_PATH, ["bar/video.mp4"])
+
+
+def test_covering_records_reads_each_directory_once(mocker: MockerFixture) -> None:
+    """Two hundred names in two directories cost two listings, as the exclusion answer does.
+
+    A directory-scoped resource's own directory is not read at all unless a name sits directly in it: it
+    covers itself, so there is nothing to ask about it.
+
+    **Test steps:**
+
+    * mock a tree of two subdirectories, each with its own record, and count the listings
+    * ask about three names spread across both
+    * verify one listing per distinct directory a name actually sits in
+    """
+    scandir = mock_tree(
+        mocker,
+        ["info.rehu", "a/info.rehu", "a/one.mp4", "a/two.mp4", "b/info.rehu", "b/three.mp4"],
+        directories=["a", "b"],
+    )
+
+    covering_content_records(DIRECTORY_SCOPED_PATH, ["a/one.mp4", "a/two.mp4", "b/three.mp4"])
+
+    assert scandir.call_count == 2
 
 
 # endregion

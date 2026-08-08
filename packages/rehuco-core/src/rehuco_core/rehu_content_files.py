@@ -19,6 +19,12 @@ each record already knows, which is the one aggregation the catalog cache exists
 under the old rule still list files this walk no longer returns; :func:`excluded_content_names` is how a
 verify decides which of those were never any record's content and can simply be dropped.
 
+**And which record covers them now** (#257). The entries the exclusion answer leaves out are the ones that
+*are* somebody's content -- another record's -- and their claims exist nowhere else, so
+:func:`covering_content_records` names the record each one belongs to and the name that record spells it
+under. It reads coverage the way :class:`ContentFileScanner`'s walk decides it, from one place, because
+the alternative is the coin flip [[data-model#resource-scoping]] was written against.
+
 The counterpart of `rehuco_core.rehu_content_images`, one level out: that module lists the images
 *inside* a reference-images resource's archives, this one lists the files the resource *is*. Core-side
 and GUI-free; the caller supplies the excluded-name patterns rather than this module reading a setting.
@@ -38,6 +44,7 @@ from .constants import (
     IMAGE_EXTENSIONS,
 )
 from .resource_scoping import (
+    DIRECTORY_SCOPED_FILENAMES,
     is_directory_scoped,
     is_directory_scoped_name,
     is_legacy_record_name,
@@ -134,6 +141,25 @@ class ContentEnumeration:
         named = ", ".join(str(directory) for directory in self.unreadable[:MAX_NAMED_UNREADABLE])
         remaining = len(self.unreadable) - MAX_NAMED_UNREADABLE
         return named if remaining <= 0 else f"{named} (and {remaining} more)"
+
+
+@dataclass(frozen=True, slots=True)
+class CoveringRecord:
+    """Which record covers a file another record still holds an entry for (#257).
+
+    The answer to *whose content is this now*, for a ``.checksum`` written before coverage was exclusive:
+    those bytes are still somebody's, and the claim over them -- a digest, an algorithm, the date the file
+    was last known good -- exists nowhere else, so it moves rather than being dropped
+    (:meth:`~rehuco_core.rehu_checksums.ChecksumRun.verify`).
+
+    :param record: the covering resource's record -- an ``info.rehu``/``info.tc`` whose directory the file
+        sits under, or a file-scoped ``foo.rehu``/``foo.tc`` whose same-stem sibling it is.
+    :param name: the file's name as *that* record spells it: record-relative and POSIX-separated, so
+        ``sub/movie.mp4`` under an enclosing record is ``movie.mp4`` under ``sub/info.rehu``.
+    """
+
+    record: Path
+    name: str
 
 
 class ContentFileScanner:
@@ -532,6 +558,135 @@ class ContentFileScanner:
             records.add(self.__slug)
         return records, self.__holds_legacy_record(filenames)
 
+    def covering_records(self, names: Collection[str]) -> dict[str, CoveringRecord]:
+        """Say which of ``names`` another record covers now, and which one (#257).
+
+        The third question a recorded name raises, after *is it content* (:meth:`scan`) and *was it never
+        content* (:meth:`excluded_names`): a record written before coverage was exclusive lists files that
+        belong to another record today, and an entry for one is a claim with somewhere to go rather than
+        something to drop.
+
+        Coverage is read exactly as :meth:`__scan_directory` decides it, from the records **present**
+        ([[data-model#resource-scoping]]): the deepest directory-scoped record along the name's own path
+        covers it, unless a file-scoped record in the file's own directory names its stem, which is
+        narrower and wins. A name this resource still covers, one that was never any resource's content,
+        and one whose directories hold no record at all are all simply left out -- their entries stay
+        where they are.
+
+        One listing per distinct directory, read once and reused, the way :meth:`excluded_names` reads
+        them; a directory that will not list claims nothing.
+
+        :param names: record-relative, POSIX-separated names, already validated as naming a file inside
+            the resource (:func:`~rehuco_core.checksum_entry_name`).
+        :returns: the covered ones only, each with the record that covers it and the name that record
+            spells it under, in the order given.
+        """
+        listings: dict[Path, list[str]] = {}
+        covering: dict[str, CoveringRecord] = {}
+        for name in names:
+            found = self.__covering_record(name, listings)
+            if found is not None:
+                covering[name] = found
+        return covering
+
+    def __covering_record(self, name: str, listings: dict[Path, list[str]]) -> CoveringRecord | None:
+        """Which record covers one recorded name, where it is not this resource's own.
+
+        **A directory-scoped resource's own directory is not searched.** That record covers its directory,
+        so it can never hand a claim to a record beside it -- which for an ``info.tc`` a conversion has
+        not reached yet would in any case be the same ``.checksum`` file, since ``info.rehu`` and
+        ``info.tc`` share one. A file-scoped resource *does* search it: whatever its whitelist does not
+        name belongs to the ``info.rehu`` sitting beside it, at that depth like any other.
+
+        :param name: a validated record-relative name.
+        :param listings: the directory listings read so far, added to in place.
+        :returns: the covering record and the name it spells the file under, or ``None`` when no other
+            record covers it.
+        """
+        parts = name.split("/")
+        directories = [self.__rehu_path.parent]
+        for part in parts[:-1]:
+            directories.append(directories[-1] / part)
+        covering = self.__enclosing_record(parts, directories, listings)
+        filenames = self.__filenames_in(directories[-1], listings)
+        records = self.__record_names(filenames)
+        if directories[-1] == self.__rehu_path.parent:
+            records.add(self.__slug)
+        filename = parts[-1]
+        if self.__is_bookkeeping(filename, records, self.__holds_legacy_record(filenames)):
+            return None
+        claimant = self.__record_named(os.path.splitext(filename)[0].lower(), filenames)
+        if claimant is not None:
+            record = directories[-1] / claimant
+            return None if record == self.__rehu_path else CoveringRecord(record, filename)
+        if covering is not None and self.__is_excluded(filename):
+            # a junk glob is a rule about a directory-scoped record's content, so a name matching one is
+            # nobody's content and its entry is the exclusion answer's to drop, not this one's to move
+            return None
+        return covering
+
+    def __enclosing_record(
+        self, parts: list[str], directories: list[Path], listings: dict[Path, list[str]]
+    ) -> CoveringRecord | None:
+        """The deepest directory-scoped record along one name's path -- who owns the ground it sits on.
+
+        :param parts: the name's segments, the file's own last.
+        :param directories: the directories those segments descend through, this resource's own first.
+        :param listings: the directory listings read so far, added to in place.
+        :returns: the record and the name it would spell the file under, or ``None``.
+        """
+        covering: CoveringRecord | None = None
+        for depth, directory in enumerate(directories):
+            if depth == 0 and is_directory_scoped(self.__rehu_path):
+                continue
+            filenames = self.__filenames_in(directory, listings)
+            if not self.__holds_directory_scoped_record(filenames):
+                continue
+            # which of the two it is decides the path, and a conversion may have left both behind:
+            # DIRECTORY_SCOPED_FILENAMES is in the order the formats arrived, so the live one wins
+            found = next(candidate for candidate in DIRECTORY_SCOPED_FILENAMES if candidate in filenames)
+            covering = CoveringRecord(directory / found, "/".join(parts[depth:]))
+        return covering
+
+    def __filenames_in(self, directory: Path, listings: dict[Path, list[str]]) -> list[str]:
+        """One directory's listing, read once however many names are asked about it.
+
+        :param directory: the directory to read; need not be under the resource's own, and need not
+            exist.
+        :param listings: the listings read so far, added to in place.
+        :returns: its filenames -- empty when it will not list, which is a directory claiming nothing
+            rather than a failure.
+        """
+        filenames = listings.get(directory)
+        if filenames is None:
+            filenames, _ = self.__read_directory(directory, [])
+            listings[directory] = filenames
+        return filenames
+
+    @staticmethod
+    def __record_named(stem: str, filenames: list[str]) -> str | None:
+        """The file-scoped record claiming ``stem`` in one directory's listing, as a filename (#257).
+
+        :meth:`__file_scoped_stems`' question asked about one stem and answered with the **file**, which
+        is what a claim being moved needs: a set of stems says a record is there, and the move has to
+        name it. The two conditions are that method's own -- a record, and not a directory-scoped one,
+        since an ``info.rehu`` claims its directory rather than the ``info.*`` siblings sitting in it.
+
+        :param stem: the lower-cased stem to look for.
+        :param filenames: one directory's filenames.
+        :returns: the record's filename, the live ``.rehu`` preferred where a conversion has left a
+            same-stem ``.tc`` beside it, or ``None`` when no file-scoped record claims the stem.
+        """
+        found: str | None = None
+        for filename in filenames:
+            if not is_record_name(filename) or is_directory_scoped_name(filename):
+                continue
+            if os.path.splitext(filename)[0].lower() != stem:
+                continue
+            if found is None or is_legacy_record_name(found):
+                found = filename
+        return found
+
 
 def enumerate_content_files(
     rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
@@ -575,6 +730,27 @@ def excluded_content_names(
     :returns: the excluded names only, each with the tier that excluded it, in the order given.
     """
     return ContentFileScanner(rehu_path, excluded_patterns).excluded_names(names)
+
+
+def covering_content_records(
+    rehu_path: Path, names: Collection[str], excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+) -> dict[str, CoveringRecord]:
+    """Say which of ``names`` another record covers now, and which record that is (#257).
+
+    The companion of :func:`excluded_content_names`, over the names it leaves out: those were never
+    excluded, they simply stopped being *this* record's, and a ``.checksum`` entry for one is a claim
+    with somewhere to go (:meth:`~rehuco_core.rehu_checksums.ChecksumRun.verify`). Names rather than
+    paths, for the same reason -- a record holds names, and the file behind one may be long gone.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :param names: record-relative, POSIX-separated names, already validated as naming a file inside the
+        resource (:func:`~rehuco_core.checksum_entry_name`).
+    :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted so a
+        name no record's content could include is never reported as covered by one.
+    :returns: the covered names only, each with the record covering it and the name that record spells it
+        under, in the order given.
+    """
+    return ContentFileScanner(rehu_path, excluded_patterns).covering_records(names)
 
 
 def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> int:

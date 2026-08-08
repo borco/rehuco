@@ -7,6 +7,7 @@ from .checksum_algorithms import (
     ChecksumAlgorithm,
     ChecksumDigest,
 )
+from .checksum_claim_moves import hand_over_claims
 from .checksum_jobs import (
     CHECKSUM_GENERATE_KIND,
     CHECKSUM_SWEEP_KIND,
@@ -111,7 +112,9 @@ from .rehu_content_files import (
     ContentEnumeration,
     ContentExclusionTier,
     ContentUnreachableError,
+    CoveringRecord,
     content_size_on_disk,
+    covering_content_records,
     enumerate_content_files,
     excluded_content_names,
 )
@@ -271,6 +274,7 @@ __all__ = [
     "ConversionBackupsScanner",
     "ConversionBackupsTreeScan",
     "ConversionReverter",
+    "CoveringRecord",
     "DEFAULT_CHECKSUM_ALGORITHM",
     "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
@@ -372,6 +376,7 @@ __all__ = [
     "content_size_on_disk",
     "conversion_backups",
     "convert_tc",
+    "covering_content_records",
     "current_block_version",
     "discard_conversion_backups",
     "enumerate_catalog_resources",
@@ -380,6 +385,7 @@ __all__ = [
     "enumerate_content_images",
     "forget_checksums",
     "generate_checksums",
+    "hand_over_claims",
     "is_conversion_backup",
     "is_directory_scoped",
     "is_directory_scoped_name",

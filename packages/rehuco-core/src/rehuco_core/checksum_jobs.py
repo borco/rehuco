@@ -243,6 +243,7 @@ class ChecksumJob(TaskJobBase):
         self.__report = report
         self.__log_seed(report)
         self.__log_pruned(report)
+        self.__log_moved(report)
         LOG.info("%s: %s", self.label, checksum_report_summary(report))
 
     @staticmethod
@@ -277,6 +278,20 @@ class ChecksumJob(TaskJobBase):
         """
         for name, tier in report.pruned.items():
             LOG.info("Dropped %r from the record: %s.", name, PRUNE_REASONS[tier])
+
+    @staticmethod
+    def __log_moved(report: ChecksumReport) -> None:
+        """Name every claim the run handed to another record, and where it went (#257).
+
+        Beside :meth:`__log_pruned` and for the stronger reason: an entry that leaves a record is only
+        safe to lose sight of because it arrived somewhere else, and *where* is exactly what the summary's
+        count cannot say. ``info`` for the same reason -- a record catching up with the coverage rule is
+        housekeeping working.
+
+        :param report: what the run established.
+        """
+        for name, covering in report.moved.items():
+            LOG.info("Moved %r into %s as %r: that record covers it now.", name, covering.record, covering.name)
 
     def perform(self, control: JobControl) -> ChecksumReport:
         """Make the run this job is for.
@@ -516,6 +531,10 @@ def checksum_report_summary(report: ChecksumReport) -> str:
         # counted here and named in the log (:meth:`ChecksumJob.__log_pruned`), because this is the one
         # part of a run that takes something away and a reader has to be able to find out what (#254)
         parts.append(f"{len(report.pruned)} pruned")
+    if report.moved:
+        # the other half of what a record catching up with the coverage rule does, and the half that has
+        # to be visible: these entries left this record for another one, rather than ceasing to exist
+        parts.append(f"{len(report.moved)} moved")
     if report.unreadable_directories:
         # the one part that is not a count of files: a branch that would not list has no files to
         # count, which is exactly why it has to be said out loud (#245)
@@ -524,8 +543,11 @@ def checksum_report_summary(report: ChecksumReport) -> str:
     return ", ".join(parts) if parts else "nothing to check"
 
 
+# a tally's members are the outcomes a sweep can have, one counter each; collapsing any of them into a
+# dict of counts would make the ones a reader has to be told about (#254, #257) indistinguishable from
+# the verdicts, which are already a dict for exactly the opposite reason
 @dataclass
-class SweepTally:
+class SweepTally:  # pylint: disable=too-many-instance-attributes
     """What a sweep established over a whole catalog (#242).
 
     Not a :class:`~rehuco_core.ChecksumReport`: a report's keys are names *relative to one record*, so
@@ -557,6 +579,11 @@ class SweepTally:
     first time under *a record counts only what it covers* cleans up as it goes, and this is what says
     how much. Which entries those were is each resource's own log."""
 
+    moved: int = 0
+    """How many entries the sweep handed to the records that cover their files now (#257) -- the same
+    catching-up as :attr:`pruned`, over the entries that had somewhere to go. Where each one went is the
+    losing resource's own log."""
+
     unreadable_branches: int = 0
     """How many directories under the root would not list, from the catalog walk itself -- distinct
     from a resource that failed, since these are branches whose resources were never even named."""
@@ -576,6 +603,8 @@ def sweep_summary(tally: SweepTally) -> str:
         parts.append(f"{tally.failed} failed")
     if tally.pruned:
         parts.append(f"{tally.pruned} pruned")
+    if tally.moved:
+        parts.append(f"{tally.moved} moved")
     if tally.unreadable_branches:
         count = tally.unreadable_branches
         parts.append(f"{count} unreadable director{'y' if count == 1 else 'ies'}")
@@ -757,6 +786,9 @@ class SweepChecksumsJob(TaskJobBase):
         tally.pruned += len(report.pruned)
         for name, tier in report.pruned.items():
             LOG.info("%s: dropped %r from the record: %s.", rehu_path, name, PRUNE_REASONS[tier])
+        tally.moved += len(report.moved)
+        for name, covering in report.moved.items():
+            LOG.info("%s: moved %r into %s as %r.", rehu_path, name, covering.record, covering.name)
         for status in report.statuses.values():
             tally.statuses[status] = tally.statuses.get(status, 0) + 1
 

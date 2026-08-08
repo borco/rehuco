@@ -27,6 +27,7 @@ from rehuco_core import (
     ChecksumRecordError,
     ChecksumReport,
     ContentUnreachableError,
+    CoveringRecord,
     checksum_entry_name,
     checksum_record_path,
     content_size_on_disk,
@@ -43,6 +44,12 @@ RECORD_PATH: Final = DIRECTORY / "info.checksum"
 VIDEO: Final = "lesson1.mp4"
 ARCHIVE: Final = "extras/pack.zip"
 RECORD_NAME: Final = "info.checksum"
+
+NESTED_PATH: Final = DIRECTORY / "extras" / "info.rehu"
+NESTED_RECORD_PATH: Final = DIRECTORY / "extras" / "info.checksum"
+NESTED_ARCHIVE: Final = "pack.zip"
+"""A record of its own dropped beside :data:`ARCHIVE`, which makes that archive its content and not the
+enclosing resource's (#254) -- and its name, as the nested record spells it."""
 
 VIDEO_BYTES: Final = bytes(range(256)) * 12
 ARCHIVE_BYTES: Final = bytes(range(255, -1, -1)) * 7
@@ -123,6 +130,9 @@ class FakeDisk:
         """What opening a given file raises instead of serving it -- a share that refuses, or a file
         that vanished between the enumeration and the read, neither of which a test can arrange by
         editing :attr:`files`."""
+        self.write_errors: Final[dict[Path, OSError]] = {}
+        """What writing a given file raises instead of storing it -- a read-only share, a record another
+        resource owns and this one may not write (#257)."""
 
     # region Filesystem faces
 
@@ -196,7 +206,11 @@ class FakeDisk:
 
         :param path: the file to write.
         :param text: what to write.
+        :raises OSError: whatever :attr:`write_errors` names for ``path``.
         """
+        error = self.write_errors.get(Path(path))
+        if error is not None:
+            raise error
         self.writes += 1
         self.files[Path(path)] = text.encode("utf-8")
 
@@ -226,7 +240,7 @@ class FakeDisk:
 
         :returns: the parsed record object.
         """
-        return json.loads(self.files[RECORD_PATH].decode("utf-8"))
+        return self.record_at(RECORD_PATH)
 
     @property
     def entries(self) -> dict[str, dict[str, Any]]:
@@ -234,7 +248,23 @@ class FakeDisk:
 
         :returns: name to entry.
         """
-        return {entry["name"]: entry for entry in self.record["files"]}
+        return self.entries_at(RECORD_PATH)
+
+    def record_at(self, path: Path) -> dict[str, Any]:
+        """Any record as it now stands on disk -- this resource's, or one a run wrote elsewhere (#257).
+
+        :param path: the ``.checksum`` file to read.
+        :returns: the parsed record object.
+        """
+        return json.loads(self.files[path].decode("utf-8"))
+
+    def entries_at(self, path: Path) -> dict[str, dict[str, Any]]:
+        """One record's entries by name.
+
+        :param path: the ``.checksum`` file to read.
+        :returns: name to entry.
+        """
+        return {entry["name"]: entry for entry in self.record_at(path)["files"]}
 
     def forget(self) -> None:
         """Clear the read counters, so a second run's reads are counted on their own."""
@@ -1719,27 +1749,25 @@ def test_a_verify_drops_an_entry_matching_a_junk_glob(disk: FakeDisk) -> None:
     assert report.pruned == {"Thumbs.db": "junk"}
 
 
-def test_a_verify_keeps_an_entry_a_nested_record_now_covers(disk: FakeDisk) -> None:
-    """A claim with somewhere to go is not destroyed here -- moving it is #257's work (#254).
+def test_a_verify_never_prunes_an_entry_a_nested_record_now_covers(disk: FakeDisk) -> None:
+    """A claim with somewhere to go is not *dropped*: it moves, which is a different operation (#257).
 
-    The archive stops being this record's content the moment a nested ``info.rehu`` appears beside it,
-    but its digest, algorithm and verification date exist nowhere else, so the entry stays and is
-    checked exactly as before.
+    Here only that the exclusion tiers never touch it -- what the move itself does is the next region's
+    subject.
 
     **Test steps:**
 
     * seed a record over both content files, then drop a nested ``info.rehu`` beside the archive
     * verify
-    * check nothing was pruned and the archive still verified
+    * check nothing was pruned and the archive's claim still exists somewhere
     """
     disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
-    disk.files[DIRECTORY / "extras" / "info.rehu"] = b'{"format_version": 2}'
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
 
     report = verify_checksums(INFO_PATH)
 
     assert not report.pruned
-    assert set(disk.entries) == {VIDEO, ARCHIVE}
-    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+    assert disk.entries_at(NESTED_RECORD_PATH)[NESTED_ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
 
 
 def test_a_verify_keeps_a_missing_entry_rather_than_pruning_it(disk: FakeDisk) -> None:
@@ -1836,6 +1864,383 @@ def test_a_pruned_name_asked_for_by_name_is_not_reported_missing(disk: FakeDisk)
 
     assert report.pruned == {"info.tc.orig": "structural"}
     assert not report.statuses
+
+
+# endregion
+
+
+# region Moving a claim to the record that covers it
+
+
+def test_a_verify_hands_an_entry_to_the_record_that_covers_it_now(disk: FakeDisk) -> None:
+    """The claim moves whole, and arrives with no date and no verdict (#257).
+
+    The archive stops being this record's content the moment a nested ``info.rehu`` appears beside it,
+    and its digest, its algorithm and the date it was last known good exist nowhere else -- so the entry
+    is written into the nested record rather than dropped. It arrives dateless deliberately: nothing has
+    checked that file *there*, and a dateless entry is never fresh, so the nested resource's next verify
+    reads it whatever the staleness window says.
+
+    **Test steps:**
+
+    * seed a record over both content files, then drop a nested ``info.rehu`` beside the archive
+    * verify
+    * check the entry left this record, arrived in the nested one under its own name with the hash
+      intact and no date or status, and was reported moved
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH)
+
+    assert set(disk.entries) == {VIDEO}
+    assert disk.entries_at(NESTED_RECORD_PATH) == {
+        NESTED_ARCHIVE: {"name": NESTED_ARCHIVE, DEFAULT_CHECKSUM_ALGORITHM: digest_of(ARCHIVE_BYTES)}
+    }
+    assert report.moved == {ARCHIVE: CoveringRecord(NESTED_PATH, NESTED_ARCHIVE)}
+
+
+def test_a_moved_entry_is_neither_read_nor_given_a_verdict(disk: FakeDisk) -> None:
+    """An entry on its way out is not this run's to check -- it belongs to the other record now.
+
+    **Test steps:**
+
+    * seed a record over both content files, then drop a nested ``info.rehu`` beside the archive
+    * verify
+    * check only the video was hashed and only the video got a status
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.forget()
+
+    report = verify_checksums(INFO_PATH)
+
+    assert disk.reads == [VIDEO]
+    assert report.statuses == {VIDEO: "matched"}
+
+
+def test_the_incoming_claim_wins_over_the_one_already_there(disk: FakeDisk) -> None:
+    """Provenance beats recency, so the arriving claim replaces a resident entry of the same name (#257).
+
+    A locally-baselined entry recorded only whatever was on disk the first time this app looked; the
+    claim arriving may have been made when the files were known good. The resident entry's date goes with
+    it, which is what sends the next verify at the file rather than letting it skip as fresh.
+
+    **Test steps:**
+
+    * seed both records over the archive, the nested one claiming a hash that is not the file's
+    * verify the enclosing resource
+    * check the nested record now carries the incoming hash, once, and no date
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.files[NESTED_RECORD_PATH] = (
+        json.dumps({"version": 1, "files": [entry(NESTED_ARCHIVE, digest=digest_of(b"something else"))]}) + "\n"
+    ).encode("utf-8")
+
+    verify_checksums(INFO_PATH)
+
+    assert disk.entries_at(NESTED_RECORD_PATH) == {
+        NESTED_ARCHIVE: {"name": NESTED_ARCHIVE, DEFAULT_CHECKSUM_ALGORITHM: digest_of(ARCHIVE_BYTES)}
+    }
+
+
+def test_a_resident_duplicate_of_the_incoming_name_goes_with_the_one_it_replaces(disk: FakeDisk) -> None:
+    """The incoming claim wins **once**: a second resident entry of that name would outlive the first.
+
+    A duplicate only ever arrives by hand-editing, and leaving one behind would keep a hash the arriving
+    claim has just superseded -- which would then fail every verify after it. The record's own order is
+    kept otherwise, so the claim lands where the entry it replaced was.
+
+    **Test steps:**
+
+    * give the nested record two entries for the same name, around an unrelated one
+    * verify the enclosing resource
+    * check one entry of that name is left, holding the incoming hash, in the position of the first
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    resident = [
+        entry(NESTED_ARCHIVE, digest=digest_of(b"one")),
+        entry("notes.txt", digest=digest_of(b"notes")),
+        entry(NESTED_ARCHIVE, digest=digest_of(b"two")),
+    ]
+    disk.files[NESTED_RECORD_PATH] = (json.dumps({"version": 1, "files": resident}) + "\n").encode("utf-8")
+
+    verify_checksums(INFO_PATH)
+
+    written = disk.record_at(NESTED_RECORD_PATH)["files"]
+    assert [item["name"] for item in written] == [NESTED_ARCHIVE, "notes.txt"]
+    assert written[0][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
+
+
+def test_an_annotation_this_build_does_not_know_travels_with_the_claim(disk: FakeDisk) -> None:
+    """A moved entry is carried key for key, the same round-trip discipline a rewrite keeps.
+
+    Only the two this run cannot honour are left behind -- the date and the verdict, neither of which is
+    true of a record that has never checked the file.
+
+    **Test steps:**
+
+    * seed an archive entry carrying a key from another build, and drop a nested ``info.rehu``
+    * verify
+    * check the annotation arrived and the date and status did not
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES, source="an older node")])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    verify_checksums(INFO_PATH)
+
+    moved = disk.entries_at(NESTED_RECORD_PATH)[NESTED_ARCHIVE]
+    assert moved["source"] == "an older node"
+    assert "verified" not in moved
+    assert "status" not in moved
+
+
+def test_a_covering_record_takes_every_claim_bound_for_it_in_one_write(disk: FakeDisk) -> None:
+    """Grouped by destination, so a nested resource named by forty entries is loaded and written once.
+
+    **Test steps:**
+
+    * seed two entries for files under the same nested resource, and drop its ``info.rehu``
+    * verify
+    * check both arrived and exactly two records were written -- the nested one, and this one
+    """
+    disk.files[DIRECTORY / "extras" / "pack2.zip"] = b"a second pack"
+    disk.seed_record(
+        [entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES), entry("extras/pack2.zip", b"a second pack")]
+    )
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.forget()
+
+    verify_checksums(INFO_PATH)
+
+    assert set(disk.entries_at(NESTED_RECORD_PATH)) == {NESTED_ARCHIVE, "pack2.zip"}
+    assert disk.writes == 2
+
+
+def test_a_legacy_record_never_hands_a_claim_to_the_converted_record_beside_it(disk: FakeDisk) -> None:
+    """``foo.tc`` and ``foo.rehu`` keep their claims in the *same* ``foo.checksum``, so there is no move.
+
+    A half-converted stem is the one shape where the covering record is a different file and the same
+    record, and taking it at face value would write this run's own record and then rewrite it without
+    those entries -- destroying the claim the move exists to preserve.
+
+    **Test steps:**
+
+    * put a ``foo.tc`` and a converted ``foo.rehu`` in the directory, with the archive they describe gone
+    * seed their shared record with an entry for it and verify through the ``.tc``
+    * check nothing moved and the entry is still there, ``missing`` and holding its hash
+    """
+    disk.files[DIRECTORY / "foo.tc"] = b"the record as tc4 wrote it"
+    disk.files[DIRECTORY / "foo.rehu"] = b'{"format_version": 2}'
+    disk.files[DIRECTORY / "foo.checksum"] = (
+        json.dumps({"version": 1, "files": [entry("foo.zip", b"once here")]}) + "\n"
+    ).encode("utf-8")
+
+    report = verify_checksums(DIRECTORY / "foo.tc")
+
+    assert not report.moved
+    assert report.statuses == {"foo.zip": "missing"}
+    assert disk.entries_at(DIRECTORY / "foo.checksum")["foo.zip"][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(b"once here")
+
+
+def test_a_covering_record_that_cannot_be_written_keeps_the_claim_where_it_is(disk: FakeDisk) -> None:
+    """The claim is only dropped here because it arrived there -- so a refused write drops nothing.
+
+    **Test steps:**
+
+    * seed a record over both content files and drop a nested ``info.rehu`` beside the archive
+    * make the nested record refuse to be written, and verify
+    * check the entry is still here, reported as moved by nothing, and still verified as before
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.write_errors[NESTED_RECORD_PATH] = PermissionError(str(NESTED_RECORD_PATH))
+
+    report = verify_checksums(INFO_PATH)
+
+    assert set(disk.entries) == {VIDEO, ARCHIVE}
+    assert not report.moved
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+
+
+def test_a_covering_record_owed_its_seed_is_not_created_by_a_move(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """A record created by a hand-over would spend the covering resource's one-time seed (#243).
+
+    Seeding is one-way -- the manifest is read only where there is no ``.checksum`` -- so a record
+    holding just the arriving names would silence the manifest's claims for every other file that
+    resource covers. The claims wait in the losing record instead, checked as before, until the covering
+    resource's own first verify has seeded.
+
+    **Test steps:**
+
+    * drop a nested ``info.rehu`` with a legacy ``info.sfv`` beside it, and no record yet
+    * verify the enclosing resource
+    * check nothing moved, no nested record appeared, and the entry stayed here and verified
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.files[DIRECTORY / "extras" / "info.sfv"] = b"pack.zip 12345678"
+    mocker.patch("rehuco_core.checksum_seeding.os.scandir", side_effect=disk.scandir)
+
+    report = verify_checksums(INFO_PATH)
+
+    assert not report.moved
+    assert NESTED_RECORD_PATH not in disk.files
+    assert ARCHIVE in disk.entries
+    assert report.statuses == {VIDEO: "matched", ARCHIVE: "matched"}
+
+
+def test_a_covering_record_that_exists_takes_the_claim_whatever_sits_beside_it(
+    disk: FakeDisk, mocker: MockerFixture
+) -> None:
+    """Once the covering resource has a record, its manifest is out of the loop -- the move proceeds.
+
+    The same one-way rule from the other side: a ``.checksum`` on disk means the seed has happened (or
+    was never needed), and the manifest beside it is history, not a veto.
+
+    **Test steps:**
+
+    * drop a nested ``info.rehu`` with both a record and a legacy ``info.sfv`` beside it
+    * verify the enclosing resource
+    * check the claim arrived in the nested record
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    disk.files[NESTED_RECORD_PATH] = (json.dumps({"version": 1, "files": []}) + "\n").encode("utf-8")
+    disk.files[DIRECTORY / "extras" / "info.sfv"] = b"pack.zip 12345678"
+    mocker.patch("rehuco_core.checksum_seeding.os.scandir", side_effect=disk.scandir)
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.moved == {ARCHIVE: CoveringRecord(NESTED_PATH, NESTED_ARCHIVE)}
+    assert disk.entries_at(NESTED_RECORD_PATH)[NESTED_ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(ARCHIVE_BYTES)
+
+
+def test_a_file_scoped_neighbour_takes_the_claim_under_the_same_name(disk: FakeDisk) -> None:
+    """The other half of the coverage rule, and the case where the name does not change (#254).
+
+    **Test steps:**
+
+    * put a ``baz.zip`` beside a ``baz.rehu`` of its own, and seed this record over it
+    * verify
+    * check the claim went to ``baz.checksum`` spelled exactly as it was
+    """
+    disk.files[DIRECTORY / "baz.rehu"] = b'{"format_version": 2}'
+    disk.files[DIRECTORY / "baz.zip"] = b"a pack of its own"
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry("baz.zip", b"a pack of its own")])
+
+    report = verify_checksums(INFO_PATH)
+
+    assert "baz.zip" not in disk.entries
+    assert report.moved == {"baz.zip": CoveringRecord(DIRECTORY / "baz.rehu", "baz.zip")}
+    assert disk.entries_at(DIRECTORY / "baz.checksum")["baz.zip"][DEFAULT_CHECKSUM_ALGORITHM] == digest_of(
+        b"a pack of its own"
+    )
+
+
+def test_freshness_does_not_protect_an_entry_from_moving(disk: FakeDisk) -> None:
+    """``stale_after`` buys a skipped read, and an entry that is leaving has nothing to read.
+
+    Every entry a catalog's first sweep has to move was dated by the run that adopted it, so a 90-day
+    window would otherwise leave all of them where they are.
+
+    **Test steps:**
+
+    * seed a record whose archive entry was verified just now, and drop a nested ``info.rehu``
+    * verify with a staleness window that would ordinarily skip it
+    * check it moved rather than being skipped
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES, verified=NOW)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH, stale_after=WEEK)
+
+    assert report.moved == {ARCHIVE: CoveringRecord(NESTED_PATH, NESTED_ARCHIVE)}
+    assert ARCHIVE not in report.skipped
+
+
+def test_a_targeted_verify_moves_only_what_it_was_asked_about(disk: FakeDisk) -> None:
+    """A selection is a selection here too: it writes another resource's record, so all the more so.
+
+    **Test steps:**
+
+    * seed a record over both content files and drop a nested ``info.rehu`` beside the archive
+    * verify the video alone
+    * check the archive's entry survived and the nested record was never written
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH, only=[VIDEO])
+
+    assert not report.moved
+    assert ARCHIVE in disk.entries
+    assert NESTED_RECORD_PATH not in disk.files
+
+
+def test_a_moved_name_asked_for_by_name_is_not_reported_missing(disk: FakeDisk) -> None:
+    """A selected entry that moved answers *moved*, not *missing* -- the file is right where it was.
+
+    **Test steps:**
+
+    * seed a record over both content files and drop a nested ``info.rehu`` beside the archive
+    * verify the archive's name alone
+    * check the run reports it moved and reports no status for it at all
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH, only=[ARCHIVE])
+
+    assert report.moved == {ARCHIVE: CoveringRecord(NESTED_PATH, NESTED_ARCHIVE)}
+    assert not report.statuses
+
+
+def test_a_malformed_entry_moves_too_rather_than_being_left_behind(disk: FakeDisk) -> None:
+    """A hash this build cannot read is still somebody's claim, and this build is not its judge.
+
+    Carrying a malformed entry byte-for-byte exists so a build never *writes into* one it cannot read;
+    handing it to the record that covers its file is not that -- the keys travel untouched.
+
+    **Test steps:**
+
+    * seed a record whose archive entry carries an unreadable hash, and drop a nested ``info.rehu``
+    * verify
+    * check the entry arrived in the nested record with its unreadable hash intact
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), {"name": ARCHIVE, DEFAULT_CHECKSUM_ALGORITHM: "not hex"}])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.moved == {ARCHIVE: CoveringRecord(NESTED_PATH, NESTED_ARCHIVE)}
+    assert disk.entries_at(NESTED_RECORD_PATH)[NESTED_ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == "not hex"
+
+
+def test_the_covering_record_is_written_before_this_one(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """The order is the whole safety argument: a failure in between duplicates a claim, never loses it.
+
+    **Test steps:**
+
+    * seed a record over both content files and drop a nested ``info.rehu`` beside the archive
+    * verify, recording which records were written in which order
+    * check the nested record was written first
+    """
+    disk.seed_record([entry(VIDEO, VIDEO_BYTES), entry(ARCHIVE, ARCHIVE_BYTES)])
+    disk.files[NESTED_PATH] = b'{"format_version": 2}'
+    written: list[Path] = []
+
+    def write_text(path: Path | str, text: str) -> None:
+        written.append(Path(path))
+        disk.write_text(path, text)
+
+    mocker.patch("rehuco_core.checksum_record.atomic_write_text", side_effect=write_text)
+
+    verify_checksums(INFO_PATH)
+
+    assert written == [NESTED_RECORD_PATH, RECORD_PATH]
 
 
 # endregion

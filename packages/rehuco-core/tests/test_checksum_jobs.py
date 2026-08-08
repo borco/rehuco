@@ -25,6 +25,7 @@ from rehuco_core import (
     PRUNE_REASONS,
     ChecksumJob,
     ChecksumReport,
+    CoveringRecord,
     GenerateChecksumsJob,
     JobCancelled,
     JobPaused,
@@ -460,6 +461,32 @@ def test_every_pruned_entry_is_named_in_the_log_with_its_reason(
     assert "2 pruned" in caplog.text
 
 
+def test_every_moved_claim_is_named_in_the_log_with_where_it_went(
+    mocker: MockerFixture, control: FakeControl, present: None, caplog: Any
+) -> None:
+    """An entry leaving a record is only safe because it arrived somewhere else, so say where (#257).
+
+    The count in the summary cannot name the record that took it, and that record is exactly what
+    someone reading the log later needs.
+
+    **Test steps:**
+
+    * run a verify reporting one entry handed to a nested record
+    * check the name, the record it went to and the name it goes by there all reached the resource's log
+    """
+    del present
+    covering = CoveringRecord(DIRECTORY / "extras" / "info.rehu", "pack.zip")
+    mocker.patch("rehuco_core.checksum_jobs.verify_checksums", return_value=ChecksumReport(moved={ARCHIVE: covering}))
+
+    with caplog.at_level("INFO", logger="rehuco_core.checksum_jobs"):
+        VerifyChecksumsJob(INFO_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert f"'{ARCHIVE}'" in caplog.text
+    assert str(covering.record) in caplog.text
+    assert "'pack.zip'" in caplog.text
+    assert "1 moved" in caplog.text
+
+
 @mark.parametrize("request_stop", ["pause", "cancel"])
 def test_a_stop_travels_out_of_the_run_untouched(
     mocker: MockerFixture, control: FakeControl, present: None, request_stop: str
@@ -726,6 +753,10 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
             "1 matched, 1 pruned",
         ),
         (
+            ChecksumReport(statuses={VIDEO: "matched"}, moved={ARCHIVE: CoveringRecord(INFO_PATH, "pack.zip")}),
+            "1 matched, 1 moved",
+        ),
+        (
             ChecksumReport(statuses={VIDEO: "matched"}, unreadable_directories=("extras", "raw")),
             "1 matched, 2 unreadable directories",
         ),
@@ -738,6 +769,7 @@ def test_several_resources_enqueue_several_jobs_and_run_one_at_a_time(mocker: Mo
         "unnamed",
         "one unreadable directory",
         "pruned",
+        "moved",
         "several unreadable directories",
     ],
 )
