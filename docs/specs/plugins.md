@@ -426,9 +426,11 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   the current screenshot framed and scrolled into view and a click jumping straight to it. Whether it is showing is
   **per document**, remembered in the document's own saved layout beside which tabs it has open, so one document's
   toggle never decides another's; the settings page holds only the *starting point* a document that has never been told
-  otherwise opens with, plus the thumbnail height on each side. Applying any of those three reaches what is **already
-  on screen** — open strips resize, open viewers resize and show or hide their row — so the effect is visible where
-  the user is looking rather than promised for next time ([[appendices.settings-pages#save-drop-actions]]).
+  otherwise opens with, plus the thumbnail height on each side and how tall the curation editor's preview pane opens
+  on a document whose split has never been dragged. Applying any of those four reaches what is **already on screen**
+  — open strips resize, open viewers resize and show or hide their row, open editors re-split — so the effect is
+  visible where the user is looking rather than promised for next time
+  ([[appendices.settings-pages#save-drop-actions]]).
   Neither strip ever paints a scrollbar, and a strip with nothing to show — no screenshots, or every one curated
   away — hides itself rather than leaving an empty band. The document's own strip has a second layout to offer,
   picked in the same settings ("Viewers > Images"): **wrapped**, folding the thumbnails onto as many rows as the
@@ -439,6 +441,16 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   ([[acquisition-tooling#tc-to-rehu]]) re-points an open viewer through the same owner, which keeps the current
   screenshot if it survived, falls back to whatever took its position if it did not, and dismisses the viewer when the
   set empties — a maximized screenshot is never one the strip no longer offers.
+  The **curation editor** on the images tab is the write side of the same set: every screenshot as a checkable
+  row (checked = in the lightbox) under a sized preview, with buttons — the shared item-list ones, so they look
+  and behave like every other list in the app — to move one up, down, to either end, or delete it.
+  Because a screenshot's order **is** its numbering
+  ([[data-model#image-meanings]]), all of those are renames on disk: they take effect immediately rather than
+  waiting for a Save, a delete renumbers everything after the hole it left, and a set arriving numbered from `01`
+  is renumbered from `00` the first time it is rearranged. A delete is confirmed first — it is the one edit here
+  that no Revert can undo. Deliberately single-select: every action names one file. A resource nothing can
+  rearrange — one not yet saved anywhere, or a legacy `.tc` whose screenshots are still conversion's to read —
+  keeps the list and greys the buttons.
 - **Editor**: field editing including the Markdown description; rename from the predefined-candidates list
   ([[data-model#rehu-format]]), which renames on disk. Each scope moves what its own naming convention owns
   ([[data-model#resource-scoping]]): a directory-scoped `info.rehu` renames its **parent directory**, one atomic

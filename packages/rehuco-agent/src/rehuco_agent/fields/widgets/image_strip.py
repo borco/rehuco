@@ -383,6 +383,16 @@ class ImageStrip(QScrollArea):  # pylint: disable=too-many-instance-attributes
         if event.type() == QEvent.Type.ParentChange and not self.__wants_visible():
             self.hide()
 
+    def refresh(self) -> None:
+        """Re-read the current scanner and repaint, for a change this strip cannot see coming (#72).
+
+        The scanner is a *live* view of a directory, so it can start reporting different files with
+        nothing about this strip having changed -- which is exactly what a curation edit that renames
+        screenshots on disk does. Every other rebuild trigger is a value this strip is handed
+        (:meth:`set_hidden`, a new scanner); this one is an owner saying the disk moved underneath it.
+        """
+        self.__refresh()
+
     def __refresh(self) -> None:
         """Recompute the visible screenshot set from the current scanner and hidden list."""
         scanner = self.image_scanner

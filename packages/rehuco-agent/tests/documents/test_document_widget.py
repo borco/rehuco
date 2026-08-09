@@ -50,12 +50,14 @@ from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab
 from rehuco_agent.fields.widgets import (
     AuthorsEditor,
     ImageLightbox,
+    ImageSelector,
     ImageStrip,
     ImageViewerMode,
     PathEditor,
     SingleChoiceComboBox,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
+from rehuco_agent.fields.widgets.image_selector import PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -1587,6 +1589,52 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
     assert fresh_editors[0].advanced is True
 
 
+def image_selector(widget: DocumentWidget) -> ImageSelector:
+    """The images editor's selector, reached through the dock registry rather than ``findChildren``.
+
+    QtAds detaches the content of a dock sitting behind another tab from the widget tree, and the
+    images editor is one of those -- the same reason ``DocumentWidget.__stateful_widgets`` enumerates
+    the registry instead.
+
+    :param widget: the document widget to look in.
+    :returns: its one images-editor selector.
+    """
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    selectors = [
+        found
+        for dock in manager.dockWidgetsMap().values()
+        for found in (dock.widget(), *dock.widget().findChildren(ImageSelector))
+        if isinstance(found, ImageSelector)
+    ]
+    assert len(selectors) == 1
+    return selectors[0]
+
+
+def test_save_state_round_trips_the_image_selector_split(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """The images editor's preview/list split is persisted per-``.rehu`` and restored on a fresh
+    widget -- the same `StatefulWidget` ride the location field's expand state takes (#72).
+
+    **Test steps:**
+
+    * drag the images editor's split to a lopsided position and save the widget's state
+    * build a fresh widget and restore that state
+    * verify the fresh widget's images editor opens at the same split
+    """
+    selector = image_selector(widget)
+    selector.setSizes([220, 80])
+    state = widget.save_state()
+
+    fresh = DocumentWidget(
+        RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
+    )
+    qtbot.addWidget(fresh)
+    fresh_selector = image_selector(fresh)
+
+    fresh.restore_state(state)
+
+    assert fresh_selector.sizes() == selector.sizes()
+
+
 def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:
     """A dict payload missing the per-widget state entry still restores cleanly.
 
@@ -2441,6 +2489,48 @@ def test_hiding_previews_app_wide_dismisses_an_open_maximized_viewer(
         shared_image_viewer_settings().previews_visible = False
 
     assert widget.findChild(ImageLightbox) is None
+
+
+def test_a_rearranged_screenshot_set_sends_the_strip_back_to_disk(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A curation edit that renames files re-reads the directory for the viewer's strip too (#72).
+
+    The strip has its own scanner over the same directory and no way to notice a rename, so without
+    the relay it would keep painting thumbnails under names that no longer exist.
+
+    **Test steps:**
+
+    * patch the strip's own refresh, then make the editor report a rearrangement
+    * verify the strip was sent back to its scanner
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    refresh = mocker.patch.object(strip, "refresh")
+
+    image_selector(widget).screenshots_changed.emit()
+
+    refresh.assert_called_once_with()
+
+
+def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: DocumentWidget) -> None:
+    """The app-wide previews toggle reaches the curation editor's preview pane, not only the strip (#71).
+
+    **Test steps:**
+
+    * hide previews app-wide, then show them again
+    * verify the editor's preview pane followed both ways
+    """
+    selector = image_selector(widget)
+    pane = selector.widget(PREVIEW_PANE)
+    assert pane is not None
+
+    shared_image_viewer_settings().previews_visible = False
+    assert pane.isHidden()
+
+    shared_image_viewer_settings().previews_visible = True
+    assert not pane.isHidden()
 
 
 def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(

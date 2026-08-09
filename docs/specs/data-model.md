@@ -616,7 +616,11 @@ explicitly:
   [[data-model#resource-scoping]])** — app-managed presentation metadata that accompanies a `.rehu`. Editable, **not**
   checksummed, part of the editable record (subject to the online-only-editing rule for resource metadata in v1,
   [[sync#overview]]/[[offline-editing#overview]]). These are what "images" refers to in the viewer's image strip and in
-  description embeds.
+  description embeds. **Their order is their numbering** — nothing in the `.rehu` records it — so
+  reordering or deleting one is a *rename*, carried out immediately rather than staged until a Save, and
+  the canonical set is gap-free from `00`. Deleting therefore renumbers everything after the hole, and a
+  set that arrives numbered from `01` is renumbered the first time it is rearranged. The one piece of
+  screenshot state that *is* stored, the curated-out list (below), is filenames, so it follows the renames.
 - **Content images inside a reference-image zip** — part of the **monolithic, immutable, checksummed resource**, exactly
   like a tutorial's video files. The app never edits these. Refreshing such a zip is a deliberate, manual, out-of-band
   action that also requires manually refreshing its checksum; it is not done through this app.

@@ -3,12 +3,13 @@
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
-from PySide6.QtGui import QPixmap, QStandardItemModel
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import ImageSelector, ImageStrip
+from rehuco_agent.fields.widgets.image_selector import NAME_COLUMN, ScreenshotListModel
 
 from fields.field_testers import ImagesFieldTester as ImagesField
 
@@ -110,8 +111,10 @@ def test_editor_seeds_the_selector_with_all_images_checked_except_hidden(
     view = editor.findChild(QTreeView)
     assert isinstance(view, QTreeView)
     list_model = view.model()
-    assert isinstance(list_model, QStandardItemModel)
-    assert [list_model.item(row).checkState() for row in range(list_model.rowCount())] == [
+    assert isinstance(list_model, ScreenshotListModel)
+    assert [
+        list_model.index(row, NAME_COLUMN).data(Qt.ItemDataRole.CheckStateRole) for row in range(list_model.rowCount())
+    ] == [
         Qt.CheckState.Checked,
         Qt.CheckState.Unchecked,
         Qt.CheckState.Checked,
@@ -137,8 +140,8 @@ def test_editor_toggle_writes_hidden_images_through_to_the_model(
     view = editor.findChild(QTreeView)
     assert isinstance(view, QTreeView)
     list_model = view.model()
-    assert isinstance(list_model, QStandardItemModel)
-    list_model.item(0).setCheckState(Qt.CheckState.Unchecked)
+    assert isinstance(list_model, ScreenshotListModel)
+    list_model.setData(list_model.index(0, NAME_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
     assert model.hidden_images == ["info00.jpg"]
 

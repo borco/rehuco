@@ -197,7 +197,7 @@
     <string>Ctrl+Shift+`</string>
    </property>
    <property name="shortcutContext">
-    <enum>Qt::ApplicationShortcut</enum>
+    <enum>Qt::ShortcutContext::ApplicationShortcut</enum>
    </property>
   </action>
   <action name="image_previews_toggle_action">
