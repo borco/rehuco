@@ -324,6 +324,10 @@ def build_document_form(
         # out when the user applies the other choice (#70)
         strip_wrap=shared_image_viewer_settings().preview_wrap,
         strip_wrap_changed=shared_image_viewer_settings().preview_wrap_changed,  # type: ignore[attr-defined]
+        # and the app-wide grave-accent quick-declutter toggle (Ctrl+Shift+`, #71): every open
+        # document's strip hides or reappears together the moment the setting changes
+        previews_visible=shared_image_viewer_settings().previews_visible,
+        previews_visible_changed=shared_image_viewer_settings().previews_visible_changed,  # type: ignore[attr-defined]
     )
 
     def measure_content_images() -> int | None:

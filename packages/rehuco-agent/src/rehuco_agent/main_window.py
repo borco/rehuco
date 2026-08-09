@@ -43,6 +43,7 @@ from .settings.checksum_settings import shared_checksum_settings
 from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
+from .settings.image_viewer_settings import shared_image_viewer_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
@@ -81,6 +82,8 @@ TASK_QUEUE_DOCK_OBJECT_NAME: Final = "task_queue_dock"
 TASK_QUEUE_DOCK_TITLE: Final = "Tasks"
 
 TASK_VIEW_ICON_RESOURCE: Final = ":/icons/task_view.svg"
+
+IMAGE_PREVIEWS_ICON_RESOURCE: Final = ":/icons/image_previews.svg"
 
 TASK_QUEUE_LOSS_TITLE: Final = "Unfinished tasks"
 TASK_QUEUE_LOSS_MESSAGE: Final = "{count} unfinished task(s) will not survive quitting:"
@@ -296,6 +299,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         list because both are views of the *app* rather than of a resource, and
         :meth:`__add_open_documents` only ever appends, so this static order survives however often the
         dynamic tail is rebuilt.
+
+        ``image_previews_action`` (``Ctrl+Shift+``, grave accent, #71) joins them for the same reason:
+        it too is a view of the app rather than of one resource. It is the *companion* to the toolbar's
+        own ``image_previews_toggle_action`` -- see :meth:`__setup_docking_system`'s companion-wiring
+        comment for both that pairing and the shortcut-context reasoning.
         """
         ThemeManager(
             self.__theme_model,
@@ -316,6 +324,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
         self.__ui.view_menu.addAction(self.__ui.log_action)
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
+        self.__ui.view_menu.addAction(self.__ui.image_previews_action)
         self.__ui.view_menu.addSeparator()  # between the app docks above and the dynamic docks list below
 
     def __setup_file_menu(self) -> None:
@@ -363,6 +372,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__ui.close_missing_action.setEnabled(self.__documents_dock.has_missing_documents())
         self.__ui.close_all_action.setEnabled(bool(self.__documents_dock.open_document_widgets()))
+
+    def __on_image_previews_toggled(self, visible: bool) -> None:
+        """Apply the previews toggle app-wide, and persist it as it is clicked (#71).
+
+        Written through here rather than at shutdown, the same shape ``Sweep checksums...``'s
+        remembered root uses: this toggle has no Apply button behind it and no settings page to be
+        saved from, so the click is the only moment there is to record it. Assigning the property is
+        what reaches the open documents; the save is only about the next launch.
+
+        :param visible: whether previews are now shown.
+        """
+        settings = shared_image_viewer_settings()
+        settings.previews_visible = visible
+        settings.save(persistent_settings())
 
     def __on_open_rehu(self) -> None:
         """Prompt for a ``.rehu`` file and open it (``File`` > ``Open rehu...``, #64)."""
@@ -556,6 +579,27 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
 
+        # image_previews_toggle_action/image_previews_action follow the same primary/companion split
+        # as the two pairs above, but neither wraps a dock: both are declared in main_window.ui, and
+        # the app-wide ImageViewerSettings singleton -- not a dock's own visibility -- is what the
+        # *toggle* (the primary, on the toolbar) drives and is driven by (#71). The companion's
+        # shortcutContext is ApplicationShortcut (set in main_window.ui), not the default
+        # WindowShortcut: a torn-out QtAds dock is a genuine top-level window of its own (#41's
+        # ambiguous-shortcut concern doesn't apply -- there is exactly one action carrying this
+        # shortcut), so WindowShortcut would go deaf to Ctrl+Shift+` the moment a floated dock had
+        # focus instead of this window.
+        self.__image_previews_icon_handler = ActionIconThemeHandler(
+            self.__ui.image_previews_toggle_action,
+            IMAGE_PREVIEWS_ICON_RESOURCE,
+            companion=self.__ui.image_previews_action,
+        )
+        self.__ui.view_menu.aboutToShow.connect(self.__image_previews_icon_handler.resync_companion_checked_state)
+        # seeded from the stored setting rather than left on the .ui's own `checked` default, and
+        # seeded *before* the connection below so restoring a hidden-previews launch is not itself
+        # written back as a fresh toggle
+        self.__ui.image_previews_toggle_action.setChecked(shared_image_viewer_settings().previews_visible)
+        self.__ui.image_previews_toggle_action.toggled.connect(self.__on_image_previews_toggled)
+
         settings_dock = DockableDialog(
             self.__dock_manager, SETTINGS_DIALOG_OBJECT_NAME, "Settings", self.__settings_dialog
         )
@@ -585,6 +629,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.__ui.action_bar.addWidget(spacer)
         self.__ui.action_bar.addAction(self.__ui.theme_action)
+        self.__ui.action_bar.addAction(self.__ui.image_previews_toggle_action)
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
         self.__ui.action_bar.addAction(settings_dock.toggle_action)

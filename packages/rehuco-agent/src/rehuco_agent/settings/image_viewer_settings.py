@@ -16,6 +16,7 @@ STRIP_VISIBLE_KEY: Final = "strip_visible"
 PREVIEW_IMAGE_HEIGHT_KEY: Final = "preview_image_height"
 LIGHTBOX_IMAGE_HEIGHT_KEY: Final = "lightbox_image_height"
 PREVIEW_WRAP_KEY: Final = "preview_wrap"
+PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
 
 DEFAULT_MODE: Final = ImageViewerMode.DOCUMENT_OVERLAY
 """What a fresh install (no ``.ini`` yet) opens screenshots on: the least disruptive of the three --
@@ -28,6 +29,11 @@ maximizing is the screenshot itself, and the row is one click away whenever it i
 DEFAULT_PREVIEW_WRAP: Final = False
 """Whether a document's own image strip wraps its thumbnails over several rows (#70). Off: one row is
 the compact shape the viewer is laid out around, and it leaves the space below it to the description."""
+
+DEFAULT_PREVIEWS_VISIBLE: Final = True
+"""Whether a document's own image strip is shown, on a fresh install with nothing persisted (#71). On:
+previews are the normal state, and the app-wide grave-accent toggle (``Ctrl+Shift+``, backtick) is the
+exception -- e.g. clearing screenshots off screen before sharing it."""
 
 DEFAULT_PREVIEW_IMAGE_HEIGHT: Final = IMAGE_STRIP_HEIGHT
 DEFAULT_LIGHTBOX_IMAGE_HEIGHT: Final = DEFAULT_STRIP_HEIGHT
@@ -57,6 +63,14 @@ class ImageViewerSettings(QObject):
     viewers currently open, so the change is visible where the user is looking, but it is never
     written back here by a toggle inside one.
 
+    :attr:`previews_visible` is the app-wide grave-accent toggle's own state (``Ctrl+Shift+``,
+    backtick, #71), and unlike the two above it is written back **by the toggle itself**: it has no
+    Apply button behind it and no settings page to be saved from, so the moment it is clicked is the
+    only moment there is to record it (`MainWindow.__on_image_previews_toggled`). Persisted rather
+    than session-only because a user who declutters previews away is stating a preference, not
+    borrowing the screen for a minute -- having to re-hide them on every launch would be the friction
+    the toggle exists to remove.
+
     :param parent: optional Qt parent.
     """
 
@@ -68,6 +82,10 @@ class ImageViewerSettings(QObject):
 
     preview_wrap = SimpleProperty(DEFAULT_PREVIEW_WRAP)
     """Whether a document's own image strip wraps its thumbnails instead of keeping them on one row."""
+
+    previews_visible = SimpleProperty(DEFAULT_PREVIEWS_VISIBLE)
+    """Whether a document's own image strip is shown, app-wide (#71) -- the grave-accent toggle's own
+    state (``Ctrl+Shift+``, backtick), persisted as it is clicked."""
 
     preview_image_height = SimpleProperty(DEFAULT_PREVIEW_IMAGE_HEIGHT)
     """How tall a screenshot is in a document's own image strip."""
@@ -88,6 +106,7 @@ class ImageViewerSettings(QObject):
         stored = cast(str, settings.value(MODE_KEY, DEFAULT_MODE.value, type=str))
         self.strip_visible = cast(bool, settings.value(STRIP_VISIBLE_KEY, DEFAULT_STRIP_VISIBLE, type=bool))
         self.preview_wrap = cast(bool, settings.value(PREVIEW_WRAP_KEY, DEFAULT_PREVIEW_WRAP, type=bool))
+        self.previews_visible = cast(bool, settings.value(PREVIEWS_VISIBLE_KEY, DEFAULT_PREVIEWS_VISIBLE, type=bool))
         self.preview_image_height = cast(
             int, settings.value(PREVIEW_IMAGE_HEIGHT_KEY, DEFAULT_PREVIEW_IMAGE_HEIGHT, type=int)
         )
@@ -109,6 +128,7 @@ class ImageViewerSettings(QObject):
         settings.setValue(MODE_KEY, self.mode.value)
         settings.setValue(STRIP_VISIBLE_KEY, self.strip_visible)
         settings.setValue(PREVIEW_WRAP_KEY, self.preview_wrap)
+        settings.setValue(PREVIEWS_VISIBLE_KEY, self.previews_visible)
         settings.setValue(PREVIEW_IMAGE_HEIGHT_KEY, self.preview_image_height)
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
         settings.endGroup()

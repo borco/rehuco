@@ -31,6 +31,7 @@ from rehuco_agent.main_window import (
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
+from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
@@ -2883,6 +2884,173 @@ def test_opening_the_task_queue_dock_from_the_action_bar_checks_the_menu_compani
 
     assert not task_queue_dock(window).isClosed()
     assert ui.tasks_action.isChecked()
+
+
+def test_the_image_previews_toggle_is_in_the_view_menu_checked_by_default(qtbot: QtBot) -> None:
+    """``image_previews_action`` sits in the View menu, checked from the start, on ``Ctrl+Shift+``
+    (grave accent, #71).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the action is in the View menu, checked, and bound to ``Ctrl+Shift+`` (grave accent)
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert ui.image_previews_action in ui.view_menu.actions()
+    assert ui.image_previews_action.isChecked()
+    assert ui.image_previews_action.shortcut() == QKeySequence("Ctrl+Shift+`")
+
+
+def test_the_image_previews_shortcut_is_application_wide(qtbot: QtBot) -> None:
+    """The toggle's shortcut fires from anywhere in the app, not only while the main window itself is
+    the active window (#71).
+
+    A torn-out QtAds dock is a genuine top-level window of its own, so the default ``WindowShortcut``
+    context (scoped to whichever window the action's own widget belongs to) would go deaf to the
+    ``Ctrl+Shift+`` grave-accent shortcut the moment a floated dock had the keyboard instead of the
+    main window.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the action's shortcut context is ``ApplicationShortcut``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert ui.image_previews_action.shortcutContext() == Qt.ShortcutContext.ApplicationShortcut
+
+
+def test_toggling_image_previews_off_hides_every_open_documents_strip(qtbot: QtBot) -> None:
+    """Unchecking ``image_previews_action`` hides every open document's preview strip at once (#71).
+
+    Goes through the shared, reactive ``ImageViewerSettings`` singleton rather than a dock of its own,
+    so this pins the toggle's real effect rather than merely its own checked state.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and untoggle ``image_previews_action``
+    * verify the shared settings' ``previews_visible`` followed
+    * toggle it back on and verify it followed again
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    ui.image_previews_action.trigger()
+    assert shared_image_viewer_settings().previews_visible is False
+
+    ui.image_previews_action.trigger()
+    assert shared_image_viewer_settings().previews_visible is True
+
+
+def test_the_image_previews_toggle_button_sits_right_below_theme_on_the_action_bar(qtbot: QtBot) -> None:
+    """``image_previews_toggle_action`` -- the toolbar primary -- sits directly after ``theme_action``,
+    ahead of the log toggle (#71).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * read the action bar's actions in order
+    * verify the toggle sits between theme and the log dock's own toggle
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    actions = ui.action_bar.actions()
+
+    assert actions.index(ui.theme_action) < actions.index(ui.image_previews_toggle_action)
+    assert actions.index(ui.image_previews_toggle_action) < actions.index(log_dock(window).toggleViewAction())
+
+
+def test_the_image_previews_toggle_button_carries_a_themed_icon(qtbot: QtBot) -> None:
+    """The toolbar toggle is themed from the image-previews icon, so it follows a theme switch like
+    every other action bar button (#71).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the toolbar toggle carries an icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert not ui.image_previews_toggle_action.icon().isNull()
+
+
+def test_toggling_the_action_bar_button_drives_the_shared_setting_and_the_menu_companion(qtbot: QtBot) -> None:
+    """Clicking the toolbar toggle -- not just the View menu row -- hides every open document's
+    preview strip, and the menu row's checked state follows along (#71).
+
+    ``image_previews_toggle_action`` is the primary the setting is actually wired to;
+    ``image_previews_action`` is its View-menu companion, kept in sync via
+    ``ActionIconThemeHandler``'s own ``toggled`` mirroring.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and untoggle the toolbar button
+    * verify the shared settings' ``previews_visible`` followed, and so did the menu companion
+    * toggle it back on and verify both followed again
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    ui.image_previews_toggle_action.trigger()
+    assert shared_image_viewer_settings().previews_visible is False
+    assert not ui.image_previews_action.isChecked()
+
+    ui.image_previews_toggle_action.trigger()
+    assert shared_image_viewer_settings().previews_visible is True
+    assert ui.image_previews_action.isChecked()
+
+
+def test_toggling_image_previews_persists_the_choice(mock_persistent_settings: Any, qtbot: QtBot) -> None:
+    """The toggle writes itself to storage as it is clicked, so it survives a restart (#71).
+
+    It has no Apply button behind it and no settings page to be saved from, so the click is the only
+    moment there is to record it.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and hide previews from the toolbar
+    * verify the hidden choice was written out under its own key
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stored = mock_persistent_settings.return_value
+
+    ui.image_previews_toggle_action.trigger()
+
+    stored.setValue.assert_any_call(PREVIEWS_VISIBLE_KEY, False)
+
+
+def test_a_launch_with_previews_hidden_opens_with_the_toggle_off(qtbot: QtBot) -> None:
+    """A window built while previews are hidden opens with both surfaces already reading off (#71).
+
+    The restore half of persistence: the ``.ui``'s own ``checked`` default says on, so a window that
+    merely trusted it would show every strip again on the launch after the user hid them.
+
+    **Test steps:**
+
+    * hide previews before the window exists, then construct a real ``MainWindow``
+    * verify the toolbar toggle and its View menu companion both open unchecked
+    """
+    shared_image_viewer_settings().previews_visible = False
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert not ui.image_previews_toggle_action.isChecked()
+    assert not ui.image_previews_action.isChecked()
 
 
 def test_the_task_queue_docks_visibility_survives_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
