@@ -188,10 +188,12 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         image_settings = shared_image_viewer_settings()
         strip_default_changed = image_settings.strip_visible_changed  # type: ignore[attr-defined]
         lightbox_height_changed = image_settings.lightbox_image_height_changed  # type: ignore[attr-defined]
+        previews_visible_changed = image_settings.previews_visible_changed  # type: ignore[attr-defined]
         # bound methods of this QObject, so Qt severs them when this widget is destroyed -- these
         # signals belong to a process-wide singleton that long outlives any one document (#161)
         strip_default_changed.connect(self.__on_default_strip_visible_changed)
         lightbox_height_changed.connect(self.__on_lightbox_image_height_changed)
+        previews_visible_changed.connect(self.__on_previews_visible_changed)
 
         self.__log_scope: Hashable | None = None
         """What this document's log surface is currently attached under -- its path, or ``None`` while it
@@ -825,6 +827,19 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         if self.__image_viewer is not None:
             self.__image_viewer.set_strip_height(height)
+
+    def __on_previews_visible_changed(self, visible: bool) -> None:
+        """Dismiss this document's maximized viewer the moment previews are hidden app-wide (#71).
+
+        Hiding previews is meant to clear every screenshot off screen -- a maximized one left open
+        would defeat that, and its own thumbnail row would no longer be reachable to dismiss it from.
+        Previews reappearing opens nothing back up: the point was decluttering, not remembering to
+        reopen whatever happened to be up. A document with no viewer open is left alone either way.
+
+        :param visible: whether previews are newly visible; ``False`` dismisses an open viewer.
+        """
+        if not visible and self.__image_viewer is not None:
+            self.__image_viewer.close()
 
     def __on_image_viewer_gone(self, viewer: ImageLightbox) -> None:
         """Forget ``viewer`` once dismissed or destroyed -- unless a newer one already replaced it (#160).

@@ -23,7 +23,7 @@ reaches this field from the owner ("Viewers > Images", #161); the number lives n
 sizes, and the settings section reads it from here as its default."""
 
 
-class ImagesField(Field[list[str]], QObject):
+class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instance-attributes
     """The special ``images`` field ([[plugins#field-toolkit]], [[data-model#image-meanings]], #27): the
     resource's curated lightbox set.
 
@@ -54,6 +54,12 @@ class ImagesField(Field[list[str]], QObject):
     :param strip_wrap_changed: fires with a new configured choice, forwarded into the strip so an
         applied settings change re-lays out the one already on screen (keyword-only, #70) -- the same
         shape as ``strip_height``/``strip_height_changed`` beside it.
+    :param previews_visible: whether the strip starts out shown (keyword-only, #71); the owner passes
+        the grave-accent toggle's (``Ctrl+Shift+``, backtick) current state.
+    :param previews_visible_changed: fires when that toggle changes, forwarded into the strip's own
+        :meth:`~rehuco_agent.fields.widgets.image_strip.ImageStrip.set_requested_visible` so every open
+        document's preview hides or reappears together (keyword-only, #71) -- the same
+        value-plus-its-signal shape ``strip_wrap``/``strip_wrap_changed`` beside it uses.
     """
 
     TYPE = "images"
@@ -82,6 +88,8 @@ class ImagesField(Field[list[str]], QObject):
         strip_height_changed: SignalInstance | None = None,
         strip_wrap: bool = False,
         strip_wrap_changed: SignalInstance | None = None,
+        previews_visible: bool = True,
+        previews_visible_changed: SignalInstance | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__image_scanner: Final = image_scanner
@@ -90,10 +98,13 @@ class ImagesField(Field[list[str]], QObject):
         self.__strip_height_changed: Final = strip_height_changed
         self.__strip_wrap: Final = strip_wrap
         self.__strip_wrap_changed: Final = strip_wrap_changed
+        self.__previews_visible: Final = previews_visible
+        self.__previews_visible_changed: Final = previews_visible_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
         strip = ImageStrip(height=self.__strip_height, wrap=self.__strip_wrap)
+        strip.set_requested_visible(self.__previews_visible)
         # wired before it is seeded, not after: seeding is itself a rebuild, and the owner needs that
         # first curated set as much as any later one -- it is what a thumbnail click opens against (#161)
         strip.image_activated.connect(self.image_activated)
@@ -110,6 +121,9 @@ class ImagesField(Field[list[str]], QObject):
         if self.__strip_wrap_changed is not None:
             # through bind_external for the same reason the height above is: the settings outlive the strip
             self.bind_external(self.__strip_wrap_changed, strip.set_wrap)
+        if self.__previews_visible_changed is not None:
+            # through bind_external for the same reason the two above are: the toggle outlives the strip
+            self.bind_external(self.__previews_visible_changed, strip.set_requested_visible)
         # no label: the strip is a self-explanatory hero, stacked full-width above the description
         return FieldViewerWidgets(self.viewer_tab, None, strip, vertical=True)
 

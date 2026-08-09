@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, Signal, SignalInstance
 from PySide6.QtGui import QPixmap, QStandardItemModel
-from PySide6.QtWidgets import QTreeView
+from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
@@ -259,3 +259,64 @@ def test_viewer_reports_the_curated_set_again_after_a_curation_edit(
     model.hidden_images = [PATHS[1].name]
 
     assert reported[-1] == [PATHS[0], PATHS[2]]
+
+
+def test_viewer_seeds_the_strip_hidden_when_previews_start_hidden(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The strip opens hidden when its owner passes a hidden ``previews_visible`` (#71).
+
+    **Test steps:**
+
+    * build the viewer with ``previews_visible=False``, hosted so the show/hide rule applies
+    * verify the strip stays hidden despite having thumbnails
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    field = ImagesField(
+        "hidden_images",
+        image_scanner=fake_scanner(mocker, PATHS),  # type: ignore[arg-type]
+        previews_visible=False,
+    )
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ImageStrip)
+    layout.addWidget(viewer)
+    qtbot.addWidget(host)
+    host.show()
+
+    assert viewer.isHidden()
+
+
+def test_viewer_follows_the_previews_visible_toggle_live(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """Firing ``previews_visible_changed`` hides and reshows an already-open strip (#71).
+
+    **Test steps:**
+
+    * build the viewer hosted and shown, wired to an emitter standing in for the grave-accent toggle
+    * fire the emitter hidden, then shown again
+    * verify the strip followed each time
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    emitter = Emitter()
+    field = ImagesField(
+        "hidden_images",
+        image_scanner=fake_scanner(mocker, PATHS),  # type: ignore[arg-type]
+        previews_visible_changed=emitter.changed,
+    )
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    viewer = field.make_viewer(model.bind(field)).viewer
+    assert isinstance(viewer, ImageStrip)
+    layout.addWidget(viewer)
+    qtbot.addWidget(host)
+    host.show()
+    assert not viewer.isHidden()
+
+    emitter.changed.emit(False)
+    assert viewer.isHidden()
+
+    emitter.changed.emit(True)
+    assert not viewer.isHidden()

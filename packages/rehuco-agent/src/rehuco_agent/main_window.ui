@@ -183,6 +183,37 @@
     <string>&amp;Tasks</string>
    </property>
   </action>
+  <action name="image_previews_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Image Previews</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide every open document's screenshot preview strip (Ctrl+Shift+`)</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+`</string>
+   </property>
+   <property name="shortcutContext">
+    <enum>Qt::ApplicationShortcut</enum>
+   </property>
+  </action>
+  <action name="image_previews_toggle_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Image Previews</string>
+   </property>
+   <property name="toolTip">
+    <string>Show or hide every open document's screenshot preview strip (Ctrl+Shift+`)</string>
+   </property>
+  </action>
   <action name="quit_action">
    <property name="text">
     <string>&amp;Quit</string>

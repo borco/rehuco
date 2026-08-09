@@ -2418,6 +2418,55 @@ def test_applying_the_strip_default_shows_the_row_in_an_open_viewer(
     assert not strip.isHidden()
 
 
+def test_hiding_previews_app_wide_dismisses_an_open_maximized_viewer(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Turning previews off app-wide dismisses this document's own maximized viewer too (#71).
+
+    A maximized screenshot left open would defeat the point of decluttering, and its own thumbnail
+    row would no longer be reachable to dismiss it from.
+
+    **Test steps:**
+
+    * open a viewer, then hide previews app-wide
+    * verify the viewer is gone
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+
+    with wait_destroyed(qtbot, lightbox):
+        shared_image_viewer_settings().previews_visible = False
+
+    assert widget.findChild(ImageLightbox) is None
+
+
+def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(
+    widget: DocumentWidget, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Turning previews back on is not remembering to reopen whatever was up -- it opens nothing (#71).
+
+    **Test steps:**
+
+    * open a viewer, hide previews app-wide (dismissing it), then show them again
+    * verify no viewer reappeared
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_lightbox.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    curate_screenshots(widget, SCREENSHOTS, mocker)
+    activate_screenshot(widget, SCREENSHOTS[0])
+    lightbox = widget.findChild(ImageLightbox)
+    assert isinstance(lightbox, ImageLightbox)
+    with wait_destroyed(qtbot, lightbox):
+        shared_image_viewer_settings().previews_visible = False
+    assert widget.findChild(ImageLightbox) is None
+
+    shared_image_viewer_settings().previews_visible = True
+
+    assert widget.findChild(ImageLightbox) is None
+
+
 def test_a_document_that_never_showed_a_row_follows_a_later_default(
     widget: DocumentWidget, mocker: MockerFixture
 ) -> None:

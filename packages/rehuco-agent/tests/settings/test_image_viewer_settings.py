@@ -11,10 +11,12 @@ from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings.image_viewer_settings import (
     DEFAULT_MODE,
     DEFAULT_PREVIEW_WRAP,
+    DEFAULT_PREVIEWS_VISIBLE,
     DEFAULT_STRIP_VISIBLE,
     GROUP,
     MODE_KEY,
     PREVIEW_WRAP_KEY,
+    PREVIEWS_VISIBLE_KEY,
     STRIP_VISIBLE_KEY,
     ImageViewerSettings,
 )
@@ -209,24 +211,67 @@ def test_load_defaults_to_an_unwrapped_document_strip_when_nothing_was_saved(set
     assert viewer_settings.preview_wrap is False
 
 
-def test_saving_writes_both_choices_together(settings: FakeSettings) -> None:
-    """One save persists the whole object, so writing either choice cannot drop the other.
+def test_load_defaults_to_visible_previews_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """A fresh install shows previews -- they are the normal state the toggle is the exception to (#71).
 
-    Regression guard: the surface is staged and saved by the settings page, while the row is written
-    straight back as the user toggles it inside a viewer -- two writers of the same group.
+    **Test steps:**
+
+    * load a fresh instance from an empty settings stand-in
+    * verify previews start visible
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.previews_visible = False
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.previews_visible is DEFAULT_PREVIEWS_VISIBLE
+    assert viewer_settings.previews_visible is True
+
+
+def test_save_then_load_round_trips_hidden_previews(settings: FakeSettings) -> None:
+    """Previews toggled away stay away across a restart (#71).
+
+    The toggle is a stated preference, not a session convenience: having to re-hide previews on every
+    launch would be the friction it exists to remove.
+
+    **Test steps:**
+
+    * hide previews and save
+    * load into a fresh instance from the same settings stand-in
+    * verify they are still hidden
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.previews_visible = False
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.previews_visible is False
+
+
+def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
+    """One save persists the whole object, so writing any one choice cannot drop the others.
+
+    Regression guard, and it guards more than one writer: the surface and the layouts are staged and
+    saved by the settings page, while the previews toggle writes straight back as it is clicked (#71)
+    -- so whichever of them saves last must not blank what the other had stored.
 
     **Test steps:**
 
     * save an instance carrying a non-default value for each choice
-    * verify both raw values are stored
+    * verify every raw value is stored
     """
     viewer_settings = ImageViewerSettings()
     viewer_settings.mode = ImageViewerMode.FULL_SCREEN
     viewer_settings.strip_visible = True
     viewer_settings.preview_wrap = True
+    viewer_settings.previews_visible = False
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
     assert settings.value(MODE_KEY) == "full_screen"
     assert settings.value(STRIP_VISIBLE_KEY) is True
     assert settings.value(PREVIEW_WRAP_KEY) is True
+    assert settings.value(PREVIEWS_VISIBLE_KEY) is False
