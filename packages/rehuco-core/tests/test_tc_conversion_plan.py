@@ -739,3 +739,99 @@ def test_stranded_rows_are_sorted_by_path(mocker: MockerFixture) -> None:
 
 
 # endregion
+
+# region Population counts (#258)
+
+
+def test_an_unconverted_tc_counts_towards_to_convert(mocker: MockerFixture) -> None:
+    """A `.tc` with no same-stem `.rehu` yet is outstanding work.
+
+    **Test steps:**
+
+    * mock a single unconverted resource
+    * plan the tree
+    * verify it is counted as one to convert and none already converted
+    """
+    mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"])
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert plan.to_convert == 1
+    assert plan.already_converted == 0
+
+
+def test_a_leftover_tc_beside_its_rehu_does_not_count_towards_to_convert(mocker: MockerFixture) -> None:
+    """A directory holding both `info.rehu` and `info.tc` counts as converted -- it has a record, and
+    the leftover `.tc` is not outstanding work.
+
+    **Test steps:**
+
+    * mock a directory holding both a `.tc` and its same-stem `.rehu`
+    * plan the tree
+    * verify it is not counted towards `to_convert`, and is counted towards `already_converted`
+    """
+    mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], other_files=["a/info.rehu"])
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert plan.to_convert == 0
+    assert plan.already_converted == 1
+
+
+def test_a_standalone_rehu_with_no_tc_counts_towards_already_converted(mocker: MockerFixture) -> None:
+    """A resource with no `.tc` left at all is still one the walk should report as converted.
+
+    **Test steps:**
+
+    * mock a directory holding only a `.rehu`, no `.tc`
+    * plan the tree
+    * verify it is counted towards `already_converted` and not `to_convert`
+    """
+    mock_environment(mocker, tc_files=[], directories=["a"], other_files=["a/info.rehu"])
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert plan.to_convert == 0
+    assert plan.already_converted == 1
+
+
+def test_to_convert_counts_tc_files_not_directories(mocker: MockerFixture) -> None:
+    """Every `.tc` converts, whatever its role, so one per file is the honest measure of work left --
+    two file-scoped resources sharing a directory are two conversions, not one.
+
+    **Test steps:**
+
+    * mock one directory holding two `.tc` files under different stems
+    * plan the tree
+    * verify both are counted
+    """
+    mock_environment(mocker, tc_files=["a/foo.tc", "a/bar.tc"], directories=["a"])
+
+    assert plan_tc_conversion(ROOT).to_convert == 2
+
+
+def test_population_counts_sum_across_the_whole_tree(mocker: MockerFixture) -> None:
+    """The three populations are each a running total over every directory the walk visits, not just
+    the one a resource happens to sit in.
+
+    **Test steps:**
+
+    * mock a tree with an unconverted resource, a converted resource with a leftover `.tc`, and a
+      converted resource with no `.tc` left
+    * plan the tree
+    * verify `to_convert` and `already_converted` sum across all three directories
+    """
+    mock_environment(
+        mocker,
+        tc_files=["a/info.tc", "b/info.tc"],
+        directories=["a", "b", "c"],
+        other_files=["b/info.rehu", "c/info.rehu"],
+    )
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert plan.to_convert == 1
+    assert plan.already_converted == 2
+
+
+# endregion

@@ -823,6 +823,23 @@ def test_a_clean_seed_says_only_what_it_seeded(disk: FakeDisk) -> None:
     assert checksum_report_summary(report) == "2 matched, seeded 2 from info.sfv, retired info.sfv"
 
 
+def test_a_seed_whose_retirement_refused_claims_none(disk: FakeDisk) -> None:
+    """The claim landed but the file is still the authority on disk, so the line must not say retired --
+    a reader who came back later would go looking for a backup nothing ever wrote (#259).
+
+    **Test steps:**
+
+    * verify against a clean ``.sfv`` whose ``.orig`` name is already taken, so retiring it refuses
+    * check the summary names what it seeded and stops there
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
+    disk.put("info.sfv.orig", b"an older backup")
+
+    report = verify_checksums(INFO_PATH)
+
+    assert checksum_report_summary(report) == "2 matched, seeded 2 from info.sfv"
+
+
 def test_a_verify_job_logs_what_the_manifest_did_not_contribute(
     disk: FakeDisk, caplog: pytest.LogCaptureFixture
 ) -> None:

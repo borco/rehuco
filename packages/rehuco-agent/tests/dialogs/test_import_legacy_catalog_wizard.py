@@ -542,6 +542,25 @@ def test_the_summary_line_matches_the_table(
     assert "1 blocked" in text
 
 
+def test_the_summary_names_how_much_of_the_tree_is_already_converted(
+    mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
+) -> None:
+    """The plan step's header says how far along the migration is (#258), ahead of the conversions'
+    own clean/flagged/blocked line.
+
+    **Test steps:**
+
+    * drive the wizard to the plan step over a scan reporting all three populations
+    * verify the summary label names all three
+    """
+    tree = TcConversionTreePlan(ROOT, (CLEAN_A,), (), (STRANDED,), to_convert=1, already_converted=137)
+    go_to_plan(qtbot, wizard, mocker, tree)
+
+    text = pages(wizard).plan_.ui.summary_label.text()
+
+    assert "1 to convert · 137 already converted · 1 with a loose manifest" in text
+
+
 def test_next_is_disabled_with_nothing_checked(
     mocker: MockerFixture, qtbot: QtBot, wizard: ImportLegacyCatalogWizard
 ) -> None:

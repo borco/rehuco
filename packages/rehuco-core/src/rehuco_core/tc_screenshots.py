@@ -80,7 +80,7 @@ def is_legacy_screenshot(filename: str) -> bool:
     return suffix.lower() in IMAGE_EXTENSIONS and TcScreenshotScanner.slot_index(stem) is not None
 
 
-class TcScreenshotScanner:  # pylint: disable=too-few-public-methods
+class TcScreenshotScanner:
     """Recognizes tc4's legacy screenshot naming schemes in one directory ([[acquisition-tooling#tc-to-rehu]]).
 
     Five patterns, matched case-insensitively against a candidate image's filename stem, mutually

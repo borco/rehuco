@@ -73,9 +73,11 @@ SCAN_THREAD_WAIT_MS: Final = 2000
 bounded, the same discipline :data:`~rehuco_core.DEFAULT_RENAME_YIELD_TIMEOUT` follows: the scan
 notices a cancel at its next resource, which is well inside this."""
 
-SUSPECT_MTIME_WARNING: Final = (
-    "\n⚠ {count:,} resource(s) share near-identical timestamps — check before importing (#191's suspect_mtime)."
+POPULATION_SUMMARY: Final = (
+    "{to_convert:,} to convert · {already_converted:,} already converted · {stranded:,} with a loose manifest"
 )
+BUCKET_SUMMARY: Final = "\n{clean:,} clean · {flagged:,} flagged · {blocked:,} blocked"
+SUSPECT_MTIME_WARNING: Final = "\n⚠ {count:,} resource(s) share near-identical timestamps — check before importing."
 UNREADABLE_WARNING: Final = "\n{count} folder(s) could not be read and were left out."
 CHECKS_QUEUED_NOTE: Final = "\n{count:,} content check(s) were queued — the Tasks dock is where they finish."
 STRANDED_NOTE: Final = (
@@ -438,12 +440,18 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     @staticmethod
     def __summary_text(plan: TcConversionTreePlan) -> str:
-        """The plan step's header line, e.g. ``"9,847 clean · 153 flagged · 12 blocked"``.
+        """The plan step's header, e.g. ``"1,200 to convert · 137 already converted · 42 with a loose
+        manifest\\n9,847 clean · 153 flagged · 12 blocked"``.
 
-        The counts are the conversions'. Stranded manifests (#259) are named on their own line rather
-        than folded into *clean*: they are not conversions, nothing about them is a judgement call, and
-        a reader who came here to convert a tree deserves to be told the run will also tidy up after an
-        earlier one.
+        The first line says how far along the migration is (#258): how much of the tree still needs
+        converting, how much already has a record, and how much of that carries a loose manifest --
+        answered from the same walk, since descending every directory to find the `.tc` side also finds
+        the `.rehu` side.
+
+        The second line's counts are the conversions' own. Stranded manifests (#259) are named again on
+        their own line below rather than folded into *clean*: they are not conversions, nothing about
+        them is a judgement call, and a reader who came here to convert a tree deserves to be told the
+        run will also tidy up after an earlier one.
 
         A large :attr:`~rehuco_core.TcConversionPlan.suspect_mtime` count is named on its own line
         rather than left as one flag among six (#192's notes): once the `.tc` files are gone, a wall
@@ -452,7 +460,10 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         :param plan: the finished scan.
         :returns: the summary text.
         """
-        text = f"{plan.clean:,} clean · {plan.flagged:,} flagged · {plan.blocked:,} blocked"
+        text = POPULATION_SUMMARY.format(
+            to_convert=plan.to_convert, already_converted=plan.already_converted, stranded=len(plan.stranded)
+        )
+        text += BUCKET_SUMMARY.format(clean=plan.clean, flagged=plan.flagged, blocked=plan.blocked)
         suspect = sum(1 for resource in plan.resources if resource.suspect_mtime)
         if suspect:
             text += SUSPECT_MTIME_WARNING.format(count=suspect)
