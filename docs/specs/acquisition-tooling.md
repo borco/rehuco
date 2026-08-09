@@ -130,7 +130,20 @@ finish on its own, so a resource is never left half-converted.
 claim made when the files were known good — is seeded into an `info.checksum` as part of the conversion job, reading
 no content ([[data-model#checksums]]). It is not an option: leaving it as a file nothing reads is what the seeding
 step exists to end, and it costs nothing, so there is nothing to choose. No manifest means no record, and inventing
-a baseline from disk instead is what the one option is for.
+a baseline from disk instead is what the one option is for. The manifest is **retired** once its claim is in the
+record ([[data-model#checksums]], #259) — renamed to an `info.sfv.orig` that joins the resource's retained backups —
+so a converted resource never keeps a file that is superseded and does not say so.
+
+**The scan reports a second kind of row** (#259): an already-converted resource still carrying that manifest beside
+its `.checksum`, which is what hand-converting produced before retirement existed. Free to find — the walk reads every
+directory's listing for the conversions anyway, and this is three names out of one listing — and executed as **one
+job per resource, like the conversions**, merging the stranded claim into the record and retiring the file. It sits on
+the same plan table as the conversions, because that is one resource, one job and one outcome, which is the whole of
+what a row means there; it is checked by default, since nothing blocks it and no judgement is being made; and the
+content-check option does not reach it, since it reads no bytes and its record lands dateless like a seeded one, which
+a later sweep settles. A `.tc` in that state gets no row of its own: the conversion ahead of it carries the manifest
+forward and retires it either way, and a second job against a path the first one renames away would be a race with
+nothing to win.
 
 That option is **whether to check the content**, and it is **off by default** because on it reads the whole library.
 Ticked, it queues a **second job per resource** — verifying the just-seeded record where a manifest made a claim, and
@@ -160,6 +173,13 @@ item can be undone one at a time. The same discipline applies as to the forward 
 - **Backups are the directory's `.orig` siblings**, not a stem-scoped set: a legacy screenshot is named `cover.jpg` or
   `sample-01.jpg`, carrying nothing that ties it to the resource it belongs to. Exact for the directory-scoped
   resources tc4 catalogs are made of, and why a revert names a directory rather than a file.
+- **A revert restores a retired manifest** (#259). The backups are restored wholesale — that is what *put the
+  directory back* means — so `info.sfv.orig` becomes a live `info.sfv` again, beside the `.checksum` the conversion
+  seeded from it, which a revert deliberately does not delete (it deletes only what the conversion wrote, and the
+  record may since hold verify work worth keeping). This is the one door through which the manifest-beside-record
+  state recurs, on a resource that is now a `.tc` again — and it heals on reconversion, which merges and retires the
+  manifest whether or not a record is present. Deliberately not a scan target: the stranded rows the import wizard
+  offers are `.rehu` resources only, since a `.tc`'s conversion carries its manifest forward itself.
 - **And a backup is never the resource's content** (#253): the same definition is what the content walk asks
   ([[data-model#checksums]]), so the files a revert is holding are exactly the files a size scan and a checksum skip.
   Otherwise a bulk import would bake each resource's own `info.tc.orig` into its first baseline, and the discard this

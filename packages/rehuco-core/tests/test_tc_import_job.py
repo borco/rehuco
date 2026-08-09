@@ -304,15 +304,46 @@ def test_a_run_carries_the_legacy_manifest_into_the_new_record(
     **Test steps:**
 
     * run a job with both the conversion and the seed mocked
-    * check the seed was asked about the target `.rehu`, with the job's own exclusion set
+    * check both carriers were asked about the target `.rehu`, with the job's own exclusion set
     """
     del present
     mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock(spec=RehuDocument))
     seed = mocker.patch("rehuco_core.tc_import_job.seed_checksum_record", return_value=None)
+    remediate = mocker.patch("rehuco_core.tc_import_job.remediate_legacy_manifest", return_value=None)
 
     TcImportJob(TC_PATH, excluded_patterns=("*.tmp",)).run(control)  # pyright: ignore[reportArgumentType]
 
     seed.assert_called_once_with(DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",))
+    remediate.assert_called_once_with(DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",))
+
+
+def test_a_conversion_over_an_existing_record_merges_rather_than_leaving_the_manifest(
+    mocker: MockerFixture, control: FakeControl, present: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A converted resource never keeps a live manifest, whichever of the two paths carried it (#259).
+
+    **Test steps:**
+
+    * run a job whose seed declines (a record is already there) and whose remediation answers a seed
+    * check the run reported what the merge carried, and which file it retired
+    """
+    del present
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock(spec=RehuDocument))
+    mocker.patch("rehuco_core.tc_import_job.seed_checksum_record", return_value=None)
+    mocker.patch(
+        "rehuco_core.tc_import_job.remediate_legacy_manifest",
+        return_value=LegacySeed(
+            DIRECTORY / "info.sfv",
+            entries=({"name": "lesson1.mp4", "crc32": "deadbeef"},),
+            retired=(DIRECTORY / "info.sfv",),
+        ),
+    )
+    caplog.set_level(logging.INFO, logger="rehuco_core")
+
+    TcImportJob(TC_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    assert "Seeded 1 checksum entry from info.sfv." in caplog.text
+    assert "was retired to info.sfv.orig" in caplog.text
 
 
 def test_a_seed_says_what_it_carried_and_what_it_dropped(

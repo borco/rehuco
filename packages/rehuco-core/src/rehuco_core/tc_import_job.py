@@ -22,7 +22,8 @@ import logging
 from pathlib import Path
 from typing import Any, Final
 
-from .checksum_seeding import log_legacy_seed, seed_checksum_record
+from .checksum_record import ChecksumRecordError
+from .checksum_seeding import LegacySeed, log_legacy_seed, remediate_legacy_manifest, seed_checksum_record
 from .constants import EXCLUDED_FILE_PATTERNS, REHU_SUFFIX
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuDocument
@@ -54,7 +55,8 @@ class TcImportJob(TaskJobBase):
     reverted (#190) if the conversion made the wrong call.
 
     **Converting a resource carries its checksums forward too** (#256): the `info.sfv` beside the `.tc`
-    is seeded into an `info.checksum` once the conversion has landed, hashing nothing. It is not an
+    is seeded into an `info.checksum` once the conversion has landed and then retired to an
+    `info.sfv.orig` backup (#259), hashing nothing. It is not an
     option, because there is no version of *converted* that leaves a years-old claim behind as a file
     nothing reads. Checking that claim **is** an option, and it is a separate job -- this one is not
     safely interruptible, and folding a multi-hour read into it would make a catalog-wide import
@@ -153,7 +155,8 @@ class TcImportJob(TaskJobBase):
 
         The second half of what converting a resource means: the `.tc` becomes a `.rehu`, and the
         `info.sfv` a predecessor left beside it -- a claim made when the files were known good -- becomes
-        record entries instead of a file nothing reads
+        record entries, and the file itself is **retired** to an `info.sfv.orig` backup (#259) rather
+        than left beside the record as something nothing reads and nothing supersedes
         (:func:`~rehuco_core.seed_checksum_record`). No bytes are hashed, so a catalog-wide import costs
         the same as it did; the entries land dateless, and any later verify picks every one of them up.
 
@@ -166,8 +169,8 @@ class TcImportJob(TaskJobBase):
         :param rehu_path: the `.rehu` the conversion just wrote.
         """
         try:
-            seed = seed_checksum_record(rehu_path, excluded_patterns=self.excluded_patterns)
-        except OSError as error:
+            seed = self.__absorbed(rehu_path)
+        except (OSError, ChecksumRecordError) as error:
             LOG.warning("The checksum record for %s could not be seeded: %s", rehu_path, error)
             return
         if seed is None:
@@ -175,6 +178,27 @@ class TcImportJob(TaskJobBase):
         count = len(seed.entries)
         LOG.info("Seeded %d checksum entr%s from %s.", count, "y" if count == 1 else "ies", seed.manifest.name)
         log_legacy_seed(seed)
+
+    def __absorbed(self, rehu_path: Path) -> LegacySeed | None:
+        """Get the manifest's claim into the record, whether or not one is already there (#259).
+
+        Two callables and one rule -- **a converted resource never keeps a live manifest**. Ordinarily
+        there is no record yet and :func:`~rehuco_core.seed_checksum_record` writes one; where a record
+        *is* there (somebody generated one over the unconverted `.tc`, which
+        [[data-model#checksums]] allows), it is merged into rather than replaced
+        (:func:`~rehuco_core.remediate_legacy_manifest`) and the manifest retired either way. Leaving
+        the second case to a later remediation pass would mean a conversion that produced exactly the
+        state the wizard exists to clean up.
+
+        :param rehu_path: the `.rehu` the conversion just wrote.
+        :returns: what the manifest contributed, or ``None`` when there was nothing to carry forward.
+        :raises ChecksumRecordError: a record this build cannot read at all.
+        :raises OSError: the resource would not list, or the record could not be written.
+        """
+        seed = seed_checksum_record(rehu_path, excluded_patterns=self.excluded_patterns)
+        if seed is not None:
+            return seed
+        return remediate_legacy_manifest(rehu_path, excluded_patterns=self.excluded_patterns)
 
     def resource_path(self) -> Path:
         """This job's `.tc` file, refusing a job that has none.

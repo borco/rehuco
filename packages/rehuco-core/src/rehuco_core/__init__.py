@@ -42,6 +42,8 @@ from .checksum_seeding import (
     legacy_manifests_among,
     log_legacy_seed,
     readable_legacy_manifest,
+    remediate_legacy_manifest,
+    retire_legacy_manifests,
     seed_checksum_record,
     seed_from_legacy_manifest,
 )
@@ -67,6 +69,7 @@ from .learning_path_entries import (
     owned_learning_paths,
     visible_learning_paths,
 )
+from .legacy_manifest_jobs import LEGACY_MANIFEST_RETIRE_KIND, RetireLegacyManifestJob
 from .lock_reasons import LockReason, LockReasonKind
 from .migrations import (
     CURRENT_CHECKSUM_RECORD_VERSION,
@@ -209,6 +212,7 @@ from .tc_conversion_plan import (
     CLUSTER_MIN_SIZE,
     CLUSTER_WINDOW_SECONDS,
     CONSUMED_TC_KEYS,
+    StrandedManifestPlan,
     TcConversionPlan,
     TcConversionPlanner,
     TcConversionTreePlan,
@@ -308,6 +312,7 @@ __all__ = [
     "JobState",
     "JobStatus",
     "LEGACY_MANIFEST_ALGORITHMS",
+    "LEGACY_MANIFEST_RETIRE_KIND",
     "LEGACY_SUFFIX",
     "LearningPathEntry",
     "LegacyDrop",
@@ -337,11 +342,13 @@ __all__ = [
     "RehuRenamer",
     "RenameCoordinator",
     "RenameYieldTimeout",
+    "RetireLegacyManifestJob",
     "RevertConversionJob",
     "ResourceLocation",
     "STAGED_SUFFIX",
     "ScreenshotRename",
     "StopRequest",
+    "StrandedManifestPlan",
     "SweepChecksumsJob",
     "SweepTally",
     "TC_DISCARD_KIND",
@@ -414,9 +421,11 @@ __all__ = [
     "readable_legacy_manifest",
     "readers_must_yield_for_directory_rename",
     "rehu_rename_conflict",
+    "remediate_legacy_manifest",
     "rename_rehu_resource",
     "resource_name",
     "restore_backup",
+    "retire_legacy_manifests",
     "revert_conversion",
     "rewrite_description_images",
     "scan_conversion_backups",

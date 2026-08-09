@@ -538,6 +538,10 @@ def checksum_report_summary(report: ChecksumReport) -> str:
         if report.seed.ignored:
             count = len(report.seed.ignored)
             parts.append(f"{count} manifest{'' if count == 1 else 's'} ignored")
+        if report.seed.retired:
+            # named rather than counted, for the reason the seed itself is: retirement happens once in a
+            # resource's life, and *which file stopped being the authority* is what a reader wants back
+            parts.append(f"retired {', '.join(manifest.name for manifest in report.seed.retired)}")
     if report.pruned:
         # counted here and named in the log (:meth:`ChecksumJob.__log_pruned`), because this is the one
         # part of a run that takes something away and a reader has to be able to find out what (#254)

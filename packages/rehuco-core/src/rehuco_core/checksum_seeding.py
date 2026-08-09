@@ -23,9 +23,28 @@ runs, once per converted resource: a catalog-wide migration cannot afford to rea
 claim forward, and it does not have to -- the entries land dateless, a dateless entry is never fresh, and
 the next sweep verifies every one of them with nobody tracking which.
 
-**Nothing here writes a legacy manifest, and nothing deletes one.** It is somebody else's data, it
-costs nothing, and it stays out of the content set either way; deleting it would also make this step
-unrepeatable if the new record were lost. The record's own suffix stays the only one written (#203).
+**Nothing here writes a legacy manifest, and once its claim is in the record the manifest is retired**
+(#259). The run that absorbed it renames ``info.sfv`` to ``info.sfv.orig``
+(:func:`retire_legacy_manifests`), which joins the resource's backup set
+(:mod:`rehuco_core.tc_conversion_backups`) so Revert and Discard reach it like any other. #243 left it
+in place -- somebody else's data, costing nothing -- and that is the call this reverses: a manifest
+beside a record only *looks* inert. Nothing reads it while the record is there, and it becomes the
+authority again the moment the record is lost, re-seeding a years-old claim over every file
+legitimately changed since. Renaming rather than deleting keeps it recoverable, and the run that seeds
+is the moment *unrepeatable if the record is lost* is weakest -- the record was written, atomically,
+from that very file, a moment earlier. The record's own suffix stays the only one written (#203).
+
+**A record written before its manifest was absorbed is remediated, not left**
+(:func:`remediate_legacy_manifest`, #259). That is the state already on disk -- a resource carrying
+`.rehu` + `.sfv` + `.checksum`, with no way to tell from the files alone which of the two the record
+came from -- and it is answered by a re-seed that **merges**: an entry the manifest names takes the
+legacy digest with its ``verified`` cleared, and every other entry is left exactly as it stands. So a
+file added after the manifest was written keeps its baseline and its date, while what the manifest is
+actually authoritative about is re-checked, honestly, on the next verify. Narrow on purpose: the
+seeding path no longer creates this state, and the one door it recurs through -- a revert restores a
+retired manifest wholesale, beside the record it deliberately keeps
+([[acquisition-tooling#convert-mechanics]]) -- heals on reconversion, which merges and retires whether
+or not a record is present. So the merge takes no options and grows no generality.
 
 The reading is the mechanical half. The half worth the module is **name normalization**: these files
 mix ``\\`` and ``/`` freely, and a name that cannot be normalized into a name *inside* the resource is
@@ -44,14 +63,18 @@ from .checksum_algorithms import CHECKSUM_ALGORITHMS
 from .checksum_record import (
     CHECKSUM_FILES_KEY,
     CHECKSUM_NAME_KEY,
+    CHECKSUM_STATUS_KEY,
+    CHECKSUM_VERIFIED_KEY,
     HEX_DIGEST_PATTERN,
     checksum_entry_name,
     checksum_record_path,
+    load_checksum_record,
     new_checksum_record,
     save_checksum_record,
 )
 from .constants import EXCLUDED_FILE_PATTERNS
-from .rehu_content_files import enumerate_content_files
+from .rehu_content_files import ContentUnreachableError, enumerate_content_files
+from .tc_conversion_backups import backup_path
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -112,12 +135,17 @@ class LegacySeed:
         a verify rather than a generate.
     :param dropped: the lines that did not become entries.
     :param ignored: the other legacy manifests sitting beside the record, which were **not** read.
+    :param retired: the manifests renamed aside once the record was written (#259), under the names they
+        had before the rename -- ``info.sfv``, now sitting at ``info.sfv.orig``. Empty when no rename
+        happened: the run never wrote a record, or every rename was refused (a read-only share, an
+        ``.orig`` name already taken) -- which costs itself, the claim being recorded either way.
     """
 
     manifest: Path
     entries: tuple[dict[str, Any], ...] = ()
     dropped: tuple[LegacyDrop, ...] = ()
     ignored: tuple[Path, ...] = ()
+    retired: tuple[Path, ...] = ()
 
 
 class LegacyManifestReader:  # pylint: disable=too-few-public-methods
@@ -279,6 +307,72 @@ class LegacyManifestReader:  # pylint: disable=too-few-public-methods
         return checksum_entry_name({CHECKSUM_NAME_KEY: "/".join(parts)})
 
 
+class LegacyClaimMerger:  # pylint: disable=too-few-public-methods
+    """Folds one manifest's claims into a record that was written without them (#259).
+
+    The remediation half of [[data-model#checksums]]'s retirement rule, and the only place a legacy
+    claim ever meets an entry that already exists: **the manifest wins over what it names, and touches
+    nothing else.** An entry it names takes the legacy digest with its date cleared, so the next verify
+    re-checks it against the claim rather than against whatever a later baseline adopted; an entry it
+    does not name -- a file added since, a ``missing`` entry about a file that has gone -- keeps its
+    digest and its date, because the manifest says nothing about either and a re-seed that overwrote
+    them would be the throwing away of a claim this whole mechanism exists to prevent.
+
+    A name the manifest carries and the record has never held becomes an entry, in the manifest's own
+    order after the record's own: it is a claim held nowhere else, which is exactly what a seed is for.
+    And a name the record holds **twice** -- only ever reached by hand-editing -- ends holding one entry,
+    the same de-duplication a targeted generate applies and for the same reason: the survivor would
+    otherwise sit beside a stale hash the merge just declared wrong, and fail every verify after it.
+
+    :param entries: the record's entries as loaded, raw and in the record's own order.
+    :param claims: what the manifest contributed (:attr:`LegacySeed.entries`), names unique.
+    """
+
+    def __init__(self, entries: list[Any], claims: tuple[dict[str, Any], ...]) -> None:
+        self.__entries: Final = entries
+        self.__claims: Final = {claim[CHECKSUM_NAME_KEY]: claim for claim in claims}
+
+    def merged(self) -> list[Any]:
+        """Fold the claims in.
+
+        :returns: the record's entries as the merge leaves them.
+        """
+        taken: set[str] = set()
+        merged: list[Any] = []
+        for raw in self.__entries:
+            name = checksum_entry_name(raw)
+            claim = self.__claims.get(name) if name is not None else None
+            if claim is None:
+                merged.append(raw)
+                continue
+            if name in taken:
+                continue
+            taken.add(str(name))
+            merged.append(self.__replaced(raw, claim))
+        merged.extend(claim for name, claim in self.__claims.items() if name not in taken)
+        return merged
+
+    @staticmethod
+    def __replaced(raw: Any, claim: dict[str, Any]) -> dict[str, Any]:
+        """One entry re-recorded from the legacy claim, dateless and without a verdict.
+
+        Shaped the way :meth:`~rehuco_core.rehu_checksums.ChecksumRun.__rewritten` shapes its own: keys
+        this build does not spell -- annotations from another one -- are carried unchanged. What goes is
+        exactly what the claim invalidates: the old hash, whichever algorithm it was under, and the date
+        and status that were about *that* hash. Leaving either behind would leave the entry claiming a
+        verdict nobody reached about the digest now sitting in it.
+
+        :param raw: the entry as loaded, always an object -- an entry this build cannot even *name*
+            never matches a claim (:func:`~rehuco_core.checksum_entry_name`) and so never reaches here.
+        :param claim: the manifest's entry for the same name -- a name and a hash, nothing else.
+        :returns: the merged entry.
+        """
+        merged = dict(claim)
+        dropped = {CHECKSUM_VERIFIED_KEY, CHECKSUM_STATUS_KEY, *CHECKSUM_ALGORITHMS}
+        merged.update({key: value for key, value in raw.items() if key not in merged and key not in dropped})
+        return merged
+
+
 def legacy_manifest_candidates(rehu_path: Path) -> list[Path]:
     """Every legacy manifest sitting beside ``rehu_path`` under its own stem, strongest suffix first.
 
@@ -361,7 +455,10 @@ def readable_legacy_manifest(candidates: list[Path]) -> Path | None:
 def seed_from_legacy_manifest(rehu_path: Path, content_names: Collection[str]) -> LegacySeed | None:
     """Read ``rehu_path``'s legacy manifest into record entries -- the one-way step (#243).
 
-    :param rehu_path: the resource's ``.rehu`` file, known to have no ``.checksum`` of its own.
+    :param rehu_path: the resource's ``.rehu`` file. Whether a ``.checksum`` already exists is the
+        caller's business: a seed reads the manifest where there is no record (#243, #256), a
+        remediation (:func:`remediate_legacy_manifest`, #259) where there is one -- this only turns
+        lines into entries either way.
     :param content_names: the resource's content file names as the enumeration answers them today
         (#226) -- only content is seeded.
     :returns: what the manifest contributed, or ``None`` when there is none this build can read, or
@@ -394,7 +491,11 @@ def seed_checksum_record(
 
     **A resource that already has a ``.checksum`` is left alone**, the same one-way rule a verify's
     seeding is under (#243): the record is what supersedes the manifest, and re-seeding over it would
-    replace dated verdicts with a years-old claim.
+    replace dated verdicts with a years-old claim. What that leaves on disk today --
+    a record and a live manifest side by side -- is :func:`remediate_legacy_manifest`'s (#259).
+
+    **The manifest is retired once the record is written** (:func:`retire_legacy_manifests`, #259), and
+    in that order: the file is renamed aside only after the claim it carried is safely somewhere else.
 
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs the content walk leaves out (#226), resolved by the caller
@@ -421,7 +522,112 @@ def seed_checksum_record(
     record = new_checksum_record()
     record[CHECKSUM_FILES_KEY] = list(seed.entries)
     save_checksum_record(record_path, record)
-    return seed
+    return replace(seed, retired=retire_legacy_manifests(rehu_path))
+
+
+def retire_legacy_manifests(rehu_path: Path) -> tuple[Path, ...]:
+    """Rename every legacy manifest beside ``rehu_path`` aside, its claim now being the record's (#259).
+
+    The sixth decision of [[data-model#checksums]]'s seeding rule, and the one #243 did not make: a
+    manifest whose claim has been absorbed is **retired**, because leaving it is not the harmless
+    no-op it reads as. Nothing consults it while the record is there, so it surfaces nowhere and looks
+    inert -- and it becomes the authority again the instant the record is deleted or lost, at which
+    point a verify re-seeds from it and reports ``mismatched`` for every file legitimately changed
+    since. After *Update checksums on verify* has re-keyed the matched entries the two cannot even be
+    reconciled, since the record no longer holds the digests the manifest carried.
+
+    **Renamed, never deleted.** The ``.orig`` sibling is the same suffix a conversion's backups use, so
+    a retired manifest joins the resource's backup set (:mod:`rehuco_core.tc_conversion_backups`) and
+    Revert and Discard reach it with no new vocabulary -- and the content walk already skips it (#253),
+    exactly as it skipped the manifest suffix before.
+
+    **Every manifest a seed would have read**, not only the one it did: the precedence
+    (:data:`LEGACY_MANIFEST_ALGORITHMS`) *considered* the others and declined them, and a passed-over
+    file left live would let a later run absorb the claim this one deliberately did not. A manifest
+    naming an algorithm this build does not ship is left alone -- nothing considered it, and a build
+    that ships that algorithm can still read it -- which is the same restraint
+    :func:`readable_legacy_manifest` shows.
+
+    **A rename that fails costs itself.** The claim is already recorded, so a read-only share or a
+    ``.orig`` name already taken leaves the file where it is and says so; failing the caller here would
+    put an error against work that genuinely happened.
+
+    :param rehu_path: the resource's ``.rehu`` file.
+    :returns: the manifests retired, under the names they had before the rename, strongest suffix first.
+    """
+    retired: list[Path] = []
+    for manifest in legacy_manifest_candidates(rehu_path):
+        if LEGACY_MANIFEST_ALGORITHMS[manifest.suffix.lower()] not in CHECKSUM_ALGORITHMS:
+            continue
+        target = backup_path(manifest)
+        try:
+            if target.exists():
+                LOG.warning("%s was not retired: %s is already there.", manifest, target.name)
+                continue
+            manifest.rename(target)
+        except OSError as error:
+            LOG.warning("%s could not be retired: %s", manifest, error)
+            continue
+        retired.append(manifest)
+    return tuple(retired)
+
+
+def remediate_legacy_manifest(
+    rehu_path: Path, *, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+) -> LegacySeed | None:
+    """Fold a stranded manifest's claim into the record beside it, and retire it (#259).
+
+    **Remediation, and deliberately narrow.** It exists for the resources converted before retirement
+    landed -- ``.rehu`` + ``.sfv`` + ``.checksum`` in one directory, with nothing in the files to say
+    whether the record came from that manifest or was baselined independently of it. The seeding path no
+    longer produces that state, so this takes no options and generalizes to nothing.
+
+    A **merge**, never an overwrite (:class:`LegacyClaimMerger`): what the manifest names takes the
+    legacy digest with its date cleared and is re-checked on the next verify, and what it does not name
+    is left exactly as it stands -- a file added since keeps its baseline and its timestamp, and a
+    ``missing`` entry the manifest never mentioned keeps its claim about a file that has gone. The
+    exclusion half is inherited rather than built: a line naming something the enumeration leaves out --
+    a ``Thumbs.db``, another record's bookkeeping -- never becomes an entry at all, so it can clear
+    nothing.
+
+    :param rehu_path: the resource's ``.rehu`` file, expected to have a ``.checksum`` already.
+    :param excluded_patterns: filename globs the content walk leaves out (#226), resolved by the caller.
+    :returns: what the manifest contributed, or ``None`` when there was nothing to do -- no record to
+        merge into, or no manifest this build can read yielded an entry. Nothing is written or renamed in
+        either case.
+    :raises ContentUnreachableError: the resource's directory would not list (#245) -- an away mount
+        must never read as *nothing to do*, and once a record is found it must not seed entries whose
+        every line reads as a claim about a file that is gone. Refused whichever way the mount's absence
+        surfaces: as a record that will not load, or as a walk that will not list.
+    :raises ChecksumRecordError: a record file this build cannot read at all; merging into half of one
+        could bless bytes it never vouched for.
+    :raises OSError: the record could not be read or re-written.
+    """
+    record_path = checksum_record_path(rehu_path)
+    try:
+        record = load_checksum_record(record_path)
+    except FileNotFoundError:
+        # *no record to merge into* is only an honest answer if the directory can be seen at all
+        # (#245): on an away mount the record's absence proves nothing, and answering *nothing to do*
+        # would be the lie this codebase's runs refuse before they look at anything else. One listing,
+        # not a walk -- the common caller (a conversion whose seed found no manifest) has already paid
+        # the walk once, and reachability is the only thing left in question
+        try:
+            with os.scandir(rehu_path.parent):
+                pass
+        except OSError as error:
+            raise ContentUnreachableError(f"The resource's directory could not be read: {rehu_path.parent}") from error
+        return None
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration.require_reachable()
+    directory = enumeration.directory
+    content_names = [path.relative_to(directory).as_posix() for path in enumeration.files]
+    seed = seed_from_legacy_manifest(rehu_path, content_names)
+    if seed is None or not seed.entries:
+        return None
+    record[CHECKSUM_FILES_KEY] = LegacyClaimMerger(record[CHECKSUM_FILES_KEY], seed.entries).merged()
+    save_checksum_record(record_path, record)
+    return replace(seed, retired=retire_legacy_manifests(rehu_path))
 
 
 def log_legacy_seed(seed: LegacySeed) -> None:
@@ -429,7 +635,8 @@ def log_legacy_seed(seed: LegacySeed) -> None:
 
     A summary carries the counts; this is where a reader finds out *which* line and *why*, on the
     resource's own log ([[appendices.logging#scopes]]). It runs once in a resource's life -- whether the
-    seed came from a verify (#243) or from an import (#256) -- so the detail costs nothing afterwards,
+    seed came from a verify (#243), from an import (#256) or from a remediation (#259) -- so the detail
+    costs nothing afterwards,
     and both callers say it the same way because it is the same event.
 
     :param seed: what the manifest contributed.
@@ -438,3 +645,5 @@ def log_legacy_seed(seed: LegacySeed) -> None:
         LOG.info("%s was not read: %s is the manifest this record was seeded from.", manifest, seed.manifest.name)
     for drop in seed.dropped:
         LOG.warning("%s: dropped %r -- %s.", seed.manifest, drop.line, drop.reason)
+    for manifest in seed.retired:
+        LOG.info("%s was retired to %s: the record holds its claim now.", manifest, backup_path(manifest).name)

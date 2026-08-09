@@ -160,6 +160,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - [#254: feat: a record counts only what it covers](https://github.com/borco/rehuco/issues/254)
 - [#257: feat: a pruned claim moves to the record that now covers it](https://github.com/borco/rehuco/issues/257)
 - [#256: feat: import options — convert the .sfv, and optionally verify](https://github.com/borco/rehuco/issues/256)
+- [#259: fix: a legacy manifest is never retired once its claim is in the record](https://github.com/borco/rehuco/issues/259)
 
 - **The algorithm was measured rather than inherited** (#203). This section used to say the choice was *"subject to
   change pending benchmarking"* and named nobody to run it — the only benchmarking job the specs describe
@@ -266,7 +267,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
   would have recorded today's bytes as `matched` about bytes nobody ever compared. The old file is a **claim, made
   when the files were known good**, and it can still be checked today. A verify that finds no `.checksum` and does
   find a **same-stem** manifest beside it — `info.sfv` next to `info.rehu` — seeds its entries from that file and
-  behaves as a verify against them, writing the `.checksum` once at the end. Five decisions carry it:
+  behaves as a verify against them, writing the `.checksum` once at the end. Six decisions carry it:
   - **Seeding produces entries, not a second kind of run.** Each line becomes `{name, <algorithm>: <digest>}` with no
     date and no status, which is a shape verify already knows: present files are hashed and compared under the
     algorithm the *suffix* named, an absent one is `missing` and **keeps its recorded hash** so the claim survives the
@@ -292,10 +293,26 @@ What a **reference-images** resource's content *is* was settled by #197: content
     land *inside* the resource; an absolute name, a drive letter or an escaping `..` is dropped and never resolved.
     Encoding is UTF-8 falling back to cp1252, since a non-ASCII filename in a file a Windows tool wrote years ago is
     a cp1252 byte sequence rather than invalid UTF-8 to give up on.
+  - **A manifest is retired once its claim is absorbed** (#259) — the run that wrote the record renames `info.sfv` to
+    `info.sfv.orig`, and every weaker same-stem manifest the precedence passed over with it. The sixth decision, and
+    the one this section shipped without: it was made in the seeding module's docstring rather than here, so the design
+    went out with the question unasked. Leaving the file is not the harmless no-op it reads as. Nothing consults it
+    while the record is there, so it surfaces nowhere and looks inert — and it becomes the authority again the moment
+    the record is lost or deleted, at which point a verify re-seeds from it and reports `mismatched` for every file
+    legitimately changed since; after *Update checksums on verify* has re-keyed the matched entries the two cannot even
+    be reconciled to detect that one supersedes the other. **Renamed, not deleted**: `.orig` is the conversion's own
+    backup suffix ([[acquisition-tooling#convert-mechanics]]), so a retired manifest joins the resource's backup set
+    for Revert and Discard with no new vocabulary, and the content walk already skips it. No marker is needed and none
+    is written — the run that absorbed the claim is the one retiring it, which is also the moment *unrepeatable if the
+    record is lost* is at its weakest, the record having been written atomically from that very file a moment earlier.
+    A manifest naming an algorithm the shipped five omit is **not** retired: nothing read it and nothing considered it,
+    and a build that ships that algorithm can still use it.
 
   It is **one-way and it happens once**: from then on there is a `.checksum`, so the next verify reads that and the
-  legacy file is never consulted again. **It is not deleted** — it is somebody else's data, it costs nothing, it stays
-  out of the content set either way, and deleting it would make the step unrepeatable if the new record were lost.
+  legacy file is never consulted again — and it is renamed aside, by the decision above, so that stops being a promise
+  about what nobody reads and becomes a fact about what is there. **It is never deleted**, only retired: it stays
+  out of the content set either way, and deleting it would make the step unrepeatable if the new record were lost —
+  which retiring, being one rename away from undone, does not.
   Normalization lives in the conversion, which is the seam that knows the file came from a Windows tool; the record
   reader stays strict and is **not** taught to normalize, since a reader that did would make one `.checksum` mean
   different things to a Windows agent and a Linux node.
@@ -311,7 +328,30 @@ What a **reference-images** resource's content *is* was settled by #197: content
   to remember. And a resource that already has a `.checksum` is **left alone**, the same one-way rule: the record is
   what supersedes the manifest, and re-seeding over it would replace dated verdicts with an old claim. An unreachable
   resource refuses (#245) rather than seeding a record whose every line would read as a claim about a file that has
-  gone.
+  gone. Where a record *is* already there and a manifest is still beside it, the remediation below applies instead.
+
+- **A record written before its manifest was absorbed is remediated, not left** (#259). What retirement leaves is a
+  clean rule going forward and a catalog that predates it — resources hand-converted into `.rehu` + `.sfv` +
+  `.checksum`, where nothing in the files says whether the record came from that manifest or was baselined
+  independently of it. The answer is a re-seed that **merges** rather than overwrites:
+
+  | record entry | named by the manifest, not excluded | outcome |
+  | --- | --- | --- |
+  | any | **yes** | digest replaced with the legacy claim, `verified` **cleared** |
+  | any | no | **untouched** — digest and date kept |
+
+  So a file added after the manifest was written keeps its baseline and its timestamp, and a `missing` entry the
+  manifest never mentioned keeps its claim about a file that has gone; only what the manifest is actually
+  authoritative about is reset, and it is re-checked, honestly, on the next verify. A name the manifest carries that
+  the record has never held becomes an entry, since it is a claim held nowhere else. The exclusion half is
+  **inherited, not built** — a line naming something the enumeration leaves out never becomes an entry at all, so it
+  can clear nothing — and the manifest is retired afterwards, as above. This is remediation and is **allowed to be
+  narrow**: the seeding path no longer produces the state, and the one door it recurs through — a revert restores a
+  retired manifest wholesale, beside the record it deliberately keeps ([[acquisition-tooling#convert-mechanics]]) —
+  heals on reconversion, since a conversion merges and retires whether or not a record is present. So the merge takes
+  no options and generalizes to nothing.
+  The bulk import is where it is offered, since that is where a legacy catalog is already being walked
+  ([[acquisition-tooling#tc-to-rehu]]).
 
 - **A verify has three modes, not two, and the fourth is refused** (#256). Two independent choices — may this run
   *create* a record, and may it *seed* one — make four combinations, and one of them is incoherent:

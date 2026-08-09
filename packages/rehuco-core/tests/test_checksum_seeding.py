@@ -31,11 +31,14 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CHECKSUM_ALGORITHMS,
     DEFAULT_CHECKSUM_ALGORITHM,
+    EXCLUDED_FILE_PATTERNS,
     ChecksumReport,
     ContentUnreachableError,
+    RetireLegacyManifestJob,
     VerifyChecksumsJob,
     checksum_report_summary,
     generate_checksums,
+    remediate_legacy_manifest,
     seed_checksum_record,
     verify_checksums,
 )
@@ -80,6 +83,8 @@ class FakeDisk:
         """Every file read whole as bytes -- which is only ever a legacy manifest (#243)."""
         self.writes = 0
         """How many times the record has been written."""
+        self.renames: list[tuple[Path, Path]] = []
+        """Every rename, in order -- which is only ever a manifest being retired (#259)."""
         self.offline_directories: Final[set[Path]] = set()
         """The directories whose listing refuses -- an away mount, or a branch of one
         ([[mounts-and-storage#offline-mounts]]). Their files stay in :attr:`files`, because that is the
@@ -176,6 +181,21 @@ class FakeDisk:
         self.writes += 1
         self.files[Path(path)] = text.encode("utf-8")
 
+    def rename(self, path: Path, target: Path) -> None:
+        """Move one file to another name -- how a manifest is retired (#259).
+
+        :param path: the file to move.
+        :param target: where it lands.
+        :raises PermissionError: the path is refused.
+        :raises FileNotFoundError: nothing lives at ``path``.
+        """
+        if Path(path) in self.refused:
+            raise PermissionError(str(path))
+        payload = self.__payload(path)
+        self.renames.append((Path(path), Path(target)))
+        self.files[Path(target)] = payload
+        del self.files[Path(path)]
+
     # endregion
 
     # region Test-side conveniences
@@ -223,6 +243,7 @@ class FakeDisk:
         """Clear the counters, so a second run's reads are counted on their own."""
         self.reads = []
         self.manifest_reads = []
+        self.renames = []
         self.writes = 0
 
     # endregion
@@ -305,6 +326,7 @@ def fixture_disk(mocker: MockerFixture, freezer: FrozenDateTimeFactory) -> FakeD
     mocker.patch.object(Path, "exists", autospec=True, side_effect=disk.exists)
     mocker.patch.object(Path, "read_text", autospec=True, side_effect=lambda self, **_kwargs: disk.read_text(self))
     mocker.patch.object(Path, "read_bytes", autospec=True, side_effect=disk.read_bytes)
+    mocker.patch.object(Path, "rename", autospec=True, side_effect=disk.rename)
     return disk
 
 
@@ -424,7 +446,7 @@ def test_the_second_verify_never_opens_the_manifest(disk: FakeDisk) -> None:
     **Test steps:**
 
     * verify against a ``.sfv``, then forget the counters and verify again
-    * check the second run read no manifest at all, and the ``.sfv`` is still on disk
+    * check the second run read no manifest at all, and the ``.sfv`` is retired rather than gone (#259)
     """
     put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"extras/pack.zip {ARCHIVE_CRC}")
     verify_checksums(INFO_PATH)
@@ -434,7 +456,8 @@ def test_the_second_verify_never_opens_the_manifest(disk: FakeDisk) -> None:
 
     assert disk.manifest_reads == []
     assert report.seed is None
-    assert SFV_PATH in disk.files
+    assert SFV_PATH not in disk.files
+    assert SFV_PATH.with_name("info.sfv.orig") in disk.files
 
 
 def test_seeding_happens_even_when_a_run_may_not_create_a_record(disk: FakeDisk) -> None:
@@ -771,7 +794,8 @@ def test_the_summary_names_the_manifest_a_run_was_seeded_from(disk: FakeDisk) ->
     **Test steps:**
 
     * verify against a ``.md5`` holding one good line and one unusable one, with a ``.sfv`` beside it
-    * check the summary line names the manifest and counts what it dropped and ignored
+    * check the summary line names the manifest, counts what it dropped and ignored, and names both
+      files it retired (#259)
     """
     disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\nNOTAHASH *extras/pack.zip\n".encode())
     put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
@@ -779,7 +803,8 @@ def test_the_summary_names_the_manifest_a_run_was_seeded_from(disk: FakeDisk) ->
     report = verify_checksums(INFO_PATH)
 
     assert checksum_report_summary(report) == (
-        "1 matched, 1 unexpected, seeded 1 from info.md5, 1 seed line dropped, 1 manifest ignored"
+        "1 matched, 1 unexpected, seeded 1 from info.md5, 1 seed line dropped, 1 manifest ignored, "
+        "retired info.md5, info.sfv"
     )
 
 
@@ -795,7 +820,7 @@ def test_a_clean_seed_says_only_what_it_seeded(disk: FakeDisk) -> None:
 
     report = verify_checksums(INFO_PATH)
 
-    assert checksum_report_summary(report) == "2 matched, seeded 2 from info.sfv"
+    assert checksum_report_summary(report) == "2 matched, seeded 2 from info.sfv, retired info.sfv"
 
 
 def test_a_verify_job_logs_what_the_manifest_did_not_contribute(
@@ -1043,6 +1068,477 @@ def test_a_job_writes_down_whether_it_seeds(disk: FakeDisk) -> None:
     older.restore_state({key: value for key, value in state.items() if key != "seed_legacy"})
 
     assert older.seed_legacy is True
+
+
+# endregion
+
+
+# region Retiring the manifest (#259)
+
+ORIG_SFV: Final = DIRECTORY / "info.sfv.orig"
+ORIG_MD5: Final = DIRECTORY / "info.md5.orig"
+
+
+def test_a_seed_only_call_retires_the_manifest_it_read(disk: FakeDisk) -> None:
+    """The claim is in the record, so the file it came from stops being one.
+
+    **Test steps:**
+
+    * seed a record from a ``.sfv``, hashing nothing
+    * check the manifest now sits under ``.orig`` and the seed says so
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == (SFV_PATH,)
+    assert SFV_PATH not in disk.files
+    assert ORIG_SFV in disk.files
+
+
+def test_the_record_is_written_before_the_manifest_is_retired(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """Nothing is renamed until the claim is safely somewhere else.
+
+    **Test steps:**
+
+    * seed with the record write refusing
+    * check the write raised and the manifest is exactly where it was
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    mocker.patch("rehuco_core.checksum_record.atomic_write_text", side_effect=PermissionError(str(RECORD_PATH)))
+
+    with raises(PermissionError):
+        seed_checksum_record(INFO_PATH)
+
+    assert disk.renames == []
+    assert SFV_PATH in disk.files
+
+
+def test_a_passed_over_manifest_is_retired_with_the_one_that_seeded(disk: FakeDisk) -> None:
+    """A file the precedence declined must not stay live to be absorbed by some later run.
+
+    **Test steps:**
+
+    * seed a resource carrying both a ``.md5`` (which wins) and a ``.sfv``
+    * check both are retired, strongest first
+    """
+    disk.put("info.md5", f"{digest_of(VIDEO_BYTES, 'md5')} *{VIDEO}\n".encode())
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == (MD5_PATH, SFV_PATH)
+    assert {ORIG_MD5, ORIG_SFV} <= set(disk.files)
+
+
+def test_a_manifest_this_build_cannot_hash_is_left_alone(disk: FakeDisk) -> None:
+    """Nothing considered it, so nothing has absorbed its claim and nothing may retire it.
+
+    **Test steps:**
+
+    * seed a resource whose ``.sha1`` (unshipped) sits beside a readable ``.sfv``
+    * check only the ``.sfv`` was retired
+    """
+    disk.put("info.sha1", b"0" * 40 + f" *{VIDEO}\n".encode())
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == (SFV_PATH,)
+    assert DIRECTORY / "info.sha1" in disk.files
+
+
+def test_a_manifest_whose_orig_name_is_taken_stays_where_it_is(disk: FakeDisk) -> None:
+    """Never overwrite -- the same contract a conversion's backups are under.
+
+    **Test steps:**
+
+    * seed a resource that already carries an ``info.sfv.orig``
+    * check the record was still written and the manifest was not renamed over it
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.put("info.sfv.orig", b"an older backup")
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == ()
+    assert disk.files[ORIG_SFV] == b"an older backup"
+    assert SFV_PATH in disk.files
+    assert RECORD_PATH in disk.files
+
+
+def test_a_rename_that_refuses_costs_itself_rather_than_the_seed(disk: FakeDisk, mocker: MockerFixture) -> None:
+    """The claim is already recorded; failing here would put an error against work that happened.
+
+    **Test steps:**
+
+    * seed with the manifest's rename refusing
+    * check the record was still written and the seed reports nothing retired
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    mocker.patch.object(Path, "rename", side_effect=PermissionError("read-only share"))
+
+    seed = seed_checksum_record(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == ()
+    assert RECORD_PATH in disk.files
+
+
+def test_a_verify_that_read_a_record_retires_nothing(disk: FakeDisk) -> None:
+    """Only a run that absorbed a claim retires the file it came from.
+
+    **Test steps:**
+
+    * write a record by seeding, put a fresh manifest back beside it, and verify again
+    * check the second run renamed nothing
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    seed_checksum_record(INFO_PATH)
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.forget()
+
+    report = verify_checksums(INFO_PATH)
+
+    assert report.seed is None
+    assert disk.renames == []
+    assert SFV_PATH in disk.files
+
+
+# endregion
+
+
+# region Remediating a record written without its manifest (#259)
+
+
+def seed_and_strand(disk: FakeDisk, *lines: str) -> None:
+    """Put a resource into the state hand-conversion left behind: a record, and a live manifest.
+
+    :param disk: the disk to arrange.
+    :param lines: the manifest's lines, written after the record so nothing absorbed them.
+    """
+    generate_checksums(INFO_PATH)
+    put_sfv(disk, *lines)
+    disk.forget()
+
+
+def test_a_stranded_claim_replaces_the_digest_and_clears_the_date(disk: FakeDisk) -> None:
+    """The manifest is the older and truer claim about what it names.
+
+    **Test steps:**
+
+    * baseline a record from disk, then drop a ``.sfv`` naming the video beside it
+    * remediate, and check the entry now carries the legacy crc32 with no date and no status
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    seed = remediate_legacy_manifest(INFO_PATH)
+
+    assert seed is not None
+    entry = disk.entries[VIDEO]
+    assert entry["crc32"] == VIDEO_CRC
+    assert DEFAULT_CHECKSUM_ALGORITHM not in entry
+    assert "verified" not in entry
+    assert "status" not in entry
+    assert disk.reads == []
+
+
+def test_an_entry_the_manifest_does_not_name_is_untouched(disk: FakeDisk) -> None:
+    """A file added after the manifest was written keeps its baseline and its timestamp.
+
+    **Test steps:**
+
+    * baseline a record covering the video and the archive, then strand a ``.sfv`` naming only the video
+    * check the archive's entry came through byte-for-byte
+    """
+    generate_checksums(INFO_PATH)
+    before = disk.entries[ARCHIVE]
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    remediate_legacy_manifest(INFO_PATH)
+
+    assert disk.entries[ARCHIVE] == before
+
+
+def test_a_missing_entry_the_manifest_never_mentioned_keeps_its_claim(disk: FakeDisk) -> None:
+    """The claim about a file that has gone is not the manifest's to overwrite.
+
+    **Test steps:**
+
+    * baseline, delete the archive, strand a ``.sfv`` naming only the video, and remediate
+    * check the archive's entry still carries the hash it was baselined with
+    """
+    generate_checksums(INFO_PATH)
+    archive_hash = disk.entries[ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM]
+    disk.remove(ARCHIVE)
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    remediate_legacy_manifest(INFO_PATH)
+
+    assert disk.entries[ARCHIVE][DEFAULT_CHECKSUM_ALGORITHM] == archive_hash
+
+
+def test_a_claim_the_record_never_held_becomes_an_entry(disk: FakeDisk) -> None:
+    """It is held nowhere else, which is exactly what seeding a claim is for.
+
+    **Test steps:**
+
+    * baseline before the archive exists, then strand a ``.sfv`` naming both files
+    * check the archive arrived as a dateless entry under the manifest's algorithm
+    """
+    disk.remove(ARCHIVE)
+    generate_checksums(INFO_PATH)
+    disk.put(ARCHIVE, ARCHIVE_BYTES)
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}", f"{ARCHIVE} {ARCHIVE_CRC}")
+
+    remediate_legacy_manifest(INFO_PATH)
+
+    assert disk.entries[ARCHIVE] == {"name": ARCHIVE, "crc32": ARCHIVE_CRC}
+
+
+def test_a_stranded_line_naming_something_excluded_clears_nothing(disk: FakeDisk) -> None:
+    """The exclusion half is inherited: such a line never becomes an entry, so it cannot reset one.
+
+    **Test steps:**
+
+    * baseline, strand a ``.sfv`` naming the video and a ``Thumbs.db`` the walk leaves out
+    * check the record gained no entry for it and the seed reported the drop
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}", f"Thumbs.db {VIDEO_CRC}")
+
+    seed = remediate_legacy_manifest(INFO_PATH)
+
+    assert seed is not None
+    assert [drop.reason for drop in seed.dropped] == ["a file this resource's content excludes"]
+    assert "Thumbs.db" not in disk.entries
+
+
+def test_a_name_the_record_holds_twice_ends_holding_one_entry(disk: FakeDisk) -> None:
+    """A survivor beside a stale hash the merge just declared wrong would fail every verify after it.
+
+    **Test steps:**
+
+    * hand-write a record listing the video twice, then strand a ``.sfv`` naming it
+    * check the merged record holds exactly one entry for it, carrying the legacy claim
+    """
+    generate_checksums(INFO_PATH)
+    record = disk.record
+    record["files"] = [*record["files"], {"name": VIDEO, "crc32": "deadbeef"}]
+    disk.put("info.checksum", (json.dumps(record) + "\n").encode())
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    remediate_legacy_manifest(INFO_PATH)
+
+    video_entries = [entry for entry in disk.record["files"] if entry["name"] == VIDEO]
+    assert video_entries == [{"name": VIDEO, "crc32": VIDEO_CRC}]
+
+
+def test_remediating_retires_the_manifest_afterwards(disk: FakeDisk) -> None:
+    """The whole point: the state cannot be reached again from here.
+
+    **Test steps:**
+
+    * remediate a stranded resource
+    * check the ``.sfv`` moved to ``.orig``, after the record was written
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    seed = remediate_legacy_manifest(INFO_PATH)
+
+    assert seed is not None
+    assert seed.retired == (SFV_PATH,)
+    assert disk.writes == 1
+    assert ORIG_SFV in disk.files
+
+
+def test_remediating_a_resource_with_no_record_does_nothing(disk: FakeDisk) -> None:
+    """Writing one is the seed's job, and it is the job that carries the *one-way* rule.
+
+    **Test steps:**
+
+    * remediate a resource that has a ``.sfv`` and no ``.checksum``
+    * check nothing was written and nothing was renamed
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+
+    assert remediate_legacy_manifest(INFO_PATH) is None
+    assert RECORD_PATH not in disk.files
+    assert disk.renames == []
+
+
+def test_remediating_a_resource_with_no_manifest_does_nothing(disk: FakeDisk) -> None:
+    """There is nothing stranded, which is every already-converted resource.
+
+    **Test steps:**
+
+    * remediate a resource carrying only a baselined record
+    * check nothing was written on top of it
+    """
+    generate_checksums(INFO_PATH)
+    disk.forget()
+
+    assert remediate_legacy_manifest(INFO_PATH) is None
+    assert disk.writes == 0
+
+
+def test_remediating_over_an_away_mount_refuses(disk: FakeDisk) -> None:
+    """*The mount is away* outranks every answer this could otherwise give (#245).
+
+    **Test steps:**
+
+    * strand a resource, take its directory offline, and remediate
+    * check it raised rather than merging over a record it could not check the content of
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.offline_directories.add(DIRECTORY)
+
+    with raises(ContentUnreachableError):
+        remediate_legacy_manifest(INFO_PATH)
+
+
+def test_remediating_with_no_record_over_an_away_mount_still_refuses(disk: FakeDisk) -> None:
+    """*No record to merge into* is only honest where the directory can be seen at all (#245).
+
+    The record lives on the mount, so an away mount surfaces as the record failing to load -- and
+    answering *nothing to do* there would report a mount outage as a settled resource.
+
+    **Test steps:**
+
+    * take a stranded resource's directory offline with no record on disk, and remediate
+    * check it raised rather than answering ``None``
+    """
+    put_sfv(disk, f"{VIDEO} {VIDEO_CRC}")
+    disk.offline_directories.add(DIRECTORY)
+
+    with raises(ContentUnreachableError):
+        remediate_legacy_manifest(INFO_PATH)
+
+
+def test_a_retirement_job_merges_and_retires(disk: FakeDisk) -> None:
+    """The wizard's row, end to end, over the real callable.
+
+    **Test steps:**
+
+    * run a :class:`~rehuco_core.RetireLegacyManifestJob` over a stranded resource
+    * check it validates, the claim landed, the manifest is retired, and the job kept what it did
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}")
+    job = RetireLegacyManifestJob(INFO_PATH)
+    assert job.validate() is None
+
+    job.run(FakeControl())
+
+    assert job.seed is not None
+    assert job.seed.retired == (SFV_PATH,)
+    assert disk.entries[VIDEO]["crc32"] == VIDEO_CRC
+    assert disk.reads == []
+
+
+def test_a_retirement_job_with_nothing_to_do_succeeds(disk: FakeDisk) -> None:
+    """The scan read a listing, not the record, so *already settled* is an outcome rather than a fault.
+
+    **Test steps:**
+
+    * run the job over a resource whose manifest has already been retired
+    * check it completed and reports no seed
+    """
+    del disk
+    generate_checksums(INFO_PATH)
+    job = RetireLegacyManifestJob(INFO_PATH)
+
+    job.run(FakeControl())
+
+    assert job.seed is None
+
+
+def test_a_retirement_job_refuses_a_resource_that_is_gone(disk: FakeDisk) -> None:
+    """A stat, not a walk -- the same validation every job about one resource does.
+
+    **Test steps:**
+
+    * validate a job naming a ``.rehu`` that is not there
+    * check it answers with a sentence
+    """
+    del disk
+    missing = DIRECTORY / "gone.rehu"
+
+    assert RetireLegacyManifestJob(missing).validate() == f"The resource no longer exists: {missing}"
+
+
+def test_a_retirement_job_is_the_job_that_was_queued_after_a_restart(disk: FakeDisk) -> None:
+    """A restored item is the run it described ([[appendices.task-queue#lifetime]]).
+
+    **Test steps:**
+
+    * round-trip a job's state through capture and restore
+    * check the path and the exclusion set came back
+    """
+    del disk
+    state = RetireLegacyManifestJob(INFO_PATH, excluded_patterns=("*.tmp",)).capture_state()
+
+    restored = RetireLegacyManifestJob()
+    restored.restore_state(state)
+
+    assert restored.source == INFO_PATH
+    assert restored.excluded_patterns == ("*.tmp",)
+    assert restored.label == "Retire legacy manifest - sculpting"
+
+
+def test_a_retirement_job_with_no_resource_at_all_refuses(disk: FakeDisk) -> None:
+    """The registry builds one empty and hands it a state; one that never got a state cannot run.
+
+    **Test steps:**
+
+    * validate a job built with no path, ask it for its resource, and read its label
+    * check all three answer without a path to work from
+    """
+    del disk
+    job = RetireLegacyManifestJob()
+
+    assert job.validate() == "This task has no resource."
+    assert job.label == "Retire legacy manifest"
+    with raises(ValueError, match="no resource"):
+        job.resource_path()
+
+
+def test_a_retirement_job_forgets_its_last_run_on_reset(disk: FakeDisk) -> None:
+    """A retry reports its own run, not the one before it.
+
+    **Test steps:**
+
+    * run a job over a stranded resource, then reset it
+    * check it no longer answers the seed it carried
+    """
+    seed_and_strand(disk, f"{VIDEO} {VIDEO_CRC}")
+    job = RetireLegacyManifestJob(INFO_PATH)
+    job.run(FakeControl())
+    assert job.seed is not None
+
+    job.reset()
+
+    assert job.seed is None
+
+
+def test_a_saved_retirement_task_that_names_no_resource_is_refused(disk: FakeDisk) -> None:
+    """A hand-edited queue file costs its own item, not the build coming up broken.
+
+    **Test steps:**
+
+    * restore from a state with an empty path, and from one whose exclusion set is not a list of names
+    * check the first raises and the second keeps this build's own default
+    """
+    del disk
+    job = RetireLegacyManifestJob()
+    with raises(ValueError, match="names no resource"):
+        job.restore_state({"path": ""})
+
+    job.restore_state({"path": str(INFO_PATH), "excluded_patterns": "*.tmp"})
+
+    assert job.excluded_patterns == EXCLUDED_FILE_PATTERNS
 
 
 # endregion

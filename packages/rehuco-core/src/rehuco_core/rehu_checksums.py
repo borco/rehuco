@@ -35,7 +35,9 @@ describes what is, and a walk that could not see a directory establishes nothing
 finds no ``.checksum`` but does find a same-stem legacy ``.sfv``/``.md5``/``.sha*`` beside the record
 seeds its entries from that file (:mod:`rehuco_core.checksum_seeding`) and checks them -- so the first
 run tests a claim made when the files were known good, rather than recording today's bytes as matched.
-It happens once: the record it writes is what every later verify reads. A caller that has already carried
+It happens once, and it **retires the manifest** once the record is written (#259) -- renamed to a
+``.orig`` sibling, so the claim is somewhere else before the file it came from stops being one. A caller
+that has already carried
 the manifest into a record without reading a byte (:func:`~rehuco_core.seed_checksum_record`, #256) turns
 ``seed_legacy`` off, so its verify checks what is recorded and refuses where nothing is.
 
@@ -61,7 +63,7 @@ is :mod:`rehuco_core.checksum_record`'s.
 # pylint: disable=too-many-lines
 
 from collections.abc import Callable, Collection
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Final
@@ -83,7 +85,7 @@ from .checksum_record import (
     save_checksum_record,
     verified_stamp,
 )
-from .checksum_seeding import LegacySeed, seed_from_legacy_manifest
+from .checksum_seeding import LegacySeed, retire_legacy_manifests, seed_from_legacy_manifest
 from .constants import EXCLUDED_FILE_PATTERNS
 from .content_reading import read_content_chunks
 from .rehu_content_files import (
@@ -272,7 +274,9 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
 
         **A resource with no record but a legacy manifest beside it is verified against that** (#243):
         the seeded entries carry a hash and no date, so every rule above applies to them unchanged --
-        which is the whole point of seeding entries rather than writing a second kind of run.
+        which is the whole point of seeding entries rather than writing a second kind of run. The
+        manifest is **retired** afterwards (#259, :meth:`__retire_seeded_manifests`), the record having
+        just been written from it.
 
         :returns: what the run established.
         :raises FileNotFoundError: no record, nothing to seed one from, and ``create_if_missing`` is
@@ -294,6 +298,7 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
         rewritten = [entry for raw in self.__entries if (entry := self.__verify_entry(raw)) is not None]
         rewritten.extend(entry for entry in map(self.__adopt, adoptees) if entry is not None)
         self.__save(rewritten)
+        self.__retire_seeded_manifests()
         return self.__report()
 
     def generate(self) -> ChecksumReport:
@@ -384,6 +389,19 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
     # endregion
 
     # region Verify
+
+    def __retire_seeded_manifests(self) -> None:
+        """Rename the manifest this run seeded from aside, now that the record carries its claim (#259).
+
+        **After the record is written, never before** -- :meth:`__save` has already run and always
+        writes on a seeded run, so a failure there leaves the manifest exactly where it was and the next
+        verify seeds from it again. Only a run that actually seeded retires anything: a verify reading a
+        record that was already there never opened a manifest, and retiring one it did not read would be
+        retiring a claim nobody absorbed.
+        """
+        if self.__seed is None or not self.__seed.entries:
+            return
+        self.__seed = replace(self.__seed, retired=retire_legacy_manifests(self.__rehu_location.path))
 
     def __unclaimed(self) -> dict[str, Any]:
         """The record's entries this resource's content no longer answers for, by name (#254, #257).
@@ -931,7 +949,8 @@ def verify_checksums(  # pylint: disable=too-many-arguments
     is left alone, since destroying its claim is what #257 exists to prevent.
 
     A resource with no record but a legacy ``.sfv``/``.md5``/``.sha*`` manifest beside it is **seeded
-    from that manifest and verified against it** (:mod:`rehuco_core.checksum_seeding`, #243) --
+    from that manifest, verified against it, and the manifest retired** (:mod:`rehuco_core.checksum_seeding`,
+    #243, #259) --
     including with ``create_if_missing`` off, since finding a record is not creating one. With
     ``seed_legacy`` off it is not, and the run refuses: that is the mode a caller asks for when the
     manifest has **already** been carried into a record it means to check
