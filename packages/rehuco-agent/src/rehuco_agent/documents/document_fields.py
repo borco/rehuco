@@ -42,6 +42,7 @@ from ..settings.markdown_rendering_settings import shared_markdown_rendering_set
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..settings.videos_settings import shared_videos_settings
 from .name_suggestion_model import NameSuggestionModel
+from .rehu_document_image_organizer import RehuDocumentImageOrganizer
 from .rehu_document_model import RehuDocumentModel
 
 TYPE_FIELD_NAME: Final = "resource_type"
@@ -314,6 +315,9 @@ def build_document_form(
         IMAGES_FIELD_NAME,
         image_scanner=model.image_scanner,
         image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
+        # the write side of the same directory: moving or deleting a screenshot renames files, since
+        # a resource's screenshot order is its `<stem>NN` numbering and nothing else records it (#72)
+        image_organizer=RehuDocumentImageOrganizer(model),
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
         # the height plus its change signal, the same shape the scanner above uses: the strip is built

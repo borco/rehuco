@@ -2491,6 +2491,29 @@ def test_hiding_previews_app_wide_dismisses_an_open_maximized_viewer(
     assert widget.findChild(ImageLightbox) is None
 
 
+def test_a_rearranged_screenshot_set_sends_the_strip_back_to_disk(
+    widget: DocumentWidget, mocker: MockerFixture
+) -> None:
+    """A curation edit that renames files re-reads the directory for the viewer's strip too (#72).
+
+    The strip has its own scanner over the same directory and no way to notice a rename, so without
+    the relay it would keep painting thumbnails under names that no longer exist.
+
+    **Test steps:**
+
+    * patch the strip's own refresh, then make the editor report a rearrangement
+    * verify the strip was sent back to its scanner
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    strip = widget.findChild(ImageStrip)
+    assert isinstance(strip, ImageStrip)
+    refresh = mocker.patch.object(strip, "refresh")
+
+    image_selector(widget).screenshots_changed.emit()
+
+    refresh.assert_called_once_with()
+
+
 def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: DocumentWidget) -> None:
     """The app-wide previews toggle reaches the curation editor's preview pane, not only the strip (#71).
 

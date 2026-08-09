@@ -141,6 +141,7 @@ from .rehu_rename import (
     rehu_rename_conflict,
     rename_rehu_resource,
 )
+from .rehu_screenshot_ordering import plan_screenshot_renumbering, renumber_screenshots
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
@@ -416,6 +417,7 @@ __all__ = [
     "original_path",
     "originals_to_back_up",
     "parse_checksum_entry",
+    "plan_screenshot_renumbering",
     "plan_tc_conversion",
     "read_content_chunks",
     "readable_legacy_manifest",
@@ -423,6 +425,7 @@ __all__ = [
     "rehu_rename_conflict",
     "remediate_legacy_manifest",
     "rename_rehu_resource",
+    "renumber_screenshots",
     "resource_name",
     "restore_backup",
     "retire_legacy_manifests",

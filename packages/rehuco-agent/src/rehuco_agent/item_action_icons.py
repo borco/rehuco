@@ -18,6 +18,7 @@ from typing import Final
 
 from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import (
+    ActionButtonColumn,
     DeleteItemAction,
     EditItemAction,
     InsertItemAction,
@@ -48,7 +49,20 @@ def apply_item_action_icons(editor: ItemListEditor) -> None:
 
     :param editor: the list editor to dress -- both columns, whichever actions each one carries.
     """
-    for column in (editor.item_actions, editor.ordering_actions):
+    apply_action_column_icons(editor.item_actions, editor.ordering_actions)
+
+
+def apply_action_column_icons(*columns: ActionButtonColumn) -> None:
+    """Give every action ``columns`` hold a button for this app's icon, kept theme-recolored.
+
+    The same dressing as :func:`apply_item_action_icons` for a host that is **not** an
+    `ItemListEditor`: the curation editor (#72) builds the two columns itself, over a list that is
+    a checkable screenshot view rather than a plain item model, and would otherwise have to restate
+    the mapping this module exists to hold in one place.
+
+    :param columns: the action columns to dress, whichever actions each one carries.
+    """
+    for column in columns:
         for button in column.findChildren(QToolButton):
             action = button.defaultAction()
             icon = ICONS_BY_ACTION_TYPE.get(type(action))
