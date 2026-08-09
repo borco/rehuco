@@ -183,12 +183,19 @@ class TcConversionTreePlan:
         live legacy manifest beside its record (#259), sorted by path -- a separate tuple rather than a
         second kind of :attr:`resources` entry, because nothing a conversion plan carries (a mapped
         payload, a rename plan, six flags) means anything here.
+    :param to_convert: how many `.tc` files under :attr:`root` still have conversion work ahead of them
+        (#258) -- every `.tc` the walk found, except one whose target `.rehu` already exists: it has a
+        record, and the leftover `.tc` is not outstanding work.
+    :param already_converted: how many `.rehu` files the walk found under :attr:`root` (#258), whether
+        or not a `.tc` still sits beside them.
     """
 
     root: Path
     resources: tuple[TcConversionPlan, ...]
     unreadable: tuple[Path, ...] = ()
     stranded: tuple[StrandedManifestPlan, ...] = ()
+    to_convert: int = 0
+    already_converted: int = 0
 
     @property
     def clean(self) -> int:
@@ -243,8 +250,8 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         entries: list[tuple[TcConversionPlan, float]] = []
         stranded: list[StrandedManifestPlan] = []
         unreadable: list[Path] = []
+        population = (0, 0)
         pending = [self.__root]
-        count = 0
         while pending:
             directory = pending.pop()
             listing = self.__listed(directory)
@@ -254,6 +261,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             file_names, subdirectories = listing
             pending.extend(subdirectories)
             stranded.extend(self.__stranded(directory, file_names))
+            population = tuple(a + b for a, b in zip(population, self.__population_counts(file_names), strict=True))
             for name in sorted(name for name in file_names if os.path.splitext(name)[1].lower() == LEGACY_SUFFIX):
                 tc_path = directory / name
                 try:
@@ -264,13 +272,12 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
                     # even less business crashing over it than an editor does
                     unreadable.append(tc_path)
                     continue
-                count += 1
                 if self.__progress is not None:
-                    self.__progress(count)
+                    self.__progress(len(entries))
         resources = self.__with_suspect_mtimes(entries)
         sorted_resources = tuple(sorted(resources, key=lambda plan: str(plan.tc_path)))
         sorted_stranded = tuple(sorted(stranded, key=lambda plan: str(plan.rehu_path)))
-        return TcConversionTreePlan(self.__root, sorted_resources, tuple(unreadable), sorted_stranded)
+        return TcConversionTreePlan(self.__root, sorted_resources, tuple(unreadable), sorted_stranded, *population)
 
     @staticmethod
     def __listed(directory: Path) -> tuple[list[str], list[Path]] | None:
@@ -332,6 +339,27 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             if manifest is not None:
                 found.append(StrandedManifestPlan(rehu_path=directory / name, manifest=manifest))
         return found
+
+    @staticmethod
+    def __population_counts(file_names: Sequence[str]) -> tuple[int, int]:
+        """How many `.tc` files in this directory still have conversion work ahead of them, and how many
+        `.rehu` files are already there (#258).
+
+        Free to find, the same way :meth:`__stranded` is: the listing :meth:`__listed` already read,
+        matched by suffix and stem, with nothing opened. A `.tc` whose same-stem `.rehu` is in the same
+        listing already has a record -- the leftover `.tc` is not outstanding work, so it does not add
+        to the first count.
+
+        :param file_names: one directory's file names, as :meth:`__listed` read them.
+        :returns: ``(to_convert, already_converted)`` for this directory alone.
+        """
+        splits = [os.path.splitext(name) for name in file_names]
+        rehu_stems = {stem.lower() for stem, suffix in splits if suffix.lower() == REHU_SUFFIX}
+        already_converted = sum(1 for _, suffix in splits if suffix.lower() == REHU_SUFFIX)
+        to_convert = sum(
+            1 for stem, suffix in splits if suffix.lower() == LEGACY_SUFFIX and stem.lower() not in rehu_stems
+        )
+        return to_convert, already_converted
 
     def __planned(self, tc_path: Path, file_names: Sequence[str]) -> tuple[TcConversionPlan, float]:
         """Build one resource's plan record and the mtime that would seed it, without writing anything.
