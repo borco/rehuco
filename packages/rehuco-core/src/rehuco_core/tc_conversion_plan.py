@@ -13,6 +13,11 @@ nested `.tc` is not a scan boundary ([[data-model#resource-scoping]], matching
 `rehuco_core.rehu_catalog.CatalogScanner`): a tc4 **collection** is a parent record over member
 directories, and stopping at the first `.tc` would plan the parent and drop every member.
 
+**The walk reports a second kind of thing** (#259): an already-converted resource still carrying the
+legacy manifest its `.checksum` was made from (:class:`StrandedManifestPlan`). Not a conversion -- there
+is no `.tc` and nothing to map -- and free to find, since the listing that answers *which manifest would
+this conversion carry forward* answers it for a `.rehu` too.
+
 **Not a cache.** A plan is built on demand and discarded after the run; it has nothing to do with
 `.rehudb`, and this module never writes one.
 """
@@ -23,8 +28,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Final
 
+from .checksum_record import checksum_record_path
 from .checksum_seeding import legacy_manifests_among, readable_legacy_manifest
-from .constants import LEGACY_SUFFIX, REHU_SUFFIX
+from .constants import CHECKSUM_RECORD_SUFFIX, LEGACY_SUFFIX, REHU_SUFFIX
 from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_document import RehuFormatError
 from .rehu_format import CORE_BLOCK_KEY
@@ -136,6 +142,33 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(frozen=True, slots=True)
+class StrandedManifestPlan:
+    """One already-converted resource still carrying the manifest its record was made from (#259).
+
+    The second kind of thing a walk of a legacy catalog finds, and not a conversion at all: there is no
+    `.tc` here and nothing to map. What there is, is a `.rehu` with both a `.checksum` and a live
+    legacy manifest beside it -- the state hand-converting produced before a seed retired anything, and
+    one nothing on disk can tell apart from *a record baselined independently of that manifest*.
+
+    **Free to find.** The walk reads every directory's listing for the conversions anyway
+    ([[acquisition-tooling#tc-to-rehu]]), and this is three names in one listing.
+
+    :param rehu_path: the resource's `.rehu` file.
+    :param manifest: the manifest a re-seed would read -- the strongest suffix this build can hash
+        (:data:`~rehuco_core.LEGACY_MANIFEST_ALGORITHMS`), which is the one whose claim the merge folds
+        in and, with any weaker sibling, the file retirement renames aside.
+    """
+
+    rehu_path: Path
+    manifest: Path
+
+    @property
+    def record_path(self) -> Path:
+        """The `.checksum` the manifest's claim would be merged into."""
+        return checksum_record_path(self.rehu_path)
+
+
+@dataclass(frozen=True, slots=True)
 class TcConversionTreePlan:
     """What a bulk conversion of every `.tc` under a folder would do, read without touching anything.
 
@@ -146,11 +179,16 @@ class TcConversionTreePlan:
         ([[mounts-and-storage#offline-mounts]]) -- and `.tc` files that would not read or parse, each
         costing its own record rather than the whole plan ([[data-model#write-integrity]]'s
         refuse-don't-crash discipline, at plan scale).
+    :param stranded: one :class:`StrandedManifestPlan` per already-converted resource still carrying a
+        live legacy manifest beside its record (#259), sorted by path -- a separate tuple rather than a
+        second kind of :attr:`resources` entry, because nothing a conversion plan carries (a mapped
+        payload, a rename plan, six flags) means anything here.
     """
 
     root: Path
     resources: tuple[TcConversionPlan, ...]
     unreadable: tuple[Path, ...] = ()
+    stranded: tuple[StrandedManifestPlan, ...] = ()
 
     @property
     def clean(self) -> int:
@@ -203,6 +241,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         :returns: the plan; see :func:`plan_tc_conversion`.
         """
         entries: list[tuple[TcConversionPlan, float]] = []
+        stranded: list[StrandedManifestPlan] = []
         unreadable: list[Path] = []
         pending = [self.__root]
         count = 0
@@ -214,6 +253,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
                 continue
             file_names, subdirectories = listing
             pending.extend(subdirectories)
+            stranded.extend(self.__stranded(directory, file_names))
             for name in sorted(name for name in file_names if os.path.splitext(name)[1].lower() == LEGACY_SUFFIX):
                 tc_path = directory / name
                 try:
@@ -229,7 +269,8 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
                     self.__progress(count)
         resources = self.__with_suspect_mtimes(entries)
         sorted_resources = tuple(sorted(resources, key=lambda plan: str(plan.tc_path)))
-        return TcConversionTreePlan(self.__root, sorted_resources, tuple(unreadable))
+        sorted_stranded = tuple(sorted(stranded, key=lambda plan: str(plan.rehu_path)))
+        return TcConversionTreePlan(self.__root, sorted_resources, tuple(unreadable), sorted_stranded)
 
     @staticmethod
     def __listed(directory: Path) -> tuple[list[str], list[Path]] | None:
@@ -262,6 +303,35 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
         except OSError:
             return None
         return file_names, subdirectories
+
+    @staticmethod
+    def __stranded(directory: Path, file_names: Sequence[str]) -> list[StrandedManifestPlan]:
+        """Which of this directory's converted resources still carry a live legacy manifest (#259).
+
+        Three names out of a listing :meth:`__listed` already read, and no file is opened: a `.rehu`,
+        its same-stem `.checksum`, and a same-stem manifest whose algorithm this build can hash. All
+        three matched case-insensitively, for the reason the content walk gives -- SMB and macOS both
+        hand back casings Windows never wrote.
+
+        **Converted resources only.** A `.tc` in the same state has a conversion still ahead of it, and
+        the conversion is what carries its manifest forward and retires it
+        (:class:`~rehuco_core.TcImportJob`); planning a remediation beside it would enqueue a second job
+        against a path the first one renames away.
+
+        :param directory: the directory the names were read from.
+        :param file_names: its file names, as :meth:`__listed` read them.
+        :returns: one plan per stranded resource, in the listing's own order.
+        """
+        lowered = {name.lower() for name in file_names}
+        found: list[StrandedManifestPlan] = []
+        for name in file_names:
+            stem, suffix = os.path.splitext(name)
+            if suffix.lower() != REHU_SUFFIX or f"{stem}{CHECKSUM_RECORD_SUFFIX}".lower() not in lowered:
+                continue
+            manifest = readable_legacy_manifest(legacy_manifests_among(directory, stem, file_names))
+            if manifest is not None:
+                found.append(StrandedManifestPlan(rehu_path=directory / name, manifest=manifest))
+        return found
 
     def __planned(self, tc_path: Path, file_names: Sequence[str]) -> tuple[TcConversionPlan, float]:
         """Build one resource's plan record and the mtime that would seed it, without writing anything.

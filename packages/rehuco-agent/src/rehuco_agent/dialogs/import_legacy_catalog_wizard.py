@@ -19,6 +19,12 @@ checkbox buys only the check: a second job per resource, verifying the seeded re
 made a claim and baselining from disk where none did. Off by default, because on it reads the whole
 library; and self-healing either way, since a seeded entry carries no date and a dateless entry is never
 fresh, so the next sweep checks every resource this import left unread.
+
+**The scan finds a second kind of row** (#259): an already-converted resource still carrying the legacy
+manifest its `.checksum` was made from, which a hand conversion left behind before seeding retired
+anything. It enqueues a :class:`~rehuco_core.RetireLegacyManifestJob` rather than a conversion, and
+belongs on this table for the reason the conversions do -- one resource, one job, one outcome, and the
+same Retry Failed. It reads no content, so the option above does not reach it.
 """
 
 import logging
@@ -37,6 +43,9 @@ from rehuco_core import (
     GenerateChecksumsJob,
     JobState,
     JobStatus,
+    RetireLegacyManifestJob,
+    StrandedManifestPlan,
+    TaskJob,
     TaskQueue,
     TcConversionPlan,
     TcConversionTreePlan,
@@ -69,6 +78,10 @@ SUSPECT_MTIME_WARNING: Final = (
 )
 UNREADABLE_WARNING: Final = "\n{count} folder(s) could not be read and were left out."
 CHECKS_QUEUED_NOTE: Final = "\n{count:,} content check(s) were queued — the Tasks dock is where they finish."
+STRANDED_NOTE: Final = (
+    "\n{count:,} converted resource(s) still carry the legacy manifest their .checksum was made from — "
+    "listed below, and retired when you import."
+)
 
 
 class _ScanCancelled(Exception):
@@ -178,9 +191,13 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__thread: QThread | None = None
         self.__scan_worker: _ScanWorker | None = None
 
-        self.__jobs: Final[dict[int, TcImportJob]] = {}
+        self.__jobs: Final[dict[int, TaskJob]] = {}
         """This wizard's own enqueued jobs, by serial -- what tells this wizard's listener callbacks
-        apart from every other job on the shared queue."""
+        apart from every other job on the shared queue.
+
+        Both kinds the table holds: a conversion and a manifest retirement (#259). They differ only in
+        the word their finished row reads (:meth:`__outcome_for`), which is read back off the job here
+        rather than carried on the row -- the job is what the queue answers about."""
         self.__seen: Final[dict[int, JobStatus]] = {}
         """The latest status this wizard has heard for each of :attr:`__jobs`, keyed by serial."""
         self.__reported: Final[set[int]] = set()
@@ -292,7 +309,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         if current is self.__root_page:
             self.__begin_scan()
         elif current is self.__plan_page:
-            self.__begin_import([row.plan.tc_path for row in self.__model.checked_rows()])
+            self.__begin_import([row.path for row in self.__model.checked_rows()])
         # Next is disabled on the scan and import steps (`__update_nav`), so the three handled here are
         # the only pages it can be clicked on -- there is no fall-through case to answer for.
         elif current is self.__result_page:  # pragma: no branch
@@ -404,7 +421,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__settings.record_root(self.__root)
             self.__settings.save(persistent_settings())
             self.__populate_recent_roots()
-        self.__model.set_plans(plan.root, plan.resources)
+        self.__model.set_plans(plan.root, plan.resources, plan.stranded)
         self.__plan_page.ui.summary_label.setText(self.__summary_text(plan))
         self.__ui.page_stack.setCurrentWidget(self.__plan_page)
         self.__update_nav()
@@ -423,6 +440,11 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
     def __summary_text(plan: TcConversionTreePlan) -> str:
         """The plan step's header line, e.g. ``"9,847 clean · 153 flagged · 12 blocked"``.
 
+        The counts are the conversions'. Stranded manifests (#259) are named on their own line rather
+        than folded into *clean*: they are not conversions, nothing about them is a judgement call, and
+        a reader who came here to convert a tree deserves to be told the run will also tidy up after an
+        earlier one.
+
         A large :attr:`~rehuco_core.TcConversionPlan.suspect_mtime` count is named on its own line
         rather than left as one flag among six (#192's notes): once the `.tc` files are gone, a wall
         of clobbered timestamps is unrecoverable, so it is a reason to stop and look.
@@ -434,6 +456,8 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         suspect = sum(1 for resource in plan.resources if resource.suspect_mtime)
         if suspect:
             text += SUSPECT_MTIME_WARNING.format(count=suspect)
+        if plan.stranded:
+            text += STRANDED_NOTE.format(count=len(plan.stranded))
         if plan.unreadable:
             text += UNREADABLE_WARNING.format(count=len(plan.unreadable))
         return text
@@ -442,10 +466,10 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
 
     # region Step 4 -- import
 
-    def __begin_import(self, tc_paths: Sequence[Path]) -> None:
-        """Enqueue one job per path in ``tc_paths``, and mark every never-run row outside it skipped.
+    def __begin_import(self, paths: Sequence[Path]) -> None:
+        """Enqueue one job per path in ``paths``, and mark every never-run row outside it skipped.
 
-        A row outside ``tc_paths`` that already carries an outcome **keeps it**: Retry Failed re-enters
+        A row outside ``paths`` that already carries an outcome **keeps it**: Retry Failed re-enters
         here with only the failed rows, and stamping the rest *skipped* would overwrite ``converted``
         on work that genuinely happened -- a result table that lies about the catalog's own state.
 
@@ -454,33 +478,43 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         in the first**: a conversion is not safely interruptible, and folding a multi-hour read into one
         would make a catalog-wide import unstoppable.
 
-        :param tc_paths: the `.tc` paths to convert -- the checked rows' own, or Retry Failed's.
+        A stranded-manifest row (#259) enqueues a :class:`~rehuco_core.RetireLegacyManifestJob` instead
+        of a conversion, and never a content check: nothing about it reads a byte, and the record it
+        merges into lands dateless exactly as a seeded one does, so the next sweep checks it.
+
+        :param paths: the resources to act on, spelled as :attr:`~.TcConversionRow.path` spells them --
+            the checked rows' own, or Retry Failed's.
         """
         self.__jobs.clear()
         self.__seen.clear()
         self.__reported.clear()
         self.__completed = 0
-        self.__selected_total = len(tc_paths)
+        self.__selected_total = len(paths)
         self.__checks.clear()
         check_content = self.__plan_page.ui.verify_content_check.isChecked()
-        wanted = set(tc_paths)
+        wanted = set(paths)
+        excluded = shared_excluded_files_settings().excluded_file_patterns
         for row in self.__model.rows():
-            if row.plan.tc_path not in wanted:
+            if row.path not in wanted:
                 if row.outcome is None:
-                    self.__model.set_row_outcome(row.plan.tc_path, "skipped")
+                    self.__model.set_row_outcome(row.path, "skipped")
                 continue
-            self.__model.set_row_outcome(row.plan.tc_path, "pending")
-            job = TcImportJob(
-                row.plan.tc_path,
-                overwrite=row.plan.rehu_exists,
-                keep_backups=True,
-                username=self.__username,
-                excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-            )
-            with LogScope.open(row.plan.tc_path):
+            self.__model.set_row_outcome(row.path, "pending")
+            job: TaskJob
+            if isinstance(row.plan, StrandedManifestPlan):
+                job = RetireLegacyManifestJob(row.plan.rehu_path, excluded_patterns=excluded)
+            else:
+                job = TcImportJob(
+                    row.plan.tc_path,
+                    overwrite=row.plan.rehu_exists,
+                    keep_backups=True,
+                    username=self.__username,
+                    excluded_patterns=excluded,
+                )
+            with LogScope.open(row.path):
                 serial = self.__queue.enqueue(job)
             self.__jobs[serial] = job  # pylint: disable=unsupported-assignment-operation
-            if check_content:
+            if check_content and isinstance(row.plan, TcConversionPlan):
                 self.__enqueue_check(row.plan)
         self.__import_page.ui.import_progress_bar.setRange(0, max(self.__selected_total, 1))
         self.__import_page.ui.import_progress_bar.setValue(0)
@@ -539,7 +573,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
                 continue
             self.__reported.add(serial)
             newly_finished += 1
-            outcome, message = self.__outcome_for(status)
+            outcome, message = self.__outcome_for(status, self.__jobs.get(serial))
             self.__model.set_row_outcome(status.source, outcome, message)
         if not newly_finished:
             return
@@ -552,14 +586,19 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__update_nav()
 
     @staticmethod
-    def __outcome_for(status: JobStatus) -> tuple[str, str | None]:
+    def __outcome_for(status: JobStatus, job: TaskJob | None) -> tuple[str, str | None]:
         """What a finished job's status means for its row.
 
+        Only success has two words: a retirement that *converted* nothing would say the wrong thing
+        about the catalog, while a failure or a cancel means the same for either kind and the message
+        carries whatever else there is to know.
+
         :param status: the finished job's last status.
+        :param job: the job that reported it, which decides the success word.
         :returns: the outcome, and a failure's message.
         """
         if status.state is JobState.DONE:
-            return "converted", None
+            return ("retired" if isinstance(job, RetireLegacyManifestJob) else "converted"), None
         if status.state is JobState.CANCELLED:
             return "cancelled", None
         return "failed", status.error
@@ -576,6 +615,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         failed = sum(1 for row in rows if row.outcome == "failed")
         skipped = sum(1 for row in rows if row.outcome in ("skipped", "cancelled"))
         text = f"{converted:,} converted · {failed:,} failed · {skipped:,} skipped"
+        retired = sum(1 for row in rows if row.outcome == "retired")
+        if retired:
+            text += f" · {retired:,} manifest(s) retired"
         if self.__checks:
             text += CHECKS_QUEUED_NOTE.format(count=len(self.__checks))
         return text
@@ -585,7 +627,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
     # region Step 5 -- result
 
     def __on_retry_failed(self) -> None:
-        failed_paths = [row.plan.tc_path for row in self.__model.rows() if row.outcome == "failed"]
+        failed_paths = [row.path for row in self.__model.rows() if row.outcome == "failed"]
         if not failed_paths:
             return
         self.__begin_import(failed_paths)
@@ -608,7 +650,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         """Every row, one line each, for the Copy/Save actions -- a plain, greppable report."""
         lines = []
         for row in self.__model.rows():
-            line = f"{row.plan.tc_path}\t{row.outcome or 'skipped'}"
+            line = f"{row.path}\t{row.outcome or 'skipped'}"
             if row.message:
                 line += f"\t{row.message}"
             lines.append(line)

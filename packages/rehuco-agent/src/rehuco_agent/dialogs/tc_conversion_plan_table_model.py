@@ -1,9 +1,15 @@
-"""The `Import Legacy Catalog…` wizard's plan/result table: one row per `.tc` resource, a checkbox to
-select it, and -- once import has run -- what became of it (#192).
+"""The `Import Legacy Catalog…` wizard's plan/result table: one row per resource the scan found, a
+checkbox to select it, and -- once import has run -- what became of it (#192).
 
 One model serves both the plan step and the result step: the rows, the paths and the flags never
 change once the scan is done, only what each row's checkbox and outcome say. A second model for the
 result table would need to be built from the first row for row, and would let the two drift.
+
+**Two kinds of row, one table** (#259). A `.tc` to convert, and an already-converted resource still
+carrying the legacy manifest its `.checksum` was made from -- both are *one resource, one job, one
+outcome*, which is the whole of what a row means here, so a second table would repeat this one's
+checkbox, filter, outcome column and Retry Failed to say nothing new. What differs is three cells and
+the job the wizard enqueues.
 """
 
 from collections.abc import Sequence
@@ -12,7 +18,7 @@ from pathlib import Path
 from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, QSortFilterProxyModel, Qt
-from rehuco_core import TcConversionPlan
+from rehuco_core import StrandedManifestPlan, TcConversionPlan
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
@@ -38,25 +44,42 @@ FLAG_LABELS: Final = (
 """Every :class:`~rehuco_core.TcConversionPlan` flag, in the order the Flags column lists them, paired
 with the word a reader sees rather than the attribute name (#191)."""
 
+STRANDED_FLAG: Final = "stranded manifest"
+"""What the Flags column says of a :class:`~rehuco_core.StrandedManifestPlan` row (#259).
+
+The one word that column has to carry for such a row -- there is nothing else to flag, since a
+remediation makes no judgement calls and can be neither blocked nor tie-broken. Written as a flag rather
+than as a row *type* column so the filter that already searches flags finds these by name."""
+
 
 @dataclass
 class TcConversionRow:
     """One table row: a plan, whether it is selected, and what became of it once import has run.
 
-    :param plan: the dry-run plan this row shows (#191).
+    :param plan: the dry-run plan this row shows -- a conversion (#191) or a stranded manifest (#259).
     :param checked: whether this row is selected for import -- for a
         :attr:`~rehuco_core.TcConversionPlan.blocked` row, checking it **is** the explicit per-row
         opt-in #192 requires before a blocked resource is enqueued at all.
     :param outcome: ``None`` before import has run over this row; ``"pending"`` once its job is
-        enqueued; ``"converted"``/``"failed"``/``"cancelled"`` once it finishes; ``"skipped"`` for a
-        row import ran without, because it was left unchecked.
+        enqueued; ``"converted"``/``"retired"``/``"failed"``/``"cancelled"`` once it finishes;
+        ``"skipped"`` for a row import ran without, because it was left unchecked.
     :param message: why a ``"failed"`` row failed, else ``None``.
     """
 
-    plan: TcConversionPlan
+    plan: TcConversionPlan | StrandedManifestPlan
     checked: bool
     outcome: str | None = None
     message: str | None = None
+
+    @property
+    def path(self) -> Path:
+        """This row's identity -- the `.tc` it converts, or the `.rehu` it remediates.
+
+        What the model keys rows by and what a finished job's ``source`` answers, so an outcome always
+        finds its own row. The two can never collide: a conversion row is a `.tc` and a stranded row is
+        a `.rehu`, and neither kind is planned for the other's path.
+        """
+        return self.plan.tc_path if isinstance(self.plan, TcConversionPlan) else self.plan.rehu_path
 
 
 class TcConversionPlanTableModel(QAbstractTableModel):
@@ -81,17 +104,22 @@ class TcConversionPlanTableModel(QAbstractTableModel):
 
     # region Building and reading
 
-    def set_plans(self, root: Path, plans: Sequence[TcConversionPlan]) -> None:
+    def set_plans(
+        self, root: Path, plans: Sequence[TcConversionPlan], stranded: Sequence[StrandedManifestPlan] = ()
+    ) -> None:
         """Replace every row, as one model reset.
 
         :param root: the folder the plans were scanned from, for the relative paths shown.
         :param plans: the scan's resources (#191); a :attr:`~rehuco_core.TcConversionPlan.blocked` one
             starts unchecked, every other one starts checked.
+        :param stranded: the scan's stranded manifests (#259), after the conversions and each starting
+            checked -- nothing blocks a remediation, and it is the state the scan was run to find.
         """
         self.beginResetModel()
         self.__root = root
         self.__rows = [TcConversionRow(plan, checked=not plan.blocked) for plan in plans]
-        self.__index_by_path = {row.plan.tc_path: index for index, row in enumerate(self.__rows)}
+        self.__rows.extend(TcConversionRow(plan, checked=True) for plan in stranded)
+        self.__index_by_path = {row.path: index for index, row in enumerate(self.__rows)}
         self.endResetModel()
 
     def rows(self) -> tuple[TcConversionRow, ...]:
@@ -102,17 +130,18 @@ class TcConversionPlanTableModel(QAbstractTableModel):
         """The rows currently selected for import."""
         return tuple(row for row in self.__rows if row.checked)
 
-    def set_row_outcome(self, tc_path: Path, outcome: str, message: str | None = None) -> None:
-        """Record what became of the resource at ``tc_path``, and repaint its row.
+    def set_row_outcome(self, path: Path, outcome: str, message: str | None = None) -> None:
+        """Record what became of the resource at ``path``, and repaint its row.
 
         A no-op for a path this model has no row for -- the plan was rebuilt (a fresh scan) since the
         job that reports this was enqueued, which the outcome then has nowhere honest to land.
 
-        :param tc_path: the resource the outcome is about.
+        :param path: the resource the outcome is about, spelled as :attr:`TcConversionRow.path` spells
+            it -- the `.tc` for a conversion, the `.rehu` for a remediation.
         :param outcome: one of the values :attr:`TcConversionRow.outcome` documents.
         :param message: why a ``"failed"`` outcome failed, else ``None``.
         """
-        row = self.__index_by_path.get(tc_path)
+        row = self.__index_by_path.get(path)
         if row is None:
             return
         self.__rows[row].outcome = outcome
@@ -162,11 +191,11 @@ class TcConversionPlanTableModel(QAbstractTableModel):
         if role not in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             return None
         if column == PATH_COLUMN:
-            return self.__relative(row.plan.tc_path)
+            return self.__relative(row.path)
         if column == TARGET_COLUMN:
-            return self.__relative(row.plan.rehu_path)
+            return self.__relative(self.__target_of(row.plan))
         if column == SCREENSHOTS_COLUMN:
-            return self.__screenshots_text(row.plan)
+            return self.__screenshots_text(row.plan) if isinstance(row.plan, TcConversionPlan) else "—"
         if column == FLAGS_COLUMN:
             return self.__flags_text(row.plan)
         if column == OUTCOME_COLUMN:
@@ -193,6 +222,16 @@ class TcConversionPlanTableModel(QAbstractTableModel):
             return str(path)
 
     @staticmethod
+    def __target_of(plan: TcConversionPlan | StrandedManifestPlan) -> Path:
+        """What this row's job writes: the `.rehu` a conversion produces, or the `.checksum` a
+        remediation merges the stranded claim into.
+
+        :param plan: the row's plan.
+        :returns: the path the Target column shows.
+        """
+        return plan.rehu_path if isinstance(plan, TcConversionPlan) else plan.record_path
+
+    @staticmethod
     def __screenshots_text(plan: TcConversionPlan) -> str:
         """What the screenshot rename plan says, e.g. ``"5 → info00–04, 2 dropped"``.
 
@@ -213,12 +252,18 @@ class TcConversionPlanTableModel(QAbstractTableModel):
         return f"{text}, {dropped} dropped" if dropped else text
 
     @staticmethod
-    def __flags_text(plan: TcConversionPlan) -> str:
+    def __flags_text(plan: TcConversionPlan | StrandedManifestPlan) -> str:
         """Every active flag, in the order :data:`FLAG_LABELS` lists them.
+
+        A stranded row carries the one flag that *is* its whole description, and names the manifest with
+        it: which file is about to stop being the authority is the only detail worth showing, and it is
+        what a reader would otherwise open the folder to find out.
 
         :param plan: the resource's plan.
         :returns: a comma-separated list, or an em dash when nothing is flagged.
         """
+        if isinstance(plan, StrandedManifestPlan):
+            return f"{STRANDED_FLAG}: {plan.manifest.name}"
         active = [label for attribute, label in FLAG_LABELS if getattr(plan, attribute)]
         return ", ".join(active) if active else "—"
 

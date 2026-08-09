@@ -15,7 +15,7 @@ from rehuco_agent.dialogs.tc_conversion_plan_table_model import (
     TcConversionPlanFilterProxyModel,
     TcConversionPlanTableModel,
 )
-from rehuco_core import ScreenshotRename, TcConversionPlan
+from rehuco_core import ScreenshotRename, StrandedManifestPlan, TcConversionPlan
 
 ROOT: Final = Path("/fake/library")
 
@@ -53,6 +53,8 @@ TIED: Final = plan(
     "b", tie_break=True, renames=(ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png")),)
 )
 BLOCKED: Final = plan("c", rehu_exists=True)
+STRANDED: Final = StrandedManifestPlan(rehu_path=ROOT / "d/info.rehu", manifest=ROOT / "d/info.sfv")
+"""An already-converted resource still carrying the manifest its record was made from (#259)."""
 
 
 def cell(model: TcConversionPlanTableModel, row: int, column: int, role: Qt.ItemDataRole) -> Any:
@@ -431,3 +433,78 @@ def test_an_invalid_index_answers_nothing() -> None:
 
     assert model.data(invalid) is None
     assert not model.flags(invalid) & Qt.ItemFlag.ItemIsUserCheckable
+
+
+# region Stranded-manifest rows (#259)
+
+
+def test_a_stranded_row_comes_after_the_conversions_and_starts_checked() -> None:
+    """Nothing blocks a remediation, and finding them is what the scan was run for.
+
+    **Test steps:**
+
+    * build a model over one conversion and one stranded manifest
+    * verify the row order and that both are checked
+    """
+    model = TcConversionPlanTableModel()
+    model.set_plans(ROOT, [CLEAN], [STRANDED])
+
+    assert [row.path for row in model.rows()] == [CLEAN.tc_path, STRANDED.rehu_path]
+    assert [row.checked for row in model.rows()] == [True, True]
+
+
+def test_a_stranded_row_shows_the_record_it_merges_into_and_names_the_manifest() -> None:
+    """The three cells that differ from a conversion's, and the only ones a reader needs here.
+
+    **Test steps:**
+
+    * build a model over one stranded manifest
+    * verify the path, target, screenshots and flags cells
+    """
+    model = TcConversionPlanTableModel()
+    model.set_plans(ROOT, [], [STRANDED])
+
+    assert cell(model, 0, PATH_COLUMN, Qt.ItemDataRole.DisplayRole) == "d/info.rehu"
+    assert cell(model, 0, TARGET_COLUMN, Qt.ItemDataRole.DisplayRole) == "d/info.checksum"
+    assert cell(model, 0, SCREENSHOTS_COLUMN, Qt.ItemDataRole.DisplayRole) == "—"
+    assert cell(model, 0, FLAGS_COLUMN, Qt.ItemDataRole.DisplayRole) == "stranded manifest: info.sfv"
+
+
+def test_a_stranded_row_takes_its_outcome_under_the_rehu_path() -> None:
+    """A finished job's ``source`` is the `.rehu`, which is what the row is keyed by.
+
+    **Test steps:**
+
+    * build a model over one conversion and one stranded manifest
+    * record an outcome against the `.rehu`
+    * verify it landed on the stranded row and nowhere else
+    """
+    model = TcConversionPlanTableModel()
+    model.set_plans(ROOT, [CLEAN], [STRANDED])
+
+    model.set_row_outcome(STRANDED.rehu_path, "retired")
+
+    assert cell(model, 1, OUTCOME_COLUMN, Qt.ItemDataRole.DisplayRole) == "retired"
+    assert cell(model, 0, OUTCOME_COLUMN, Qt.ItemDataRole.DisplayRole) == "—"
+
+
+def test_the_filter_finds_stranded_rows_by_name() -> None:
+    """Writing it as a flag rather than a row type is what puts it inside the filter's reach.
+
+    **Test steps:**
+
+    * filter a mixed model for ``stranded``
+    * verify only the stranded row survives
+    """
+    model = TcConversionPlanTableModel()
+    model.set_plans(ROOT, [CLEAN], [STRANDED])
+    proxy = TcConversionPlanFilterProxyModel()
+    proxy.setSourceModel(model)
+
+    proxy.set_filter_text("stranded")
+
+    assert proxy.rowCount() == 1
+    assert proxy.data(proxy.index(0, PATH_COLUMN), Qt.ItemDataRole.DisplayRole) == "d/info.rehu"
+
+
+# endregion

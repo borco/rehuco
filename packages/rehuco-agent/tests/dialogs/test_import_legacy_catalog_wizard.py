@@ -32,6 +32,7 @@ from rehuco_core import (
     ChecksumReport,
     GenerateChecksumsJob,
     JobState,
+    StrandedManifestPlan,
     TaskQueue,
     TcConversionPlan,
     TcConversionTreePlan,
@@ -78,6 +79,9 @@ BLOCKED: Final = plan("c", rehu_exists=True)
 WITH_MANIFEST: Final = plan("m", legacy_manifest=ROOT / "m" / "info.sfv")
 """A resource carrying the legacy `.sfv` its conversion would seed a record from (#256) -- which is what
 decides whether checking it means verifying a claim or baselining today's bytes."""
+
+STRANDED: Final = StrandedManifestPlan(rehu_path=ROOT / "s" / "info.rehu", manifest=ROOT / "s" / "info.sfv")
+"""An already-converted resource still carrying the manifest its `.checksum` was made from (#259)."""
 
 
 # the core walk's own fake -- kept as a separate copy rather than shared, this codebase's
@@ -407,7 +411,7 @@ def test_the_scan_step_produces_the_plan_without_touching_any_file(
     widgets.next_button.click()
     qtbot.waitUntil(lambda: widgets.stack.currentWidget() is widgets.plan_, timeout=TIMEOUT)
 
-    assert [row.plan.tc_path for row in wizard.model.rows()] == [ROOT / "a/info.tc"]
+    assert [row.path for row in wizard.model.rows()] == [ROOT / "a/info.tc"]
     mock_rename.assert_not_called()
     mock_unlink.assert_not_called()
 
@@ -620,7 +624,7 @@ def test_import_enqueues_one_job_per_selected_resource_and_none_for_unselected(
     qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
     assert len(queue.jobs()) == 1
     convert.assert_called_once()
-    by_path = {row.plan.tc_path: row for row in wizard.model.rows()}
+    by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_B.tc_path].outcome == "skipped"
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
 
@@ -680,7 +684,7 @@ def test_cancel_mid_import_leaves_every_resource_converted_or_untouched(
 
     qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
     assert convert.call_count == 1
-    by_path = {row.plan.tc_path: row for row in wizard.model.rows()}
+    by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
     assert by_path[CLEAN_B.tc_path].outcome == "cancelled"
     assert by_path[third.tc_path].outcome == "cancelled"
@@ -806,6 +810,77 @@ def test_cancelling_an_import_cancels_the_checks_it_queued(
 # endregion
 
 
+# region Step 4 -- stranded manifests (#259)
+
+
+def test_a_stranded_row_enqueues_a_retirement_and_reports_it_as_retired(
+    qtbot: QtBot, mocker: MockerFixture, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """The second kind of row, end to end: its own job, its own word on the result table.
+
+    **Test steps:**
+
+    * scan a tree holding one conversion and one stranded manifest, then import
+    * verify one job of each kind was enqueued, and the two rows read *converted* and *retired*
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch("rehuco_core.tc_import_job.convert_tc", return_value=mocker.MagicMock())
+    remediate = mocker.patch("rehuco_core.legacy_manifest_jobs.remediate_legacy_manifest", return_value=None)
+    enqueue = mocker.patch.object(queue, "enqueue", wraps=queue.enqueue)
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (CLEAN_A,), (), (STRANDED,)))
+
+    pages(wizard).next_button.click()
+
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+    enqueued = [call.args[0] for call in enqueue.call_args_list]
+    assert [type(job).__name__ for job in enqueued] == ["TcImportJob", "RetireLegacyManifestJob"]
+    remediate.assert_called_once_with(STRANDED.rehu_path, excluded_patterns=mocker.ANY)
+    by_path = {row.path: row for row in wizard.model.rows()}
+    assert by_path[CLEAN_A.tc_path].outcome == "converted"
+    assert by_path[STRANDED.rehu_path].outcome == "retired"
+    assert "1 manifest(s) retired" in pages(wizard).result.ui.summary_label.text()
+
+
+def test_the_plan_step_says_how_many_stranded_manifests_the_scan_found(
+    qtbot: QtBot, mocker: MockerFixture, wizard: ImportLegacyCatalogWizard
+) -> None:
+    """A reader who came to convert a tree is told the run will also tidy up after an earlier one.
+
+    **Test steps:**
+
+    * scan a tree holding one conversion and one stranded manifest
+    * verify the plan summary names them on their own line
+    """
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (CLEAN_A,), (), (STRANDED,)))
+
+    assert "1 converted resource(s) still carry the legacy manifest" in pages(wizard).plan_.ui.summary_label.text()
+
+
+def test_a_stranded_row_is_never_given_a_content_check(
+    qtbot: QtBot, mocker: MockerFixture, wizard: ImportLegacyCatalogWizard, queue: TaskQueue
+) -> None:
+    """It reads no bytes and its record lands dateless, so the option has nothing to buy here.
+
+    **Test steps:**
+
+    * import a stranded-only tree with *Check the content of every converted resource* ticked
+    * verify no checksum job was enqueued
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=True)
+    mocker.patch("rehuco_core.legacy_manifest_jobs.remediate_legacy_manifest", return_value=None)
+    enqueue = mocker.patch.object(queue, "enqueue", wraps=queue.enqueue)
+    go_to_plan(qtbot, wizard, mocker, TcConversionTreePlan(ROOT, (), (), (STRANDED,)))
+    pages(wizard).plan_.ui.verify_content_check.setChecked(True)
+
+    pages(wizard).next_button.click()
+
+    qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
+    assert not [call.args[0] for call in enqueue.call_args_list if isinstance(call.args[0], ChecksumJob)]
+
+
+# endregion
+
+
 # region Step 5 -- result
 
 
@@ -836,7 +911,7 @@ def test_a_forced_failure_is_reported_and_retry_failed_reenqueues_exactly_it(
 
     pages(wizard).next_button.click()
     qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
-    by_path = {row.plan.tc_path: row for row in wizard.model.rows()}
+    by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_B.tc_path].outcome == "failed"
     assert "FileExistsError" in (by_path[CLEAN_B.tc_path].message or "")
     assert by_path[CLEAN_A.tc_path].outcome == "converted"

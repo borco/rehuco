@@ -608,3 +608,134 @@ def test_the_strongest_readable_manifest_is_the_one_named(mocker: MockerFixture)
 
 
 # endregion
+
+# region Stranded manifests (#259)
+
+
+def test_a_converted_resource_still_carrying_its_manifest_is_reported(mocker: MockerFixture) -> None:
+    """The state hand-conversion left behind, found off the listing the walk already reads.
+
+    **Test steps:**
+
+    * mock a directory holding an `info.rehu`, its `info.checksum` and a live `info.sfv`
+    * plan the tree
+    * verify it is reported as stranded, naming the manifest, and is not a conversion
+    """
+    mock_environment(
+        mocker,
+        tc_files=[],
+        directories=["a"],
+        other_files=["a/info.rehu", "a/info.checksum", "a/info.sfv"],
+    )
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert not plan.resources
+    assert [(row.rehu_path, row.manifest) for row in plan.stranded] == [(ROOT / "a/info.rehu", ROOT / "a/info.sfv")]
+    assert plan.stranded[0].record_path == ROOT / "a/info.checksum"
+
+
+def test_a_converted_resource_with_no_record_yet_is_not_stranded(mocker: MockerFixture) -> None:
+    """Nothing has absorbed the claim, so a plain verify still seeds and retires it (#243).
+
+    **Test steps:**
+
+    * mock a directory holding an `info.rehu` and an `info.sfv`, with no `.checksum`
+    * plan the tree
+    * verify nothing was reported
+    """
+    mock_environment(mocker, tc_files=[], directories=["a"], other_files=["a/info.rehu", "a/info.sfv"])
+
+    assert not plan_tc_conversion(ROOT).stranded
+
+
+def test_a_converted_resource_whose_manifest_was_retired_is_not_stranded(mocker: MockerFixture) -> None:
+    """A retired manifest is a backup, not a manifest -- which is what retiring it was for.
+
+    **Test steps:**
+
+    * mock a directory holding an `info.rehu`, an `info.checksum` and an `info.sfv.orig`
+    * plan the tree
+    * verify nothing was reported
+    """
+    mock_environment(
+        mocker,
+        tc_files=[],
+        directories=["a"],
+        other_files=["a/info.rehu", "a/info.checksum", "a/info.sfv.orig"],
+    )
+
+    assert not plan_tc_conversion(ROOT).stranded
+
+
+def test_an_unconverted_resource_gets_a_conversion_row_and_no_stranded_one(mocker: MockerFixture) -> None:
+    """The conversion carries the manifest forward itself; a second job would race it.
+
+    **Test steps:**
+
+    * mock a directory holding an `info.tc`, its `info.checksum` and a live `info.sfv`
+    * plan the tree
+    * verify it is one conversion and nothing stranded
+    """
+    mock_environment(
+        mocker,
+        tc_files=["a/info.tc"],
+        directories=["a"],
+        other_files=["a/info.checksum", "a/info.sfv"],
+    )
+
+    plan = plan_tc_conversion(ROOT)
+
+    assert len(plan.resources) == 1
+    assert not plan.stranded
+
+
+def test_a_stranded_manifest_naming_an_unhashable_algorithm_is_passed_over(mocker: MockerFixture) -> None:
+    """Nothing would read it, so nothing here would absorb or retire it either.
+
+    **Test steps:**
+
+    * mock a converted resource whose only manifest is an `info.sha1` this build cannot hash
+    * plan the tree
+    * verify nothing was reported
+    """
+    mock_environment(
+        mocker,
+        tc_files=[],
+        directories=["a"],
+        other_files=["a/info.rehu", "a/info.checksum", "a/info.sha1"],
+    )
+
+    assert not plan_tc_conversion(ROOT).stranded
+
+
+def test_stranded_rows_are_sorted_by_path(mocker: MockerFixture) -> None:
+    """A walk over a tree answers in traversal order; a reader is owed a stable one.
+
+    **Test steps:**
+
+    * mock two stranded resources in directories the walk reaches in the other order
+    * plan the tree
+    * verify they came back sorted
+    """
+    mock_environment(
+        mocker,
+        tc_files=[],
+        directories=["a", "b"],
+        other_files=[
+            "a/info.rehu",
+            "a/info.checksum",
+            "a/info.sfv",
+            "b/info.rehu",
+            "b/info.checksum",
+            "b/info.sfv",
+        ],
+    )
+
+    assert [row.rehu_path for row in plan_tc_conversion(ROOT).stranded] == [
+        ROOT / "a/info.rehu",
+        ROOT / "b/info.rehu",
+    ]
+
+
+# endregion
