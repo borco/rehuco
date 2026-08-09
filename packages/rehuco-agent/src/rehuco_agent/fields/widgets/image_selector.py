@@ -102,7 +102,7 @@ class PreviewLabel(QLabel):
         self.__rescale()
 
 
-class ImageSelector(QSplitter):
+class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     """A sized preview above a checkable screenshot list ([[plugins#field-toolkit]], #27).
 
     Top pane -- the selected screenshot scaled to fit, with a ``W x H`` pixel-dimension overlay pinned
@@ -111,7 +111,9 @@ class ImageSelector(QSplitter):
     re-emits :attr:`hidden_changed` with the current hidden filenames. Where the two meet is this
     widget's own persisted state (`StatefulWidget`, #72) -- saved per ``.rehu`` with the document's
     dock layout, the same way the ``path`` editor's expand state is. A document with none remembered
-    yet opens at the configured ``preview_height`` instead.
+    yet opens at the configured ``preview_height`` instead. The preview pane answers the app-wide
+    previews toggle (``Ctrl+Shift+``, backtick, #71) alongside every document's strip, folding away
+    to leave the curation list on its own.
 
     Holds its own :attr:`image_scanner`, so it can re-fetch its screenshots and rebuild itself whenever
     that changes (e.g. a `.tc` -> `.rehu` conversion switching naming conventions,
@@ -135,9 +137,12 @@ class ImageSelector(QSplitter):
         # the split still owes the preview its height -- cleared by whichever of a restore or a first
         # show gets there first, so a document's own remembered split is never overwritten by the default
         self.__pending_split = True
+        self.__previews_visible = True
+        # the split as it stood when the preview was toggled away, held until it comes back (#71)
+        self.__stashed_state: bytes | None = None
 
-        preview_pane = QWidget()
-        overlay = QGridLayout(preview_pane)
+        self.__preview_pane: Final = QWidget()
+        overlay = QGridLayout(self.__preview_pane)
         overlay.setContentsMargins(0, 0, 0, 0)
         self.__preview: Final = PreviewLabel()
         self.__size_overlay: Final = QLabel()
@@ -145,7 +150,7 @@ class ImageSelector(QSplitter):
         self.__size_overlay.hide()
         overlay.addWidget(self.__preview, 0, 0)
         overlay.addWidget(self.__size_overlay, 0, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
-        self.addWidget(preview_pane)
+        self.addWidget(self.__preview_pane)
 
         self.__list_model: Final = QStandardItemModel(self)
         self.__list: Final = QTreeView()
@@ -182,6 +187,33 @@ class ImageSelector(QSplitter):
             return
         self.__rebuild(hidden)
 
+    def set_previews_visible(self, visible: bool) -> None:
+        """Fold the preview pane away, or bring it back, with the app-wide previews toggle (#71, #72).
+
+        The editor answers the same ``Ctrl+Shift+`` (backtick) toggle every document's strip does, so
+        one keystroke clears screenshots off screen everywhere rather than everywhere-but-here -- and
+        what is left is exactly the curation list, which is the half of this editor that is not a
+        screenshot.
+
+        The split is **held, not lost**: hiding a splitter's child collapses it to nothing, so the
+        state as it stood is stashed and re-applied when the pane returns, rather than the user coming
+        back to a preview squeezed to zero. A selector that was toggled away before it was ever laid
+        out has no split worth keeping, and falls back to the configured height.
+
+        :param visible: whether the preview pane is shown.
+        """
+        if visible == self.__previews_visible:
+            return
+        self.__previews_visible = visible
+        if not visible:
+            self.__stashed_state = bytes(self.saveState().data()) if self.isVisible() else None
+            self.__preview_pane.hide()
+            return
+        self.__preview_pane.show()
+        stashed, self.__stashed_state = self.__stashed_state, None
+        if stashed is None or not self.restoreState(QByteArray(stashed)):
+            self.__apply_preview_height()
+
     def set_preview_height(self, height: int) -> None:
         """Re-split so the preview pane is ``height`` pixels tall (#72).
 
@@ -196,6 +228,11 @@ class ImageSelector(QSplitter):
         if height == self.__preview_height:
             return
         self.__preview_height = height
+        # folded away by the previews toggle: the new height is what the pane comes back at, so the
+        # split held from before it hid is no longer the answer (#71)
+        if not self.__previews_visible:
+            self.__stashed_state = None
+            return
         # a hidden selector has no room to divide (a QtAds tab behind another has none at all), so
         # the new height waits for the show that gives it one
         if self.isVisible():
@@ -229,6 +266,11 @@ class ImageSelector(QSplitter):
 
         :returns: the splitter state blob, restorable by :meth:`restore_state`.
         """
+        # while the preview is toggled away the live state describes a collapsed pane, which is the
+        # toggle's doing and not the user's split -- so the stash is the honest answer, and saving
+        # with previews off never costs a document the split it will come back to (#71)
+        if self.__stashed_state is not None:
+            return self.__stashed_state
         return bytes(self.saveState().data())
 
     def restore_state(self, state: bytes) -> None:
@@ -238,6 +280,12 @@ class ImageSelector(QSplitter):
             written by an incompatible build) leaves the configured preview height to settle it, since
             `QSplitter.restoreState` refuses it and reports so rather than raising.
         """
+        # a document restored while previews are toggled off has a split but nowhere to put it yet:
+        # held in the stash, it is what the pane opens at when the toggle brings it back (#71)
+        if not self.__previews_visible:
+            self.__stashed_state = state
+            self.__pending_split = False
+            return
         # only a state Qt actually took settles the split: a refused blob leaves the document with no
         # remembered split at all, which is exactly the case the configured height is the answer to
         if self.restoreState(QByteArray(state)):

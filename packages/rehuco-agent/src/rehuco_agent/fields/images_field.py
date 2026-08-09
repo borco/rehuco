@@ -36,7 +36,9 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     description.
 
     **Editor** -- an :class:`~rehuco_agent.fields.widgets.ImageSelector`: every screenshot as a checkable
-    row (checked = visible) under a sized preview, on its own editor tab.
+    row (checked = visible) under a sized preview, on its own editor tab. That preview answers the
+    app-wide previews toggle too (#71), so the keystroke that clears screenshots off screen clears
+    them here as well.
 
     :param name: the field's identifier on its model (the bound ``hidden_images`` list).
     :param image_scanner: resolves the resource's current screenshot siblings; seeds both widgets.
@@ -55,12 +57,15 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     :param strip_wrap_changed: fires with a new configured choice, forwarded into the strip so an
         applied settings change re-lays out the one already on screen (keyword-only, #70) -- the same
         shape as ``strip_height``/``strip_height_changed`` beside it.
-    :param previews_visible: whether the strip starts out shown (keyword-only, #71); the owner passes
-        the grave-accent toggle's (``Ctrl+Shift+``, backtick) current state.
+    :param previews_visible: whether the strip and the editor's preview pane start out shown
+        (keyword-only, #71, #72); the owner passes the grave-accent toggle's
+        (``Ctrl+Shift+``, backtick) current state.
     :param previews_visible_changed: fires when that toggle changes, forwarded into the strip's own
-        :meth:`~rehuco_agent.fields.widgets.image_strip.ImageStrip.set_requested_visible` so every open
-        document's preview hides or reappears together (keyword-only, #71) -- the same
-        value-plus-its-signal shape ``strip_wrap``/``strip_wrap_changed`` beside it uses.
+        :meth:`~rehuco_agent.fields.widgets.image_strip.ImageStrip.set_requested_visible` and the
+        selector's :meth:`~rehuco_agent.fields.widgets.image_selector.ImageSelector.set_previews_visible`,
+        so every open document's screenshots hide or reappear together, editor included
+        (keyword-only, #71, #72) -- the same value-plus-its-signal shape
+        ``strip_wrap``/``strip_wrap_changed`` beside it uses.
     :param selector_preview_height: the curation editor's preview-pane height on a document with no
         split of its own remembered yet (keyword-only, #72); the owner passes the user's configured
         height, and :data:`~rehuco_agent.fields.widgets.image_selector.PREVIEW_HEIGHT` stands in.
@@ -141,6 +146,7 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
         selector = ImageSelector(preview_height=self.__selector_preview_height)
+        selector.set_previews_visible(self.__previews_visible)
         selector.setObjectName(self.name)
         selector.image_scanner = self.__image_scanner
         # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip
@@ -154,5 +160,9 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
             # through bind_external for the same reason the strip's height is: the settings outlive
             # the selector, so a form rebuild has to be able to sever this deterministically
             self.bind_external(self.__selector_preview_height_changed, selector.set_preview_height)
+        if self.__previews_visible_changed is not None:
+            # the same toggle the viewer's strip answers, reaching the editor's preview pane too, so
+            # one keystroke clears screenshots off screen everywhere rather than everywhere-but-here
+            self.bind_external(self.__previews_visible_changed, selector.set_previews_visible)
         # no label for the editor tab, since the tab itself is the label; fills its dedicated tab
         return FieldEditorWidgets(self.editor_tab, None, selector, vertical=True, fill=True)

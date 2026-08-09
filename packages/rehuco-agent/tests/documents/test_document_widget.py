@@ -57,6 +57,7 @@ from rehuco_agent.fields.widgets import (
     SingleChoiceComboBox,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
+from rehuco_agent.fields.widgets.image_selector import PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -2488,6 +2489,25 @@ def test_hiding_previews_app_wide_dismisses_an_open_maximized_viewer(
         shared_image_viewer_settings().previews_visible = False
 
     assert widget.findChild(ImageLightbox) is None
+
+
+def test_hiding_previews_app_wide_folds_the_images_editors_preview_away(widget: DocumentWidget) -> None:
+    """The app-wide previews toggle reaches the curation editor's preview pane, not only the strip (#71).
+
+    **Test steps:**
+
+    * hide previews app-wide, then show them again
+    * verify the editor's preview pane followed both ways
+    """
+    selector = image_selector(widget)
+    pane = selector.widget(PREVIEW_PANE)
+    assert pane is not None
+
+    shared_image_viewer_settings().previews_visible = False
+    assert pane.isHidden()
+
+    shared_image_viewer_settings().previews_visible = True
+    assert not pane.isHidden()
 
 
 def test_previews_reappearing_does_not_reopen_a_dismissed_viewer(

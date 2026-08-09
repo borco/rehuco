@@ -453,6 +453,194 @@ def test_a_restored_split_wins_over_the_configured_height(qtbot: QtBot) -> None:
     assert restored.sizes() == source.sizes()
 
 
+def preview_pane(selector: ImageSelector) -> QWidget:
+    """The selector's preview pane -- the splitter's top child (#71).
+
+    :param selector: the selector under test.
+    :returns: the widget holding the preview and its size overlay.
+    """
+    pane = selector.widget(PREVIEW_PANE)
+    assert isinstance(pane, QWidget)
+    return pane
+
+
+def test_toggling_previews_off_folds_the_preview_pane_away(qtbot: QtBot) -> None:
+    """The editor answers the app-wide previews toggle, leaving the curation list on its own (#71).
+
+    **Test steps:**
+
+    * show a selector
+    * toggle previews off
+    * verify the preview pane is hidden and the list is not
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+
+    selector.set_previews_visible(False)
+
+    assert not preview_pane(selector).isVisible()
+    list_pane = selector.widget(LIST_PANE)
+    assert list_pane is not None
+    assert list_pane.isVisible()
+
+
+def test_toggling_previews_back_on_restores_the_split_it_hid_at(qtbot: QtBot) -> None:
+    """The split is held while the pane is folded away, not lost to the collapse (#71, #72).
+
+    **Test steps:**
+
+    * show a selector, drag its split, then toggle previews off
+    * toggle them back on
+    * verify the pane came back at the split it left
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([220, 75])
+    dragged = selector.sizes()
+    selector.set_previews_visible(False)
+
+    selector.set_previews_visible(True)
+
+    assert preview_pane(selector).isVisible()
+    assert selector.sizes() == dragged
+
+
+def test_saving_while_previews_are_off_keeps_the_split_not_the_collapse(qtbot: QtBot) -> None:
+    """A document saved with previews toggled away records the split it will come back to (#71, #72).
+
+    Without this the toggle would quietly cost every open document its split: a collapsed pane is the
+    toggle's doing, not something the user asked to remember.
+
+    **Test steps:**
+
+    * show a selector, drag its split, and toggle previews off
+    * save its state and restore it onto a fresh, previews-on selector
+    * verify the dragged split came back, not a collapsed pane
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([220, 75])
+    dragged = selector.sizes()
+    selector.set_previews_visible(False)
+
+    restored = ImageSelector()
+    qtbot.addWidget(restored)
+    restored.resize(400, 300)
+    restored.show()
+    qtbot.waitExposed(restored)
+    restored.restore_state(selector.save_state())
+
+    assert restored.sizes() == dragged
+
+
+def test_a_split_restored_while_previews_are_off_lands_when_they_return(qtbot: QtBot) -> None:
+    """A document reopened with previews off still opens at its own split once they return (#71, #72).
+
+    **Test steps:**
+
+    * capture a lopsided split, then restore it onto a shown selector whose previews are off
+    * toggle previews back on
+    * verify the restored split is what the pane opens at
+    """
+    source = ImageSelector()
+    qtbot.addWidget(source)
+    source.resize(400, 300)
+    source.show()
+    qtbot.waitExposed(source)
+    source.setSizes([220, 75])
+
+    restored = ImageSelector()
+    qtbot.addWidget(restored)
+    restored.resize(400, 300)
+    restored.show()
+    qtbot.waitExposed(restored)
+    restored.set_previews_visible(False)
+    restored.restore_state(source.save_state())
+
+    restored.set_previews_visible(True)
+
+    assert restored.sizes() == source.sizes()
+
+
+def test_a_height_applied_while_previews_are_off_wins_when_they_return(qtbot: QtBot) -> None:
+    """An applied height beats the split held from before the pane folded away (#71, #72).
+
+    The held split is the answer to "where was it", and a height applied since is the more recent
+    statement -- coming back to the older split would ignore the setting the user just saved.
+
+    **Test steps:**
+
+    * show a selector, drag its split, and toggle previews off
+    * apply a new preview height, then toggle previews back on
+    * verify the pane opened at the applied height rather than the held split
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([220, 75])
+    selector.set_previews_visible(False)
+
+    selector.set_preview_height(140)
+    selector.set_previews_visible(True)
+
+    assert selector.sizes()[PREVIEW_PANE] == 140
+
+
+def test_a_selector_toggled_off_before_it_was_laid_out_opens_at_the_configured_height(qtbot: QtBot) -> None:
+    """Toggled away before its first layout, there is no split worth holding (#71, #72).
+
+    **Test steps:**
+
+    * toggle previews off on a selector that was never shown, then back on
+    * size and show it
+    * verify the pane opened at the configured height
+    """
+    selector = ImageSelector(preview_height=120)
+    qtbot.addWidget(selector)
+
+    selector.set_previews_visible(False)
+    selector.set_previews_visible(True)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+
+    assert selector.sizes()[PREVIEW_PANE] == 120
+
+
+def test_toggling_previews_to_the_state_they_are_in_changes_nothing(qtbot: QtBot) -> None:
+    """Re-stating the current toggle is not a toggle, so it never disturbs the split (#71).
+
+    **Test steps:**
+
+    * show a selector and drag its split
+    * set previews visible when they already are
+    * verify the pane is still shown at the dragged split
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([220, 75])
+    dragged = selector.sizes()
+
+    selector.set_previews_visible(True)
+
+    assert preview_pane(selector).isVisible()
+    assert selector.sizes() == dragged
+
+
 def test_split_position_survives_a_save_restore_round_trip(qtbot: QtBot) -> None:
     """The split position is this widget's own persisted state, restored onto a fresh selector (#72).
 
