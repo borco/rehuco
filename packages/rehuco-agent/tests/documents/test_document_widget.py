@@ -50,6 +50,7 @@ from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab
 from rehuco_agent.fields.widgets import (
     AuthorsEditor,
     ImageLightbox,
+    ImageSelector,
     ImageStrip,
     ImageViewerMode,
     PathEditor,
@@ -1585,6 +1586,52 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
     fresh.restore_state(state)
 
     assert fresh_editors[0].advanced is True
+
+
+def image_selector(widget: DocumentWidget) -> ImageSelector:
+    """The images editor's selector, reached through the dock registry rather than ``findChildren``.
+
+    QtAds detaches the content of a dock sitting behind another tab from the widget tree, and the
+    images editor is one of those -- the same reason ``DocumentWidget.__stateful_widgets`` enumerates
+    the registry instead.
+
+    :param widget: the document widget to look in.
+    :returns: its one images-editor selector.
+    """
+    manager = widget._DocumentWidget__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    selectors = [
+        found
+        for dock in manager.dockWidgetsMap().values()
+        for found in (dock.widget(), *dock.widget().findChildren(ImageSelector))
+        if isinstance(found, ImageSelector)
+    ]
+    assert len(selectors) == 1
+    return selectors[0]
+
+
+def test_save_state_round_trips_the_image_selector_split(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """The images editor's preview/list split is persisted per-``.rehu`` and restored on a fresh
+    widget -- the same `StatefulWidget` ride the location field's expand state takes (#72).
+
+    **Test steps:**
+
+    * drag the images editor's split to a lopsided position and save the widget's state
+    * build a fresh widget and restore that state
+    * verify the fresh widget's images editor opens at the same split
+    """
+    selector = image_selector(widget)
+    selector.setSizes([220, 80])
+    state = widget.save_state()
+
+    fresh = DocumentWidget(
+        RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
+    )
+    qtbot.addWidget(fresh)
+    fresh_selector = image_selector(fresh)
+
+    fresh.restore_state(state)
+
+    assert fresh_selector.sizes() == selector.sizes()
 
 
 def test_restore_state_tolerates_a_payload_without_widget_state(widget: DocumentWidget) -> None:

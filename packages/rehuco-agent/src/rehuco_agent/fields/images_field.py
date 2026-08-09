@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, Signal, SignalInstance
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .image_scanner import ImageScanner
 from .widgets import ImageSelector, ImageStrip
+from .widgets.image_selector import PREVIEW_HEIGHT
 
 IMAGE_STRIP_HEIGHT: Final = 150
 """The lightbox strip viewer's pixel height when its owner names none (#27). The user's own choice
@@ -35,7 +36,7 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     description.
 
     **Editor** -- an :class:`~rehuco_agent.fields.widgets.ImageSelector`: every screenshot as a checkable
-    row (checked = visible) beside a sized preview, on its own editor tab.
+    row (checked = visible) under a sized preview, on its own editor tab.
 
     :param name: the field's identifier on its model (the bound ``hidden_images`` list).
     :param image_scanner: resolves the resource's current screenshot siblings; seeds both widgets.
@@ -60,6 +61,12 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         :meth:`~rehuco_agent.fields.widgets.image_strip.ImageStrip.set_requested_visible` so every open
         document's preview hides or reappears together (keyword-only, #71) -- the same
         value-plus-its-signal shape ``strip_wrap``/``strip_wrap_changed`` beside it uses.
+    :param selector_preview_height: the curation editor's preview-pane height on a document with no
+        split of its own remembered yet (keyword-only, #72); the owner passes the user's configured
+        height, and :data:`~rehuco_agent.fields.widgets.image_selector.PREVIEW_HEIGHT` stands in.
+    :param selector_preview_height_changed: fires with a new configured height, forwarded into the
+        selector so an applied settings change re-splits the one already on screen (keyword-only,
+        #72) -- the same shape as ``strip_height``/``strip_height_changed`` above.
     """
 
     TYPE = "images"
@@ -90,6 +97,8 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         strip_wrap_changed: SignalInstance | None = None,
         previews_visible: bool = True,
         previews_visible_changed: SignalInstance | None = None,
+        selector_preview_height: int = PREVIEW_HEIGHT,
+        selector_preview_height_changed: SignalInstance | None = None,
     ) -> None:
         super().__init__(name, label, viewer_tab=viewer_tab, editor_tab=editor_tab)
         self.__image_scanner: Final = image_scanner
@@ -100,6 +109,8 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         self.__strip_wrap_changed: Final = strip_wrap_changed
         self.__previews_visible: Final = previews_visible
         self.__previews_visible_changed: Final = previews_visible_changed
+        self.__selector_preview_height: Final = selector_preview_height
+        self.__selector_preview_height_changed: Final = selector_preview_height_changed
 
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
@@ -129,7 +140,7 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
 
     @override
     def make_editor(self, binding: FieldBinding[list[str]]) -> FieldEditorWidgets:
-        selector = ImageSelector()
+        selector = ImageSelector(preview_height=self.__selector_preview_height)
         selector.setObjectName(self.name)
         selector.image_scanner = self.__image_scanner
         # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip
@@ -139,5 +150,9 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         binding.changed.connect(selector.set_hidden)
         if self.__image_scanner_changed is not None:
             self.__image_scanner_changed.connect(selector.set_image_scanner)  # type: ignore[attr-defined]
+        if self.__selector_preview_height_changed is not None:
+            # through bind_external for the same reason the strip's height is: the settings outlive
+            # the selector, so a form rebuild has to be able to sever this deterministically
+            self.bind_external(self.__selector_preview_height_changed, selector.set_preview_height)
         # no label for the editor tab, since the tab itself is the label; fills its dedicated tab
         return FieldEditorWidgets(self.editor_tab, None, selector, vertical=True, fill=True)

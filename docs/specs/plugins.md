@@ -426,9 +426,11 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   the current screenshot framed and scrolled into view and a click jumping straight to it. Whether it is showing is
   **per document**, remembered in the document's own saved layout beside which tabs it has open, so one document's
   toggle never decides another's; the settings page holds only the *starting point* a document that has never been told
-  otherwise opens with, plus the thumbnail height on each side. Applying any of those three reaches what is **already
-  on screen** — open strips resize, open viewers resize and show or hide their row — so the effect is visible where
-  the user is looking rather than promised for next time ([[appendices.settings-pages#save-drop-actions]]).
+  otherwise opens with, plus the thumbnail height on each side and how tall the curation editor's preview pane opens
+  on a document whose split has never been dragged. Applying any of those four reaches what is **already on screen**
+  — open strips resize, open viewers resize and show or hide their row, open editors re-split — so the effect is
+  visible where the user is looking rather than promised for next time
+  ([[appendices.settings-pages#save-drop-actions]]).
   Neither strip ever paints a scrollbar, and a strip with nothing to show — no screenshots, or every one curated
   away — hides itself rather than leaving an empty band. The document's own strip has a second layout to offer,
   picked in the same settings ("Viewers > Images"): **wrapped**, folding the thumbnails onto as many rows as the

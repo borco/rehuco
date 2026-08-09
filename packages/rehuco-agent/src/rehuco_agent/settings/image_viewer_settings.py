@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QSettings
 
 from ..fields.images_field import IMAGE_STRIP_HEIGHT
 from ..fields.widgets.image_lightbox import DEFAULT_STRIP_HEIGHT, ImageViewerMode
+from ..fields.widgets.image_selector import PREVIEW_HEIGHT
 from .persistent_settings import persistent_settings
 
 GROUP: Final = "image_viewer"
@@ -15,6 +16,7 @@ MODE_KEY: Final = "mode"
 STRIP_VISIBLE_KEY: Final = "strip_visible"
 PREVIEW_IMAGE_HEIGHT_KEY: Final = "preview_image_height"
 LIGHTBOX_IMAGE_HEIGHT_KEY: Final = "lightbox_image_height"
+EDITOR_PREVIEW_HEIGHT_KEY: Final = "editor_preview_height"
 PREVIEW_WRAP_KEY: Final = "preview_wrap"
 PREVIEWS_VISIBLE_KEY: Final = "previews_visible"
 
@@ -41,6 +43,10 @@ DEFAULT_LIGHTBOX_IMAGE_HEIGHT: Final = DEFAULT_STRIP_HEIGHT
 row. Each is read from the widget that implements the strip rather than restated here -- the same
 direction :class:`ImageViewerMode` is imported in, so a widget's own natural size and the setting that
 overrides it can never drift apart."""
+
+DEFAULT_EDITOR_PREVIEW_HEIGHT: Final = PREVIEW_HEIGHT
+"""How tall the images editor's preview pane opens on a document with no split of its own remembered
+yet (#72). Read from `ImageSelector` for the same reason the two above are read from their widgets."""
 
 
 class ImageViewerSettings(QObject):
@@ -93,6 +99,9 @@ class ImageViewerSettings(QObject):
     lightbox_image_height = SimpleProperty(DEFAULT_LIGHTBOX_IMAGE_HEIGHT)
     """How tall a screenshot is in the maximized viewer's own thumbnail row."""
 
+    editor_preview_height = SimpleProperty(DEFAULT_EDITOR_PREVIEW_HEIGHT)
+    """How tall the images editor's preview pane opens, before a document remembers its own split."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current choices with what's in persistent storage.
 
@@ -113,6 +122,9 @@ class ImageViewerSettings(QObject):
         self.lightbox_image_height = cast(
             int, settings.value(LIGHTBOX_IMAGE_HEIGHT_KEY, DEFAULT_LIGHTBOX_IMAGE_HEIGHT, type=int)
         )
+        self.editor_preview_height = cast(
+            int, settings.value(EDITOR_PREVIEW_HEIGHT_KEY, DEFAULT_EDITOR_PREVIEW_HEIGHT, type=int)
+        )
         settings.endGroup()
         try:
             self.mode = ImageViewerMode(stored)
@@ -131,6 +143,7 @@ class ImageViewerSettings(QObject):
         settings.setValue(PREVIEWS_VISIBLE_KEY, self.previews_visible)
         settings.setValue(PREVIEW_IMAGE_HEIGHT_KEY, self.preview_image_height)
         settings.setValue(LIGHTBOX_IMAGE_HEIGHT_KEY, self.lightbox_image_height)
+        settings.setValue(EDITOR_PREVIEW_HEIGHT_KEY, self.editor_preview_height)
         settings.endGroup()
 
 

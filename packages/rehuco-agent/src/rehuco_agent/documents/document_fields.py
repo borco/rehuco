@@ -328,6 +328,12 @@ def build_document_form(
         # document's strip hides or reappears together the moment the setting changes
         previews_visible=shared_image_viewer_settings().previews_visible,
         previews_visible_changed=shared_image_viewer_settings().previews_visible_changed,  # type: ignore[attr-defined]
+        # and the curation editor's own preview pane, same shape again: a document with no split
+        # remembered opens at the configured height, and applying a new one re-splits it live (#72)
+        selector_preview_height=shared_image_viewer_settings().editor_preview_height,
+        selector_preview_height_changed=(
+            shared_image_viewer_settings().editor_preview_height_changed  # type: ignore[attr-defined]
+        ),
     )
 
     def measure_content_images() -> int | None:

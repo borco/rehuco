@@ -18,7 +18,7 @@ class ImageChoices(NamedTuple):
     """Every choice this page holds, in one comparable value ([[appendices.settings-pages#save-drop-actions]]).
 
     Named rather than a bare tuple because the page compares the staged set against the saved one
-    wholesale (:meth:`ImagesPage.is_dirty`) *and* writes each member individually, and five positional
+    wholesale (:meth:`ImagesPage.is_dirty`) *and* writes each member individually, and six positional
     booleans and ints of the same types are exactly where a swapped pair would go unnoticed.
 
     :param mode: which surface a maximized screenshot opens on.
@@ -26,6 +26,7 @@ class ImageChoices(NamedTuple):
     :param preview_wrap: whether a document's own image strip wraps its thumbnails (#70).
     :param preview_height: how tall a screenshot is in a document's own image strip.
     :param lightbox_height: how tall a screenshot is in the maximized viewer's own thumbnail row.
+    :param editor_preview_height: how tall the images editor's preview pane opens (#72).
     """
 
     mode: ImageViewerMode
@@ -33,6 +34,7 @@ class ImageChoices(NamedTuple):
     preview_wrap: bool
     preview_height: int
     lightbox_height: int
+    editor_preview_height: int
 
 
 class ImagesPage(QWidget):
@@ -44,7 +46,8 @@ class ImagesPage(QWidget):
     nothing else, and had to know which plugin owned which to find either:
 
     - `ImageViewerSettings` -- the maximized viewer's surface, whether it starts with its thumbnail
-      strip shown, whether a document's own strip wraps, and the thumbnail heights either side
+      strip shown, whether a document's own strip wraps, the thumbnail heights either side, and how
+      tall the curation editor's preview pane opens (#72)
       (:class:`ImageChoices`, compared wholesale).
     - `MarkdownRenderingSettings` -- the width cap on an image embedded in a description. Only this
       one field, not the engine or its CSS, which stay on `DescriptionsPage` where the question is
@@ -105,6 +108,7 @@ class ImagesPage(QWidget):
         settings.preview_wrap = staged.preview_wrap
         settings.preview_image_height = staged.preview_height
         settings.lightbox_image_height = staged.lightbox_height
+        settings.editor_preview_height = staged.editor_preview_height
         settings.save(persistent_settings())
 
         rendering = shared_markdown_rendering_settings()
@@ -127,6 +131,7 @@ class ImagesPage(QWidget):
         self.__ui.wrap_check_box.setChecked(saved.preview_wrap)
         self.__ui.preview_height_spin_box.setValue(saved.preview_height)
         self.__ui.lightbox_height_spin_box.setValue(saved.lightbox_height)
+        self.__ui.editor_preview_height_spin_box.setValue(saved.editor_preview_height)
         self.__ui.max_image_width_spin_box.setValue(shared_markdown_rendering_settings().max_image_width)
         self.__show_saved_extensions()
 
@@ -137,7 +142,7 @@ class ImagesPage(QWidget):
     def __staged(self) -> ImageChoices:
         """The choices currently shown in this page's widgets.
 
-        :returns: the staged surface, strip visibility, strip layout, and the two thumbnail heights.
+        :returns: the staged surface, strip visibility, strip layout, and the three image heights.
         """
         return ImageChoices(
             self.__selected_mode(),
@@ -145,13 +150,14 @@ class ImagesPage(QWidget):
             self.__ui.wrap_check_box.isChecked(),
             self.__ui.preview_height_spin_box.value(),
             self.__ui.lightbox_height_spin_box.value(),
+            self.__ui.editor_preview_height_spin_box.value(),
         )
 
     @staticmethod
     def __saved() -> ImageChoices:
         """The same choices as currently held by the shared settings.
 
-        :returns: the saved surface, strip visibility, strip layout, and the two thumbnail heights.
+        :returns: the saved surface, strip visibility, strip layout, and the three image heights.
         """
         settings = shared_image_viewer_settings()
         return ImageChoices(
@@ -160,6 +166,7 @@ class ImagesPage(QWidget):
             settings.preview_wrap,
             settings.preview_image_height,
             settings.lightbox_image_height,
+            settings.editor_preview_height,
         )
 
     def __selected_mode(self) -> ImageViewerMode:

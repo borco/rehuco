@@ -251,7 +251,7 @@ def wrap_check_box(page: ImagesPage) -> QCheckBox:
 
 
 def test_the_page_starts_on_every_saved_choice(page: ImagesPage) -> None:
-    """A fresh page shows the toggles and both heights the shared settings currently hold (#161, #70).
+    """A fresh page shows the toggles and all three heights the shared settings hold (#161, #70, #72).
 
     **Test steps:**
 
@@ -264,6 +264,7 @@ def test_the_page_starts_on_every_saved_choice(page: ImagesPage) -> None:
     assert wrap_check_box(page).isChecked() == settings.preview_wrap
     assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
     assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height
+    assert spin_box(page, "editor_preview_height_spin_box").value() == settings.editor_preview_height
     assert not page.is_dirty()
 
 
@@ -312,11 +313,11 @@ def test_changing_a_height_makes_the_page_dirty(page: ImagesPage) -> None:
 
 
 def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesPage) -> None:
-    """Applying the page writes all five choices, not just the surface (#161, #70).
+    """Applying the page writes all six choices, not just the surface (#161, #70, #72).
 
     **Test steps:**
 
-    * stage a surface, both toggles, and both heights, then apply
+    * stage a surface, both toggles, and all three heights, then apply
     * verify the shared settings carry every one of them
     """
     check(page, ImageViewerMode.FULL_SCREEN)
@@ -324,6 +325,7 @@ def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesP
     wrap_check_box(page).setChecked(True)
     spin_box(page, "preview_height_spin_box").setValue(200)
     spin_box(page, "lightbox_height_spin_box").setValue(120)
+    spin_box(page, "editor_preview_height_spin_box").setValue(180)
 
     page.save_changes()
 
@@ -333,6 +335,7 @@ def test_save_changes_pushes_every_choice_into_the_shared_settings(page: ImagesP
     assert settings.preview_wrap is True
     assert settings.preview_image_height == 200
     assert settings.lightbox_image_height == 120
+    assert settings.editor_preview_height == 180
     assert not page.is_dirty()
 
 
@@ -349,6 +352,7 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesPage) -> None:
     wrap_check_box(page).setChecked(not settings.preview_wrap)
     spin_box(page, "preview_height_spin_box").setValue(settings.preview_image_height + 20)
     spin_box(page, "lightbox_height_spin_box").setValue(settings.lightbox_image_height + 20)
+    spin_box(page, "editor_preview_height_spin_box").setValue(settings.editor_preview_height + 20)
     assert page.is_dirty()
 
     page.drop_changes()
@@ -358,6 +362,7 @@ def test_drop_changes_reverts_every_staged_choice(page: ImagesPage) -> None:
     assert wrap_check_box(page).isChecked() == settings.preview_wrap
     assert spin_box(page, "preview_height_spin_box").value() == settings.preview_image_height
     assert spin_box(page, "lightbox_height_spin_box").value() == settings.lightbox_image_height
+    assert spin_box(page, "editor_preview_height_spin_box").value() == settings.editor_preview_height
 
 
 # region the description image-width cap (moved here from DescriptionsPage)

@@ -169,7 +169,7 @@
          </font>
         </property>
         <property name="text">
-         <string>Thumbnail height</string>
+         <string>Image heights</string>
         </property>
        </widget>
       </item>
@@ -228,6 +228,35 @@
         </property>
         <property name="value">
          <number>96</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="editor_preview_height_label">
+        <property name="text">
+         <string>Images editor preview:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QSpinBox" name="editor_preview_height_spin_box">
+        <property name="toolTip">
+         <string>How tall the preview pane opens in the images editor. Each document remembers its own split once you drag it, and applying a height here re-splits the editors currently open.</string>
+        </property>
+        <property name="suffix">
+         <string> px</string>
+        </property>
+        <property name="minimum">
+         <number>32</number>
+        </property>
+        <property name="maximum">
+         <number>2000</number>
+        </property>
+        <property name="singleStep">
+         <number>10</number>
+        </property>
+        <property name="value">
+         <number>100</number>
         </property>
        </widget>
       </item>

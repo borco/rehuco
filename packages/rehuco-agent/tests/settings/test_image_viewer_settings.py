@@ -9,10 +9,12 @@ from typing import Any
 from pytest import fixture
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings.image_viewer_settings import (
+    DEFAULT_EDITOR_PREVIEW_HEIGHT,
     DEFAULT_MODE,
     DEFAULT_PREVIEW_WRAP,
     DEFAULT_PREVIEWS_VISIBLE,
     DEFAULT_STRIP_VISIBLE,
+    EDITOR_PREVIEW_HEIGHT_KEY,
     GROUP,
     MODE_KEY,
     PREVIEW_WRAP_KEY,
@@ -251,6 +253,43 @@ def test_save_then_load_round_trips_hidden_previews(settings: FakeSettings) -> N
     assert restored.previews_visible is False
 
 
+def test_load_defaults_the_editor_preview_to_the_selectors_own_height(settings: FakeSettings) -> None:
+    """A fresh install opens the images editor's preview at the height the selector itself declares (#72).
+
+    **Test steps:**
+
+    * load a fresh instance from an empty settings stand-in
+    * verify the editor preview height is the widget's own default
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.editor_preview_height = 999
+
+    viewer_settings.load(settings)  # type: ignore[arg-type]
+
+    assert viewer_settings.editor_preview_height == DEFAULT_EDITOR_PREVIEW_HEIGHT
+    assert viewer_settings.editor_preview_height == 100
+
+
+def test_save_then_load_round_trips_the_editor_preview_height(settings: FakeSettings) -> None:
+    """A chosen images-editor preview height survives a restart (#72).
+
+    **Test steps:**
+
+    * set a non-default editor preview height and save
+    * load into a fresh instance from the same settings stand-in
+    * verify the height came back
+    """
+    viewer_settings = ImageViewerSettings()
+    viewer_settings.editor_preview_height = 240
+
+    viewer_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = ImageViewerSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.editor_preview_height == 240
+
+
 def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     """One save persists the whole object, so writing any one choice cannot drop the others.
 
@@ -268,6 +307,7 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     viewer_settings.strip_visible = True
     viewer_settings.preview_wrap = True
     viewer_settings.previews_visible = False
+    viewer_settings.editor_preview_height = 240
     viewer_settings.save(settings)  # type: ignore[arg-type]
 
     settings.beginGroup(GROUP)
@@ -275,3 +315,4 @@ def test_saving_writes_every_choice_together(settings: FakeSettings) -> None:
     assert settings.value(STRIP_VISIBLE_KEY) is True
     assert settings.value(PREVIEW_WRAP_KEY) is True
     assert settings.value(PREVIEWS_VISIBLE_KEY) is False
+    assert settings.value(EDITOR_PREVIEW_HEIGHT_KEY) == 240

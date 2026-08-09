@@ -7,7 +7,13 @@ from PySide6.QtGui import QColor, QPixmap, QStandardItemModel
 from PySide6.QtWidgets import QLabel, QStackedWidget, QTreeView, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.widgets.image_selector import ImageSelector, PreviewLabel
+from rehuco_agent.fields.widgets.image_selector import (
+    LIST_PANE,
+    PREVIEW_HEIGHT,
+    PREVIEW_PANE,
+    ImageSelector,
+    PreviewLabel,
+)
 
 PATHS = [Path("/fake/info00.jpg"), Path("/fake/info01.png"), Path("/fake/info02.gif")]
 
@@ -299,6 +305,199 @@ def test_set_images_populates_dimensions_and_size_columns_from_disk(mocker: Mock
     model = checkable_model(selector)
     assert model.item(0, 1).text() == "320 x 180"
     assert model.item(0, 2).text() == "1.4M"
+
+
+def test_preview_sits_above_the_list(qtbot: QtBot) -> None:
+    """The splitter runs top-to-bottom with the preview first and the screenshot list under it (#72).
+
+    **Test steps:**
+
+    * build a selector
+    * verify the splitter is vertical and the tree view is its second pane
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    assert selector.orientation() == Qt.Orientation.Vertical
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert selector.indexOf(view) == LIST_PANE
+
+
+def test_the_preview_opens_at_the_configured_height(qtbot: QtBot) -> None:
+    """A selector with no split remembered gives the preview the height it was built with (#72).
+
+    **Test steps:**
+
+    * build a selector at a named preview height and show it
+    * verify the preview pane got exactly that height and the list took the rest
+    """
+    selector = ImageSelector(preview_height=120)
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+
+    assert selector.sizes()[PREVIEW_PANE] == 120
+    assert sum(selector.sizes()) + selector.handleWidth() == 300
+
+
+def test_the_preview_defaults_to_a_hundred_pixels(qtbot: QtBot) -> None:
+    """Naming no height opens the preview at :data:`PREVIEW_HEIGHT` (#72).
+
+    **Test steps:**
+
+    * build and show a selector without naming a preview height
+    * verify the preview pane is the module's declared default tall
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+
+    assert selector.sizes()[PREVIEW_PANE] == PREVIEW_HEIGHT
+    assert PREVIEW_HEIGHT == 100
+
+
+def test_setting_a_new_preview_height_re_splits_a_shown_selector(qtbot: QtBot) -> None:
+    """An applied height reaches the selector already on screen, overriding the split it was on (#72).
+
+    **Test steps:**
+
+    * show a selector and drag its split away from the configured height
+    * set a new preview height
+    * verify the preview pane took it
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([250, 50])
+
+    selector.set_preview_height(140)
+
+    assert selector.sizes()[PREVIEW_PANE] == 140
+
+
+def test_setting_the_height_it_already_has_leaves_a_dragged_split_alone(qtbot: QtBot) -> None:
+    """An unchanged height is not an applied one, so it never undoes the user's own drag (#72).
+
+    Applying the settings page rewrites every choice it holds, whether or not each actually moved --
+    without this guard, saving an unrelated image setting would snap every open editor back off the
+    split its user had just dragged.
+
+    **Test steps:**
+
+    * show a selector and drag its split away from the configured height
+    * set the height it already has
+    * verify the dragged split survived
+    """
+    selector = ImageSelector(preview_height=120)
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([250, 50])
+    dragged = selector.sizes()
+
+    selector.set_preview_height(120)
+
+    assert selector.sizes() == dragged
+
+
+def test_a_height_set_while_hidden_lands_on_the_next_show(qtbot: QtBot) -> None:
+    """A selector behind another tab has no room to divide, so the new height waits for its show (#72).
+
+    **Test steps:**
+
+    * set a preview height on a selector that was never shown
+    * size and show it
+    * verify the preview pane opened at that height
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    selector.set_preview_height(140)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+
+    assert selector.sizes()[PREVIEW_PANE] == 140
+
+
+def test_a_restored_split_wins_over_the_configured_height(qtbot: QtBot) -> None:
+    """A document's own remembered split is not overwritten by the configured height on show (#72).
+
+    **Test steps:**
+
+    * capture a lopsided split off a shown selector
+    * restore it onto a second selector *before* that one is ever shown, then show it
+    * verify the restored split survived rather than the configured height replacing it
+    """
+    source = ImageSelector()
+    qtbot.addWidget(source)
+    source.resize(400, 300)
+    source.show()
+    qtbot.waitExposed(source)
+    source.setSizes([220, 75])
+
+    restored = ImageSelector()
+    qtbot.addWidget(restored)
+    restored.restore_state(source.save_state())
+    restored.resize(400, 300)
+    restored.show()
+    qtbot.waitExposed(restored)
+
+    assert restored.sizes() == source.sizes()
+
+
+def test_split_position_survives_a_save_restore_round_trip(qtbot: QtBot) -> None:
+    """The split position is this widget's own persisted state, restored onto a fresh selector (#72).
+
+    **Test steps:**
+
+    * size and show a selector, then drag its split to a deliberately lopsided position
+    * save its state and restore it onto a second, identically-sized selector
+    * verify the second selector's panes end up the same sizes as the first's
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    selector.setSizes([220, 80])
+
+    restored = ImageSelector()
+    qtbot.addWidget(restored)
+    restored.resize(400, 300)
+    restored.show()
+    qtbot.waitExposed(restored)
+    restored.restore_state(selector.save_state())
+
+    assert restored.sizes() == selector.sizes()
+
+
+def test_restore_state_ignores_a_blob_qt_refuses(qtbot: QtBot) -> None:
+    """An unrecognized blob leaves the constructor's own split alone instead of raising (#72).
+
+    **Test steps:**
+
+    * record a shown selector's split
+    * restore garbage onto it
+    * verify the split is unchanged
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+    selector.resize(400, 300)
+    selector.show()
+    qtbot.waitExposed(selector)
+    before = selector.sizes()
+
+    selector.restore_state(b"not a splitter state")
+
+    assert selector.sizes() == before
 
 
 def test_set_images_blanks_dimensions_and_size_for_unreadable_files(qtbot: QtBot) -> None:
