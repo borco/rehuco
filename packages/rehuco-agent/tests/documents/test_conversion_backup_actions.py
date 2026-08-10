@@ -171,6 +171,77 @@ def test_neither_action_is_offered_without_backups(
     assert actions.notice == ""
 
 
+def test_revert_is_not_offered_when_there_is_no_backed_up_tc(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """Backups are any ``.orig`` sibling, deliberately unscoped -- so *has backups* is not *has a
+    conversion to undo*, and offering Revert on the first was the defect (#246).
+
+    Regression: a *Convert, discard originals* run over a resource whose checksum manifest had already
+    been retired to an ``info.sfv.orig`` (#243) left that file as the directory's only ``.orig``. The
+    resource read as retained, Revert was offered, and clicking it could only ever answer that there is
+    no backed-up ``.tc``.
+
+    **Test steps:**
+
+    * report an inventory holding backups but no restorable ``.tc``
+    * verify Revert is hidden while Discard -- which really can delete them -- is not
+    """
+    del qtbot
+    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(legacy=False))
+
+    actions = ConversionBackupActions(model)
+
+    assert actions.retained is True
+    assert actions.undoable is False
+    assert not actions.revert_action.isVisible()
+    assert actions.discard_action.isVisible()
+
+
+def test_revert_is_still_offered_over_an_occupied_restore_target(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """An occupied target is a conversion that *can* be undone once the file in the way is moved -- so
+    the button stays, and the click names what is blocking it (#246).
+
+    The line between the two refusals: hiding this one would leave a reader with nothing to act on and
+    no reason given, where hiding the no-backed-up-``.tc`` one removes a button that could never work.
+
+    **Test steps:**
+
+    * report an inventory whose restore target is occupied
+    * verify Revert is offered even though the inventory calls it unrevertible
+    """
+    del qtbot
+    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(obstructed=True))
+
+    actions = ConversionBackupActions(model)
+
+    assert actions.undoable is True
+    assert actions.revert_action.isVisible()
+
+
+def test_the_notice_promises_nothing_about_a_revert_that_is_not_offered(
+    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
+) -> None:
+    """*Reverting now would discard those edits* is a warning about a choice -- with no revert on offer
+    there is no choice, and the edits cost nothing by being unrevertable (#246).
+
+    **Test steps:**
+
+    * report an edited-since inventory with no restorable ``.tc``
+    * verify the strip still names the backups but drops the revert warning, leaving the row informational
+    """
+    del qtbot
+    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(legacy=False, edited_since=True))
+
+    actions = ConversionBackupActions(model)
+
+    assert actions.edited_since is False
+    assert "3 files, 14.0 MB" in actions.notice
+    assert "discard those edits" not in actions.notice
+
+
 def test_a_document_with_no_path_reads_nothing(qtbot: QtBot, mocker: MockerFixture, qapp: Any) -> None:
     """A never-saved document has no directory to look in, so the inventory is never asked for at all.
 

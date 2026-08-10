@@ -1023,6 +1023,99 @@ def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> Non
     assert dock.focused_document_path() is None
 
 
+def test_open_paths_reports_every_currently_open_documents_path(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``open_paths`` is what the bulk conversion-backups manager checks a selection against, to warn
+    before reverting a resource that is open in a tab (#246).
+
+    **Test steps:**
+
+    * open two distinct documents
+    * verify ``open_paths`` reports both, and nothing else
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    dock.open_document(FAKE_PATH)
+    dock.open_document(OTHER_PATH)
+
+    assert dock.open_paths() == frozenset({FAKE_PATH, OTHER_PATH})
+
+
+def test_open_paths_is_empty_with_nothing_open(qtbot: QtBot) -> None:
+    """No open documents means nothing to warn about.
+
+    **Test steps:**
+
+    * build an empty dock
+    * verify ``open_paths`` is empty
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    assert dock.open_paths() == frozenset()
+
+
+def test_adopt_reverted_conversion_reaches_the_open_documents_model(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A revert finished elsewhere -- the bulk manager's ``RevertConversionJob`` -- is handed to the open
+    document's own model, so the tab catches up instead of going stale (#246).
+
+    **Test steps:**
+
+    * open a document and patch its model's ``adopt_reverted_conversion``
+    * call the dock's own ``adopt_reverted_conversion`` for that path
+    * verify the model's method was called
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    adopt = mocker.patch.object(widget.model, "adopt_reverted_conversion")
+
+    dock.adopt_reverted_conversion(FAKE_PATH)
+
+    adopt.assert_called_once_with()
+
+
+def test_adopt_reverted_conversion_is_a_no_op_for_a_path_not_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Most reverts run over resources nobody has open, and the dock has no cheaper way to know that in
+    advance than asking (#246).
+
+    **Test steps:**
+
+    * open one document and call ``adopt_reverted_conversion`` for a different path
+    * verify the open document's model was left alone
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    adopt = mocker.patch.object(widget.model, "adopt_reverted_conversion")
+
+    dock.adopt_reverted_conversion(OTHER_PATH)
+
+    adopt.assert_not_called()
+
+
+def test_adopt_reverted_conversion_logs_rather_than_raises_on_failure(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The job that triggered this already succeeded; a failure to re-read the restored ``.tc`` is
+    reported, not raised into a queue-listener callback that has nowhere to show it (#246).
+
+    **Test steps:**
+
+    * open a document and make its model's ``adopt_reverted_conversion`` raise
+    * call the dock's own ``adopt_reverted_conversion``
+    * verify it does not propagate
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    mocker.patch.object(widget.model, "adopt_reverted_conversion", side_effect=FileNotFoundError("gone"))
+
+    dock.adopt_reverted_conversion(FAKE_PATH)
+
+
 def test_becoming_the_current_document_hands_it_the_keyboard(mocker: MockerFixture, qtbot: QtBot) -> None:
     """The newly-current document is asked to take focus, so an open image viewer answers ESC (#160).
 

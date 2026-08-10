@@ -1652,6 +1652,131 @@ def test_revert_conversion_without_a_path_raises(mocker: MockerFixture) -> None:
     revert.assert_not_called()
 
 
+def test_adopt_reverted_conversion_adopts_the_restored_tc_in_place(mocker: MockerFixture) -> None:
+    """``adopt_reverted_conversion()`` catches up with a revert that already ran elsewhere -- the bulk
+    conversion-backups manager's ``RevertConversionJob`` (#246) -- ending in the same state
+    :meth:`revert_conversion` would, but without redoing (or failing) the file-system work a job has
+    already finished.
+
+    **Test steps:**
+
+    * build a model over a converted ``.rehu``
+    * mock ``load_tc`` to the restored legacy document; leave the core ``revert_conversion`` unmocked
+    * call ``model.adopt_reverted_conversion()``
+    * verify the model now stands for the ``.tc``, locked and clean, with a fresh tc scanner, and that
+      the core file-system revert was never reached
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    original_scanner = model.image_scanner
+    core_revert = mocker.patch("rehuco_agent.documents.rehu_document_model.revert_conversion")
+    restored = RehuDocument(
+        {"type": "Tutorial", "sources": [{"title": "Legacy Title", "primary": True}]},
+        Path("/fake/info.tc"),
+        legacy_tc=True,
+    )
+    mocker.patch("rehuco_agent.documents.rehu_document_model.load_tc", return_value=restored)
+
+    model.adopt_reverted_conversion()
+
+    core_revert.assert_not_called()
+    assert model.document is restored
+    assert model.path == Path("/fake/info.tc")
+    assert model.title == "Legacy Title"
+    assert model.dirty is False
+    assert model.locked is True
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    assert lister_of(model.image_scanner) is scan_tc_screenshot_files
+    assert model.image_scanner is not original_scanner
+
+
+def test_adopt_reverted_conversion_reads_the_restored_tc_under_the_unknown_identity(mocker: MockerFixture) -> None:
+    """Same identity rule as :meth:`revert_conversion` (#109): the restored ``.tc``'s per-user flags were
+    not set by this install's identity.
+
+    **Test steps:**
+
+    * adopt a reverted conversion with ``load_tc`` mocked
+    * verify it was handed the unknown username
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    load = mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
+    )
+
+    model.adopt_reverted_conversion()
+
+    load.assert_called_once_with(Path("/fake/info.tc"), username=DEFAULT_UNKNOWN_USERNAME)
+
+
+def test_adopt_reverted_conversion_emits_the_file_seam_and_rebuilds_the_form(mocker: MockerFixture) -> None:
+    """It replaces the file the model stands for, so it raises both ``reloaded`` and
+    ``active_block_changed``, same as :meth:`revert_conversion` (#174, #83).
+
+    **Test steps:**
+
+    * record both signals, then adopt a reverted conversion
+    * verify each fired once
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_tc",
+        return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
+    )
+    reloaded: list[None] = []
+    rebuilt: list[None] = []
+    model.reloaded.connect(lambda: reloaded.append(None))
+    model.active_block_changed.connect(lambda: rebuilt.append(None))
+
+    model.adopt_reverted_conversion()
+
+    assert reloaded == [None]
+    assert rebuilt == [None]
+
+
+def test_adopt_reverted_conversion_without_a_restored_tc_raises(mocker: MockerFixture) -> None:
+    """Nothing to adopt when the revert this was meant to catch up with never actually happened.
+
+    **Test steps:**
+
+    * make ``load_tc`` raise as it would for a missing file
+    * call ``adopt_reverted_conversion``
+    * verify the error propagates and the model is left untouched
+    """
+    document = RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu"))
+    model = RehuDocumentModel(document)
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.load_tc",
+        side_effect=FileNotFoundError("/fake/info.tc"),
+    )
+    fired: list[None] = []
+    model.reloaded.connect(lambda: fired.append(None))
+
+    with raises(FileNotFoundError):
+        model.adopt_reverted_conversion()
+
+    assert model.document is document
+    assert model.path == Path("/fake/info.rehu")
+    assert not fired
+
+
+def test_adopt_reverted_conversion_without_a_path_raises(mocker: MockerFixture) -> None:
+    """A never-saved document has no conversion to catch up with.
+
+    **Test steps:**
+
+    * call ``adopt_reverted_conversion`` on a path-less document
+    * verify ``ValueError``, and that ``load_tc`` was never reached
+    """
+    load = mocker.patch("rehuco_agent.documents.rehu_document_model.load_tc")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+    with raises(ValueError, match="no conversion to adopt"):
+        model.adopt_reverted_conversion()
+
+    load.assert_not_called()
+
+
 def test_revert_leaves_the_image_scanner_untouched(mocker: MockerFixture) -> None:
     """``revert()`` never changes ``legacy_tc``-ness, so it leaves ``image_scanner`` untouched.
 

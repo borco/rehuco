@@ -205,9 +205,15 @@ rather than enqueued to fail later, and a revert that can run is confirmed **per
 discard — never as a blanket disclaimer, which a reader can only agree to blindly. Discard, the one irreversible step
 in the whole import flow, names the resource count and the byte total.
 
-The same two remedies sit on an open converted document, as toolbar actions visible exactly while its backups are
-retained — the mirror of the convert actions' own visible-while-`legacy_tc` rule — with the inline notice strip saying
-what is true and nothing more ([[plugins#viewer-editor-both]]'s message-only banner discipline). Both run inline
+The same two remedies sit on an open converted document, as toolbar actions offered exactly while each has something
+to do — the mirror of the convert actions' own visible-while-`legacy_tc` rule. **Discard is offered while backups are
+retained; Revert only while one of them restores a `.tc`.** The two conditions differ precisely because backups are
+any `.orig` sibling: a resource converted with its originals discarded, whose manifest had already been retired beside
+it (#259), holds an `info.sfv.orig` and nothing to revert *to*, and a Revert offered there could only ever refuse. An
+occupied restore target is the other refusal and keeps its button — that is a conversion which can be undone once the
+file in the way is moved, and hiding it would leave a reader nothing to act on and no reason given. The inline notice
+strip says what is true and nothing more ([[plugins#viewer-editor-both]]'s message-only banner discipline), so where
+no revert is on offer it drops the warning about the edits one would cost. Both run inline
 there: one resource is a handful of renames, and the forward conversion is already inline. **A revert adopts the
 restored `.tc` in place**, the exact mirror of a convert: the same dock keeps showing the same resource, now a locked
 legacy document again, re-convertible without a reopen round-trip. **A save never discards the backups** — the
