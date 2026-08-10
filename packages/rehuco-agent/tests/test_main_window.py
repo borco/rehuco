@@ -44,8 +44,8 @@ from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
-from rehuco_agent.tasks import TaskQueueWidget
-from rehuco_core import JobState, JobStatus, SweepChecksumsJob, TaskQueue
+from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
+from rehuco_core import JobControl, JobState, JobStatus, SweepChecksumsJob, TaskJobBase, TaskQueue
 
 SWEEP_ROOT: Final = Path("/fake/library")
 """The folder a sweep test points the chooser at -- never read, since no sweep here does real work."""
@@ -2460,6 +2460,15 @@ def task_queue_dock(window: MainWindow) -> Any:
     return dock_manager.findDockWidget(TASK_QUEUE_DOCK_OBJECT_NAME)
 
 
+def task_queue_status_indicator(window: MainWindow) -> TaskQueueStatusIndicator:
+    """The status bar's own view of the task queue (#239).
+
+    :param window: the window to read.
+    :returns: the indicator.
+    """
+    return window._MainWindow__task_queue_status_indicator  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def log_messages(window: MainWindow) -> list[str]:
     """Read every message the app-wide log surface holds.
 
@@ -2884,6 +2893,123 @@ def test_opening_the_task_queue_dock_from_the_action_bar_checks_the_menu_compani
 
     assert not task_queue_dock(window).isClosed()
     assert ui.tasks_action.isChecked()
+
+
+class GatedJob(TaskJobBase):
+    """A job that reports once, then blocks until released -- the window's own queue is real here,
+    the same discipline ``tests/tasks/test_task_queue_widget.py`` uses (#239).
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.label = label
+        self.entered: Final = Event()
+        self.__proceed: Final = Event()
+
+    def run(self, control: JobControl) -> None:
+        control.report(1, 1)
+        self.entered.set()
+        self.__proceed.wait(SWEEP_TIMEOUT)
+
+    def let_finish(self) -> None:
+        """Release the block, letting ``run`` return."""
+        self.__proceed.set()
+
+
+def test_the_task_queue_status_indicator_sits_on_the_status_bar_hidden_by_default(qtbot: QtBot) -> None:
+    """The queue's status bar surface (#239) exists from construction and starts hidden, mirroring the
+    dock's own default: an empty queue is nothing to interrupt a reader for.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing enqueued
+    * verify the indicator is a permanent widget on the status bar, and hidden
+
+    Read off :meth:`~PySide6.QtWidgets.QWidget.isHidden`, not ``isVisible()``: none of these tests
+    ``show()`` the window, and ``isVisible()`` answers for the whole ancestor chain -- it would read
+    ``False`` here regardless of what the indicator itself was told, which is exactly the bit under
+    test. ``isHidden()`` is this widget's own explicit shown/hidden state alone.
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    indicator = task_queue_status_indicator(window)
+
+    assert indicator in window.statusBar().findChildren(TaskQueueStatusIndicator)
+    assert indicator.isHidden()
+
+
+def test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_closed(
+    qtbot: QtBot,
+) -> None:
+    """A queue running with its dock closed is not mistaken for an idle app (#239) -- the whole point
+    of the indicator.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and enqueue a job without opening the task queue dock
+    * verify the indicator shows once the job starts running, and names it
+    * finish the job and verify the indicator hides again
+
+    The job is run to completion before the test returns -- an unfinished, non-persistable job still
+    in the queue when the window closes at teardown pops the real quit-time
+    :meth:`~MainWindow._MainWindow__confirm_task_queue_loss` warning dialog, which nothing here would
+    ever answer.
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    indicator = task_queue_status_indicator(window)
+    assert task_queue_dock(window).isClosed()
+
+    job = GatedJob("importing")
+    queue.enqueue(job)
+    assert job.entered.wait(SWEEP_TIMEOUT)
+    qtbot.wait(50)
+
+    assert task_queue_dock(window).isClosed()
+    assert not indicator.isHidden()
+    assert "importing" in indicator.text()
+
+    job.let_finish()
+    qtbot.wait(50)
+
+    assert indicator.isHidden()
+
+
+def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -> None:
+    """Clicking the indicator reveals the dock it stands in for.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and enqueue a job, so the indicator is visible and clickable
+    * click it
+    * verify the task queue dock opened
+
+    Finishes the job and pumps once more before returning, the same reason
+    :func:`test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_closed` does --
+    an unfinished job left behind at teardown pops a real, unanswered warning dialog.
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    queue = window._MainWindow__task_queue  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    indicator = task_queue_status_indicator(window)
+
+    job = GatedJob("importing")
+    queue.enqueue(job)
+    assert job.entered.wait(SWEEP_TIMEOUT)
+    qtbot.wait(50)
+    assert not indicator.isHidden()
+    assert task_queue_dock(window).isClosed()
+
+    qtbot.mouseClick(indicator, Qt.MouseButton.LeftButton)
+
+    assert not task_queue_dock(window).isClosed()
+
+    job.let_finish()
+    qtbot.wait(50)
 
 
 def test_the_image_previews_toggle_is_in_the_view_menu_checked_by_default(qtbot: QtBot) -> None:

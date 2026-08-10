@@ -59,7 +59,7 @@ from .settings.ui.logs_page import LogsPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
-from .tasks import TaskQueueStore, TaskQueueWidget, job_already_queued
+from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -578,6 +578,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
+
+        # the queue's own surface while its dock is closed (#239): this window's first
+        # addPermanentWidget call, following the model the dock's widget already exposes rather than
+        # becoming a second listener on the queue itself
+        self.__task_queue_status_indicator = TaskQueueStatusIndicator(self.__task_queue_widget.model)
+        self.__task_queue_status_indicator.clicked.connect(lambda: self.__task_queue_dock.toggleView(True))
+        self.statusBar().addPermanentWidget(self.__task_queue_status_indicator)
 
         # image_previews_toggle_action/image_previews_action follow the same primary/companion split
         # as the two pairs above, but neither wraps a dock: both are declared in main_window.ui, and

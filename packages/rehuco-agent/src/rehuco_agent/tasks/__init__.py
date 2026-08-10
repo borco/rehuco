@@ -13,6 +13,7 @@ from .already_queued import job_already_queued
 from .task_info_delegate import TaskInfoDelegate
 from .task_progress_renderers import PROGRESS_RENDERERS, progress_text
 from .task_queue_model import TaskQueueModel
+from .task_queue_status_indicator import TaskQueueStatusIndicator
 from .task_queue_store import TASK_QUEUE_FILENAME, TaskQueueStore, task_queue_path
 from .task_queue_widget import TaskQueueWidget
 from .task_state_delegate import TaskStateDelegate
@@ -26,6 +27,7 @@ __all__ = [
     "TaskInfoDelegate",
     "TaskStateDelegate",
     "TaskQueueModel",
+    "TaskQueueStatusIndicator",
     "TaskQueueStore",
     "TaskQueueWidget",
     "job_already_queued",
