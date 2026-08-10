@@ -273,8 +273,14 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   shown, invisible to a widget-only snapshot — harmless, since the highlight is a visual aid and
   `is_dirty()` stays the badge/enablement source of truth.
 
-A dirty frame gets a low-alpha pink background (`DIRTY_BACKGROUND`, `fields/colors.py`) via a
-`QFrame#<objectName>` id-selector stylesheet -- a visual aid only, naming nothing to click. An earlier
+A dirty frame gets a low-alpha pink background (`DIRTY_BACKGROUND`, `fields/colors.py`) -- a visual
+aid only, naming nothing to click. The mechanics are the field toolkit's own `WARNING_STYLESHEET`
+idiom: every block wears a `QFrame[dirty="true"]` property-selector stylesheet
+(`DIRTY_FRAME_STYLESHEET`) from registration, and toggling the `dirty` dynamic property (plus an
+unpolish/polish) is all that turns the tint on and off -- behind a changed-guard, so the poll leaves
+unchanged frames entirely alone instead of re-parsing a stylesheet per tick. A background-only rule,
+deliberately: it composes with the native `StyledPanel` border, so a dirty frame keeps the platform
+look, where any QSS `border` rule would replace the OS-drawn panel wholesale. An earlier
 version of this slice also floated a per-frame `SettingsFrameOverlay` with its own Apply/Reset buttons
 in each dirty frame's corner; it was removed (#77) because those buttons could only ever act on the
 **whole page** (nothing generic can tell which settings field a widget maps to, so a true per-frame

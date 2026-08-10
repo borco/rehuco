@@ -81,9 +81,8 @@ class FakePage(QWidget):
         # way a real page's controller does, and QWidget.layout() answers the untyped base class
         self.main_layout = QVBoxLayout(self)
         layout = self.main_layout
-        for index, terms in enumerate(groups or []):
+        for terms in groups or []:
             frame = QFrame(self)
-            frame.setObjectName(f"frame_{index}")  # a real page's .ui-declared frames always have one
             frame_layout = QVBoxLayout(frame)
             for term in terms:
                 frame_layout.addWidget(QLabel(term, frame))
@@ -2281,7 +2280,7 @@ def test_committing_a_page_resyncs_its_frame_baseline_so_the_badge_clears(qtbot:
 
     * add a page with one editable frame, edit its field, and refresh
     * trigger "Apply"
-    * verify the badge is gone and the frame carries no dirty stylesheet
+    * verify the badge is gone and the frame's ``dirty`` property is off again
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -2297,17 +2296,21 @@ def test_committing_a_page_resyncs_its_frame_baseline_so_the_badge_clears(qtbot:
     assert page.save_calls == 1
     assert visible_titles(dialog) == ["Registry"]
     refresh_dirty_state(dialog)
-    assert page.frames[0].styleSheet() == ""
+    assert page.frames[0].property("dirty") is False
 
 
 def test_editing_a_frames_field_tints_it(qtbot: QtBot) -> None:
     """Typing into one of the current page's frames pinks its background (#77).
 
+    The tint is the ``dirty`` dynamic property flipping true under the property-selector stylesheet
+    every block wears from registration -- so the property is what's asserted, plus the stylesheet's
+    presence once, since the property alone paints nothing without it.
+
     **Test steps:**
 
     * add a page with one editable frame and edit its field
     * refresh
-    * verify the frame's stylesheet is no longer empty
+    * verify the frame's ``dirty`` property is on, under the dirty-tint stylesheet
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -2317,17 +2320,18 @@ def test_editing_a_frames_field_tints_it(qtbot: QtBot) -> None:
     page.edits[0].setText("changed")
     refresh_dirty_state(dialog)
 
-    assert page.frames[0].styleSheet() != ""
+    assert page.frames[0].property("dirty") is True
+    assert page.frames[0].styleSheet() == settings_dialog.DIRTY_FRAME_STYLESHEET
 
 
 def test_a_clean_frame_has_no_tint(qtbot: QtBot) -> None:
-    """A frame that has never been edited gets no stylesheet override (#77).
+    """A frame that has never been edited keeps its ``dirty`` property off (#77).
 
     **Test steps:**
 
     * add a page with one editable frame, left untouched
     * refresh
-    * verify the frame carries no stylesheet
+    * verify the frame's ``dirty`` property is off
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
@@ -2336,7 +2340,7 @@ def test_a_clean_frame_has_no_tint(qtbot: QtBot) -> None:
 
     refresh_dirty_state(dialog)
 
-    assert page.frames[0].styleSheet() == ""
+    assert page.frames[0].property("dirty") is False
 
 
 def test_auto_apply_commits_a_dirty_page_on_the_next_poll_tick(qtbot: QtBot) -> None:

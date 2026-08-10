@@ -37,6 +37,13 @@ costlier than a handful of field comparisons, and nothing here needs to react fa
 notices, so a short poll is simpler than wiring a change signal through every field widget type each of
 the settings pages happens to use."""
 
+DIRTY_FRAME_STYLESHEET: Final = f'QFrame[dirty="true"] {{ background-color: {DIRTY_BACKGROUND}; }}'
+"""Set once on every settings block at registration; toggling each frame's ``dirty`` property is what
+turns the tint on and off (#77) -- the same property-selector idiom as the field toolkit's
+``WARNING_STYLESHEET``\\ s. A background-only rule, deliberately: it composes with the native
+``StyledPanel`` border, so a dirty frame keeps the platform look, where any QSS ``border`` rule would
+replace the OS-drawn panel wholesale."""
+
 
 class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
     """The settings dialog's shell: a filterable category tree on the left, the selected category's
@@ -170,6 +177,11 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         item.setEditable(False)
         self.__record_blocks(page, frame_filter)
         self.__frame_filters[widget] = frame_filter  # pylint: disable=unsupported-assignment-operation
+        # Property before stylesheet: the sheet's one polish then already sees the clean state, so
+        # __set_frame_dirty's changed-guard never has to repolish a frame that was never edited.
+        for frame in frame_filter.blocks():
+            frame.setProperty("dirty", False)
+            frame.setStyleSheet(DIRTY_FRAME_STYLESHEET)
         parent = self.__model if group is None else self.__group_item(group)
         parent.appendRow(item)
         self.__ui.page_stack.addWidget(self.__scroll_area_for(widget))
@@ -655,12 +667,26 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
 
     @staticmethod
     def __set_frame_dirty(frame: QFrame, dirty: bool) -> None:
-        """Show or clear ``frame``'s pink dirty tint (#77).
+        """Show or clear ``frame``'s pink dirty tint: flip the ``dirty`` dynamic property that
+        :data:`DIRTY_FRAME_STYLESHEET`'s selector matches on -- the sheet itself, set once at
+        registration, is never touched again (#77).
+
+        The re-polish is not optional: Qt resolves which stylesheet rules match a widget at polish
+        time and caches the result, and ``setProperty`` on a dynamic property does not invalidate
+        that cache -- a property flip alone repaints nothing (confirmed empirically offscreen).
+        ``unpolish``/``polish`` is Qt's own documented recipe for property-selector re-evaluation,
+        the same dance ``BooleanField.__render`` does for its warning color. The changed-guard in
+        front is what keeps the 200 ms poll cheap: an unchanged frame is left entirely alone.
 
         :param frame: the frame to update.
         :param dirty: whether ``frame`` currently differs from its last-synced baseline.
         """
-        frame.setStyleSheet(f"QFrame#{frame.objectName()} {{ background-color: {DIRTY_BACKGROUND}; }}" if dirty else "")
+        if frame.property("dirty") == dirty:
+            return
+        frame.setProperty("dirty", dirty)
+        style = frame.style()
+        style.unpolish(frame)
+        style.polish(frame)
 
     def __page_items(self) -> list[tuple[QStandardItem, SettingsPage]]:
         """Every registered (tree item, page) pair, in the same order as :meth:`__pages`."""
