@@ -1,5 +1,10 @@
 """Top-level `QtAds` dock-in-dock shell hosting the open-documents area ([[plugins#toolkit-surfaces]])."""
 
+# the window wires together every top-level surface the app has -- docks, actions, dialogs, the task
+# queue -- and that is one cohesive job; splitting it to dodge a line-count cap would scatter the wiring
+# rather than clarify it (same precedent as test_rehu_document_model.py, [[appendices.code-conventions]])
+# pylint: disable=too-many-lines
+
 import logging
 import sys
 from pathlib import Path
@@ -476,8 +481,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         Takes no identity, unlike :meth:`__on_import_legacy_catalog`: reverting and discarding move and
         delete files, and file them under nobody -- there are no per-user flags being read or written
         here for an identity to belong to.
+
+        Wired to the documents dock's open-paths seam (#246), which warns before a revert about an open
+        tab and refreshes it once reverted.
         """
-        dialog = ConversionBackupsDialog(self.__task_queue, parent=self)
+        dialog = ConversionBackupsDialog(
+            self.__task_queue,
+            parent=self,
+            open_paths=self.__documents_dock.open_paths,
+            on_reverted=self.__documents_dock.adopt_reverted_conversion,
+        )
         dialog.exec()
 
     def __populate_recents_menu(self) -> None:

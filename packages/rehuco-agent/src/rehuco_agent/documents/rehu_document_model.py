@@ -716,11 +716,39 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         with LogScope.open(self.path):
             LOG.info("Reverting the conversion of %s", self.path)
             revert_conversion(self.path)
-            # where the restored `.tc` lands is the `.rehu`'s own stem, which is how the conversion
-            # named it in the first place -- and a revert that could not put one there raised above
+            self.__adopt_restored_tc(self.path.with_suffix(LEGACY_SUFFIX))
+
+    def adopt_reverted_conversion(self) -> None:
+        """Catch up with a revert that already ran outside this model (#246): the bulk conversion-backups
+        manager's ``RevertConversionJob`` does the same file-system work :meth:`revert_conversion` does,
+        but with no model in the loop to tell an open tab its file moved.
+
+        The same adoption :meth:`revert_conversion` ends with, minus the file-system step -- this trusts
+        that the ``.rehu`` this model was showing is already gone and the legacy ``.tc`` already restored
+        beside it, which is exactly what a *finished* ``RevertConversionJob`` guarantees. Calling this
+        for a revert that has not actually happened raises the same way opening a missing ``.tc`` would.
+
+        :raises ValueError: this document has no path.
+        :raises FileNotFoundError: no ``.tc`` sits beside this model's path -- the revert this was meant
+            to catch up with never happened, or has already been undone again.
+        """
+        if self.path is None:
+            raise ValueError("no conversion to adopt -- document was not loaded from a file")
+        with LogScope.open(self.path):
             legacy = self.path.with_suffix(LEGACY_SUFFIX)
-            self.__document = load_tc(legacy, username=DEFAULT_UNKNOWN_USERNAME)
-            LOG.info("Restored %s", legacy)
+            LOG.info("Adopting the restored %s after an external revert", legacy)
+            self.__adopt_restored_tc(legacy)
+
+    def __adopt_restored_tc(self, legacy: Path) -> None:
+        """Load ``legacy`` and adopt it as the document -- the shared tail of :meth:`revert_conversion`
+        and :meth:`adopt_reverted_conversion`, everything past the file-system revert itself, which only
+        the former performs. Runs inside the caller's own :class:`~borco_pyside.logging.LogScope`.
+
+        :param legacy: the restored ``.tc``, beside this model's path.
+        :raises FileNotFoundError: ``legacy`` does not exist.
+        """
+        self.__document = load_tc(legacy, username=DEFAULT_UNKNOWN_USERNAME)
+        LOG.info("Restored %s", legacy)
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""

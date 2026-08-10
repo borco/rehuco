@@ -1129,7 +1129,8 @@ def test_import_legacy_catalog_action_opens_the_wizard_over_the_unknown_identity
 
 
 def test_conversion_backups_action_opens_the_manager(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """``File > Conversion Backups...`` opens the backups manager over the app-wide queue (#193).
+    """``File > Conversion Backups...`` opens the backups manager over the app-wide queue, wired to the
+    documents dock's open-paths seam (#193, #246).
 
     Takes no identity, unlike the import wizard: reverting and discarding move and delete files and file
     them under nobody, so there are no per-user flags for an identity to belong to.
@@ -1138,18 +1139,22 @@ def test_conversion_backups_action_opens_the_manager(mocker: MockerFixture, qtbo
 
     * mock the dialog class
     * trigger ``conversion_backups_action``
-    * verify the dialog was built over the app-wide queue and shown modally
+    * verify the dialog was built over the app-wide queue, the documents dock's ``open_paths`` and
+      ``adopt_reverted_conversion``, and shown modally
     """
     dialog = mocker.MagicMock()
     built = mocker.patch("rehuco_agent.main_window.ConversionBackupsDialog", return_value=dialog)
     window = MainWindow()
     qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     window._MainWindow__ui.conversion_backups_action.trigger()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     built.assert_called_once_with(
         window._MainWindow__task_queue,  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
         parent=window,
+        open_paths=documents_dock.open_paths,
+        on_reverted=documents_dock.adopt_reverted_conversion,
     )
     dialog.exec.assert_called_once()
 

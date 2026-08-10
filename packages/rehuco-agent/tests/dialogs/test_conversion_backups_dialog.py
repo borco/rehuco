@@ -899,6 +899,98 @@ def test_a_revert_with_nothing_edited_says_nothing_about_edits(
     assert "saved again" not in question_of(answer_yes)
 
 
+def test_reverting_warns_about_resources_open_in_a_tab(
+    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """The bulk manager cannot see open documents on its own -- ``open_paths`` is the seam that tells it,
+    and what makes this warning possible at all (#246).
+
+    **Test steps:**
+
+    * revert a selection where one of the two runnable resources is reported as open
+    * verify the question counts it
+    """
+    del scan, present
+    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
+    dialog = ConversionBackupsDialog(queue, open_paths=lambda: {SCULPTING})
+    qtbot.addWidget(dialog)
+    choose_root(qtbot, dialog, ROOT)
+
+    ui_of(dialog).revert_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert "1 of these are open in an editor tab" in question_of(answer_yes)
+
+
+def test_reverting_says_nothing_about_open_documents_with_no_seam_wired(
+    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """With no ``open_paths`` wired -- the default -- the manager says nothing about tabs it has no way
+    to see.
+
+    **Test steps:**
+
+    * revert with the default dialog, built with no ``open_paths``
+    * verify the question says nothing about open tabs
+    """
+    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
+
+    ui_of(dialog).revert_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert "open in an editor tab" not in question_of(answer_yes)
+
+
+def test_a_finished_revert_reports_it_to_the_open_documents_seam(
+    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """A successfully reverted resource is handed to ``on_reverted``, so an open tab can adopt the
+    restored ``.tc`` in place instead of going stale (#246).
+
+    **Test steps:**
+
+    * revert a selection restricted to one revertible resource
+    * verify ``on_reverted`` was called with its path once the job finished
+    """
+    del scan, present, answer_yes
+    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
+    on_reverted = mocker.Mock()
+    dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
+    qtbot.addWidget(dialog)
+    choose_root(qtbot, dialog, ROOT)
+    dialog.model.set_checked([ZBRUSH, PAINTING], False)
+
+    ui_of(dialog).revert_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    on_reverted.assert_called_once_with(SCULPTING)
+
+
+def test_a_failed_revert_does_not_report_it_to_the_open_documents_seam(
+    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """Only a resource that actually reverted is worth catching an open tab up on -- a failed operation
+    changed nothing on disk for it to adopt (#246).
+
+    **Test steps:**
+
+    * make the operation raise for the one resource selected
+    * verify ``on_reverted`` was never called
+    """
+    del scan, present, answer_yes
+    mocker.patch(f"{JOBS_MODULE}.revert_conversion", side_effect=PermissionError("read-only"))
+    on_reverted = mocker.Mock()
+    dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
+    qtbot.addWidget(dialog)
+    choose_root(qtbot, dialog, ROOT)
+    dialog.model.set_checked([ZBRUSH, PAINTING], False)
+
+    ui_of(dialog).revert_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    on_reverted.assert_not_called()
+
+
 def test_cancelling_a_run_stops_the_jobs_still_queued(
     qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
 ) -> None:

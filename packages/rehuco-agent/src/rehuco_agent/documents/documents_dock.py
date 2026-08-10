@@ -180,6 +180,35 @@ class DocumentsDock(QMainWindow):
         """
         return [widget.model for widget in self.open_document_widgets()]
 
+    def open_paths(self) -> frozenset[Path]:
+        """Absolute paths of every currently open document that has one.
+
+        Used by the bulk conversion-backups manager (#246) to warn before reverting a resource that is
+        open in a tab. A never-saved document has no path yet, and is left out -- there is nothing on
+        disk for a revert to have moved.
+        """
+        return frozenset(model.path for model in self.open_document_models() if model.path is not None)
+
+    def adopt_reverted_conversion(self, path: Path) -> None:
+        """Catch up an open document with a revert that ran outside it (#246): the bulk
+        conversion-backups manager's ``RevertConversionJob`` does its file-system work with no
+        :class:`RehuDocumentModel` in the loop, so nothing else tells an open tab its file moved.
+
+        A no-op if ``path`` is not open -- most reverts run over resources nobody has open, and the
+        caller has no cheaper way to know that in advance than asking here.
+
+        :param path: the ``.rehu`` a finished ``RevertConversionJob`` has just reverted.
+        """
+        dock = self.__find_dock_by_path(path)
+        if dock is None:
+            return
+        model = self.__document_docks[dock].model
+        with LogScope.open(path):
+            try:
+                model.adopt_reverted_conversion()
+            except OSError as error:
+                LOG.error("Could not adopt the reverted %s: %s", path, error)
+
     def close_all(self) -> None:
         """Close every open document at once, via the same batch confirmation as the whole-app
         close guard (:func:`~rehuco_agent.documents.confirm_and_save_dirty.confirm_and_save_dirty`,

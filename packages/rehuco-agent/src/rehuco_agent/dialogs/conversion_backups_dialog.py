@@ -24,7 +24,7 @@ it names the resource count and the byte total rather than asking a reflexive ye
 # pylint: disable=duplicate-code
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import Final, override
 
@@ -89,6 +89,14 @@ MAXIMUM_NAMED_EDITED: Final = 10
 **Per resource, not a blanket disclaimer** (#193): *some of these may have been edited* is a sentence a
 reader can only agree to blindly. Past this many the rest are counted, because a wall of names is a
 blanket disclaimer again."""
+
+OPEN_WARNING: Final = (
+    "\n{count} of these are open in an editor tab; each is refreshed to show the restored file, discarding "
+    "any unsaved changes there."
+)
+"""What the revert confirmation adds when some of the selection is open (#246) -- a count, the same shape
+:data:`EDITED_WARNING` uses for its own disclaimer, since which tabs are open is not a decision a reader
+made here and naming them would only repeat what their own title bars already say."""
 
 DISCARD_TITLE: Final = "Discard Backups"
 DISCARD_QUESTION: Final = (
@@ -177,8 +185,20 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     on whichever thread the change happened on ([[appendices.task-queue#observation]]), and touching a
     widget there would be a plain thread-safety bug.
 
+    **This dialog knows nothing about open documents by itself** (#246) -- it works over a folder tree,
+    not the editor's own state, so both halves of that seam are handed in rather than reached for:
+    ``open_paths`` says which selected resources to warn about before a revert runs, and ``on_reverted``
+    is where a finished one is reported, so whoever *does* track open documents (``MainWindow`` via
+    `~rehuco_agent.documents.DocumentsDock`) can refresh a tab left showing a file that just moved out
+    from under it. Neither is required: omitted, this dialog behaves exactly as it did before #246, over
+    a caller (a test, say) that has no documents open to protect.
+
     :param queue: the app-wide queue this dialog enqueues its jobs onto.
     :param parent: optional Qt parent.
+    :param open_paths: called fresh at each revert confirmation for the paths currently open in an editor
+        tab, to warn about how many of the selection that covers. ``None`` warns about none.
+    :param on_reverted: called with a resource's path once its ``RevertConversionJob`` has finished
+        successfully, so an open tab can adopt the restored ``.tc`` in place. ``None`` does nothing.
     """
 
     class Marshaller(QObject):
@@ -191,9 +211,18 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
 
         queue_changed = Signal()
 
-    def __init__(self, queue: TaskQueue, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        queue: TaskQueue,
+        parent: QWidget | None = None,
+        *,
+        open_paths: Callable[[], Collection[Path]] | None = None,
+        on_reverted: Callable[[Path], None] | None = None,
+    ) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
+        self.__open_paths: Final = open_paths
+        self.__on_reverted: Final = on_reverted
         self.__settings: Final = ConversionBackupsDialogSettings()
         self.__settings.load(persistent_settings())
 
@@ -535,7 +564,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         return OBSTRUCTED_REASON.format(path=row.backups.obstructions[0].name)  # pylint: disable=no-member
 
     def __confirm_revert(self, rows: Sequence[ConversionBackupsRow]) -> bool:
-        """Ask before reverting, naming the resources whose edits it would discard.
+        """Ask before reverting, naming the resources whose edits it would discard and counting how many
+        are open in an editor tab right now (#246).
 
         :param rows: the resources about to be reverted.
         :returns: whether to go ahead.
@@ -547,6 +577,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
             if len(edited) > MAXIMUM_NAMED_EDITED:
                 named += MORE_EDITED.format(count=len(edited) - MAXIMUM_NAMED_EDITED)
             question += EDITED_WARNING.format(count=len(edited), names=named)
+        if self.__open_paths is not None:
+            open_now = set(self.__open_paths())
+            open_count = sum(1 for row in rows if row.path in open_now)
+            if open_count:
+                question += OPEN_WARNING.format(count=open_count)
         return self.__ask(REVERT_TITLE, question)
 
     def __confirm_discard(self, rows: Sequence[ConversionBackupsRow]) -> bool:
@@ -621,6 +656,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         :meth:`~rehuco_agent.dialogs.import_legacy_catalog_wizard.ImportLegacyCatalogWizard.__on_queue_changed`
         follows: :meth:`__observe` writes to it from whichever thread the engine calls it on, which can
         be mid-iteration here on the GUI thread.
+
+        A resource whose ``RevertConversionJob`` just landed here is reported to :attr:`__on_reverted`
+        (#246), so a tab left open on it can catch up -- after the row itself is updated, the same order
+        :meth:`~rehuco_agent.documents.checksum_actions.ChecksumActions.__on_queue_changed` reports its
+        own finding in.
         """
         newly_finished = 0
         for serial, status in list(self.__seen.items()):
@@ -628,8 +668,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
                 continue
             self.__reported.add(serial)
             newly_finished += 1
-            outcome, message = self.__outcome_for(self.__jobs[serial], status)
+            job = self.__jobs[serial]
+            outcome, message = self.__outcome_for(job, status)
             self.__model.set_row_outcome(status.source, outcome, message)
+            if outcome == "reverted" and self.__on_reverted is not None:
+                self.__on_reverted(status.source)
         if not newly_finished:
             return
         self.__completed += newly_finished
