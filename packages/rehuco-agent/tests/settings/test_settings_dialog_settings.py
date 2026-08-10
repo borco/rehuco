@@ -123,4 +123,38 @@ def test_load_defaults_to_no_selected_page_title_when_nothing_was_saved(settings
     assert dialog_settings.selected_page_title == ""
 
 
+def test_save_then_load_round_trips_auto_apply(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the auto-apply toggle (#77).
+
+    **Test steps:**
+
+    * save with auto-apply checked
+    * load into a fresh instance from the same settings stand-in
+    * verify it comes back checked
+    """
+    dialog_settings = SettingsDialogSettings(auto_apply=True)
+
+    dialog_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = SettingsDialogSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.auto_apply is True
+
+
+def test_load_defaults_to_auto_apply_off_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had auto-apply saved leaves it off (#77).
+
+    **Test steps:**
+
+    * load into a fresh (non-default) instance from an empty settings stand-in
+    * verify auto-apply is off
+    """
+    dialog_settings = SettingsDialogSettings(auto_apply=True)
+
+    dialog_settings.load(settings)  # type: ignore[arg-type]
+
+    assert dialog_settings.auto_apply is False
+
+
 # pylint: enable=duplicate-code

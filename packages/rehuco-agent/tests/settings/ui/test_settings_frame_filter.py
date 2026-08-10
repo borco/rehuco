@@ -6,7 +6,18 @@ it. Visibility is checked with ``isVisibleTo(page)`` -- which reflects each fram
 state without the page having to be realized on screen.
 """
 
-from PySide6.QtWidgets import QFrame, QGroupBox, QLabel, QVBoxLayout, QWidget
+from borco_pyside.widgets import StringListEditor
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
@@ -30,6 +41,29 @@ def make_page(qtbot: QtBot, groups: list[list[str]]) -> tuple[QWidget, list[QFra
         layout.addWidget(frame)
         frames.append(frame)
     return page, frames
+
+
+def make_value_page(qtbot: QtBot, frame_count: int) -> tuple[QWidget, list[QFrame], list[QLineEdit]]:
+    """Build a page with ``frame_count`` top-level frames, each holding one editable `QLineEdit`.
+
+    :param qtbot: the Qt test bot, to own the page.
+    :param frame_count: how many frames to build.
+    :returns: the page, its frames, and each frame's line edit, all in frame order.
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frames: list[QFrame] = []
+    edits: list[QLineEdit] = []
+    for _ in range(frame_count):
+        frame = QFrame(page)
+        frame_layout = QVBoxLayout(frame)
+        edit = QLineEdit(frame)
+        frame_layout.addWidget(edit)
+        layout.addWidget(frame)
+        frames.append(frame)
+        edits.append(edit)
+    return page, frames, edits
 
 
 def test_empty_text_shows_every_frame(qtbot: QtBot) -> None:
@@ -224,3 +258,206 @@ def test_field_labels_gathers_each_frames_caption_text(qtbot: QtBot) -> None:
     frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
 
     assert frame_filter.field_labels() == ["engine css", "maximum image width"]
+
+
+# region frame-level dirty tracking (#77)
+
+
+def test_no_frame_is_dirty_right_after_construction(qtbot: QtBot) -> None:
+    """A freshly-built filter's baseline is the widgets' own starting values, so nothing is dirty yet.
+
+    **Test steps:**
+
+    * build a two-frame page and its filter
+    * verify neither frame is reported dirty
+    """
+    page, _frames, _edits = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    assert frame_filter.dirty_frames() == []
+
+
+def test_editing_a_line_edit_marks_its_own_frame_dirty(qtbot: QtBot) -> None:
+    """Typing into a frame's `QLineEdit` makes that frame -- and only that frame -- dirty.
+
+    **Test steps:**
+
+    * build a two-frame page and its filter
+    * edit the first frame's line edit
+    * verify only the first frame is reported dirty
+    """
+    page, frames, edits = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    edits[0].setText("changed")
+
+    assert frame_filter.dirty_frames() == [frames[0]]
+
+
+def test_reverting_a_value_to_its_baseline_clears_the_dirty_frame(qtbot: QtBot) -> None:
+    """Dirty is judged against the live value, not "was this ever touched" -- typing back the
+    original text clears it again.
+
+    **Test steps:**
+
+    * build a page, edit its line edit, then type the original text back
+    * verify the frame is no longer reported dirty
+    """
+    page, _frames, edits = make_value_page(qtbot, 1)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("changed")
+
+    edits[0].setText("")
+
+    assert frame_filter.dirty_frames() == []
+
+
+def test_resync_baseline_clears_every_dirty_frame(qtbot: QtBot) -> None:
+    """:meth:`SettingsFrameFilter.resync_baseline` adopts the current values as the new clean state.
+
+    **Test steps:**
+
+    * build a page, edit its line edit, then resync the baseline
+    * verify the frame is no longer reported dirty
+    """
+    page, _frames, edits = make_value_page(qtbot, 1)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("changed")
+    assert frame_filter.dirty_frames() != []
+
+    frame_filter.resync_baseline()
+
+    assert frame_filter.dirty_frames() == []
+
+
+def test_editing_after_resync_is_measured_against_the_new_baseline(qtbot: QtBot) -> None:
+    """A resync's baseline is what the *next* edit is measured against, not the original values.
+
+    **Test steps:**
+
+    * edit a line edit, resync, then type the very first (pre-edit) text back
+    * verify the frame is dirty again -- it now differs from the resynced baseline
+    """
+    page, frames, edits = make_value_page(qtbot, 1)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+    edits[0].setText("changed")
+    frame_filter.resync_baseline()
+
+    edits[0].setText("")
+
+    assert frame_filter.dirty_frames() == [frames[0]]
+
+
+def test_checking_a_checkbox_marks_its_frame_dirty(qtbot: QtBot) -> None:
+    """A `QCheckBox` counts as a value widget, the same as a line edit.
+
+    **Test steps:**
+
+    * build a page whose one frame holds a checkbox
+    * check it
+    * verify the frame is reported dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    check_box = QCheckBox(frame)
+    frame_layout.addWidget(check_box)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    check_box.setChecked(True)
+
+    assert frame_filter.dirty_frames() == [frame]
+
+
+def test_changing_a_spin_box_marks_its_frame_dirty(qtbot: QtBot) -> None:
+    """A `QSpinBox` counts as a value widget, the same as a line edit.
+
+    **Test steps:**
+
+    * build a page whose one frame holds a spin box
+    * change its value
+    * verify the frame is reported dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    spin_box = QSpinBox(frame)
+    frame_layout.addWidget(spin_box)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    spin_box.setValue(spin_box.value() + 1)
+
+    assert frame_filter.dirty_frames() == [frame]
+
+
+def test_editing_a_plain_text_edit_marks_its_frame_dirty(qtbot: QtBot) -> None:
+    """A `QPlainTextEdit` counts as a value widget, the same as a line edit.
+
+    **Test steps:**
+
+    * build a page whose one frame holds a plain text edit
+    * type into it
+    * verify the frame is reported dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    text_edit = QPlainTextEdit(frame)
+    frame_layout.addWidget(text_edit)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    text_edit.setPlainText("changed")
+
+    assert frame_filter.dirty_frames() == [frame]
+
+
+def test_changing_a_string_list_editors_values_marks_its_frame_dirty(qtbot: QtBot) -> None:
+    """A `StringListEditor` counts as one value widget, read through its own ``values`` property.
+
+    **Test steps:**
+
+    * build a page whose one frame holds a string list editor
+    * change its values
+    * verify the frame is reported dirty
+    """
+    page = QWidget()
+    qtbot.addWidget(page)
+    layout = QVBoxLayout(page)
+    frame = QFrame(page)
+    frame_layout = QVBoxLayout(frame)
+    editor = StringListEditor(frame)
+    frame_layout.addWidget(editor)
+    layout.addWidget(frame)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    editor.values = ["one", "two"]
+
+    assert frame_filter.dirty_frames() == [frame]
+
+
+def test_a_clean_frame_alongside_a_dirty_one_is_not_reported(qtbot: QtBot) -> None:
+    """Only the frame that actually changed is dirty -- a sibling frame is left out (#77).
+
+    **Test steps:**
+
+    * build a two-frame page and edit only the second frame's line edit
+    * verify ``dirty_frames`` names only the second frame
+    """
+    page, frames, edits = make_value_page(qtbot, 2)
+    frame_filter = SettingsFrameFilter(page, "Markdown Rendering")
+
+    edits[1].setText("changed")
+
+    assert frame_filter.dirty_frames() == [frames[1]]
+
+
+# endregion

@@ -2,6 +2,7 @@
 
 from typing import Final, cast, override
 
+from borco_pyside.widgets import WrappingCheckBox
 from PySide6.QtCore import (
     QItemSelectionModel,
     QModelIndex,
@@ -9,10 +10,13 @@ from PySide6.QtCore import (
     QPersistentModelIndex,
     QSortFilterProxyModel,
     Qt,
+    QTimer,
 )
-from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtGui import QHideEvent, QShowEvent, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QBoxLayout, QFrame, QScrollArea, QWidget
 
+from ...documents.document_dock import DIRTY_DOCK_MARKER
+from ...fields.colors import DIRTY_BACKGROUND
 from ..persistent_settings import persistent_settings
 from ..settings_dialog_settings import SettingsDialogSettings
 from .settings_block_column import SettingsBlockColumn
@@ -25,6 +29,20 @@ PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 
 FILTER_ROLE: Final = Qt.ItemDataRole.UserRole + 2
 """Item-data role storing each row's `SettingsFrameFilter`, for page- and frame-level filtering."""
+
+DIRTY_POLL_INTERVAL_MS: Final = 200
+"""How often the dialog re-derives dirty state (#77) -- page badges, frame highlights, Apply/Reset
+enablement, and (while auto-apply is on) the commits themselves. No page's `is_dirty` does anything
+costlier than a handful of field comparisons, and nothing here needs to react faster than a human
+notices, so a short poll is simpler than wiring a change signal through every field widget type each of
+the settings pages happens to use."""
+
+DIRTY_FRAME_STYLESHEET: Final = f'QFrame[dirty="true"] {{ background-color: {DIRTY_BACKGROUND}; }}'
+"""Set once on every settings block at registration; toggling each frame's ``dirty`` property is what
+turns the tint on and off (#77) -- the same property-selector idiom as the field toolkit's
+``WARNING_STYLESHEET``\\ s. A background-only rule, deliberately: it composes with the native
+``StyledPanel`` border, so a dirty frame keeps the platform look, where any QSS ``border`` rule would
+replace the OS-drawn panel wholesale."""
 
 
 class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
@@ -58,6 +76,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         # them: the index each sits at in the page's own layout, and whether it is the one stretched
         # to fill what the others leave (see __restore_blocks).
         self.__page_blocks: Final[dict[QWidget, list[tuple[QFrame, int, bool]]]] = {}
+        self.__frame_filters: Final[dict[QWidget, SettingsFrameFilter]] = {}
         self.__blank_page: Final = QWidget(self)
         self.__ui.page_stack.addWidget(self.__blank_page)
         # Which *source* row the stack is on. The tree's own currentIndex cannot answer this: it is a
@@ -74,6 +93,14 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.show_full_page_check_box.set_text("Show full page if title matches")
         self.__ui.show_full_group_check_box.set_text("Show full group if title matches")
 
+        # A toolbar can't host a plain widget from the .ui alone (Designer has no way to drop one onto
+        # a QToolBar; only actions), so this one is built and added here instead -- the same way
+        # ImageLightbox's own overlay chrome is built in code rather than a .ui.
+        self.__auto_apply_check_box: Final = WrappingCheckBox(self.__ui.toolbar)
+        self.__auto_apply_check_box.set_text("Apply changes as they're made")
+        self.__ui.toolbar.addSeparator()
+        self.__ui.toolbar.addWidget(self.__auto_apply_check_box)
+
         # Restore the filter *before* wiring it up, so seeding the widgets doesn't fire the handlers
         # below; the proxy is seeded by hand for the same reason (no signal to ride in on). Each
         # page's own frame filter needs no seeding here: a page is frame-filtered when it becomes
@@ -83,6 +110,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.filter_edit.setText(self.__settings.filter_text)
         self.__ui.show_full_page_check_box.set_checked(self.__settings.show_full_page_on_title_match)
         self.__ui.show_full_group_check_box.set_checked(self.__settings.show_full_group_on_title_match)
+        self.__auto_apply_check_box.set_checked(self.__settings.auto_apply)
         self.__proxy.set_filter_text(self.__settings.filter_text)
         self.__proxy.set_show_full_group(self.__settings.show_full_group_on_title_match)
 
@@ -103,6 +131,33 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.reset_all_action.triggered.connect(self.__reset_all)
         self.__ui.reset_current_page_action.triggered.connect(self.__reset_current_page)
 
+        # Runs only while this dialog is actually visible (started/stopped in showEvent/hideEvent):
+        # a hidden settings dock has nothing on screen for a badge or highlight to update.
+        self.__dirty_poll_timer: Final = QTimer(self)
+        self.__dirty_poll_timer.setInterval(DIRTY_POLL_INTERVAL_MS)
+        self.__dirty_poll_timer.timeout.connect(self.__poll_dirty_state)
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802  (Qt API name)
+        """Start polling dirty state, and refresh it once immediately (#77) -- otherwise a dialog
+        populated while hidden (`MainWindow` registers every page before ever showing it) would come
+        up with stale badges/enablement until the first tick.
+
+        :param event: the show event; passed through to the base implementation.
+        """
+        super().showEvent(event)
+        self.__refresh_dirty_ui()
+        self.__dirty_poll_timer.start()
+
+    @override
+    def hideEvent(self, event: QHideEvent) -> None:  # noqa: N802  (Qt API name)
+        """Stop polling dirty state while nothing is on screen to reflect it (#77).
+
+        :param event: the hide event; passed through to the base implementation.
+        """
+        super().hideEvent(event)
+        self.__dirty_poll_timer.stop()
+
     def add_page(self, page: SettingsPage, group: str | None = None) -> None:
         """Register ``page`` as a new category: adds its tree row and stacked page.
 
@@ -121,6 +176,12 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         item.setData(frame_filter, FILTER_ROLE)
         item.setEditable(False)
         self.__record_blocks(page, frame_filter)
+        self.__frame_filters[widget] = frame_filter  # pylint: disable=unsupported-assignment-operation
+        # Property before stylesheet: the sheet's one polish then already sees the clean state, so
+        # __set_frame_dirty's changed-guard never has to repolish a frame that was never edited.
+        for frame in frame_filter.blocks():
+            frame.setProperty("dirty", False)
+            frame.setStyleSheet(DIRTY_FRAME_STYLESHEET)
         parent = self.__model if group is None else self.__group_item(group)
         parent.appendRow(item)
         self.__ui.page_stack.addWidget(self.__scroll_area_for(widget))
@@ -136,6 +197,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         if len(self.__scroll_areas) == 1:
             index = self.__proxy.mapFromSource(item.index())
             self.__ui.category_tree.setCurrentIndex(index)
+        self.__refresh_dirty_ui()
 
     def restore_selected_page(self) -> None:
         """Show the page or group saved by the last :meth:`save_filter_state` call, if it is still
@@ -243,6 +305,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__settings.filter_text = self.__ui.filter_edit.text()
         self.__settings.show_full_page_on_title_match = self.__ui.show_full_page_check_box.is_checked()
         self.__settings.show_full_group_on_title_match = self.__ui.show_full_group_check_box.is_checked()
+        self.__settings.auto_apply = self.__auto_apply_check_box.is_checked()
         if (title := self.__shown_title()) is not None:
             self.__settings.selected_page_title = title
         self.__settings.save(persistent_settings())
@@ -383,7 +446,9 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         (#228, #230).
 
         A group's own title matches too, since #230 made a group row something `restore_selected_page`
-        can show on its own (its stacked column), not just a stand-in for one of its pages.
+        can show on its own (its stacked column), not just a stand-in for one of its pages. Compared
+        with :data:`DIRTY_DOCK_MARKER` stripped off (:meth:`__unbadged`): a dirty page's row carries
+        that prefix (#77), which is display state, not part of its identity.
 
         :param title: the title to look for.
         :returns: that row, or ``None``.
@@ -392,15 +457,24 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             item = self.__model.item(row)
             if item is None:  # pragma: no cover  (a row within rowCount() always has an item)
                 continue
-            if item.text() == title:
+            if self.__unbadged(item.text()) == title:
                 return item
             if item.data(PAGE_ROLE) is not None:
                 continue
             for child_row in range(item.rowCount()):  # a page-less row is a group: its children are pages
                 child = item.child(child_row)
-                if child.text() == title:
+                if self.__unbadged(child.text()) == title:
                     return child
         return None
+
+    @staticmethod
+    def __unbadged(text: str) -> str:
+        """``text`` with a leading :data:`DIRTY_DOCK_MARKER` stripped, if present (#77).
+
+        :param text: a tree row's displayed text.
+        :returns: the row's title, with the dirty badge (if any) removed.
+        """
+        return text.removeprefix(DIRTY_DOCK_MARKER)
 
     def __pages(self) -> list[SettingsPage]:
         """Every registered page, in tree order (a group's pages together, at the group's position)."""
@@ -442,9 +516,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         Read off :attr:`__shown_row` rather than the widget in the stack, so it holds a title for the
         blank page too: what that blank stands in for is the row it will return to, which is what the
         next launch should restore (#230). Distinct from :meth:`__current_pages` (the tree's *selected*
-        row): the two diverge whenever the live filter hides the shown row (#228).
+        row): the two diverge whenever the live filter hides the shown row (#228). Unbadged
+        (:meth:`__unbadged`), so a dirty row's persisted title stays its plain one (#77).
         """
-        return None if self.__shown_row is None else self.__shown_row.text()
+        return None if self.__shown_row is None else self.__unbadged(self.__shown_row.text())
 
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Show the newly-selected row's page (or, for a group row, every page under it) in the stack.
@@ -509,22 +584,140 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
     def __apply_all(self) -> None:
         """Apply every registered page's changes."""
         for page in self.__pages():
-            page.save_changes()
+            self.__commit_page(page, save=True)
+        self.__refresh_dirty_ui()
 
     def __apply_current_page(self) -> None:
         """Apply the currently-selected row's changes -- one page, or every page under a group row."""
         for page in self.__current_pages():
-            page.save_changes()
+            self.__commit_page(page, save=True)
+        self.__refresh_dirty_ui()
 
     def __reset_all(self) -> None:
         """Discard every registered page's in-progress changes."""
         for page in self.__pages():
-            page.drop_changes()
+            self.__commit_page(page, save=False)
+        self.__refresh_dirty_ui()
 
     def __reset_current_page(self) -> None:
         """Discard the currently-selected row's changes -- one page, or every page under a group row."""
         for page in self.__current_pages():
+            self.__commit_page(page, save=False)
+        self.__refresh_dirty_ui()
+
+    def __commit_page(self, page: SettingsPage, *, save: bool) -> None:
+        """Apply or discard ``page``'s staged edits, and resync its frame-dirty baseline to match (#77).
+
+        The resync matters even though ``save_changes``/``drop_changes`` don't themselves touch any
+        widget: without it, :meth:`SettingsFrameFilter.dirty_frames` would keep comparing the
+        now-settled widgets against the *previous* clean snapshot and report the page as still dirty.
+
+        :param page: the page to commit.
+        :param save: ``True`` applies (``save_changes``), ``False`` discards (``drop_changes``).
+        """
+        if save:
+            page.save_changes()
+        else:
             page.drop_changes()
+        self.__frame_filters[cast(QWidget, page)].resync_baseline()
+
+    def __poll_dirty_state(self) -> None:
+        """Re-derive every bit of dirty-driven UI state (#77): while auto-apply is on, first commits
+        any page that has become dirty since the last tick; then refreshes page badges, the current
+        page's frame highlights, and Apply/Reset enablement either way.
+        """
+        if self.__auto_apply_check_box.is_checked():
+            for _, page in self.__page_items():
+                if page.is_dirty():
+                    self.__commit_page(page, save=True)
+        self.__refresh_dirty_ui()
+
+    def __refresh_dirty_ui(self) -> None:
+        """Bring every dirty-driven bit of UI state back in sync with the pages' current `is_dirty` (#77)."""
+        self.__refresh_all_badges()
+        self.__refresh_current_frame_state()
+        self.__refresh_action_enablement()
+
+    def __refresh_all_badges(self) -> None:
+        """Prefix :data:`DIRTY_DOCK_MARKER` on every dirty page's tree row, the same idiom a dirty
+        document tab uses (#77, #148)."""
+        for item, page in self.__page_items():
+            title = f"{DIRTY_DOCK_MARKER}{page.title}" if page.is_dirty() else page.title
+            if item.text() != title:
+                item.setText(title)
+
+    def __refresh_action_enablement(self) -> None:
+        """Enable Apply/Reset only while there is something for them to act on (#77)."""
+        current_dirty = any(page.is_dirty() for page in self.__current_pages())
+        any_dirty = any(page.is_dirty() for page in self.__pages())
+        self.__ui.apply_current_page_action.setEnabled(current_dirty)
+        self.__ui.reset_current_page_action.setEnabled(current_dirty)
+        self.__ui.apply_all_action.setEnabled(any_dirty)
+        self.__ui.reset_all_action.setEnabled(any_dirty)
+
+    def __refresh_current_frame_state(self) -> None:
+        """Refresh the pink dirty highlight of every frame the stack is currently showing (#77) --
+        an off-screen frame has nothing to update towards.
+        """
+        for page in self.__shown_pages():
+            frame_filter = self.__frame_filters[cast(QWidget, page)]
+            dirty_frames = set(frame_filter.dirty_frames())
+            for frame in frame_filter.blocks():
+                self.__set_frame_dirty(frame, frame in dirty_frames)
+
+    @staticmethod
+    def __set_frame_dirty(frame: QFrame, dirty: bool) -> None:
+        """Show or clear ``frame``'s pink dirty tint: flip the ``dirty`` dynamic property that
+        :data:`DIRTY_FRAME_STYLESHEET`'s selector matches on -- the sheet itself, set once at
+        registration, is never touched again (#77).
+
+        The re-polish is not optional: Qt resolves which stylesheet rules match a widget at polish
+        time and caches the result, and ``setProperty`` on a dynamic property does not invalidate
+        that cache -- a property flip alone repaints nothing (confirmed empirically offscreen).
+        ``unpolish``/``polish`` is Qt's own documented recipe for property-selector re-evaluation,
+        the same dance ``BooleanField.__render`` does for its warning color. The changed-guard in
+        front is what keeps the 200 ms poll cheap: an unchanged frame is left entirely alone.
+
+        :param frame: the frame to update.
+        :param dirty: whether ``frame`` currently differs from its last-synced baseline.
+        """
+        if frame.property("dirty") == dirty:
+            return
+        frame.setProperty("dirty", dirty)
+        style = frame.style()
+        style.unpolish(frame)
+        style.polish(frame)
+
+    def __page_items(self) -> list[tuple[QStandardItem, SettingsPage]]:
+        """Every registered (tree item, page) pair, in the same order as :meth:`__pages`."""
+        pairs: list[tuple[QStandardItem, SettingsPage]] = []
+        for row in range(self.__model.rowCount()):
+            item = self.__model.item(row)
+            if item is None:  # pragma: no cover  (a row within rowCount() always has an item)
+                continue
+            if (page := item.data(PAGE_ROLE)) is not None:
+                pairs.append((item, cast(SettingsPage, page)))
+                continue
+            for child_row in range(item.rowCount()):  # a page-less row is a group: recurse one level
+                child = item.child(child_row)
+                pairs.append((child, cast(SettingsPage, child.data(PAGE_ROLE))))
+        return pairs
+
+    def __shown_pages(self) -> list[SettingsPage]:
+        """The page(s) the stack is currently showing.
+
+        Mirrors :meth:`__current_pages`, but keyed off :attr:`__shown_row` rather than the tree's own
+        current index, so it stays right even when the live filter has hidden the shown row's tree
+        entry (#77, mirroring #228).
+        """
+        if self.__shown_row is None:
+            return []
+        if (page := self.__shown_row.data(PAGE_ROLE)) is not None:
+            return [cast(SettingsPage, page)]
+        return [
+            cast(SettingsPage, self.__shown_row.child(row).data(PAGE_ROLE))
+            for row in range(self.__shown_row.rowCount())
+        ]
 
     class CategoryFilterProxyModel(QSortFilterProxyModel):
         """Shows only rows whose page title or frame text contains the filter text, case-insensitive.

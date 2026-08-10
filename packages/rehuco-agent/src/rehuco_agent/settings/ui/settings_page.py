@@ -21,7 +21,8 @@ class SettingsPage(Protocol):
     def is_dirty(self) -> bool:  # pyright: ignore[reportReturnType]
         """Whether this page has unsaved changes.
 
-        Reserved for a later dirty-badging slice -- not yet consumed by `SettingsDialog`.
+        `SettingsDialog` polls this to badge the page's category-tree row, enable/disable its
+        Apply/Reset actions, and -- while auto-apply is on -- commit the page (#77).
         """
 
     def save_changes(self) -> None:

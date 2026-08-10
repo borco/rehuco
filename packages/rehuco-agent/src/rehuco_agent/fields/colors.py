@@ -28,3 +28,12 @@ blue ``RUNNING`` tint so queued and running read apart at a glance, the pair a r
 DONE_COLOR: Final = "#43A047"
 """Material Green 600 -- the task queue's ``DONE`` row tint (#251); the first token here marking
 something that finished rather than something to watch."""
+
+DIRTY_COLOR: Final = "#F48FB1"
+"""Material Pink 200 -- the settings dialog's dirty-frame highlight (#77), pink being the one hue
+none of the severity tokens above already claim. The lighter 200 step, not 400: the latter reads as a
+cold, saturated magenta at any real strength, where this one stays a soft, warm blush."""
+
+DIRTY_BACKGROUND: Final = "rgba(244, 143, 177, 24)"
+""":data:`DIRTY_COLOR` at low alpha, for tinting a dirty settings frame's background without
+overpowering the labels and controls painted on top of it."""
