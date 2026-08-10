@@ -123,6 +123,12 @@ class TaskQueueWidget(QWidget):
         """Stop listening, before the queue is shut down ([[appendices.task-queue#teardown]])."""
         self.__model.detach()
 
+    @property
+    def model(self) -> TaskQueueModel:
+        """The dock's own table model -- what :class:`~.task_queue_status_indicator.TaskQueueStatusIndicator`
+        (#239) follows, rather than becoming a second listener on the queue itself."""
+        return self.__model
+
     # region toolbar and context menu
 
     def __setup_toolbar(self) -> None:
