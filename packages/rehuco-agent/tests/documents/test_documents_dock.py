@@ -22,7 +22,7 @@ import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
 from borco_pyside.qtads import tab_label
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
-from pytest import fixture
+from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
@@ -34,6 +34,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     LockReasonKind,
     RehuDocument,
+    RehuFormatError,
     RenameCoordinator,
     TaskQueue,
 )
@@ -1097,9 +1098,46 @@ def test_adopt_reverted_conversion_is_a_no_op_for_a_path_not_open(mocker: Mocker
     adopt.assert_not_called()
 
 
-def test_adopt_reverted_conversion_logs_rather_than_raises_on_failure(mocker: MockerFixture, qtbot: QtBot) -> None:
+def test_adopt_reverted_conversion_finds_the_tab_through_a_resolved_spelling(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The caller's spelling comes from a browsed scan root, while an open document's path is resolved
+    (``MainWindow.open_file``) -- a root reached through a junction or mapped drive must still find the
+    tab it names (#246).
+
+    **Test steps:**
+
+    * open a document under its resolved path, then adopt under a junction spelling of it
+    * verify the model's method was still reached
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    adopt = mocker.patch.object(widget.model, "adopt_reverted_conversion")
+    junction = Path.cwd() / "junction" / "sculpting" / "info.rehu"
+    real = {junction: FAKE_PATH}
+    mocker.patch.object(Path, "resolve", autospec=True, side_effect=lambda self, strict=False: real.get(self, self))
+
+    dock.adopt_reverted_conversion(junction)
+
+    adopt.assert_called_once_with()
+
+
+@mark.parametrize(
+    "error",
+    [FileNotFoundError("gone"), RehuFormatError("the restored .tc will not parse")],
+    ids=["missing again", "unparsable"],
+)
+def test_adopt_reverted_conversion_logs_rather_than_raises_on_failure(
+    mocker: MockerFixture, qtbot: QtBot, error: Exception
+) -> None:
     """The job that triggered this already succeeded; a failure to re-read the restored ``.tc`` is
     reported, not raised into a queue-listener callback that has nowhere to show it (#246).
+
+    Both refusals ``load_tc`` can put: the file gone again (an ``OSError``), and a backed-up ``.tc``
+    that was corrupt all along (``RehuFormatError``, a ``ValueError``) -- the renames restore whatever
+    bytes were retained, parseable or not.
 
     **Test steps:**
 
@@ -1111,7 +1149,7 @@ def test_adopt_reverted_conversion_logs_rather_than_raises_on_failure(mocker: Mo
     dock = DocumentsDock()
     qtbot.addWidget(dock)
     widget = dock.open_document(FAKE_PATH)
-    mocker.patch.object(widget.model, "adopt_reverted_conversion", side_effect=FileNotFoundError("gone"))
+    mocker.patch.object(widget.model, "adopt_reverted_conversion", side_effect=error)
 
     dock.adopt_reverted_conversion(FAKE_PATH)
 
