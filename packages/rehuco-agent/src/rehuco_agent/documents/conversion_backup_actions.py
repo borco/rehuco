@@ -142,19 +142,41 @@ class ConversionBackupActions(QObject):
 
     @property
     def retained(self) -> bool:
-        """Whether this resource still holds conversion backups -- what decides whether either action is
-        offered at all, and whether the banner has anything to say."""
+        """Whether this resource still holds conversion backups -- what decides whether Discard is
+        offered, and whether the banner has anything to say."""
         return self.__retained_backups() is not None
+
+    @property
+    def undoable(self) -> bool:
+        """Whether a backed-up ``.tc`` is here, so there is a conversion to undo at all -- what decides
+        whether Revert is offered (#246).
+
+        **Not the same question as :attr:`retained`**, and offering Revert on that one was the defect:
+        backups are any ``.orig`` sibling, deliberately unscoped
+        ([[acquisition-tooling#convert-mechanics]]), so a directory holding only a retired checksum
+        manifest (an ``info.sfv.orig``, [[data-model#checksums]]) reads as *has backups* while there is
+        nothing to revert to. A convert-discarding-originals run leaves exactly that shape, and the
+        button it offered could only ever answer :data:`NO_LEGACY_REFUSAL`.
+
+        Deliberately weaker than :attr:`~rehuco_core.ConversionBackups.revertible`, which also wants the
+        restore targets free: an occupied target is a conversion that *can* be undone once the file in
+        the way is moved, so Revert stays offered and :meth:`revert` names what is blocking it. Hiding
+        it there would leave the reader nothing to act on and no reason given.
+        """
+        backups = self.__retained_backups()
+        return backups is not None and backups.legacy_restored is not None
 
     @property
     def edited_since(self) -> bool:
         """Whether the ``.rehu`` has been saved again since the conversion, so reverting now costs real
         work -- what turns the banner's row from information into a warning.
 
-        ``False`` for a resource with no retained backups, where the question does not arise.
+        ``False`` for a resource with no retained backups, and for one with nothing to revert *to*
+        (:attr:`undoable`, #246) -- in both the question does not arise, and an edit costs nothing by
+        being unrevertable when no revert was on offer.
         """
         backups = self.__retained_backups()
-        return backups is not None and backups.edited_since
+        return self.undoable and backups is not None and backups.edited_since
 
     @property
     def notice(self) -> str:
@@ -168,7 +190,7 @@ class ConversionBackupActions(QObject):
         backups = self.__retained_backups()
         if backups is None:
             return ""
-        template = EDITED_NOTICE if backups.edited_since else NOTICE
+        template = EDITED_NOTICE if self.edited_since else NOTICE
         return template.format(summary=self.__summary(backups))
 
     def refresh(self) -> None:
@@ -179,7 +201,7 @@ class ConversionBackupActions(QObject):
         """
         path = self.__model.path
         self.__backups = conversion_backups(path) if path is not None else None
-        self.__revert_action.setVisible(self.retained)
+        self.__revert_action.setVisible(self.undoable)
         self.__discard_action.setVisible(self.retained)
         self.changed.emit()
 
@@ -190,9 +212,11 @@ class ConversionBackupActions(QObject):
     def revert(self) -> None:
         """Undo this resource's conversion, after confirming what it costs.
 
-        Refuses up front where the inventory already knows it cannot run -- no backed-up ``.tc``, or an
-        occupied restore target -- naming the reason and changing nothing, rather than letting the
-        operation raise the same answer out of a confirmed action.
+        Refuses up front where the inventory already knows it cannot run -- an occupied restore target,
+        naming the file in the way and changing nothing, rather than letting the operation raise the same
+        answer out of a confirmed action. That is the refusal this surface exists to put: the *other*
+        one, no backed-up ``.tc`` at all, is not offered in the first place (:attr:`undoable`, #246) and
+        so only a click racing an out-of-band change can still reach it.
 
         The inventory is re-read **at the click**, not taken from the last seam's cache: the model's
         signals cover this app's own writes, but an out-of-band edit -- or the bulk manager acting on
