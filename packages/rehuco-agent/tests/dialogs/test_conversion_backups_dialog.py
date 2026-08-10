@@ -162,6 +162,20 @@ def fixture_present(mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "exists", autospec=True, return_value=True)
 
 
+@fixture(name="scannable_library")
+def fixture_scannable_library(scan: Any, present: None) -> None:
+    """The scan seam patched and a filesystem where every resource is present -- the two side-effect
+    fixtures a test needs in place before it can :func:`choose_root` over a dialog it built itself.
+
+    Requested as one by every test that constructs its own dialog (to pass ``open_paths``/``on_reverted``,
+    #246), which is what keeps their signatures down to the collaborators they actually name.
+
+    :param scan: the patched scan seam.
+    :param present: the filesystem where each resource still exists.
+    """
+    del scan, present
+
+
 @fixture(name="dialog")
 def fixture_dialog(qtbot: QtBot, queue: TaskQueue, scan: Any, present: None) -> ConversionBackupsDialog:
     """The dialog under test, over a scanned root.
@@ -918,7 +932,7 @@ def test_a_revert_with_nothing_edited_says_nothing_about_edits(
 
 
 def test_reverting_warns_about_resources_open_in_a_tab(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """The bulk manager cannot see open documents on its own -- ``open_paths`` is the seam that tells it,
     and what makes this warning possible at all (#246).
@@ -928,7 +942,7 @@ def test_reverting_warns_about_resources_open_in_a_tab(
     * revert a selection where one of the two runnable resources is reported as open
     * verify the question counts it
     """
-    del scan, present
+    del scannable_library
     mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
     dialog = ConversionBackupsDialog(queue, open_paths=lambda: {SCULPTING})
     qtbot.addWidget(dialog)
@@ -941,7 +955,7 @@ def test_reverting_warns_about_resources_open_in_a_tab(
 
 
 def test_the_open_warning_matches_a_resolved_spelling_of_the_scan_path(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """An open document's path is resolved (``MainWindow.open_file``), while the scan keeps the spelling
     the root was browsed under -- a junction or mapped drive must not hide the very tab the warning is
@@ -952,7 +966,7 @@ def test_the_open_warning_matches_a_resolved_spelling_of_the_scan_path(
     * report the open tab under the resolved spelling of a scanned resource
     * verify the question still counts it
     """
-    del scan, present
+    del scannable_library
     mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
     real = {SCULPTING: RESOLVED_SCULPTING}
     mocker.patch.object(Path, "resolve", autospec=True, side_effect=lambda self, strict=False: real.get(self, self))
@@ -986,8 +1000,32 @@ def test_reverting_says_nothing_about_open_documents_with_no_seam_wired(
     assert "open in an editor tab" not in question_of(answer_yes)
 
 
+def test_reverting_says_nothing_about_a_tab_open_on_a_resource_not_selected(
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
+) -> None:
+    """The warning is a fact about *this revert*, so a tab open on something the selection does not
+    cover must not carry it -- a disclaimer that always appears is one nobody reads (#246).
+
+    **Test steps:**
+
+    * revert only Sculpting, with the seam reporting a tab open on the deselected ZBrush
+    * verify the question says nothing about open tabs
+    """
+    del scannable_library
+    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
+    dialog = ConversionBackupsDialog(queue, open_paths=lambda: {ZBRUSH})
+    qtbot.addWidget(dialog)
+    choose_root(qtbot, dialog, ROOT)
+    dialog.model.set_checked([ZBRUSH, PAINTING], False)
+
+    ui_of(dialog).revert_button.click()
+    wait_for_outcomes(qtbot, dialog)
+
+    assert "open in an editor tab" not in question_of(answer_yes)
+
+
 def test_a_finished_revert_reports_it_to_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """A successfully reverted resource is handed to ``on_reverted``, so an open tab can adopt the
     restored ``.tc`` in place instead of going stale (#246).
@@ -997,7 +1035,7 @@ def test_a_finished_revert_reports_it_to_the_open_documents_seam(
     * revert a selection restricted to one revertible resource
     * verify ``on_reverted`` was called with its path once the job finished
     """
-    del scan, present, answer_yes
+    del scannable_library, answer_yes
     mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
     on_reverted = mocker.Mock()
     dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
@@ -1012,7 +1050,7 @@ def test_a_finished_revert_reports_it_to_the_open_documents_seam(
 
 
 def test_a_failed_revert_does_not_report_it_to_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """Only a resource that actually reverted is worth catching an open tab up on -- a failed operation
     changed nothing on disk for it to adopt (#246).
@@ -1022,7 +1060,7 @@ def test_a_failed_revert_does_not_report_it_to_the_open_documents_seam(
     * make the operation raise for the one resource selected
     * verify ``on_reverted`` was never called
     """
-    del scan, present, answer_yes
+    del scannable_library, answer_yes
     mocker.patch(f"{JOBS_MODULE}.revert_conversion", side_effect=PermissionError("read-only"))
     on_reverted = mocker.Mock()
     dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
@@ -1037,7 +1075,7 @@ def test_a_failed_revert_does_not_report_it_to_the_open_documents_seam(
 
 
 def test_a_revert_finishing_after_close_still_reaches_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """The confirmation promised the open tab a refresh, and the serial app-wide queue can hold that
     revert behind hours of other work -- so closing the dialog defers the queue detach until the batch
@@ -1048,7 +1086,7 @@ def test_a_revert_finishing_after_close_still_reaches_the_open_documents_seam(
     * hold the revert inside the worker, close the dialog while it runs, then let it finish
     * verify the dialog kept listening across the close, the seam was told, and only then detached
     """
-    del scan, present, answer_yes
+    del scannable_library, answer_yes
     running = Event()
     release = Event()
 
@@ -1076,7 +1114,7 @@ def test_a_revert_finishing_after_close_still_reaches_the_open_documents_seam(
 
 
 def test_a_deferred_detach_settles_when_the_last_job_is_removed_unrun(
-    qtbot: QtBot, queue: TaskQueue, scan: Any, present: None, answer_yes: Any, mocker: MockerFixture
+    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
 ) -> None:
     """A job deleted from the Tasks dock without running produces no outcome to read back, so the
     settled-batch question is put to the queue's own snapshot -- and the removal itself is a wake, or a
@@ -1087,7 +1125,7 @@ def test_a_deferred_detach_settles_when_the_last_job_is_removed_unrun(
     * hold the first revert, pause the second, close the dialog, let the first finish
     * verify the dialog is still listening for the paused job, then remove it and verify the detach
     """
-    del scan, present, answer_yes
+    del scannable_library, answer_yes
     running = Event()
     release = Event()
 
