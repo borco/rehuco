@@ -1,5 +1,5 @@
-"""The SettingsDialog's own filter state, persisted across restarts (#76), and its last-shown page or
-group (#228, #230)."""
+"""The SettingsDialog's own filter state, persisted across restarts (#76), its last-shown page or
+group (#228, #230), and its auto-apply toggle (#77)."""
 
 from dataclasses import dataclass, field
 from typing import Final, cast
@@ -11,12 +11,13 @@ FILTER_TEXT_KEY: Final = "filter_text"
 SHOW_FULL_PAGE_KEY: Final = "show_full_page_on_title_match"
 SHOW_FULL_GROUP_KEY: Final = "show_full_group_on_title_match"
 SELECTED_PAGE_KEY: Final = "selected_page_title"
+AUTO_APPLY_KEY: Final = "auto_apply"
 
 
 @dataclass
 class SettingsDialogSettings:
-    """The settings dialog's filter text, its two "show full ... if title matches" toggles, and the
-    title of the page or group it was last showing (#228, #230)."""
+    """The settings dialog's filter text, its two "show full ... if title matches" toggles, the title
+    of the page or group it was last showing (#228, #230), and its auto-apply toggle (#77)."""
 
     filter_text: str = field(default="")
     """The text in the filter box, restored so a search survives a restart; empty shows every page."""
@@ -35,6 +36,10 @@ class SettingsDialogSettings:
     group is added, so a stored index would silently select a different row than the one that was
     showing (#228)."""
 
+    auto_apply: bool = field(default=False)
+    """Whether a page's changes are applied as they're made rather than waiting for an explicit
+    Apply (#77)."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current filter text, toggle states and selected-page title with what's in
         persistent storage.
@@ -46,6 +51,7 @@ class SettingsDialogSettings:
         self.show_full_page_on_title_match = cast(bool, settings.value(SHOW_FULL_PAGE_KEY, False, type=bool))
         self.show_full_group_on_title_match = cast(bool, settings.value(SHOW_FULL_GROUP_KEY, False, type=bool))
         self.selected_page_title = cast(str, settings.value(SELECTED_PAGE_KEY, "", type=str))
+        self.auto_apply = cast(bool, settings.value(AUTO_APPLY_KEY, False, type=bool))
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -58,4 +64,5 @@ class SettingsDialogSettings:
         settings.setValue(SHOW_FULL_PAGE_KEY, self.show_full_page_on_title_match)
         settings.setValue(SHOW_FULL_GROUP_KEY, self.show_full_group_on_title_match)
         settings.setValue(SELECTED_PAGE_KEY, self.selected_page_title)
+        settings.setValue(AUTO_APPLY_KEY, self.auto_apply)
         settings.endGroup()

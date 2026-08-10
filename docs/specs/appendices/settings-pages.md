@@ -192,8 +192,8 @@ What "saved" or "dropped" actually *means* is entirely up to each page. Two shap
   (Register/Unregister) already took effect on the OS the moment they were clicked; nothing is
   staged, so `save_changes()`/`drop_changes()` are no-ops and `is_dirty()` always returns `False`.
 
-`is_dirty()` is reserved for a later dirty-badging slice on the category tree — declared on the
-protocol, but not yet read by `SettingsDialog` itself.
+`is_dirty()` is what drives all of the dialog's dirty-state UI — the tree badges, the Apply/Reset
+enablement, and auto-apply ([[appendices.settings-pages#dirty-state-ui]]).
 
 ## 3. How a page persists its own changes
 
@@ -250,7 +250,56 @@ than surfacing as a row that refuses to compute.
 Windows registry via `rehuco_agent.windows_registration` when clicked, so there is nothing left for
 `save_changes()` to do.
 
-## 4. Adding a new settings page
+## 4. Dirty-state UI: badges, highlight, auto-apply (#77)
+
+[[[appendices.settings-pages#dirty-state-ui]]]
+
+`is_dirty()` is consumed at two granularities the dialog derives without any page-specific wiring:
+
+- **Page level** — `SettingsDialog` reads a page's own `is_dirty()`. A dirty page's category-tree row
+  is prefixed with `DIRTY_DOCK_MARKER` (`documents/document_dock.py`), the same glyph a dirty document
+  tab uses, so the two affordances read as one idiom. Apply/Reset (current page and all) are enabled
+  only while there is something for them to act on: current-page actions track `is_dirty()` of the
+  selected row's page(s), the "all" actions track whether *any* registered page is dirty.
+- **Frame level** — no page reports this; `SettingsPage.is_dirty()` only ever answers for the whole
+  page. `SettingsFrameFilter` derives it generically instead: it snapshots every frame's recognized
+  control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, `StringListEditor`) at
+  construction, and `dirty_frames()` compares the live values against that snapshot.
+  `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
+  after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the
+  *previous* clean state and report a just-settled page as still dirty. This snapshot approach needs no
+  per-page changes and matches what every staged-edit page's own `is_dirty()` already checks, with one
+  accepted gap: `DescriptionsPage` keeps the *other* engine's CSS draft off-widget while its own is
+  shown, invisible to a widget-only snapshot — harmless, since the highlight is a visual aid and
+  `is_dirty()` stays the badge/enablement source of truth.
+
+A dirty frame gets a low-alpha pink background (`DIRTY_BACKGROUND`, `fields/colors.py`) via a
+`QFrame#<objectName>` id-selector stylesheet -- a visual aid only, naming nothing to click. An earlier
+version of this slice also floated a per-frame `SettingsFrameOverlay` with its own Apply/Reset buttons
+in each dirty frame's corner; it was removed (#77) because those buttons could only ever act on the
+**whole page** (nothing generic can tell which settings field a widget maps to, so a true per-frame
+partial commit isn't derivable from the widgets alone), and a page with several dirty frames at once
+showed several Apply/Reset pairs that all did the same whole-page thing -- reading as scoped to the
+frame they sat in when they weren't. The toolbar's own Apply/Reset is the one true way to commit or
+discard a page's changes.
+
+A dialog-wide **"Apply changes as they're made"** `WrappingCheckBox` drives auto-apply: while checked,
+a page found dirty on the next poll tick is committed immediately. It lives in the toolbar, added via
+`toolbar.addWidget()` in `__init__` rather than the `.ui` -- Designer has no way to drop a plain widget
+onto a `QToolBar` (only actions), so it's built in code the same way `ImageLightbox`'s own overlay
+chrome is.
+
+All of this is driven by a `QTimer` poll (`DIRTY_POLL_INTERVAL_MS`, 200 ms), started in `showEvent` and
+stopped in `hideEvent` — nothing here needs to react faster than a human notices, and a poll is simpler
+than wiring a change signal through every field-widget type each page happens to use. The dialog also
+refreshes once synchronously after every `add_page` and after every toolbar commit, so the visible
+state never waits a whole tick to catch up with an explicit action.
+
+**Dirty-marker identity note:** a tree row's *displayed* text carries the badge, but its identity
+(what `restore_selected_page`/`save_filter_state` compare and persist) is always the unbadged title —
+`SettingsDialog.__unbadged` strips the marker before either reads a row's text.
+
+## 5. Adding a new settings page
 
 [[[appendices.settings-pages#adding-a-page]]]
 
@@ -308,7 +357,7 @@ Windows registry via `rehuco_agent.windows_registration` when clicked, so there 
   `wordWrap` on. A plain wrapping `QLabel` hints as though its text were one wide line, and the frame
   around it is sized from that hint — so the paragraph paints past the border (#226, fixed in #229).
 
-## 5. Making the rest of the app react to a saved change
+## 6. Making the rest of the app react to a saved change
 
 [[[appendices.settings-pages#reacting-to-changes]]]
 

@@ -2,11 +2,13 @@
 
 from typing import Any
 
+from borco_pyside.widgets import WrappingCheckBox
 from PySide6.QtCore import QModelIndex
-from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
 from rehuco_agent.settings.settings_dialog_settings import SettingsDialogSettings
 from rehuco_agent.settings.ui import settings_dialog
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
@@ -67,21 +69,29 @@ class FakePage(QWidget):
     def __init__(self, title: str, groups: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__title = title
+        self.dirty = False
         self.save_calls = 0
         self.drop_calls = 0
         self.frames: list[QFrame] = []
+        # one per frame, so a test can make a specific frame's SettingsFrameFilter.dirty_frames()
+        # baseline diverge without the page as a whole knowing anything about it (#77)
+        self.edits: list[QLineEdit] = []
 
         # kept as an attribute, not a local: a test staging a filling block sets its stretch here, the
         # way a real page's controller does, and QWidget.layout() answers the untyped base class
         self.main_layout = QVBoxLayout(self)
         layout = self.main_layout
-        for terms in groups or []:
+        for index, terms in enumerate(groups or []):
             frame = QFrame(self)
+            frame.setObjectName(f"frame_{index}")  # a real page's .ui-declared frames always have one
             frame_layout = QVBoxLayout(frame)
             for term in terms:
                 frame_layout.addWidget(QLabel(term, frame))
+            edit = QLineEdit(frame)
+            frame_layout.addWidget(edit)
             layout.addWidget(frame)
             self.frames.append(frame)
+            self.edits.append(edit)
 
     @property
     def title(self) -> str:
@@ -89,16 +99,20 @@ class FakePage(QWidget):
         return self.__title
 
     def is_dirty(self) -> bool:
-        """Always clean -- not exercised by these tests."""
-        return False
+        """Whatever :attr:`dirty` was last set to -- ``False`` unless a test opts in."""
+        return self.dirty
 
     def save_changes(self) -> None:
-        """Record that a save was requested."""
+        """Record that a save was requested, and settle -- the same as a real page's is_dirty()
+        reporting clean once its staged edits match what was just saved."""
         self.save_calls += 1
+        self.dirty = False
 
     def drop_changes(self) -> None:
-        """Record that a drop was requested."""
+        """Record that a drop was requested, and settle -- the same as a real page's is_dirty()
+        reporting clean once its edits are reverted."""
         self.drop_calls += 1
+        self.dirty = False
 
 
 # endregion
@@ -111,6 +125,45 @@ def dialog_ui(dialog: SettingsDialog) -> object:
     :returns: the generated ``Ui_SettingsDialog`` instance.
     """
     return dialog._SettingsDialog__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def auto_apply_check_box(dialog: SettingsDialog) -> WrappingCheckBox:
+    """The dialog's auto-apply toggle (#77).
+
+    Not part of ``Ui_SettingsDialog``: a ``QToolBar`` can't host a plain widget from Designer, so this
+    one is built and added to the toolbar in code (see `SettingsDialog.__init__`) rather than promoted
+    in the ``.ui``.
+
+    :param dialog: the dialog to inspect.
+    :returns: the auto-apply checkbox.
+    """
+    return dialog._SettingsDialog__auto_apply_check_box  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def refresh_dirty_state(dialog: SettingsDialog) -> None:
+    """Force the dialog to recompute every dirty-derived bit of UI (badges, frame highlights,
+    Apply/Reset enablement) (#77).
+
+    Real usage never needs this call directly: it happens on every show and on a short poll tick
+    while the dialog is visible (`SettingsDialog.showEvent`/``__poll_dirty_state``). Tests mutate a
+    `FakePage`'s ``dirty`` flag straight through, with no signal of its own to ride in on, so this is
+    what stands in for "some time has passed and a poll tick already ran."
+
+    :param dialog: the dialog to refresh.
+    """
+    dialog._SettingsDialog__refresh_dirty_ui()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def poll_dirty_state(dialog: SettingsDialog) -> None:
+    """Run one tick of the dialog's dirty-state poll, as its own timer would (#77).
+
+    Unlike :func:`refresh_dirty_state`, this also auto-applies any page found dirty while the
+    dialog's auto-apply checkbox is on -- exercising that path without waiting on the real
+    :class:`~PySide6.QtCore.QTimer` or a real show event.
+
+    :param dialog: the dialog to tick.
+    """
+    dialog._SettingsDialog__poll_dirty_state()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
 def page_scroll_areas(dialog: SettingsDialog) -> list[QScrollArea]:
@@ -471,6 +524,8 @@ def test_apply_current_page_action_saves_only_the_selected_page(qtbot: QtBot) ->
     dialog.add_page(first)
     dialog.add_page(second)
     select_page(dialog, "Markdown Rendering")
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
 
@@ -493,6 +548,9 @@ def test_apply_all_action_saves_every_page(qtbot: QtBot) -> None:
     second = FakePage("Markdown Rendering")
     dialog.add_page(first)
     dialog.add_page(second)
+    first.dirty = True
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).apply_all_action.trigger()  # type: ignore[attr-defined]
 
@@ -516,6 +574,8 @@ def test_reset_current_page_action_drops_only_the_selected_page(qtbot: QtBot) ->
     dialog.add_page(first)
     dialog.add_page(second)
     select_page(dialog, "Markdown Rendering")
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).reset_current_page_action.trigger()  # type: ignore[attr-defined]
 
@@ -538,6 +598,9 @@ def test_reset_all_action_drops_every_page(qtbot: QtBot) -> None:
     second = FakePage("Markdown Rendering")
     dialog.add_page(first)
     dialog.add_page(second)
+    first.dirty = True
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).reset_all_action.trigger()  # type: ignore[attr-defined]
 
@@ -873,6 +936,9 @@ def test_apply_current_page_on_a_group_row_saves_every_page_under_it(qtbot: QtBo
     dialog.add_page(first, group="Editors")
     dialog.add_page(second, group="Editors")
     select_group(dialog, "Editors")
+    first.dirty = True
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
 
@@ -896,6 +962,9 @@ def test_reset_current_page_on_a_group_row_drops_every_page_under_it(qtbot: QtBo
     dialog.add_page(first, group="Editors")
     dialog.add_page(second, group="Editors")
     select_group(dialog, "Editors")
+    first.dirty = True
+    second.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).reset_current_page_action.trigger()  # type: ignore[attr-defined]
 
@@ -941,6 +1010,9 @@ def test_apply_all_action_saves_grouped_pages_too(qtbot: QtBot) -> None:
     ungrouped = FakePage("System Integration")
     dialog.add_page(grouped, group="Editors")
     dialog.add_page(ungrouped)
+    grouped.dirty = True
+    ungrouped.dirty = True
+    refresh_dirty_state(dialog)
 
     dialog_ui(dialog).apply_all_action.trigger()  # type: ignore[attr-defined]
 
@@ -2045,3 +2117,330 @@ def test_a_filling_block_fills_alone_and_packs_with_others(qtbot: QtBot) -> None
     assert packed == page.frames[0].sizeHint().height(), "packed, it takes its natural height"
     assert page.frames[0].height() == filling_alone, "the page's stretch must survive the round trip"
     assert page.main_layout.stretch(0) == 1
+
+
+# region dirty-state UI (#77)
+
+
+def test_a_freshly_added_page_carries_no_dirty_marker(qtbot: QtBot) -> None:
+    """A clean page's tree row shows its plain title, with no badge.
+
+    **Test steps:**
+
+    * add a page
+    * verify its tree row's text is its plain title
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.add_page(FakePage("Registry"))
+
+    assert visible_titles(dialog) == ["Registry"]
+
+
+def test_a_dirty_pages_row_gets_the_dirty_marker_prefix(qtbot: QtBot) -> None:
+    """A page reporting itself dirty is badged in the tree, the same idiom a dirty document tab uses.
+
+    **Test steps:**
+
+    * add a page and mark it dirty, then refresh
+    * verify its tree row's text is prefixed with the dirty marker
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    dialog.add_page(page)
+
+    page.dirty = True
+    refresh_dirty_state(dialog)
+
+    assert visible_titles(dialog) == [f"{DIRTY_DOCK_MARKER}Registry"]
+
+
+def test_a_settled_page_loses_its_dirty_marker(qtbot: QtBot) -> None:
+    """Once a dirty page reports itself clean again, its badge is removed.
+
+    **Test steps:**
+
+    * add a page, mark it dirty and refresh, then mark it clean and refresh again
+    * verify its tree row's text is back to its plain title
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    dialog.add_page(page)
+    page.dirty = True
+    refresh_dirty_state(dialog)
+
+    page.dirty = False
+    refresh_dirty_state(dialog)
+
+    assert visible_titles(dialog) == ["Registry"]
+
+
+def test_restore_selected_page_still_finds_a_dirty_pages_row(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """The dirty badge is display state, not part of a row's identity -- ``restore_selected_page``
+    still finds a badged row by its plain, saved title (#77, #228).
+
+    **Test steps:**
+
+    * save a page's title, then build a dialog, register that page dirty, and refresh
+    * call ``restore_selected_page``
+    * verify the stack shows that page despite its badged row
+    """
+    SettingsDialogSettings(selected_page_title="Markdown Rendering").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry"))
+    second = FakePage("Markdown Rendering")
+    dialog.add_page(second)
+    second.dirty = True
+    refresh_dirty_state(dialog)
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is second
+    assert visible_titles(dialog) == ["Registry", f"{DIRTY_DOCK_MARKER}Markdown Rendering"]
+
+
+def test_apply_and_reset_actions_are_disabled_when_nothing_is_dirty(qtbot: QtBot) -> None:
+    """With every registered page clean, all four toolbar actions start disabled.
+
+    **Test steps:**
+
+    * add a page (left clean)
+    * verify every apply/reset action is disabled
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.add_page(FakePage("Registry"))
+
+    ui = dialog_ui(dialog)
+    assert ui.apply_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+    assert ui.reset_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+    assert ui.apply_all_action.isEnabled() is False  # type: ignore[attr-defined]
+    assert ui.reset_all_action.isEnabled() is False  # type: ignore[attr-defined]
+
+
+def test_apply_all_action_enables_when_an_unselected_page_is_dirty(qtbot: QtBot) -> None:
+    """ "Apply All"/"Reset All" answer for every page, not just the selected one -- a dirty page that
+    isn't current still enables them.
+
+    **Test steps:**
+
+    * add two pages, leave the first (auto-selected) clean, and dirty the second
+    * refresh
+    * verify "Apply All"/"Reset All" are enabled, but the current-page actions are not
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    dialog.add_page(FakePage("Registry"))
+    second = FakePage("Markdown Rendering")
+    dialog.add_page(second)
+
+    second.dirty = True
+    refresh_dirty_state(dialog)
+
+    ui = dialog_ui(dialog)
+    assert ui.apply_all_action.isEnabled() is True  # type: ignore[attr-defined]
+    assert ui.reset_all_action.isEnabled() is True  # type: ignore[attr-defined]
+    assert ui.apply_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+    assert ui.reset_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
+
+
+def test_apply_current_page_action_enables_once_the_current_page_is_dirty(qtbot: QtBot) -> None:
+    """The current-page actions track the *selected* page's own dirty state.
+
+    **Test steps:**
+
+    * add a page (auto-selected, clean) and mark it dirty
+    * refresh
+    * verify "Apply"/"Reset" are now enabled
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    dialog.add_page(page)
+
+    page.dirty = True
+    refresh_dirty_state(dialog)
+
+    ui = dialog_ui(dialog)
+    assert ui.apply_current_page_action.isEnabled() is True  # type: ignore[attr-defined]
+    assert ui.reset_current_page_action.isEnabled() is True  # type: ignore[attr-defined]
+
+
+def test_committing_a_page_resyncs_its_frame_baseline_so_the_badge_clears(qtbot: QtBot) -> None:
+    """Applying a dirty page's changes settles both the page-level badge and its frame highlight --
+    the frame baseline is resynced, not just ``save_changes`` called (#77).
+
+    **Test steps:**
+
+    * add a page with one editable frame, edit its field, and refresh
+    * trigger "Apply"
+    * verify the badge is gone and the frame carries no dirty stylesheet
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry", [["Name"]])
+    dialog.add_page(page)
+    page.edits[0].setText("changed")
+    page.dirty = True
+    refresh_dirty_state(dialog)
+    assert visible_titles(dialog) == [f"{DIRTY_DOCK_MARKER}Registry"]
+
+    dialog_ui(dialog).apply_current_page_action.trigger()  # type: ignore[attr-defined]
+
+    assert page.save_calls == 1
+    assert visible_titles(dialog) == ["Registry"]
+    refresh_dirty_state(dialog)
+    assert page.frames[0].styleSheet() == ""
+
+
+def test_editing_a_frames_field_tints_it(qtbot: QtBot) -> None:
+    """Typing into one of the current page's frames pinks its background (#77).
+
+    **Test steps:**
+
+    * add a page with one editable frame and edit its field
+    * refresh
+    * verify the frame's stylesheet is no longer empty
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry", [["Name"]])
+    dialog.add_page(page)
+
+    page.edits[0].setText("changed")
+    refresh_dirty_state(dialog)
+
+    assert page.frames[0].styleSheet() != ""
+
+
+def test_a_clean_frame_has_no_tint(qtbot: QtBot) -> None:
+    """A frame that has never been edited gets no stylesheet override (#77).
+
+    **Test steps:**
+
+    * add a page with one editable frame, left untouched
+    * refresh
+    * verify the frame carries no stylesheet
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry", [["Name"]])
+    dialog.add_page(page)
+
+    refresh_dirty_state(dialog)
+
+    assert page.frames[0].styleSheet() == ""
+
+
+def test_auto_apply_commits_a_dirty_page_on_the_next_poll_tick(qtbot: QtBot) -> None:
+    """With auto-apply on, a page found dirty during a poll tick is committed immediately, without
+    waiting for an explicit Apply (#77).
+
+    **Test steps:**
+
+    * add a page, check auto-apply, then mark the page dirty
+    * run one poll tick
+    * verify the page's ``save_changes`` was called and its badge is gone
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    dialog.add_page(page)
+    auto_apply_check_box(dialog).set_checked(True)
+    page.dirty = True
+
+    poll_dirty_state(dialog)
+
+    assert page.save_calls == 1
+
+
+def test_auto_apply_leaves_a_clean_page_alongside_a_dirty_one_untouched(qtbot: QtBot) -> None:
+    """With auto-apply on, a poll tick commits only the pages that are actually dirty -- a clean
+    sibling is skipped, not saved along with it (#77).
+
+    **Test steps:**
+
+    * add two pages, check auto-apply, and mark only the second dirty
+    * run one poll tick
+    * verify only the second page's ``save_changes`` was called
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = FakePage("Registry")
+    second = FakePage("Markdown Rendering")
+    dialog.add_page(first)
+    dialog.add_page(second)
+    auto_apply_check_box(dialog).set_checked(True)
+    second.dirty = True
+
+    poll_dirty_state(dialog)
+
+    assert first.save_calls == 0
+    assert second.save_calls == 1
+
+
+def test_auto_apply_off_leaves_a_dirty_page_uncommitted(qtbot: QtBot) -> None:
+    """With auto-apply off (the default), a poll tick never commits anything on its own -- only an
+    explicit Apply/Reset does (#77).
+
+    **Test steps:**
+
+    * add a page and mark it dirty, auto-apply left off
+    * run one poll tick
+    * verify the page's ``save_changes`` was never called
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    page = FakePage("Registry")
+    dialog.add_page(page)
+    page.dirty = True
+
+    poll_dirty_state(dialog)
+
+    assert page.save_calls == 0
+
+
+def test_save_filter_state_persists_auto_apply(qtbot: QtBot, fake_persistent_settings: FakeSettings) -> None:
+    """:meth:`SettingsDialog.save_filter_state` writes the auto-apply toggle too (#77).
+
+    **Test steps:**
+
+    * check the auto-apply checkbox
+    * call ``save_filter_state``
+    * verify it comes back checked from a fresh `SettingsDialogSettings`
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    auto_apply_check_box(dialog).set_checked(True)
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.auto_apply is True
+
+
+def test_starts_with_the_persisted_auto_apply_toggle(qtbot: QtBot, fake_persistent_settings: FakeSettings) -> None:
+    """A freshly-built dialog restores the auto-apply toggle from storage (#77).
+
+    **Test steps:**
+
+    * save auto-apply as checked, then build a dialog
+    * verify its auto-apply checkbox comes up checked
+    """
+    SettingsDialogSettings(auto_apply=True).save(fake_persistent_settings)  # type: ignore[arg-type]
+
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    assert auto_apply_check_box(dialog).is_checked() is True
+
+
+# endregion
