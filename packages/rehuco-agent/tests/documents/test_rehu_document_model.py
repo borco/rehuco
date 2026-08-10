@@ -29,7 +29,6 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_l
 from rehuco_agent.fields import FieldsTab, UnknownField
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
-    DEFAULT_UNKNOWN_USERNAME,
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
     ConversionBackups,
@@ -1558,18 +1557,22 @@ def test_revert_conversion_adopts_the_restored_tc_in_place(mocker: MockerFixture
 
 def test_revert_conversion_reads_the_restored_tc_under_the_unknown_identity(mocker: MockerFixture) -> None:
     """A revert puts back exactly the file that was there before, whose per-user flags were not set by
-    this install's identity -- the same rule every ``.tc`` open follows (#109).
+    this install's identity -- the same rule every ``.tc`` open follows (#109), and the same **configured**
+    name (#246): a customized unknown-username must give the adopted tab the per-user state a
+    close-and-reopen of the identical file would.
 
     **Test steps:**
 
-    * revert a conversion with ``load_tc`` mocked
-    * verify it was handed the unknown username
+    * configure a custom unknown username, then revert a conversion with ``load_tc`` mocked
+    * verify it was handed the configured name, not the built-in default
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
     mocker.patch(
         "rehuco_agent.documents.rehu_document_model.revert_conversion",
         return_value=backups_restoring(Path("/fake/info.tc")),
     )
+    identity = mocker.patch("rehuco_agent.documents.rehu_document_model.shared_identity_settings")
+    identity.return_value.unknown_username = "guest"
     load = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.load_tc",
         return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
@@ -1577,7 +1580,7 @@ def test_revert_conversion_reads_the_restored_tc_under_the_unknown_identity(mock
 
     model.revert_conversion()
 
-    load.assert_called_once_with(Path("/fake/info.tc"), username=DEFAULT_UNKNOWN_USERNAME)
+    load.assert_called_once_with(Path("/fake/info.tc"), username="guest")
 
 
 def test_revert_conversion_emits_the_file_seam_and_rebuilds_the_form(mocker: MockerFixture) -> None:
@@ -1690,15 +1693,18 @@ def test_adopt_reverted_conversion_adopts_the_restored_tc_in_place(mocker: Mocke
 
 
 def test_adopt_reverted_conversion_reads_the_restored_tc_under_the_unknown_identity(mocker: MockerFixture) -> None:
-    """Same identity rule as :meth:`revert_conversion` (#109): the restored ``.tc``'s per-user flags were
-    not set by this install's identity.
+    """Same identity rule as :meth:`revert_conversion` (#109), same configured name (#246): the restored
+    ``.tc``'s per-user flags were not set by this install's identity, and the adopted tab must match what
+    a close-and-reopen of the identical file would show.
 
     **Test steps:**
 
-    * adopt a reverted conversion with ``load_tc`` mocked
-    * verify it was handed the unknown username
+    * configure a custom unknown username, then adopt a reverted conversion with ``load_tc`` mocked
+    * verify it was handed the configured name, not the built-in default
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.rehu")))
+    identity = mocker.patch("rehuco_agent.documents.rehu_document_model.shared_identity_settings")
+    identity.return_value.unknown_username = "guest"
     load = mocker.patch(
         "rehuco_agent.documents.rehu_document_model.load_tc",
         return_value=RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True),
@@ -1706,7 +1712,7 @@ def test_adopt_reverted_conversion_reads_the_restored_tc_under_the_unknown_ident
 
     model.adopt_reverted_conversion()
 
-    load.assert_called_once_with(Path("/fake/info.tc"), username=DEFAULT_UNKNOWN_USERNAME)
+    load.assert_called_once_with(Path("/fake/info.tc"), username="guest")
 
 
 def test_adopt_reverted_conversion_emits_the_file_seam_and_rebuilds_the_form(mocker: MockerFixture) -> None:

@@ -80,7 +80,7 @@ REVERT_QUESTION: Final = (
     "Each restores its original .tc and legacy screenshots, and deletes the .rehu the conversion wrote."
 )
 EDITED_WARNING: Final = (
-    "\n{count} of these have been saved again since they were converted, so reverting discards those edits:\n{names}"
+    "\n{count} resource(s) have been saved again since they were converted, so reverting discards those edits:\n{names}"
 )
 MORE_EDITED: Final = "\n  …and {count} more"
 MAXIMUM_NAMED_EDITED: Final = 10
@@ -88,15 +88,17 @@ MAXIMUM_NAMED_EDITED: Final = 10
 
 **Per resource, not a blanket disclaimer** (#193): *some of these may have been edited* is a sentence a
 reader can only agree to blindly. Past this many the rest are counted, because a wall of names is a
-blanket disclaimer again."""
+blanket disclaimer again. ``resource(s)``, the count convention every other string in this dialog
+already follows (:data:`REVERT_QUESTION`, :data:`DISCARD_QUESTION`, :data:`UNREADABLE_WARNING`) --
+*1 of these have* was a number disagreement in the commonest case."""
 
 OPEN_WARNING: Final = (
-    "\n{count} of these are open in an editor tab; each is refreshed to show the restored file, discarding "
-    "any unsaved changes there."
+    "\n{count} resource(s) are open in an editor tab; each is refreshed to show the restored file, "
+    "discarding any unsaved changes there."
 )
-"""What the revert confirmation adds when some of the selection is open (#246) -- a count, the same shape
-:data:`EDITED_WARNING` uses for its own disclaimer, since which tabs are open is not a decision a reader
-made here and naming them would only repeat what their own title bars already say."""
+"""What the revert confirmation adds when some of the selection is open (#246) -- a count in the same
+``resource(s)`` convention as :data:`EDITED_WARNING`, since which tabs are open is not a decision a
+reader made here and naming them would only repeat what their own title bars already say."""
 
 DISCARD_TITLE: Final = "Discard Backups"
 DISCARD_QUESTION: Final = (
@@ -249,6 +251,10 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         after it finished (the engine may notify more than once) is not double-counted."""
         self.__completed = 0
         self.__running_total = 0
+        self.__closed = False
+        """Whether :meth:`done` has run with jobs still unfinished, deferring the queue detach until
+        the batch settles (#246) -- what keeps a finishing revert reaching :attr:`__on_reverted` after
+        the dialog closes, instead of the tab it promised to refresh going stale anyway."""
 
         self.__marshaller: Final = ConversionBackupsDialog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
@@ -288,7 +294,13 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         Close, the titlebar close button and Escape alike.
 
         Jobs already enqueued are left alone: closing this dialog does not cancel work already asked
-        for, and their rows stay in the Tasks dock.
+        for, and their rows stay in the Tasks dock. **And they are still listened for** (#246): the
+        confirmation promised any open tab a refresh once its revert lands, and the queue is serial and
+        app-wide, so a revert can sit behind hours of hashing while the dialog is long closed. The
+        detach is deferred until the batch settles (:meth:`__on_queue_changed`) rather than skipped --
+        safe because this dialog outlives its close (parented to the window) and ``MainWindow`` shuts
+        the queue down before teardown, so no callback can reach a deleted object. A revert persisted
+        across a restart (#238) is the one residue: it finishes with no dialog listening at all.
 
         :param result: the dialog's result code, passed straight through to :meth:`QDialog.done`.
         """
@@ -297,10 +309,24 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         if self.__thread is not None and self.__thread.isRunning():
             self.__thread.quit()
             self.__thread.wait(SCAN_THREAD_WAIT_MS)
-        self.__queue.remove_listener(self)
+        if self.__unfinished_jobs():
+            self.__closed = True
+        else:
+            self.__queue.remove_listener(self)
         self.__settings.geometry = bytes(self.saveGeometry().data())
         self.__settings.save(persistent_settings())
         super().done(result)
+
+    def __unfinished_jobs(self) -> bool:
+        """Whether any job this dialog enqueued is still on the queue and not yet finished.
+
+        Asked of the queue itself rather than answered from :attr:`__seen`'s bookkeeping: a job removed
+        from the Tasks dock without ever running settles the batch too, and the queue's snapshot is the
+        one place that cannot disagree with itself about which jobs still stand.
+        """
+        return any(
+            status.serial in self.__jobs and status.state not in FINISHED_JOB_STATES for status in self.__queue.jobs()
+        )
 
     # region TaskQueueListener -- every method is "something changed", nothing more
 
@@ -318,8 +344,13 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         del serials
 
     def jobs_removed(self, serials: Sequence[int]) -> None:
-        """See :class:`~rehuco_core.TaskQueueListener`."""
-        del serials
+        """See :class:`~rehuco_core.TaskQueueListener`.
+
+        One of this dialog's own jobs being removed (deleted from the Tasks dock without running) is
+        worth a wake: it may be the last thing a deferred detach (#246) was waiting on.
+        """
+        if any(serial in self.__jobs for serial in serials):
+            self.__marshaller.queue_changed.emit()
 
     def queue_paused_changed(self, paused: bool) -> None:
         """See :class:`~rehuco_core.TaskQueueListener`."""
@@ -578,8 +609,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
                 named += MORE_EDITED.format(count=len(edited) - MAXIMUM_NAMED_EDITED)
             question += EDITED_WARNING.format(count=len(edited), names=named)
         if self.__open_paths is not None:
+            # resolved before matching: an open document's path is resolved (`MainWindow.open_file`),
+            # while these rows keep the spelling the scan root was browsed under -- a junction or
+            # mapped drive would otherwise hide exactly the tabs this warning is about (#246)
             open_now = set(self.__open_paths())
-            open_count = sum(1 for row in rows if row.path in open_now)
+            open_count = sum(1 for row in rows if row.path in open_now or row.path.resolve() in open_now)
             if open_count:
                 question += OPEN_WARNING.format(count=open_count)
         return self.__ask(REVERT_TITLE, question)
@@ -660,7 +694,10 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         A resource whose ``RevertConversionJob`` just landed here is reported to :attr:`__on_reverted`
         (#246), so a tab left open on it can catch up -- after the row itself is updated, the same order
         :meth:`~rehuco_agent.documents.checksum_actions.ChecksumActions.__on_queue_changed` reports its
-        own finding in.
+        own finding in. And once the whole batch has settled with the dialog already closed, the
+        deferred queue detach :meth:`done` left behind finally runs -- checked even on a wake that
+        finished nothing, because a job removed without running settles the batch without ever
+        producing an outcome to read.
         """
         newly_finished = 0
         for serial, status in list(self.__seen.items()):
@@ -668,19 +705,20 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
                 continue
             self.__reported.add(serial)
             newly_finished += 1
-            job = self.__jobs[serial]
-            outcome, message = self.__outcome_for(job, status)
+            outcome, message = self.__outcome_for(self.__jobs[serial], status)
             self.__model.set_row_outcome(status.source, outcome, message)
             if outcome == "reverted" and self.__on_reverted is not None:
                 self.__on_reverted(status.source)
-        if not newly_finished:
-            return
-        self.__completed += newly_finished
-        self.__ui.scan_progress_bar.setValue(self.__completed)
-        self.__ui.status_label.setText(BUSY_STATUS.format(done=self.__completed, total=self.__running_total))
-        if self.__completed >= self.__running_total:
-            self.__ui.scan_progress_bar.setVisible(False)
-        self.__update_controls()
+        if newly_finished:
+            self.__completed += newly_finished
+            self.__ui.scan_progress_bar.setValue(self.__completed)
+            self.__ui.status_label.setText(BUSY_STATUS.format(done=self.__completed, total=self.__running_total))
+            if self.__completed >= self.__running_total:
+                self.__ui.scan_progress_bar.setVisible(False)
+            self.__update_controls()
+        if self.__closed and not self.__unfinished_jobs():
+            self.__queue.remove_listener(self)
+            self.__closed = False
 
     @staticmethod
     def __outcome_for(job: TcBackupsJob, status: JobStatus) -> tuple[str, str | None]:

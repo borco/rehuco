@@ -18,7 +18,6 @@ from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_CURRENT_USERNAME,
-    DEFAULT_UNKNOWN_USERNAME,
     FORMAT_VERSION_KEY,
     LEGACY_SUFFIX,
     USERS_KEY,
@@ -39,6 +38,7 @@ from rehuco_core import (
 from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..settings.identity_settings import shared_identity_settings
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
@@ -698,9 +698,11 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         called at all. In-memory edits go too, and for the same reason -- there is no file left for
         them to be saved into.
 
-        The restored document is read under the **unknown** identity, the rule every ``.tc`` open
-        follows (`DocumentsDock`, #109): the per-user flags a legacy file carries were not set by this
-        install's own identity, and a revert puts back exactly the file that was there before.
+        The restored document is read under the configured **unknown** identity
+        (:func:`~rehuco_agent.settings.identity_settings.shared_identity_settings`), the rule every
+        ``.tc`` open follows (`DocumentsDock`, #109): the per-user flags a legacy file carries were not
+        set by this install's own identity, and a revert puts back exactly the file that was there
+        before.
 
         Emits :attr:`reloaded` on success -- the same file seam :meth:`revert` and :meth:`convert`
         raise, since this too replaces the file the model stands for (#174).
@@ -710,6 +712,8 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
             conversion to undo. Nothing on disk is touched, and this model is left as it was.
         :raises FileExistsError: a restore target is occupied, or a leftover staging file from an
             interrupted revert is in the way; likewise nothing is touched.
+        :raises RehuFormatError: the restored ``.tc`` will not parse -- the files are back on disk as
+            they were, but this model could not adopt them.
         """
         if self.path is None:
             raise ValueError("no conversion to revert -- document was not loaded from a file")
@@ -731,6 +735,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :raises ValueError: this document has no path.
         :raises FileNotFoundError: no ``.tc`` sits beside this model's path -- the revert this was meant
             to catch up with never happened, or has already been undone again.
+        :raises RehuFormatError: the ``.tc`` beside this model's path will not parse.
         """
         if self.path is None:
             raise ValueError("no conversion to adopt -- document was not loaded from a file")
@@ -744,10 +749,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         and :meth:`adopt_reverted_conversion`, everything past the file-system revert itself, which only
         the former performs. Runs inside the caller's own :class:`~borco_pyside.logging.LogScope`.
 
+        Reads under the configured unknown identity rather than the built-in default, the same seam
+        every ``.tc`` open threads (``DocumentsDock``, #109) -- so an adopted tab shows the same
+        per-user state a close-and-reopen of the identical file would.
+
         :param legacy: the restored ``.tc``, beside this model's path.
         :raises FileNotFoundError: ``legacy`` does not exist.
+        :raises RehuFormatError: ``legacy`` will not parse.
         """
-        self.__document = load_tc(legacy, username=DEFAULT_UNKNOWN_USERNAME)
+        self.__document = load_tc(legacy, username=shared_identity_settings().unknown_username)
         LOG.info("Restored %s", legacy)
         self.__seed_from_document()
         self.dirty = False

@@ -185,7 +185,10 @@ class DocumentsDock(QMainWindow):
 
         Used by the bulk conversion-backups manager (#246) to warn before reverting a resource that is
         open in a tab. A never-saved document has no path yet, and is left out -- there is nothing on
-        disk for a revert to have moved.
+        disk for a revert to have moved. The paths are as the models hold them, which is **resolved**:
+        every open funnels through ``MainWindow.open_file``/``open_folder``/``open_archive``, and each
+        resolves before handing the path on -- so a caller matching against these compares its own
+        spelling against the real location, not against however a file dialog happened to spell it.
         """
         return frozenset(model.path for model in self.open_document_models() if model.path is not None)
 
@@ -195,18 +198,26 @@ class DocumentsDock(QMainWindow):
         :class:`RehuDocumentModel` in the loop, so nothing else tells an open tab its file moved.
 
         A no-op if ``path`` is not open -- most reverts run over resources nobody has open, and the
-        caller has no cheaper way to know that in advance than asking here.
+        caller has no cheaper way to know that in advance than asking here. Looked up as spelled first,
+        then resolved: the caller's spelling comes from a browsed scan root, while an open document's
+        path is resolved (:meth:`open_paths`), so a root reached through a junction or mapped drive
+        would otherwise miss the very tab this exists to refresh.
+
+        A revert that ran but whose restored ``.tc`` cannot be read back (gone again already, or
+        unparsable) is logged rather than raised: this is called from a queue-completion callback with
+        nobody above it to catch, and the model refuses before touching itself, so the tab is left
+        exactly as it was.
 
         :param path: the ``.rehu`` a finished ``RevertConversionJob`` has just reverted.
         """
-        dock = self.__find_dock_by_path(path)
+        dock = self.__find_dock_by_path(path) or self.__find_dock_by_path(path.resolve())
         if dock is None:
             return
         model = self.__document_docks[dock].model
         with LogScope.open(path):
             try:
                 model.adopt_reverted_conversion()
-            except OSError as error:
+            except (OSError, RehuFormatError) as error:
                 LOG.error("Could not adopt the reverted %s: %s", path, error)
 
     def close_all(self) -> None:

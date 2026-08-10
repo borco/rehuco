@@ -172,11 +172,11 @@ class ConversionBackupActions(QObject):
         work -- what turns the banner's row from information into a warning.
 
         ``False`` for a resource with no retained backups, and for one with nothing to revert *to*
-        (:attr:`undoable`, #246) -- in both the question does not arise, and an edit costs nothing by
-        being unrevertable when no revert was on offer.
+        (the same condition :attr:`undoable` reads, #246) -- in both the question does not arise, and
+        an edit costs nothing by being unrevertable when no revert was on offer.
         """
         backups = self.__retained_backups()
-        return self.undoable and backups is not None and backups.edited_since
+        return backups is not None and backups.legacy_restored is not None and backups.edited_since
 
     @property
     def notice(self) -> str:
