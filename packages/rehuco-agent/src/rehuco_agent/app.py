@@ -181,8 +181,12 @@ def run(argv: list[str]) -> int:
     LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)
-    if not singleton.setup(APP_ID):
-        # not primary: setup() already forwarded this process's argv to the existing primary
+    # ``argv[1:]`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]`` default:
+    # the two are the same in production (``run(sys.argv)``), but this function's contract is that
+    # its *parameter* is the argv -- honored when primary (opened below), so also honored when
+    # forwarding, rather than silently substituting the process's real command line
+    if not singleton.setup(APP_ID, argv[1:]):
+        # not primary: setup() already forwarded argv[1:] to the existing primary
         return 0
 
     def open_forwarded(paths: list[str]) -> None:
