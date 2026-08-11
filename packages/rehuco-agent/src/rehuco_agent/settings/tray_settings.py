@@ -20,7 +20,7 @@ class TraySettings(QObject):
     plain dataclass most of this app's settings sections use: toggling this on the settings page has
     to reach the tray icon `MainWindow` already owns -- creating or tearing it down live -- not just
     change what the next launch does. :func:`shared_tray_settings` is the single, process-wide
-    instance `TrayPage` writes and `MainWindow` follows.
+    instance the System Integration pages' `TrayBlock` writes and `MainWindow` follows.
 
     :param parent: optional Qt parent.
     """
