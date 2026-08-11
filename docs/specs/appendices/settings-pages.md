@@ -74,8 +74,11 @@ settings go.
 
 **Top-level is for what is about the app rather than about a resource type**: "Identity"
 (`IdentityPage`, #99), "Logs" (`LogsPage`, #200), "Tasks" (`TasksPage`, #202), "Checksums"
-(`ChecksumsPage`, #242), and the platform-gated "System Integration" (`RegistryPage` on Windows,
-`DesktopIntegrationPage` on Linux). The test each of them passes is the same: a reader looking for it has
+(`ChecksumsPage`, #242), and "System Integration" — one page on every platform, a different class behind
+each (`RegistryPage` on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS,
+which registers nothing because the association comes from the app bundle). macOS has that page at all
+only because the tray block lives on it (#205): a setting deciding what the window's close button does has
+to be reachable wherever there is a window. The test each of them passes is the same: a reader looking for it has
 no plugin name to guess. Checksums govern every resource type and the sweep that reads them is reached
 from `File` rather than from a document, so filing them under a plugin would hide them behind a word the
 reader never thought of.
@@ -188,9 +191,11 @@ What "saved" or "dropped" actually *means* is entirely up to each page. Two shap
   looking, and each of those documents then remembers the applied value as if its toggle had been
   clicked by hand. A document with no viewer open resolves the setting afresh whenever it opens one,
   so it is never seeded with a stale default from whenever it happened to be constructed.
-- **Immediate-effect pages** (`RegistryPage`, "System Integration") — its buttons
-  (Register/Unregister) already took effect on the OS the moment they were clicked; nothing is
-  staged, so `save_changes()`/`drop_changes()` are no-ops and `is_dirty()` always returns `False`.
+- **Mixed pages** ("System Integration") — its registration buttons (Register/Unregister) already took
+  effect on the OS the moment they were clicked, so nothing of *theirs* is ever staged; the tray checkbox
+  beside them (#205) is staged like any other control. `is_dirty()`/`save_changes()`/`drop_changes()`
+  therefore answer for the tray block alone. The page was purely immediate-effect until #205 merged Tray
+  into it, which is what turned a page that could never be dirty into one that can.
 
 `is_dirty()` is what drives all of the dialog's dirty-state UI — the tree badges, the Apply/Reset
 enablement, and auto-apply ([[appendices.settings-pages#dirty-state-ui]]).
@@ -246,9 +251,18 @@ choice as it is typed: a scan under an unusable backend raises rather than measu
 ([[field-schema#duration-size]]), so an ffprobe path pointing at nothing has to be visible here rather
 than surfacing as a row that refuses to compute.
 
-`RegistryPage` has no local settings dataclass at all: Register/Unregister write straight to the
-Windows registry via `rehuco_agent.windows_registration` when clicked, so there is nothing left for
-`save_changes()` to do.
+The "System Integration" pages have no local settings dataclass of their own: Register/Unregister write
+straight to the OS when clicked (`rehuco_agent.windows_registration` on Windows), so the registration half
+leaves `save_changes()` nothing to do. What it does save is the tray checkbox, through `TrayBlock`
+(`settings/ui/tray_block.py`, #205) into the shared `TraySettings`.
+
+`TrayBlock` is **not a widget**, which is the part worth knowing: the block itself is a plain `QFrame`
+declared in each of the three pages' own `.ui`, because `SettingsFrameFilter` counts only exact-`QFrame`
+direct children of the page as blocks and deliberately excludes subclasses
+([[appendices.settings-pages#category-groups]]) — a `TrayBlock(QFrame)` widget would have been invisible to
+the filter, the group column and the dirty highlight alike. So the markup is duplicated per page and only
+the behavior is shared, which is the half that reads and writes persistent storage and therefore the half
+where three copies would drift into a real defect rather than a cosmetic one.
 
 ## 4. Dirty-state UI: badges, highlight, auto-apply (#77)
 
