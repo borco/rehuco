@@ -7,6 +7,9 @@ winreg = pytest.importorskip("winreg")  # module doesn't exist off Windows -- sk
 
 from pytest_mock import MockerFixture  # noqa: E402  # pylint: disable=wrong-import-position
 from pytestqt.qtbot import QtBot  # noqa: E402  # pylint: disable=wrong-import-position
+from rehuco_agent.settings.tray_settings import (  # noqa: E402  # pylint: disable=wrong-import-position
+    shared_tray_settings,
+)
 from rehuco_agent.settings.ui import registry_page  # noqa: E402  # pylint: disable=wrong-import-position
 from rehuco_agent.settings.ui.settings_frame_filter import (  # noqa: E402  # pylint: disable=wrong-import-position
     SettingsFrameFilter,
@@ -195,8 +198,9 @@ def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot
 
 
 @mark.windows
-def test_is_dirty_is_always_false(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page is never dirty -- register/unregister act immediately, nothing is staged.
+def test_is_dirty_is_false_with_the_tray_checkbox_untouched(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A freshly-built page is clean: the registration buttons stage nothing, and the tray checkbox
+    starts on what is saved (#205).
 
     **Test steps:**
 
@@ -211,21 +215,50 @@ def test_is_dirty_is_always_false(qtbot: QtBot, mocker: MockerFixture) -> None:
 
 
 @mark.windows
-def test_save_and_drop_changes_are_no_ops(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """``save_changes``/``drop_changes`` do nothing and don't raise.
+def test_is_dirty_follows_the_tray_checkbox(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Toggling the tray checkbox makes the page dirty -- it is this page's one staged control
+    since Tray merged into System Integration (#205).
 
     **Test steps:**
 
-    * construct the page
-    * call both methods
-    * verify neither raises and the status label is untouched
+    * construct the page and toggle the tray checkbox
+    * verify ``is_dirty`` is ``True``
     """
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
     ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
+    ui.enabled_check_box.setChecked(True)
+
+    assert page.is_dirty() is True
+
+
+@mark.windows
+def test_save_changes_applies_the_tray_choice_and_drop_changes_reverts_it(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """``save_changes`` pushes the staged tray choice into the shared settings; ``drop_changes``
+    puts the checkbox back. Neither disturbs the registration controls above them (#205).
+
+    **Test steps:**
+
+    * construct the page, check the tray box and save
+    * verify the shared settings took it and the page is clean
+    * toggle again and drop
+    * verify the checkbox is back and the status label was never touched
+    """
+    mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
+    page = registry_page.RegistryPage((".zip",))
+    qtbot.addWidget(page)
+    ui = page._RegistryPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.enabled_check_box.setChecked(True)
     page.save_changes()
+
+    assert shared_tray_settings().enabled is True
+    assert page.is_dirty() is False
+
+    ui.enabled_check_box.setChecked(False)
     page.drop_changes()
 
+    assert ui.enabled_check_box.isChecked() is True
     assert ui.status_label.text() == registry_page.NOT_CHECKED_STATUS

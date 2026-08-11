@@ -81,6 +81,56 @@
     </widget>
    </item>
    <item>
+    <widget class="QFrame" name="tray_frame">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="tray_frame_layout">
+      <item>
+       <widget class="QLabel" name="tray_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Tray</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="enabled_check_box">
+        <property name="text">
+         <string>Show a tray icon; closing the window minimizes to tray instead of quitting</string>
+        </property>
+        <property name="toolTip">
+         <string>Quit becomes explicit (tray menu / File &gt; Quit) while this is on</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="unavailable_label">
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>No system tray is available on this desktop, so this setting has no effect: closing the window will keep quitting.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="bottom_spacer">
      <property name="orientation">
       <enum>Qt::Orientation::Vertical</enum>

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QWidget
 
 from ... import windows_registration
 from .registry_page_ui import Ui_RegistryPage
+from .tray_block import TrayBlock
 
 NOT_RUNNING_FROM_EXE_STATUS: Final = (
     "Cannot register/unregister -- not running from a real .exe (started via `python -m rehuco_agent`)."
@@ -24,9 +25,11 @@ class RegistryPage(QWidget):
     `rehuco_agent.windows_registration`, the same orchestration the CLI's ``--register``/
     ``--unregister`` use.
 
-    Register/unregister take effect immediately when clicked -- there's nothing staged to save or
-    drop, so :meth:`save_changes`/:meth:`drop_changes` are no-ops and :meth:`is_dirty` is always
-    ``False``.
+    Register/unregister take effect immediately when clicked, so nothing of theirs is ever staged.
+    The tray block below them (`TrayBlock`, #205) holds this page's one staged control, and is what
+    :meth:`is_dirty`/:meth:`save_changes`/:meth:`drop_changes` answer for -- the Linux
+    `DesktopIntegrationPage` and the macOS `SystemIntegrationPage` carry the same block under the
+    same page title, so the tray setting is reachable on every platform.
 
     Windows-only, like `rehuco_agent.windows_registration` itself -- only ever constructed inside
     an ``if sys.platform == "win32":`` branch (`main_window.py`).
@@ -59,20 +62,27 @@ class RegistryPage(QWidget):
         self.__ui.unregister_button.clicked.connect(self.__unregister)
         self.__ui.check_button.clicked.connect(self.__check)
 
+        self.__tray: Final = TrayBlock(self.__ui.enabled_check_box, self.__ui.unavailable_label)
+
     @property
     def title(self) -> str:
         """This page's category-tree label."""
         return "System Integration"
 
     def is_dirty(self) -> bool:
-        """Always ``False`` -- register/unregister act immediately, nothing is staged."""
-        return False
+        """Whether the staged tray checkbox differs from what's saved.
+
+        The registration controls above it never contribute: they act immediately when clicked, so
+        there is nothing of theirs to stage (#205 put the one staged control on this page)."""
+        return self.__tray.is_dirty()
 
     def save_changes(self) -> None:
-        """No-op: nothing is staged -- register/unregister already took effect when clicked."""
+        """Persist the staged tray choice -- register/unregister already took effect when clicked."""
+        self.__tray.save_changes()
 
     def drop_changes(self) -> None:
-        """No-op: nothing is staged -- register/unregister already took effect when clicked."""
+        """Discard the staged tray edit -- register/unregister already took effect when clicked."""
+        self.__tray.drop_changes()
 
     def __register(self) -> None:
         """Register the file association and context menus, then reflect the result."""

@@ -17,7 +17,16 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QDialog, QLabel, QMessageBox, QScrollArea, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QLabel,
+    QMessageBox,
+    QScrollArea,
+    QSystemTrayIcon,
+    QWidget,
+)
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -36,6 +45,7 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
+from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
@@ -45,6 +55,7 @@ from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
+from rehuco_agent.tray_icon import TrayIcon
 from rehuco_core import JobControl, JobState, JobStatus, SweepChecksumsJob, TaskJobBase, TaskQueue
 
 SWEEP_ROOT: Final = Path("/fake/library")
@@ -1589,6 +1600,409 @@ def test_close_event_is_aborted_when_a_failing_save_is_cancelled(mocker: MockerF
 
     assert not event.isAccepted()
     save.assert_not_called()
+
+
+# region tray tests (#205)
+
+
+def test_no_tray_icon_by_default(qtbot: QtBot) -> None:
+    """With tray mode off (the default), a fresh window builds no `TrayIcon`.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify no tray icon was built
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window._MainWindow__tray_icon is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_tray_icon_built_at_startup_when_already_enabled(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A window built while tray mode is already on (and a tray is available) starts with its icon
+    already in place, without waiting for the setting to change.
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * verify a `TrayIcon` was built
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert isinstance(window._MainWindow__tray_icon, TrayIcon)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_tray_icon_not_built_when_enabled_but_no_tray_is_available(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Tray mode turned on with no system tray available (bare Linux sessions, chiefly) refuses to
+    engage: no `TrayIcon` is built at all.
+
+    **Test steps:**
+
+    * mock tray availability as ``False`` and enable tray mode before constructing the window
+    * verify no `TrayIcon` was built
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=False)
+    shared_tray_settings().enabled = True
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window._MainWindow__tray_icon is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_tray_icon_created_live_when_the_setting_turns_on(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Turning tray mode on after the window already exists builds the icon immediately -- not just
+    on the next launch, the same immediacy `MarkdownRenderingSettings` gives an open viewer.
+
+    **Test steps:**
+
+    * mock tray availability as ``True``
+    * construct the window with tray mode off
+    * turn tray mode on via the shared settings
+    * verify a `TrayIcon` now exists
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._MainWindow__tray_icon is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    shared_tray_settings().enabled = True
+
+    assert isinstance(window._MainWindow__tray_icon, TrayIcon)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_tray_icon_torn_down_live_when_the_setting_turns_off(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Turning tray mode back off tears the icon down immediately.
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * turn tray mode off via the shared settings
+    * verify no `TrayIcon` remains
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._MainWindow__tray_icon is not None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    shared_tray_settings().enabled = False
+
+    assert window._MainWindow__tray_icon is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_close_event_hides_to_tray_instead_of_closing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A plain window close (titlebar/Alt+F4 -- not ``File`` > ``Quit`` or the tray menu's own
+    ``Quit``) hides the window to tray instead of running the guarded close, while tray mode is on.
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * dispatch a close event directly (not through :meth:`MainWindow.request_quit`)
+    * verify the event was ignored, the window was hidden, and nothing was persisted
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    hide = mocker.patch.object(window, "hide")
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    hide.assert_called_once_with()
+    save.assert_not_called()
+
+
+def test_close_event_quits_normally_when_no_tray_is_available(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With tray mode on but no system tray available, closing still quits -- tray mode refuses to
+    engage rather than leaving an unquittable app.
+
+    **Test steps:**
+
+    * mock tray availability as ``False`` and enable tray mode before constructing the window
+    * mock ``open_document_models`` to return no dirty documents
+    * dispatch a close event
+    * verify the event was accepted (not hidden-to-tray)
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=False)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert event.isAccepted()
+
+
+def test_request_quit_bypasses_tray_and_runs_the_guarded_close(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """``request_quit`` (``File`` > ``Quit``, or the tray menu's own ``Quit``) overrides tray mode's
+    close-to-tray routing: the same guarded close a plain window close runs still runs, so
+    persistence still happens.
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * mock ``open_document_models`` to return no dirty documents, and ``QApplication.quit`` so the
+      accepted close's explicit quit never reaches the test session's real application
+    * call ``request_quit``
+    * verify persistence ran (standing in for "the guarded close ran, not the tray hide")
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(QApplication, "quit")
+    save = mocker.patch.object(MainWindowSettings, "save")
+
+    window.request_quit()
+
+    save.assert_called_once()
+
+
+def test_an_accepted_quit_tears_down_the_tray_and_quits_the_application(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A quit accepted while the tray icon exists ends with the icon torn down and an **explicit**
+    ``QApplication.quit()`` -- a window hidden to tray is no longer a visible primary window, so
+    closing it never fires Qt's own last-window-closed quit, and Quit from the tray menu would
+    otherwise leave ``exec()`` running forever (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * mock ``open_document_models`` to return no dirty documents, and spy on ``QApplication.quit``
+    * call ``request_quit``
+    * verify the tray icon is gone and the application was told to quit
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    quit_call = mocker.patch.object(QApplication, "quit")
+
+    window.request_quit()
+
+    assert window._MainWindow__tray_icon is None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    quit_call.assert_called_once()
+
+
+def test_quitting_from_the_tray_with_a_dirty_document_runs_the_save_prompt(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Quitting via ``request_quit`` (the tray menu's Quit) with a dirty document runs the same
+    batch save prompt a window close does -- hiding to tray postpones the close guard, it never
+    passes it (#205). A refusal leaves the window, its edits, and the tray icon exactly as they
+    were, with nothing persisted.
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * mock ``open_document_models`` to return a dirty model, and the dialog to be rejected (Cancel)
+    * call ``request_quit``
+    * verify the dialog was shown, nothing was persisted, and the tray icon survived
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dirty_model = mocker.MagicMock(dirty=True)
+    mocker.patch.object(window._MainWindow__documents_dock, "open_document_models", return_value=[dirty_model])  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog = mocker.MagicMock()
+    dialog.exec.return_value = QDialog.DialogCode.Rejected
+    dialog_class = mocker.patch(UNSAVED_CHANGES_DIALOG, return_value=dialog)
+    save = mocker.patch.object(MainWindowSettings, "save")
+
+    window.request_quit()
+
+    dialog_class.assert_called_once()
+    save.assert_not_called()
+    assert window._MainWindow__tray_icon is not None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def float_open_settings_dialog(window: MainWindow) -> Any:
+    """Open the settings dialog as its own floating window, and return that container.
+
+    The dialog is placed floating by default (#47), so opening it is all it takes -- but the
+    container is read back through the dock rather than assumed, so these tests fail loudly if that
+    default ever changes rather than silently asserting about ``None``.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    dock.toggleView(True)
+    container = dock.floatingDockContainer()
+    assert container is not None, "the settings dialog is expected to open floating (#47)"
+    return container
+
+
+def test_hide_to_tray_hides_a_floating_dialog_with_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Hiding to tray takes every floating dock window with it: a floating dialog is its own
+    top-level window, so it does not follow a plain ``hide()`` and would otherwise sit on screen
+    with nothing behind it (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog as its own floating window
+    * call ``hide_to_tray``
+    * verify the window and the floating dialog are both hidden
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    assert container.isVisible()
+
+    window.hide_to_tray()
+
+    assert window.isHidden()
+    assert container.isVisible() is False
+
+
+def test_hide_to_tray_leaves_the_dialog_logically_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dialog hidden with the window stays *open* as far as its dock is concerned -- hidden, not
+    closed -- so what gets persisted on a quit from the tray is the user's own choice rather than
+    the tray's bookkeeping (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating, then hide to tray
+    * verify its dock still reports itself open
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    float_open_settings_dialog(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window.hide_to_tray()
+
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    assert dock.isClosed() is False
+
+
+def test_showing_from_the_tray_brings_back_the_dialog_hidden_with_the_window(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A dialog that was on screen when the window went to the tray comes back with it (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating, hide to tray, then show again
+    * verify the window and the dialog are both back on screen
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    window.hide_to_tray()
+
+    window.raise_and_activate()
+
+    assert window.isVisible()
+    assert container.isVisible()
+
+
+def test_showing_from_the_tray_leaves_a_closed_dialog_closed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only what was actually on screen comes back: a dialog the user had closed before hiding is
+    not opened by returning from the tray (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * leave the settings dialog closed, hide to tray, then show again
+    * verify the dialog is still closed
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    dock.toggleView(False)
+
+    window.hide_to_tray()
+    window.raise_and_activate()
+
+    assert dock.isClosed() is True
+
+
+def test_close_to_tray_hides_a_floating_dialog_too(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The window's own close button routes through the same hide, so closing to tray takes the
+    floating dialogs with it -- not only the tray menu's Hide (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating
+    * dispatch a close event (the titlebar close, not an explicit quit)
+    * verify the close was ignored and the dialog went away with the window
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    assert window.isHidden()
+    assert container.isVisible() is False
+
+
+def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> None:
+    """The tray checkbox is a block on the System Integration page rather than a category of its
+    own (#205) -- what the window's close button does is system integration, and the page exists on
+    every platform, so the setting is reachable from all of them.
+
+    Asserted by title and by the checkbox's object name rather than by page class: which class fills
+    that slot is per-platform (`RegistryPage`, `DesktopIntegrationPage`, `SystemIntegrationPage`),
+    and what matters here is that whichever one this platform built carries the tray block.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the registered page titled "System Integration"
+    * verify it holds the tray checkbox
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    system_integration = [
+        page for page in pages if page is not None and getattr(page, "title", None) == "System Integration"
+    ]
+
+    assert len(system_integration) == 1, "every platform registers exactly one System Integration page"
+    assert system_integration[0].findChild(QCheckBox, "enabled_check_box") is not None
+
+
+# endregion
 
 
 def test_restore_session_reopens_open_documents_and_restores_their_state(mocker: MockerFixture, qtbot: QtBot) -> None:

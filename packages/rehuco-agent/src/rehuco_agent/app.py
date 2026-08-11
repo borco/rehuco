@@ -181,17 +181,36 @@ def run(argv: list[str]) -> int:
     LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)
-    if not singleton.setup(APP_ID):
-        # not primary: setup() already forwarded this process's argv to the existing primary
+    # ``argv[1:]`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]`` default:
+    # the two are the same in production (``run(sys.argv)``), but this function's contract is that
+    # its *parameter* is the argv -- honored when primary (opened below), so also honored when
+    # forwarding, rather than silently substituting the process's real command line
+    if not singleton.setup(APP_ID, argv[1:]):
+        # not primary: setup() already forwarded argv[1:] to the existing primary
         return 0
 
     def open_forwarded(paths: list[str]) -> None:
+        """Bring this instance forward, then open whatever it was handed.
+
+        **The raise is unconditional, and comes first.** Starting the app again while it is already
+        running is a request to see it, whether or not the launch carried a path -- and with tray
+        mode on (#205) the window it should come back to may be hidden, with only a tray icon left
+        to say the app is there at all. ``paths`` is empty for exactly that launch (a plain
+        double-click on the app itself), so the loop below is never what shows the window; without
+        this call, such a launch would look like nothing happened.
+
+        Also this process's own startup path, so the window is shown once, here, rather than by a
+        separate call that the forwarded case would have to remember to repeat.
+
+        :param paths: the launching process's arguments -- filesystem paths to open; empty for a
+            bare relaunch.
+        """
+        app.show_main_window()
         for path in paths:
             app.open_path(path)
 
-    # connected before show_main_window() so a forward arriving during startup is never missed
+    # connected before the first call below, so a forward arriving during startup is never missed
     singleton.other_instance_run.connect(open_forwarded)
-    app.show_main_window()
     open_forwarded(argv[1:])  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
 
     return app.exec()

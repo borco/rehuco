@@ -5,7 +5,7 @@ from typing import Final
 
 from PySide6.QtGui import QFileOpenEvent, QGuiApplication
 from pytest_mock import MockerFixture
-from rehuco_agent.app import Application, run
+from rehuco_agent.app import APP_ID, Application, run
 from rehuco_agent.linux_registration import DESKTOP_FILE_NAME
 
 FAKE_PATH: Final = "/fake/tutorials/sculpting/info.rehu"
@@ -84,22 +84,27 @@ def test_file_open_event_opens_a_path(mocker: MockerFixture) -> None:
 
 
 def test_run_forwards_when_not_primary(mocker: MockerFixture) -> None:
-    """When another instance already owns the single-instance role, ``run`` returns immediately.
+    """When another instance already owns the single-instance role, ``run`` returns immediately --
+    and what it forwarded is its own ``argv`` parameter's paths, not the process's real command
+    line, which ``setup``'s ``sys.argv[1:]`` default would silently substitute.
 
     **Test steps:**
 
     * mock ``Application`` and ``ApplicationSingleton`` so no real Qt objects are involved
     * make ``setup`` report this process is not primary
-    * call ``run`` and verify it returns ``0`` without ever calling ``exec``
+    * call ``run`` with one path and verify it returns ``0`` without ever calling ``exec``
+    * verify ``setup`` was handed that path explicitly
     """
     app_cls = mocker.patch("rehuco_agent.app.Application")
     singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
-    singleton_cls.return_value.setup.return_value = False
+    singleton = singleton_cls.return_value
+    singleton.setup.return_value = False
 
-    result = run(["rehuco-agent"])
+    result = run(["rehuco-agent", "a.rehu"])
 
     assert result == 0
     app_cls.return_value.exec.assert_not_called()
+    singleton.setup.assert_called_once_with(APP_ID, ["a.rehu"])
 
 
 def test_run_opens_initial_paths_and_execs(mocker: MockerFixture) -> None:
@@ -171,3 +176,33 @@ def test_run_wires_forwarded_opens(mocker: MockerFixture) -> None:
 
     app_instance.open_path.assert_any_call("c.rehu")
     app_instance.open_path.assert_any_call("d.rehu")
+
+
+def test_run_shows_the_window_for_a_forward_carrying_no_paths(mocker: MockerFixture) -> None:
+    """Starting the app again while it is already running shows it, even when the launch carried no
+    path at all -- a plain double-click on the app itself forwards an empty argv, and with tray mode
+    on (#205) the window it should come back to may be hidden, so without this the launch looks like
+    nothing happened.
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton``
+    * capture the callback connected to ``other_instance_run``, then reset the calls ``run``'s own
+      startup made through it
+    * invoke the callback with an empty path list, as a bare relaunch forwards
+    * verify the window was shown and nothing was opened
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    app_instance = app_cls.return_value
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton = singleton_cls.return_value
+    singleton.setup.return_value = True
+
+    run(["rehuco-agent"])
+
+    callback = singleton.other_instance_run.connect.call_args[0][0]
+    app_instance.show_main_window.reset_mock()
+    callback([])  # pylint: disable=not-callable
+
+    app_instance.show_main_window.assert_called_once_with()
+    app_instance.open_path.assert_not_called()

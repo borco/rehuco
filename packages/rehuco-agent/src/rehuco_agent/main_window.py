@@ -15,13 +15,15 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.logging import LogScope, LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QAction, QCloseEvent
+from PySide6.QtGui import QAction, QCloseEvent, QIcon
 from PySide6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QMainWindow,
     QMenu,
     QMessageBox,
     QSizePolicy,
+    QSystemTrayIcon,
     QWidget,
     QWidgetAction,
 )
@@ -55,6 +57,7 @@ from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
+from .settings.tray_settings import shared_tray_settings
 from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
@@ -65,6 +68,7 @@ from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
 from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
+from .tray_icon import TrayIcon
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -89,6 +93,11 @@ TASK_QUEUE_DOCK_TITLE: Final = "Tasks"
 TASK_VIEW_ICON_RESOURCE: Final = ":/icons/task_view.svg"
 
 IMAGE_PREVIEWS_ICON_RESOURCE: Final = ":/icons/image_previews.svg"
+
+TRAY_ICON_RESOURCE: Final = ":/icons/rehuco-agent.svg"
+"""qrc path to the tray icon (#205) -- the app's own icon, the same one `Application.__init__` sets
+as the window icon; a tray icon distinguishing itself from every other running app is `QSystemTrayIcon`'s
+whole point, and no dedicated asset says anything a second icon design would."""
 
 TASK_QUEUE_LOSS_TITLE: Final = "Unfinished tasks"
 TASK_QUEUE_LOSS_MESSAGE: Final = "{count} unfinished task(s) will not survive quitting:"
@@ -136,6 +145,17 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # rebuilt from scratch each time, so the rebuild never has to know or guess what's
         # "static" above it (the theme entries, their separator, or anything added there later)
         self.__dynamic_view_menu_actions: Final[list[QAction]] = []
+
+        # not Final: request_quit sets this before close(), and closeEvent clears it right back --
+        # the one thing that overrides tray mode's close-to-tray routing (#205)
+        self.__quit_requested = False
+        # not Final: __on_tray_enabled_changed creates/tears it down live as the setting changes
+        self.__tray_icon: TrayIcon | None = None
+        # the floating dock windows hidden alongside this one by hide_to_tray, waiting for
+        # raise_and_activate to put them back; empty whenever the window is not hidden to tray
+        self.__floating_docks_hidden_with_window: Final[list[QtAds.CFloatingDockContainer]] = []
+        shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
+        self.__on_tray_enabled_changed(shared_tray_settings().enabled)
 
         self.__dialog_manager: Final = DockableDialogManager()
         self.__dock_manager: Final = QtAds.CDockManager(self)
@@ -354,7 +374,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.sweep_checksums_action.triggered.connect(self.__on_sweep_checksums)
         self.__ui.import_legacy_catalog_action.triggered.connect(self.__on_import_legacy_catalog)
         self.__ui.conversion_backups_action.triggered.connect(self.__on_conversion_backups)
-        self.__ui.quit_action.triggered.connect(self.close)
+        self.__ui.quit_action.triggered.connect(self.request_quit)
         self.__ui.open_recents_menu.aboutToShow.connect(self.__populate_recents_menu)
         # settings_action's checked state can go stale without emitting toggled (see
         # ActionIconThemeHandler's companion parameter docstring) -- force it correct right before
@@ -526,16 +546,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         page holding one list, whose subject was images, is what a reader looking for images had to
         know a plugin name to find.
 
-        The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
-        wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
-        wrapping the XDG desktop entry / MIME type / icon (#209), and macOS neither -- there the
-        association comes from the app bundle itself ([[packaging-deployment#app-identity]]). Both
-        are imported lazily, only here: the Windows one *must* be, mirroring the gate
+        The top-level "System Integration" page is per-platform, and **every** platform has one:
+        Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
+        the `DesktopIntegrationPage` wrapping the XDG desktop entry / MIME type / icon (#209), and
+        macOS the `SystemIntegrationPage` -- which registers nothing, since there the association
+        comes from the app bundle itself ([[packaging-deployment#app-identity]]). macOS gets a page
+        at all because the tray block (#205) lives on this one, and a setting that decides what the
+        window's close button does must be reachable wherever there is a window.
+
+        All three are imported lazily, only here: the Windows one *must* be, mirroring the gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
-        it wraps) already requires, and the Linux one follows for symmetry. Two separate ``if``s
-        rather than an ``if``/``elif`` chain: coverage excludes the whole construct when its first
-        guard line is excluded off Windows, which would silently drop the Linux branch from the
-        report there.
+        it wraps) already requires, and the other two follow for symmetry. Separate ``if``s rather
+        than an ``if``/``elif`` chain: coverage excludes the whole construct when its first guard
+        line is excluded off Windows, which would silently drop the other branches from the report
+        there.
         """
         self.__settings_dialog.add_page(IdentityPage())
         # top-level, not under "Plugins": how much log to keep is about the app itself, and a reader
@@ -561,6 +585,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from .settings.ui.desktop_integration_page import DesktopIntegrationPage
 
             self.__settings_dialog.add_page(DesktopIntegrationPage())
+
+        if sys.platform == "darwin":
+            # pylint: disable-next=import-outside-toplevel
+            from .settings.ui.system_integration_page import SystemIntegrationPage
+
+            self.__settings_dialog.add_page(SystemIntegrationPage())
 
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")
@@ -826,9 +856,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     @override
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Guard the app close: prompt for dirty documents, saving the checked ones.
+        """Route to tray (#205), or guard the app close: prompt for dirty documents, saving the
+        checked ones.
 
-        The prompt itself, and the guarded save of each checked document, are the shared batch guard
+        **Tray routing comes first.** While the tray icon exists and this close was not requested
+        through :meth:`request_quit` (a window close via the titlebar/Alt+F4, not File > Quit or the
+        tray menu's own Quit), the event is ignored and the window is hidden instead -- nothing below
+        runs, so a document's edits and the task queue are left exactly as they were. The quit flag is
+        read and cleared right away, before either branch: a refused guard below must not leave a
+        stale "this was a real quit" reading that would skip tray routing on the *next*, unrelated
+        close.
+
+        Otherwise, the prompt itself, and the guarded save of each checked document, are the shared
+        batch guard
         (:func:`~rehuco_agent.documents.confirm_and_save_dirty.confirm_and_save_dirty`, #176) --
         the same one :meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.close_all` uses. What
         is specific here is the follow-on: a refusal (the prompt cancelled, or a failed save's
@@ -837,8 +877,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         steps below (window state, session, recents, theme) while the window closes anyway -- once the
         guard has passed, they always run.
 
+        A close accepted while the tray icon exists ends with an **explicit** application quit --
+        see the comment on that block for why Qt's own last-window-closed quit cannot be relied on
+        for a window that is hidden to tray.
+
         :param event: the close event to accept or ignore.
         """
+        quit_requested = self.__quit_requested
+        self.__quit_requested = False
+        if self.__tray_icon is not None and not quit_requested:
+            event.ignore()
+            self.hide_to_tray()
+            return
+
         dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
         if not confirm_and_save_dirty(self, dirty_models):
             event.ignore()
@@ -863,6 +914,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__recent_files.save(persistent_settings())
         self.__theme_settings.mode = self.__theme_model.mode
         self.__theme_settings.save(persistent_settings())
+        if self.__tray_icon is not None:
+            # An explicit quit, not left to Qt's last-window-closed machinery: a window hidden to
+            # tray is no longer a *visible* primary window, so closing it never fires that quit --
+            # Quit from the tray menu while hidden would run this whole teardown and then leave
+            # ``exec()`` running forever, the unquittable-app trap #205 names arriving through the
+            # other door (confirmed empirically offscreen). The icon is taken down first so it
+            # never outlives the window it controls.
+            self.__tray_icon.hide()
+            self.__tray_icon.deleteLater()
+            self.__tray_icon = None
+            if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
+                app.quit()
         super().closeEvent(event)
 
     def __restore_session(self) -> None:
@@ -995,12 +1058,22 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         Called whenever a path is opened -- including a forwarded open from a second process via
         the single-instance guard -- so the running app visibly comes forward rather than silently
-        gaining a new dock behind other windows.
+        gaining a new dock behind other windows. ``show()`` alone is what makes this also the tray
+        icon's own "Show"/un-hide action (#205): a window hidden to tray is still not minimized, so
+        the plain ``show()`` branch is what a forwarded open lands on, exactly like `TrayIcon` itself
+        raising it from its menu.
+
+        Every floating dock window :meth:`hide_to_tray` put away comes back with it, before this
+        window takes the foreground -- so the main window ends up the active one, with the dialogs
+        it owns restored above it rather than stealing the activation on the way up.
         """
         if self.isMinimized():
             self.showNormal()
         else:
             self.show()
+        for container in self.__floating_docks_hidden_with_window:
+            container.show()
+        self.__floating_docks_hidden_with_window.clear()
         self.raise_()
         self.activateWindow()
 
@@ -1008,3 +1081,60 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from borco_pyside.platforms.windows import window_activation  # pylint: disable=import-outside-toplevel
 
             window_activation.force_foreground(self)
+
+    def hide_to_tray(self) -> None:
+        """Hide this window to the tray, taking every floating dock window with it (#205).
+
+        **A floating dock is its own top-level window**, parented to its `CDockManager` rather than
+        to this one, so it does not follow a plain ``hide()`` -- a floating Settings dialog would sit
+        on screen with nothing behind it, offering Apply on a window the user has just put away
+        (confirmed empirically offscreen). Every floating container is found from this window, which
+        covers the documents dock's own nested manager as well as the outer one, so a torn-out
+        document window follows too.
+
+        Each is hidden rather than closed (``toggleView(False)``), which is what keeps the round trip
+        honest in both directions: the dock stays *open* as far as `CDockWidget.isClosed` is
+        concerned, so :meth:`raise_and_activate` puts back exactly what was on screen, and a Quit
+        from the tray while hidden still persists the dialog as open for the next launch
+        (`DockableDialog.save_settings` reads that same flag) rather than recording the tray's own
+        bookkeeping as the user's choice.
+        """
+        for container in self.findChildren(QtAds.CFloatingDockContainer):
+            if container.isVisible():
+                self.__floating_docks_hidden_with_window.append(container)
+                container.hide()
+        self.hide()
+
+    def request_quit(self) -> None:
+        """Ask this window to close as an explicit quit (#205) -- the one thing that overrides tray
+        mode's close-to-tray routing, from either ``File`` > ``Quit`` or the tray menu's own
+        ``Quit``.
+
+        Sets the flag :meth:`closeEvent` reads (and clears) before calling :meth:`close`, so the
+        guarded close path -- the same one a plain window close runs -- decides whether the app can
+        actually quit; a cancelled dirty-document prompt or task-queue warning leaves the window
+        (and, while tray mode is on, the tray icon) exactly as they were.
+        """
+        self.__quit_requested = True
+        self.close()
+
+    def __on_tray_enabled_changed(self, enabled: bool) -> None:
+        """Create or tear down the tray icon as `TraySettings.enabled` changes (#205) -- live, not
+        just on the next launch, the same immediacy `MarkdownRenderingSettings` gives an open
+        description viewer.
+
+        **Refuses to engage without a real tray to show in.** A tray-only app with no visible window
+        and no icon would be unquittable, so this leaves :attr:`__tray_icon` ``None`` -- and
+        :meth:`closeEvent` closing exactly as if the setting were off -- whenever
+        ``QSystemTrayIcon.isSystemTrayAvailable()`` is false (bare Linux sessions, chiefly).
+
+        :param enabled: the newly-set value of `TraySettings.enabled`.
+        """
+        if enabled and QSystemTrayIcon.isSystemTrayAvailable():
+            if self.__tray_icon is None:
+                self.__tray_icon = TrayIcon(self, QIcon(TRAY_ICON_RESOURCE))
+                self.__tray_icon.show()
+        elif self.__tray_icon is not None:
+            self.__tray_icon.hide()
+            self.__tray_icon.deleteLater()
+            self.__tray_icon = None
