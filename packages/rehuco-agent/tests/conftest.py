@@ -16,6 +16,7 @@ from rehuco_agent.settings import (
     logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
+    tray_settings,
     videos_settings,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
@@ -25,6 +26,7 @@ from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_sett
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
+from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import settings_dialog
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 
@@ -193,6 +195,24 @@ def isolate_shared_logs_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(logs_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_logs_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `TraySettings` singleton (#205).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: every `MainWindow` reads
+    this at construction to decide whether to build a tray icon, so without this whichever test
+    first built one would pin an instance loaded from the developer's real on-disk settings -- and a
+    tray icon left enabled there would build (and never tear down) a real `QSystemTrayIcon` in every
+    later test's window.
+
+    Tests that specifically exercise the tray settings patch ``persistent_settings`` themselves.
+    """
+    shared_tray_settings.cache_clear()
+    mocker.patch.object(tray_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_tray_settings.cache_clear()
 
 
 @fixture(autouse=True)
