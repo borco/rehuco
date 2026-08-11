@@ -171,3 +171,33 @@ def test_run_wires_forwarded_opens(mocker: MockerFixture) -> None:
 
     app_instance.open_path.assert_any_call("c.rehu")
     app_instance.open_path.assert_any_call("d.rehu")
+
+
+def test_run_shows_the_window_for_a_forward_carrying_no_paths(mocker: MockerFixture) -> None:
+    """Starting the app again while it is already running shows it, even when the launch carried no
+    path at all -- a plain double-click on the app itself forwards an empty argv, and with tray mode
+    on (#205) the window it should come back to may be hidden, so without this the launch looks like
+    nothing happened.
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton``
+    * capture the callback connected to ``other_instance_run``, then reset the calls ``run``'s own
+      startup made through it
+    * invoke the callback with an empty path list, as a bare relaunch forwards
+    * verify the window was shown and nothing was opened
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    app_instance = app_cls.return_value
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton = singleton_cls.return_value
+    singleton.setup.return_value = True
+
+    run(["rehuco-agent"])
+
+    callback = singleton.other_instance_run.connect.call_args[0][0]
+    app_instance.show_main_window.reset_mock()
+    callback([])  # pylint: disable=not-callable
+
+    app_instance.show_main_window.assert_called_once_with()
+    app_instance.open_path.assert_not_called()
