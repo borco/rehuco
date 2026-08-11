@@ -152,6 +152,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__quit_requested = False
         # not Final: __on_tray_enabled_changed creates/tears it down live as the setting changes
         self.__tray_icon: TrayIcon | None = None
+        # the floating dock windows hidden alongside this one by hide_to_tray, waiting for
+        # raise_and_activate to put them back; empty whenever the window is not hidden to tray
+        self.__floating_docks_hidden_with_window: Final[list[QtAds.CFloatingDockContainer]] = []
         shared_tray_settings().enabled_changed.connect(self.__on_tray_enabled_changed)  # type: ignore[attr-defined]
         self.__on_tray_enabled_changed(shared_tray_settings().enabled)
 
@@ -877,7 +880,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__quit_requested = False
         if self.__tray_icon is not None and not quit_requested:
             event.ignore()
-            self.hide()
+            self.hide_to_tray()
             return
 
         dirty_models = [model for model in self.__documents_dock.open_document_models() if model.dirty]
@@ -1052,11 +1055,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         icon's own "Show"/un-hide action (#205): a window hidden to tray is still not minimized, so
         the plain ``show()`` branch is what a forwarded open lands on, exactly like `TrayIcon` itself
         raising it from its menu.
+
+        Every floating dock window :meth:`hide_to_tray` put away comes back with it, before this
+        window takes the foreground -- so the main window ends up the active one, with the dialogs
+        it owns restored above it rather than stealing the activation on the way up.
         """
         if self.isMinimized():
             self.showNormal()
         else:
             self.show()
+        for container in self.__floating_docks_hidden_with_window:
+            container.show()
+        self.__floating_docks_hidden_with_window.clear()
         self.raise_()
         self.activateWindow()
 
@@ -1064,6 +1074,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from borco_pyside.platforms.windows import window_activation  # pylint: disable=import-outside-toplevel
 
             window_activation.force_foreground(self)
+
+    def hide_to_tray(self) -> None:
+        """Hide this window to the tray, taking every floating dock window with it (#205).
+
+        **A floating dock is its own top-level window**, parented to its `CDockManager` rather than
+        to this one, so it does not follow a plain ``hide()`` -- a floating Settings dialog would sit
+        on screen with nothing behind it, offering Apply on a window the user has just put away
+        (confirmed empirically offscreen). Every floating container is found from this window, which
+        covers the documents dock's own nested manager as well as the outer one, so a torn-out
+        document window follows too.
+
+        Each is hidden rather than closed (``toggleView(False)``), which is what keeps the round trip
+        honest in both directions: the dock stays *open* as far as `CDockWidget.isClosed` is
+        concerned, so :meth:`raise_and_activate` puts back exactly what was on screen, and a Quit
+        from the tray while hidden still persists the dialog as open for the next launch
+        (`DockableDialog.save_settings` reads that same flag) rather than recording the tray's own
+        bookkeeping as the user's choice.
+        """
+        for container in self.findChildren(QtAds.CFloatingDockContainer):
+            if container.isVisible():
+                self.__floating_docks_hidden_with_window.append(container)
+                container.hide()
+        self.hide()
 
     def request_quit(self) -> None:
         """Ask this window to close as an explicit quit (#205) -- the one thing that overrides tray

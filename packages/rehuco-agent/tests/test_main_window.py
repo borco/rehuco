@@ -1819,6 +1819,151 @@ def test_quitting_from_the_tray_with_a_dirty_document_runs_the_save_prompt(mocke
     assert window._MainWindow__tray_icon is not None  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def float_open_settings_dialog(window: MainWindow) -> Any:
+    """Open the settings dialog as its own floating window, and return that container.
+
+    The dialog is placed floating by default (#47), so opening it is all it takes -- but the
+    container is read back through the dock rather than assumed, so these tests fail loudly if that
+    default ever changes rather than silently asserting about ``None``.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    dock.toggleView(True)
+    container = dock.floatingDockContainer()
+    assert container is not None, "the settings dialog is expected to open floating (#47)"
+    return container
+
+
+def test_hide_to_tray_hides_a_floating_dialog_with_the_window(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Hiding to tray takes every floating dock window with it: a floating dialog is its own
+    top-level window, so it does not follow a plain ``hide()`` and would otherwise sit on screen
+    with nothing behind it (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog as its own floating window
+    * call ``hide_to_tray``
+    * verify the window and the floating dialog are both hidden
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    assert container.isVisible()
+
+    window.hide_to_tray()
+
+    assert window.isHidden()
+    assert container.isVisible() is False
+
+
+def test_hide_to_tray_leaves_the_dialog_logically_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A dialog hidden with the window stays *open* as far as its dock is concerned -- hidden, not
+    closed -- so what gets persisted on a quit from the tray is the user's own choice rather than
+    the tray's bookkeeping (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating, then hide to tray
+    * verify its dock still reports itself open
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    float_open_settings_dialog(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window.hide_to_tray()
+
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    assert dock.isClosed() is False
+
+
+def test_showing_from_the_tray_brings_back_the_dialog_hidden_with_the_window(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A dialog that was on screen when the window went to the tray comes back with it (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating, hide to tray, then show again
+    * verify the window and the dialog are both back on screen
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    window.hide_to_tray()
+
+    window.raise_and_activate()
+
+    assert window.isVisible()
+    assert container.isVisible()
+
+
+def test_showing_from_the_tray_leaves_a_closed_dialog_closed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only what was actually on screen comes back: a dialog the user had closed before hiding is
+    not opened by returning from the tray (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * leave the settings dialog closed, hide to tray, then show again
+    * verify the dialog is still closed
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+    assert dock is not None
+    dock.toggleView(False)
+
+    window.hide_to_tray()
+    window.raise_and_activate()
+
+    assert dock.isClosed() is True
+
+
+def test_close_to_tray_hides_a_floating_dialog_too(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The window's own close button routes through the same hide, so closing to tray takes the
+    floating dialogs with it -- not only the tray menu's Hide (#205).
+
+    **Test steps:**
+
+    * mock tray availability as ``True`` and enable tray mode before constructing the window
+    * open the settings dialog floating
+    * dispatch a close event (the titlebar close, not an explicit quit)
+    * verify the close was ignored and the dialog went away with the window
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    container = float_open_settings_dialog(window)
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert not event.isAccepted()
+    assert window.isHidden()
+    assert container.isVisible() is False
+
+
 def test_registers_the_tray_page(qtbot: QtBot) -> None:
     """The Tray settings page (#205) is registered top-level, not under "Plugins" -- what the
     window's own close button does, not a plugin's concern.

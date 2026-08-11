@@ -30,8 +30,8 @@ class TrayWindow(Protocol):
     def isVisible(self) -> bool:  # noqa: N802  (Qt API name)  # pylint: disable=invalid-name  # pyright: ignore[reportReturnType]
         """Whether the window is currently shown."""
 
-    def hide(self) -> None:
-        """Hide the window without closing it."""
+    def hide_to_tray(self) -> None:
+        """Hide the window to the tray, taking every floating dock window with it."""
 
     def raise_and_activate(self) -> None:
         """Show the window, restoring it first if minimized, and bring it to the foreground."""
@@ -76,7 +76,7 @@ class TrayIcon(QSystemTrayIcon):
     def __toggle_window(self) -> None:
         """Hide the window if shown, or bring it to the foreground if not."""
         if self.__window.isVisible():
-            self.__window.hide()
+            self.__window.hide_to_tray()
         else:
             self.__window.raise_and_activate()
 

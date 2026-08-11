@@ -90,7 +90,7 @@ def test_toggle_action_hides_a_visible_window(mocker: MockerFixture) -> None:
 
     menu.actions()[0].trigger()
 
-    window.hide.assert_called_once_with()  # type: ignore[attr-defined]
+    window.hide_to_tray.assert_called_once_with()  # type: ignore[attr-defined]
     window.raise_and_activate.assert_not_called()  # type: ignore[attr-defined]
 
 
@@ -111,7 +111,7 @@ def test_toggle_action_raises_a_hidden_window(mocker: MockerFixture) -> None:
     menu.actions()[0].trigger()
 
     window.raise_and_activate.assert_called_once_with()  # type: ignore[attr-defined]
-    window.hide.assert_not_called()  # type: ignore[attr-defined]
+    window.hide_to_tray.assert_not_called()  # type: ignore[attr-defined]
 
 
 def test_quit_action_requests_quit(mocker: MockerFixture) -> None:
@@ -185,4 +185,4 @@ def test_a_context_menu_activation_does_not_toggle_the_window(mocker: MockerFixt
     tray_icon.activated.emit(QSystemTrayIcon.ActivationReason.Context)
 
     window.raise_and_activate.assert_not_called()  # type: ignore[attr-defined]
-    window.hide.assert_not_called()  # type: ignore[attr-defined]
+    window.hide_to_tray.assert_not_called()  # type: ignore[attr-defined]
