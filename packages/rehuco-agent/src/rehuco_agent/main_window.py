@@ -66,7 +66,6 @@ from .settings.ui.images_page import ImagesPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
-from .settings.ui.tray_page import TrayPage
 from .settings.ui.videos_page import VideosPage
 from .tasks import TaskQueueStatusIndicator, TaskQueueStore, TaskQueueWidget, job_already_queued
 from .tray_icon import TrayIcon
@@ -547,16 +546,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         page holding one list, whose subject was images, is what a reader looking for images had to
         know a plugin name to find.
 
-        The top-level "System Integration" page is per-platform: Windows gets the `RegistryPage`
-        wrapping ``winreg``-backed HKCU registration (#47), Linux the `DesktopIntegrationPage`
-        wrapping the XDG desktop entry / MIME type / icon (#209), and macOS neither -- there the
-        association comes from the app bundle itself ([[packaging-deployment#app-identity]]). Both
-        are imported lazily, only here: the Windows one *must* be, mirroring the gate
+        The top-level "System Integration" page is per-platform, and **every** platform has one:
+        Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
+        the `DesktopIntegrationPage` wrapping the XDG desktop entry / MIME type / icon (#209), and
+        macOS the `SystemIntegrationPage` -- which registers nothing, since there the association
+        comes from the app bundle itself ([[packaging-deployment#app-identity]]). macOS gets a page
+        at all because the tray block (#205) lives on this one, and a setting that decides what the
+        window's close button does must be reachable wherever there is a window.
+
+        All three are imported lazily, only here: the Windows one *must* be, mirroring the gate
         ``rehuco_agent.windows_registration`` (and the ``borco_core.platforms.windows.*`` modules
-        it wraps) already requires, and the Linux one follows for symmetry. Two separate ``if``s
-        rather than an ``if``/``elif`` chain: coverage excludes the whole construct when its first
-        guard line is excluded off Windows, which would silently drop the Linux branch from the
-        report there.
+        it wraps) already requires, and the other two follow for symmetry. Separate ``if``s rather
+        than an ``if``/``elif`` chain: coverage excludes the whole construct when its first guard
+        line is excluded off Windows, which would silently drop the other branches from the report
+        there.
         """
         self.__settings_dialog.add_page(IdentityPage())
         # top-level, not under "Plugins": how much log to keep is about the app itself, and a reader
@@ -567,8 +570,6 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # and again for the checksum defaults (#242): they govern every resource type rather than one
         # plugin's, and the sweep that reads them is reached from File rather than from a document
         self.__settings_dialog.add_page(ChecksumsPage())
-        # and again for tray mode (#205): what the window's own close button does, not a plugin's concern
-        self.__settings_dialog.add_page(TrayPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
@@ -584,6 +585,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             from .settings.ui.desktop_integration_page import DesktopIntegrationPage
 
             self.__settings_dialog.add_page(DesktopIntegrationPage())
+
+        if sys.platform == "darwin":
+            # pylint: disable-next=import-outside-toplevel
+            from .settings.ui.system_integration_page import SystemIntegrationPage
+
+            self.__settings_dialog.add_page(SystemIntegrationPage())
 
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")

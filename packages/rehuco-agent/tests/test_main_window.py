@@ -17,7 +17,16 @@ from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QScrollArea, QSystemTrayIcon, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QLabel,
+    QMessageBox,
+    QScrollArea,
+    QSystemTrayIcon,
+    QWidget,
+)
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -44,7 +53,6 @@ from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
-from rehuco_agent.settings.ui.tray_page import TrayPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
@@ -1964,14 +1972,20 @@ def test_close_to_tray_hides_a_floating_dialog_too(mocker: MockerFixture, qtbot:
     assert container.isVisible() is False
 
 
-def test_registers_the_tray_page(qtbot: QtBot) -> None:
-    """The Tray settings page (#205) is registered top-level, not under "Plugins" -- what the
-    window's own close button does, not a plugin's concern.
+def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> None:
+    """The tray checkbox is a block on the System Integration page rather than a category of its
+    own (#205) -- what the window's close button does is system integration, and the page exists on
+    every platform, so the setting is reachable from all of them.
+
+    Asserted by title and by the checkbox's object name rather than by page class: which class fills
+    that slot is per-platform (`RegistryPage`, `DesktopIntegrationPage`, `SystemIntegrationPage`),
+    and what matters here is that whichever one this platform built carries the tray block.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds a ``TrayPage``
+    * find the registered page titled "System Integration"
+    * verify it holds the tray checkbox
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1980,7 +1994,12 @@ def test_registers_the_tray_page(qtbot: QtBot) -> None:
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, TrayPage) for page in pages)
+    system_integration = [
+        page for page in pages if page is not None and getattr(page, "title", None) == "System Integration"
+    ]
+
+    assert len(system_integration) == 1, "every platform registers exactly one System Integration page"
+    assert system_integration[0].findChild(QCheckBox, "enabled_check_box") is not None
 
 
 # endregion

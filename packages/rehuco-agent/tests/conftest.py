@@ -27,7 +27,7 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
-from rehuco_agent.settings.ui import settings_dialog
+from rehuco_agent.settings.ui import settings_dialog, tray_block
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 
 
@@ -210,7 +210,12 @@ def isolate_shared_tray_settings(mocker: MockerFixture) -> Iterator[None]:
     Tests that specifically exercise the tray settings patch ``persistent_settings`` themselves.
     """
     shared_tray_settings.cache_clear()
-    mocker.patch.object(tray_settings, "persistent_settings", return_value=FakeSettings())
+    fake = FakeSettings()
+    mocker.patch.object(tray_settings, "persistent_settings", return_value=fake)
+    # the block's own import site too, unlike the other sections here: its Save is reachable from
+    # every System Integration page (one per platform, #205), so an unpatched one would write the
+    # developer's real settings file from any test that applies a settings page
+    mocker.patch.object(tray_block, "persistent_settings", return_value=fake)
     yield
     shared_tray_settings.cache_clear()
 

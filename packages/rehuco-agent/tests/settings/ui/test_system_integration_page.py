@@ -1,4 +1,4 @@
-"""Tests for TrayPage: the Tray settings category page (#47, #76, #205)."""
+"""Tests for SystemIntegrationPage: the macOS System Integration page -- tray only (#47, #205)."""
 
 from typing import Any
 
@@ -8,8 +8,8 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.settings import tray_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
-from rehuco_agent.settings.ui import tray_page
-from rehuco_agent.settings.ui.tray_page import TrayPage
+from rehuco_agent.settings.ui import tray_block
+from rehuco_agent.settings.ui.system_integration_page import SystemIntegrationPage
 
 
 # region fixtures
@@ -46,11 +46,11 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 
     Patched on both modules that imported their own reference to it: the shared settings module
     (used by :func:`shared_tray_settings`'s lazy load) and the page module itself (used by
-    :meth:`TrayPage.save_changes`).
+    :meth:`TrayBlock.save_changes`).
     """
     fake = FakeSettings()
     mocker.patch.object(tray_settings, "persistent_settings", return_value=fake)
-    mocker.patch.object(tray_page, "persistent_settings", return_value=fake)
+    mocker.patch.object(tray_block, "persistent_settings", return_value=fake)
     return fake
 
 
@@ -68,10 +68,10 @@ def test_starts_with_the_shared_settings_current_value(qtbot: QtBot) -> None:
     """
     shared_tray_settings().enabled = True
 
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
 
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.enabled_check_box.isChecked() is True
 
 
@@ -83,7 +83,7 @@ def test_is_dirty_is_false_right_after_construction(qtbot: QtBot) -> None:
     * build the page
     * verify ``is_dirty`` is ``False``
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
 
     assert page.is_dirty() is False
@@ -97,9 +97,9 @@ def test_is_dirty_is_true_after_toggling_the_checkbox(qtbot: QtBot) -> None:
     * build the page and check the box
     * verify ``is_dirty`` is ``True``
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     ui.enabled_check_box.setChecked(True)
 
@@ -118,9 +118,9 @@ def test_save_changes_updates_the_shared_settings_and_persists(
     * verify the shared settings object reflects the change
     * verify a fresh load from the persisted store reflects it too
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.enabled_check_box.setChecked(True)
 
     page.save_changes()
@@ -141,9 +141,9 @@ def test_save_changes_clears_dirty(qtbot: QtBot) -> None:
     * build the page, check the box, save
     * verify ``is_dirty`` is now ``False``
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.enabled_check_box.setChecked(True)
 
     page.save_changes()
@@ -160,9 +160,9 @@ def test_drop_changes_reverts_the_checkbox(qtbot: QtBot) -> None:
     * call ``drop_changes``
     * verify the checkbox is back to the (unsaved, still-default) shared settings value
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     ui.enabled_check_box.setChecked(True)
 
     page.drop_changes()
@@ -171,18 +171,20 @@ def test_drop_changes_reverts_the_checkbox(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_tray(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Tray" (#76).
+def test_title_is_system_integration(qtbot: QtBot) -> None:
+    """The page's category-tree title is "System Integration" -- the same title its Windows and
+    Linux counterparts carry, so the tray setting is found in the same place on every platform
+    (#76, #205).
 
     **Test steps:**
 
     * construct the page
     * verify ``title``
     """
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
 
-    assert page.title == "Tray"
+    assert page.title == "System Integration"
 
 
 def test_unavailable_label_hidden_when_a_tray_is_available(qtbot: QtBot, mocker: MockerFixture) -> None:
@@ -196,10 +198,10 @@ def test_unavailable_label_hidden_when_a_tray_is_available(qtbot: QtBot, mocker:
     """
     mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
 
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
 
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.unavailable_label.isHidden() is True
 
 
@@ -214,8 +216,8 @@ def test_unavailable_label_shown_when_no_tray_is_available(qtbot: QtBot, mocker:
     """
     mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=False)
 
-    page = TrayPage()
+    page = SystemIntegrationPage()
     qtbot.addWidget(page)
 
-    ui = page._TrayPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui = page._SystemIntegrationPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert ui.unavailable_label.isHidden() is False

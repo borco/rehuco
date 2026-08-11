@@ -9,6 +9,7 @@ from typing import Any, Final
 
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import desktop_integration_page
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 
@@ -243,8 +244,9 @@ def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot
     assert ui.registration_frame.isVisibleTo(page) is False
 
 
-def test_is_dirty_is_always_false(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page is never dirty -- register/unregister act immediately, nothing is staged.
+def test_is_dirty_is_false_with_the_tray_checkbox_untouched(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A freshly-built page is clean: the registration buttons stage nothing, and the tray checkbox
+    starts on what is saved (#205).
 
     **Test steps:**
 
@@ -256,18 +258,43 @@ def test_is_dirty_is_always_false(qtbot: QtBot, mocker: MockerFixture) -> None:
     assert page.is_dirty() is False
 
 
-def test_save_and_drop_changes_are_no_ops(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """``save_changes``/``drop_changes`` do nothing and don't raise.
+def test_is_dirty_follows_the_tray_checkbox(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Toggling the tray checkbox makes the page dirty -- it is this page's one staged control
+    since Tray merged into System Integration (#205).
 
     **Test steps:**
 
-    * construct the page
-    * call both methods
-    * verify neither raises and the status label is untouched
+    * construct the page and toggle the tray checkbox
+    * verify ``is_dirty`` is ``True``
     """
     page, ui = build_page(qtbot, mocker)
 
+    ui.enabled_check_box.setChecked(True)
+
+    assert page.is_dirty() is True
+
+
+def test_save_changes_applies_the_tray_choice_and_drop_changes_reverts_it(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """``save_changes`` pushes the staged tray choice into the shared settings; ``drop_changes``
+    puts the checkbox back. Neither disturbs the registration controls above them (#205).
+
+    **Test steps:**
+
+    * construct the page, check the tray box and save
+    * verify the shared settings took it and the page is clean
+    * toggle again and drop
+    * verify the checkbox is back and the status label was never touched
+    """
+    page, ui = build_page(qtbot, mocker)
+
+    ui.enabled_check_box.setChecked(True)
     page.save_changes()
+
+    assert shared_tray_settings().enabled is True
+    assert page.is_dirty() is False
+
+    ui.enabled_check_box.setChecked(False)
     page.drop_changes()
 
+    assert ui.enabled_check_box.isChecked() is True
     assert ui.status_label.text() == desktop_integration_page.NOT_CHECKED_STATUS

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>TrayPage</class>
- <widget class="QWidget" name="TrayPage">
+ <class>SystemIntegrationPage</class>
+ <widget class="QWidget" name="SystemIntegrationPage">
   <property name="geometry">
    <rect>
     <x>0</x>
