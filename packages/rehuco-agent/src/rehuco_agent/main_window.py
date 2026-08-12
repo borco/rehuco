@@ -942,9 +942,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         for path, item in self.__session.items.items():
             if not item.open:
                 continue
-            widget = self.__documents_dock.open_document(path)
-            widget.restore_state(item.state)
-            opened[path] = widget
+            # the remembered layout rides the open itself (#62): the dock applies exactly one layout
+            # per document -- this one, or the saved default only where this one fails to restore --
+            # instead of adopting the default first and having this overwrite it a moment later
+            opened[path] = self.__documents_dock.open_document(path, state=item.state)
 
         self.__documents_dock.restore_state(self.__session.docks_state)
 

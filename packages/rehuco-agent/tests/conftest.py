@@ -8,8 +8,10 @@ from borco_pyside.logging import LogBridge
 from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.documents import document_widget
 from rehuco_agent.settings import (
     checksum_settings,
+    default_layout_settings,
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
@@ -20,6 +22,7 @@ from rehuco_agent.settings import (
     videos_settings,
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
+from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -161,6 +164,27 @@ def isolate_shared_checksum_settings(mocker: MockerFixture) -> Iterator[None]:
     mocker.patch.object(checksum_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_checksum_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_default_layout_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `DefaultLayoutSettings` singleton (#62).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: every `DocumentsDock` reads
+    this when it builds a new document dock, and every `DocumentWidget`'s "Save current layout as
+    default"/"Reset default layout" actions write it. Without this, whichever test first opened a
+    document would pin an instance loaded from the developer's real on-disk settings for the rest of
+    the session -- and could overwrite the layout they actually saved as their default.
+    """
+    shared_default_layout_settings.cache_clear()
+    fake = FakeSettings()
+    mocker.patch.object(default_layout_settings, "persistent_settings", return_value=fake)
+    # the widget's own import site too, same as the tray fixture below: the Save/Reset actions call
+    # ``settings.save(persistent_settings())`` through document_widget's import, so an unpatched one
+    # would write the developer's real settings file from any test that triggers either action
+    mocker.patch.object(document_widget, "persistent_settings", return_value=fake)
+    yield
+    shared_default_layout_settings.cache_clear()
 
 
 @fixture(autouse=True)

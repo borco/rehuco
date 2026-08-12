@@ -2014,8 +2014,8 @@ def test_restore_session_reopens_open_documents_and_restores_their_state(mocker:
       one closed item
     * mock ``DocumentsDock.open_document`` to return a stand-in widget
     * construct ``MainWindow``
-    * verify ``open_document`` was called only for the open item's path, and its widget's
-      ``restore_state`` was called with that item's state
+    * verify ``open_document`` was called only for the open item's path, carrying that item's state
+      (#62: the layout rides the open itself, so the dock applies exactly one layout per document)
     """
     open_path = Path("open.rehu").resolve()
     closed_path = Path("closed.rehu").resolve()
@@ -2033,8 +2033,7 @@ def test_restore_session_reopens_open_documents_and_restores_their_state(mocker:
     window = MainWindow()
     qtbot.addWidget(window)
 
-    open_document.assert_called_once_with(open_path)
-    widget.restore_state.assert_called_once_with(b"state-bytes")
+    open_document.assert_called_once_with(open_path, state=b"state-bytes")
 
 
 def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2046,7 +2045,7 @@ def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: 
 
     * seed one open item
     * mock ``open_document`` to return the (locked) dock it now yields for a file that can't be read
-    * construct ``MainWindow`` and verify the dock's saved state was still restored
+    * construct ``MainWindow`` and verify the open still carried the saved state to restore
     """
     path = Path("missing.rehu").resolve()
 
@@ -2056,12 +2055,12 @@ def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: 
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_load)
     widget = mocker.MagicMock()
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
 
     window = MainWindow()
     qtbot.addWidget(window)
 
-    widget.restore_state.assert_called_once_with(b"state")
+    open_document.assert_called_once_with(path, state=b"state")
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2483,7 +2482,7 @@ def test_restore_session_refocuses_a_vanished_focused_documents_locked_dock(
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert open_document.call_args_list == [mocker.call(path), mocker.call(path)]
+    assert open_document.call_args_list == [mocker.call(path, state=b"state"), mocker.call(path)]
 
 
 def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:

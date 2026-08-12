@@ -21,6 +21,7 @@ from rehuco_core import (
 )
 
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.identity_settings import shared_identity_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
@@ -92,16 +93,19 @@ class DocumentsDock(QMainWindow):
         )
         self.__tracker.current_dock_changed.connect(self.__on_current_dock_changed)
 
-    def open_document(self, path: Path) -> DocumentWidget:
+    def open_document(self, path: Path, *, state: bytes | None = None) -> DocumentWidget:
         """Open ``path`` in a new dock, or focus its dock if already open.
 
         :param path: absolute filesystem path to a ``.rehu`` file, or a legacy ``.tc`` file
             ([[acquisition-tooling#tc-to-rehu]], opened locked and read-only) -- ``MainWindow.open_file``
             resolves it.
+        :param state: the document's own remembered layout to restore (a session restore's per-path
+            blob), or ``None`` to adopt the saved default layout when one is defined (#62). Only
+            meaningful for a document actually being opened; ignored when ``path`` is already open.
         :returns: the document's widget. A file that cannot be read opens as an empty **locked** dock
             standing in for it ([[data-model#write-integrity]]).
         """
-        return self.__activate(self.__find_dock_by_path(path) or self.__make_new_dock(path))
+        return self.__activate(self.__find_dock_by_path(path) or self.__make_new_dock(path, state=state))
 
     def open_folder(self, folder: Path) -> DocumentWidget:
         """Open the directory-scoped resource in ``folder`` ([[data-model#resource-scoping]]).
@@ -387,7 +391,7 @@ class DocumentsDock(QMainWindow):
             LOG.info("Read %s as %s", path, document.type or "an untyped resource")
             return document
 
-    def __make_new_dock(self, path: Path, *, new: bool = False) -> QtAds.CDockWidget:
+    def __make_new_dock(self, path: Path, *, new: bool = False, state: bytes | None = None) -> QtAds.CDockWidget:
         """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.
 
         Every open attempt yields a document view ([[data-model#write-integrity]]): a file that is
@@ -404,6 +408,8 @@ class DocumentsDock(QMainWindow):
             when the directory has no `info.rehu` yet; nothing is written to disk until the user saves.
             Kept strictly distinct from the empty **locked** stub a failed load produces: a new document
             is empty **and editable and dirty**, a document about to be written.
+        :param state: the document's own remembered layout, or ``None`` for the saved default -- see
+            :meth:`open_document`.
         :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
         """
         if new:
@@ -432,6 +438,18 @@ class DocumentsDock(QMainWindow):
         current = self.__tracker.current_dock
         dock_area = current.dockAreaWidget() if current is not None else None
         self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, dock_area)
+
+        # exactly one layout is applied, after addDockWidget above so the widget is parented into the
+        # hierarchy first -- restoring earlier feeds the saved splitter sizes to a never-laid-out
+        # widget. A session-restored document gets its own remembered layout; anything else adopts the
+        # saved default when one is defined (#62), through the widget's own apply (an unusable saved
+        # blob falls back to the as-built layout it already has), so what a default means lives in one
+        # place. A session blob that fails to restore (stale version, corrupted) falls through to the
+        # default too: the default is precisely "what a document with no usable layout of its own
+        # gets". The emptiness guard only skips a pointless as-built -> as-built restore on the common
+        # no-default path.
+        if (state is None or not dock.document_widget.restore_state(state)) and shared_default_layout_settings().state:
+            dock.document_widget.apply_default_layout()
 
         return dock
 
