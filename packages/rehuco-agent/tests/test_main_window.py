@@ -3411,16 +3411,16 @@ def test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_
     job = GatedJob("importing")
     queue.enqueue(job)
     assert job.entered.wait(SWEEP_TIMEOUT)
-    qtbot.wait(50)
+    # entered.wait only confirms the worker thread reached the job -- the state change still has to
+    # cross to the GUI thread through the queue's own marshalling before the indicator reacts, so a
+    # fixed sleep races that hop under load; wait for the actual effect instead
+    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=int(SWEEP_TIMEOUT * 1000))
 
     assert task_queue_dock(window).isClosed()
-    assert not indicator.isHidden()
     assert "importing" in indicator.text()
 
     job.let_finish()
-    qtbot.wait(50)
-
-    assert indicator.isHidden()
+    qtbot.waitUntil(indicator.isHidden, timeout=int(SWEEP_TIMEOUT * 1000))
 
 
 def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -> None:
@@ -3444,8 +3444,9 @@ def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -
     job = GatedJob("importing")
     queue.enqueue(job)
     assert job.entered.wait(SWEEP_TIMEOUT)
-    qtbot.wait(50)
-    assert not indicator.isHidden()
+    # same cross-thread race as test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_closed --
+    # wait for the indicator to actually react rather than a fixed sleep
+    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=int(SWEEP_TIMEOUT * 1000))
     assert task_queue_dock(window).isClosed()
 
     qtbot.mouseClick(indicator, Qt.MouseButton.LeftButton)
@@ -3453,7 +3454,7 @@ def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -
     assert not task_queue_dock(window).isClosed()
 
     job.let_finish()
-    qtbot.wait(50)
+    qtbot.waitUntil(indicator.isHidden, timeout=int(SWEEP_TIMEOUT * 1000))
 
 
 def test_the_image_previews_toggle_is_in_the_view_menu_checked_by_default(qtbot: QtBot) -> None:
