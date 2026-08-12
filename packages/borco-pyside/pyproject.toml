@@ -25,13 +25,16 @@ dependencies = [
     # ([[packaging-deployment#channels]]). Essentials ships the same `PySide6` package directory.
     "PySide6-Essentials>=6.9",
     "colorama>=0.4.6",
-    # !=5.0.0.1: that release's version-bump commit silently reverted its vendored Qt-ADS submodule
-    # from 5.0.0 back to a 4.5.0-era commit, so the wheel ships 4.5 C++ under a 5.0.0.1 version
-    # (verified: `ColorSchemeMode`, `DisableStylesheet` and `isApplicationPaletteDark` are all absent
-    # from its binary, present in 5.0.0's). `QtAdsFocusTracker` reads the first and third at
-    # construction, so it would AttributeError at startup in every window. `!=` rather than a `==`
-    # pin, so a fixed 5.0.0.2 is picked up normally.
-    "pyside6-qtads>=5.0.0,!=5.0.0.1",
+    # >=5.0.0.2, not just >=5.0.0: 5.0.0.1's version-bump commit silently reverted its vendored
+    # Qt-ADS submodule from 5.0.0 back to a 4.5.0-era commit, so that wheel ships 4.5 C++ under a
+    # 5.0.0.1 version (verified: `ColorSchemeMode`, `DisableStylesheet` and `isApplicationPaletteDark`
+    # are all absent from its binary, present in 5.0.0's). `QtAdsFocusTracker` reads the first and
+    # third at construction, so it would AttributeError at startup in every window -- it was yanked
+    # from PyPI for exactly this. 5.0.0.2 restores the correct submodule *and* stops vendoring
+    # `libxkbcommon` in the manylinux wheel (upstream's own ci fix; see
+    # [[appendices.qt-ads#libxkbcommon-race]]), which is a real win for the AppImage's bundled size,
+    # not just the crash workaround.
+    "pyside6-qtads>=5.0.0.2",
 ]
 
 [project.urls]

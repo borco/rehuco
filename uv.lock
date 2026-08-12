@@ -141,7 +141,7 @@ dev = [
 requires-dist = [
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
-    { name = "pyside6-qtads", specifier = ">=5.0.0,!=5.0.0.1" },
+    { name = "pyside6-qtads", specifier = ">=5.0.0.2" },
 ]
 
 [package.metadata.requires-dev]
@@ -1010,20 +1010,20 @@ wheels = [
 
 [[package]]
 name = "pyside6-qtads"
-version = "5.0.0"
+version = "5.0.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pyside6-essentials" },
     { name = "shiboken6" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ba/59/61daec52a9622c548969d54e1cd97a30525434bd3c9195c4268ef9468ceb/pyside6_qtads-5.0.0.tar.gz", hash = "sha256:ddccae87bf11642a78d332de5fe281e6482040e97cd812f034c434a7c4939ca8", size = 23167191, upload-time = "2026-06-29T18:59:16.23Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8e/02/d274df5c1ebc1ca0229cb9e21becbeec90be2e02a00eabff842f852fd165/pyside6_qtads-5.0.0.2.tar.gz", hash = "sha256:74d647aa9c8f661da4086798dc0e7b8c97aaef427106273969f1b4def147858f", size = 23168823, upload-time = "2026-08-04T20:58:17.708Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/03/65dc4707f11c261075b3498272dcb656b14a81e9b50cc42e2d141545f23e/pyside6_qtads-5.0.0-cp310-abi3-macosx_13_0_arm64.whl", hash = "sha256:b014b9ac69b6e882b5793549ce049f30b61e010d9002724386cb49fee6cd58cc", size = 493622, upload-time = "2026-06-29T18:59:08.329Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/87/d1ff7593ed1ab666d0a35cd10c22390853267b78e387c398ecc12911b4eb/pyside6_qtads-5.0.0-cp310-abi3-macosx_13_0_x86_64.whl", hash = "sha256:af2477b6b422557906508741a3e00d38f36e691601cc2f4180bb070e9692b2a0", size = 515604, upload-time = "2026-06-29T18:59:09.576Z" },
-    { url = "https://files.pythonhosted.org/packages/9e/30/417ecb963d8cd98aa5061091db5d22ac25984ead60d3f875bdc9fb8eb697/pyside6_qtads-5.0.0-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:a6472caaca43f01f39ca6701d042867171c5767e6c672da026b8f06a7083b360", size = 750470, upload-time = "2026-06-29T18:59:10.704Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/b4/74bf03abb56134bc7efe543c22ea06f899980d5409268652181eb4ec5a58/pyside6_qtads-5.0.0-cp310-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:e363e62d9329c1cdb06e5372395f2450a04a96ba693a49834fd63143f9b44d66", size = 653681, upload-time = "2026-06-29T18:59:11.912Z" },
-    { url = "https://files.pythonhosted.org/packages/bd/cc/1e791874ea92636fc6728a08fe072675012f2c7e763d97ece80503054e3c/pyside6_qtads-5.0.0-cp310-abi3-win_amd64.whl", hash = "sha256:f033351a0c9dac4ac3b9ea85feda12d5b24252ba03b16741ebe47341c6529742", size = 427363, upload-time = "2026-06-29T18:59:13.05Z" },
-    { url = "https://files.pythonhosted.org/packages/d4/99/1a088f324f0f7b74355199c0a7dd8edf0ad5d7b05daf616801fe2006b50e/pyside6_qtads-5.0.0-cp310-abi3-win_arm64.whl", hash = "sha256:75ee4a8b5c76eb1e2f41b221a3298bd6f974e3d0e227e4721856dd2cf220f877", size = 393694, upload-time = "2026-06-29T18:59:14.673Z" },
+    { url = "https://files.pythonhosted.org/packages/79/82/8fe401731fc452c1c2128452700baca313e2fb1fc03051faad72174f20a5/pyside6_qtads-5.0.0.2-cp310-abi3-macosx_13_0_arm64.whl", hash = "sha256:5b7da55d2f38a12e032fbff5ce4f60307b67ec43e885d8cbb51b9267fe524b1a", size = 503757, upload-time = "2026-08-04T20:58:11.498Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/14/bc844d464b4e80f5d09584d39187d2b7276d394e2d93183b9ac01d0e2aab/pyside6_qtads-5.0.0.2-cp310-abi3-macosx_13_0_x86_64.whl", hash = "sha256:4f79e6b5a8dc27c090234ebee925b0959214c47a35a76a663f0d7b83fc7740d2", size = 515625, upload-time = "2026-08-04T20:58:12.75Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/ed/70820718091e8cace85ad4f13ffb9a78c29969bdf42fadf040d157111775/pyside6_qtads-5.0.0.2-cp310-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:84077beff91fcc361766d31ca1dbb56e3563c1c694652a2ea63c337c8aed802d", size = 624108, upload-time = "2026-08-04T20:58:13.602Z" },
+    { url = "https://files.pythonhosted.org/packages/da/4a/9ad920ba90a0098e83567a162069bda3c3d636fbef8e6160349dc29a8432/pyside6_qtads-5.0.0.2-cp310-abi3-manylinux_2_39_aarch64.whl", hash = "sha256:8d567bede178f82ecb49b3af53162fc9bf1411f620bd5bef819253e3239f94e6", size = 653711, upload-time = "2026-08-04T20:58:14.498Z" },
+    { url = "https://files.pythonhosted.org/packages/0b/1b/5c5ab984521553562396775558be7ba33d42a11b1c48041cb50b8595f8d0/pyside6_qtads-5.0.0.2-cp310-abi3-win_amd64.whl", hash = "sha256:9dfe2085e65255c802dc7283d2008b887a6fc580fddb5541e4cd0a1e3c593af6", size = 427386, upload-time = "2026-08-04T20:58:15.568Z" },
+    { url = "https://files.pythonhosted.org/packages/14/aa/f1b7c3dd07ecc7b055b98950b33de49ea6e997bd58543d9100c3c9df4c5b/pyside6_qtads-5.0.0.2-cp310-abi3-win_arm64.whl", hash = "sha256:5403437d9b5509dc5e93ffa442e1f5413f5bfc1510112fda6248dced1b87e7a5", size = 393719, upload-time = "2026-08-04T20:58:16.585Z" },
 ]
 
 [[package]]
@@ -1242,7 +1242,7 @@ requires-dist = [
     { name = "pathvalidate", specifier = ">=3.3.1" },
     { name = "pillow" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
-    { name = "pyside6-qtads", specifier = ">=5.0.0,!=5.0.0.1" },
+    { name = "pyside6-qtads", specifier = ">=5.0.0.2" },
     { name = "pyside6-scintilla", specifier = ">=5.6.3.7" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "rehuco-core", editable = "packages/rehuco-core" },

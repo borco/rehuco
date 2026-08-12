@@ -371,8 +371,15 @@ order) leaves it alone. No other file needs the same treatment: Python caches mo
 one on the real startup path.
 
 Filed upstream: [mborgerson/pyside6_qtads#123](https://github.com/mborgerson/pyside6_qtads/issues/123).
-If upstream stops vendoring `libxkbcommon`, this ordering requirement goes away too, but there's no
-harm in leaving `app.py`'s import order as-is.
+
+**Resolved upstream in `5.0.0.2`** (released 2026-08-04): the manylinux wheel no longer vendors
+`libxkbcommon` at all (`ci: Don't vendor libxkbcommon in manylinux wheels`), so the race this section
+describes cannot happen on a wheel built from that fix onward — confirmed via the diff between the
+`v5.0.0` and `v5.0.0.2` tags on `mborgerson/pyside6_qtads`. This also drops a duplicate copy of
+`libxkbcommon` (and whatever it pulls in) from what the Linux AppImage build has to bundle, on top of
+closing the crash. `pyside6-qtads`'s floor is `>=5.0.0.2` for exactly this, alongside the submodule
+fix below. `app.py`'s import order is left as-is regardless — there's no harm in it, and it costs
+nothing to keep protecting a build resolved below the floor.
 
 ## 8. Every `CDockManager` carries QtAds' default stylesheet — nesting pays for it per level
 
@@ -464,7 +471,10 @@ And the reload hands a **nested** manager back a full default sheet, undoing the
 arrangement of [[appendices.qt-ads#per-manager-stylesheet]]; re-clearing it belongs in the same step.
 
 `eConfigFlag.DisableStylesheet` would be the blunter lever — QtAds applies no sheet at all and the
-app owns styling outright. It exists in upstream ADS 5.0 but is **not bound in the installed wheel**
-(`pyside6-qtads` 5.0.0): `dir(CDockManager.eConfigFlag)` does not list it, which is the
+app owns styling outright. It exists in upstream ADS 5.0 but was **not bound in `pyside6-qtads`
+5.0.0** (`dir(CDockManager.eConfigFlag)` did not list it, the
 [[appendices.qt-ads#verify-bindings-live]] check applied to a flag an issue body had recorded as
-available.
+available) -- and *is* bound as of `5.0.0.2` (confirmed the same way against the installed wheel).
+Not adopted: pinning the mode already solves the problem this section is about, and switching levers
+now would trade a working, tested fix for an untested one on the strength of a binding gap that has
+since closed.
