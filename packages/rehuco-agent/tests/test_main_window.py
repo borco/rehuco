@@ -1637,6 +1637,32 @@ def test_tray_icon_built_at_startup_when_already_enabled(mocker: MockerFixture, 
     assert isinstance(window._MainWindow__tray_icon, TrayIcon)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_a_redundant_enabled_notification_does_not_rebuild_an_existing_tray_icon(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The build guard is idempotent: an already-enabled icon is left exactly as it is, not replaced.
+
+    ``SimpleProperty`` only notifies on an actual value change, so this shouldn't fire from a real
+    setting toggle -- but the handler itself makes no such assumption, and this pins that it doesn't
+    need to.
+
+    **Test steps:**
+
+    * build a window with tray mode already on (an icon exists)
+    * call the handler again with ``enabled=True``
+    * verify the same `TrayIcon` instance is still there, untouched
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    icon = window._MainWindow__tray_icon  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__on_tray_enabled_changed(True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window._MainWindow__tray_icon is icon  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_tray_icon_not_built_when_enabled_but_no_tray_is_available(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Tray mode turned on with no system tray available (bare Linux sessions, chiefly) refuses to
     engage: no `TrayIcon` is built at all.
