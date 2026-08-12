@@ -10,6 +10,8 @@
         <file alias="icons/banner_warning.svg">../../../../design/icons/banner_warning.svg</file>
         <file alias="icons/checksum_generate.svg">../../../../design/icons/checksum_generate.svg</file>
         <file alias="icons/checksum_verify.svg">../../../../design/icons/checksum_verify.svg</file>
+        <file alias="icons/document_checksum.svg">../../../../design/icons/document_checksum.svg</file>
+        <file alias="icons/document_default_layout.svg">../../../../design/icons/document_default_layout.svg</file>
         <file alias="icons/document_description.svg">../../../../design/icons/document_description.svg</file>
         <file alias="icons/document_editor_main.svg">../../../../design/icons/document_editor_main.svg</file>
         <file alias="icons/document_images.svg">../../../../design/icons/document_images.svg</file>

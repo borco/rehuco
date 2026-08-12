@@ -1637,6 +1637,32 @@ def test_tray_icon_built_at_startup_when_already_enabled(mocker: MockerFixture, 
     assert isinstance(window._MainWindow__tray_icon, TrayIcon)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
 
+def test_a_redundant_enabled_notification_does_not_rebuild_an_existing_tray_icon(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The build guard is idempotent: an already-enabled icon is left exactly as it is, not replaced.
+
+    ``SimpleProperty`` only notifies on an actual value change, so this shouldn't fire from a real
+    setting toggle -- but the handler itself makes no such assumption, and this pins that it doesn't
+    need to.
+
+    **Test steps:**
+
+    * build a window with tray mode already on (an icon exists)
+    * call the handler again with ``enabled=True``
+    * verify the same `TrayIcon` instance is still there, untouched
+    """
+    mocker.patch.object(QSystemTrayIcon, "isSystemTrayAvailable", return_value=True)
+    shared_tray_settings().enabled = True
+    window = MainWindow()
+    qtbot.addWidget(window)
+    icon = window._MainWindow__tray_icon  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    window._MainWindow__on_tray_enabled_changed(True)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    assert window._MainWindow__tray_icon is icon  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
 def test_tray_icon_not_built_when_enabled_but_no_tray_is_available(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Tray mode turned on with no system tray available (bare Linux sessions, chiefly) refuses to
     engage: no `TrayIcon` is built at all.
@@ -2014,8 +2040,8 @@ def test_restore_session_reopens_open_documents_and_restores_their_state(mocker:
       one closed item
     * mock ``DocumentsDock.open_document`` to return a stand-in widget
     * construct ``MainWindow``
-    * verify ``open_document`` was called only for the open item's path, and its widget's
-      ``restore_state`` was called with that item's state
+    * verify ``open_document`` was called only for the open item's path, carrying that item's state
+      (#62: the layout rides the open itself, so the dock applies exactly one layout per document)
     """
     open_path = Path("open.rehu").resolve()
     closed_path = Path("closed.rehu").resolve()
@@ -2033,8 +2059,7 @@ def test_restore_session_reopens_open_documents_and_restores_their_state(mocker:
     window = MainWindow()
     qtbot.addWidget(window)
 
-    open_document.assert_called_once_with(open_path)
-    widget.restore_state.assert_called_once_with(b"state-bytes")
+    open_document.assert_called_once_with(open_path, state=b"state-bytes")
 
 
 def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2046,7 +2071,7 @@ def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: 
 
     * seed one open item
     * mock ``open_document`` to return the (locked) dock it now yields for a file that can't be read
-    * construct ``MainWindow`` and verify the dock's saved state was still restored
+    * construct ``MainWindow`` and verify the open still carried the saved state to restore
     """
     path = Path("missing.rehu").resolve()
 
@@ -2056,12 +2081,12 @@ def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: 
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_load)
     widget = mocker.MagicMock()
-    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
 
     window = MainWindow()
     qtbot.addWidget(window)
 
-    widget.restore_state.assert_called_once_with(b"state")
+    open_document.assert_called_once_with(path, state=b"state")
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2483,7 +2508,7 @@ def test_restore_session_refocuses_a_vanished_focused_documents_locked_dock(
     window = MainWindow()
     qtbot.addWidget(window)
 
-    assert open_document.call_args_list == [mocker.call(path), mocker.call(path)]
+    assert open_document.call_args_list == [mocker.call(path, state=b"state"), mocker.call(path)]
 
 
 def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:

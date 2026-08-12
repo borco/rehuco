@@ -17,15 +17,17 @@ from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import MessageBanner, MessageBannerRow, MessageBannerSeverity
 from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtGui import QAction, QIcon, QKeySequence
-from PySide6.QtWidgets import QMainWindow, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMainWindow, QMenu, QMessageBox, QVBoxLayout, QWidget
 from rehuco_core import TaskQueue
 
 from ..app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
 from ..fields import FieldsTab, StatefulWidget
 from ..fields.widgets import ImageLightbox
 from ..glyphs import TAB_CLOSE_GLYPH
+from ..settings.default_layout_settings import shared_default_layout_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
 from ..settings.logs_settings import shared_logs_settings
+from ..settings.persistent_settings import persistent_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .conversion_backup_actions import ConversionBackupActions
@@ -68,6 +70,8 @@ CONVERT_DISCARD_ICON_RESOURCE: Final = ":/icons/tc_convert.svg"
 UPGRADE_ICON_RESOURCE: Final = ":/icons/rehu_upgrade.svg"
 SAVE_PREVIEW_ICON_RESOURCE: Final = ":/icons/document_save_preview.svg"
 ON_DISK_ICON_RESOURCE: Final = ":/icons/document_on_disk.svg"
+CHECKSUM_ICON_RESOURCE: Final = ":/icons/document_checksum.svg"
+DEFAULT_LAYOUT_ICON_RESOURCE: Final = ":/icons/document_default_layout.svg"
 
 SAVE_PREVIEW_DOCK_NAME: Final = "save_preview"
 ON_DISK_DOCK_NAME: Final = "on_disk"
@@ -90,6 +94,11 @@ UPGRADE_MESSAGE: Final = "This document uses an older format — click the <i>Up
 button by the label it actually carries, the same way the banner already names Revert/Convert as *the*
 remedy for every lock reason. The specs' own user-facing word for this is "upgrade" -- "migration" stays
 the internal name."""
+
+APPLY_DEFAULT_LAYOUT_TOOLTIP: Final = "Apply default layout"
+SAVE_DEFAULT_LAYOUT_LABEL: Final = "Save current layout as default"
+RESET_DEFAULT_LAYOUT_LABEL: Final = "Reset default layout"
+"""What the default-layout toolbar action and its two menu entries say (#62)."""
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
@@ -331,6 +340,26 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         model.rename_error_changed.connect(self.__on_rename_error_changed)  # type: ignore[attr-defined]
         model.active_block_changed.connect(self.__rebuild_field_docks)
 
+        self.__apply_default_layout_action: Final = QAction("Apply Default Layout", self)
+        self.__apply_default_layout_action.setToolTip(APPLY_DEFAULT_LAYOUT_TOOLTIP)
+        ActionIconThemeHandler(self.__apply_default_layout_action, DEFAULT_LAYOUT_ICON_RESOURCE)
+        self.__apply_default_layout_action.triggered.connect(self.apply_default_layout)
+        self.addAction(self.__apply_default_layout_action)
+
+        self.__save_default_layout_action: Final = QAction(SAVE_DEFAULT_LAYOUT_LABEL, self)
+        self.__save_default_layout_action.triggered.connect(self.__on_save_default_layout)
+
+        self.__reset_default_layout_action: Final = QAction(RESET_DEFAULT_LAYOUT_LABEL, self)
+        self.__reset_default_layout_action.triggered.connect(self.__on_reset_default_layout)
+
+        # the main action carries the other two as its menu, the same shape ChecksumActions gives
+        # Verify Old/Verify All (#244) -- one toolbar button both applies the default and offers the
+        # two ways to change it
+        self.__default_layout_menu: Final = QMenu(self)
+        self.__default_layout_menu.addAction(self.__save_default_layout_action)
+        self.__default_layout_menu.addAction(self.__reset_default_layout_action)
+        self.__apply_default_layout_action.setMenu(self.__default_layout_menu)
+
         toolbar = self.addToolBar("View")
         toolbar.addAction(self.__revert_action)
         toolbar.addAction(self.__save_action)
@@ -351,6 +380,15 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             inspection_docks = (*inspection_docks, self.__checksum_dock)
         for dock in (*self.__viewer_docks.values(), *self.__editor_docks.values(), *inspection_docks):
             toolbar.addAction(dock.toggleViewAction())
+        toolbar.addSeparator()  # between the dock toggles above and the default-layout action below
+        toolbar.addAction(self.__apply_default_layout_action)
+
+        # captured once, right after every dock exists and before any restore_state call could run --
+        # what "Apply default layout" falls back to (:meth:`apply_default_layout`) while no usable
+        # default is saved (#62): this document's own as-built layout, not an arbitrary one.
+        # Layout-only, same subset the saved default itself is, so the fallback resets docks without
+        # also resetting per-widget state the user has since changed.
+        self.__factory_state: Final = self.save_layout_state()
 
     @property
     def model(self) -> RehuDocumentModel:
@@ -439,16 +477,37 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         return cbor2.dumps(
             {
-                STATE_VERSION_KEY: STATE_VERSION,
-                STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
-                STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
-                STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
+                **self.__layout_state(),
                 STATE_IMAGE_STRIP_VISIBLE_KEY: self.__image_strip_visible,
                 STATE_WIDGET_STATE_KEY: {
                     name: widget.save_state() for name, widget in self.__stateful_widgets().items()
                 },
             }
         )
+
+    def save_layout_state(self) -> bytes:
+        """Serialize only this document's dock layout -- what "Save current layout as default" stores
+        (#62).
+
+        Deliberately the **layout-only subset** of :meth:`save_state`: the per-widget state and the
+        thumbnail-row choice that ride the full blob are per-``.rehu`` view state by design (#25, #161),
+        and a default saved from one document must not promote them into an app-wide setting every
+        other document inherits. :meth:`restore_state` reads each key defensively, so this reduced
+        blob restores through the same method unchanged.
+
+        :returns: cbor2-encoded layout, suitable for :meth:`restore_state`
+            (:attr:`~rehuco_agent.settings.default_layout_settings.DefaultLayoutSettings.state`).
+        """
+        return cbor2.dumps(self.__layout_state())
+
+    def __layout_state(self) -> dict[str, Any]:
+        """The dock-layout entries shared by :meth:`save_state` and :meth:`save_layout_state`."""
+        return {
+            STATE_VERSION_KEY: STATE_VERSION,
+            STATE_DOCK_MANAGER_KEY: bytes(self.__dock_manager.saveState().data()),
+            STATE_STASHED_SIZES_KEY: self.__stashed_sizes,
+            STATE_CURRENT_DOCK_KEY: self.__tracker.save_state(),
+        }
 
     def restore_state(self, state: bytes) -> bool:
         """Restore a dock layout previously captured by :meth:`save_state`.
@@ -749,6 +808,33 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         save_or_prompt_retry(self, self.__model)
 
+    def apply_default_layout(self) -> None:
+        """Apply the saved default dock layout, or this document's own as-built layout when no
+        **usable** default is saved (#62) -- the toolbar action's slot, and what `DocumentsDock` calls
+        on every document it opens while a default is defined.
+
+        Falls back on :meth:`restore_state` *failing*, not merely on the stored blob being empty: an
+        empty blob is "never saved" (or reset), but a non-empty one can be just as unusable -- written
+        under an older :data:`STATE_VERSION`, or corrupted -- and treating it as a default would make
+        this a permanent silent no-op rather than the reset the action promises.
+        """
+        if not self.restore_state(shared_default_layout_settings().state):
+            self.restore_state(self.__factory_state)
+
+    def __on_save_default_layout(self) -> None:
+        """Save this document's current dock layout as the default every newly opened document adopts
+        (#62) -- the layout-only subset (:meth:`save_layout_state`), never per-document widget state."""
+        settings = shared_default_layout_settings()
+        settings.state = self.save_layout_state()
+        settings.save(persistent_settings())
+
+    def __on_reset_default_layout(self) -> None:
+        """Clear the saved default layout (#62); a later "Apply default layout" falls back to each
+        document's own as-built layout again."""
+        settings = shared_default_layout_settings()
+        settings.state = b""
+        settings.save(persistent_settings())
+
     def __on_image_activated(self, path: Path) -> None:
         """Open ``path`` maximized, on whichever surface the user's settings ask for (#160).
 
@@ -964,9 +1050,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """Build the per-file checksum dock, stacked with the inspection docks and hidden (#244).
 
         The same shape and the same place as the #111 pair: hidden by default, its toggle on this
-        document's own toolbar. It carries no icon of its own -- ``icons.afdesign`` has no
-        ``checksum_view`` export yet, and a toggle wearing the Verify action's icon beside that very
-        action would read as a second Verify.
+        document's own toolbar.
 
         :param model: the view-model whose record the table shows.
         :param actions: the document's checksum actions, whose checking pair the dock's toolbar shares.
@@ -974,7 +1058,11 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """
         viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
         dock = self.__add_hidden_inspection_dock(
-            CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, "", ChecksumView(model, actions, self), viewer_area
+            CHECKSUM_DOCK_NAME,
+            CHECKSUM_DOCK_TITLE,
+            CHECKSUM_ICON_RESOURCE,
+            ChecksumView(model, actions, self),
+            viewer_area,
         )
         return dock
 
@@ -1025,8 +1113,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
         :param name: the dock's object name.
         :param title: the dock's tab title.
-        :param icon: the SVG resource its toggle action is themed from, or ``""`` for a toggle that
-            shows its title instead -- what a dock with no icon exported yet gets.
+        :param icon: the SVG resource its toggle action is themed from.
         :param content: the view widget the dock hosts.
         :param viewer_area: the viewer dock area to stack into; ``None`` opens a fresh right-side area
             (only when there are no viewer docks at all).
@@ -1037,8 +1124,7 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, viewer_area)
         else:
             self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
-        if icon:
-            ActionIconThemeHandler(dock.toggleViewAction(), icon)
+        ActionIconThemeHandler(dock.toggleViewAction(), icon)
         # hidden by default: a first-run layout shows every other dock but these. Guarded like a layout
         # restore -- this programmatic hide isn't a user toggle, so __on_view_toggled must not stash the
         # (zero, area-collapsed) sizes it would see and later re-apply when the dock is shown.

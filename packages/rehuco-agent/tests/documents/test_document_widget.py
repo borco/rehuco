@@ -38,10 +38,16 @@ from qt_waits import wait_destroyed
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
 from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
 from rehuco_agent.documents.document_widget import (
+    APPLY_DEFAULT_LAYOUT_TOOLTIP,
+    CHECKSUM_ICON_RESOURCE,
+    DEFAULT_LAYOUT_ICON_RESOURCE,
     ON_DISK_ICON_RESOURCE,
+    RESET_DEFAULT_LAYOUT_LABEL,
+    SAVE_DEFAULT_LAYOUT_LABEL,
     SAVE_PREVIEW_ICON_RESOURCE,
     STATE_IMAGE_STRIP_VISIBLE_KEY,
     STATE_VERSION_KEY,
+    STATE_WIDGET_STATE_KEY,
     DocumentWidget,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -60,6 +66,7 @@ from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
 from rehuco_agent.fields.widgets.image_selector import PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
+from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_core import (
@@ -3158,6 +3165,189 @@ def test_a_checksum_finding_lands_in_the_inline_strip(
 
     assert "Checksums verified: 1 mismatched." in texts
     assert "warning" in severities
+
+
+def test_the_checksum_dock_toggle_carries_its_own_icon(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The per-file checksum dock's toggle is themed from its own SVG, like the #111 pair (#244).
+
+    **Test steps:**
+
+    * build a widget over a real queue
+    * verify the checksum dock's toggle action was themed from ``document_checksum.svg``
+    """
+    queue = TaskQueue()
+    widget = DocumentWidget(model, task_queue=queue)
+    qtbot.addWidget(widget)
+    try:
+        dock = widget._DocumentWidget__checksum_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert dock is not None
+        handlers = dock.toggleViewAction().findChildren(ActionIconThemeHandler)
+        svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        assert read_resource_bytes(CHECKSUM_ICON_RESOURCE) in svgs
+    finally:
+        widget.detach()
+        queue.shutdown()
+
+
+# endregion
+
+
+# region default layout (#62)
+
+
+def test_apply_default_layout_action_is_on_the_toolbar_with_its_icon_and_tooltip(widget: DocumentWidget) -> None:
+    """The apply action sits on the toolbar, themed from its own SVG, with the tooltip promised (#62).
+
+    **Test steps:**
+
+    * build a plain widget
+    * verify the apply action is on its toolbar, themed from ``document_default_layout.svg``, and
+      carries the expected tooltip
+    """
+    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    toolbar = widget.findChildren(QToolBar)[0]
+    assert action in toolbar.actions()
+    assert action.toolTip() == APPLY_DEFAULT_LAYOUT_TOOLTIP
+    handlers = action.findChildren(ActionIconThemeHandler)
+    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert read_resource_bytes(DEFAULT_LAYOUT_ICON_RESOURCE) in svgs
+
+
+def test_apply_default_layout_actions_toolbar_separator_precedes_it(widget: DocumentWidget) -> None:
+    """The apply action is separated from the dock toggles ahead of it (#62).
+
+    **Test steps:**
+
+    * build a plain widget
+    * verify the toolbar action immediately before the apply action is a separator
+    """
+    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    toolbar = widget.findChildren(QToolBar)[0]
+    actions = toolbar.actions()
+    assert actions[actions.index(action) - 1].isSeparator()
+
+
+def test_apply_default_layout_action_carries_the_save_and_reset_entries_as_its_menu(widget: DocumentWidget) -> None:
+    """One toolbar button offers Apply, and reaches Save/Reset through its own menu (#62).
+
+    **Test steps:**
+
+    * build a plain widget
+    * verify the apply action's menu holds exactly Save then Reset, by their labels
+    """
+    action = widget._DocumentWidget__apply_default_layout_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    menu = cast(QMenu, action.menu())
+    assert [entry.text() for entry in menu.actions()] == [SAVE_DEFAULT_LAYOUT_LABEL, RESET_DEFAULT_LAYOUT_LABEL]
+
+
+def test_save_current_layout_as_default_writes_the_current_layout(widget: DocumentWidget) -> None:
+    """Triggering Save records this document's current dock layout as the shared default (#62).
+
+    **Test steps:**
+
+    * toggle the On Disk dock visible (off by default)
+    * trigger Save
+    * verify the shared default now holds this document's current layout-only state
+    """
+    on_disk_dock(widget).toggleView(True)
+
+    widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert shared_default_layout_settings().state == widget.save_layout_state()
+
+
+def test_the_saved_default_is_layout_only(widget: DocumentWidget) -> None:
+    """The default excludes per-widget state and the thumbnail-row choice -- both are per-``.rehu``
+    view state by design (#25, #161), and a default must not promote one document's into every
+    other's (#62).
+
+    **Test steps:**
+
+    * trigger Save
+    * verify the stored blob carries neither the widget-state nor the image-strip entry
+    """
+    widget._DocumentWidget__save_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    payload = cbor2.loads(shared_default_layout_settings().state)
+    assert STATE_WIDGET_STATE_KEY not in payload
+    assert STATE_IMAGE_STRIP_VISIBLE_KEY not in payload
+
+
+def test_reset_default_layout_clears_the_shared_default(widget: DocumentWidget) -> None:
+    """Triggering Reset clears whatever default was saved (#62).
+
+    **Test steps:**
+
+    * seed a non-empty shared default
+    * trigger Reset
+    * verify the shared default is empty again
+    """
+    shared_default_layout_settings().state = widget.save_state()
+
+    widget._DocumentWidget__reset_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert shared_default_layout_settings().state == b""
+
+
+def test_apply_default_layout_restores_the_saved_default(widget: DocumentWidget) -> None:
+    """Triggering Apply restores the shared default layout when one is set (#62).
+
+    **Test steps:**
+
+    * toggle the On Disk dock visible and save that as the default
+    * hide it again, then trigger Apply
+    * verify the dock is visible again, matching the saved default
+    """
+    on_disk_dock(widget).toggleView(True)
+    shared_default_layout_settings().state = widget.save_layout_state()
+    on_disk_dock(widget).toggleView(False)
+
+    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is True
+
+
+def test_apply_default_layout_falls_back_to_the_as_built_layout_when_none_is_saved(widget: DocumentWidget) -> None:
+    """With no default ever saved, Apply resets this document to its own as-built layout (#62).
+
+    An empty shared default must not be a no-op: `restore_state` itself treats an empty blob as
+    "nothing to restore" and leaves the current layout untouched, which is not what the action promises.
+
+    **Test steps:**
+
+    * toggle the On Disk dock visible (off by default) with no shared default ever saved
+    * trigger Apply
+    * verify the dock is hidden again, matching the widget's own as-built layout
+    """
+    on_disk_dock(widget).toggleView(True)
+    assert shared_default_layout_settings().state == b""
+
+    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget: DocumentWidget) -> None:
+    """A default saved under an older ``STATE_VERSION`` must not turn Apply into a silent no-op (#62).
+
+    ``restore_state`` rejects such a blob and returns ``False``; without the fallback keying on that
+    return, a non-empty-but-stale default -- what every saved default becomes on the next version
+    bump -- would leave the button doing nothing, forever, with no way to tell why.
+
+    **Test steps:**
+
+    * seed the shared default with this widget's own layout, its version rolled back one
+    * toggle the On Disk dock visible (off as-built), then trigger Apply
+    * verify the dock is hidden again -- the as-built fallback ran, not the stale blob
+    """
+    payload = cbor2.loads(widget.save_layout_state())
+    payload[STATE_VERSION_KEY] -= 1
+    shared_default_layout_settings().state = cbor2.dumps(payload)
+    on_disk_dock(widget).toggleView(True)
+
+    widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert on_disk_dock(widget).toggleViewAction().isChecked() is False
 
 
 # endregion

@@ -29,6 +29,7 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents import documents_dock
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
 from rehuco_agent.documents.documents_dock import DocumentsDock
+from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
 from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -2015,6 +2016,110 @@ def test_a_new_document_renames_through_the_docks_coordinator(mocker: MockerFixt
     assert widget.model.rename_location("new_name") is True
 
     through.assert_called_once_with(FAKE_PATH, "new_name")
+
+
+# endregion
+
+
+# region default layout (#62)
+
+
+def test_a_freshly_opened_document_adopts_the_saved_default_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A newly opened document adopts the saved default layout, when one is defined.
+
+    **Test steps:**
+
+    * open one document, toggle its On Disk dock visible (off by default), and save that layout as the
+      shared default
+    * open a second, different document
+    * verify the second document's On Disk dock opens visible, matching the saved default
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk.toggleView(True)
+    shared_default_layout_settings().state = first.save_layout_state()
+
+    second = dock.open_document(OTHER_PATH)
+
+    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert second_on_disk.toggleViewAction().isChecked() is True
+
+
+def test_a_session_restored_layout_wins_over_the_saved_default(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A document opened with its own remembered layout keeps it -- the default applies only to
+    documents with no usable layout of their own (#62).
+
+    **Test steps:**
+
+    * open one document, capture its as-built layout (On Disk hidden), then toggle On Disk visible
+      and save that as the shared default
+    * open a second document, handing it the captured as-built layout as its own remembered state
+    * verify the second document's On Disk dock is hidden -- its own layout won, not the default
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    own_state = first.save_state()
+    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk.toggleView(True)
+    shared_default_layout_settings().state = first.save_layout_state()
+
+    second = dock.open_document(OTHER_PATH, state=own_state)
+
+    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert second_on_disk.toggleViewAction().isChecked() is False
+
+
+def test_an_unusable_session_layout_falls_through_to_the_saved_default(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A remembered layout that fails to restore (stale version, corrupted) is exactly the case the
+    default exists for: what a document with no usable layout of its own gets (#62).
+
+    **Test steps:**
+
+    * open one document, toggle its On Disk dock visible, and save that as the shared default
+    * open a second document, handing it garbage as its own remembered state
+    * verify the second document's On Disk dock opens visible -- the default applied
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    first = dock.open_document(FAKE_PATH)
+    first_on_disk = first._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    first_on_disk.toggleView(True)
+    shared_default_layout_settings().state = first.save_layout_state()
+
+    second = dock.open_document(OTHER_PATH, state=b"not a layout blob")
+
+    second_on_disk = second._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert second_on_disk.toggleViewAction().isChecked() is True
+
+
+def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """With no default ever saved, a newly opened document keeps its own as-built layout.
+
+    **Test steps:**
+
+    * open a document with no shared default ever saved
+    * verify its On Disk dock is hidden, the as-built default
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    assert shared_default_layout_settings().state == b""
+
+    widget = dock.open_document(FAKE_PATH)
+
+    on_disk = widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert on_disk.toggleViewAction().isChecked() is False
 
 
 # endregion
