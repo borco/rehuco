@@ -902,6 +902,7 @@ def test_a_paused_job_has_returned_rather_than_parked(
     * start a checkpointing job and count the threads while it runs
     * pause it and wait for it to unwind
     * verify the thread count is unchanged and the worker is idle
+    * verify the settled job carries no leftover stop request (#260)
     """
     job = CheckpointingJob()
     serial = queue.enqueue(job)
@@ -913,6 +914,7 @@ def test_a_paused_job_has_returned_rather_than_parked(
     assert wait_for_state(listener, serial, JobState.PAUSED)
     settles(lambda: active_count() == while_running)
     assert queue.wait_until_idle(TIMEOUT)
+    assert queue.jobs()[0].stop_requested is None
     job.release.set()
 
 
@@ -1146,7 +1148,7 @@ def test_a_cancel_after_a_pause_replaces_it_rather_than_joining_it(
 
     * start a job that blocks before its checkpoint
     * ask it to pause, then to cancel, then release it
-    * verify it was reported cancelled, carrying a cancel request
+    * verify it was reported cancelled, carrying no leftover request
     """
     gated = GatedJob()
     serial = queue.enqueue(gated)
@@ -1157,7 +1159,7 @@ def test_a_cancel_after_a_pause_replaces_it_rather_than_joining_it(
     gated.release.set()
 
     assert wait_for_state(listener, serial, JobState.CANCELLED)
-    assert queue.jobs()[0].stop_requested is StopRequest.CANCEL
+    assert queue.jobs()[0].stop_requested is None
 
 
 def test_a_pause_after_a_cancel_downgrades_it(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -1167,7 +1169,7 @@ def test_a_pause_after_a_cancel_downgrades_it(queue: TaskQueue, listener: Record
 
     * start a job that blocks before its checkpoint
     * ask it to cancel, then to pause, then release it
-    * verify it was reported paused rather than cancelled
+    * verify it was reported paused rather than cancelled, carrying no leftover request
     """
     gated = GatedJob()
     serial = queue.enqueue(gated)
@@ -1178,7 +1180,7 @@ def test_a_pause_after_a_cancel_downgrades_it(queue: TaskQueue, listener: Record
     gated.release.set()
 
     assert wait_for_state(listener, serial, JobState.PAUSED)
-    assert queue.jobs()[0].stop_requested is StopRequest.PAUSE
+    assert queue.jobs()[0].stop_requested is None
 
 
 def test_resuming_a_job_with_nothing_pending_is_accepted(queue: TaskQueue) -> None:
@@ -1473,6 +1475,7 @@ def test_cancelling_a_queued_job_means_it_never_runs(
     * hold a job running and enqueue a second behind it
     * cancel the second, then release the first
     * verify the second was reported cancelled and never ran
+    * verify it carries no leftover stop request, settled outright by the engine (#260)
     """
     order: list[str] = []
     gated = GatedJob()
@@ -1486,6 +1489,7 @@ def test_cancelling_a_queued_job_means_it_never_runs(
     settles(lambda: gated.finished)
     assert listener.states_of(second) == [JobState.CANCELLED]
     assert not order
+    assert next(status for status in queue.jobs() if status.serial == second).stop_requested is None
 
 
 def test_cancelling_the_running_job_reaches_it_at_its_checkpoint(queue: TaskQueue, listener: RecordingListener) -> None:
@@ -1496,6 +1500,7 @@ def test_cancelling_the_running_job_reaches_it_at_its_checkpoint(queue: TaskQueu
     * start a job that blocks and then checkpoints
     * cancel it, then release it into its checkpoint
     * verify it was reported cancelled and never reached the line past the checkpoint
+    * verify the settled job carries no leftover stop request (#260)
     """
     gated = GatedJob()
     serial = queue.enqueue(gated)
@@ -1506,6 +1511,7 @@ def test_cancelling_the_running_job_reaches_it_at_its_checkpoint(queue: TaskQueu
 
     assert wait_for_state(listener, serial, JobState.CANCELLED)
     assert not gated.finished
+    assert queue.jobs()[0].stop_requested is None
 
 
 def test_a_cancel_request_is_announced_before_the_job_obeys_it(queue: TaskQueue, listener: RecordingListener) -> None:
