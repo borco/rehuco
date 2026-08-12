@@ -920,25 +920,30 @@ class TaskQueue:
 
         The running job is **told** -- the request is recorded inside it, and it acts wherever its work
         divides. A job that is not running has no request to act on: it never started, or it already
-        stopped, so the engine settles it here and the job is never troubled.
+        stopped, so the engine settles it here and the job is never troubled -- and, settled, it keeps
+        no request: :attr:`~rehuco_core.tasks.JobStatus.stop_requested` is only ever true of a job that
+        has not yet obeyed ([[appendices.task-queue#pause-concept]]).
 
         :param entry: the job to ask.
         :param request: what to ask of it.
         """
-        changed = entry.stop_requested is not request
-        entry.stop_requested = request
         entry.resume_requested = False
         if entry.state is JobState.RUNNING:
+            changed = entry.stop_requested is not request
+            entry.stop_requested = request
             if request is StopRequest.CANCEL:
                 entry.job.cancel()
             else:
                 entry.job.pause()
-        elif request is StopRequest.CANCEL:
-            entry.state = JobState.CANCELLED
-            changed = True
-        elif entry.state is JobState.QUEUED:
-            entry.state = JobState.PAUSED
-            changed = True
+        else:
+            changed = entry.stop_requested is not None
+            entry.stop_requested = None
+            if request is StopRequest.CANCEL:
+                entry.state = JobState.CANCELLED
+                changed = True
+            elif entry.state is JobState.QUEUED:
+                entry.state = JobState.PAUSED
+                changed = True
         if changed:
             self.__notify_updated(entry)
 
@@ -1076,6 +1081,8 @@ class TaskQueue:
                         elif entry.resume_requested:
                             state = JobState.QUEUED
                             entry.stop_requested = None
+                    if state in (JobState.PAUSED, JobState.CANCELLED):
+                        entry.stop_requested = None
                     entry.resume_requested = False
                     entry.state = state
                     entry.error = error

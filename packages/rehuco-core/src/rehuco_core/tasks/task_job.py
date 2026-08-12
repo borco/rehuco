@@ -327,8 +327,11 @@ class JobStatus:
     :param stop_requested: what the job was last asked to do about stopping, or ``None``. A **fact
         separate from the state**, so a watcher can be honest while the running job has not acted yet
         -- and so that a job which finished anyway can be reported :attr:`JobState.DONE` without the
-        request being lost. What the engine last *asked*; whether the job has acted on it is the
-        job's to know, and a surface finds out by asking for a resume.
+        request being lost. What the engine last *asked and has not seen answered*: a request the
+        engine settled itself, or watched the job unwind under, is cleared with the settling (#260),
+        so no row goes on reading *Pausing…* after the pause has happened. Whether the running job
+        has acted on its request yet is the job's to know, and a surface finds out by asking for a
+        resume.
     :param source: where the job's work is, as of this snapshot -- its :attr:`TaskJob.source`, read at
         enqueue and re-read whenever the queue is told a rename moved something
         (:meth:`~rehuco_core.TaskQueue.resync_sources`, #241). The one declaration below that is not
