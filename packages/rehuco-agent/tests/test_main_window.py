@@ -65,6 +65,25 @@ SWEEP_TIMEOUT: Final = 5.0
 """How long a held sweep waits to be released, in seconds -- generous, since it only ever expires when
 something is genuinely wrong."""
 
+GATE_TIMEOUT: Final = 120.0
+"""How long a gated job blocks before giving up on ever being released, in seconds -- a deadlock guard,
+never a wait anything is meant to reach.
+
+**Deliberately far longer than any assertion window**, unlike :data:`SWEEP_TIMEOUT`, which a job may
+legitimately sit inside. A gated job exists to hold the queue in a *running* state while the test looks
+at it, so the moment its own gate can expire first, the thing under test has already changed underneath
+the assertion. That is not hypothetical: the first event-loop spin in a test can take seconds (draining
+the deferred deletions every widget-heavy test above it left behind), so a five-second gate expired
+before the very first sample -- the job read ``done``, the status indicator was correctly hidden, and
+the failure looked like a lost signal rather than a job nobody was holding any more."""
+
+WAIT_TIMEOUT_MS: Final = 10_000
+"""How long a ``waitUntil`` gives the GUI thread to show an effect, in milliseconds.
+
+Generous for the same reason :data:`GATE_TIMEOUT` is: the wait itself may be the spin that drains a
+long-accumulated deferred-deletion backlog, so the budget has to cover that before it can honestly
+call an effect missing."""
+
 UNSAVED_CHANGES_DIALOG: Final = "rehuco_agent.documents.confirm_and_save_dirty.UnsavedChangesDialog"
 """Where the close guard's batch dialog is looked up -- the shared seam ``closeEvent`` reaches it
 through (#176), not this module, so that is where these tests patch it."""
@@ -3355,7 +3374,7 @@ class GatedJob(TaskJobBase):
     def run(self, control: JobControl) -> None:
         control.report(1, 1)
         self.entered.set()
-        self.__proceed.wait(SWEEP_TIMEOUT)
+        self.__proceed.wait(GATE_TIMEOUT)
 
     def let_finish(self) -> None:
         """Release the block, letting ``run`` return."""
@@ -3414,13 +3433,13 @@ def test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_
     # entered.wait only confirms the worker thread reached the job -- the state change still has to
     # cross to the GUI thread through the queue's own marshalling before the indicator reacts, so a
     # fixed sleep races that hop under load; wait for the actual effect instead
-    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=int(SWEEP_TIMEOUT * 1000))
+    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=WAIT_TIMEOUT_MS)
 
     assert task_queue_dock(window).isClosed()
     assert "importing" in indicator.text()
 
     job.let_finish()
-    qtbot.waitUntil(indicator.isHidden, timeout=int(SWEEP_TIMEOUT * 1000))
+    qtbot.waitUntil(indicator.isHidden, timeout=WAIT_TIMEOUT_MS)
 
 
 def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -> None:
@@ -3444,9 +3463,9 @@ def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -
     job = GatedJob("importing")
     queue.enqueue(job)
     assert job.entered.wait(SWEEP_TIMEOUT)
-    # same cross-thread race as test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_closed --
+    # same cross-thread wait as test_the_task_queue_status_indicator_follows_the_queue_while_its_dock_stays_closed --
     # wait for the indicator to actually react rather than a fixed sleep
-    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=int(SWEEP_TIMEOUT * 1000))
+    qtbot.waitUntil(lambda: not indicator.isHidden(), timeout=WAIT_TIMEOUT_MS)
     assert task_queue_dock(window).isClosed()
 
     qtbot.mouseClick(indicator, Qt.MouseButton.LeftButton)
@@ -3454,7 +3473,7 @@ def test_clicking_the_task_queue_status_indicator_opens_the_dock(qtbot: QtBot) -
     assert not task_queue_dock(window).isClosed()
 
     job.let_finish()
-    qtbot.waitUntil(indicator.isHidden, timeout=int(SWEEP_TIMEOUT * 1000))
+    qtbot.waitUntil(indicator.isHidden, timeout=WAIT_TIMEOUT_MS)
 
 
 def test_the_image_previews_toggle_is_in_the_view_menu_checked_by_default(qtbot: QtBot) -> None:
