@@ -1,4 +1,4 @@
-.PHONY: sync tests checksum-bench cov format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build setup-git \
+.PHONY: sync tests profile checksum-bench cov cov-parallel format bandit pyright pylint check-slugs qa docs-icons docs-serve docs-build setup-git \
 	uis qrcs icons agent-dev-build agent-dev-clean agent-dev-register agent-dev-unregister \
 	agent-dist-build agent-dist-update agent-dist-package agent-dist-clean \
 	agent-appimage-build agent-appimage-clean
@@ -136,13 +136,50 @@ sync:
 tests:
 	uv run pytest
 
+# Where the suite's own time goes -- not a benchmark, and not part of `qa`. `--durations` names the
+# slowest tests, `--profile` writes one .pstats per test plus a `combined.prof` under .prof/ for
+# snakeviz/gprof2dot. Defaults to the whole suite: profiling one subdirectory can only ever confirm
+# what is slow inside it, and the three files that hold most of the runtime were not that one (#262).
+# Narrow it when chasing a specific test -- `make profile PROFILE_ARGS=packages/rehuco-agent/tests`.
+PROFILE_ARGS :=
+
+profile:
+	uv run pytest \
+		--durations=25 \
+		--profile \
+		--pstats-dir=.prof \
+		$(PROFILE_ARGS)
+
 # The checksum-algorithm comparison [[data-model#checksums]] left open (#203). Opt-in rather than part of
 # `tests`: it measures rather than asserts, and pytest-explicit skips it without the --run flag.
 checksum-bench:
 	uv run pytest -m checksum_benchmark --run-checksum_benchmark --benchmark-only
 
 cov:
-	uv run pytest --cov=rehuco_agent --cov=rehuco_core --cov=rehuco_node --cov=borco_core --cov=borco_pyside --cov-report=term-missing --cov-report=xml
+	uv run pytest \
+		--cov=rehuco_agent \
+		--cov=rehuco_core \
+		--cov=rehuco_node \
+		--cov=borco_core \
+		--cov=borco_pyside \
+		--cov-report=term-missing \
+		--cov-report=xml
+
+# Parallelized coverage: pytest-xdist runs tests in parallel, so the coverage
+# report is more accurate and faster. The `-n auto` option automatically
+# determines the number of available CPU cores and runs that many tests in
+# parallel. This is useful for large test suites where running tests
+# sequentially would take a long time.
+cov-parallel:
+	uv run pytest \
+		--cov=rehuco_agent \
+		--cov=rehuco_core \
+		--cov=rehuco_node \
+		--cov=borco_core \
+		--cov=borco_pyside \
+		--cov-report=term-missing \
+		--cov-report=xml \
+		-n auto
 
 format:
 	uv run ruff format .
