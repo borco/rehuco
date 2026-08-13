@@ -33,6 +33,10 @@ TIMEOUT: Final = 5.0
 class GatedJob(TaskJobBase):
     """A job that reports once, then blocks on ``proceed`` until told to finish.
 
+    Checkpoints while it waits, so a job still blocked at teardown unwinds on the fixture's
+    ``shutdown`` cancel at once instead of waiting out :data:`TIMEOUT` -- the same reason the
+    store tests' own gate job checkpoints (#262).
+
     :param label: the job's label.
     :param proceed: set to let the job finish; unset (the default construction) blocks ``run``.
     """
@@ -48,7 +52,8 @@ class GatedJob(TaskJobBase):
         self.run_threads.append(get_ident())
         control.report(1, 1)
         self.entered.set()
-        self.__proceed.wait(TIMEOUT)
+        while not self.__proceed.wait(0.01):
+            self.checkpoint()
 
     def let_finish(self) -> None:
         """Release the block, letting ``run`` return."""
@@ -544,25 +549,36 @@ def test_a_reorder_is_taken_as_a_whole_new_snapshot(queue: TaskQueue, deliver: C
 
     **Test steps:**
 
-    * enqueue three jobs and pause the queue so every one of them is movable
-    * move the last to the top, and let the snapshot land
-    * verify the model's order equals the queue's own, with that job first
+    * occupy the worker with a gate, so the three jobs enqueued behind it stay movable
+    * move the last to the front, and let the snapshot land
+    * verify the model's order equals the queue's own, with that job right behind the gate
     """
     model = TaskQueueModel(queue)
     model.attach_to()
+    # A gate rather than the old enqueue-then-pause: pause is pause_job applied to the jobs there
+    # are ([[appendices.task-queue#pause-concept]]), and the worker could start job-0 in the window
+    # before it -- once RUNNING, job-0 is no longer movable, the move clamps behind it, and the
+    # "with that job first" assertion reads job-0 instead. The same race #262 fixed in the store's
+    # reorder test, missed here because this one lives in the model's file; it too surfaced only
+    # under cov-parallel, where four coverage-traced workers hand the worker thread its head start.
+    gate = GatedJob("gate")
+    queue.enqueue(gate)
+    assert gate.entered.wait(TIMEOUT)
     for index in range(3):
         queue.enqueue(GatedJob(f"job-{index}"))
-    queue.pause()
     deliver()
 
     last = queue.jobs()[-1].serial
+    # index 0 clamps to row 1, the top of the movable run -- nothing moves ahead of the running gate
     queue.move(last, 0)
     deliver()
 
     assert [model.status_at(row).serial for row in range(model.rowCount())] == [
         status.serial for status in queue.jobs()
     ]
-    assert model.status_at(0).serial == last  # pylint: disable=no-member
+    assert model.status_at(1).serial == last  # pylint: disable=no-member
+
+    gate.let_finish()
 
 
 def test_removing_every_job_empties_the_model(queue: TaskQueue, deliver: Callable[[], None]) -> None:
