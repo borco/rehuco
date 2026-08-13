@@ -1025,6 +1025,38 @@ def test_focused_document_path_is_none_with_no_focused_dock(qtbot: QtBot) -> Non
     assert dock.focused_document_path() is None
 
 
+def test_focused_document_widget_reports_the_focused_documents_widget(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The focused document's widget is reported once a dock is the current one -- the ``View``
+    menu's open-documents list (#79) compares by this identity, since a not-yet-saved document has
+    no path to compare by.
+
+    **Test steps:**
+
+    * open a document (which tracks it as current)
+    * verify ``focused_document_widget`` returns its widget
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+
+    assert dock.focused_document_widget() is widget
+
+
+def test_focused_document_widget_is_none_with_no_focused_dock(qtbot: QtBot) -> None:
+    """With no dock focused (e.g. nothing open yet), ``focused_document_widget`` reports ``None``.
+
+    **Test steps:**
+
+    * build an empty dock
+    * verify ``focused_document_widget`` returns ``None``
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+
+    assert dock.focused_document_widget() is None
+
+
 def test_open_paths_reports_every_currently_open_documents_path(mocker: MockerFixture, qtbot: QtBot) -> None:
     """``open_paths`` is what the bulk conversion-backups manager checks a selection against, to warn
     before reverting a resource that is open in a tab (#246).

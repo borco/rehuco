@@ -177,6 +177,19 @@ class DocumentsDock(QMainWindow):
             return None
         return self.__document_docks[current].model.path
 
+    def focused_document_widget(self) -> DocumentWidget | None:
+        """The widget of the currently focused document, or ``None`` if none is focused.
+
+        Used by the ``View`` menu's open-documents list (#79) to mark the focused entry with a
+        checkmark -- compared by widget identity rather than path, the same reason
+        :meth:`focus_document` takes a widget rather than a path: a not-yet-saved document has none
+        (yet) to compare by.
+        """
+        current = self.__tracker.current_dock
+        if current is None:
+            return None
+        return self.__document_docks[current]
+
     def open_document_models(self) -> list[RehuDocumentModel]:
         """The models of every currently open document, in no particular order.
 

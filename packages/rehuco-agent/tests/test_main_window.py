@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
-    QLabel,
     QMessageBox,
     QScrollArea,
     QSystemTrayIcon,
@@ -1321,7 +1320,7 @@ def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
 
     * construct ``MainWindow`` and record two paths, oldest first
     * populate the recents menu
-    * verify its entries read back newest first
+    * verify its entries read back newest first, none of them marked
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1333,8 +1332,11 @@ def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
     window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    paths_shown = [action.defaultWidget().displayed_path() for action in menu.actions()]
     assert paths_shown == [str(newer), str(older)]
+    # recents lists paths, not open documents -- no notion of "current" or "dirty", so no entry
+    # is ever checked or marked (#79)
+    assert not any(action.defaultWidget().checked or action.defaultWidget().dirty for action in menu.actions())
 
 
 def test_recents_menu_derives_the_title_the_same_way_as_a_document_label(qtbot: QtBot) -> None:
@@ -1359,7 +1361,7 @@ def test_recents_menu_derives_the_title_the_same_way_as_a_document_label(qtbot: 
     window._MainWindow__populate_recents_menu()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     menu = window._MainWindow__ui.open_recents_menu  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    titles_shown = [action.defaultWidget().findChildren(QLabel)[0].text() for action in menu.actions()]
+    titles_shown = [action.defaultWidget().displayed_title() for action in menu.actions()]
     assert titles_shown == ["plain.rehu", "some_folder/"]
 
 
@@ -1426,7 +1428,7 @@ def test_recents_menu_repopulates_on_every_show(qtbot: QtBot) -> None:
     window._MainWindow__recent_files.record(path)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     menu.aboutToShow.emit()
 
-    paths_shown = [action.defaultWidget().findChildren(QLabel)[1].text() for action in menu.actions()]
+    paths_shown = [action.defaultWidget().displayed_path() for action in menu.actions()]
     assert paths_shown == [str(path)]
 
 
@@ -2678,7 +2680,7 @@ def test_docks_menu_lists_open_documents_alphabetically_by_title(
     window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     dynamic_actions = dock_entries(window)
-    titles = [action.defaultWidget().findChildren(QLabel)[0].text() for action in dynamic_actions]
+    titles = [action.defaultWidget().displayed_title() for action in dynamic_actions]
     assert titles == ["alpha", "Bravo", "Charlie"]
 
 
@@ -2761,6 +2763,66 @@ def test_docks_menu_entry_triggering_focuses_that_document(
     dock_entries(window)[0].trigger()
 
     focus_document.assert_called_once_with(widget)
+
+
+def test_docks_menu_marks_the_focused_documents_entry_with_a_checkmark(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Only the currently focused document's entry draws the style's checkmark (#79); it is drawn in
+    the menu's own check column rather than written into the title, so the title is unaffected.
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and stand in two open documents
+    * stand in one of them as the focused widget
+    * populate the docks menu
+    * verify only the focused document's entry is checked, and no title gained a marker
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    focused_widget = mocker.MagicMock(
+        model=mocker.MagicMock(label="Focused", path=Path("/focused/info.rehu"), dirty=False)
+    )
+    other_widget = mocker.MagicMock(model=mocker.MagicMock(label="Other", path=Path("/other/info.rehu"), dirty=False))
+    for widget in (focused_widget, other_widget):
+        widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    mocker.patch.object(documents_dock, "open_document_widgets", return_value=[focused_widget, other_widget])
+    mocker.patch.object(documents_dock, "focused_document_widget", return_value=focused_widget)
+
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    entries = [action.defaultWidget() for action in dock_entries(window)]
+    assert {entry.displayed_title(): entry.checked for entry in entries} == {"Focused": True, "Other": False}
+
+
+def test_docks_menu_marks_a_dirty_documents_entry_with_the_dirty_marker(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Only a dirty open document's entry draws the unsaved-changes marker -- the same one its own
+    tab title carries, placed in the menu's icon column rather than in the title text (#79).
+
+    **Test steps:**
+
+    * construct ``MainWindow`` and stand in a dirty and a clean open document
+    * populate the docks menu
+    * verify only the dirty document's entry is marked, and no title text was altered
+    """
+    # the dirty stand-in below would otherwise pop a real modal close guard at teardown
+    discard_unsaved_changes_on_close(mocker)
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dirty_widget = mocker.MagicMock(model=mocker.MagicMock(label="Dirty", path=Path("/dirty/info.rehu"), dirty=True))
+    clean_widget = mocker.MagicMock(model=mocker.MagicMock(label="Clean", path=Path("/clean/info.rehu"), dirty=False))
+    for widget in (dirty_widget, clean_widget):
+        widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(documents_dock, "open_document_widgets", return_value=[dirty_widget, clean_widget])
+
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    entries = [action.defaultWidget() for action in dock_entries(window)]
+    assert {entry.displayed_title(): entry.dirty for entry in entries} == {"Dirty": True, "Clean": False}
 
 
 def test_close_actions_are_grouped_below_close_in_the_file_menu(qtbot: QtBot) -> None:
