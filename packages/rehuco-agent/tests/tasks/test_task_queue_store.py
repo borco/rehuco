@@ -10,6 +10,7 @@ import json
 import logging
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from threading import Event
 from time import monotonic, sleep
 from typing import Any, Final
 
@@ -73,6 +74,38 @@ class CounterJob(TaskJobBase):
             self.checkpoint()
             self.__cursor += 1
             control.report(self.__cursor, self.__units)
+
+
+class GateJob(TaskJobBase):
+    """A job that occupies the worker until released, so everything behind it stays queued.
+
+    **Not a `PersistableTaskJob`**, deliberately: :meth:`~rehuco_core.TaskQueue.serialize` skips a job
+    that cannot be written down, so this holds the queue without appearing in the file a test is
+    asserting on.
+
+    Checkpoints while it waits, so the cancel ``queue.shutdown`` sends in teardown unwinds it at once
+    rather than being waited out.
+    """
+
+    def __init__(self, label: str = "gate") -> None:
+        super().__init__()
+        self.label = label
+        self.entered: Final = Event()
+        self.__proceed: Final = Event()
+
+    def run(self, control: JobControl) -> None:
+        """Block until released, checkpointing throughout.
+
+        :param control: the engine's face to this job.
+        """
+        del control
+        self.entered.set()
+        while not self.__proceed.wait(0.01):
+            self.checkpoint()
+
+    def let_finish(self) -> None:
+        """Release the block, letting ``run`` return."""
+        self.__proceed.set()
 
 
 class FakeDisk:
@@ -378,18 +411,30 @@ def test_a_reorder_is_written(store: TaskQueueStore, queue: TaskQueue, disk: Fak
 
     **Test steps:**
 
-    * hold the queue and enqueue two jobs with the store attached
+    * occupy the worker, so the two jobs enqueued behind it stay movable
     * move the second above the first
     * verify the file holds the new order
     """
-    queue.pause()
+    # A gate rather than `queue.pause()`, which reads as holding the queue but cannot hold *this* one:
+    # pause is pause_job applied to the jobs there are ([[appendices.task-queue#pause-concept]]), so on
+    # an empty queue it asks nobody, and the worker starts "first" the moment it is enqueued. Only a
+    # job in MOVABLE_JOB_STATES moves, so once "first" has left QUEUED the move clamps to where
+    # "second" already is and does nothing -- leaving the file holding the original order. That is a
+    # race with the worker, which the main thread nearly always won until a cov-parallel run put four
+    # coverage-traced workers on four cores and it started losing (#262).
+    gate = GateJob()
     store.restore([])
+    queue.enqueue(gate)
+    assert gate.entered.wait(TIMEOUT)
     queue.enqueue(CounterJob("first"))
     second = queue.enqueue(CounterJob("second"))
 
     queue.move(second, 0)
 
+    # the gate is not persistable, so `serialize` skips it and the file holds only the two below it
     assert [item["label"] for item in disk.items()] == ["second", "first"]
+
+    gate.let_finish()
 
 
 def test_a_write_that_fails_is_logged_rather_than_raised(
