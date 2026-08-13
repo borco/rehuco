@@ -286,6 +286,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         additions from the last rebuild -- is removed first, unlike a plain ``menu.clear()``, which
         would wipe whatever's above them too.
 
+        The currently focused document's entry draws the style's checkmark, and a dirty one draws
+        the same :data:`~.document_dock.DIRTY_DOCK_MARKER` its tab title already carries in the
+        menu's icon column (#79, both are the entry's own concern --
+        :class:`RehuDocumentMenuEntry`); focus and dirtiness are read fresh at build time here, the
+        same as everything else this rebuild reads.
+
         :param menu: the menu to (re)populate (``View``).
         """
         for action in self.__dynamic_view_menu_actions:
@@ -302,9 +308,18 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             placeholder.setEnabled(False)
             self.__dynamic_view_menu_actions.append(placeholder)
             return
+        focused_widget = self.__documents_dock.focused_document_widget()
         for widget in widgets:
             action = QWidgetAction(menu)
-            action.setDefaultWidget(RehuDocumentMenuEntry(widget.model.label, widget.model.path, menu))
+            action.setDefaultWidget(
+                RehuDocumentMenuEntry(
+                    widget.model.label,
+                    widget.model.path,
+                    menu,
+                    checked=widget is focused_widget,
+                    dirty=widget.model.dirty,
+                )
+            )
             action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
             menu.addAction(action)
             self.__dynamic_view_menu_actions.append(action)
