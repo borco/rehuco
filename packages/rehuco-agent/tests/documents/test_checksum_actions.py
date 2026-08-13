@@ -466,15 +466,34 @@ def test_a_run_that_was_stopped_part_way_says_nothing(
 
     **Test steps:**
 
-    * run a verify that raises out of its checkpoint after being cancelled
+    * hold a verify inside its call until the cancel has landed, then let it checkpoint into it
     * check the job is cancelled and no finding was raised
     """
-    mocker.patch(
-        "rehuco_core.checksum_jobs.verify_checksums",
-        side_effect=lambda *_args, **kwargs: kwargs["checkpoint"](),
-    )
+    entered = Event()
+    proceed = Event()
+
+    def verify(*_args: Any, **kwargs: Any) -> ChecksumReport:
+        """Report having started, wait to be released, then checkpoint.
+
+        The wait is what makes the cancel land first. Called straight away instead, ``checkpoint``
+        returns ``None`` on a run nobody has stopped yet -- and that ``None`` goes back to the job as
+        its report, which dies on ``report.seed`` and records the job *failed* rather than cancelled.
+        The main thread nearly always got its cancel in first, until a cov-parallel run put every core
+        under load and the worker started winning (#262).
+
+        :param kwargs: the job's call, for the ``checkpoint`` it passes down.
+        :returns: never -- ``checkpoint`` raises `JobCancelled` by the time it is called.
+        """
+        entered.set()
+        proceed.wait(TIMEOUT / 1000)
+        return kwargs["checkpoint"]()
+
+    mocker.patch("rehuco_core.checksum_jobs.verify_checksums", side_effect=verify)
     actions.verify_action.trigger()
+    assert entered.wait(TIMEOUT / 1000)
+
     queue.cancel(queue.jobs()[0].serial)
+    proceed.set()
 
     qtbot.waitUntil(lambda: queue.jobs()[0].state in {JobState.CANCELLED, JobState.DONE}, timeout=TIMEOUT)
 

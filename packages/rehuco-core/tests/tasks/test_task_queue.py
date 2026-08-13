@@ -27,6 +27,7 @@ from typing import Final
 import pytest
 from pytest import fixture
 from rehuco_core import (
+    FINISHED_JOB_STATES,
     PROGRESS_UNIT_BYTES,
     PROGRESS_UNIT_RESOURCES,
     JobCancelled,
@@ -1794,7 +1795,11 @@ def test_nothing_leaves_the_queue_until_it_is_asked_for(
     queue.cancel(cancelled)
     gated.release.set()
 
-    settles(lambda: all(status.state is not JobState.QUEUED for status in queue.jobs()))
+    # Wait for the states the assertion below actually names, not merely for nothing to be QUEUED:
+    # a job that has just been picked up is RUNNING, which satisfies "not queued" while the outcome
+    # this test is about has not happened yet. The FailingJob passed through exactly that gap on a
+    # cov-parallel run and was read as RUNNING rather than FAILED (#262).
+    settles(lambda: all(status.state in FINISHED_JOB_STATES for status in queue.jobs()))
 
     assert {status.state for status in queue.jobs()} == {JobState.DONE, JobState.FAILED, JobState.CANCELLED}
     assert listener.removed == []

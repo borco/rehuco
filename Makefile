@@ -197,7 +197,7 @@ pylint:
 check-slugs:
 	uv run python tools/check_slug_refs.py
 
-qa: format check-slugs cov bandit pyright pylint
+qa: format check-slugs cov-parallel bandit pyright pylint
 
 # Both docs targets depend on docs-icons because the favicon and logo are generated, not committed:
 # mkdocs-material resolves theme.favicon/theme.logo relative to docs_dir and cannot read outside it,
