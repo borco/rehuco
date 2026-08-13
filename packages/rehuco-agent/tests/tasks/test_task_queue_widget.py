@@ -25,7 +25,6 @@ from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.tasks import task_queue_widget as widget_module
 from rehuco_agent.tasks.task_queue_model import STARTS_OVER_HINT
 from rehuco_agent.tasks.task_queue_widget import PAUSE_TOOLTIP, STARTS_OVER_SOME_TOOLTIP, TaskQueueWidget

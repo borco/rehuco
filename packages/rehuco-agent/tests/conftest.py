@@ -1,4 +1,16 @@
-"""pytest fixtures for rehuco-agent."""
+"""pytest fixtures for rehuco-agent, and the one import every one of its tests depends on.
+
+``main_rc`` is imported below for its side effect, not for a name: importing it is what registers the
+``:/icons/...`` Qt resources, and any widget carrying a themed icon -- a `LogWidget`, hence every
+`DocumentWidget`, hence every `MainWindow` -- raises ``cannot open ':/icons/...' for reading`` without
+it. It belongs here rather than in the modules that need it, because "the modules that need it" is not
+a knowable set: a widget three levels down acquiring an icon silently adds one. Ten test modules each
+carried their own copy of this import and the rest were green only by collection accident -- whichever
+module ran first registered the resources for the whole process. That accident does not survive
+pytest-xdist, where each worker is its own process with its own subset of modules: running
+``test_documents_dock.py`` under ``-n 4`` failed 72 of its 81 tests, and the full parallel suite failed
+a different 33 depending on how the scheduler happened to split the work (#262).
+"""
 
 import logging
 from collections.abc import Iterator
@@ -7,9 +19,11 @@ from typing import Any
 from borco_pyside.logging import LogBridge
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents import document_widget
 from rehuco_agent.settings import (
+from rehuco_agent.fields.widgets.markdown_view import render_markdown
     checksum_settings,
     default_layout_settings,
     excluded_files_settings,
@@ -102,6 +116,27 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
     """Isolate every test from the process-wide `ImageViewerSettings` singleton (#160).
 
     Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first
+@fixture(autouse=True, scope="session")
+def warm_the_markdown_extension_cache() -> None:
+    """Resolve Python-Markdown's extensions once, while the real filesystem is still visible (#262).
+
+    ``markdown`` looks its extensions up through ``importlib.metadata`` entry points and memoises the
+    result in a process-wide ``lru_cache`` -- deliberately, "only load extension entry_points once".
+    Reading entry points means reading ``*.dist-info/entry_points.txt`` through ``Path.read_text``,
+    and a great many tests here patch exactly that to serve a document's JSON from a fake path. Should
+    the *first* render in a process happen under such a patch, the lookup sees a tutorial document
+    where an entry-point table should be, caches the empty result forever, and every later render in
+    that process dies on ``ModuleNotFoundError: No module named 'fenced_code'`` -- markdown's fallback
+    of importing the bare extension name once the entry point is missing.
+
+    Which tests that hits is pure collection order: the serial suite was green only because something
+    rendered before anything mocked, while ``test_documents_dock.py`` on its own -- serially or under a
+    pytest-xdist worker -- failed 72 of its 81 tests. Warming here happens before the first ``mocker``
+    exists, so the cache is always populated from the real filesystem, which is what production does.
+    """
+    render_markdown("")
+
+
     clicks a thumbnail (or builds an `ImagesPage`) would otherwise pin an instance loaded from the
     developer's real on-disk settings for the rest of the session -- and decide, from that file,
     which surface every later test's viewer opens on.

@@ -8,7 +8,6 @@ from PySide6.QtWidgets import QCheckBox, QRadioButton, QSpinBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
 from rehuco_agent.settings import image_viewer_settings, markdown_rendering_settings, reference_images_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings

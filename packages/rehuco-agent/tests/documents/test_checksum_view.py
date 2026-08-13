@@ -16,7 +16,6 @@ from PySide6.QtCore import QPoint, Qt
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.documents import checksum_view as view_module
 from rehuco_agent.documents.checksum_actions import ChecksumActions
 from rehuco_agent.documents.checksum_rows import PATH_COLUMN, STATUS_COLUMN, ChecksumRow, ChecksumRows

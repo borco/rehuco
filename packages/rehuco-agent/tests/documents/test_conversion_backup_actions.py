@@ -13,7 +13,6 @@ from PySide6.QtWidgets import QMessageBox
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.documents.conversion_backup_actions import (
     NO_LEGACY_REFUSAL,
     ConversionBackupActions,

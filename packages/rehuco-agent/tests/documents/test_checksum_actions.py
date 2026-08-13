@@ -17,7 +17,6 @@ from borco_pyside.logging import LogScope
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.documents.checksum_actions import PROGRESS_COALESCING_BYTES, ChecksumActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
