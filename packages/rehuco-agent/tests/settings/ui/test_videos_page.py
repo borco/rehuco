@@ -8,7 +8,6 @@ from pymediainfo import MediaInfo
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.settings import videos_settings
 from rehuco_agent.settings.ui import videos_page
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter

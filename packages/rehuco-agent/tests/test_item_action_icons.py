@@ -4,7 +4,6 @@ from borco_pyside.widgets import StringListEditor
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QToolButton
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.item_action_icons import ICONS_BY_ACTION_TYPE, apply_item_action_icons
 
 

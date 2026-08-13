@@ -41,8 +41,16 @@ from rehuco_core import (
 
 ROOT: Final = Path("/fake/library")
 
-TIMEOUT: Final = 5000
-"""How long a test waits for the worker thread, in milliseconds."""
+TIMEOUT: Final = 15_000
+"""How long a test waits for the worker thread, in milliseconds -- a deadlock guard, never a budget a
+passing test comes near.
+
+Raised from the 5s it was, for the reason ``test_main_window``'s ``WAIT_TIMEOUT_MS`` is generous: a
+``waitUntil`` measures the *machine*, not the effect, and under ``make cov-parallel`` the machine is
+every core saturated with a coverage-traced worker. A scan result crossing from a worker thread to the
+GUI thread took longer than five seconds there roughly one run in three, and the wizard was working
+correctly every time. Raising this cannot mask a regression -- ``waitUntil`` returns the moment its
+predicate holds, so only a run that was going to fail waits any longer (#262)."""
 
 # mirrors `test_tc_conversion_plan_table_model`'s own FLAG_DEFAULTS/plan() exactly -- kept as a
 # separate copy rather than shared, this codebase's settings/fixture-test convention

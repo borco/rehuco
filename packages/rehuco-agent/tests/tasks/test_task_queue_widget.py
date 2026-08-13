@@ -25,7 +25,6 @@ from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.tasks import task_queue_widget as widget_module
 from rehuco_agent.tasks.task_queue_model import STARTS_OVER_HINT
 from rehuco_agent.tasks.task_queue_widget import PAUSE_TOOLTIP, STARTS_OVER_SOME_TOOLTIP, TaskQueueWidget
@@ -514,6 +513,14 @@ def test_resume_is_offered_for_a_running_job_with_a_stop_pending(
 
     assert widget_status(widget, 0).state is JobState.RUNNING
     assert ui_of(widget).resume_action.isEnabled()  # type: ignore[attr-defined]
+
+    # Release the gate directly, rather than leaving teardown to it. This is the one test that patches
+    # `checkpoint` out, and that is exactly what a job unwinds on -- so the cancel `queue.shutdown`
+    # sends can never land, and the fixture sat out its whole TIMEOUT before giving up on a job that
+    # was never going to answer. The patch is still in force at that point: every autouse fixture in
+    # this package's conftest requests `mocker`, so it is built before this test's own fixtures and
+    # torn down after them (#262).
+    job.let_finish()
 
 
 def test_a_mixed_selection_moves_nothing(

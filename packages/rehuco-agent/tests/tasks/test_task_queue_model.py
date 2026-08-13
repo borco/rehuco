@@ -619,7 +619,8 @@ def test_pausing_the_whole_queue_reaches_the_model(queue: TaskQueue, deliver: Ca
     """
     model = TaskQueueModel(queue)
     model.attach_to()
-    queue.enqueue(GatedJob("job"))
+    job = GatedJob("job")
+    queue.enqueue(job)
     deliver()
 
     queue.pause()
@@ -627,6 +628,12 @@ def test_pausing_the_whole_queue_reaches_the_model(queue: TaskQueue, deliver: Ca
 
     status = model.status_at(0)
     assert status.state is JobState.PAUSED or status.stop_requested is StopRequest.PAUSE  # pylint: disable=no-member
+
+    # This module's `GatedJob` blocks outright rather than checkpointing, so it cannot act on the
+    # cancel `queue.shutdown` sends -- the fixture waited out its whole TIMEOUT here, the single
+    # slowest teardown in the suite. Released once the assertion above has read what it came for,
+    # the same way the rest of this module's tests end (#262).
+    job.let_finish()
 
 
 # endregion

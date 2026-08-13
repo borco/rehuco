@@ -1,4 +1,16 @@
-"""pytest fixtures for rehuco-agent."""
+"""pytest fixtures for rehuco-agent, and the one import every one of its tests depends on.
+
+``main_rc`` is imported below for its side effect, not for a name: importing it is what registers the
+``:/icons/...`` Qt resources, and any widget carrying a themed icon -- a `LogWidget`, hence every
+`DocumentWidget`, hence every `MainWindow` -- raises ``cannot open ':/icons/...' for reading`` without
+it. It belongs here rather than in the modules that need it, because "the modules that need it" is not
+a knowable set: a widget three levels down acquiring an icon silently adds one. Ten test modules each
+carried their own copy of this import and the rest were green only by collection accident -- whichever
+module ran first registered the resources for the whole process. That accident does not survive
+pytest-xdist, where each worker is its own process with its own subset of modules: running
+``test_documents_dock.py`` under ``-n 4`` failed 72 of its 81 tests, and the full parallel suite failed
+a different 33 depending on how the scheduler happened to split the work (#262).
+"""
 
 import logging
 from collections.abc import Iterator
@@ -7,8 +19,11 @@ from typing import Any
 from borco_pyside.logging import LogBridge
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/... resources
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.dialogs import conversion_backups_dialog
 from rehuco_agent.documents import document_widget
+from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.settings import (
     checksum_settings,
     default_layout_settings,
@@ -30,7 +45,7 @@ from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
-from rehuco_agent.settings.ui import settings_dialog, tray_block
+from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
 from rehuco_agent.settings.videos_settings import shared_videos_settings
 
 
@@ -39,27 +54,87 @@ from rehuco_agent.settings.videos_settings import shared_videos_settings
 # matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,redefined-builtin
-    """A minimal in-memory stand-in for the ``QSettings`` group/value API."""
+    """An in-memory stand-in for the ``QSettings`` group, value and array API.
+
+    Groups nest on a prefix stack rather than being replaced, which is what ``QSettings`` itself does
+    and what the array support below needs: an array opened inside a group writes under both. Every
+    section that uses this opens one group at a time, so nothing existing reads differently for it.
+
+    The array half exists for `ConversionBackupsDialogSettings`, the only section here storing a list
+    ([[appendices.code-conventions]]), and follows ``QSettings``' own layout -- ``<prefix>/<n>/<key>``
+    numbered from one, alongside a ``<prefix>/size`` written when the array closes. Faithful enough
+    that the dialog's save-then-load round trip reads back exactly what it wrote, which is what its
+    remembered-geometry and recent-roots tests assert on.
+    """
 
     def __init__(self) -> None:
         self.__data: dict[str, Any] = {}
-        self.__group = ""
+        self.__prefixes: list[str] = []
+        self.__arrays: list[list[Any]] = []
+
+    @property
+    def __prefix(self) -> str:
+        return "".join(self.__prefixes)
 
     def beginGroup(self, name: str) -> None:  # noqa: N802
-        self.__group = f"{name}/"
+        self.__prefixes.append(f"{name}/")
 
     def endGroup(self) -> None:  # noqa: N802
-        self.__group = ""
+        if self.__prefixes:
+            self.__prefixes.pop()
 
     def setValue(self, key: str, value: Any) -> None:  # noqa: N802
-        self.__data[self.__group + key] = value
+        self.__data[self.__prefix + key] = value
 
     def value(self, key: str, default: Any = None, type: Any = None) -> Any:  # noqa: A002, N802
         del type
-        return self.__data.get(self.__group + key, default)
+        return self.__data.get(self.__prefix + key, default)
+
+    def beginWriteArray(self, prefix: str, size: int = -1) -> None:  # noqa: N802
+        del size
+        self.__arrays.append([prefix, self.__prefix, 0])
+        self.__prefixes.append(f"{prefix}/")
+
+    def beginReadArray(self, prefix: str) -> int:  # noqa: N802
+        stored = self.__data.get(f"{self.__prefix}{prefix}/size", 0)
+        size = int(stored) if stored else 0
+        self.__arrays.append([prefix, self.__prefix, size])
+        self.__prefixes.append(f"{prefix}/")
+        return size
+
+    def setArrayIndex(self, index: int) -> None:  # noqa: N802
+        prefix, _, count = self.__arrays[-1]
+        self.__prefixes[-1] = f"{prefix}/{index + 1}/"
+        self.__arrays[-1][2] = max(count, index + 1)
+
+    def endArray(self) -> None:  # noqa: N802
+        prefix, outer, count = self.__arrays.pop()
+        self.__prefixes.pop()
+        self.__data[f"{outer}{prefix}/size"] = count
 
 
 # pylint: enable=duplicate-code
+
+
+@fixture(autouse=True, scope="session")
+def warm_the_markdown_extension_cache() -> None:
+    """Resolve Python-Markdown's extensions once, while the real filesystem is still visible (#262).
+
+    ``markdown`` looks its extensions up through ``importlib.metadata`` entry points and memoises the
+    result in a process-wide ``lru_cache`` -- deliberately, "only load extension entry_points once".
+    Reading entry points means reading ``*.dist-info/entry_points.txt`` through ``Path.read_text``,
+    and a great many tests here patch exactly that to serve a document's JSON from a fake path. Should
+    the *first* render in a process happen under such a patch, the lookup sees a tutorial document
+    where an entry-point table should be, caches the empty result forever, and every later render in
+    that process dies on ``ModuleNotFoundError: No module named 'fenced_code'`` -- markdown's fallback
+    of importing the bare extension name once the entry point is missing.
+
+    Which tests that hits is pure collection order: the serial suite was green only because something
+    rendered before anything mocked, while ``test_documents_dock.py`` on its own -- serially or under a
+    pytest-xdist worker -- failed 72 of its 81 tests. Warming here happens before the first ``mocker``
+    exists, so the cache is always populated from the real filesystem, which is what production does.
+    """
+    render_markdown("")
 
 
 @fixture(autouse=True)
@@ -161,9 +236,56 @@ def isolate_shared_checksum_settings(mocker: MockerFixture) -> Iterator[None]:
     real ``.ini`` would both read their catalog's settings and overwrite the folder they last swept.
     """
     shared_checksum_settings.cache_clear()
-    mocker.patch.object(checksum_settings, "persistent_settings", return_value=FakeSettings())
+    fake = FakeSettings()
+    mocker.patch.object(checksum_settings, "persistent_settings", return_value=fake)
+    # `ChecksumsPage` reaches storage through its own import of `persistent_settings` rather than
+    # through the shared instance, so patching the section alone left it on the real one. The settings
+    # dialog asks every page whether it is dirty on each edit, and `is_dirty` builds a `QSettings` and
+    # re-parses the developer's actual .ini every time it is asked: 2036 real reads of a real file in
+    # one profiled run of the window and dock suites (#262). It shares this fixture's fake rather than
+    # taking its own, so a Save made through the page is what the shared instance then reads.
+    mocker.patch.object(checksums_page, "persistent_settings", return_value=fake)
     yield
     shared_checksum_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_conversion_backups_dialog_settings(mocker: MockerFixture) -> FakeSettings:
+    """Isolate every test building a `ConversionBackupsDialog` from real persistent storage (#262).
+
+    The sharpest of these, because this one **wrote**. The dialog saves on close and again whenever a
+    scan finishes, so a suite run appended the tests' own fake roots -- ``/fake/library`` and friends --
+    to the developer's real recent-roots list and overwrote the geometry they had left the dialog at.
+    Under ``make cov-parallel`` that became several worker processes writing one .ini at once, which is
+    where a worker died mid-``load`` with a fatal fault rather than a test failure.
+
+    Nothing patched it before: unlike its neighbours the dialog has no settings *page*, so it fell
+    outside the section-by-section isolation above and was reached only through the dialog's own tests.
+
+    :returns: the in-memory stand-in the dialog loads from and saves to -- the same object across one
+        test, so its close-then-reopen geometry round trip still reads back what it wrote.
+    """
+    fake = FakeSettings()
+    mocker.patch.object(conversion_backups_dialog, "persistent_settings", return_value=fake)
+    return fake
+
+
+@fixture(autouse=True)
+def isolate_tasks_page_settings(mocker: MockerFixture) -> FakeSettings:
+    """Isolate every test building a `TasksPage` from real persistent storage (#262).
+
+    `TasksSettings` is read where it is needed rather than held as a process-wide singleton, so unlike
+    its neighbours above there is no cache to clear -- but the page still reaches storage through its
+    own import of ``persistent_settings``, and the settings dialog asks it whether it is dirty on every
+    edit. Each ask built a ``QSettings`` over the developer's real ``.ini`` and re-parsed it: 2372 real
+    reads in one profiled run, and the second-largest such leak after `ChecksumsPage`.
+
+    :returns: the in-memory stand-in the page loads from and saves to, for a test that wants to seed it
+        or assert on what was written.
+    """
+    fake = FakeSettings()
+    mocker.patch.object(tasks_page, "persistent_settings", return_value=fake)
+    return fake
 
 
 @fixture(autouse=True)

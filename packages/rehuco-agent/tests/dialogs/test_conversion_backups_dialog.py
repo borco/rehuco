@@ -23,7 +23,6 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.dialogs.conversion_backups_dialog import (
     MAXIMUM_NAMED_EDITED,
     NO_LEGACY_REASON,

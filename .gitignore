@@ -83,3 +83,7 @@ desktop.ini
 
 # Agent Continue Prompt
 continue_prompt*
+
+# Profiling output
+.prof/
+profile.svg

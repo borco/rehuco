@@ -8,7 +8,6 @@ from PySide6.QtCore import Qt
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent import main_rc  # noqa: F401  # pylint: disable=unused-import  # registers :/icons/...
 from rehuco_agent.settings import excluded_files_settings
 from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
 from rehuco_agent.settings.ui import excluded_files_page
