@@ -43,6 +43,7 @@ from rehuco_agent.settings.image_viewer_settings import PREVIEWS_VISIBLE_KEY, sh
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.main_window_settings import MainWindowSettings
 from rehuco_agent.settings.recent_files_settings import RecentFilesSettings
+from rehuco_agent.settings.session_restore_settings import SessionRestoreSettings
 from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
@@ -2108,6 +2109,38 @@ def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: 
     qtbot.addWidget(window)
 
     open_document.assert_called_once_with(path, state=b"state")
+
+
+def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Turning off the Session page's toggle (#65) starts with no documents open, even though the
+    previous session still has an open item saved underneath.
+
+    **Test steps:**
+
+    * seed ``DocumentSessionSettings.load`` to report one open item
+    * seed ``SessionRestoreSettings.load`` to report the toggle off
+    * mock ``DocumentsDock.open_document``
+    * construct ``MainWindow``
+    * verify ``open_document`` was never called
+    """
+    open_path = Path("open.rehu").resolve()
+
+    def fake_session_load(self: DocumentSessionSettings, settings: object) -> None:
+        del settings
+        self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")  # pylint: disable=unsupported-assignment-operation
+
+    def fake_restore_settings_load(self: SessionRestoreSettings, settings: object) -> None:
+        del settings
+        self.restore_on_startup = False
+
+    mocker.patch.object(DocumentSessionSettings, "load", fake_session_load)
+    mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
+    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    open_document.assert_not_called()
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
