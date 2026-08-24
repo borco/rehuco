@@ -7,7 +7,14 @@ they do in the app -- off the job, through the queue's listener, marshalled onto
 the banner assertions exercise that path rather than a shortcut around it.
 """
 
+# the pair owns a broad surface (what is offered, enqueuing and its dedup, progress coalescing, the
+# findings that reach the banner, and where each run is logged); its test suite is correspondingly
+# long -- one cohesive module reads better than an arbitrary split, so the module-length cap is
+# lifted here rather than fragmenting it, the same way test_documents_dock.py does.
+# pylint: disable=too-many-lines
+
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
@@ -20,7 +27,15 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.checksum_actions import PROGRESS_COALESCING_BYTES, ChecksumActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
-from rehuco_core import ChecksumReport, JobState, JobStatus, RehuDocument, TaskQueue
+from rehuco_core import (
+    ChecksumReport,
+    JobControl,
+    JobState,
+    JobStatus,
+    RehuDocument,
+    TaskJobBase,
+    TaskQueue,
+)
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
 INFO_PATH: Final = DIRECTORY / "info.rehu"
@@ -83,6 +98,50 @@ def snapshot(serial: int, done: int, state: JobState = JobState.RUNNING) -> JobS
     return JobStatus(serial=serial, label="Verify checksums - sculpting/", state=state, done=done)
 
 
+GATE_TIMEOUT: Final = 120.0
+"""How long a gate waits before giving up, in seconds -- a deadlock detector, not a measurement."""
+
+GATE_LABEL: Final = "gate"
+"""The gate job's label, so :func:`queued_rows` can tell it from the rows a test enqueued."""
+
+
+class GateJob(TaskJobBase):
+    """A job that occupies the worker until released, holding everything enqueued behind it.
+
+    :meth:`~rehuco_core.TaskQueue.pause` asks every *unfinished* job to pause and is deliberately
+    **not** a queue-wide flag dispatch consults ([[appendices.task-queue#pause-concept]]), so calling
+    it on an **empty** queue holds nothing: the next job enqueued starts at once. Tests here used to
+    do exactly that and then rely on the worker not finishing first -- which it does under load,
+    turning the first run FINISHED and letting the dedup (which only matches unfinished rows) admit a
+    second. Occupying the worker is the gate-not-pause discipline ``tests/tasks/`` already keeps.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.label = GATE_LABEL
+        self.entered: Final = Event()
+        self.__proceed: Final = Event()
+
+    def run(self, control: JobControl) -> None:
+        """Report having started, then block until :meth:`let_finish`."""
+        del control
+        self.entered.set()
+        self.__proceed.wait(GATE_TIMEOUT)
+
+    def let_finish(self) -> None:
+        """Release the block, letting ``run`` return."""
+        self.__proceed.set()
+
+
+def queued_rows(queue: TaskQueue) -> list[JobStatus]:
+    """The rows a test enqueued, with the gate holding the worker filtered out.
+
+    :param queue: the queue to read.
+    :returns: every row that is not the gate.
+    """
+    return [status for status in queue.jobs() if status.label != GATE_LABEL]
+
+
 # region fixtures
 
 
@@ -111,6 +170,20 @@ def fixture_queue(qapp: Any) -> Any:
     queue = TaskQueue()
     yield queue
     queue.shutdown()
+
+
+@fixture(name="held")
+def fixture_held(queue: TaskQueue) -> Iterator[GateJob]:
+    """Hold the queue by occupying its worker, so what a test enqueues behind stays unfinished.
+
+    :param queue: the queue to hold.
+    :returns: the gate, already running.
+    """
+    gate = GateJob()
+    queue.enqueue(gate)
+    assert gate.entered.wait(GATE_TIMEOUT), "the gate job never reached the worker"
+    yield gate
+    gate.let_finish()
 
 
 @fixture(name="recorded")
@@ -903,7 +976,9 @@ def test_forgetting_nothing_that_was_there_says_nothing(actions: ChecksumActions
     assert not fired
 
 
-def test_two_different_selection_runs_are_different_work(actions: ChecksumActions, queue: TaskQueue) -> None:
+def test_two_different_selection_runs_are_different_work(
+    actions: ChecksumActions, queue: TaskQueue, held: GateJob
+) -> None:
     """A selection's label carries a count, not an identity, so it must not be the dedup key (#244).
 
     *Verify a.mp4* and *Verify b.mp4* both read ``Verify checksums (1 file)``, and refusing the second
@@ -914,15 +989,17 @@ def test_two_different_selection_runs_are_different_work(actions: ChecksumAction
     * hold the queue and enqueue two single-file verifies over different files
     * check both rows were queued
     """
-    queue.pause()
+    del held  # holding the worker is the point; the gate itself is filtered out of the rows
 
     actions.verify_selection(["a.mp4"])
     actions.verify_selection(["b.mp4"])
 
-    assert len(queue.jobs()) == 2
+    assert len(queued_rows(queue)) == 2
 
 
-def test_the_whole_resource_runs_still_refuse_a_second_ask(actions: ChecksumActions, queue: TaskQueue) -> None:
+def test_the_whole_resource_runs_still_refuse_a_second_ask(
+    actions: ChecksumActions, queue: TaskQueue, held: GateJob
+) -> None:
     """The dedup the selection runs opt out of still guards the buttons it was built for (#204).
 
     **Test steps:**
@@ -930,9 +1007,9 @@ def test_the_whole_resource_runs_still_refuse_a_second_ask(actions: ChecksumActi
     * hold the queue and trigger the same whole-resource verify twice
     * check only one row was queued
     """
-    queue.pause()
+    del held  # holding the worker is the point; the gate itself is filtered out of the rows
 
     actions.verify()
     actions.verify()
 
-    assert len(queue.jobs()) == 1
+    assert len(queued_rows(queue)) == 1
