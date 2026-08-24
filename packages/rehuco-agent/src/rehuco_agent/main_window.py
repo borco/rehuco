@@ -55,6 +55,7 @@ from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
+from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
 from .settings.tray_settings import shared_tray_settings
@@ -64,6 +65,7 @@ from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
 from .settings.ui.logs_page import LogsPage
+from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
 from .settings.ui.videos_page import VideosPage
@@ -218,7 +220,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         self.__session: Final = DocumentSessionSettings()
         self.__session.load(persistent_settings())
-        self.__restore_session()
+        self.__restore_session_if_enabled()
 
         self.__dialog_manager.restore_all(persistent_settings())
 
@@ -582,6 +584,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page(LogsPage())
         # same reasoning, for the task queue's restart choices (#202)
         self.__settings_dialog.add_page(TasksPage())
+        # and again for whether a restart restores the previous session's open documents (#65)
+        self.__settings_dialog.add_page(SessionPage())
         # and again for the checksum defaults (#242): they govern every resource type rather than one
         # plugin's, and the sweep that reads them is reached from File rather than from a document
         self.__settings_dialog.add_page(ChecksumsPage())
@@ -942,6 +946,19 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             if (app := QApplication.instance()) is not None:  # pragma: no branch  (always exists here)
                 app.quit()
         super().closeEvent(event)
+
+    def __restore_session_if_enabled(self) -> None:
+        """Apply the loaded session (#65) unless the Session page's toggle has turned that off.
+
+        Only the *apply* step is gated: the session is still loaded, and ``__save_session`` still
+        runs on every close, so a run with the toggle off ends by recording its own open set -- the
+        skipped session's documents survive only as closed entries under the LRU cap, and
+        re-enabling the toggle restores the most recent close, not the pre-toggle session.
+        """
+        session_restore_settings = SessionRestoreSettings()
+        session_restore_settings.load(persistent_settings())
+        if session_restore_settings.restore_on_startup:
+            self.__restore_session()
 
     def __restore_session(self) -> None:
         """Reopen every document the last session left open, restoring its dock layout and focus.
