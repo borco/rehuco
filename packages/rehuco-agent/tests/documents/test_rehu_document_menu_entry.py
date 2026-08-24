@@ -12,9 +12,18 @@ reaching for `QLabel` children that no longer exist.
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPointF
-from PySide6.QtGui import QColor, QEnterEvent
-from PySide6.QtWidgets import QApplication, QMenu, QStyleFactory, QWidgetAction
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QColor, QEnterEvent, QImage, QPainter
+from PySide6.QtWidgets import (
+    QApplication,
+    QMenu,
+    QProxyStyle,
+    QStyle,
+    QStyleFactory,
+    QStyleOption,
+    QWidget,
+    QWidgetAction,
+)
 from pytest import mark, skip
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
@@ -173,18 +182,90 @@ def test_the_dirty_marker_goes_in_the_icon_column_not_into_the_title(qtbot: QtBo
     assert DIRTY_DOCK_MARKER.strip() not in dirty.displayed_title()
 
 
+class IconRecordingStyle(QProxyStyle):
+    """A style that records whether each menu row it is asked to draw carried an icon.
+
+    Wraps the default application style (the no-argument `QProxyStyle`, which borrows it rather than
+    taking ownership) so what it records is the real style's own behavior. Lets a test assert that the
+    entry *hands the marker to the style* without depending on whether the process can actually render
+    the marker's glyph -- see :func:`marker_is_renderable`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.menu_row_icons: list[bool] = []
+        """One entry per ``CE_MenuItem`` drawn: whether that row carried a non-null icon."""
+
+    def drawControl(  # noqa: N802  (Qt's own camelCase override)
+        self,
+        element: QStyle.ControlElement,
+        option: QStyleOption,
+        painter: QPainter,
+        widget: QWidget | None = None,
+    ) -> None:
+        """Record whether a menu row carried an icon, then draw it as the real style would."""
+        if element == QStyle.ControlElement.CE_MenuItem:
+            self.menu_row_icons.append(not option.icon.isNull())  # type: ignore[attr-defined]
+        super().drawControl(element, option, painter, widget)
+
+
+def marker_is_renderable(entry: RehuDocumentMenuEntry) -> bool:
+    """Whether this process can actually draw :data:`DIRTY_DOCK_MARKER` in ``entry``'s font.
+
+    The suite runs on the **offscreen** platform, whose font database starts empty (root
+    ``conftest.py``), so the marker normally reaches the pixels only as a tofu box. Once a test has
+    loaded an icon font -- ``borco-pyside``'s theming tests add ``Phosphor-Fill.ttf``, which that
+    package's ``conftest`` documents as changing plain-text rendering **permanently and process-wide**
+    -- that font becomes the only family, and it has no glyph at the marker's codepoint and no tofu
+    either, so the marker renders to nothing. Which of those two states a process is in depends on what
+    else ran in it, and under ``pytest -n auto`` that is the xdist scheduler's choice.
+
+    A real desktop is never in the second state: its font database has genuine families, and Qt's
+    fallback supplies the codepoint (verified outside offscreen, with the icon font loaded first), which
+    is why this is a test-environment artifact rather than a defect in what the app draws.
+
+    :param entry: the entry whose font to probe.
+    :returns: whether drawing the marker leaves any non-transparent pixel.
+    """
+    probe = QImage(32, 32, QImage.Format.Format_ARGB32)
+    probe.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(probe)
+    painter.setFont(entry.font())
+    painter.setPen(QColor("black"))
+    painter.drawText(probe.rect(), Qt.AlignmentFlag.AlignCenter, DIRTY_DOCK_MARKER.strip())
+    painter.end()
+    return any(probe.pixelColor(x, y).alpha() > 0 for x in range(probe.width()) for y in range(probe.height()))
+
+
 def test_the_dirty_marker_is_actually_drawn(qtbot: QtBot) -> None:
     """The dirty marker reaches the pixels -- ``dirty`` is not merely recorded (#79).
 
+    Asserted in two halves, because only one of them can be stated unconditionally. That the entry
+    **hands the marker to the style** holds whatever the process's fonts are, so it is checked always,
+    through a recording style rather than by reaching into the widget. That the marker then **changes
+    the pixels** depends on the font database actually having a glyph for it, which an earlier test in
+    the same process may have taken away (:func:`marker_is_renderable`) -- so that half runs only where
+    it can mean anything, instead of failing on whichever worker xdist handed the icon-font tests to.
+
     **Test steps:**
 
-    * paint a dirty entry and a clean one that are otherwise identical
-    * verify the two paintings differ
+    * paint a dirty entry and a clean one that are otherwise identical, through a recording style
+    * verify the dirty row carried an icon and the clean row did not
+    * where the marker's glyph renders at all, verify the two paintings differ
     """
     dirty = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"), dirty=True)
     clean = make_entry(qtbot, "My Tutorial", Path("/home/ada/my.rehu"))
+    dirty_style, clean_style = IconRecordingStyle(), IconRecordingStyle()
+    dirty.setStyle(dirty_style)
+    clean.setStyle(clean_style)
 
-    assert dirty.grab().toImage() != clean.grab().toImage()
+    dirty_painting = dirty.grab().toImage()
+    clean_painting = clean.grab().toImage()
+
+    assert any(dirty_style.menu_row_icons)
+    assert not any(clean_style.menu_row_icons)
+    if marker_is_renderable(dirty):
+        assert dirty_painting != clean_painting
 
 
 def test_the_checkmark_is_actually_drawn(qtbot: QtBot) -> None:
