@@ -400,6 +400,31 @@ def test_on_disk_reads_nothing_while_hidden(qtbot: QtBot, mocker: MockerFixture)
     assert label(view, OnDiskView.LABEL_NAME).text() == "on disk\n"
 
 
+def test_on_disk_does_not_reread_when_shown_again_unchanged(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """Being shown again re-reads only what went stale while hidden -- a tab switched away from and
+    back to, with no file seam crossed in between, costs no read at all (#66, #111).
+
+    The other half of the deferral: :func:`test_on_disk_reads_nothing_while_hidden` pins that a hidden
+    view defers its read, and this pins that the catch-up does not then fire on every later show.
+
+    **Test steps:**
+
+    * build and show an On Disk view, noting the read it did on first show
+    * hide it and show it again, crossing no file seam
+    * verify no further read happened
+    """
+    read = mocker.patch.object(Path, "read_text", return_value="on disk\n")
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo"}]}, REHU_PATH))
+    view = shown_on_disk(qtbot, model)
+    reads_when_first_shown = read.call_count
+
+    view.hide()
+    view.show()
+    qtbot.waitExposed(view)
+
+    assert read.call_count == reads_when_first_shown
+
+
 def test_on_disk_uses_the_fixed_system_font_family(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """The On Disk label is drawn in the fixed system font too (#75, #111).
 

@@ -2276,6 +2276,31 @@ def test_showing_the_dock_loads_exactly_the_visible_tab(mocker: MockerFixture, q
     assert widgets[FAKE_PATH].model.title == ""
 
 
+def test_a_pending_dock_being_hidden_does_not_load_it(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only *reaching* the screen loads a placeholder -- the same signal reporting a tab **leaving**
+    it must not (#66), or a dock hidden on its way somewhere else would pay for the read the
+    deferral exists to avoid.
+
+    **Test steps:**
+
+    * restore a session with one open, unfocused item, leaving its dock pending
+    * report that dock's visibility going away
+    * verify it is still pending and still unseeded
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    dock.restore_session(session)
+    widget = dock.open_document_widgets()[0]
+
+    dock_for(dock, widget).visibilityChanged.emit(False)
+
+    assert widget.model.pending is True
+    assert widget.model.title == ""
+
+
 def test_a_placeholder_fabricates_no_identity(mocker: MockerFixture, qtbot: QtBot) -> None:
     """A pending placeholder carries **no data at all** -- in particular no freshly minted ``id``
     standing in for the identity the file on disk already has ([[data-model#stable-identity]], #66).
