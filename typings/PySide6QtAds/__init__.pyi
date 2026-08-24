@@ -169,6 +169,16 @@ class CDockWidget(QWidget):
     doesn't change open/closed state), nor by a `CustomCloseHandling` close-button click (that
     emits `closeRequested` instead, and does not toggle the view itself)."""
 
+    visibilityChanged: Signal
+    """Emitted with the new visibility when this dock's content actually appears on or leaves the
+    screen -- unlike `viewToggled` (logical open/closed) this tracks *real* widget visibility, tab
+    selection included. Confirmed empirically (offscreen): while the top-level window is still
+    hidden, adding docks and switching their tabs emits **nothing**; showing the window emits
+    ``True`` once for each area's current tab only; switching tabs in a shown window emits
+    ``False`` for the covered dock and ``True`` for the revealed one. That silence-while-hidden
+    plus fires-on-first-show is what `DocumentsDock` keys its deferred session-restore document
+    loads on (#66)."""
+
     def setFeatures(self, features: DockWidgetFeature) -> None:
         """Replace this dock's entire `DockWidgetFeature` bitmask."""
 

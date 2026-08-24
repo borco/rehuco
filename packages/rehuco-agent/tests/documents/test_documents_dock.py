@@ -14,9 +14,9 @@
 
 import json
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, NoReturn
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
@@ -30,6 +30,7 @@ from rehuco_agent.documents import documents_dock
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER, LOCKED_DOCK_MARKER
 from rehuco_agent.documents.documents_dock import DocumentsDock
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
+from rehuco_agent.settings.document_session_settings import DocumentSessionSettings
 from rehuco_agent.settings.identity_settings import IdentitySettings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -2152,6 +2153,304 @@ def test_a_freshly_opened_document_keeps_its_own_layout_with_no_saved_default(
 
     on_disk = widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
     assert on_disk.toggleViewAction().isChecked() is False
+
+
+# endregion
+
+
+# region restoring a session (#21, #66)
+
+
+def test_restore_session_skips_closed_items(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Only the items the session marks open are reopened.
+
+    **Test steps:**
+
+    * seed a session with one open item and one closed one
+    * restore the session
+    * verify only the open item's dock exists
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[OTHER_PATH] = DocumentSessionSettings.Item(open=False)  # pylint: disable=unsupported-assignment-operation
+
+    dock.restore_session(session)
+
+    widgets = dock.open_document_widgets()
+    assert len(widgets) == 1
+    assert widgets[0].model.path == FAKE_PATH
+
+
+def forbid_filesystem_for(mocker: MockerFixture, forbidden_directory: Path) -> None:
+    """Patch ``Path``'s file-touching methods to **fail the test** for anything under
+    ``forbidden_directory``, while serving the tutorial fixture (or an empty directory) elsewhere.
+
+    The teeth behind #66's whole point: "the shell was restored without the read" is asserted not by
+    watching one known reader, but by making *any* touch of the unviewed resource's file or directory
+    -- by any consumer a document widget's construction happens to grow -- an immediate failure. A
+    previous, weaker version of this test watched only the model's own load and so missed the On Disk
+    view's and the conversion-backups inventory's construction-time reads entirely.
+
+    :param mocker: pytest-mock fixture.
+    :param forbidden_directory: the resource directory nothing may touch.
+    """
+
+    def guard[T](member: str, result: Callable[[], T]) -> Callable[..., T]:
+        def side_effect(self: Path, *_args: object, **_kwargs: object) -> T:
+            assert forbidden_directory not in (self, *self.parents), f"restore touched {self} via {member}()"
+            return result()
+
+        return side_effect
+
+    def raise_os_error() -> NoReturn:
+        raise OSError("not backed by a real filesystem")
+
+    mocker.patch.object(Path, "read_text", autospec=True, side_effect=guard("read_text", lambda: json.dumps(TUTORIAL)))
+    mocker.patch.object(Path, "iterdir", autospec=True, side_effect=guard("iterdir", lambda: iter(())))
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=guard("exists", lambda: False))
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=guard("stat", raise_os_error))
+
+
+def test_restore_session_touches_no_files_for_unviewed_documents(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Restoring the session touches **nothing on disk** for a document whose tab is not shown (#66):
+    not the ``.rehu`` itself, and not its directory either -- no reader a document widget's
+    construction brings along (the On Disk view, the conversion-backups inventory, the screenshot
+    scan, the checksum record's stat) is exempt, since any of them can block on an offline mount
+    ([[mounts-and-storage#offline-mounts]]).
+
+    **Test steps:**
+
+    * make every filesystem touch of the unfocused item's directory fail the test outright
+    * restore a session with two open items, the other one focused
+    * verify the focused document loaded fully while the unfocused one is still a pending, unseeded
+      placeholder
+    """
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[OTHER_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.focused_path = FAKE_PATH
+    forbid_filesystem_for(mocker, OTHER_PATH.parent)
+
+    dock.restore_session(session)
+
+    focused = dock.focused_document_widget()
+    assert focused is not None
+    assert focused.model.path == FAKE_PATH
+    assert focused.model.title == "Foo"
+    other = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
+    assert other.model.pending is True
+    assert other.model.title == ""
+
+
+def test_showing_the_dock_loads_exactly_the_visible_tab(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """When the dock first reaches the screen, each area's *visible* tab loads its document and the
+    covered tabs stay unread (#66) -- the ``visibilityChanged`` half of the deferral, which is also
+    what loads the current tab when the session remembered no focused document at all.
+
+    **Test steps:**
+
+    * restore a session with two open items tabbed together and no focused document -- nothing loads
+    * show the dock
+    * verify the area's current tab loaded while the covered one is still pending
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[OTHER_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    dock.restore_session(session)
+    widgets = {widget.model.path: widget for widget in dock.open_document_widgets()}
+    assert all(widget.model.pending for widget in widgets.values())
+
+    dock.show()
+    qtbot.waitUntil(lambda: not widgets[OTHER_PATH].model.pending, timeout=int(TIMEOUT * 1000))
+
+    assert widgets[OTHER_PATH].model.title == "Foo"  # the current tab: the last one restored
+    assert widgets[FAKE_PATH].model.pending is True
+    assert widgets[FAKE_PATH].model.title == ""
+
+
+def test_a_placeholder_fabricates_no_identity(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A pending placeholder carries **no data at all** -- in particular no freshly minted ``id``
+    standing in for the identity the file on disk already has ([[data-model#stable-identity]], #66).
+
+    **Test steps:**
+
+    * restore a session with one open, unfocused item
+    * verify its placeholder document carries no ``id`` and no content, and is clean and unlocked
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+
+    dock.restore_session(session)
+
+    model = dock.open_document_widgets()[0].model
+    assert model.pending is True
+    assert model.document.id == ""
+    # nothing but the migrator's own format stamp -- no core block, no sources, no plugin blocks
+    assert set(model.document.data) <= {"format_version"}
+    assert model.dirty is False
+    assert model.locked is False
+
+
+def test_closing_a_never_viewed_dock_retires_its_pending_load(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing a session-restored dock whose tab was never shown retires its deferred-load
+    bookkeeping with it (#66), rather than leaving a stale entry armed for the session.
+
+    **Test steps:**
+
+    * restore a session with one open, unfocused item
+    * close every document
+    * verify no dock -- and no pending entry -- remains
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    dock.restore_session(session)
+
+    dock.close_all()
+
+    assert not dock.open_document_widgets()
+    assert not dock._DocumentsDock__pending_docks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+
+def test_restore_session_reads_the_focused_documents_file_immediately(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The remembered focused document is read right away -- it is visible the moment restore
+    returns, so there is no later tab switch to defer its read to (#66); every other item stays an
+    unread placeholder.
+
+    **Test steps:**
+
+    * seed a session with two open items, one of them focused, and mock the filesystem to serve the
+      tutorial fixture
+    * restore the session
+    * verify the focused document's fields came from the file, and the other one is still empty
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.items[OTHER_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.focused_path = FAKE_PATH
+
+    dock.restore_session(session)
+
+    focused = dock.focused_document_widget()
+    assert focused is not None
+    assert focused.model.path == FAKE_PATH
+    assert focused.model.title == "Foo"
+    other = next(widget for widget in dock.open_document_widgets() if widget.model.path == OTHER_PATH)
+    assert other.model.title == ""
+
+
+def test_switching_to_a_pending_dock_loads_its_document(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Bringing a still-unread session-restored dock current reads its file at that point (#66) -- the
+    deferred read this all exists for.
+
+    **Test steps:**
+
+    * restore a session with one open, unfocused item
+    * focus its (still empty) document
+    * verify its fields now came from the file
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    dock.restore_session(session)
+    pending = dock.open_document_widgets()[0]
+    assert pending.model.title == ""
+
+    dock.focus_document(pending)
+
+    assert pending.model.title == "Foo"
+
+
+def test_restore_session_materializes_a_locked_dock_for_a_vanished_focused_file(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A remembered focused document whose file has since vanished still reads as locked right away
+    ([[data-model#write-integrity]]), rather than being skipped or left an unlocked placeholder.
+
+    **Test steps:**
+
+    * seed a session with one open, focused item, and mock the filesystem to report it missing
+    * restore the session
+    * verify the focused document opened as a locked, empty dock
+    """
+    mocker.patch.object(Path, "read_text", side_effect=FileNotFoundError("no such file"))
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.focused_path = FAKE_PATH
+
+    dock.restore_session(session)
+
+    focused = dock.focused_document_widget()
+    assert focused is not None
+    assert focused.model.locked is True
+
+
+def test_restore_session_reads_a_legacy_tc_document_eagerly(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A legacy ``.tc`` item is never made a placeholder, focused or not (#66) -- ``RehuDocument.reload``,
+    what the deferred read runs through, only ever re-reads a ``.rehu`` path as JSON
+    ([[acquisition-tooling#tc-to-rehu]]).
+
+    **Test steps:**
+
+    * seed a session with one open, unfocused ``.tc`` item, and mock the filesystem to serve a tc4
+      fixture
+    * restore the session
+    * verify its fields already came from the file
+    """
+    tc_path = FAKE_PATH.with_suffix(".tc")
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    session = DocumentSessionSettings()
+    session.items[tc_path] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+
+    dock.restore_session(session)
+
+    widget = dock.open_document_widgets()[0]
+    assert widget.model.title == "Legacy Title"
+
+
+def test_restore_session_restores_the_outer_dock_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The saved outer layout (splits/tabs between documents) is applied once every dock it references
+    has been recreated.
+
+    **Test steps:**
+
+    * seed a session with one open item and a saved outer layout blob
+    * restore the session
+    * verify ``restore_state`` was called with that blob
+    """
+    mocker.patch.object(Path, "read_text", return_value="")
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    restore_state = mocker.patch.object(dock, "restore_state")
+    session = DocumentSessionSettings()
+    session.items[FAKE_PATH] = DocumentSessionSettings.Item(open=True)  # pylint: disable=unsupported-assignment-operation
+    session.docks_state = b"outer-state"
+
+    dock.restore_session(session)
+
+    restore_state.assert_called_once_with(b"outer-state")
 
 
 # endregion

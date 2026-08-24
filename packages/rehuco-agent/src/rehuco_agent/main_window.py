@@ -961,29 +961,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.__restore_session()
 
     def __restore_session(self) -> None:
-        """Reopen every document the last session left open, restoring its dock layout and focus.
-
-        A path that has since gone missing or become unparseable still reopens -- as an empty, **locked**
-        dock materialized in its place ([[data-model#write-integrity]]), not skipped and not a dialog per
-        file -- so the user can fix it and revert in place rather than lose the session slot. The outer
-        layout (splits/tabs between documents) is restored only once every document it references has
-        already been reopened above -- ``DocumentsDock.restore_state`` matches saved entries up to
-        currently-registered docks by name, it does not create any itself.
-        """
-        opened: dict[Path, DocumentWidget] = {}
-        for path, item in self.__session.items.items():
-            if not item.open:
-                continue
-            # the remembered layout rides the open itself (#62): the dock applies exactly one layout
-            # per document -- this one, or the saved default only where this one fails to restore --
-            # instead of adopting the default first and having this overwrite it a moment later
-            opened[path] = self.__documents_dock.open_document(path, state=item.state)
-
-        self.__documents_dock.restore_state(self.__session.docks_state)
-
-        focused_path = self.__session.focused_path
-        if focused_path is not None and focused_path in opened:
-            self.__documents_dock.open_document(focused_path)  # re-focuses an already-open dock
+        """Reopen every document the last session left open, restoring its dock layout and focus --
+        without reading any of their files up front (#66); see ``DocumentsDock.restore_session``."""
+        self.__documents_dock.restore_session(self.__session)
 
     def __save_window_state(self) -> None:
         """Persist this window's current size/position, toolbar layout, outer dock layout, and the

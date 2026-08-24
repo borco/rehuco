@@ -198,8 +198,14 @@ class ConversionBackupActions(QObject):
 
         Cheap enough to run at every such seam: one directory listing plus the one read of the ``.rehu``
         that :attr:`~rehuco_core.ConversionBackups.edited_since` needs, over the one resource on screen.
+
+        A :attr:`~RehuDocumentModel.pending` session-restore placeholder is treated like a document with
+        no path: its file is deliberately unread (#66), and this inventory would otherwise be the very
+        read the deferral exists to avoid -- it loads the whole ``.rehu`` for the timestamps. The
+        deferred load emits ``reloaded``, which is already wired here, so the inventory catches up the
+        moment the document is real.
         """
-        path = self.__model.path
+        path = self.__model.path if not self.__model.pending else None
         self.__backups = conversion_backups(path) if path is not None else None
         self.__revert_action.setVisible(self.undoable)
         self.__discard_action.setVisible(self.retained)

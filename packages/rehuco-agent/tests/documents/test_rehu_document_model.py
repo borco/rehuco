@@ -2432,6 +2432,82 @@ def test_create_new_mints_a_fresh_id() -> None:
     assert first.document.id != second.document.id
 
 
+def test_create_pending_is_empty_clean_and_bound_without_an_identity() -> None:
+    """``create_pending`` builds a session-restore placeholder (#66): bound to its path but wrapping a
+    completely empty document -- in particular **no** freshly minted ``id``, which would fabricate an
+    identity for a resource that already has one on disk ([[data-model#stable-identity]]) -- and,
+    unlike ``create_new``, not dirty: nothing here is a document about to be written.
+
+    **Test steps:**
+
+    * call ``RehuDocumentModel.create_pending`` for a path
+    * verify pending, path-bound, empty data, clean, and unlocked
+    """
+    path = Path("/fake/sculpting/info.rehu")
+
+    model = RehuDocumentModel.create_pending(path)
+
+    assert model.pending is True
+    assert model.path == path
+    assert model.document.id == ""
+    # nothing but the migrator's own format stamp -- no core block, no sources, no plugin blocks
+    assert set(model.document.data) <= {"format_version"}
+    assert model.dirty is False
+    assert model.locked is False
+
+
+def test_load_pending_reads_the_file_and_clears_pending(mocker: MockerFixture) -> None:
+    """``load_pending`` performs the deferred read (#66): the placeholder reseeds from what is on
+    disk, ``pending`` clears, and the flag is already down by the time the reload's own signals reach
+    the consumers that were holding their I/O back on it.
+
+    **Test steps:**
+
+    * build a pending placeholder over a mocked file, recording ``pending`` as ``reloaded`` fires
+    * call ``load_pending`` and verify the fields seeded, pending cleared, and the signal saw it down
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}),
+    )
+    model = RehuDocumentModel.create_pending(Path("/fake/sculpting/info.rehu"))
+    pending_at_reload: list[bool] = []
+    model.reloaded.connect(lambda: pending_at_reload.append(model.pending))
+
+    model.load_pending()
+
+    assert model.pending is False
+    assert model.title == "Foo"
+    assert pending_at_reload == [False]
+
+
+def test_load_pending_is_a_no_op_once_loaded(mocker: MockerFixture) -> None:
+    """A second ``load_pending`` -- a stale trigger after the first already ran -- reloads nothing, so
+    it can never revert a document out from under live edits (#66).
+
+    **Test steps:**
+
+    * load a pending placeholder, then edit it dirty
+    * call ``load_pending`` again and verify nothing was re-read and the edit survived
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}),
+    )
+    model = RehuDocumentModel.create_pending(Path("/fake/sculpting/info.rehu"))
+    model.load_pending()
+    model.title = "Edited"
+    reload = mocker.patch.object(model.document, "reload")
+
+    model.load_pending()
+
+    assert reload.call_count == 0
+    assert model.title == "Edited"
+    assert model.dirty is True
+
+
 def test_unknown_field_names_lists_unrecognized_block_keys_sorted(document: RehuDocument) -> None:
     """``unknown_field_names`` returns the live block's unrecognized keys, sorted, excluding known ones.
 
@@ -3480,6 +3556,36 @@ def test_reverting_logs_under_this_documents_own_scope(
     qtbot.wait(10)
 
     assert any("Reverted" in message for message in sink.messages_at(logging.INFO))
+
+
+def test_a_deferred_load_logs_as_a_read_not_a_revert(
+    mocker: MockerFixture, scoped_sink: Callable[..., RecordingSink], qtbot: QtBot
+) -> None:
+    """The deferred session-restore read logs in the eager open's exact words -- *Read ... as ...* --
+    not as a *Reverted* (#66, #200): nobody reverted anything, and the record should say what
+    actually happened, which is the same this-file-was-read event an eager open logs; *when* it
+    happened is already the record's timestamp.
+
+    **Test steps:**
+
+    * attach a sink for a pending placeholder's path, with the file's content mocked
+    * complete the deferred load
+    * verify a *Read* record was placed under that scope, and no *Reverted* one
+    """
+    mocker.patch.object(
+        Path,
+        "read_text",
+        return_value=json.dumps({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}),
+    )
+    model = RehuDocumentModel.create_pending(LOGGED_PATH)
+    sink = scoped_sink(LOGGED_PATH)
+
+    model.load_pending()
+    qtbot.wait(10)
+
+    messages = sink.messages_at(logging.INFO)
+    assert any(message.startswith("Read ") for message in messages)
+    assert not any("Reverted" in message for message in messages)
 
 
 def test_a_lock_is_logged_as_a_warning_in_the_banners_own_words(

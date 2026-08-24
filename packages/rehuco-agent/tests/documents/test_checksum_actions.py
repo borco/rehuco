@@ -211,6 +211,34 @@ def test_a_document_with_no_path_at_all_is_offered_neither(queue: TaskQueue) -> 
     assert queue.jobs() == ()
 
 
+def test_a_pending_placeholder_stats_no_record_until_loaded(mocker: MockerFixture, queue: TaskQueue) -> None:
+    """A session-restore placeholder takes not even the record's single ``stat`` (#66) -- it can block
+    on an offline mount -- and the deferred load's ``reloaded`` re-offers the actions once the
+    document is real.
+
+    **Test steps:**
+
+    * build the actions over a pending placeholder, with every ``exists`` failing the test
+    * verify neither action is offered
+    * complete the deferred load with the record present, and verify Verify is now offered
+    """
+    exists = mocker.patch.object(Path, "exists", side_effect=AssertionError("a placeholder stat'd the disk"))
+    model = RehuDocumentModel.create_pending(INFO_PATH)
+    actions = ChecksumActions(model, queue)
+
+    assert not actions.generate_action.isEnabled()
+    assert not actions.verify_action.isEnabled()
+
+    exists.side_effect = None
+    exists.return_value = True
+    mocker.patch.object(
+        Path, "read_text", return_value='{"type": "Tutorial", "sources": [{"title": "Foo", "primary": true}]}'
+    )
+    model.load_pending()
+
+    assert actions.verify_action.isEnabled()
+
+
 # endregion
 
 

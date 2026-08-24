@@ -147,6 +147,13 @@ class OnDiskView(MonospaceTextView):
     revert of a *clean, unlocked* document -- the out-of-band-edit workflow Revert advertises, where no
     property moves at all (#174).
 
+    **A hidden view reads nothing** -- the same discipline :class:`SavePreviewView` and the checksum
+    dock already keep: a seam crossed while hidden only flags the text stale, and :meth:`showEvent`
+    catches it up. This dock starts closed, so no file is read merely because a document was opened --
+    which is also what keeps a session-restored placeholder's file untouched until its tab is actually
+    viewed (#66); no :attr:`~RehuDocumentModel.pending` check is needed here, because *visible* is
+    exactly the condition that makes the read legitimate.
+
     :param model: the reactive view-model whose file is shown.
     :param parent: optional Qt parent.
     """
@@ -157,19 +164,37 @@ class OnDiskView(MonospaceTextView):
     def __init__(self, model: RehuDocumentModel, parent: QWidget | None = None) -> None:
         super().__init__(self.LABEL_NAME, parent)
         self.__model: Final = model
+        self.__stale = True
         model_type = type(model)
         for name in ON_DISK_REFRESH_FIELDS:
-            getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__render)
-        model.reloaded.connect(self.__render)
-        self.__render()
+            getattr(model, SimpleProperty.notify_signal_name(model_type, name)).connect(self.__on_file_seam)
+        model.reloaded.connect(self.__on_file_seam)
 
-    def __render(self, *_args: object) -> None:
-        """Re-read the file from disk (or fall back to the placeholder) and show it.
+    def __on_file_seam(self, *_args: object) -> None:
+        """Re-read if currently visible, else defer the read to the next :meth:`showEvent`.
 
         :param _args: whatever value the triggering notify signal carried; unused -- the path is always
             re-read whole from the model.
         """
+        if self.isVisible():
+            self.__render()
+        else:
+            self.__stale = True
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Catch up a read deferred while hidden -- the dock being opened, or its tab switched back to.
+
+        :param event: the Qt show event, forwarded to the base class.
+        """
+        super().showEvent(event)
+        if self.__stale:
+            self.__render()
+
+    def __render(self) -> None:
+        """Re-read the file from disk (or fall back to the placeholder) and show it."""
         self.set_text(self.__read_on_disk())
+        self.__stale = False
 
     def __read_on_disk(self) -> str:
         """The document's file as it sits on disk, or :data:`NOT_ON_DISK_PLACEHOLDER` when there is no

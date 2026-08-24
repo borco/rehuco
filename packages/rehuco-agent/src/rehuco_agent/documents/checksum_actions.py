@@ -195,6 +195,10 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         self.__verify_old_action.setMenu(self.__verify_menu)
 
         model.path_changed.connect(self.__update_enabled)  # type: ignore[attr-defined]
+        # reloaded too, for the deferred session-restore load (#66): that read reseeds `path` to an
+        # equal value, so no `path_changed` fires, yet it is the moment the record's stat below
+        # becomes worth taking
+        model.reloaded.connect(self.__update_enabled)
         self.__update_enabled()
         queue.add_listener(self)
 
@@ -499,8 +503,13 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
         with no record a legitimate run rather than a refusal. The setting is re-read here rather than
         watched: this runs on every path change and every queue movement, which is soon enough after a
         Save, and one checkbox does not earn a reactive settings object.
+
+        A :attr:`~RehuDocumentModel.pending` session-restore placeholder is treated like a document
+        with no path: even the record's single ``stat`` can block on an offline mount (#66,
+        [[mounts-and-storage#offline-mounts]]), and the deferred load's ``reloaded`` -- wired in
+        ``__init__`` -- re-runs this once the document is real.
         """
-        path = self.__model.path
+        path = self.__model.path if not self.__model.pending else None
         checksums = shared_checksum_settings()
         has_record = path is not None and self.__has_something_to_verify(path)
         self.__generate_action.setEnabled(path is not None)

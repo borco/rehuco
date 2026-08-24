@@ -2053,62 +2053,24 @@ def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> 
 # endregion
 
 
-def test_restore_session_reopens_open_documents_and_restores_their_state(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A document the saved session marks open is reopened and has its dock layout restored.
+def test_restore_session_on_startup_delegates_to_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The loaded session is handed to ``DocumentsDock.restore_session`` as-is (#21, #66) --
+    ``DocumentsDock`` alone decides how to recreate each dock/tab and when each document's file is
+    actually read; see its own test suite for that behavior.
 
     **Test steps:**
 
-    * seed ``DocumentSessionSettings.load`` to report one open item (with known state bytes) and
-      one closed item
-    * mock ``DocumentsDock.open_document`` to return a stand-in widget
+    * mock ``DocumentsDock.restore_session``
     * construct ``MainWindow``
-    * verify ``open_document`` was called only for the open item's path, carrying that item's state
-      (#62: the layout rides the open itself, so the dock applies exactly one layout per document)
+    * verify it was called once, with the window's own loaded session
     """
-    open_path = Path("open.rehu").resolve()
-    closed_path = Path("closed.rehu").resolve()
-
-    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
-        # pylint: disable=unsupported-assignment-operation
-        self.items[open_path] = DocumentSessionSettings.Item(open=True, state=b"state-bytes")
-        self.items[closed_path] = DocumentSessionSettings.Item(open=False, state=b"old-state")
-
-    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    widget = mocker.MagicMock()
-    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
+    restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
 
     window = MainWindow()
     qtbot.addWidget(window)
 
-    open_document.assert_called_once_with(open_path, state=b"state-bytes")
-
-
-def test_restore_session_materializes_a_locked_dock_for_a_vanished_file(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """A previously-open document whose file has since vanished still reopens on restore -- as a locked
-    dock materialized in its place, its saved state applied ([[data-model#write-integrity]]) -- rather
-    than being skipped or crashing the restore.
-
-    **Test steps:**
-
-    * seed one open item
-    * mock ``open_document`` to return the (locked) dock it now yields for a file that can't be read
-    * construct ``MainWindow`` and verify the open still carried the saved state to restore
-    """
-    path = Path("missing.rehu").resolve()
-
-    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
-        self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state")  # pylint: disable=unsupported-assignment-operation
-
-    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    widget = mocker.MagicMock()
-    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document", return_value=widget)
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    open_document.assert_called_once_with(path, state=b"state")
+    session = window._MainWindow__session  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    restore_session.assert_called_once_with(session)
 
 
 def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2119,9 +2081,9 @@ def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: Mocker
 
     * seed ``DocumentSessionSettings.load`` to report one open item
     * seed ``SessionRestoreSettings.load`` to report the toggle off
-    * mock ``DocumentsDock.open_document``
+    * mock ``DocumentsDock.restore_session``
     * construct ``MainWindow``
-    * verify ``open_document`` was never called
+    * verify ``restore_session`` was never called
     """
     open_path = Path("open.rehu").resolve()
 
@@ -2135,12 +2097,12 @@ def test_restore_on_startup_off_skips_reopening_the_saved_session(mocker: Mocker
 
     mocker.patch.object(DocumentSessionSettings, "load", fake_session_load)
     mocker.patch.object(SessionRestoreSettings, "load", fake_restore_settings_load)
-    open_document = mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+    restore_session = mocker.patch("rehuco_agent.main_window.DocumentsDock.restore_session")
 
     window = MainWindow()
     qtbot.addWidget(window)
 
-    open_document.assert_not_called()
+    restore_session.assert_not_called()
 
 
 def test_close_event_snapshots_open_documents_into_the_session(mocker: MockerFixture, qtbot: QtBot) -> None:
@@ -2499,70 +2461,6 @@ def test_toolbars_state_round_trips_the_action_bar_area(mocker: MockerFixture, q
     second_ui = second._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
 
     assert second.toolBarArea(second_ui.action_bar) == Qt.ToolBarArea.BottomToolBarArea
-
-
-def test_restore_session_refocuses_the_previously_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:
-    """The document focused when the session was last saved is re-focused on restore.
-
-    **Test steps:**
-
-    * seed the session with two open items and a matching focused-document path
-    * mock ``open_document`` to return a stand-in widget for each path
-    * construct ``MainWindow``
-    * verify ``open_document`` was called an extra, final time for the focused path (to re-focus
-      its already-open dock)
-    """
-    first_path = Path("first.rehu").resolve()
-    second_path = Path("second.rehu").resolve()
-
-    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
-        # pylint: disable=unsupported-assignment-operation
-        self.items[first_path] = DocumentSessionSettings.Item(open=True, state=b"first")
-        self.items[second_path] = DocumentSessionSettings.Item(open=True, state=b"second")
-        self.focused_path = second_path
-
-    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    open_document = mocker.patch(
-        "rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock()
-    )
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    assert open_document.call_args_list[-1].args == (second_path,)  # pylint: disable=no-member
-    assert open_document.call_count == 3  # first_path, second_path, then second_path again to focus it
-
-
-def test_restore_session_refocuses_a_vanished_focused_documents_locked_dock(
-    mocker: MockerFixture, qtbot: QtBot
-) -> None:
-    """A remembered focused document whose file has vanished is still re-focused -- its materialized
-    locked dock is a real, focusable dock now ([[data-model#write-integrity]]), not a skipped nothing.
-
-    **Test steps:**
-
-    * seed the session with a focused-document path whose file can't be read
-    * construct ``MainWindow``
-    * verify ``open_document`` was called twice for that path: the initial open, then again to re-focus
-      its locked dock
-    """
-    path = Path("missing.rehu").resolve()
-
-    def fake_load(self: DocumentSessionSettings, settings: object) -> None:
-        del settings
-        self.items[path] = DocumentSessionSettings.Item(open=True, state=b"state")  # pylint: disable=unsupported-assignment-operation
-        self.focused_path = path
-
-    mocker.patch.object(DocumentSessionSettings, "load", fake_load)
-    open_document = mocker.patch(
-        "rehuco_agent.main_window.DocumentsDock.open_document", return_value=mocker.MagicMock()
-    )
-
-    window = MainWindow()
-    qtbot.addWidget(window)
-
-    assert open_document.call_args_list == [mocker.call(path, state=b"state"), mocker.call(path)]
 
 
 def test_close_event_records_the_focused_document(mocker: MockerFixture, qtbot: QtBot) -> None:

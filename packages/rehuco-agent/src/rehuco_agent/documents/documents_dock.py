@@ -22,6 +22,7 @@ from rehuco_core import (
 
 from ..glyphs import TAB_CLOSE_GLYPH
 from ..settings.default_layout_settings import shared_default_layout_settings
+from ..settings.document_session_settings import DocumentSessionSettings
 from ..settings.identity_settings import shared_identity_settings
 from .confirm_and_save_dirty import confirm_and_save_dirty
 from .document_dock import DocumentDock
@@ -32,7 +33,7 @@ from .save_or_prompt_retry import save_or_prompt_retry
 LOG: Final = logging.getLogger(__name__)
 
 
-class DocumentsDock(QMainWindow):
+class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attributes
     """A dock area holding one :class:`DocumentWidget` per open document, tabbed in the focused area.
 
     Reopening an already-open path focuses its existing dock rather than opening a second one
@@ -88,6 +89,23 @@ class DocumentsDock(QMainWindow):
         self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
+        self.__pending_docks: Final[set[QtAds.CDockWidget]] = set()
+        """Docks made by :meth:`restore_session` whose document has not been read yet (#66) -- each is
+        loaded (:meth:`__load_pending`) the first time it actually reaches the screen. Two triggers
+        cover every way there: the dock's own ``visibilityChanged`` -- which stays silent while the
+        window is still hidden, fires once per area's current tab when it first shows, and again on
+        every later tab reveal (see the curated stub's entry) -- and, for the programmatic focus routes
+        that bypass real visibility (a re-open by path, the ``View`` menu, the session's remembered
+        focus), :meth:`__activate` and :meth:`__on_current_dock_changed`. Entries are settled
+        (:meth:`__settle_pending`) by whichever fires first, by a bulk revert adopting the dock's file
+        (:meth:`adopt_reverted_conversion`), or by the dock closing unviewed (:meth:`__remove_dock`)."""
+        self.__restoring_session = False
+        """True only while :meth:`restore_session`'s own loop is (re)creating docks -- suppresses
+        :meth:`__on_current_dock_changed`'s load-on-focus reaction to QtAds making each newly added dock
+        current in turn, which would otherwise load every restored document up front, defeating the
+        deferral this all exists for (#66). The ``visibilityChanged`` trigger needs no such guard: the
+        window is still hidden for the whole of the restore, and a hidden window's tab churn emits
+        nothing."""
         self.__tracker: Final = QtAdsFocusTracker(
             self.__dock_manager, close_glyph=TAB_CLOSE_GLYPH, stylesheet_host=stylesheet_host
         )
@@ -157,6 +175,51 @@ class DocumentsDock(QMainWindow):
         if tc_path.exists():
             return self.open_document(tc_path)
         return self.__activate(self.__find_dock_by_path(info_path) or self.__make_new_dock(info_path, new=True))
+
+    def restore_session(self, session: DocumentSessionSettings) -> None:
+        """Recreate every document the last session left open (#21), restoring its dock layout and
+        focus -- touching **none of their files** up front (#66).
+
+        Every remembered open path gets its dock/tab shell immediately, built around an empty
+        placeholder model bound to its path (:meth:`RehuDocumentModel.create_pending` -- which is also
+        what keeps the shell's own construction off the filesystem: every consumer that would read the
+        file or scan its directory as a side effect of the widget merely existing stands down while
+        the model is pending). The real read runs the first time a document's tab actually reaches the
+        screen: each pending dock's ``visibilityChanged`` fires for the current tab of every area when
+        the still-hidden window first shows -- so what is on screen at startup is loaded at startup,
+        split layouts included -- and again whenever a covered tab is later revealed. The one document
+        loaded *here* is the session's remembered focused one, through :meth:`__activate`'s own
+        pending-load: it is about to be the first thing shown, and making it current is a programmatic
+        act real visibility signals don't cover while the window is hidden. A legacy ``.tc`` is never
+        made a placeholder (:meth:`__make_new_dock`): it always loads here, same as before.
+
+        A path that has since gone missing or become unparseable still reopens -- as an empty,
+        **locked** dock materialized in its place ([[data-model#write-integrity]]) once its tab is
+        actually shown, not skipped and not a dialog per file. Until then the tab shows no lock
+        marker and does not count as missing (:meth:`has_missing_documents`) -- knowing either would
+        take the very read this defers. The outer layout (splits/tabs between documents) is restored
+        only once every document it references has already been (re)created -- :meth:`restore_state`
+        matches saved entries up to currently-registered docks by name; it does not create any itself.
+
+        :param session: the loaded session (#65) to restore.
+        """
+        self.__restoring_session = True
+        try:
+            opened: dict[Path, QtAds.CDockWidget] = {}
+            for path, item in session.items.items():
+                if not item.open:
+                    continue
+                # the remembered layout rides the open itself (#62): the dock applies exactly one
+                # layout per document -- this one, or the saved default only where this one fails to
+                # restore -- instead of adopting the default first and having this overwrite it later
+                opened[path] = self.__find_dock_by_path(path) or self.__make_new_dock(path, state=item.state, lazy=True)
+            self.restore_state(session.docks_state)
+        finally:
+            self.__restoring_session = False
+
+        focused_dock = opened.get(session.focused_path) if session.focused_path is not None else None
+        if focused_dock is not None:
+            self.__activate(focused_dock)  # loads it now (#66) -- it is the first thing shown
 
     def open_document_widgets(self) -> list[DocumentWidget]:
         """Every currently open document's widget, in no particular order.
@@ -230,6 +293,10 @@ class DocumentsDock(QMainWindow):
         dock = self.__find_dock_by_path(path) or self.__find_dock_by_path(path.resolve())
         if dock is None:
             return
+        # a bulk revert can reach a session-restored tab nobody has viewed yet (#66): adopting the
+        # restored `.tc` *is* that dock's first real read, so its deferred-load trigger is retired
+        # here rather than left armed to revert the adopted document all over again on first view
+        self.__settle_pending(dock)
         model = self.__document_docks[dock].model
         with LogScope.open(path):
             try:
@@ -360,9 +427,16 @@ class DocumentsDock(QMainWindow):
         stub when the file cannot be read, [[data-model#write-integrity]]), so there is no "no dock was
         created" case to pass through.
 
+        Loads a still-pending dock's real content first (#66), same as :meth:`__on_current_dock_changed`
+        -- explicitly, rather than relying on the ``current_dock_changed`` signal :meth:`set_current_dock`
+        is about to raise: a dock QtAds already made current as it was added (the common case for a
+        session-restored dock with only one candidate) makes that call a no-op, which would otherwise
+        raise no signal and leave the document unread.
+
         :param dock: a dock found or just created by :meth:`open_document`/:meth:`open_folder`.
         :returns: the dock's widget.
         """
+        self.__load_pending(dock)
         self.__tracker.set_current_dock(dock)
         return self.__document_docks[dock]
 
@@ -404,7 +478,9 @@ class DocumentsDock(QMainWindow):
             LOG.info("Read %s as %s", path, document.type or "an untyped resource")
             return document
 
-    def __make_new_dock(self, path: Path, *, new: bool = False, state: bytes | None = None) -> QtAds.CDockWidget:
+    def __make_new_dock(
+        self, path: Path, *, new: bool = False, state: bytes | None = None, lazy: bool = False
+    ) -> QtAds.CDockWidget:
         """Load ``path`` and build its document dock -- **always** a dock, never an error dialog.
 
         Every open attempt yields a document view ([[data-model#write-integrity]]): a file that is
@@ -423,10 +499,24 @@ class DocumentsDock(QMainWindow):
             is empty **and editable and dirty**, a document about to be written.
         :param state: the document's own remembered layout, or ``None`` for the saved default -- see
             :meth:`open_document`.
-        :returns: the new dock (created for a successful load, a new document, or a locked stub alike).
+        :param lazy: when true (only :meth:`restore_session`), skip the read and build the dock around
+            a pending placeholder instead (:meth:`RehuDocumentModel.create_pending`) --
+            :meth:`__load_pending` reads the real file the first time this dock actually reaches the
+            screen (its ``visibilityChanged``), or is made current programmatically. Never honored for
+            ``new`` (there is nothing to defer reading) or a legacy ``.tc`` (:meth:`RehuDocument.reload`,
+            what the deferred read runs through, only ever re-reads a ``.rehu`` path as JSON).
+        :returns: the new dock (created for a successful load, a new document, a locked stub, or -- when
+            ``lazy`` -- an as-yet-unread placeholder, alike).
         """
+        lazy = lazy and not new and path.suffix.lower() != ".tc"
         if new:
             model = RehuDocumentModel.create_new(
+                path,
+                username=shared_identity_settings().current_username,
+                rename_coordinator=self.__rename_coordinator,
+            )
+        elif lazy:
+            model = RehuDocumentModel.create_pending(
                 path,
                 username=shared_identity_settings().current_username,
                 rename_coordinator=self.__rename_coordinator,
@@ -445,6 +535,12 @@ class DocumentsDock(QMainWindow):
         dock.document_widget.status_message.connect(self.status_message)
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = dock.document_widget  # pylint: disable=unsupported-assignment-operation
+        if lazy:
+            self.__pending_docks.add(dock)
+            # the "first time this tab actually reaches the screen" trigger (#66): silent while the
+            # window is still hidden (the whole restore), fired for each area's current tab when it
+            # first shows, and for every covered tab later revealed -- see __pending_docks
+            dock.visibilityChanged.connect(self.__on_pending_dock_visibility_changed)
 
         # tab the new document into the current dock's area (a fresh area when nothing is current
         # yet, e.g. the very first document); the tracker adopts it as current from there
@@ -477,12 +573,68 @@ class DocumentsDock(QMainWindow):
                 return dock
         return None
 
+    def __settle_pending(self, dock: QtAds.CDockWidget) -> bool:
+        """Retire ``dock``'s pending-load bookkeeping (#66): drop it from :attr:`__pending_docks` and
+        disconnect its ``visibilityChanged`` trigger, which has served its purpose.
+
+        The one funnel every way out of the pending state passes through, so a dock can never be
+        settled twice: the load itself (:meth:`__load_pending`), a bulk revert adopting the file
+        without a load (:meth:`adopt_reverted_conversion`), and a dock closing unviewed
+        (:meth:`__remove_dock`).
+
+        :param dock: the dock to settle.
+        :returns: whether ``dock`` was actually pending -- ``False`` for the overwhelmingly common
+            already-loaded (or never-lazy) dock, which callers use to skip their follow-up.
+        """
+        if dock not in self.__pending_docks:
+            return False
+        self.__pending_docks.discard(dock)
+        dock.visibilityChanged.disconnect(self.__on_pending_dock_visibility_changed)
+        return True
+
+    def __load_pending(self, dock: QtAds.CDockWidget) -> None:
+        """Read ``dock``'s real content now, if it is still an unread session-restore placeholder
+        (#66) -- a no-op for a dock opened normally, or one already loaded this way.
+
+        Goes through :meth:`RehuDocumentModel.load_pending`, which delegates to revert: a placeholder
+        is, precisely, a document bound to its path with nothing read from it yet, and revert is
+        already exactly "re-read this document's path and reseed every field from what comes back" --
+        the same seam an already-open document's Revert action and a hand-fixed locked stub's retry
+        both use to pick up a file's real content. It also fires
+        :attr:`~RehuDocumentModel.active_block_changed` unconditionally, so ``DocumentWidget`` rebuilds
+        its whole form for the real type in place of the placeholder's typeless one. Settled first,
+        so nothing re-triggered by the load's own signal storm can re-enter it.
+
+        :param dock: the dock whose document to load, if it is pending.
+        """
+        if self.__settle_pending(dock):
+            self.__document_docks[dock].model.load_pending()
+
+    def __on_pending_dock_visibility_changed(self, visible: bool) -> None:
+        """Load a pending dock's document the moment its tab actually reaches the screen (#66).
+
+        Connected only for :meth:`restore_session`'s placeholders, and disconnected once settled;
+        resolves the dock via ``sender()``, the same pattern as
+        :meth:`__on_close_dock_widget_requested`, since the signal carries only the new visibility.
+
+        :param visible: whether the dock just appeared (``True``) or was covered/hidden.
+        """
+        dock = self.sender()
+        if visible and isinstance(dock, QtAds.CDockWidget):
+            self.__load_pending(dock)
+
     def __on_current_dock_changed(self, dock: QtAds.CDockWidget | None) -> None:
         """Announce the newly-current document's widget whenever the tracked current dock changes.
+
+        Loads a still-pending dock's real content first (#66) -- unless :meth:`restore_session`'s own
+        loop is what just made it current, in which case it is left pending; the loop's own explicit
+        re-focus, or this document's next genuine tab switch, loads it instead.
 
         :param dock: the newly-current dock, or ``None`` when focus leaves every document dock (a
             dock the tracker has already forgotten, e.g. one just closed, resolves to ``None`` too).
         """
+        if dock is not None and not self.__restoring_session:
+            self.__load_pending(dock)
         widget = self.__document_docks.get(dock) if dock is not None else None
         if widget is not None:
             # clicking a document's tab makes it current without moving the keyboard anywhere near it
@@ -534,6 +686,9 @@ class DocumentsDock(QMainWindow):
             dock (which emits :attr:`document_focus_changed` with ``None`` when it was the current
             one).
         """
+        # a dock closed before its tab was ever viewed leaves the pending state here instead of
+        # lingering as a stale entry for the session (#66)
+        self.__settle_pending(dock)
         # let go of everything app-wide this document is attached to before it is destroyed: the task
         # queue calls its listeners on the worker thread, so one arriving after the C++ objects have
         # gone would reach a deleted QObject (#204). The work itself is untouched -- closing a document

@@ -142,7 +142,7 @@ def path_label(path: Path) -> str:
     return f"{path.parent.name}/" if is_directory_scoped(path) else path.name
 
 
-class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes
+class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attributes,too-many-public-methods
     """Reactive `QObject` over one `RehuDocument`, exposing common-core fields and a dirty flag
     ([[plugins#view-model]]).
 
@@ -394,10 +394,15 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         parent: QObject | None = None,
         *,
         rename_coordinator: RenameCoordinator | None = None,
+        pending: bool = False,
     ) -> None:
         super().__init__(parent)
         self.__document = document
         self.__rename_coordinator: Final = rename_coordinator
+        self.__pending = pending
+        """See :attr:`pending`; set only by :meth:`create_pending`, cleared at the file seams that
+        replace the placeholder with real content (:meth:`revert` -- which :meth:`load_pending`
+        delegates to -- and :meth:`__adopt_restored_tc`)."""
 
         self.__seeding = False
         """True only while :meth:`__seed_from_document` is applying field values pulled from the
@@ -458,6 +463,68 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         if path is not None:
             model.dirty = True
         return model
+
+    @classmethod
+    def create_pending(
+        cls,
+        path: Path,
+        parent: QObject | None = None,
+        *,
+        username: str = DEFAULT_CURRENT_USERNAME,
+        rename_coordinator: RenameCoordinator | None = None,
+    ) -> RehuDocumentModel:
+        """Start a **pending** stand-in for an existing file that has deliberately not been read yet --
+        session restore's deferred document load (#66).
+
+        The model is bound to ``path`` but wraps an *empty* document, and :attr:`pending` is set so the
+        consumers that would otherwise touch the file or its directory at construction hold off (each
+        names the guard at its own seam). Unlike :meth:`create_new` it is **not** dirty and **not**
+        built through :meth:`RehuDocument.new` -- the file already exists, so minting a fresh ``id``
+        here would fabricate an identity for a resource that has one on disk
+        ([[data-model#stable-identity]]); the bare constructor is the one that stands for an existing
+        payload without inventing anything.
+
+        :param path: the existing file this placeholder stands in for; :meth:`load_pending` reads it.
+        :param parent: optional Qt parent.
+        :param username: the identity the eventual read files per-user state under
+            ([[field-schema#per-user-shared]], #99) -- same seam as :meth:`create_new`.
+        :param rename_coordinator: forwarded to the constructor; see its own docstring (#241).
+        :returns: the pending model; empty, clean, and unlocked until :meth:`load_pending` runs.
+        """
+        return cls(
+            RehuDocument({}, path, username=username), parent, rename_coordinator=rename_coordinator, pending=True
+        )
+
+    @property
+    def pending(self) -> bool:
+        """Whether this model is a session-restore placeholder whose file has not been read yet (#66).
+
+        While true, every consumer that reads the file or its directory as a side effect of merely
+        *existing* stands down -- the On Disk view already defers to its ``showEvent``, and
+        `ConversionBackupActions`, `ChecksumActions`, and `RehuDocumentImageScanner` each guard on this
+        -- so building the dock shell for a restored session touches no files at all
+        ([[mounts-and-storage#offline-mounts]]). Cleared by :meth:`load_pending` (via :meth:`revert`)
+        and by any other file seam that replaces the placeholder with real content; each of those emits
+        :attr:`reloaded`, which is the signal those consumers already catch up on -- so no separate
+        notify signal is carried for this flag.
+        """
+        return self.__pending
+
+    def load_pending(self) -> None:
+        """Read the file this :attr:`pending` placeholder stands in for -- the deferred half of the
+        session restore's open (#66), run the first time the document's tab actually becomes visible.
+
+        Delegates to :meth:`revert`: a placeholder is precisely a document bound to its path with
+        nothing read from it yet, and revert is already exactly *re-read the path and reseed
+        everything* -- including materializing the empty **locked** dock for a file that has since
+        vanished or become unparseable ([[data-model#write-integrity]]), and rebuilding the whole form
+        (:attr:`active_block_changed`) for the real type in place of the placeholder's typeless one.
+
+        A no-op on a model that is not (or no longer) pending, so a stale second trigger never reverts
+        a document out from under live edits.
+        """
+        if self.__pending:
+            self.revert()
 
     @property
     def document(self) -> RehuDocument:
@@ -622,9 +689,19 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         :raises ValueError: if the document has no path (was never loaded from or saved to a file).
         """
+        # cleared before anything is emitted: the refresh handlers this raises (reloaded,
+        # active_block_changed) are the very consumers whose I/O the pending flag was holding back (#66)
+        was_pending = self.__pending
+        self.__pending = False
         with LogScope.open(self.path):
             self.__document.reload()
-            LOG.info("Reverted %s to what is on disk", self.path)
+            if was_pending:
+                # the deferred first read (#66), not a user's Revert: logged in the eager open's own
+                # words (#200, `DocumentsDock.__load_or_locked`), since it is the same event -- this
+                # file was read -- and *when* it happened is already the record's timestamp
+                LOG.info("Read %s as %s", self.path, self.__document.type or "an untyped resource")
+            else:
+                LOG.info("Reverted %s to what is on disk", self.path)
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""
@@ -759,6 +836,9 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         """
         self.__document = load_tc(legacy, username=shared_identity_settings().unknown_username)
         LOG.info("Restored %s", legacy)
+        # a file seam that replaces the placeholder with real content, same as revert() (#66): a bulk
+        # revert can reach a session-restored tab before it was ever viewed
+        self.__pending = False
         self.__seed_from_document()
         self.dirty = False
         self.rename_error = ""

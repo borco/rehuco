@@ -51,11 +51,17 @@ class RehuDocumentImageScanner:
     def files(self) -> list[Path]:
         """Every recognized screenshot for this resource, as absolute paths.
 
+        Empty, without touching the directory, while the model is still a
+        :attr:`~RehuDocumentModel.pending` session-restore placeholder (#66): the lister is a
+        directory scan, which can block on an offline mount ([[mounts-and-storage#offline-mounts]]),
+        and the strip/selector call this while merely being built. The deferred load rebuilds the
+        whole form (``active_block_changed``), so the rebuilt widgets re-ask once the answer is real.
+
         :returns: the matching paths via this resource's screenshot ``lister``, or empty when the
-            document has no path yet.
+            document has no path yet or is still pending.
         """
         path = self.__model.path
-        if path is None:
+        if path is None or self.__model.pending:
             return []
         return self.__lister(path.parent, path.stem)
 

@@ -170,6 +170,34 @@ def test_neither_action_is_offered_without_backups(
     assert actions.notice == ""
 
 
+def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, mocker: MockerFixture) -> None:
+    """A session-restore placeholder's inventory is not taken (#66) -- it would read the whole
+    ``.rehu`` for the timestamps, the very read the deferral exists to avoid -- and the deferred
+    load's ``reloaded`` is what takes it, through the wiring the actions already have.
+
+    **Test steps:**
+
+    * build the actions over a pending placeholder and verify no inventory ran and nothing is offered
+    * complete the deferred load (its ``reloaded`` fires) and verify the inventory ran once
+    """
+    del qtbot
+    inventory = mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups())
+    model = RehuDocumentModel.create_pending(INFO_PATH)
+    actions = ConversionBackupActions(model)
+
+    assert inventory.call_count == 0
+    assert actions.retained is False
+    assert not actions.revert_action.isVisible()
+
+    mocker.patch.object(
+        Path, "read_text", return_value='{"type": "Tutorial", "sources": [{"title": "Foo", "primary": true}]}'
+    )
+    model.load_pending()
+
+    assert inventory.call_count == 1
+    assert actions.retained is True
+
+
 def test_revert_is_not_offered_when_there_is_no_backed_up_tc(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
