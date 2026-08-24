@@ -136,6 +136,9 @@ sync:
 tests:
 	uv run pytest
 
+tests-parallel:
+	uv run pytest -n auto
+
 # Where the suite's own time goes -- not a benchmark, and not part of `qa`. `--durations` names the
 # slowest tests, `--profile` writes one .pstats per test plus a `combined.prof` under .prof/ for
 # snakeviz/gprof2dot. Defaults to the whole suite: profiling one subdirectory can only ever confirm
