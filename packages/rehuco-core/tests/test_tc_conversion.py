@@ -73,7 +73,9 @@ def mock_environment(  # pylint: disable=too-many-arguments
     """
     mocker.patch.object(Path, "read_text", return_value=tc_yaml)
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in existing)
-    mocker.patch.object(Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME))
+    mocker.patch.object(
+        Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME, st_size=len(tc_yaml.encode("utf-8")))
+    )
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
     mocker.patch("rehuco_core.tc_conversion.scan_tc_screenshots", return_value=renames)
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)

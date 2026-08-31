@@ -64,6 +64,11 @@ from .rehu_locks import (
     optional_int,
     optional_str,
 )
+from .rehu_parse_limits import (
+    excessive_entry_reason,
+    excessive_nesting_reason,
+    oversized_file_reason,
+)
 from .rehu_serialization import ordered_for_file
 
 LOG: Final = logging.getLogger(__name__)
@@ -257,31 +262,45 @@ class RehuDocument:  # pylint: disable=too-many-public-methods,too-many-instance
         """Read and parse a ``.rehu`` file from disk.
 
         A ``.rehu`` is untrusted outside input ([[data-model#write-integrity]]) -- a double-clicked file
-        is not this app's just because of its extension -- so a payload that cannot be parsed is
-        **refused** as a `RehuFormatError` rather than being allowed to escape as whatever the parser
-        happened to raise. ``json.loads`` raises more than ``JSONDecodeError``: deep nesting exhausts the
+        is not this app's just because of its extension -- so a payload that cannot be parsed, or trips a
+        sanity cap (:mod:`rehuco_core.rehu_parse_limits`, #88), is **refused** as a `RehuFormatError`
+        rather than being allowed to escape as whatever the parser happened to raise, or to exhaust memory
+        or wedge the app. ``json.loads`` raises more than ``JSONDecodeError``: deep nesting exhausts the
         interpreter stack (``RecursionError``), and an over-long integer literal trips CPython's
         integer-digit limit (a bare ``ValueError``). Catching ``ValueError`` covers both that and
         ``JSONDecodeError``, which is a subclass of it.
 
-        This does **not** make parsing safe against a hostile file's *size* -- the full sanity caps this
-        section calls for (total bytes, nesting depth, entry counts) are not implemented, and the read
-        below buys the whole file into memory before ``json`` ever sees it (#88).
+        The sanity caps run in cheapest-first order, each **before** the step it would otherwise let
+        through unbounded: the byte cap against ``stat()`` before the file is read into memory at all, the
+        nesting-depth cap against the raw text before ``json.loads`` parses it (CPython's JSON scanner
+        does not consult the interpreter's recursion limit, so ``RecursionError`` alone cannot be trusted
+        to catch this), and the collection/string-length cap against the parsed value.
 
         :param path: path to the ``.rehu`` file.
         :param plugins: the plugins installed here, for alias normalization; see :class:`RehuDocument`.
         :param username: the active identity; see :class:`RehuDocument`. Threaded so a file opened at an
             older block layout is migrated under the caller's identity, not a bare default.
         :returns: a document backed by the parsed JSON object.
-        :raises RehuFormatError: if the file cannot be parsed, or its top-level JSON value is not an object.
+        :raises RehuFormatError: if the file cannot be parsed, its top-level JSON value is not an object,
+            or it trips a sanity cap.
         """
         path = Path(path)
+        oversized = oversized_file_reason(path.stat().st_size)
+        if oversized is not None:
+            raise RehuFormatError(f"Refusing to parse — {oversized}")
+        text = path.read_text(encoding="utf-8")
+        nested_too_deep = excessive_nesting_reason(text)
+        if nested_too_deep is not None:
+            raise RehuFormatError(f"Refusing to parse — {nested_too_deep}")
         try:
-            data: object = json.loads(path.read_text(encoding="utf-8"))
+            data: object = json.loads(text)
         except (ValueError, RecursionError) as exc:
             raise RehuFormatError(f"Invalid JSON — {exc}.") from exc
         if not isinstance(data, dict):
             raise RehuFormatError("Expected a JSON object at the top level.")
+        oversized_entry = excessive_entry_reason(data)
+        if oversized_entry is not None:
+            raise RehuFormatError(f"Refusing to parse — {oversized_entry}")
         if stamped_version(data) is None and CORE_BLOCK_KEY in data:
             # No build wrote this: `core` arrived with format v2, and saving has stamped since v1, so a
             # file cannot honestly have the one without the other. Not fatal -- it is carried verbatim

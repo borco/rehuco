@@ -14,6 +14,7 @@ a different 33 depending on how the scheduler happened to split the work (#262).
 
 import logging
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from borco_pyside.logging import LogBridge
@@ -116,6 +117,35 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 
 
 # pylint: enable=duplicate-code
+
+
+@fixture(autouse=True)
+def default_path_stat_size(mocker: MockerFixture) -> None:
+    """Give ``Path.stat()`` a usable ``st_size`` by default, for every test that mocks ``Path.read_text``
+    over a fake path without mocking ``Path.stat`` itself (#88).
+
+    ``RehuDocument.load``/``TcDocument.load`` now read ``Path.stat().st_size`` *before* ``read_text`` --
+    the sanity cap has to run before the file is bought into memory, not after. A great many tests here
+    mock only ``read_text`` to serve a document's JSON/YAML from a path like ``/fake/info.rehu``, which
+    exists nowhere on the real filesystem; without this, ``stat()`` on that path raises for real, and the
+    file is refused as unreadable before the mocked content is ever reached.
+
+    Falls back to a small stand-in **only when the real ``stat()`` call itself fails** -- a genuine path
+    (``tmp_path``-backed) still reports its real size, and this defers to the real call first rather than
+    always substituting one, which is also what keeps this composable with a test that patches ``Path.stat``
+    itself with ``autospec=True`` (a per-test scenario needing a specific size, mtime, or failure):
+    ``unittest.mock`` refuses to autospec an attribute that is already a ``Mock`` instance, so this default
+    must stay a plain function, never a `MagicMock`, for a later autospec patch to compose on top of it.
+    """
+    original_stat = Path.stat
+
+    def default_stat(self: Path, **kwargs: object) -> object:
+        try:
+            return original_stat(self, **kwargs)  # type: ignore[arg-type]
+        except OSError:
+            return mocker.Mock(st_size=0, st_mtime=0.0)
+
+    mocker.patch.object(Path, "stat", default_stat)
 
 
 @fixture(autouse=True, scope="session")

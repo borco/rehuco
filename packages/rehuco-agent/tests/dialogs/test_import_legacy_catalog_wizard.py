@@ -408,7 +408,7 @@ def test_the_scan_step_produces_the_plan_without_touching_any_file(
     mocker.patch("rehuco_core.tc_conversion_plan.os.scandir", side_effect=lambda d: FakeScandir(listing[Path(d)]))
     mocker.patch.object(Path, "read_text", autospec=True, return_value="type: Tutorial\ntitle: X\n")
     mocker.patch.object(Path, "exists", autospec=True, return_value=False)
-    mocker.patch.object(Path, "stat", autospec=True, return_value=mocker.MagicMock(st_mtime=1700000000.0))
+    mocker.patch.object(Path, "stat", autospec=True, return_value=mocker.MagicMock(st_mtime=1700000000.0, st_size=32))
     mocker.patch("rehuco_core.tc_conversion_plan.scan_tc_screenshots", return_value=[])
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
     mock_unlink = mocker.patch.object(Path, "unlink", autospec=True)

@@ -8,6 +8,8 @@ from pytest import mark, param
 from pytest_mock import MockerFixture
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
+    MAX_COLLECTION_LENGTH,
+    MAX_FILE_BYTES,
     RehuDocument,
     RehuFormatError,
     TcDocument,
@@ -101,8 +103,20 @@ def load_tc_doc(mocker: MockerFixture, content: str) -> RehuDocument:
     :param content: the ``.tc`` file's raw YAML text.
     :returns: the mapped document.
     """
-    mocker.patch.object(Path, "read_text", return_value=content)
+    mock_file_contents(mocker, content)
     return load_tc(FAKE_PATH)
+
+
+def mock_file_contents(mocker: MockerFixture, text: str) -> None:
+    """Mock ``Path.read_text`` to return ``text``, and ``Path.stat`` to report its real byte size --
+    the pairing every ``TcDocument.load``/``load_tc`` caller needs since #88's size cap reads ``stat()``
+    before ``read_text``.
+
+    :param mocker: pytest-mock fixture.
+    :param text: the file content to serve.
+    """
+    mocker.patch.object(Path, "read_text", return_value=text)
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=len(text.encode("utf-8"))))
 
 
 def test_tutorial_mapping(mocker: MockerFixture) -> None:
@@ -273,7 +287,7 @@ def test_invalid_yaml_raises_rehu_format_error(mocker: MockerFixture, content: s
     * load unparseable YAML (an unterminated flow sequence), then a YAML scalar (not a mapping)
     * verify each raises :class:`RehuFormatError`
     """
-    mocker.patch.object(Path, "read_text", return_value=content)
+    mock_file_contents(mocker, content)
 
     with pytest.raises(RehuFormatError):
         load_tc(FAKE_PATH)
@@ -298,7 +312,7 @@ def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture)
     * mock ``Path.read_text`` to return a number no ``int`` will accept
     * verify it comes back as :class:`RehuFormatError`, chained from the ``ValueError``
     """
-    mocker.patch.object(Path, "read_text", return_value="duration: " + "9" * 5000)
+    mock_file_contents(mocker, "duration: " + "9" * 5000)
 
     with pytest.raises(RehuFormatError) as exc_info:
         load_tc(FAKE_PATH)
@@ -321,13 +335,52 @@ def test_load_refuses_a_payload_that_exhausts_the_parsers_stack(mocker: MockerFi
     * make the parser raise ``RecursionError``, as an over-deep payload would on some platform
     * verify it comes back as :class:`RehuFormatError`, chained from it
     """
-    mocker.patch.object(Path, "read_text", return_value="title: Deep")
+    mock_file_contents(mocker, "title: Deep")
     mocker.patch("rehuco_core.tc_document.yaml.safe_load", side_effect=RecursionError("maximum recursion depth"))
 
     with pytest.raises(RehuFormatError) as exc_info:
         load_tc(FAKE_PATH)
 
     assert isinstance(exc_info.value.__cause__, RecursionError)
+
+
+# region Sanity caps (#88, [[data-model#write-integrity]])
+
+
+def test_load_refuses_an_oversized_file(mocker: MockerFixture) -> None:
+    """A ``.tc`` file over :data:`MAX_FILE_BYTES` is refused before it is read into memory.
+
+    **Test steps:**
+
+    * mock ``Path.stat`` to report a size over the cap, and ``Path.read_text`` to prove it is never
+      reached
+    * verify loading raises :class:`RehuFormatError`, and ``read_text`` was never called
+    """
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=MAX_FILE_BYTES + 1))
+    read_text = mocker.patch.object(Path, "read_text")
+
+    with pytest.raises(RehuFormatError, match="exceeds"):
+        load_tc(FAKE_PATH)
+
+    read_text.assert_not_called()
+
+
+def test_load_refuses_a_collection_past_the_entry_cap(mocker: MockerFixture) -> None:
+    """A list holding more than :data:`MAX_COLLECTION_LENGTH` entries is refused.
+
+    **Test steps:**
+
+    * build a ``.tc`` whose ``tags`` list is one entry past the cap
+    * verify loading raises :class:`RehuFormatError`
+    """
+    content = "title: Some Title\ntags: [" + ", ".join(["t"] * (MAX_COLLECTION_LENGTH + 1)) + "]\n"
+    mock_file_contents(mocker, content)
+
+    with pytest.raises(RehuFormatError, match="entries exceeds"):
+        load_tc(FAKE_PATH)
+
+
+# endregion
 
 
 def test_the_mapping_stamps_the_current_format_but_mints_no_resource_bookkeeping() -> None:
@@ -453,7 +506,7 @@ def test_the_username_threads_from_load_tc_into_the_users_map(mocker: MockerFixt
     * mock ``Path.read_text`` to return :data:`TUTORIAL_TC` and load with an explicit username
     * verify the per-user flags landed under that username and nowhere else, and the document adopts it
     """
-    mocker.patch.object(Path, "read_text", return_value=TUTORIAL_TC)
+    mock_file_contents(mocker, TUTORIAL_TC)
     doc = load_tc(FAKE_PATH, username="alice")
 
     assert doc.username == "alice"
@@ -473,7 +526,7 @@ def test_load_tc_files_per_user_flags_under_the_unknown_user_by_default(mocker: 
     * mock ``Path.read_text`` to return :data:`TUTORIAL_TC` and load with no username
     * verify the per-user flags landed under ``unknown`` and the document adopts that name
     """
-    mocker.patch.object(Path, "read_text", return_value=TUTORIAL_TC)
+    mock_file_contents(mocker, TUTORIAL_TC)
     doc = load_tc(FAKE_PATH)
 
     assert doc.username == "unknown"

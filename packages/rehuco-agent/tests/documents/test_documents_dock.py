@@ -16,7 +16,7 @@ import json
 import logging
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Final, NoReturn
+from typing import Any, Final
 
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
@@ -2205,13 +2205,14 @@ def forbid_filesystem_for(mocker: MockerFixture, forbidden_directory: Path) -> N
 
         return side_effect
 
-    def raise_os_error() -> NoReturn:
-        raise OSError("not backed by a real filesystem")
-
     mocker.patch.object(Path, "read_text", autospec=True, side_effect=guard("read_text", lambda: json.dumps(TUTORIAL)))
     mocker.patch.object(Path, "iterdir", autospec=True, side_effect=guard("iterdir", lambda: iter(())))
     mocker.patch.object(Path, "exists", autospec=True, side_effect=guard("exists", lambda: False))
-    mocker.patch.object(Path, "stat", autospec=True, side_effect=guard("stat", raise_os_error))
+    # a real size, not a canned failure: #88's byte cap reads this for every load, focused document
+    # included, so this must succeed for an allowed path exactly like the real filesystem would
+    mocker.patch.object(
+        Path, "stat", autospec=True, side_effect=guard("stat", lambda: mocker.MagicMock(st_size=0, st_mtime=0.0))
+    )
 
 
 def test_restore_session_touches_no_files_for_unviewed_documents(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -135,6 +135,15 @@ from .rehu_document import (
     authors_comma_editable,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
+from .rehu_parse_limits import (
+    MAX_COLLECTION_LENGTH,
+    MAX_FILE_BYTES,
+    MAX_JSON_NESTING_DEPTH,
+    MAX_STRING_LENGTH,
+    excessive_entry_reason,
+    excessive_nesting_reason,
+    oversized_file_reason,
+)
 from .rehu_rename import (
     PartialRenameError,
     RehuRenamer,
@@ -320,6 +329,10 @@ __all__ = [
     "LegacySeed",
     "LockReason",
     "LockReasonKind",
+    "MAX_COLLECTION_LENGTH",
+    "MAX_FILE_BYTES",
+    "MAX_JSON_NESTING_DEPTH",
+    "MAX_STRING_LENGTH",
     "MOVABLE_JOB_STATES",
     "MediaInfoDurationProbe",
     "PROGRESS_UNIT_BYTES",
@@ -395,6 +408,8 @@ __all__ = [
     "enumerate_content_files",
     "excluded_content_names",
     "enumerate_content_images",
+    "excessive_entry_reason",
+    "excessive_nesting_reason",
     "forget_checksums",
     "generate_checksums",
     "hand_over_claims",
@@ -416,6 +431,7 @@ __all__ = [
     "new_checksum_record",
     "original_path",
     "originals_to_back_up",
+    "oversized_file_reason",
     "parse_checksum_entry",
     "plan_screenshot_renumbering",
     "plan_tc_conversion",

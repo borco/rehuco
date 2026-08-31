@@ -20,6 +20,10 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     DEFAULT_PLUGIN_REGISTRY,
     FORMAT_VERSION_KEY,
+    MAX_COLLECTION_LENGTH,
+    MAX_FILE_BYTES,
+    MAX_JSON_NESTING_DEPTH,
+    MAX_STRING_LENGTH,
     RESERVED_KEYS,
     TUTORIAL_PLUGIN,
     LockReasonKind,
@@ -82,8 +86,21 @@ def load_doc(
     :param plugins: the plugins installed for this load; defaults to this build's shipped set.
     :returns: the loaded document.
     """
-    mocker.patch.object(Path, "read_text", return_value=json.dumps(data))
+    text = json.dumps(data)
+    mock_file_contents(mocker, text)
     return RehuDocument.load(FAKE_PATH, plugins=plugins)
+
+
+def mock_file_contents(mocker: MockerFixture, text: str) -> None:
+    """Mock ``Path.read_text`` to return ``text``, and ``Path.stat`` to report its real byte size --
+    the pairing every ``RehuDocument.load``/``TcDocument.load`` caller needs since #88's size cap reads
+    ``stat()`` before ``read_text``.
+
+    :param mocker: pytest-mock fixture.
+    :param text: the file content to serve.
+    """
+    mocker.patch.object(Path, "read_text", return_value=text)
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=len(text.encode("utf-8"))))
 
 
 def test_common_field_accessors(mocker: MockerFixture) -> None:
@@ -2892,7 +2909,7 @@ def test_load_rejects_invalid_json(mocker: MockerFixture) -> None:
     * mock ``Path.read_text`` to return syntactically invalid JSON
     * verify loading raises :class:`RehuFormatError` chained from ``JSONDecodeError``
     """
-    mocker.patch.object(Path, "read_text", return_value="{not valid")
+    mock_file_contents(mocker, "{not valid")
     with pytest.raises(RehuFormatError) as exc_info:
         RehuDocument.load(FAKE_PATH)
     assert exc_info.value.__cause__ is not None
@@ -2916,7 +2933,7 @@ def test_load_refuses_a_payload_with_an_over_long_integer(mocker: MockerFixture)
     * mock ``Path.read_text`` to return a number no ``int`` will accept
     * verify it comes back as :class:`RehuFormatError`, chained from the ``ValueError``
     """
-    mocker.patch.object(Path, "read_text", return_value='{"format_version": ' + "9" * 5000 + "}")
+    mock_file_contents(mocker, '{"format_version": ' + "9" * 5000 + "}")
 
     with pytest.raises(RehuFormatError) as exc_info:
         RehuDocument.load(FAKE_PATH)
@@ -2943,7 +2960,7 @@ def test_load_refuses_a_payload_that_exhausts_the_parsers_stack(mocker: MockerFi
     * make the parser raise ``RecursionError``, as an over-deep payload would on some platform
     * verify it comes back as :class:`RehuFormatError`, chained from it
     """
-    mocker.patch.object(Path, "read_text", return_value='{"core": {}}')
+    mock_file_contents(mocker, '{"core": {}}')
     mocker.patch("rehuco_core.rehu_document.json.loads", side_effect=RecursionError("maximum recursion depth"))
 
     with pytest.raises(RehuFormatError) as exc_info:
@@ -2960,9 +2977,98 @@ def test_load_rejects_non_object(mocker: MockerFixture) -> None:
     * mock ``Path.read_text`` to return a JSON array
     * verify loading raises :class:`RehuFormatError`
     """
-    mocker.patch.object(Path, "read_text", return_value="[1, 2, 3]")
+    mock_file_contents(mocker, "[1, 2, 3]")
     with pytest.raises(RehuFormatError):
         RehuDocument.load(FAKE_PATH)
+
+
+# region Sanity caps (#88, [[data-model#write-integrity]])
+
+
+def test_load_refuses_an_oversized_file(mocker: MockerFixture) -> None:
+    """A file over :data:`MAX_FILE_BYTES` is refused **before** it is read into memory.
+
+    **Test steps:**
+
+    * mock ``Path.stat`` to report a size over the cap, and ``Path.read_text`` to prove it is never
+      reached
+    * verify loading raises :class:`RehuFormatError`, and ``read_text`` was never called
+    """
+    mocker.patch.object(Path, "stat", return_value=mocker.Mock(st_size=MAX_FILE_BYTES + 1))
+    read_text = mocker.patch.object(Path, "read_text")
+
+    with pytest.raises(RehuFormatError, match="exceeds"):
+        RehuDocument.load(FAKE_PATH)
+
+    read_text.assert_not_called()
+
+
+def test_load_refuses_excessive_json_nesting(mocker: MockerFixture) -> None:
+    """JSON nested deeper than :data:`MAX_JSON_NESTING_DEPTH` is refused, before ``json.loads`` ever
+    runs -- CPython's own scanner does not reliably catch this (#88, ``RecursionError`` alone is
+    platform-dependent).
+
+    **Test steps:**
+
+    * build JSON text nested one level past the cap
+    * verify loading raises :class:`RehuFormatError`
+    """
+    text = "{" * (MAX_JSON_NESTING_DEPTH + 1) + "}" * (MAX_JSON_NESTING_DEPTH + 1)
+    mock_file_contents(mocker, text)
+
+    with pytest.raises(RehuFormatError, match="nesting depth"):
+        RehuDocument.load(FAKE_PATH)
+
+
+def test_load_does_not_count_braces_inside_strings_as_nesting(mocker: MockerFixture) -> None:
+    """The depth scan is string-aware: braces inside a string value (a title, a Markdown description)
+    are ordinary user text, not structure, and must not trip the cap.
+
+    **Test steps:**
+
+    * build a shallow, valid document whose description string alone holds more brace characters than
+      :data:`MAX_JSON_NESTING_DEPTH`
+    * verify it loads without raising
+    """
+    description = "{" * (MAX_JSON_NESTING_DEPTH * 2)
+    mock_file_contents(mocker, json.dumps({"core": {"description": description}}))
+
+    doc = RehuDocument.load(FAKE_PATH)
+
+    assert doc.core["description"] == description
+
+
+def test_load_refuses_a_collection_past_the_entry_cap(mocker: MockerFixture) -> None:
+    """A list holding more than :data:`MAX_COLLECTION_LENGTH` entries is refused.
+
+    **Test steps:**
+
+    * build a document whose ``sources`` list is one entry past the cap
+    * verify loading raises :class:`RehuFormatError`
+    """
+    payload = {"core": {"sources": [{"title": "x"}] * (MAX_COLLECTION_LENGTH + 1)}}
+    mock_file_contents(mocker, json.dumps(payload))
+
+    with pytest.raises(RehuFormatError, match="entries exceeds"):
+        RehuDocument.load(FAKE_PATH)
+
+
+def test_load_refuses_a_string_past_the_length_cap(mocker: MockerFixture) -> None:
+    """A single string value over :data:`MAX_STRING_LENGTH` characters is refused.
+
+    **Test steps:**
+
+    * build a document whose ``description`` is one character past the cap
+    * verify loading raises :class:`RehuFormatError`
+    """
+    payload = {"core": {"description": "x" * (MAX_STRING_LENGTH + 1)}}
+    mock_file_contents(mocker, json.dumps(payload))
+
+    with pytest.raises(RehuFormatError, match="characters exceeds"):
+        RehuDocument.load(FAKE_PATH)
+
+
+# endregion
 
 
 # region Reserved-key misuse (#90, [[data-model#rehu-format]])
@@ -3092,7 +3198,7 @@ def test_reserved_key_misuse_is_refused_from_load_too(mocker: MockerFixture) -> 
     * mock ``Path.read_text`` to return the malformed JSON on disk
     * verify loading raises :class:`RehuFormatError`
     """
-    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": {"x": 1}}))
+    mock_file_contents(mocker, json.dumps({"format_version": {"x": 1}}))
     with pytest.raises(RehuFormatError, match="'format_version' holds an object"):
         RehuDocument.load(FAKE_PATH)
 
@@ -3108,7 +3214,7 @@ def test_reserved_key_misuse_locks_the_document_via_open_or_locked(mocker: Mocke
     * mock ``Path.read_text`` to return the malformed JSON on disk
     * verify the returned document is an empty, load-failed stub whose lock reason carries the message
     """
-    mocker.patch.object(Path, "read_text", return_value=json.dumps({"format_version": 2, "core": {"type": "core"}}))
+    mock_file_contents(mocker, json.dumps({"format_version": 2, "core": {"type": "core"}}))
     doc = RehuDocument.open_or_locked(FAKE_PATH)
     assert doc.load_failed is True
     assert doc.lock_reasons[0].kind is LockReasonKind.INVALID_FILE
@@ -3522,7 +3628,7 @@ def test_open_or_locked_returns_an_invalid_file_stub_for_unparseable_content(moc
     * call ``open_or_locked``
     * verify the sole reason is ``INVALID_FILE`` with a non-empty message
     """
-    mocker.patch.object(Path, "read_text", return_value="{not valid json")
+    mock_file_contents(mocker, "{not valid json")
 
     doc = RehuDocument.open_or_locked(FAKE_PATH)
 
@@ -3540,7 +3646,7 @@ def test_open_or_locked_returns_a_genuinely_loaded_document_on_success(mocker: M
     * call ``open_or_locked``
     * verify the document loaded its fields and is not a load failure
     """
-    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    mock_file_contents(mocker, json.dumps(TUTORIAL))
 
     doc = RehuDocument.open_or_locked(FAKE_PATH)
 
@@ -3607,7 +3713,7 @@ def test_new_id_survives_a_save_load_round_trip(mocker: MockerFixture) -> None:
 
     doc.save()
 
-    mocker.patch.object(Path, "read_text", return_value=write.call_args[0][1])
+    mock_file_contents(mocker, write.call_args[0][1])
     reloaded = RehuDocument.load(FAKE_PATH)
     assert reloaded.id == minted_id
 
@@ -3683,7 +3789,7 @@ def test_reload_after_a_fix_drops_the_lock(mocker: MockerFixture) -> None:
     doc = RehuDocument.open_or_locked(FAKE_PATH)
     assert doc.load_failed is True
 
-    mocker.patch.object(Path, "read_text", return_value=json.dumps(TUTORIAL))
+    mock_file_contents(mocker, json.dumps(TUTORIAL))
     doc.reload()
 
     assert doc.load_failed is False

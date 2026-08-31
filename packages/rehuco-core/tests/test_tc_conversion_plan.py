@@ -72,14 +72,15 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
             raise OSError(self)
         return (yaml_by_path or {}).get(self, DEFAULT_YAML)
 
+    def stat(self: Path) -> Any:
+        # `st_size` mirrors what `read_text` would serve for this same path, so the two never disagree
+        # -- #88's byte cap reads `stat()` before any content is read.
+        size = len((yaml_by_path or {}).get(self, DEFAULT_YAML).encode("utf-8"))
+        return mocker.MagicMock(st_mtime=(mtimes or {}).get(self, DEFAULT_MTIME), st_size=size)
+
     mocker.patch.object(Path, "read_text", autospec=True, side_effect=read_text)
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in existing)
-    mocker.patch.object(
-        Path,
-        "stat",
-        autospec=True,
-        side_effect=lambda self: mocker.MagicMock(st_mtime=(mtimes or {}).get(self, DEFAULT_MTIME)),
-    )
+    mocker.patch.object(Path, "stat", autospec=True, side_effect=stat)
     return {
         "scandir": mocker.patch("rehuco_core.tc_conversion_plan.os.scandir", side_effect=scandir),
         "scan": mocker.patch(

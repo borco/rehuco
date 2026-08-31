@@ -25,6 +25,7 @@ from .migrations import CURRENT_FORMAT_VERSION, current_block_version
 from .plugins import DEFAULT_PLUGIN_REGISTRY, DEFAULT_UNKNOWN_USERNAME, USERS_KEY
 from .rehu_document import RehuDocument, RehuFormatError
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY
+from .rehu_parse_limits import excessive_entry_reason, oversized_file_reason
 
 
 def load_tc(path: Path | str, *, username: str = DEFAULT_UNKNOWN_USERNAME) -> RehuDocument:
@@ -104,22 +105,28 @@ class TcDocument:
         can leave a genuinely empty ``info.tc`` on disk.
 
         A ``.tc`` is untrusted outside input just as a ``.rehu`` is ([[data-model#write-integrity]]), so a
-        payload the parser cannot survive is **refused** rather than escaping as whatever it happened to
-        raise. ``yaml.safe_load`` raises more than ``YAMLError``: an over-long integer literal trips
-        CPython's integer-digit limit inside the ``int`` constructor (a bare ``ValueError``), and deep
-        nesting exhausts the interpreter stack (``RecursionError``). ``YAMLError`` is not a ``ValueError``,
-        so all three are needed.
+        payload the parser cannot survive, or that trips a sanity cap
+        (:mod:`rehuco_core.rehu_parse_limits`, #88), is **refused** rather than escaping as whatever it
+        happened to raise, or exhausting memory. ``yaml.safe_load`` raises more than ``YAMLError``: an
+        over-long integer literal trips CPython's integer-digit limit inside the ``int`` constructor (a
+        bare ``ValueError``), and deep nesting exhausts the interpreter stack (``RecursionError``) --
+        unlike ``json.loads`` (#88's platform-dependent finding), PyYAML's pure-Python parser genuinely
+        does consult the interpreter's recursion limit, so ``RecursionError`` alone already catches
+        excessive nesting here; no separate pre-parse depth scan is needed. ``YAMLError`` is not a
+        ``ValueError``, so all three are needed.
 
-        This does **not** make parsing safe against a hostile file's *size* -- the sanity caps (total
-        bytes, nesting depth, entry counts) are not implemented, and the read below buys the whole file
-        into memory before ``yaml`` ever sees it (#88).
+        The byte cap runs against ``stat()`` before the file is read into memory at all; the
+        collection/string-length cap runs against the parsed value.
 
         :param path: path to the ``.tc`` file.
         :returns: a document backed by the parsed YAML mapping.
-        :raises RehuFormatError: if the file cannot be parsed, or its top-level YAML value is neither a
-            mapping nor empty.
+        :raises RehuFormatError: if the file cannot be parsed, its top-level YAML value is neither a
+            mapping nor empty, or it trips a sanity cap.
         """
         path = Path(path)
+        oversized = oversized_file_reason(path.stat().st_size)
+        if oversized is not None:
+            raise RehuFormatError(f"Refusing to parse — {oversized}")
         try:
             data: object = yaml.safe_load(path.read_text(encoding="utf-8"))
         except (yaml.YAMLError, ValueError, RecursionError) as exc:
@@ -128,6 +135,9 @@ class TcDocument:
             data = {}
         if not isinstance(data, dict):
             raise RehuFormatError("Expected a YAML mapping at the top level.")
+        oversized_entry = excessive_entry_reason(data)
+        if oversized_entry is not None:
+            raise RehuFormatError(f"Refusing to parse — {oversized_entry}")
         return cls(data)
 
     @property
