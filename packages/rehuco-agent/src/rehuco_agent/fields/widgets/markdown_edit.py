@@ -29,32 +29,61 @@ IMAGE_LINK_PATTERN: Final = re.compile(r"!\[[^\]]*\]\(([^)]*)$")
 """Matches an in-progress Markdown image reference up to the caret, e.g. ``![alt](already-typed``
 -- capturing the filename fragment typed so far, for image-filename autocomplete."""
 
+WRAPPED: Final = Scintilla.Wrap.Word
+"""Wrap mode applied while :attr:`MarkdownEdit.wrap_long_lines` is on."""
+
+NOT_WRAPPED: Final = Scintilla.Wrap.None_
+"""Wrap mode applied while :attr:`MarkdownEdit.wrap_long_lines` is off -- Scintilla's own default."""
+
 
 class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
-    """A `ScintillaEdit` configured as a Markdown source editor (#74): a visible line-number margin,
-    wrapped long lines, a visible end-of-line glyph, typing that reaches every line of a block
-    (rectangular) selection (Alt+drag / Alt+Shift+Arrow) at once, and autocomplete offering this
+    """A `ScintillaEdit` configured as a Markdown source editor (#74): a line-number margin, wrapped
+    long lines, a visible end-of-line glyph -- each independently toggleable (:attr:`line_numbers`,
+    :attr:`wrap_long_lines`, :attr:`line_endings_visible`, #69) -- typing that reaches every line of a
+    block (rectangular) selection (Alt+drag / Alt+Shift+Arrow) at once, and autocomplete offering this
     resource's own image filenames while typing an in-progress ``![alt](...)`` reference, or on
     demand (the full list) via Ctrl+Space.
 
     :param parent: optional Qt parent.
     :param image_scanner: resolves this resource's own image filenames, offered by autocomplete;
         omit for an editor that offers none (e.g. a bare instance in isolation/tests).
+    :param line_numbers: the starting state of :attr:`line_numbers`.
+    :param line_endings_visible: the starting state of :attr:`line_endings_visible`.
+    :param wrap_long_lines: the starting state of :attr:`wrap_long_lines`.
     """
 
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """Resolves this resource's own image filenames, offered by autocomplete; ``None`` offers none."""
 
-    def __init__(self, parent: QWidget | None = None, image_scanner: ImageScanner | None = None) -> None:
+    line_numbers = SimpleProperty(True)
+    """Whether the line-number margin (:data:`LINE_NUMBER_MARGIN`) is shown."""
+
+    line_endings_visible = SimpleProperty(True)
+    """Whether a visible end-of-line glyph (:data:`EOL_REPRESENTATION`) is drawn at each line's end."""
+
+    wrap_long_lines = SimpleProperty(True)
+    """Whether long lines wrap instead of scrolling horizontally."""
+
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        image_scanner: ImageScanner | None = None,
+        *,
+        line_numbers: bool = True,
+        line_endings_visible: bool = True,
+        wrap_long_lines: bool = True,
+    ) -> None:
         super().__init__(parent)
         self.image_scanner = image_scanner
         self.__setup_appearance()
+        self.__setup_toggles(line_numbers, line_endings_visible, wrap_long_lines)
         self.__setup_autocomplete()
         self.__setup_theme_reactivity()
 
     def __setup_appearance(self) -> None:
-        """Line numbers, wrapped long lines, a visible end-of-line glyph, and block (rectangular)
-        select/edit.
+        """Static appearance, independent of the three toggleable states :meth:`__setup_toggles`
+        seeds and applies: the line-number margin's type, the EOL glyph's look, and block
+        (rectangular) select/edit.
 
         Rectangular selection itself (Alt+drag / Alt+Shift+Arrow) and its virtual-space placement
         past a shorter line's real end are left at Scintilla's own defaults, deliberately not
@@ -69,23 +98,68 @@ class MarkdownEdit(ScintillaEdit):  # pylint: disable=too-few-public-methods
         self.__setup_font()
 
         self.setMarginTypeN(LINE_NUMBER_MARGIN, Scintilla.MarginType.Number)
-        self.setMarginWidthN(LINE_NUMBER_MARGIN, self.textWidth(Scintilla.StylesCommon.LineNumber, "9999"))
         self.setMarginWidthN(SYMBOL_MARGIN, 0)
 
-        self.setViewEOL(True)
         # CR LF has its own representation slot, separate from CR and LF's own -- Scintilla falls
         # back to drawing CR's and LF's individual representations side by side when it's unset,
         # doubling the glyph on a CRLF-terminated line, so all three need setting, not just CR/LF.
+        # Configuring the glyph's look is independent of whether it's shown (setViewEOL, applied by
+        # __setup_toggles) -- Scintilla just doesn't draw it while that's off.
         for sequence in ("\r", "\n", "\r\n"):
             self.setRepresentation(sequence, EOL_REPRESENTATION)
             self.setRepresentationAppearance(sequence, Scintilla.RepresentationAppearance.Colour)
-        self.setWrapMode(Scintilla.Wrap.Word)
         # loaded/echoed text is already LF-only (RehuDocument.description normalizes on read) --
         # this only governs what a newly-typed Enter inserts, keeping live edits consistent too
         self.setEOLMode(Scintilla.EndOfLine.Lf)
 
         self.setMultipleSelection(True)
         self.setAdditionalSelectionTyping(True)
+
+    def __setup_toggles(self, line_numbers: bool, line_endings_visible: bool, wrap_long_lines: bool) -> None:
+        """Seed the three toggleable states and apply them, then keep applying on every later change
+        -- e.g. the description field's misc-bar toggle buttons (#69).
+
+        Assigning a `~borco_pyside.core.SimpleProperty` its own default value is a no-op (no
+        ``*_changed`` emission), so seeding alone would silently skip applying a start state that
+        happens to match the class default (``True``) -- each is therefore applied once here
+        explicitly, in addition to being connected for every later change.
+
+        :param line_numbers: the starting state of :attr:`line_numbers`.
+        :param line_endings_visible: the starting state of :attr:`line_endings_visible`.
+        :param wrap_long_lines: the starting state of :attr:`wrap_long_lines`.
+        """
+        self.line_numbers_changed.connect(self.__apply_line_numbers)  # type: ignore[attr-defined]
+        self.line_endings_visible_changed.connect(self.__apply_line_endings_visible)  # type: ignore[attr-defined]
+        self.wrap_long_lines_changed.connect(self.__apply_wrap_long_lines)  # type: ignore[attr-defined]
+
+        self.line_numbers = line_numbers
+        self.line_endings_visible = line_endings_visible
+        self.wrap_long_lines = wrap_long_lines
+        self.__apply_line_numbers(self.line_numbers)
+        self.__apply_line_endings_visible(self.line_endings_visible)
+        self.__apply_wrap_long_lines(self.wrap_long_lines)
+
+    def __apply_line_numbers(self, visible: bool) -> None:
+        """Show or hide the line-number margin.
+
+        :param visible: the new :attr:`line_numbers` state.
+        """
+        width = self.textWidth(Scintilla.StylesCommon.LineNumber, "9999") if visible else 0
+        self.setMarginWidthN(LINE_NUMBER_MARGIN, width)
+
+    def __apply_line_endings_visible(self, visible: bool) -> None:
+        """Show or hide the end-of-line glyph.
+
+        :param visible: the new :attr:`line_endings_visible` state.
+        """
+        self.setViewEOL(visible)
+
+    def __apply_wrap_long_lines(self, wrap: bool) -> None:
+        """Wrap long lines, or let them scroll horizontally instead.
+
+        :param wrap: the new :attr:`wrap_long_lines` state.
+        """
+        self.setWrapMode(WRAPPED if wrap else NOT_WRAPPED)
 
     def __setup_font(self) -> None:
         """Force a monospace font onto every style (#75).

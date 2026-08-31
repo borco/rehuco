@@ -35,6 +35,7 @@ from ..fields import (
     TypeField,
     UnknownField,
 )
+from ..settings.description_editor_settings import shared_description_editor_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
@@ -416,9 +417,10 @@ def build_document_form(
         "description",
         image_scanner=model.image_scanner,
         image_scanner_changed=model.image_scanner_changed,  # type: ignore[attr-defined]
-        # the shared settings satisfy the DescriptionRenderingSettings protocol at runtime; only the
+        # both shared settings satisfy their toolkit protocols at runtime; only the
         # SimpleProperty/Signal descriptor duality trips static protocol matching (see bind_value_widget)
         rendering_settings=shared_markdown_rendering_settings(),  # type: ignore[arg-type]
+        editor_settings=shared_description_editor_settings(),  # type: ignore[arg-type]
         viewer_tab=VIEWER_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )

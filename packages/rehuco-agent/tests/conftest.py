@@ -27,6 +27,7 @@ from rehuco_agent.fields.widgets.markdown_view import render_markdown
 from rehuco_agent.settings import (
     checksum_settings,
     default_layout_settings,
+    description_editor_settings,
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
@@ -38,6 +39,7 @@ from rehuco_agent.settings import (
 )
 from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
+from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
@@ -154,6 +156,22 @@ def isolate_shared_markdown_rendering_settings(mocker: MockerFixture) -> Iterato
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_markdown_rendering_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_description_editor_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `DescriptionEditorSettings` singleton (#69).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`, and reached the same
+    indirect way: whichever test first builds a document's fields (``DescriptionField.make_editor``)
+    would otherwise pin an instance loaded from the developer's real on-disk settings for the rest
+    of the session. Tests that specifically exercise these settings patch ``persistent_settings``
+    themselves.
+    """
+    shared_description_editor_settings.cache_clear()
+    mocker.patch.object(description_editor_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_description_editor_settings.cache_clear()
 
 
 @fixture(autouse=True)

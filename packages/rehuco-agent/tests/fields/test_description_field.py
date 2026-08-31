@@ -5,6 +5,7 @@ from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.widgets import MarkdownEdit, MarkdownView
+from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 from fields.field_testers import DescriptionFieldTester as DescriptionField
@@ -249,6 +250,107 @@ def test_description_editor_follows_an_external_model_change(qtbot: QtBot, model
 
     model.description = "external prose"
     assert editor_text(editor) == "external prose"
+
+
+def test_editor_seeds_from_the_shared_editor_settings(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A newly-built editor starts from the shared description-editor settings' current values
+    (#69), not `MarkdownEdit`'s own all-on defaults.
+
+    **Test steps:**
+
+    * turn every shared editor setting off
+    * build the editor
+    * verify all three of its states start off
+    """
+    settings = shared_description_editor_settings()
+    settings.show_line_numbers = False
+    settings.show_line_endings = False
+    settings.wrap_long_lines = False
+
+    field = DescriptionField("description")
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+
+    assert editor.line_numbers is False
+    assert editor.line_endings_visible is False
+    assert editor.wrap_long_lines is False
+
+
+def test_editor_follows_live_editor_settings_changes(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """An already-open editor picks up the shared description-editor settings' values whenever they
+    change (#69) -- so a Save on the settings page restyles every open document's editor
+    immediately, not just newly-opened ones.
+
+    **Test steps:**
+
+    * build the editor (every setting on by default)
+    * flip each shared setting off in turn
+    * verify the editor's matching state followed each time
+    """
+    field = DescriptionField("description")
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+    settings = shared_description_editor_settings()
+
+    settings.show_line_numbers = False
+    assert editor.line_numbers is False
+
+    settings.show_line_endings = False
+    assert editor.line_endings_visible is False
+
+    settings.wrap_long_lines = False
+    assert editor.wrap_long_lines is False
+
+
+def test_two_open_editors_both_follow_a_settings_change(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """A shared-settings change reaches *every* open editor at once (#69), not just the most
+    recently built one.
+
+    **Test steps:**
+
+    * build two editors over separate fields (as two open documents would)
+    * flip one shared setting
+    * verify both editors followed
+    """
+    first_field = DescriptionField("description")
+    second_field = DescriptionField("description")
+    first = first_field.make_editor(model.bind(first_field)).editor
+    second = second_field.make_editor(model.bind(second_field)).editor
+    assert isinstance(first, MarkdownEdit)
+    assert isinstance(second, MarkdownEdit)
+    qtbot.addWidget(first)
+    qtbot.addWidget(second)
+
+    shared_description_editor_settings().wrap_long_lines = False
+
+    assert first.wrap_long_lines is False
+    assert second.wrap_long_lines is False
+
+
+def test_editor_without_editor_settings_uses_defaults_and_ignores_changes(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """With ``editor_settings=None`` the editor starts on `MarkdownEdit`'s own defaults and is not
+    wired to follow the shared settings (#69) -- the bare, settings-agnostic path, mirroring the
+    viewer's ``rendering_settings=None``.
+
+    **Test steps:**
+
+    * build the editor with ``editor_settings=None``
+    * verify it starts with every state on
+    * flip a shared setting and verify the editor does *not* follow it (no wiring)
+    """
+    field = DescriptionField("description", editor_settings=None)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, MarkdownEdit)
+    qtbot.addWidget(editor)
+
+    assert editor.wrap_long_lines is True
+
+    shared_description_editor_settings().wrap_long_lines = False
+    assert editor.wrap_long_lines is True
 
 
 def test_description_editor_and_viewer_stay_live_together(qtbot: QtBot, model: RehuDocumentModel) -> None:

@@ -1,28 +1,31 @@
-"""Descriptions settings page: renderer engine choice and its per-engine CSS (#26, #47)."""
+"""Descriptions settings page: renderer engine choice, its per-engine CSS (#26, #47), and the editor's
+line-numbers/line-endings/wrap-long-lines switches (#69)."""
 
 from typing import Final
 
 from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QWidget
 
+from ..description_editor_settings import shared_description_editor_settings
 from ..markdown_rendering_settings import shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
 from .descriptions_page_ui import Ui_DescriptionsPage
 
 
 class DescriptionsPage(QWidget):
-    """Configure how every document's description field renders (#26's constants, made
-    configurable): the Markdown engine and its per-engine CSS.
+    """Configure every document's description field (#26's constants, made configurable): how it
+    *renders* -- the Markdown engine and its per-engine CSS -- and how its *editor* looks -- line
+    numbers, line endings, wrap long lines (#69).
 
     The width cap on an embedded image is `ImagesPage`'s, not this page's -- it shares
     `MarkdownRenderingSettings` with the two fields here but answers a different question, and a
-    reader looking for it went to Images first. This page keeps what decides how a description
-    *renders*.
+    reader looking for it went to Images first. This page keeps what is description-specific.
 
     Edits are staged locally (including a separate CSS draft per engine, swapped into the one
     ``css_edit`` box as the engine radio changes) until :meth:`save_changes` pushes them into the
-    shared `MarkdownRenderingSettings` instance -- firing its ``_changed`` signals, which every
-    open document's ``MarkdownView`` is already connected to, so already-open viewers re-render
+    shared `MarkdownRenderingSettings` and `DescriptionEditorSettings` instances -- firing their
+    ``_changed`` signals, which every open document's ``MarkdownView`` and ``MarkdownEdit`` are
+    already connected to, so already-open viewers re-render and already-open editors restyle
     immediately.
 
     :param parent: optional Qt parent.
@@ -57,21 +60,31 @@ class DescriptionsPage(QWidget):
     def is_dirty(self) -> bool:
         """Whether any staged edit differs from the shared settings' current values."""
         settings = shared_markdown_rendering_settings()
+        editor_settings = shared_description_editor_settings()
         return (
             self.__current_engine() != settings.engine
             or self.__markdown_css_draft != settings.markdown_css
             or self.__mistletoe_css_draft != settings.mistletoe_css
+            or self.__ui.line_numbers_check_box.isChecked() != editor_settings.show_line_numbers
+            or self.__ui.line_endings_check_box.isChecked() != editor_settings.show_line_endings
+            or self.__ui.wrap_long_lines_check_box.isChecked() != editor_settings.wrap_long_lines
         )
 
     def save_changes(self) -> None:
-        """Push the staged edits into the shared settings object (live-updating open viewers) and
-        persist them."""
+        """Push the staged edits into the shared settings objects (live-updating open viewers and
+        editors) and persist them."""
         self.__sync_current_css_draft()
         settings = shared_markdown_rendering_settings()
         settings.engine = self.__current_engine()
         settings.markdown_css = self.__markdown_css_draft
         settings.mistletoe_css = self.__mistletoe_css_draft
         settings.save(persistent_settings())
+
+        editor_settings = shared_description_editor_settings()
+        editor_settings.show_line_numbers = self.__ui.line_numbers_check_box.isChecked()
+        editor_settings.show_line_endings = self.__ui.line_endings_check_box.isChecked()
+        editor_settings.wrap_long_lines = self.__ui.wrap_long_lines_check_box.isChecked()
+        editor_settings.save(persistent_settings())
 
     def drop_changes(self) -> None:
         """Discard staged edits, reverting every field back to the shared settings' current values."""
@@ -83,6 +96,11 @@ class DescriptionsPage(QWidget):
         else:
             self.__ui.markdown_engine_radio_button.setChecked(True)
         self.__show_current_css_draft()
+
+        editor_settings = shared_description_editor_settings()
+        self.__ui.line_numbers_check_box.setChecked(editor_settings.show_line_numbers)
+        self.__ui.line_endings_check_box.setChecked(editor_settings.show_line_endings)
+        self.__ui.wrap_long_lines_check_box.setChecked(editor_settings.wrap_long_lines)
 
     def __current_engine(self) -> str:
         """The engine currently selected in the radio buttons."""

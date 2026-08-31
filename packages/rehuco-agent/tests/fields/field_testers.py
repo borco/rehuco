@@ -32,6 +32,7 @@ from rehuco_agent.fields.text_list_field import TextListField
 from rehuco_agent.fields.type_field import TypeField
 from rehuco_agent.fields.unknown_field import UnknownField
 from rehuco_agent.fields.url_field import UrlField
+from rehuco_agent.settings.description_editor_settings import shared_description_editor_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 TEST_VIEWER_TAB = FieldsTab("Test Viewer", ":/test/viewer.svg")
@@ -180,10 +181,11 @@ class PathFieldTester(PathField):
 
 
 class DescriptionFieldTester(DescriptionField):
-    """`DescriptionField` with fixed test tabs and the shared rendering settings by default."""
+    """`DescriptionField` with fixed test tabs and the shared rendering/editor settings by default."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.setdefault("rendering_settings", shared_markdown_rendering_settings())
+        kwargs.setdefault("editor_settings", shared_description_editor_settings())
         super().__init__(*args, viewer_tab=TEST_VIEWER_TAB, editor_tab=TEST_EDITOR_TAB, **kwargs)
 
 

@@ -40,6 +40,37 @@ class DescriptionRenderingSettings(Protocol):
         re-render trigger only (the scanner reads it live), never read through this contract."""
 
 
+class DescriptionEditorViewSettings(Protocol):
+    """The live description-editor settings a `DescriptionField` editor follows (#69): line
+    numbers, line endings, wrap long lines.
+
+    Mirrors `DescriptionRenderingSettings`'s inversion exactly: the toolkit only ever sees three
+    booleans and one aggregate change signal, never the app's settings storage -- a newly-built
+    editor seeds from the current values, and every already-open editor re-applies them wholesale
+    whenever the signal fires, so a Save on the settings page restyles all open documents at once.
+    The app's settings layer implements it
+    (``settings.description_editor_settings.DescriptionEditorSettings``), and the owner injects the
+    shared, process-wide instance (`document_fields.build_document_form`).
+    """
+
+    @property
+    def show_line_numbers(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether the editor shows its line-number margin."""
+
+    @property
+    def show_line_endings(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether the editor draws a visible end-of-line glyph."""
+
+    @property
+    def wrap_long_lines(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether the editor wraps long lines instead of scrolling horizontally."""
+
+    @property
+    def description_editor_changed(self) -> SignalInstance:  # pyright: ignore[reportReturnType]
+        """Fires when any of the three settings changes -- i.e. whenever an already-open editor
+        needs to re-apply them."""
+
+
 class DescriptionField(Field[str]):
     """A ``description`` field ([[plugins#field-toolkit]], [[plugins#viewer-editor-both]]): the resource's
     Markdown prose. The **viewer** renders it (`MarkdownView`); the **editor** is a `MarkdownEdit`
@@ -62,6 +93,10 @@ class DescriptionField(Field[str]):
     :param rendering_settings: the shared, live-reactive Markdown-rendering settings the viewer seeds
         from and re-renders on (#26, #47), injected by the owner rather than reached for directly;
         omit for a bare viewer that renders with the defaults and does not follow settings changes.
+    :param editor_settings: the shared, live-reactive description-editor settings (#69) the editor
+        seeds from and re-applies on, injected by the owner rather than reached for directly; omit
+        for a bare editor that starts with `MarkdownEdit`'s own defaults and does not follow
+        settings changes.
     """
 
     TYPE = "description"
@@ -74,6 +109,7 @@ class DescriptionField(Field[str]):
         image_scanner_changed: SignalInstance | None = None,
         *,
         rendering_settings: DescriptionRenderingSettings | None = None,
+        editor_settings: DescriptionEditorViewSettings | None = None,
         viewer_tab: FieldsTab,
         editor_tab: FieldsTab,
     ) -> None:
@@ -81,6 +117,7 @@ class DescriptionField(Field[str]):
         self.__image_scanner: Final = image_scanner
         self.__image_scanner_changed: Final = image_scanner_changed
         self.__rendering_settings: Final = rendering_settings
+        self.__editor_settings: Final = editor_settings
 
     @override
     def make_viewer(self, binding: FieldBinding[str]) -> FieldViewerWidgets:
@@ -130,15 +167,48 @@ class DescriptionField(Field[str]):
 
     @override
     def make_editor(self, binding: FieldBinding[str]) -> FieldEditorWidgets:
-        editor = MarkdownEdit(image_scanner=self.__image_scanner)
+        settings = self.__editor_settings
+        if settings is None:
+            editor = MarkdownEdit(image_scanner=self.__image_scanner)
+        else:
+            editor = MarkdownEdit(
+                image_scanner=self.__image_scanner,
+                line_numbers=settings.show_line_numbers,
+                line_endings_visible=settings.show_line_endings,
+                wrap_long_lines=settings.wrap_long_lines,
+            )
         editor.setObjectName(self.name)
         editor.setText(binding.value)
         editor.notifyChange.connect(lambda *_: binding.set_value(self.__text(editor)))
         self.bind_external(binding.changed, lambda value: self.__echo(editor, value))
         if self.__image_scanner_changed is not None:
             self.__image_scanner_changed.connect(editor.set_image_scanner)  # type: ignore[attr-defined]
+        if settings is not None:
+            self.__wire_editor_settings(editor, settings)
         # no label for the editor tab, since the tab itself is the label
         return FieldEditorWidgets(self.editor_tab, None, editor, vertical=True, fill=True)
+
+    def __wire_editor_settings(self, editor: MarkdownEdit, settings: DescriptionEditorViewSettings) -> None:
+        """Re-apply the shared description-editor settings' current values to ``editor`` whenever
+        they change (#69) -- so a Save on the settings page restyles an already-open editor
+        immediately, not just newly-opened ones. One binding to the settings' aggregate
+        ``description_editor_changed`` covers all three toggles at once; the editor re-applies them
+        wholesale (each `MarkdownEdit` property setter is a no-op for an unchanged value), so it
+        never needs to know which of them moved -- :meth:`__wire_rendering_settings`'s exact shape.
+
+        :param editor: the editor to keep in sync.
+        :param settings: the shared, live-reactive settings to follow.
+        """
+
+        def apply_current_settings(*_args: object) -> None:
+            editor.line_numbers = settings.show_line_numbers
+            editor.line_endings_visible = settings.show_line_endings
+            editor.wrap_long_lines = settings.wrap_long_lines
+
+        # the settings are an app-wide singleton, far longer-lived than this editor -- so route this
+        # through bind_external, which the form clears on a rebuild/destroy, rather than a raw connect
+        # that would fire into a deleted editor
+        self.bind_external(settings.description_editor_changed, apply_current_settings)
 
     @staticmethod
     def __text(editor: MarkdownEdit) -> str:

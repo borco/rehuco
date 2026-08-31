@@ -6,7 +6,11 @@ from typing import Any
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings import markdown_rendering_settings
+from rehuco_agent.settings import description_editor_settings, markdown_rendering_settings
+from rehuco_agent.settings.description_editor_settings import (
+    DescriptionEditorSettings,
+    shared_description_editor_settings,
+)
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.ui import descriptions_page
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
@@ -46,23 +50,26 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
     """Stand in for ``persistent_settings()`` so save/load never touch real storage.
 
-    Patched on both modules that imported their own reference to it: the shared settings module
-    (used by :func:`shared_markdown_rendering_settings`'s lazy load) and the page module itself
-    (used by :meth:`DescriptionsPage.save_changes`).
+    Patched on every module that imported its own reference to it: the two shared settings modules
+    (used by their singletons' lazy loads) and the page module itself (used by
+    :meth:`DescriptionsPage.save_changes`).
     """
     fake = FakeSettings()
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(description_editor_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(descriptions_page, "persistent_settings", return_value=fake)
     return fake
 
 
 @fixture(autouse=True)
 def clear_shared_instance_cache() -> Iterator[None]:
-    """Clear the shared settings singleton before and after every test (see
+    """Clear both shared settings singletons before and after every test (see
     ``test_markdown_rendering_settings.py`` for the full rationale)."""
     shared_markdown_rendering_settings.cache_clear()
+    shared_description_editor_settings.cache_clear()
     yield
     shared_markdown_rendering_settings.cache_clear()
+    shared_description_editor_settings.cache_clear()
 
 
 # endregion
@@ -236,6 +243,110 @@ def test_drop_changes_reverts_edits(qtbot: QtBot) -> None:
 
     assert ui.markdown_engine_radio_button.isChecked()
     assert ui.css_edit.toPlainText() == ""
+    assert page.is_dirty() is False
+
+
+def test_editor_check_boxes_start_with_the_shared_settings_current_values(qtbot: QtBot) -> None:
+    """A freshly-built page's three editor checkboxes reflect the shared editor settings' current
+    values (#69).
+
+    **Test steps:**
+
+    * seed the shared editor settings with everything off
+    * build the page
+    * verify every checkbox starts unchecked
+    """
+    settings = shared_description_editor_settings()
+    settings.show_line_numbers = False
+    settings.show_line_endings = False
+    settings.wrap_long_lines = False
+
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert ui.line_numbers_check_box.isChecked() is False
+    assert ui.line_endings_check_box.isChecked() is False
+    assert ui.wrap_long_lines_check_box.isChecked() is False
+
+
+def test_toggling_an_editor_check_box_makes_the_page_dirty(qtbot: QtBot) -> None:
+    """Toggling any of the three editor checkboxes makes the page dirty (#69).
+
+    **Test steps:**
+
+    * build the page and uncheck the wrap-long-lines checkbox
+    * verify ``is_dirty`` is ``True``
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    ui.wrap_long_lines_check_box.setChecked(False)
+
+    assert page.is_dirty() is True
+
+
+def test_save_changes_updates_the_shared_editor_settings_and_persists(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings, mocker: MockerFixture
+) -> None:
+    """``save_changes`` pushes the staged editor checkboxes into the shared editor settings --
+    firing its aggregate signal, which every open document's editor follows (#69) -- and persists
+    them, independent of the rendering settings it also saves.
+
+    **Test steps:**
+
+    * build the page and connect a spy to the shared settings' aggregate signal
+    * uncheck every editor checkbox and call ``save_changes``
+    * verify the shared settings object reflects every change and the signal fired
+    * verify a fresh load from the persisted store reflects them too
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    settings = shared_description_editor_settings()
+    spy = mocker.Mock()
+    settings.description_editor_changed.connect(spy)
+    ui.line_numbers_check_box.setChecked(False)
+    ui.line_endings_check_box.setChecked(False)
+    ui.wrap_long_lines_check_box.setChecked(False)
+
+    page.save_changes()
+
+    assert settings.show_line_numbers is False
+    assert settings.show_line_endings is False
+    assert settings.wrap_long_lines is False
+    assert spy.call_count == 3
+
+    reloaded = DescriptionEditorSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert reloaded.show_line_numbers is False
+    assert reloaded.show_line_endings is False
+    assert reloaded.wrap_long_lines is False
+
+
+def test_drop_changes_reverts_the_editor_check_boxes(qtbot: QtBot) -> None:
+    """``drop_changes`` reverts the three editor checkboxes back to the shared editor settings'
+    current values (#69), independent of the rendering-settings fields it also reverts.
+
+    **Test steps:**
+
+    * build the page and uncheck every editor checkbox
+    * call ``drop_changes``
+    * verify every checkbox is back to the (unsaved, still-default) shared value: checked
+    """
+    page = DescriptionsPage()
+    qtbot.addWidget(page)
+    ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    ui.line_numbers_check_box.setChecked(False)
+    ui.line_endings_check_box.setChecked(False)
+    ui.wrap_long_lines_check_box.setChecked(False)
+
+    page.drop_changes()
+
+    assert ui.line_numbers_check_box.isChecked() is True
+    assert ui.line_endings_check_box.isChecked() is True
+    assert ui.wrap_long_lines_check_box.isChecked() is True
     assert page.is_dirty() is False
 
 

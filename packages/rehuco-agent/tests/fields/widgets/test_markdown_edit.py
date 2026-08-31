@@ -165,6 +165,101 @@ def test_long_lines_wrap(qtbot: QtBot) -> None:
     assert editor.wrapMode() == int(Scintilla.Wrap.Word)
 
 
+def test_line_numbers_can_start_hidden(qtbot: QtBot) -> None:
+    """``line_numbers=False`` seeds an editor whose margin starts hidden (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` with ``line_numbers=False``
+    * verify its margin 0 has zero width
+    """
+    editor = MarkdownEdit(line_numbers=False)
+    qtbot.addWidget(editor)
+
+    assert editor.marginWidthN(0) == 0
+
+
+def test_toggling_line_numbers_off_hides_the_margin(qtbot: QtBot) -> None:
+    """Flipping :attr:`MarkdownEdit.line_numbers` off after construction hides the margin live (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` (line numbers shown by default)
+    * set ``line_numbers`` to ``False``
+    * verify its margin 0 width drops to zero
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    editor.line_numbers = False
+
+    assert editor.marginWidthN(0) == 0
+
+
+def test_line_endings_can_start_hidden(qtbot: QtBot) -> None:
+    """``line_endings_visible=False`` seeds an editor with no visible EOL glyph (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` with ``line_endings_visible=False``
+    * verify `viewEOL` is off
+    """
+    editor = MarkdownEdit(line_endings_visible=False)
+    qtbot.addWidget(editor)
+
+    assert editor.viewEOL() is False
+
+
+def test_toggling_line_endings_off_hides_the_glyph(qtbot: QtBot) -> None:
+    """Flipping :attr:`MarkdownEdit.line_endings_visible` off after construction hides the EOL glyph
+    live (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` (EOL glyph shown by default)
+    * set ``line_endings_visible`` to ``False``
+    * verify `viewEOL` is off
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    editor.line_endings_visible = False
+
+    assert editor.viewEOL() is False
+
+
+def test_wrap_long_lines_can_start_off(qtbot: QtBot) -> None:
+    """``wrap_long_lines=False`` seeds an editor whose long lines scroll instead of wrapping (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` with ``wrap_long_lines=False``
+    * verify its wrap mode is `Wrap.None_`
+    """
+    editor = MarkdownEdit(wrap_long_lines=False)
+    qtbot.addWidget(editor)
+
+    assert editor.wrapMode() == int(Scintilla.Wrap.None_)
+
+
+def test_toggling_wrap_long_lines_off_stops_wrapping(qtbot: QtBot) -> None:
+    """Flipping :attr:`MarkdownEdit.wrap_long_lines` off after construction switches the wrap mode
+    live (#69).
+
+    **Test steps:**
+
+    * construct a `MarkdownEdit` (wrapping on by default)
+    * set ``wrap_long_lines`` to ``False``
+    * verify its wrap mode is `Wrap.None_`
+    """
+    editor = MarkdownEdit()
+    qtbot.addWidget(editor)
+
+    editor.wrap_long_lines = False
+
+    assert editor.wrapMode() == int(Scintilla.Wrap.None_)
+
+
 def test_additional_selection_typing_is_enabled(qtbot: QtBot) -> None:
     """Typing reaches every selection at once, not just the most recently touched one -- not
     Scintilla's default of only the main selection (#74).
