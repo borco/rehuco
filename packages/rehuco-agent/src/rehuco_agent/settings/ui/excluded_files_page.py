@@ -65,8 +65,17 @@ class ExcludedFilesPage(QWidget):
         return "Excluded Files"
 
     def is_dirty(self) -> bool:
-        """Whether the staged pattern list differs from the set the shared settings resolve to."""
-        return self.__ui.patterns_editor.values != shared_excluded_files_settings().excluded_file_patterns
+        """Whether applying would change the set the shared settings resolve to.
+
+        The staged list is normalized before the comparison, so a row that saving would drop anyway --
+        a blank insert, a duplicate -- is not yet a change (#53): while *Apply changes as they're made*
+        is on, the dialog commits any dirty page, and a save here reloads the editor from what
+        normalization kept, which would tear a freshly inserted row out from under its open cell.
+        """
+        return (
+            normalize_patterns(self.__ui.patterns_editor.values)
+            != shared_excluded_files_settings().excluded_file_patterns
+        )
 
     def save_changes(self) -> None:
         """Push the staged patterns into the shared settings object, persist them, and show the result.

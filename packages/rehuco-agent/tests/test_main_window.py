@@ -50,6 +50,7 @@ from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
+from rehuco_agent.settings.ui.legacy_screenshots_page import LegacyScreenshotsPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
@@ -453,6 +454,29 @@ def test_registers_the_checksums_page_at_the_top_level(qtbot: QtBot) -> None:
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
+
+
+def test_registers_the_legacy_screenshots_page_at_the_top_level(qtbot: QtBot) -> None:
+    """Legacy screenshot rules govern converting a `.tc` of any resource type, so the page is not in
+    Plugins either (#53) -- the same reasoning the Checksums page records.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the page stack holds a `LegacyScreenshotsPage` and the category tree lists it at the
+      top level
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
+    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
+    assert any(isinstance(page, LegacyScreenshotsPage) for page in pages)
+
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert [model.item(row).text() for row in range(model.rowCount())].count("Legacy Screenshots") == 1
 
 
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:

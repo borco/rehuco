@@ -58,8 +58,16 @@ class LegacyScreenshotsPage(QWidget):
         return "Legacy Screenshots"
 
     def is_dirty(self) -> bool:
-        """Whether the staged rules differ from the set the shared settings resolve to."""
-        return self.__ui.rules_editor.values != shared_legacy_screenshots_settings().legacy_screenshot_rules
+        """Whether applying would change the set the shared settings resolve to.
+
+        The staged rules are normalized before the comparison, so a row that saving would drop anyway --
+        blank, half-typed, uncompilable -- is not yet a change. That is what lets an insert survive
+        while *Apply changes as they're made* is on: the dialog polls this and commits a dirty page,
+        and a save here reloads the editor from what normalization kept, which would tear the fresh
+        row out from under its open cell (#53).
+        """
+        staged = normalize_legacy_screenshot_rules(self.__ui.rules_editor.values)
+        return staged != shared_legacy_screenshots_settings().legacy_screenshot_rules
 
     def save_changes(self) -> None:
         """Push the staged rules into the shared settings object, persist them, and show the result.

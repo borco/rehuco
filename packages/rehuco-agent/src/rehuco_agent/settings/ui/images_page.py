@@ -89,7 +89,10 @@ class ImagesPage(QWidget):
         return (
             self.__staged() != self.__saved()
             or self.__ui.max_image_width_spin_box.value() != shared_markdown_rendering_settings().max_image_width
-            or self.__ui.extensions_editor.values != shared_reference_images_settings().content_image_extensions
+            # normalized before the comparison, so a row saving would drop anyway is not yet a change
+            # and auto-apply does not tear a fresh insert out from under its open cell (#53)
+            or normalize_extensions(self.__ui.extensions_editor.values)
+            != shared_reference_images_settings().content_image_extensions
         )
 
     def save_changes(self) -> None:

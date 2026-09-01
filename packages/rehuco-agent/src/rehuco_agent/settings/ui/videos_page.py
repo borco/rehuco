@@ -73,7 +73,9 @@ class VideosPage(QWidget):
         return (
             self.__staged_engine() != settings.engine
             or self.__ui.ffprobe_executable_edit.text() != settings.ffprobe_executable
-            or self.__ui.extensions_editor.values != settings.video_extensions
+            # normalized before the comparison, so a row saving would drop anyway is not yet a change
+            # and auto-apply does not tear a fresh insert out from under its open cell (#53)
+            or normalize_extensions(self.__ui.extensions_editor.values) != settings.video_extensions
         )
 
     def save_changes(self) -> None:

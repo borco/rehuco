@@ -310,6 +310,22 @@ def test_starts_on_the_shipped_formats_on_a_fresh_install(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
+def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
+    """A blank insert does not make the page dirty, because applying would not change what is saved --
+    the guard that keeps auto-apply from tearing a fresh row out from under its open cell (#53).
+
+    **Test steps:**
+
+    * add a blank row to the extension list and verify the page stays clean
+    """
+    page = VideosPage()
+    qtbot.addWidget(page)
+
+    extensions_editor(page).values = (*VIDEO_EXTENSIONS, "")
+
+    assert page.is_dirty() is False
+
+
 def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
     """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
 

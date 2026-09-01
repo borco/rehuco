@@ -241,6 +241,28 @@ def test_the_page_names_itself(page: LegacyScreenshotsPage) -> None:
 # region Editing, saving and dropping
 
 
+def test_a_row_saving_would_drop_is_not_yet_a_change(page: LegacyScreenshotsPage) -> None:
+    """A blank or half-typed rule does not make the page dirty, because applying would not change
+    what is saved -- and while *Apply changes as they're made* is on, the dialog commits any dirty
+    page, which would tear the fresh row out from under its open cell (#53).
+
+    **Test steps:**
+
+    * insert a blank rule and verify the page stays clean
+    * type its cover only and verify it still does
+    * complete the rule and verify the page is dirty exactly then
+    """
+    model = model_of(page)
+    row = model.insert(-1)
+    assert page.is_dirty() is False
+
+    model.setData(model.index(row, COVER_COLUMN), "shot-1")
+    assert page.is_dirty() is False
+
+    model.setData(model.index(row, REST_COLUMN), "shot-#")
+    assert page.is_dirty() is True
+
+
 def test_an_edit_makes_the_page_dirty(page: LegacyScreenshotsPage) -> None:
     """Dirtiness is the staged list against what a scan would read, polled rather than signalled.
 
