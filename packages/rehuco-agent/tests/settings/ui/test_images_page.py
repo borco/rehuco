@@ -568,6 +568,19 @@ def test_editing_the_extension_list_makes_the_page_dirty(page: ImagesPage) -> No
     assert page.is_dirty()
 
 
+def test_a_row_saving_would_drop_is_not_yet_a_change(page: ImagesPage) -> None:
+    """A blank insert does not make the page dirty, because applying would not change what is saved --
+    the guard that keeps auto-apply from tearing a fresh row out from under its open cell (#53).
+
+    **Test steps:**
+
+    * add a blank row to the extension list and verify the page stays clean
+    """
+    extensions_editor(page).values = (*CONTENT_IMAGE_EXTENSIONS, "")
+
+    assert page.is_dirty() is False
+
+
 def test_save_pushes_the_staged_image_formats_and_persists_them(
     page: ImagesPage, fake_persistent_settings: FakeSettings
 ) -> None:

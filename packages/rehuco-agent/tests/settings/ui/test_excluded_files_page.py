@@ -235,6 +235,27 @@ def test_editing_the_list_makes_the_page_dirty(qtbot: QtBot) -> None:
     assert page.is_dirty() is True
 
 
+def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
+    """A blank insert does not make the page dirty, because applying would not change what is saved --
+    and while *Apply changes as they're made* is on, the dialog commits any dirty page, which would
+    tear the fresh row out from under its open cell (#53).
+
+    **Test steps:**
+
+    * insert a blank row and verify the page stays clean
+    * fill it and verify the page is dirty exactly then
+    """
+    page = ExcludedFilesPage()
+    qtbot.addWidget(page)
+    editor = patterns_editor(page)
+
+    editor.values = (*EXCLUDED_FILE_PATTERNS, "")
+    assert page.is_dirty() is False
+
+    editor.values = (*EXCLUDED_FILE_PATTERNS, "*.part")
+    assert page.is_dirty() is True
+
+
 # endregion
 
 # region save and drop
