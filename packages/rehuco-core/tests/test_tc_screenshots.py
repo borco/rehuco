@@ -4,9 +4,20 @@ from pathlib import Path
 from typing import Final
 
 from PIL import UnidentifiedImageError
-from pytest import mark, param
+from pytest import mark, param, raises
 from pytest_mock import MockerFixture
-from rehuco_core import ScreenshotRename, is_legacy_screenshot, scan_tc_screenshot_files, scan_tc_screenshots
+from rehuco_core import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    LegacyScreenshotRuleMatcher,
+    LegacyScreenshotRules,
+    ScreenshotRename,
+    is_legacy_screenshot,
+    legacy_screenshot_rules_from_state,
+    legacy_screenshot_rules_state,
+    scan_tc_screenshot_files,
+    scan_tc_screenshots,
+)
 
 DIRECTORY: Final = Path("/fake/tutorial")
 STEM: Final = "info"
@@ -362,6 +373,226 @@ def test_a_name_is_classified_without_opening_anything(mocker: MockerFixture, fi
     mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=OSError("nothing may be opened"))
 
     assert is_legacy_screenshot(filename) is expected
+
+
+# endregion
+
+# region The rule language (#53)
+
+
+@mark.parametrize(
+    ("rest", "text", "expected"),
+    [
+        param("img-#", "0", 0, id="no-padding-zero"),
+        param("img-#", "7", 7, id="no-padding-single"),
+        param("img-#", "10", 10, id="no-padding-grows"),
+        param("img-#", "01", None, id="no-padding-refuses-padded"),
+        param("img-##", "00", 0, id="pad-two-zero"),
+        param("img-##", "09", 9, id="pad-two-single"),
+        param("img-##", "99", 99, id="pad-two-full"),
+        param("img-##", "100", 100, id="pad-two-grows-past-its-width"),
+        param("img-##", "0", None, id="pad-two-refuses-narrower"),
+        param("img-##", "0100", None, id="pad-two-refuses-over-padded"),
+        param("img-###", "000", 0, id="pad-three-zero"),
+        param("img-###", "1000", 1000, id="pad-three-grows"),
+        param("img-###", "00", None, id="pad-three-refuses-narrower"),
+    ],
+)
+def test_a_rest_template_reads_its_number_at_the_written_padding(rest: str, text: str, expected: int | None) -> None:
+    """A run of ``#`` is the number's **minimum** zero-padded width, and re-rendering enforces it.
+
+    **Test steps:**
+
+    * compile a rule carrying the template
+    * ask it for the number in a stem built from the digits
+    * verify the number, or that the template refused it
+    """
+    matcher = LegacyScreenshotRuleMatcher(LegacyScreenshotRule("cover", rest))
+
+    assert matcher.number(f"img-{text}") == expected
+
+
+@mark.parametrize(
+    ("rule", "reason"),
+    [
+        param(LegacyScreenshotRule("", "##"), "a blank cover", id="blank-cover"),
+        param(LegacyScreenshotRule("#", "##"), "a cover holding the placeholder", id="placeholder-in-cover"),
+        param(LegacyScreenshotRule("cover", "no-number"), "a rest with no placeholder", id="no-placeholder"),
+        param(LegacyScreenshotRule("cover", "a#b#c"), "a rest with two runs", id="two-placeholder-runs"),
+    ],
+)
+def test_a_malformed_rule_is_refused_rather_than_half_compiled(rule: LegacyScreenshotRule, reason: str) -> None:
+    """Compiling states what a rule must be; the set above it is what skips one that isn't.
+
+    **Test steps:**
+
+    * compile a malformed rule
+    * verify it raises rather than producing a matcher that matches nothing
+    """
+    with raises(ValueError):
+        LegacyScreenshotRuleMatcher(rule)
+    assert reason  # names the case in the parametrization, read in the failure output
+
+
+def test_a_malformed_rule_is_skipped_and_the_rest_of_the_set_still_applies() -> None:
+    """One unusable rule costs itself, not the scan -- the refuse-don't-crash discipline.
+
+    **Test steps:**
+
+    * build a set holding a malformed rule between two good ones
+    * classify a name each good rule claims
+    * verify both are still recognized
+    """
+    rules = LegacyScreenshotRules(
+        (
+            LegacyScreenshotRule("cover", "no-number"),
+            LegacyScreenshotRule("00", "##"),
+        )
+    )
+
+    assert rules.recognizes("01") is True
+    assert rules.recognizes("nonsense") is False
+
+
+@mark.parametrize(
+    ("filenames", "expected"),
+    [
+        param(
+            ["image-00.jpg", "image-01.jpg", "image-02.jpg"],
+            {0: ["image-00.jpg"], 1: ["image-01.jpg"], 2: ["image-02.jpg"]},
+            id="image-00-first",
+        ),
+        param(
+            ["image-01.jpg", "image-02.jpg", "image-03.jpg"],
+            {0: ["image-01.jpg"], 1: ["image-02.jpg"], 2: ["image-03.jpg"]},
+            id="image-01-first",
+        ),
+        param(
+            ["file.jpg", "file(2).jpg", "file(3).jpg"],
+            {0: ["file.jpg"], 1: ["file(2).jpg"], 2: ["file(3).jpg"]},
+            id="windows-duplicate-series",
+        ),
+        param(
+            ["cover.jpg", "file-01.jpg", "file-02.jpg"],
+            {0: ["cover.jpg"], 1: ["file-01.jpg"], 2: ["file-02.jpg"]},
+            id="cover-then-file-nn",
+        ),
+    ],
+)
+def test_each_shipped_rule_numbers_its_series_from_its_own_cover(
+    filenames: list[str], expected: dict[int, list[str]]
+) -> None:
+    """The four series the rules were written from, each starting at slot 0 with its own cover.
+
+    The ``image-01``-first case is the one no filename can answer: ``image-01`` is slot 1 under the rule
+    above it and slot 0 under its own, and the only evidence is that ``image-00`` is absent.
+
+    **Test steps:**
+
+    * group a directory's filenames under the shipped rules
+    * verify each file's slot
+    """
+    assert LegacyScreenshotRules(LEGACY_SCREENSHOT_RULES).group_by_slot(filenames) == expected
+
+
+def test_the_numbers_order_the_files_rather_than_naming_their_slots() -> None:
+    """A gap in the numbering closes: slots are ordinal, because a rule carries no start value.
+
+    **Test steps:**
+
+    * group a series numbered 00, 01, 05
+    * verify the third file is slot 2 rather than slot 5
+    """
+    assert LegacyScreenshotRules(LEGACY_SCREENSHOT_RULES).group_by_slot(["00.jpg", "01.jpg", "05.jpg"]) == {
+        0: ["00.jpg"],
+        1: ["01.jpg"],
+        2: ["05.jpg"],
+    }
+
+
+def test_a_file_the_winning_rule_misses_folds_in_as_a_variant_of_the_same_slot() -> None:
+    """The winner assigns the slots; another rule's files join them rather than being dropped.
+
+    That is what keeps a thumbnail ``cover.jpg`` paired with the full-size ``sample-00.jpg`` it
+    duplicates, so the tie-break still gets to pick between them.
+
+    **Test steps:**
+
+    * group a directory holding both a `sample-` series and a `cover`
+    * verify both land on slot 0
+    """
+    grouped = LegacyScreenshotRules(LEGACY_SCREENSHOT_RULES).group_by_slot(
+        ["cover.jpg", "sample-00.jpg", "sample-01.jpg"]
+    )
+
+    assert grouped == {0: ["cover.jpg", "sample-00.jpg"], 1: ["sample-01.jpg"]}
+
+
+def test_the_first_rule_whose_cover_is_present_claims_the_directory() -> None:
+    """Rule order is the control, and only a *present* cover puts a rule in charge.
+
+    **Test steps:**
+
+    * group a `file-NN` series whose `cover` is absent
+    * verify it is numbered from its own first file rather than left without a slot 0
+    """
+    grouped = LegacyScreenshotRules(LEGACY_SCREENSHOT_RULES).group_by_slot(["file-01.jpg", "file-02.jpg"])
+
+    assert grouped == {1: ["file-01.jpg"], 2: ["file-02.jpg"]}
+
+
+def test_a_directory_the_rules_reach_differently_is_scanned_with_the_rules_it_was_given(
+    mocker: MockerFixture,
+) -> None:
+    """The rule set is the caller's, so a user-added series converts like any shipped one.
+
+    **Test steps:**
+
+    * mock a directory holding a series no shipped rule recognizes
+    * scan it with a rule set that does
+    * verify the rename plan numbers it from its cover
+    """
+    mock_directory(mocker, ["shot-1.jpg", "shot-2.jpg"])
+    rules = (LegacyScreenshotRule("shot-1", "shot-#"),)
+
+    renames = scan_tc_screenshots(DIRECTORY, STEM, rules)
+
+    assert renames == [
+        ScreenshotRename("info00.jpg", "shot-1.jpg", ("shot-1.jpg",)),
+        ScreenshotRename("info01.jpg", "shot-2.jpg", ("shot-2.jpg",)),
+    ]
+
+
+def test_recognition_follows_the_rules_it_is_given(mocker: MockerFixture) -> None:
+    """The name-only question the content walk asks is answered by the caller's rules too, which is what
+    keeps the set the walk skips identical to the set a conversion renames aside.
+
+    **Test steps:**
+
+    * make any disk access raise
+    * classify a name under a rule set that claims it and one that does not
+    * verify the two answers differ
+    """
+    mocker.patch.object(Path, "iterdir", side_effect=OSError("nothing may be listed"))
+    rules = (LegacyScreenshotRule("shot-1", "shot-#"),)
+
+    assert is_legacy_screenshot("shot-2.jpg", rules) is True
+    assert is_legacy_screenshot("shot-2.jpg") is False
+
+
+def test_a_rule_set_round_trips_through_a_saved_jobs_state() -> None:
+    """A queued conversion carries its rules, so a restored job converts the way it was queued to.
+
+    **Test steps:**
+
+    * write a rule set down and read it back
+    * verify it is unchanged, and that malformed state falls back rather than half-reading
+    """
+    assert legacy_screenshot_rules_from_state(legacy_screenshot_rules_state(LEGACY_SCREENSHOT_RULES)) == (
+        LEGACY_SCREENSHOT_RULES
+    )
+    assert legacy_screenshot_rules_from_state(None) is None
+    assert legacy_screenshot_rules_from_state([["only-one-field"]]) is None
 
 
 # endregion
