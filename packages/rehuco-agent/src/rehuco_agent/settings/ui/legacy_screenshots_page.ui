@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LegacyScreenshotsPage</class>
+ <widget class="QWidget" name="LegacyScreenshotsPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>460</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="rules_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="rules_frame_layout">
+      <item>
+       <widget class="QLabel" name="rules_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Legacy screenshot rules</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="LegacyScreenshotRulesEditor" name="rules_editor">
+        <property name="toolTip">
+         <string>Each rule is one screenshot series: the file that becomes its cover, and a template for the files after it. Double-click a cell to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="rules_note_label">
+        <property name="text">
+         <string>In the template, # marks the number: # counts 0, 1, 2, while ## counts 00, 01, 02 and ### counts 000, 001, 002. The remaining files are numbered in order after the cover, so cover image-01 followed by image-02 and image-03 gives three screenshots.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="rules_order_label">
+        <property name="text">
+         <string>Order matters: the first rule whose cover file is present claims the folder, which is the only thing separating two rules that share a template. Files a rule does not claim still fold in as smaller or duplicate variants of the same screenshot. An empty list falls back to the shipped rules.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="tie_break_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="tie_break_frame_layout">
+      <item>
+       <widget class="QLabel" name="tie_break_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Always applied</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="tie_break_label">
+        <property name="text">
+         <string>When several files land on the same screenshot, the one kept is the largest by pixel size, then a .jpg or .jpeg over any other format, then the first by name. The others are still backed up when a resource is converted.</string>
+        </property>
+        <property name="toolTip">
+         <string>This ranking is not configurable — it applies whatever the rules above say.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>LegacyScreenshotRulesEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.legacy_screenshot_rules_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

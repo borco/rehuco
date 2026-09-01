@@ -39,6 +39,7 @@ from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
+from ..settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 
 LOG: Final = logging.getLogger(__name__)
@@ -748,6 +749,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 overwrite=overwrite,
                 username=self.__document.username,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+                legacy_screenshot_rules=shared_legacy_screenshots_settings().legacy_screenshot_rules,
             )
             LOG.info("Converted to %s", self.__document.path)
         self.__seed_from_document()

@@ -45,6 +45,7 @@ from rehuco_agent.settings.videos_settings import shared_videos_settings
 from rehuco_core import (
     BUILTIN_PLUGINS,
     CORE_FIELD_NAMES,
+    LEGACY_SCREENSHOT_RULES,
     TUTORIAL_PLUGIN,
     ContentUnreachableError,
     DurationProbeError,
@@ -572,7 +573,7 @@ def test_compute_sums_the_resources_content_with_the_configured_exclusions(qtbot
 
     compute(qtbot, editor, SIZE_COMPUTE_TOOLTIP)
 
-    content_size_on_disk.assert_called_once_with(PACK_PATH, ("*.tmp",))
+    content_size_on_disk.assert_called_once_with(PACK_PATH, ("*.tmp",), LEGACY_SCREENSHOT_RULES)
     assert editor.computed == 1073741824
     assert model.original_size is None
     assert model.current_size is None
@@ -686,7 +687,11 @@ def test_duration_compute_sums_the_resources_videos_with_the_configured_exclusio
     path, probe = content_duration.call_args.args
     assert path == PACK_PATH
     assert isinstance(probe, MediaInfoDurationProbe)
-    assert content_duration.call_args.kwargs == {"video_extensions": (".mkv",), "excluded_patterns": ("*.tmp",)}
+    assert content_duration.call_args.kwargs == {
+        "video_extensions": (".mkv",),
+        "excluded_patterns": ("*.tmp",),
+        "legacy_screenshot_rules": LEGACY_SCREENSHOT_RULES,
+    }
     assert editor.computed == 8100
     assert model.original_duration is None
     assert model.current_duration is None

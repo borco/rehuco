@@ -437,8 +437,8 @@ def test_cancelling_mid_scan_returns_to_the_root_step(
     * verify the wizard is back on the root step
     """
 
-    def slow_scan(root: Path, *, username: str, progress: Any) -> Any:
-        del root, username
+    def slow_scan(root: Path, *, username: str, legacy_screenshot_rules: Any, progress: Any) -> Any:
+        del root, username, legacy_screenshot_rules
         while True:
             progress(1)
 
@@ -489,8 +489,8 @@ def test_closing_the_wizard_mid_scan_stops_the_worker_thread(
     * verify it closed without hanging and the worker thread is no longer running
     """
 
-    def slow_scan(root: Path, *, username: str, progress: Any) -> Any:
-        del root, username
+    def slow_scan(root: Path, *, username: str, legacy_screenshot_rules: Any, progress: Any) -> Any:
+        del root, username, legacy_screenshot_rules
         while True:
             progress(1)
 

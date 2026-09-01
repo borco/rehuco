@@ -43,6 +43,7 @@ from rehuco_core import (
     GenerateChecksumsJob,
     JobState,
     JobStatus,
+    LegacyScreenshotRule,
     RetireLegacyManifestJob,
     StrandedManifestPlan,
     TaskJob,
@@ -57,6 +58,7 @@ from rehuco_core import (
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.import_legacy_catalog_wizard_settings import ImportLegacyCatalogWizardSettings
+from ..settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from ..settings.persistent_settings import persistent_settings
 from .import_legacy_catalog_wizard_ui import Ui_ImportLegacyCatalogWizard
 from .import_wizard_import_page import ImportWizardImportPage
@@ -97,6 +99,9 @@ class _ScanWorker(QObject):
 
     :param root: the folder to scan.
     :param username: the identity an actual conversion's imported per-user flags would be filed under.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by (#53),
+        resolved on the GUI thread before the worker starts so the dry run and the import it previews
+        read the same set.
     """
 
     progress = Signal(int)
@@ -104,10 +109,11 @@ class _ScanWorker(QObject):
     failed = Signal(str)
     cancelled = Signal()
 
-    def __init__(self, root: Path, username: str) -> None:
+    def __init__(self, root: Path, username: str, legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...]) -> None:
         super().__init__()
         self.__root: Final = root
         self.__username: Final = username
+        self.__legacy_screenshot_rules: Final = legacy_screenshot_rules
         self.__cancel_requested = False
 
     def cancel(self) -> None:
@@ -117,7 +123,12 @@ class _ScanWorker(QObject):
     def run(self) -> None:
         """Do the scan. Called on the worker thread once the owning `QThread` starts."""
         try:
-            plan = plan_tc_conversion(self.__root, username=self.__username, progress=self.__on_progress)
+            plan = plan_tc_conversion(
+                self.__root,
+                username=self.__username,
+                legacy_screenshot_rules=self.__legacy_screenshot_rules,
+                progress=self.__on_progress,
+            )
         except _ScanCancelled:
             self.cancelled.emit()
             return
@@ -400,7 +411,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         self.__scan_page.ui.status_label.setText("Scanning…")
         self.__scan_page.ui.scan_progress_bar.setRange(0, 0)
         self.__thread = QThread(self)
-        self.__scan_worker = _ScanWorker(root, self.__username)
+        self.__scan_worker = _ScanWorker(
+            root, self.__username, shared_legacy_screenshots_settings().legacy_screenshot_rules
+        )
         self.__scan_worker.moveToThread(self.__thread)
         self.__thread.started.connect(self.__scan_worker.run)
         self.__scan_worker.progress.connect(self.__on_scan_progress)
@@ -505,6 +518,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         check_content = self.__plan_page.ui.verify_content_check.isChecked()
         wanted = set(paths)
         excluded = shared_excluded_files_settings().excluded_file_patterns
+        screenshot_rules = shared_legacy_screenshots_settings().legacy_screenshot_rules
         for row in self.__model.rows():
             if row.path not in wanted:
                 if row.outcome is None:
@@ -513,7 +527,9 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
             self.__model.set_row_outcome(row.path, "pending")
             job: TaskJob
             if isinstance(row.plan, StrandedManifestPlan):
-                job = RetireLegacyManifestJob(row.plan.rehu_path, excluded_patterns=excluded)
+                job = RetireLegacyManifestJob(
+                    row.plan.rehu_path, excluded_patterns=excluded, legacy_screenshot_rules=screenshot_rules
+                )
             else:
                 job = TcImportJob(
                     row.plan.tc_path,
@@ -521,6 +537,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
                     keep_backups=True,
                     username=self.__username,
                     excluded_patterns=excluded,
+                    legacy_screenshot_rules=screenshot_rules,
                 )
             with LogScope.open(row.path):
                 serial = self.__queue.enqueue(job)
@@ -555,6 +572,7 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
         """
         checksums = shared_checksum_settings()
         excluded = shared_excluded_files_settings().excluded_file_patterns
+        screenshot_rules = shared_legacy_screenshots_settings().legacy_screenshot_rules
         job: ChecksumJob
         if plan.legacy_manifest is not None:
             job = VerifyChecksumsJob(
@@ -564,9 +582,15 @@ class ImportLegacyCatalogWizard(QDialog):  # pylint: disable=too-many-instance-a
                 seed_legacy=False,
                 migrate_to=checksums.migrate_target,
                 excluded_patterns=excluded,
+                legacy_screenshot_rules=screenshot_rules,
             )
         else:
-            job = GenerateChecksumsJob(plan.rehu_path, algorithm=checksums.algorithm, excluded_patterns=excluded)
+            job = GenerateChecksumsJob(
+                plan.rehu_path,
+                algorithm=checksums.algorithm,
+                excluded_patterns=excluded,
+                legacy_screenshot_rules=screenshot_rules,
+            )
         with LogScope.open(plan.rehu_path):
             self.__checks.append(self.__queue.enqueue(job))
 

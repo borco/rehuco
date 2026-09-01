@@ -51,6 +51,7 @@ from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
 from .settings.image_viewer_settings import shared_image_viewer_settings
+from .settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
@@ -64,6 +65,7 @@ from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
+from .settings.ui.legacy_screenshots_page import LegacyScreenshotsPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
@@ -493,6 +495,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             create_if_missing=settings.create_missing_on_verify,
             migrate_to=settings.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+            legacy_screenshot_rules=shared_legacy_screenshots_settings().legacy_screenshot_rules,
         )
         if job_already_queued(self.__task_queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
@@ -589,6 +592,9 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # and again for the checksum defaults (#242): they govern every resource type rather than one
         # plugin's, and the sweep that reads them is reached from File rather than from a document
         self.__settings_dialog.add_page(ChecksumsPage())
+        # and again for the legacy screenshot rules (#53): they govern converting a `.tc` of any
+        # resource type, and the import wizard that reads them is reached from File as well
+        self.__settings_dialog.add_page(LegacyScreenshotsPage())
         self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
         self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
         self.__settings_dialog.add_page(ImagesPage(), group="Plugins")

@@ -39,6 +39,7 @@ from ..settings.description_editor_settings import shared_description_editor_set
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.identity_settings import shared_identity_settings
 from ..settings.image_viewer_settings import shared_image_viewer_settings
+from ..settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from ..settings.reference_images_settings import shared_reference_images_settings
 from ..settings.videos_settings import shared_videos_settings
@@ -378,7 +379,11 @@ def build_document_form(
         if path is None:
             return None
         try:
-            return content_size_on_disk(path, shared_excluded_files_settings().excluded_file_patterns)
+            return content_size_on_disk(
+                path,
+                shared_excluded_files_settings().excluded_file_patterns,
+                shared_legacy_screenshots_settings().legacy_screenshot_rules,
+            )
         except ContentUnreachableError:
             return None
 
@@ -409,6 +414,7 @@ def build_document_form(
                 videos.create_probe(),
                 video_extensions=videos.video_extensions,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+                legacy_screenshot_rules=shared_legacy_screenshots_settings().legacy_screenshot_rules,
             )
         except DurationProbeError, ContentUnreachableError:
             return None
