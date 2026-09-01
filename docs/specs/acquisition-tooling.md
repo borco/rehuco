@@ -221,25 +221,55 @@ divergence it creates is detectable ([[field-schema#record-timestamps]]) and is 
 deliberate and confirmed or it is not discarding at all, and the `.orig` set is also the only copy of the original
 `.tc` and of the tie-break's losers.
 
-### §15.3.2 The five legacy screenshot naming schemes
+### §15.3.2 Legacy screenshot naming rules
 
 [[[acquisition-tooling#screenshot-schemes]]]
 
-tc4 catalogs accumulated screenshots under several naming conventions; conversion recognizes **five**, matched
-case-insensitively against the filename stem and mutually exclusive by prefix, and renumbers the winners into the uniform
-basename-derived `<stem>NN` scheme ([[data-model#resource-scoping]]):
+tc4 catalogs accumulated screenshots under several naming conventions, and which ones a given catalog holds is a
+property of that catalog rather than of the format. Conversion therefore takes an **ordered list of rules**, shipped
+with a default set and editable in the agent's Legacy Screenshots settings page (#53), and renumbers the winners into
+the uniform basename-derived `<stem>NN` scheme ([[data-model#resource-scoping]]).
 
-| scheme | example | notes |
+**A rule is a series, not a filename pattern.** It has two fields: a **cover**, the literal filename stem that becomes
+the series' first screenshot, and a **rest** template that the files after it match. A run of `#` in the template marks
+where the number sits, and its length is that number's minimum zero-padded width — `#` counts `0, 1, … 10`, `##` counts
+`00, 01 … 99, 100`, `###` counts `000 … 999, 1000`. A digit run is accepted only when re-rendering its value at that
+width reproduces it exactly, so `##` takes `09` and `100` but refuses `0100`. Everything outside the `#` run is literal,
+so `file(#)`'s parentheses are parentheses: a rule is never a regular expression, which is what keeps a settings string
+free of both a capture-group contract and a backtracking cost.
+
+The shipped defaults:
+
+| cover | rest | the series it reads |
 | --- | --- | --- |
-| bare zero-padded index | `00`, `01` | its own numeric series |
-| `sample-N` | `sample-0`, `sample-1` | full-size series |
-| `file` / `file(N)` | `file`, `file(1)` | `file` alone is index 0; the Windows-duplicate `(N)` numbers the rest; full-size |
-| `cover` | `cover` | always index 0; a thumbnail variant |
-| `file-N` | `file-0`, `file-1` | a thumbnail-variant series |
+| `00` | `##` | `00`, `01`, `02`, … |
+| `sample-00` | `sample-##` | `sample-00`, `sample-01`, … |
+| `image-00` | `image-##` | `image-00`, `image-01`, … |
+| `image-01` | `image-##` | `image-01`, `image-02`, … |
+| `file` | `file(#)` | `file`, `file(2)`, `file(3)`, … — Windows duplicate numbering |
+| `cover` | `file-##` | `cover`, `file-01`, `file-02`, … |
+
+**Slots are ordinal, not the numbers themselves.** The cover is slot 0; the files matching the rest template follow it
+in ascending numeric order as slots 1, 2, 3, … So an `image-01`-covered series numbers `image-02` as slot 1, and `file`
+is followed by `file(2)` at slot 1 — the numbering is an ordering, and a rule carries no start value to read one from.
+A gap therefore closes: `00`, `01`, `05` converts to `<stem>00`, `<stem>01`, `<stem>02`.
+
+**Which rule applies is a question about a directory, not a filename.** The two `image-##` rules above differ *only* in
+their cover, and no single name distinguishes them: given `image-01.jpg` and `image-02.jpg`, the right reading is the
+second rule, and the only evidence is that `image-00` is absent. So the winning rule is the **first in list order whose
+cover file is present**, which is what makes the list's order significant and its reordering a real edit. A file the
+winner does not recognize falls to the first other rule that does, folding into that rule's slot as a losing variant —
+which is what keeps a thumbnail `cover.jpg` paired with the full-size `sample-00.jpg` it duplicates. When no rule's
+cover is present at all, every rule simply participates in list order.
 
 When several files resolve to the **same slot**, the winner is chosen by a fixed tie-break: **largest pixel area** first,
 then `.jpg`/`.jpeg` preferred over other extensions, then the alphabetically-first filename. The losers are still backed
-up (they are recognized files the conversion touches) but are not installed under a new name.
+up (they are recognized files the conversion touches) but are not installed under a new name. The tie-break is **not**
+part of the editable rules: it applies whatever they say.
+
+**The same rule set reaches the content walk.** [[data-model#resource-scoping]]'s coverage rule skips a legacy record's
+screenshots, and it is handed the rules the conversion is handed — otherwise a file a user's added rule renames aside
+would count as content before conversion and as bookkeeping after it, moving `current_size` for no reason but a rename.
 
 ### §15.3.3 Legacy size and duration string parsing
 

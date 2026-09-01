@@ -74,14 +74,16 @@ settings go.
 
 **Top-level is for what is about the app rather than about a resource type**: "Identity"
 (`IdentityPage`, #99), "Logs" (`LogsPage`, #200), "Tasks" (`TasksPage`, #202), "Checksums"
-(`ChecksumsPage`, #242), and "System Integration" — one page on every platform, a different class behind
+(`ChecksumsPage`, #242), "Legacy Screenshots" (`LegacyScreenshotsPage`, #53), and "System Integration"
+— one page on every platform, a different class behind
 each (`RegistryPage` on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS,
 which registers nothing because the association comes from the app bundle). macOS has that page at all
 only because the tray block lives on it (#205): a setting deciding what the window's close button does has
 to be reachable wherever there is a window. The test each of them passes is the same: a reader looking for it has
 no plugin name to guess. Checksums govern every resource type and the sweep that reads them is reached
 from `File` rather than from a document, so filing them under a plugin would hide them behind a word the
-reader never thought of.
+reader never thought of. Legacy screenshot rules pass it the same way (#53): converting a `.tc` happens
+to a resource of any type, and the import wizard that reads them is reached from `File` as well.
 
 **One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
 owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
@@ -368,6 +370,14 @@ state never waits a whole tick to catch up with an explicit action.
   settings object, where two pages can (and do) normalize differently (§3). It is a `QStringListModel`
   under `ItemListEditor`, the shared machinery the `authors` record rows are built on too (#97), which is
   why a list edited on a settings page and one edited in a document behave identically.
+- Use `ContentSizedTableView` under `ItemListEditor` for a list whose entries are **more than one
+  field**, rather than packing them into one string with a separator. `LegacyScreenshotsPage`'s rules —
+  a cover and a template per row (#53) — are the worked example: a small `QAbstractTableModel` over the
+  domain objects supplies the columns, and everything about *how* the list is edited still comes from
+  `ItemListEditor`, so it behaves exactly as a `StringListEditor` does. Override the editor's
+  `row_is_blank` when a row is only abandonable with *every* cell empty; the base reads the first column
+  alone, which would discard an insert somebody had typed a second field into. `AuthorsListEditor`
+  (#97) is the same construction in a document field.
 - Use `ContentSizedListView` (`borco_pyside.widgets`) for any *other* list, not a plain `QListView`
   (`StringListEditor` already uses one inside, over a `QStringListModel`). A list
   that scrolls inside a page that scrolls gives two vertical scrollbars and a list the reader has to
@@ -407,8 +417,9 @@ settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fiel
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
 value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
-only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
-run does, so a plain dataclass carries each and there is nothing to watch either change;
+only when an enumeration runs, `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
+run does, and `LegacyScreenshotsPage`'s rules only when a `.tc` is scanned or converted, so a plain
+dataclass carries each and there is nothing to watch any of them change;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
 told a save happened.
 
@@ -419,5 +430,5 @@ autouse `isolate_shared_markdown_rendering_settings` fixture in
 around every test. A new page with its own shared settings object needs the equivalent, reactive or
 not — `isolate_shared_image_viewer_settings` is the second reactive one, and
 `isolate_shared_identity_settings` / `isolate_shared_reference_images_settings` /
-`isolate_shared_excluded_files_settings` / `isolate_shared_videos_settings` the plain-dataclass
-counterparts, all sitting right beside it.
+`isolate_shared_excluded_files_settings` / `isolate_shared_legacy_screenshots_settings` /
+`isolate_shared_videos_settings` the plain-dataclass counterparts, all sitting right beside it.
