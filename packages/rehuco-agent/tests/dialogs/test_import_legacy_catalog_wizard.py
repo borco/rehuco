@@ -861,7 +861,9 @@ def test_a_stranded_row_enqueues_a_retirement_and_reports_it_as_retired(
     qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
     enqueued = [call.args[0] for call in enqueue.call_args_list]
     assert [type(job).__name__ for job in enqueued] == ["TcImportJob", "RetireLegacyManifestJob"]
-    remediate.assert_called_once_with(STRANDED.rehu_path, excluded_patterns=mocker.ANY)
+    remediate.assert_called_once_with(
+        STRANDED.rehu_path, excluded_patterns=mocker.ANY, legacy_screenshot_rules=mocker.ANY
+    )
     by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
     assert by_path[STRANDED.rehu_path].outcome == "retired"

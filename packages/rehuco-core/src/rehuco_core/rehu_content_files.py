@@ -51,7 +51,11 @@ from .resource_scoping import (
     is_record_name,
 )
 from .tc_conversion_backups import is_conversion_backup
-from .tc_screenshots import is_legacy_screenshot
+from .tc_screenshots import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    compiled_legacy_screenshot_rules,
+)
 
 MAX_NAMED_UNREADABLE: Final = 3
 """How many unreadable directories an error names before it counts the rest.
@@ -243,6 +247,9 @@ class ContentFileScanner:
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs to leave out of the directory-scoped walk, matched
         case-insensitively against the file name.
+    :param legacy_screenshot_rules: the naming rules that decide whether an image beside a ``.tc`` is
+        one of its screenshots, resolved by the caller. The same set the conversion is handed, so the
+        names skipped here stay the ones a conversion renames aside.
     """
 
     __SCREENSHOT_NAME_PATTERN: Final = re.compile(r"^(?P<record>.*)\d{2}$")
@@ -251,9 +258,17 @@ class ContentFileScanner:
     record is what has to be looked up. Greedy, so ``info0000`` decomposes to ``info00`` + ``00`` and
     matches only a record actually named ``info00``."""
 
-    def __init__(self, rehu_path: Path, excluded_patterns: tuple[str, ...]) -> None:
+    def __init__(
+        self,
+        rehu_path: Path,
+        excluded_patterns: tuple[str, ...],
+        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+    ) -> None:
         self.__rehu_path: Final = rehu_path
         self.__excluded_patterns: Final = tuple(pattern.lower() for pattern in excluded_patterns)
+        # compiled once here rather than asked for per candidate: a walk visits thousands of files, and
+        # the compiled set is what each of them is judged against
+        self.__legacy_screenshot_rules: Final = compiled_legacy_screenshot_rules(legacy_screenshot_rules)
         self.__slug: Final = rehu_path.stem.lower()
 
     def scan(self) -> ContentEnumeration:
@@ -485,11 +500,25 @@ class ContentFileScanner:
         if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
             return stem in records
         if suffix in IMAGE_EXTENSIONS:
-            if legacy and is_legacy_screenshot(filename):
+            if legacy and self.__recognized_legacy_screenshot(stem):
                 return True
             screenshot = self.__SCREENSHOT_NAME_PATTERN.match(stem)
             return screenshot is not None and screenshot["record"] in records
         return False
+
+    def __recognized_legacy_screenshot(self, file_stem: str) -> bool:
+        """Whether ``file_stem`` is a legacy screenshot name under this walk's rules.
+
+        Asked through the set compiled in :meth:`__init__` rather than through
+        :func:`~rehuco_core.is_legacy_screenshot`, so a walk of thousands of files compiles the rules
+        once. The rules are the caller's -- the same set the conversion is handed -- which is what keeps
+        the names skipped here identical to the ones :func:`~rehuco_core.originals_to_back_up` renames
+        aside.
+
+        :param file_stem: the candidate's stem, already lower-cased and known to carry an image suffix.
+        :returns: whether some rule recognizes it.
+        """
+        return self.__legacy_screenshot_rules.recognizes(file_stem)
 
     def __is_excluded(self, filename: str) -> bool:
         """Whether ``filename`` matches one of the caller's junk globs.
@@ -689,7 +718,9 @@ class ContentFileScanner:
 
 
 def enumerate_content_files(
-    rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+    rehu_path: Path,
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
 ) -> ContentEnumeration:
     """Enumerate ``rehu_path``'s content files: what it is a record *of*, never its own bookkeeping.
 
@@ -699,16 +730,21 @@ def enumerate_content_files(
         (:data:`~rehuco_core.constants.EXCLUDED_FILE_PATTERNS` by default), so the size scan and the
         checksums are handed the same answer instead of each deciding one. Ignored for a file-scoped
         resource, whose content is a whitelist of one.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, injected
+        for the same reason and from the same settings the conversion reads.
     :returns: the files, in a stable order (by name for a file-scoped resource, by full path for a
         directory-scoped one), **and the directories that would not list**. A missing or unreadable
         directory contributes nothing rather than raising -- a document-level condition, not a crash --
         but it is named, so no caller has to mistake it for an empty resource (#245).
     """
-    return ContentFileScanner(rehu_path, excluded_patterns).scan()
+    return ContentFileScanner(rehu_path, excluded_patterns, legacy_screenshot_rules).scan()
 
 
 def excluded_content_names(
-    rehu_path: Path, names: Collection[str], excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+    rehu_path: Path,
+    names: Collection[str],
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
 ) -> dict[str, ContentExclusionTier]:
     """Say which of ``names`` were never ``rehu_path``'s content, and under which tier (#254).
 
@@ -727,13 +763,18 @@ def excluded_content_names(
     :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted for a
         directory-scoped resource only, since a file-scoped one's content is a whitelist no pattern
         reaches.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, the same
+        set the walk is given.
     :returns: the excluded names only, each with the tier that excluded it, in the order given.
     """
-    return ContentFileScanner(rehu_path, excluded_patterns).excluded_names(names)
+    return ContentFileScanner(rehu_path, excluded_patterns, legacy_screenshot_rules).excluded_names(names)
 
 
 def covering_content_records(
-    rehu_path: Path, names: Collection[str], excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS
+    rehu_path: Path,
+    names: Collection[str],
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
 ) -> dict[str, CoveringRecord]:
     """Say which of ``names`` another record covers now, and which record that is (#257).
 
@@ -747,13 +788,19 @@ def covering_content_records(
         resource (:func:`~rehuco_core.checksum_entry_name`).
     :param excluded_patterns: the caller's junk globs, the same set the walk is given -- consulted so a
         name no record's content could include is never reported as covered by one.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, the same
+        set the walk is given.
     :returns: the covered names only, each with the record covering it and the name that record spells it
         under, in the order given.
     """
-    return ContentFileScanner(rehu_path, excluded_patterns).covering_records(names)
+    return ContentFileScanner(rehu_path, excluded_patterns, legacy_screenshot_rules).covering_records(names)
 
 
-def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS) -> int:
+def content_size_on_disk(
+    rehu_path: Path,
+    excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+) -> int:
     """Sum the sizes of ``rehu_path``'s content files -- the resource's footprint on disk
     ([[field-schema#duration-size]], #223).
 
@@ -774,12 +821,14 @@ def content_size_on_disk(rehu_path: Path, excluded_patterns: tuple[str, ...] = E
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: filename globs to leave out of the directory-scoped walk, passed straight
         through to :func:`enumerate_content_files`.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, passed
+        through the same way.
     :returns: the total size in whole bytes; ``0`` when the resource has content files nowhere -- there
         is content and there is none of it, which is now a different answer from *unreachable*.
     :raises ContentUnreachableError: some directory under the resource would not list, or a content file
         that was listed refused to be measured.
     """
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns, legacy_screenshot_rules)
     enumeration.require_complete()
     total = 0
     for path in enumeration.files:

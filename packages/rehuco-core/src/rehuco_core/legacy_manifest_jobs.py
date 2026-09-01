@@ -26,6 +26,12 @@ from .checksum_seeding import LegacySeed, log_legacy_seed, remediate_legacy_mani
 from .constants import EXCLUDED_FILE_PATTERNS
 from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
+from .tc_screenshots import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    legacy_screenshot_rules_from_state,
+    legacy_screenshot_rules_state,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -35,6 +41,7 @@ into a user's queue file, never casually renamed."""
 
 STATE_PATH_KEY: Final = "path"
 STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
+STATE_LEGACY_SCREENSHOT_RULES_KEY: Final = "legacy_screenshot_rules"
 """The keys this job writes itself down under, read back by this class and nothing else
 ([[appendices.task-queue#lifetime]])."""
 
@@ -55,6 +62,8 @@ class RetireLegacyManifestJob(TaskJobBase):
 
     :param rehu_path: the resource's ``.rehu`` file, or ``None`` for a job about to be handed a saved
         state.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by (#53),
+        resolved by the caller alongside ``excluded_patterns``.
     :param excluded_patterns: the filename globs the content walk leaves out (#226), resolved by the
         caller -- core never reads a setting. Only content is seeded, so this decides which of the
         manifest's lines never become entries.
@@ -69,11 +78,13 @@ class RetireLegacyManifestJob(TaskJobBase):
         rehu_path: Path | None = None,
         *,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
         label: str | None = None,
     ) -> None:
         super().__init__()
         self.source = rehu_path
         self.excluded_patterns = excluded_patterns
+        self.legacy_screenshot_rules = legacy_screenshot_rules
         self.label = label if label is not None else self.__derived_label()
         self.__seed: LegacySeed | None = None
 
@@ -119,7 +130,11 @@ class RetireLegacyManifestJob(TaskJobBase):
         """
         control.report(0, 1)
         path = self.resource_path()
-        seed = remediate_legacy_manifest(path, excluded_patterns=self.excluded_patterns)
+        seed = remediate_legacy_manifest(
+            path,
+            excluded_patterns=self.excluded_patterns,
+            legacy_screenshot_rules=self.legacy_screenshot_rules,
+        )
         self.__seed = seed
         control.report(1, 1)
         if seed is None:
@@ -149,6 +164,7 @@ class RetireLegacyManifestJob(TaskJobBase):
         return {
             STATE_PATH_KEY: str(path) if path is not None else "",
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
+            STATE_LEGACY_SCREENSHOT_RULES_KEY: legacy_screenshot_rules_state(self.legacy_screenshot_rules),
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -167,6 +183,9 @@ class RetireLegacyManifestJob(TaskJobBase):
         self.source = Path(path)
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
+        rules = legacy_screenshot_rules_from_state(state.get(STATE_LEGACY_SCREENSHOT_RULES_KEY))
+        if rules is not None:
+            self.legacy_screenshot_rules = rules
         self.label = self.__derived_label()
 
     def __derived_label(self) -> str:

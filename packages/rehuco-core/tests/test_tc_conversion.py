@@ -10,6 +10,7 @@ import pytest
 from pytest_mock import MockerFixture
 from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
+    LEGACY_SCREENSHOT_RULES,
     ContentUnreachableError,
     RehuDocument,
     ScreenshotRename,
@@ -427,7 +428,7 @@ def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> 
     saved = json.loads(mocks["write"].call_args[0][1])
     assert saved["core"]["current_size"] == 123
     assert document.current_size == 123
-    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS)
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, EXCLUDED_FILE_PATTERNS, LEGACY_SCREENSHOT_RULES)
 
 
 def test_an_unreachable_resource_stores_no_current_size(mocker: MockerFixture) -> None:
@@ -465,4 +466,4 @@ def test_current_size_measurement_uses_the_given_excluded_patterns(mocker: Mocke
 
     convert_tc(TC_PATH, keep_backups=True, excluded_patterns=("*.tmp",))
 
-    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, ("*.tmp",))
+    mocks["content_size_on_disk"].assert_called_once_with(TC_PATH, ("*.tmp",), LEGACY_SCREENSHOT_RULES)

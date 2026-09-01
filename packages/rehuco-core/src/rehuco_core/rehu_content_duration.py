@@ -28,6 +28,7 @@ from pymediainfo import MediaInfo
 
 from .constants import EXCLUDED_FILE_PATTERNS, VIDEO_EXTENSIONS
 from .rehu_content_files import enumerate_content_files
+from .tc_screenshots import LEGACY_SCREENSHOT_RULES, LegacyScreenshotRule
 
 
 class DurationProbeError(RuntimeError):
@@ -246,6 +247,7 @@ def content_duration(
     *,
     video_extensions: tuple[str, ...] = VIDEO_EXTENSIONS,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
 ) -> int:
     """Sum how long ``rehu_path``'s videos run ([[field-schema#duration-size]], #224).
 
@@ -265,6 +267,8 @@ def content_duration(
         a user's list (#225) reaches this without core learning what a settings page is.
     :param excluded_patterns: filename globs to leave out of the walk, passed straight through to
         :func:`~rehuco_core.rehu_content_files.enumerate_content_files`.
+    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, passed
+        through the same way.
     :returns: the total duration in whole seconds; ``0`` when the resource holds no video at all. A file
         that cannot be *probed* costs its own seconds and nothing more.
     :raises DurationProbeError: if ``probe`` cannot run here at all. Deliberately not a ``0``: a
@@ -278,7 +282,7 @@ def content_duration(
     if unavailable is not None:
         raise DurationProbeError(unavailable)
     suffixes = tuple(extension.lower() for extension in video_extensions)
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns, legacy_screenshot_rules)
     enumeration.require_complete()
     total = 0.0
     for path in enumeration.files:
