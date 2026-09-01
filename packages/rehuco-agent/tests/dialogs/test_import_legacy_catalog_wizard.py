@@ -437,8 +437,8 @@ def test_cancelling_mid_scan_returns_to_the_root_step(
     * verify the wizard is back on the root step
     """
 
-    def slow_scan(root: Path, *, username: str, progress: Any) -> Any:
-        del root, username
+    def slow_scan(root: Path, *, username: str, legacy_screenshot_rules: Any, progress: Any) -> Any:
+        del root, username, legacy_screenshot_rules
         while True:
             progress(1)
 
@@ -489,8 +489,8 @@ def test_closing_the_wizard_mid_scan_stops_the_worker_thread(
     * verify it closed without hanging and the worker thread is no longer running
     """
 
-    def slow_scan(root: Path, *, username: str, progress: Any) -> Any:
-        del root, username
+    def slow_scan(root: Path, *, username: str, legacy_screenshot_rules: Any, progress: Any) -> Any:
+        del root, username, legacy_screenshot_rules
         while True:
             progress(1)
 
@@ -861,7 +861,9 @@ def test_a_stranded_row_enqueues_a_retirement_and_reports_it_as_retired(
     qtbot.waitUntil(lambda: pages(wizard).stack.currentWidget() is pages(wizard).result, timeout=TIMEOUT)
     enqueued = [call.args[0] for call in enqueue.call_args_list]
     assert [type(job).__name__ for job in enqueued] == ["TcImportJob", "RetireLegacyManifestJob"]
-    remediate.assert_called_once_with(STRANDED.rehu_path, excluded_patterns=mocker.ANY)
+    remediate.assert_called_once_with(
+        STRANDED.rehu_path, excluded_patterns=mocker.ANY, legacy_screenshot_rules=mocker.ANY
+    )
     by_path = {row.path: row for row in wizard.model.rows()}
     assert by_path[CLEAN_A.tc_path].outcome == "converted"
     assert by_path[STRANDED.rehu_path].outcome == "retired"

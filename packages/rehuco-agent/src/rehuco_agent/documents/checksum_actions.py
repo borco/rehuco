@@ -39,6 +39,7 @@ from rehuco_core import (
 
 from ..settings.checksum_settings import shared_checksum_settings
 from ..settings.excluded_files_settings import shared_excluded_files_settings
+from ..settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from ..tasks.already_queued import job_already_queued
 from .rehu_document_model import RehuDocumentModel
 
@@ -354,6 +355,7 @@ class ChecksumActions(QObject):  # pylint: disable=too-many-instance-attributes
             create_if_missing=True if checksums.create_missing_on_verify else None,
             migrate_to=checksums.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
+            legacy_screenshot_rules=shared_legacy_screenshots_settings().legacy_screenshot_rules,
             label=self.__label_for(job_class, only),
         )
         # *asking twice is not asking again* holds for the whole-resource runs, where a second ask is

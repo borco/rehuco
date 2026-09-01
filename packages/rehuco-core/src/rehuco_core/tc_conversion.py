@@ -21,7 +21,12 @@ from .rehu_format import CORE_BLOCK_KEY
 from .tc_conversion_backups import backup_path, restore_backup
 from .tc_description import rewrite_description_images
 from .tc_document import TcDocument
-from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
+from .tc_screenshots import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    ScreenshotRename,
+    scan_tc_screenshots,
+)
 
 
 def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[ScreenshotRename]) -> list[Path]:
@@ -51,6 +56,10 @@ def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[Screensh
     return list(dict.fromkeys(originals))
 
 
+# the parameters *are* the conversion's inputs, and the two resolved sets (#226, #53) are handed in
+# rather than read from a setting; collapsing them into a bag would put a second shape between the
+# caller and the call
+# pylint: disable-next=too-many-arguments
 def convert_tc(
     tc_path: Path,
     *,
@@ -58,6 +67,7 @@ def convert_tc(
     overwrite: bool = False,
     username: str = DEFAULT_UNKNOWN_USERNAME,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
 ) -> RehuDocument:
     """Convert ``tc_path`` (and its recognized legacy screenshots) into a real, unlocked ``.rehu``.
 
@@ -71,6 +81,9 @@ def convert_tc(
         ([[field-schema#per-user-shared]], #109); defaults to
         :data:`~rehuco_core.plugins.DEFAULT_UNKNOWN_USERNAME`, since a flag carried in from the ``.tc``
         was not set by this install's own identity.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by (#53),
+        resolved by the caller for the same reason -- the walk measuring ``current_size`` and the rename
+        plan must agree on which files are screenshots, or converting would change the measurement.
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out (#226),
         resolved by the caller -- core never reads a setting.
     :returns: the fresh, unlocked document, already saved at the target path.
@@ -83,6 +96,7 @@ def convert_tc(
         overwrite=overwrite,
         username=username,
         excluded_patterns=excluded_patterns,
+        legacy_screenshot_rules=legacy_screenshot_rules,
     ).convert()
 
 
@@ -101,10 +115,14 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
     :param overwrite: whether an existing target ``.rehu`` may be replaced.
     :param username: the identity the imported per-user flags are filed under; see :func:`convert_tc`.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by; see
+        :func:`convert_tc`.
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out; see
         :func:`convert_tc`.
     """
 
+    # the same inputs as :func:`convert_tc`, for the same reason
+    # pylint: disable-next=too-many-arguments
     def __init__(
         self,
         tc_path: Path,
@@ -113,12 +131,14 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         overwrite: bool,
         username: str,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
     ) -> None:
         self.__tc_path: Final = tc_path
         self.__keep_backups: Final = keep_backups
         self.__overwrite: Final = overwrite
         self.__username: Final = username
         self.__excluded_patterns: Final = excluded_patterns
+        self.__legacy_screenshot_rules: Final = legacy_screenshot_rules
 
     def convert(self) -> RehuDocument:
         """Run the full plan-then-replace sequence.
@@ -129,7 +149,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         target = self.__tc_path.with_suffix(".rehu")
         if target.exists() and not self.__overwrite:
             raise FileExistsError(target)
-        renames = scan_tc_screenshots(self.__tc_path.parent, self.__tc_path.stem)
+        renames = scan_tc_screenshots(self.__tc_path.parent, self.__tc_path.stem, self.__legacy_screenshot_rules)
         data = self.__built_rehu_data(renames)
         originals = originals_to_back_up(self.__tc_path, target, renames)
         self.__check_no_stale_backups(originals)
@@ -178,7 +198,9 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         """
         core.pop("current_size", None)
         try:
-            core["current_size"] = content_size_on_disk(self.__tc_path, self.__excluded_patterns)
+            core["current_size"] = content_size_on_disk(
+                self.__tc_path, self.__excluded_patterns, self.__legacy_screenshot_rules
+            )
         except ContentUnreachableError:
             pass
 

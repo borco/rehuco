@@ -37,7 +37,12 @@ from .rehu_format import CORE_BLOCK_KEY
 from .tc_conversion import originals_to_back_up
 from .tc_conversion_backups import backup_path
 from .tc_document import TcDocument
-from .tc_screenshots import ScreenshotRename, scan_tc_screenshots
+from .tc_screenshots import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    ScreenshotRename,
+    scan_tc_screenshots,
+)
 
 CONSUMED_TC_KEYS: Final = frozenset(
     {
@@ -214,17 +219,26 @@ class TcConversionTreePlan:
 
 
 def plan_tc_conversion(
-    root: Path, *, username: str = DEFAULT_UNKNOWN_USERNAME, progress: TcConversionPlanProgress | None = None
+    root: Path,
+    *,
+    username: str = DEFAULT_UNKNOWN_USERNAME,
+    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+    progress: TcConversionPlanProgress | None = None,
 ) -> TcConversionTreePlan:
     """Walk ``root`` and report what converting every `.tc` under it would do, writing nothing.
 
     :param root: the folder to walk.
     :param username: the identity an actual conversion's imported per-user flags would be filed under;
         see :func:`~rehuco_core.tc_conversion.convert_tc`.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by (#53),
+        resolved by the caller -- the same set the conversion this previews will be handed, or the dry
+        run would describe a different rename plan from the one that runs.
     :param progress: called with a running count of resources planned so far, or ``None``.
     :returns: the plan; see :class:`TcConversionTreePlan`.
     """
-    return TcConversionPlanner(root, username=username, progress=progress).plan()
+    return TcConversionPlanner(
+        root, username=username, legacy_screenshot_rules=legacy_screenshot_rules, progress=progress
+    ).plan()
 
 
 class TcConversionPlanner:  # pylint: disable=too-few-public-methods
@@ -232,14 +246,22 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
 
     :param root: the folder to walk.
     :param username: the identity an actual conversion's imported per-user flags would be filed under.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by; see
+        :func:`plan_tc_conversion`.
     :param progress: called with a running count of resources planned so far, or ``None``.
     """
 
     def __init__(
-        self, root: Path, *, username: str = DEFAULT_UNKNOWN_USERNAME, progress: TcConversionPlanProgress | None = None
+        self,
+        root: Path,
+        *,
+        username: str = DEFAULT_UNKNOWN_USERNAME,
+        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+        progress: TcConversionPlanProgress | None = None,
     ) -> None:
         self.__root: Final = root
         self.__username: Final = username
+        self.__legacy_screenshot_rules: Final = legacy_screenshot_rules
         self.__progress: Final = progress
 
     def plan(self) -> TcConversionTreePlan:
@@ -370,7 +392,7 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             every resource's mtime, filled in by :meth:`__with_suspect_mtimes`) and its mtime.
         """
         document = TcDocument.load(tc_path)
-        renames = tuple(scan_tc_screenshots(tc_path.parent, tc_path.stem))
+        renames = tuple(scan_tc_screenshots(tc_path.parent, tc_path.stem, self.__legacy_screenshot_rules))
         data = document.to_rehu_data(username=self.__username)
         core = data[CORE_BLOCK_KEY]
         type_block = data.get(core["type"], {})

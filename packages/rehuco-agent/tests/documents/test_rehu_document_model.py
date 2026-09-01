@@ -31,6 +31,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
+    LEGACY_SCREENSHOT_RULES,
     ConversionBackups,
     LearningPathEntry,
     LockReasonKind,
@@ -1407,7 +1408,12 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
     model.convert(keep_backups=False, overwrite=True)
 
     mock_convert.assert_called_once_with(
-        tc_path, keep_backups=False, overwrite=True, username="alice", excluded_patterns=EXCLUDED_FILE_PATTERNS
+        tc_path,
+        keep_backups=False,
+        overwrite=True,
+        username="alice",
+        excluded_patterns=EXCLUDED_FILE_PATTERNS,
+        legacy_screenshot_rules=LEGACY_SCREENSHOT_RULES,
     )
 
 

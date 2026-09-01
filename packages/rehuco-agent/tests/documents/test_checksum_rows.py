@@ -31,6 +31,7 @@ from rehuco_agent.documents.checksum_rows import (
     tally_rows,
     tally_text,
 )
+from rehuco_core import LEGACY_SCREENSHOT_RULES
 
 
 # the listing fakes below are `test_excluded_files_settings`' and the core walks' near-verbatim --
@@ -77,6 +78,10 @@ VIDEO: Final = "lesson1.mp4"
 ARCHIVE: Final = "extras/pack.zip"
 
 PATTERNS: Final = ("Thumbs.db",)
+
+RULES: Final = LEGACY_SCREENSHOT_RULES
+"""The shipped legacy screenshot rules, which these tests take as given: what they exercise is the row
+merge, not which images a `.tc`'s conversion would rename."""
 
 SETTLE: Final = 5.0
 """How long a test waits for the loader's pool thread to reach a state, in seconds.
@@ -209,7 +214,7 @@ def test_a_covered_file_and_an_uncovered_one_both_appear(disk: FakeDisk) -> None
     """
     disk.put_record([entry(VIDEO, verified=STAMP, status="matched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     by_name = {row.name: row for row in rows.rows}
     assert set(by_name) == {VIDEO, ARCHIVE}
@@ -227,7 +232,7 @@ def test_a_resource_with_no_record_shows_every_content_file(disk: FakeDisk) -> N
     * check both content files are listed, unchecked, and nothing is wrong
     """
     del disk
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
     assert all(row.status == "" for row in rows.rows)
@@ -244,7 +249,7 @@ def test_the_bookkeeping_is_never_a_row(disk: FakeDisk) -> None:
     * check no bookkeeping name is among them
     """
     del disk
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert {"info.rehu", "info00.jpg", "info.checksum", "Thumbs.db"}.isdisjoint({row.name for row in rows.rows})
 
@@ -260,7 +265,7 @@ def test_a_recorded_entry_outside_the_content_still_shows(disk: FakeDisk) -> Non
     """
     disk.put_record([entry("Thumbs.db", verified=STAMP, status="mismatched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert {row.name: row.status for row in rows.rows}["Thumbs.db"] == "mismatched"
 
@@ -275,7 +280,7 @@ def test_an_unreachable_resource_is_not_an_empty_one(disk: FakeDisk) -> None:
     """
     disk.offline.add(DIRECTORY)
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert not rows.reachable
     assert not rows.rows
@@ -292,7 +297,7 @@ def test_a_record_this_build_cannot_read_still_lists_the_files(disk: FakeDisk) -
     """
     disk.put(RECORD_PATH, b"not json")
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
     assert all(row.status == "" for row in rows.rows)
@@ -310,7 +315,7 @@ def test_an_entry_this_build_cannot_name_is_not_a_row(disk: FakeDisk) -> None:
     """
     disk.put_record([{"crc32": "deadbeef"}, entry(VIDEO, verified=STAMP, status="matched")])
 
-    rows = read_checksum_rows(INFO_PATH, PATTERNS)
+    rows = read_checksum_rows(INFO_PATH, PATTERNS, RULES)
 
     assert {row.name for row in rows.rows} == {VIDEO, ARCHIVE}
 
@@ -496,7 +501,7 @@ def test_a_read_that_raises_reports_rather_than_leaving_the_dock_waiting(qtbot: 
     delivered: list[ChecksumRows] = []
     loader.loaded.connect(delivered.append)
 
-    loader.start(INFO_PATH, PATTERNS)
+    loader.start(INFO_PATH, PATTERNS, RULES)
 
     qtbot.waitUntil(lambda: bool(delivered), timeout=5000)
     assert delivered[0].error == "the walk fell over"
@@ -532,9 +537,9 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
     # the first read has to still be *out* when the second start supersedes it: two starts back to
     # back leave a window in which the pool thread finishes the first and delivers it before the
     # second start ever runs, which is a legitimate delivery and asserts nothing about generations
-    loader.start(INFO_PATH, PATTERNS)
+    loader.start(INFO_PATH, PATTERNS, RULES)
     assert reached.wait(SETTLE)
-    loader.start(INFO_PATH, PATTERNS)
+    loader.start(INFO_PATH, PATTERNS, RULES)
     release.set()
 
     qtbot.waitUntil(lambda: bool(delivered), timeout=5000)
@@ -627,6 +632,6 @@ def test_a_walk_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker:
 
     # generation 0 is the one a loader that has never been started is on, so this read is
     # current rather than superseded -- otherwise it returns before it ever tries to report
-    run(INFO_PATH, PATTERNS, 0)
+    run(INFO_PATH, PATTERNS, RULES, 0)
 
     assert not delivered

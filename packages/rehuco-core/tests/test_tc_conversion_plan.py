@@ -85,7 +85,7 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
         "scandir": mocker.patch("rehuco_core.tc_conversion_plan.os.scandir", side_effect=scandir),
         "scan": mocker.patch(
             "rehuco_core.tc_conversion_plan.scan_tc_screenshots",
-            side_effect=lambda directory, stem: (renames_by_directory or {}).get(directory, []),
+            side_effect=lambda directory, stem, rules=None: (renames_by_directory or {}).get(directory, []),
         ),
         "rename": mocker.patch.object(Path, "rename", autospec=True),
         "unlink": mocker.patch.object(Path, "unlink", autospec=True),

@@ -392,11 +392,12 @@ What a **reference-images** resource's content *is* was settled by #197: content
   `infoNN` siblings beside it, exactly as the `info.rehu` replacing it will. Otherwise the same directory measures a
   different set the moment it is converted, for a reason that has nothing to do with its content, and a claim seeded
   from the old manifest (#243) would describe a resource that no longer exists. **A legacy record claims its
-  screenshots by scheme rather than by stem** — `01.jpg`, `cover.jpg`, `sample-01.jpg`, `file(2).jpg`, `file-01.jpg`
-  ([[acquisition-tooling#screenshot-schemes]]), none of them named after the record, so the `<record>NN` rule cannot
-  reach them and only a `.tc` in the same directory says whose they are. What is skipped is exactly what a conversion
-  renames aside, winners and losing variants alike; where no `.tc` sits, a `01.jpg` is an ordinary file and stays
-  counted.
+  screenshots by naming rule rather than by stem** — `01.jpg`, `cover.jpg`, `sample-01.jpg`, `file(2).jpg`,
+  `file-01.jpg` under the shipped defaults ([[acquisition-tooling#screenshot-schemes]]), none of them named after the
+  record, so the `<record>NN` rule cannot reach them and only a `.tc` in the same directory says whose they are. The
+  rules are the caller's, and the walk is handed the same set the conversion is: that is what makes *what is skipped*
+  exactly *what a conversion renames aside*, winners and losing variants alike, however a user has edited them. Where
+  no `.tc` sits, a `01.jpg` is an ordinary file and stays counted.
   **A retained `.orig` conversion backup is
   structural as well** (#253), and is the one exception to that last condition: a backup belongs to the directory it
   sits in rather than to a stem — a legacy screenshot is named `cover.jpg`, carrying nothing that ties it to its

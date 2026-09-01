@@ -30,6 +30,12 @@ from .rehu_document import RehuDocument
 from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
 from .tc_conversion import convert_tc
+from .tc_screenshots import (
+    LEGACY_SCREENSHOT_RULES,
+    LegacyScreenshotRule,
+    legacy_screenshot_rules_from_state,
+    legacy_screenshot_rules_state,
+)
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -42,10 +48,14 @@ STATE_OVERWRITE_KEY: Final = "overwrite"
 STATE_KEEP_BACKUPS_KEY: Final = "keep_backups"
 STATE_USERNAME_KEY: Final = "username"
 STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
+STATE_LEGACY_SCREENSHOT_RULES_KEY: Final = "legacy_screenshot_rules"
 """The keys this job writes itself down under, read back by this class and nothing else
 ([[appendices.task-queue#lifetime]])."""
 
 
+# a job's members *are* its conversion's parameters, and #192's callable takes that many -- the same
+# reasoning `ChecksumJob` records for its own count
+# pylint: disable-next=too-many-instance-attributes
 class TcImportJob(TaskJobBase):
     """Convert one legacy `.tc` into a real `.rehu`, on the queue (#192).
 
@@ -68,6 +78,8 @@ class TcImportJob(TaskJobBase):
     :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
     :param username: the identity the imported per-user flags are filed under; see
         :func:`~rehuco_core.convert_tc`.
+    :param legacy_screenshot_rules: the naming rules the legacy screenshots are recognized by (#53),
+        carried in the job's saved state so a restored import converts the way it was queued to.
     :param excluded_patterns: the filename globs the walk measuring ``current_size`` leaves out
         (#226, #255), resolved by the caller -- core never reads a setting.
     :param label: how the job is named to a reader, or ``None`` for one derived from the path.
@@ -85,6 +97,7 @@ class TcImportJob(TaskJobBase):
         keep_backups: bool = True,
         username: str = DEFAULT_UNKNOWN_USERNAME,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
+        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
         label: str | None = None,
     ) -> None:
         super().__init__()
@@ -93,6 +106,7 @@ class TcImportJob(TaskJobBase):
         self.keep_backups = keep_backups
         self.username = username
         self.excluded_patterns = excluded_patterns
+        self.legacy_screenshot_rules = legacy_screenshot_rules
         self.label = label if label is not None else self.__derived_label()
         self.__document: RehuDocument | None = None
 
@@ -145,6 +159,7 @@ class TcImportJob(TaskJobBase):
             overwrite=self.overwrite,
             username=self.username,
             excluded_patterns=self.excluded_patterns,
+            legacy_screenshot_rules=self.legacy_screenshot_rules,
         )
         control.report(1, 1)
         LOG.info("Converted %s.", self.resource_path())
@@ -195,10 +210,18 @@ class TcImportJob(TaskJobBase):
         :raises ChecksumRecordError: a record this build cannot read at all.
         :raises OSError: the resource would not list, or the record could not be written.
         """
-        seed = seed_checksum_record(rehu_path, excluded_patterns=self.excluded_patterns)
+        seed = seed_checksum_record(
+            rehu_path,
+            excluded_patterns=self.excluded_patterns,
+            legacy_screenshot_rules=self.legacy_screenshot_rules,
+        )
         if seed is not None:
             return seed
-        return remediate_legacy_manifest(rehu_path, excluded_patterns=self.excluded_patterns)
+        return remediate_legacy_manifest(
+            rehu_path,
+            excluded_patterns=self.excluded_patterns,
+            legacy_screenshot_rules=self.legacy_screenshot_rules,
+        )
 
     def resource_path(self) -> Path:
         """This job's `.tc` file, refusing a job that has none.
@@ -223,6 +246,7 @@ class TcImportJob(TaskJobBase):
             STATE_KEEP_BACKUPS_KEY: self.keep_backups,
             STATE_USERNAME_KEY: self.username,
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
+            STATE_LEGACY_SCREENSHOT_RULES_KEY: legacy_screenshot_rules_state(self.legacy_screenshot_rules),
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -249,6 +273,9 @@ class TcImportJob(TaskJobBase):
         self.username = username
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
+        rules = legacy_screenshot_rules_from_state(state.get(STATE_LEGACY_SCREENSHOT_RULES_KEY))
+        if rules is not None:
+            self.legacy_screenshot_rules = rules
         self.label = self.__derived_label()
 
     def __derived_label(self) -> str:

@@ -17,6 +17,7 @@ from rehuco_core import (
     DEFAULT_DURATION_PROBE,
     DURATION_PROBES,
     INFO_REHU_FILENAME,
+    LEGACY_SCREENSHOT_RULES,
     VIDEO_EXTENSIONS,
     ContentEnumeration,
     ContentUnreachableError,
@@ -236,7 +237,7 @@ def test_the_excluded_patterns_reach_the_shared_enumeration(mocker: MockerFixtur
 
     content_duration(REHU_PATH, FakeProbe(), excluded_patterns=("*.tmp",))
 
-    enumerate_content_files.assert_called_once_with(REHU_PATH, ("*.tmp",))
+    enumerate_content_files.assert_called_once_with(REHU_PATH, ("*.tmp",), LEGACY_SCREENSHOT_RULES)
 
 
 def test_the_default_probe_is_used_when_none_is_given(mocker: MockerFixture) -> None:

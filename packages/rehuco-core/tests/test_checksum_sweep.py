@@ -22,12 +22,14 @@ from pytest_mock import MockerFixture
 from rehuco_core import (
     CHECKSUM_SWEEP_KIND,
     DEFAULT_TASK_JOB_REGISTRY,
+    LEGACY_SCREENSHOT_RULES,
     PROGRESS_UNIT_RESOURCES,
     ContentUnreachableError,
     JobPaused,
     SweepChecksumsJob,
     SweepTally,
     generate_checksums,
+    legacy_screenshot_rules_state,
     sweep_summary,
 )
 
@@ -710,6 +712,7 @@ def test_a_sweep_writes_down_what_it_needs_to_be_itself_again(catalog: FakeCatal
         "create_if_missing": True,
         "migrate_to": "crc32",
         "excluded_patterns": ["*.tmp"],
+        "legacy_screenshot_rules": legacy_screenshot_rules_state(LEGACY_SCREENSHOT_RULES),
     }
 
 
