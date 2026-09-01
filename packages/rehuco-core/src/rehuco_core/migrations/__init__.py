@@ -20,12 +20,36 @@ The direction is one-way: migrations know which plugin a chain belongs to (by ke
 a plugin knows nothing about its own history. Every chain is validated at import (:func:`validate_all_chains`).
 """
 
-from types import ModuleType
+from typing import Final, Protocol
 
 from . import checksum, reference_images, rehu, tutorial
 from .runner import Chain, Step, run, stamped_version, validate_chain
 
-BLOCK_TARGETS: dict[str, ModuleType] = {
+
+class MigrationTarget(Protocol):
+    """The shape a plugin block's migration subpackage must have to sit in :data:`BLOCK_TARGETS`.
+
+    Modules satisfy protocols structurally, so ``tutorial`` and ``reference_images`` need no explicit
+    declaration -- this only gives their three module-level attributes a real type in place of
+    :class:`~types.ModuleType`'s ``Any``.
+    """
+
+    # Read-only properties, not plain attributes: a target module's own CHAIN/BASE_VERSION/CURRENT_VERSION
+    # are typed via `max(...)`/tuple-literal inference rather than an explicit `int`/`Chain` annotation, so
+    # a mutable Protocol attribute (invariant) would reject them on the literal's exact type; a getter only
+    # needs the return type to be assignable, which is what structural module access actually is.
+    # pylint: disable=invalid-name,missing-function-docstring
+    @property
+    def CHAIN(self) -> Chain: ...
+
+    @property
+    def BASE_VERSION(self) -> int: ...
+
+    @property
+    def CURRENT_VERSION(self) -> int: ...
+
+
+BLOCK_TARGETS: Final[dict[str, MigrationTarget]] = {
     # Keyed by each plugin's stable **main key** -- referenced by name, so the migration layer depends on
     # plugins and never the reverse. A key with no entry (collection, an uninstalled type, a stray block)
     # has an empty chain: head 0, nothing to run.
@@ -107,6 +131,7 @@ __all__ = [
     "CURRENT_CHECKSUM_RECORD_VERSION",
     "CURRENT_FORMAT_VERSION",
     "Chain",
+    "MigrationTarget",
     "Step",
     "current_block_version",
     "migrate_block_data",
