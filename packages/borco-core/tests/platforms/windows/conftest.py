@@ -59,8 +59,9 @@ class FakeRegistry:
 
         Mirrors real ``winreg.CreateKeyEx``, which creates every intermediate key along the
         path (like ``mkdir -p``) -- without this, a leaf like ``...\\shell\\open\\command``
-        would exist while ``...\\shell`` itself does not, and :func:`~hkcu_registry.delete_key_tree`'s
-        recursive delete would loop forever failing to ``OpenKey`` that never-created ancestor.
+        would exist while ``...\\shell`` itself does not, and :func:`~hkcu_registry.delete_key_tree`
+        would skip that never-created ancestor as "already gone" (``OpenKey`` raises
+        ``FileNotFoundError``), then fail to delete its still-populated parent.
         """
         parts = path.split("\\")
         for end in range(1, len(parts) + 1):
@@ -88,9 +89,13 @@ class FakeRegistry:
         return values[name], winreg.REG_SZ
 
     def delete_key(self, _root: int, path: str) -> None:
-        """Fake for ``winreg.DeleteKey`` -- raises ``OSError`` if ``path`` doesn't exist."""
+        """Fake for ``winreg.DeleteKey`` -- raises ``FileNotFoundError`` if ``path`` doesn't exist and
+        ``PermissionError`` if it still has sub-keys, mirroring real ``winreg`` (which deletes only
+        empty keys and reports a populated one as ``WinError 5``, access denied)."""
         if path not in self.values:
-            raise OSError(f"no such key: {path}")
+            raise FileNotFoundError(f"no such key: {path}")
+        if self.children_of(path):
+            raise PermissionError(f"key has sub-keys: {path}")
         del self.values[path]
 
     def delete_value(self, key: FakeKey, name: str) -> None:

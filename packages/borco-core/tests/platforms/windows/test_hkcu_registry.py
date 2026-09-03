@@ -167,6 +167,41 @@ def test_delete_key_tree_logs_but_does_not_raise_on_other_os_errors(
 
 
 @mark.windows
+@mark.timeout(10)  # the bug this guards against is an infinite loop: without a cap it hangs instead of failing
+def test_delete_key_tree_does_not_loop_forever_on_an_undeletable_child(
+    fake_registry: FakeRegistry, mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A child key that persistently fails to delete (e.g. a deny ACE) is visited once, not
+    forever: ``EnumKey(key, 0)`` would keep returning that same still-present child, so the fix is
+    to snapshot child names before recursing rather than re-enumerating from index 0 each time.
+
+    **Test steps:**
+
+    * write a parent key with one child key
+    * make ``DeleteKey`` raise ``PermissionError`` for the child path only
+    * delete the key tree
+    * verify no exception propagates, each failure was logged exactly once (the child, then its
+      still-populated parent -- not once per would-be infinite iteration), and both keys survived
+    """
+    child_path = rf"{KEY_PATH}\Undeletable"
+    hkcu_registry.set_value(child_path, "name", "some-value")
+    real_delete_key = fake_registry.delete_key
+
+    def delete_key(root: int, path: str) -> None:
+        if path == child_path:
+            raise PermissionError("access denied")
+        real_delete_key(root, path)
+
+    mocker.patch(f"{hkcu_registry.__name__}.winreg.DeleteKey", side_effect=delete_key)
+
+    hkcu_registry.delete_key_tree(KEY_PATH)  # must not raise, must not loop forever
+
+    assert caplog.text.count("failed to delete") == 2
+    assert child_path in fake_registry.values
+    assert KEY_PATH in fake_registry.values
+
+
+@mark.windows
 def test_matches_verb_is_true_right_after_write_verb(fake_registry: FakeRegistry) -> None:
     """``matches_verb`` reports a match immediately after the same-shaped ``write_verb`` call.
 
