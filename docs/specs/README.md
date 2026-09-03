@@ -39,6 +39,7 @@ picking a next file to read: **core data/protocol** (§4–§7) → **storage/id
 | 15 | `acquisition-tooling` | Acquisition and Migration Tooling | [acquisition-tooling.md](acquisition-tooling.md) |
 | 16 | `packaging-deployment` | Code Organization, Packaging, and Deployment | [packaging-deployment.md](packaging-deployment.md) |
 | 17 | `field-schema` | Field Schema (v1, `.tc`-compatible) | [field-schema.md](field-schema.md) |
+| 18 | `reference-images` | Reference Images: Scanning, Regions, Search, and Practice | [reference-images.md](reference-images.md) |
 | | **Appendices** | | |
 | | `appendices.briefcase-packaging` | Briefcase Packaging — Native Builds, File Association, App Identity | [appendices/briefcase-packaging.md](appendices/briefcase-packaging.md) |
 | | `appendices.code-conventions` | Code Conventions | [appendices/code-conventions.md](appendices/code-conventions.md) |

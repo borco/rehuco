@@ -21,7 +21,11 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   rebuild by rescan; transient instances re-register on reconnect; borrows persist via the user meta block
   ([[borrowing#recording-borrows]]).
 - **Per-image metadata location** — clarified ([[data-model#image-meanings]]): app-managed mutable metadata alongside
-  `.rehu`, never inside the immutable checksummed zip.
+  `.rehu`, never inside the immutable checksummed zip. Now given a concrete shape ([[reference-images#layers]]):
+  machine-derived output in a scan sidecar beside the `.rehu`, an admin-authored default inline in the block,
+  per-user overrides in the block's `users` map; keyed by the zip's own central-directory identity with XXH3 as
+  the durable key ([[reference-images#image-identity]]). What a node needs for scanning versus serving, and how
+  scans are dispatched in a swarm, are [[reference-images#node-requirements]] and [[reference-images#dispatch]].
 - **Scanning strategy** — incremental, version-aware reconciliation is now the normal mode; full rescan demoted to
   recovery ([[data-model#scan-and-staleness]]).
 - **Node identity scheme** — replaced the pairing-secret design with Syncthing-style cert-hash device IDs
@@ -173,6 +177,11 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
   designed.
 - **Drawing comparison/critique pipeline** — exploratory ([[plugins#refimages-plugin]]); needs prototyping before being
   committed.
+- **Reference-image scanning — the parts left open** ([[reference-images#open-questions]] keeps the local list):
+  the region/blur sub-dock's interaction design; the scan sidecar's final name and whether SQLite holds; the
+  tag-vocabulary mapping for a user-supplied tagger; mixed-model embeddings (refuse to merge, or one index per
+  model); whether a serving node carries the query text encoder or delegates encoding; the working-image
+  storage budget; practice-session retention; what 360° sequences are for.
 - **Where a type's *ordered* field list is authored** — narrowed, not closed. *Which* fields a type has is settled:
   the **plugin declares them** beside its key list ([[field-schema#resource-types]], #195), which is the half that
   decides what renders where. What is still open is where the **order** comes from — today one hardcoded Python list

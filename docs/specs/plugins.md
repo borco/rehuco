@@ -495,7 +495,9 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 
 [[[plugins#refimages-plugin]]]
 
-Viewer/editor similar in shape to the tutorial plugin (no "follow" mode), with type-specific features:
+Viewer/editor similar in shape to the tutorial plugin (no "follow" mode), with type-specific features. The
+four bullets below are the summary; the full treatment — the three data layers and their homes, the scan
+sidecar, user-configurable models, what a node needs, and swarm dispatch — is [[reference-images]]:
 
 - **Tagging at two granularities**: archive-level and per-image. Per-image tags are stored as app-managed mutable
   metadata alongside `.rehu`/screenshots (not inside the immutable, checksummed zip), keyed to images by index/filename
@@ -597,4 +599,5 @@ its browser/editor contributed by its plugin ([[plugins#browsers]]). All three a
 "Follow tutorial" ([[plugins#tutorial-plugin]]) and the sketch-practice slideshow ([[plugins#refimages-plugin]]) both
 want a **timed/sequential presentation** capability, just configured differently (tracked progress + notes/bookmarks vs.
 a fixed-duration rotating display + a session log). Worth designing this as one shared core capability that plugins
-configure, rather than reimplementing similar sequencing/timer logic independently in two plugins.
+configure, rather than reimplementing similar sequencing/timer logic independently in two plugins. The practice
+side's requirements are in [[reference-images#practice-sessions]].

@@ -377,8 +377,26 @@ Everything that isn't on the personal critical path, per the architecture doc's 
 - **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — [[acquisition-tooling#overview]]. Explicitly
   deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap
   enough to slip into LocalEdit if convenient.)
-- **Reference-image richness** (redaction, tag/semantic search, sketch slideshow, drawing critique) —
-  [[plugins#refimages-plugin]].
+- **Reference-image richness** (auto-tagging, blur, tag/semantic search, practice mode, drawing critique) —
+  [[plugins#refimages-plugin]], designed in full in [[reference-images]]. It is its own milestone family,
+  **RefImages**, whose slices hang off the near-term four by dependency rather than sitting at one fixed
+  position. The order is **browser first, blur second, Pinterest third**; the first five are single-machine
+  and can start any time after LocalEdit. 360° identification and practice mode are deliberately last:
+
+  | Slice | Spine | Depends on |
+  | --- | --- | --- |
+  | **RefImages1** (tracer) | **the image browser dock** — #221: open a pack → a grid over the archive's members in natural zip order → click opens the lightbox on the original, decoded on demand. No sidecar, no models; the lightbox's path-based seam widens to an image source ([[reference-images#modes]]) | LocalEdit |
+  | RefImages2 | **the sidecar skeleton** — `.rehuimg` with its `application_id` and migration chain; a decode-only, resumable task-queue job writes tier 0 and the working images, so a 20 000-image grid fills from the sidecar instead of decoding on every open ([[reference-images#scan-sidecar]]) | RefImages1 |
+  | RefImages3 | **blur, render-only** — the `rehuco-vision` skeleton with one stage, the blur-region detector; boxes stored with probabilities and the model stamp; blur/mosaic drawn in grid and lightbox behind the toggle and shortcut, threshold and default-off as plugin settings ([[reference-images#inference-package]], [[reference-images#model-contracts]]) | RefImages2 |
+  | RefImages4 | **blur, authored** — the admin default inline and per-user overrides in the block (a block-version bump + migration), the three-layer toggle, and the minimal sub-dock: add / move / scale / delete a blur box ([[reference-images#layers]], [[reference-images#region-editor]]) | RefImages3 |
+  | RefImages5 | **Pinterest, in-pack** — the tagger and embedding stages; similar-image walls by brute-force cosine over one sidecar, fuzzy text over tags, random start; per-user favorites ([[reference-images#modes]]) | RefImages3 |
+  | RefImages6 | **Pinterest, cross-pack** — the index built from sidecars into `.rehudb`; the text encoder for text→vector queries ([[reference-images#cross-pack-index]]) | RefImages5, **CacheDB** |
+  | RefImages7 | body regions (tier 2, person crops from the original) and the full region editor | RefImages4 |
+  | RefImages8 | the web fronts served by a node | RefImages6, **WatchTutorial** |
+  | RefImages9 | scan dispatch across nodes, capability advertisement, the streaming fallback ([[reference-images#dispatch]]) | **Swarm** |
+  | *deferred* | 360° identification ([[reference-images#sequences]]); practice mode with its session document and the shared timed-presentation capability ([[reference-images#practice-sessions]], [[plugins#shared-capability]]) | — |
+  | RefImagesX | polish catch-all, never "next" | — |
+
 - **3D objects, dedup review UI, access-control grammar, multi-user auth propagation, web for non-tutorial types.**
 - **Auto-update** (the installers themselves landed in #206, [[appendices.briefcase-packaging#status]]) — Briefcase-built installers with declarative file association / icon /
   AUMID, MSIX later, and self-update against a public release oracle

@@ -24,6 +24,8 @@ Nodes need to support, at minimum:
   ([[mounts-and-storage#safe-move-rename]])
 - Dropping/creating **fingerprint files** and reporting found fingerprints for auto-mapping
   ([[mounts-and-storage#fingerprint-map]])
+- Accepting an **image-scan job** for a resource it can reach, and accepting **scan results posted back** by
+  another node for a resource it owns — the primary alone writes the sidecar ([[reference-images#dispatch]])
 
 ## §5.1 Two roles: node (service) and agent (desktop GUI)
 

@@ -631,7 +631,11 @@ images inside the zip* but are stored as **app-managed mutable metadata alongsid
 inside the zip by index/filename — they never modify the immutable zip. Consequence worth handling: if a zip is manually
 refreshed (new content, new checksum), per-image overlays may now point at the wrong images. The app should detect the
 checksum change and warn that per-image overlays may be stale, rather than silently rendering redactions over the wrong
-images.
+images. That per-image metadata has three layers with three homes — machine-derived output in a sidecar beside the
+`.rehu`, an admin-authored default inline in the block, per-user overrides in the block's `users` map — and a
+per-image identity that makes the staleness check cheap; both are [[reference-images#layers]] and
+[[reference-images#image-identity]]. The cross-pack search index built from those sidecars is `.rehudb`-class
+([[data-model#local-file-trio]]): disposable, rebuilt by reading, never by re-running models.
 
 ## §4.7 Scanning strategy and staleness detection
 

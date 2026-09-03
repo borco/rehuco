@@ -109,6 +109,7 @@ nav:
       - Acquisition Tooling: specs/acquisition-tooling.md
       - Packaging & Deployment: specs/packaging-deployment.md
       - Field Schema: specs/field-schema.md
+      - Reference Images: specs/reference-images.md
       - Diagrams:
           - Overview: specs/diagrams/README.md
           - "Activity: Open a Path": specs/diagrams/activity-open-document.md
