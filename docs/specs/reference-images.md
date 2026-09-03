@@ -59,7 +59,7 @@ per-image data, and each already has a home in the data model.
 | --- | --- | --- | --- |
 | **Machine-derived** | per-image tags with confidences, an image embedding, detected person / head / hand / foot boxes, detected blur boxes, keypoints, 360° sequence membership, a ~512 px working image, and the model that produced each | the **scan sidecar** beside the `.rehu` ([[reference-images#scan-sidecar]]) | resource metadata: written only by the resource's primary node ([[mounts-and-storage#folder-add]]); travels with the folder; a bookkeeping suffix like `.checksum`, so it never counts as content ([[data-model#checksums]]). **Rebuildable in principle, at GPU-weeks cost — so retained and copied like screenshots, never treated as `.rehudb`-disposable** |
 | **Shared authored — the admin default** | an admin's corrections: regions and blur boxes added, moved, resized or deleted; manual 360° groupings; per-image shared tags | the `reference_images` block of the `.rehu`, inline, **sparse** (only images someone touched) | resource metadata: single writer, online-only edit in v1 ([[sync#overview]]); the layer every user sees by default |
-| **Per-user** | favorites (image keys), per-user region and blur overrides, the user's blur-on/off preference | the block's `users.<name>` map ([[field-schema#per-user-shared]]), sparse | per-user state: mergeable, offline-editable, writable through any node |
+| **Per-user** | favorites (image keys), per-user region and blur overrides, the user's blur preference (on/off plus the per-class switches) | the block's `users.<name>` map ([[field-schema#per-user-shared]]), sparse | per-user state: mergeable, offline-editable, writable through any node |
 
 **Render-time merge rule: the scan provides, the admin layer overrides, the current user's layer overrides
 that.** "Other users" is a *view* of their `users.<name>` entries and is never merged into anyone's rendering.
@@ -269,6 +269,10 @@ not to be uploaded regardless.
 
 Each scan stage — tagger, blur-region detector, pose and regions, embedding, and the optional caption and
 prop stages — is a **named contract**: an input shape, an output schema, and for taggers a vocabulary map.
+For the blur detector the output schema fixes the **class vocabulary**: male genitals, female genitals,
+female nipples, each with an exposed and a covered variant ([[reference-images#modes]]); a model that emits a
+different class list is mapped onto it, never the other way round, so the per-class switches mean the same
+thing whichever model produced the boxes.
 The plugin's settings page (the "Plugins" settings group, [[appendices.settings-pages#overview]]) lists, per
 stage, *which model fills it*. Three kinds of entry are foreseen:
 
@@ -391,6 +395,30 @@ practice mode is deferred ([[reference-images#practice-sessions]]).
   ships**: the detector finds body parts on the whole image directly, so it needs no person stage, a
   non-people image simply yields no boxes, and the render-only half (boxes, toggle, shortcut, threshold)
   lands before any authored layer or editor.
+- **Blur is per class, and the classes are distinct.** There are three: **male genitals**, **female
+  genitals**, **female nipples**. The master toggle above switches blurring on and off; *what* is blurred
+  while it is on is a per-user preference of three independent switches, one per class, plus an **"all
+  genitals"** control that is derived, not a fourth state: it reads as on exactly when both genital switches
+  are on, and setting it sets both. So a user can blur all genitals, only male, only female, and/or female
+  nipples, in any combination. The class vocabulary is part of the detector's contract
+  ([[reference-images#model-contracts]]): a user-supplied detector maps its own classes onto these three, and
+  a class it cannot supply leaves that switch inert for images it scanned.
+- **A blur area carries a *set* of classes, not one.** A detector emits one class per box and the scan
+  stores them exactly so — one box, one class, one probability — because that is the precise form and the
+  one that keeps per-class thresholds meaningful; the scan never merges. Overlapping boxes need no merging
+  to *render*: every box whose class is enabled is drawn, and overlapping enabled boxes coalesce on screen by
+  themselves. Sets arise in the **authored** layer: a box drawn by hand over an area large enough to hold
+  several parts is given every class that applies, and the sub-dock can **merge** selected areas into one
+  whose classes are the union ([[reference-images#region-editor]]). The rule for a multi-class area is that
+  it is blurred when **any** of its classes is enabled — deliberately imprecise, because whoever merged
+  chose one area over several, and the way back is to delete it and redraw. Whether the scan should ever
+  auto-merge near-duplicate detections of one class is open ([[reference-images#open-questions]]).
+- **Only what is visible is ever blurred.** A blur box exists where the detector *saw* the part; a back or
+  profile view in which the genitals or nipples are not visible yields no box, so nothing is blurred — there
+  is no rule to write, since a detector cannot box what is not in the picture. Detectors of the candidate
+  family also report **covered** variants; those are stored, because they are useful for the "clothed only"
+  filter, but they are **never** blurred: blur applies to the exposed classes alone. A part the detector
+  missed is what the authored layer's hand-drawn box is for.
 
 ## §18.12 The region and blur sub-dock
 
@@ -403,7 +431,11 @@ what is wanted so the decision is made later on purpose rather than fallen into.
 - It shows **two previews**: one with every region drawn and the selected region editable; one showing only
   the blur regions, with the blur on/off toggle applied so the effect is seen as it will render.
 - **Body regions** (person, head, hands, feet, …) can be selected, moved, scaled and deleted; **blur regions**
-  can additionally be added.
+  can additionally be added and **merged**. A box drawn by hand is given one or more of the three blur
+  classes — male genitals, female genitals, female nipples ([[reference-images#modes]]) — so it obeys the
+  same per-class switches as a detected one; merging selected areas yields one area whose classes are the
+  union, blurred when any of them is enabled. There is no split: the way back from a merge is delete and
+  redraw.
 - Which layer is shown and edited follows [[reference-images#layers]]: the admin default, the current user,
   or other users; editing while viewing someone else's layer creates the current user's override. Whether a
   logged-in admin edits the shared layer directly or the same override path with a "promote to default"
@@ -444,6 +476,9 @@ Local to this document; the global list is [[appendices.open-questions#still-ope
 - Tag-vocabulary mapping for a user-supplied tagger ([[reference-images#model-contracts]]) — a mapping file
   per model with the built-ins' shipped, unmapped tags kept raw and searchable, is the likely floor.
 - Mixed-model embeddings: the index either refuses to merge them or keeps one index per embedding model.
+- Whether the scan should auto-merge near-duplicate blur detections of one class (the same part boxed twice
+  at slightly different extents), and at what overlap; detections of *different* classes are never merged
+  by the scan ([[reference-images#modes]]).
 - Whether the Pinterest front needs the text encoder on every serving node or delegates encoding to a
   scan-capable node (a string in, a vector out — tiny).
 - The working-image storage budget (~300–500 GB at 512 px over ten million images) and whether any eviction
