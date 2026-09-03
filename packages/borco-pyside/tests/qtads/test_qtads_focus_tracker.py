@@ -10,9 +10,9 @@ from collections.abc import Iterator
 
 import PySide6QtAds as QtAds
 from borco_pyside.qtads.qtads_focus_tracker import QtAdsFocusTracker
-from borco_pyside.qtads.qtads_widgets import tab_close_button
+from borco_pyside.qtads.qtads_widgets import tab_close_button, tab_label
 from borco_pyside.theming import ApplicationPaletteChangeNotifier, Glyph
-from PySide6.QtCore import QByteArray
+from PySide6.QtCore import QByteArray, Qt
 from PySide6.QtWidgets import QApplication, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -466,18 +466,18 @@ def test_state_restore_retracks_areas_so_tab_switches_still_work(manager: QtAds.
 
 
 def test_state_restore_re_marks_the_current_dock_it_rebuilt(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
-    """After a restore rebuilds the tabs, the current dock's tab is re-marked and re-polished.
+    """After a restore rebuilds its area, the current dock's tab is re-marked and re-polished.
 
-    ``restoreState`` rebuilds every tab, and a rebuilt tab does not re-evaluate the
-    ``[tracked_focus="true"]`` rule on its own -- the current dock comes back unhighlighted (visibly
-    so when the rule is inherited from an ancestor rather than set on this manager). The re-mark is
-    deferred, like the close-button restyle beside it, because QtAds keeps re-polishing the rebuilt
-    tabs after ``stateRestored``.
+    ``restoreState`` rebuilds the *area* a tab sits in, and reparenting into the rebuilt area does
+    not make the tab re-evaluate the ``[tracked_focus="true"]`` rule on its own -- the current dock
+    comes back unhighlighted (visibly so when the rule is inherited from an ancestor rather than set
+    on this manager). The re-mark is deferred, like the close-button restyle beside it, because QtAds
+    keeps re-polishing tabs within the rebuilt area after ``stateRestored``.
 
     **Test steps:**
 
     * add a dock (making it current) and save the layout
-    * clear the tracked-focus property off its tab by hand, standing in for the rebuild
+    * clear the tracked-focus property off its tab by hand, standing in for the area rebuild
     * restore the layout and let the deferred restyle run
     * verify the tab carries the tracked-focus property again
     """
@@ -491,6 +491,35 @@ def test_state_restore_re_marks_the_current_dock_it_rebuilt(manager: QtAds.CDock
     qtbot.wait(50)
 
     assert dock.tabWidget().property(QtAdsFocusTracker.TRACKED_FOCUS_PROPERTY) is True
+
+
+def test_state_restore_keeps_a_lone_docks_tab_click_selecting_it(manager: QtAds.CDockManager, qtbot: QtBot) -> None:
+    """After a layout restore, clicking a lone dock's own tab label still selects it.
+
+    A dock alone in its own area is always index 0, so its tab-label ``clicked`` (connected in
+    ``__on_dock_widget_added``) is the *only* signal that can select it -- ``currentChanged`` never
+    fires for it. Pins whether that connection survives ``restoreState``, which rebuilds every area
+    and so, per the class docstring, the tab labels within it.
+
+    **Test steps:**
+
+    * add a lone dock (current) and a second dock in a split area, then select the second one
+    * save the layout and restore it
+    * click the first dock's (rebuilt) tab label
+    * verify it became current again
+    """
+    tracker = QtAdsFocusTracker(manager)
+    lone = add_dock(manager, "one")
+    other = add_dock(manager, "two", QtAds.RightDockWidgetArea)
+    tracker.set_current_dock(other)
+    state = bytes(manager.saveState().data())
+
+    assert manager.restoreState(QByteArray(state))
+    assert tracker.current_dock is other
+
+    qtbot.mouseClick(tab_label(lone), Qt.MouseButton.LeftButton)
+
+    assert tracker.current_dock is lone
 
 
 def test_construction_pins_the_colour_scheme_to_the_current_palette(

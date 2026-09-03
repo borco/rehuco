@@ -98,8 +98,8 @@ class QtAdsFocusTracker(QObject):  # pylint: disable=too-many-instance-attribute
 
     DEFAULT_CLOSE_GLYPH_SIZE: Final = 12
     """Default pixel size the close-button glyph is rendered at -- set in code (not QSS, which QtAds
-    ignores for this button's font), and re-applied on every restyle since QtAds rebuilds the
-    button."""
+    ignores for this button's font), and re-applied on every restyle along with the glyph itself,
+    since a restyle re-asserts the whole button look at once (see :meth:`__style_close_button`)."""
 
     current_dock_changed: Signal = Signal(object)
     """Emitted with the newly-current dock (a ``QtAds.CDockWidget``), or ``None`` when none is
@@ -377,8 +377,14 @@ ads--CDockWidget[{prop}="true"] {{
         (e.g. a dock the restore has since stacked *behind* another). Reading the current tab of the
         stale current dock's area back here corrects it, without needing the user to click first.
 
-        Also re-runs :meth:`__style_close_button` on every tracked dock: ``restoreState`` rebuilds
-        the tabs, so each dock's close button is a fresh one back to showing QtAds' default icon.
+        Also re-runs :meth:`__style_close_button` on every tracked dock. Not because the buttons are
+        new: ``restoreState`` rebuilds each affected *area* (see the class docstring), not the tabs
+        within it -- a dock's tab label, tab widget and close button are the same objects afterwards,
+        reparented rather than recreated, which is also why the label's ``clicked`` connection made
+        in :meth:`__on_dock_widget_added` survives a restore. Measured offscreen (manager shown and
+        unshown, lone and tabbed docks, #183): the button's zero icon size, glyph text, font and
+        fixed size all came through the restore untouched, so this re-assertion is defensive rather
+        than repairing a reset that was observed.
         """
         for dock in self.__tracked_docks:
             self.__defer_close_button_style(dock)
@@ -482,10 +488,11 @@ ads--CDockWidget[{prop}="true"] {{
         """Schedule :meth:`__style_close_button` for ``dock`` on the next event-loop tick.
 
         Deferred, not immediate, because QtAds re-applies the close button's own icon and 16px icon
-        size *after* it emits ``dockWidgetAdded`` (and after a restore) for the tab it then makes
-        active -- overwriting an eager restyle (confirmed empirically: the first/active tab kept
-        QtAds' icon while a tabbed-in one styled correctly). A zero-delay timer runs once that
-        synchronous QtAds setup has finished.
+        size *after* it emits ``dockWidgetAdded`` for the tab it then makes active -- overwriting an
+        eager restyle (confirmed empirically: the first/active tab kept QtAds' icon while a tabbed-in
+        one styled correctly). A zero-delay timer runs once that synchronous QtAds setup has
+        finished. The same deferral is reused after a restore and a palette change for uniformity;
+        a restore itself was measured to leave the button intact (see :meth:`__on_state_restored`).
 
         :param dock: the dock whose close button to restyle once QtAds has finished with it.
         """
@@ -495,14 +502,15 @@ ads--CDockWidget[{prop}="true"] {{
         """Schedule :meth:`__style_dock` for ``dock` on the next event-loop tick, reading current-ness
         as it stands *then* -- so a restore that also moves current-ness styles the final answer.
 
-        A layout restore rebuilds every tab, and a rebuilt tab does not re-evaluate a
-        property-matched rule (``[tracked_focus="true"]``) on its own: whichever dock was current
-        comes back unhighlighted. Deferred for the same reason
-        :meth:`__defer_close_button_style` is -- QtAds keeps re-polishing the rebuilt tabs after
-        ``stateRestored``, and an eager repolish is simply undone (confirmed empirically: immediate,
-        the restored tab still came back unhighlighted).
+        A layout restore rebuilds the *area* around a tab, not the tab itself (see
+        :meth:`__on_state_restored`), and reparenting into the rebuilt area does not make a tab
+        re-evaluate a property-matched rule (``[tracked_focus="true"]``) on its own: whichever dock
+        was current comes back unhighlighted. Deferred for the same reason
+        :meth:`__defer_close_button_style` is -- QtAds keeps re-polishing tabs within the rebuilt
+        area after ``stateRestored``, and an eager repolish is simply undone (confirmed empirically:
+        immediate, the restored tab still came back unhighlighted).
 
-        :param dock: the dock to restyle once QtAds has finished rebuilding its tab.
+        :param dock: the dock to restyle once QtAds has finished rebuilding its area.
         """
         QTimer.singleShot(0, lambda: self.__style_dock(dock, dock is self.__current_dock))
 
@@ -512,9 +520,10 @@ ads--CDockWidget[{prop}="true"] {{
         Shows the close glyph as text and hides QtAds' own close icon by zeroing the button's icon
         size (rather than clearing the icon, which QtAds re-sets) -- so QSS ``color:`` recolours it,
         see :data:`DEFAULT_CLOSE_GLYPH`. An empty glyph family keeps the button's inherited UI font
-        (right for a plain Unicode symbol). Called (deferred) whenever the button is
-        (re)created: on ``dockWidgetAdded`` and after a layout restore rebuilds the tabs. A no-op if
-        this tab shows no close button (no close-button config flag).
+        (right for a plain Unicode symbol). Called (deferred) on ``dockWidgetAdded``, where QtAds's
+        own setup would overwrite an eager restyle, and again after a layout restore and a palette
+        change -- re-assertions, since the button survives both (see :meth:`__on_state_restored`).
+        A no-op if this tab shows no close button (no close-button config flag).
 
         Defensive against a ``dock`` mid-teardown, like :meth:`__style_dock`: ``RuntimeError`` from a
         tab Shiboken has already flagged deleted is harmless to skip -- and expected, since the
