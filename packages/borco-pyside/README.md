@@ -21,8 +21,20 @@ If you use `borco-pyside` from PyPI, this move will be handled automatically.
 
 Currently provides:
 
-- **`borco_pyside.core.ApplicationSingleton`** — a single-instance guard that forwards argv from later launches
-  to the first process, built on `QLocalServer`/`QLocalSocket`.
+- **`borco_pyside.core`** — application-lifecycle primitives: `ApplicationSingleton` (single-instance guard
+  forwarding argv to the first process), `ConnectionList`, `SimpleProperty`/`TypedProperty`.
+- **`borco_pyside.dialogs`** — a modeless, dockable dialog framework: `DockableDialog`,
+  `DockableDialogFrame`, `DockableDialogManager`.
+- **`borco_pyside.logging`** — logging for a GUI app: `LogBridge`, `LogModel`, `LogWidget`, `LogView`, plus
+  console setup via `setup_console_logging`.
+- **`borco_pyside.platforms`** — platform-specific modules, each imported only on its own platform (e.g.
+  `platforms.windows.window_activation`).
+- **`borco_pyside.qtads`** — generic helpers for `pyside6-qtads` (QtAds): `QtAdsFocusTracker`,
+  `tab_close_button`, `tab_label`.
+- **`borco_pyside.theming`** — theme switching, SVG recoloring, and themed action icons: `ThemeManager`,
+  `ThemeMenu`, `ThemeModel`, `ActionIconThemeHandler`.
+- **`borco_pyside.widgets`** — reusable widgets: `ItemListEditor`, `MessageBanner`, `Rating`,
+  `RichTextView`, `StringListEditor`, `UnboundedSpinBox`, and other small building blocks.
 
 ## Installation
 
