@@ -88,6 +88,8 @@ def atomic_write_bytes(path: Path | str, data: bytes) -> None:
             else:
                 try:
                     os.fsync(dir_fd)
+                except OSError:
+                    LOG.warning("Could not fsync directory %s", path.parent, exc_info=True)
                 finally:
                     os.close(dir_fd)
     except BaseException:
