@@ -16,7 +16,7 @@ from .utils import painted_pixmap
 
 
 class Glyph(NamedTuple):
-    """A single glyph codepoint paired with the font family/weight it resolves in -- kept together so
+    """A single glyph codepoint paired with the font family it resolves in -- kept together so
     a codepoint is never passed around without knowing which font it needs, or vice versa.
 
     :param codepoint: the glyph character.
@@ -44,9 +44,10 @@ def glyph_icon(glyph: str, family: str, color: QColor) -> QIcon:
 class GlyphIconEngine(QIconEngine):
     """Renders one font glyph fresh at whatever exact size/mode/state Qt requests.
 
-    A single glyph/family/color, unlike :class:`~borco_pyside.theming.RecoloredSvgIconEngine`'s
-    mode/state corners -- none of this toolkit's glyph icons (a line edit's clear/calendar trailing
-    actions) are checkable, so there is no On/Off or enabled/disabled variant to carry.
+    A single glyph/family/color, unlike
+    :class:`~borco_pyside.theming.svg_recolor.RecoloredSvgIconEngine`'s mode/state corners -- none
+    of this toolkit's glyph icons (a line edit's clear/calendar trailing actions) are checkable, so
+    there is no On/Off or enabled/disabled variant to carry.
 
     :param glyph: the character to draw.
     :param family: the font family ``glyph`` resolves in.
@@ -56,9 +57,9 @@ class GlyphIconEngine(QIconEngine):
     FILL_FACTOR: Final = 0.7
     """Fraction of the requested rect the glyph's font size fills. An SVG icon's own source already
     bakes in margin around its drawn shape (its viewBox is deliberately larger than the artwork), so
-    :class:`~borco_pyside.theming.RecoloredSvgIconEngine` can render edge-to-edge; a font glyph has no
-    such built-in canvas margin, so filling the *whole* rect at ``1.0`` reads as cramped -- confirmed
-    empirically against the actual `QLineEdit` trailing-action size."""
+    :class:`~borco_pyside.theming.svg_recolor.RecoloredSvgIconEngine` can render edge-to-edge; a font
+    glyph has no such built-in canvas margin, so filling the *whole* rect at ``1.0`` reads as
+    cramped -- confirmed empirically against the actual `QLineEdit` trailing-action size."""
 
     def __init__(self, glyph: str, family: str, color: QColor) -> None:
         super().__init__()

@@ -26,7 +26,7 @@ STALE_STATUS: Final = (
 # per-OS twins whose `.ui` files (hence generated `Ui_` types), constructor arguments and status
 # vocabularies already differ -- this page reports four states where the Windows one reports three
 # -- and a base class over two platform-specific pages would have to be re-opened by whichever OS
-# diverges next. Matches the same choice made in `tests/conftest.py`'s `FakeSettings`.
+# diverges next. Matches the same choice made in `tests/rehuco_agent_tests/conftest.py`'s `FakeSettings`.
 # pylint: disable=duplicate-code
 class DesktopIntegrationPage(QWidget):
     """Register/unregister the Linux ``.rehu`` desktop entry, MIME type and icon, and check
