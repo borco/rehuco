@@ -12,7 +12,7 @@ from borco_core.platforms.windows import file_association  # noqa: E402  # pylin
 from .conftest import FakeRegistry  # noqa: E402  # pylint: disable=wrong-import-position
 
 PROGID: Final = "Test.Document"
-EXTENSION: Final = "test"
+EXTENSION: Final = ".test"
 FRIENDLY_NAME: Final = "Test Document"
 AUMID: Final = "test.app"
 EXE_PATH: Final = r"C:\fake\test-app.exe"
@@ -37,7 +37,7 @@ def test_register_writes_progid_and_extension_binding(fake_registry: FakeRegistr
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
 
     progid_key = rf"Software\Classes\{PROGID}"
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     assert fake_registry.values[progid_key][""] == FRIENDLY_NAME
     assert fake_registry.values[f"{progid_key}\\DefaultIcon"][""] == ICON
     assert fake_registry.values[f"{progid_key}\\shell\\open\\command"][""] == COMMAND
@@ -184,7 +184,7 @@ def test_is_registered_is_false_when_the_extension_points_elsewhere(fake_registr
     * verify ``False``
     """
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     fake_registry.values[ext_key][""] = "SomeOtherApp.Document"
 
     assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
@@ -202,7 +202,7 @@ def test_is_registered_is_false_when_open_with_progids_is_missing(fake_registry:
     * verify ``False``
     """
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     del fake_registry.values[f"{ext_key}\\OpenWithProgids"][PROGID]
 
     assert not file_association.FileAssociation.is_registered(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
@@ -224,7 +224,7 @@ def test_unregister_removes_progid_and_extension_binding(fake_registry: FakeRegi
 
     progid_key = rf"Software\Classes\{PROGID}"
     assert not any(key.startswith(progid_key) for key in fake_registry.values)
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     assert ext_key in fake_registry.values
     assert "" not in fake_registry.values[ext_key]
     assert PROGID not in fake_registry.values[rf"{ext_key}\OpenWithProgids"]
@@ -242,7 +242,7 @@ def test_unregister_keeps_extension_binding_pointing_elsewhere(fake_registry: Fa
     * verify the extension key is untouched
     """
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     fake_registry.values[ext_key][""] = "SomeOtherApp.Document"
 
     file_association.FileAssociation.unregister(PROGID, EXTENSION)
@@ -264,7 +264,7 @@ def test_unregister_preserves_other_applications_data_on_the_extension_key(fake_
       app's entry and ``PerceivedType`` survive
     """
     file_association.FileAssociation.register(PROGID, EXTENSION, FRIENDLY_NAME, COMMAND, ICON, AUMID)
-    ext_key = rf"Software\Classes\.{EXTENSION}"
+    ext_key = rf"Software\Classes\{EXTENSION}"
     fake_registry.values[rf"{ext_key}\OpenWithProgids"]["SomeOtherApp.Document"] = ""
     fake_registry.values[ext_key]["PerceivedType"] = "document"
 
