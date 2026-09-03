@@ -234,6 +234,40 @@ def test_atomic_write_logs_warning_when_directory_fsync_fails(
     assert "fsync" in caplog.text
 
 
+def test_atomic_write_logs_warning_when_directory_fsync_itself_fails(
+    mocker: MockerFixture, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A directory-fd ``fsync`` failure is logged, not raised -- the replace already succeeded.
+
+    **Test steps:**
+
+    * patch filesystem calls; the directory fd opens fine but ``os.fsync`` on it raises
+      ``OSError`` (only for that fd -- the file's own ``fsync`` in the write itself still
+      succeeds), as network filesystems can when directory-fd fsync is unsupported
+    * call ``atomic_write_bytes``
+    * verify no exception propagates, the write still completes (``os.replace`` ran), the
+      directory fd is still closed, and a warning is logged
+    """
+    _, replace, _ = patch_fs(mocker)
+    close = mocker.patch("borco_core.atomic_write.os.close")
+
+    def fsync(fd: object) -> None:
+        # ``patch_fs`` hands out ``FD`` as the directory fd; the file's own fsync gets
+        # the mocked handle's ``fileno()``, which is not ``FD``, so only the directory
+        # fsync fails here.
+        if fd == FD:
+            raise OSError("cannot fsync directory")
+
+    mocker.patch("borco_core.atomic_write.os.fsync", side_effect=fsync)
+
+    with caplog.at_level("WARNING"):
+        atomic_write_bytes(TARGET, b"data")
+
+    replace.assert_called_once_with(Path(TEMP), TARGET)
+    close.assert_called_once_with(FD)
+    assert "fsync" in caplog.text
+
+
 def test_atomic_write_skips_directory_fsync_on_windows(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
     """On Windows, the directory-fsync attempt is skipped entirely, without logging.
 
