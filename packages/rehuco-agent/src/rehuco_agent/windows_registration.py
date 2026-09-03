@@ -21,8 +21,8 @@ from borco_core.platforms.windows.file_extension_context_menu import FileExtensi
 PROGID: Final = "Rehuco.Document"
 """HKCU ProgID under ``Software\\Classes`` that owns the ``.rehu``/``.tc`` associations."""
 
-EXTENSIONS: Final = ("rehu", "tc")
-"""File extensions (each without the leading dot) registered to :data:`PROGID` -- ``.tc`` gets the
+EXTENSIONS: Final = (".rehu", ".tc")
+"""File extensions (each including the leading dot) registered to :data:`PROGID` -- ``.tc`` gets the
 same handler as ``.rehu`` so a legacy file opens straight into its locked view
 ([[acquisition-tooling#tc-to-rehu]])."""
 
