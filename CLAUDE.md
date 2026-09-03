@@ -53,8 +53,9 @@ view/edit), **CacheDB** (cached database), **WatchTutorial** (watch a tutorial),
 site scrapers feeding the editor), **RefImages** (image tagging, search,
 practice; slices hang off the others by dependency) — each sliced `LocalEdit1`,
 `LocalEdit2`, …, with a terminal catch-all polish slice named `<Milestone>X` (e.g. `LocalEditX`) that is
-never "next". Audit runs are `X1`, `X2`, …. GH milestone names track the per-slice labels in
-`implementation-plan.md`; keep the two in step.
+never "next". Audit runs are `Audit1`, `Audit2`, … (`X1`/`X2` is the retired form — those two are already
+closed and stay as-is). GH milestone names track the per-slice labels in `implementation-plan.md`; keep the
+two in step.
 
 ## Monorepo layout
 
