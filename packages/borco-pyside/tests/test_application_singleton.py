@@ -12,7 +12,7 @@ from typing import Final
 import pytest
 from borco_pyside.core import ApplicationSingleton, application_singleton
 from PySide6.QtCore import QCoreApplication, QDeadlineTimer
-from PySide6.QtNetwork import QAbstractSocket, QLocalSocket
+from PySide6.QtNetwork import QAbstractSocket, QLocalServer, QLocalSocket
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 
@@ -288,6 +288,7 @@ def test_rebind_failure_attempts_to_restore_previous_server(mocker: MockerFixtur
     * patch ``__claim_role`` on the instance to always report ``Claim.FAILED``
     * call ``setup`` with a new app id and verify ``__claim_role`` was called twice: once
       for the new name and once to attempt restoration of the previous name
+    * verify the restore call carries no payload, so no argv can reach whoever holds that name
     """
     mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
     singleton = make_singleton()
@@ -301,8 +302,103 @@ def test_rebind_failure_attempts_to_restore_previous_server(mocker: MockerFixtur
 
     assert result is True  # degraded: neither name could be claimed
     assert claim_mock.call_count == 2
-    restore_name = claim_mock.call_args_list[1][0][0]
+    restore_name, restore_message = claim_mock.call_args_list[1][0]
     assert restore_name == previous_name
+    assert restore_message is None  # a restore carries no payload
+
+
+def test_rebind_failure_restores_previous_server_successfully(
+    mocker: MockerFixture, make_singleton: Factory, caplog: pytest.LogCaptureFixture
+) -> None:
+    """When rebinding fails but the previous name is still free, the restore succeeds quietly.
+
+    Covers the success side of the restore attempt (the failure side is exercised by
+    ``test_failed_rebind_restore_never_forwards_argv_to_a_foreign_primary``): no "could not
+    restore" warning is logged when the restore claims ``Claim.PRIMARY``.
+
+    **Test steps:**
+
+    * bypass forwarding and let a first ``setup`` succeed
+    * patch ``__claim_role`` to report ``Claim.FAILED`` for the rebind and ``Claim.PRIMARY``
+      for the restore attempt that follows it
+    * call ``setup`` with a new app id and verify it returns ``True``
+    * verify no "could not restore" warning was logged
+    """
+    mocker.patch.object(ApplicationSingleton, "_ApplicationSingleton__forward_to_primary", return_value=False)
+    singleton = make_singleton()
+    assert singleton.setup(unique_app_id()) is True
+
+    mocker.patch.object(
+        singleton,
+        "_ApplicationSingleton__claim_role",
+        side_effect=[ApplicationSingleton.Claim.FAILED, ApplicationSingleton.Claim.PRIMARY],
+    )
+
+    with caplog.at_level(logging.WARNING, logger="borco_pyside.core.application_singleton"):
+        result = singleton.setup(unique_app_id())
+
+    assert result is True
+    assert not any("could not restore" in r.message for r in caplog.records)
+
+
+def test_failed_rebind_restore_never_forwards_argv_to_a_foreign_primary(
+    mocker: MockerFixture,
+    monkeypatch: pytest.MonkeyPatch,
+    make_singleton: Factory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A restore that lands on someone else's primary delivers nothing and leaves it alone.
+
+    A rebind releases the previous name before claiming the new one, so another process can own
+    it by the time the failed rebind tries to restore it. Restoring must not hand that unrelated
+    primary this process's argv (it would open the wrong files there while this process keeps
+    running), nor unlink its live socket.
+
+    **Test steps:**
+
+    * claim a first app id, then let a foreign server steal that name the moment it is released
+    * patch ``QLocalServer`` so every claim by the guard fails with ``AddressInUseError``
+    * mock the command line so the rebind carries file arguments worth misdelivering
+    * call ``setup`` with a second app id and verify it degrades (``True``, no server name)
+    * verify the foreign primary saw a connection but received zero bytes
+    * verify it is still listening, and that the failed restore is logged
+    """
+    app_id = unique_app_id()
+    singleton = make_singleton()
+    assert singleton.setup(app_id) is True
+    previous_name = singleton.server_name
+    assert previous_name is not None
+
+    # QLocalServer imported here, not through the module, so the patch below leaves it real
+    foreign = QLocalServer()
+    release = singleton.shutdown
+
+    def steal_previous_name() -> None:
+        release()
+        if not foreign.isListening():
+            assert foreign.listen(previous_name)
+
+    mocker.patch.object(singleton, "shutdown", side_effect=steal_previous_name)
+    server_cls = mocker.patch("borco_pyside.core.application_singleton.QLocalServer")
+    server = server_cls.return_value
+    server.listen.return_value = False
+    server.isListening.return_value = False
+    server.serverError.return_value = QAbstractSocket.SocketError.AddressInUseError
+
+    monkeypatch.setattr(sys, "argv", ["my-app", "tutorial.txt"])
+    with caplog.at_level(logging.WARNING, logger="borco_pyside.core.application_singleton"):
+        assert singleton.setup(unique_app_id()) is True  # degraded: neither name could be claimed
+    assert singleton.server_name is None
+
+    connected, _ = foreign.waitForNewConnection(1000)  # PySide6 returns (arrived, timed_out)
+    assert connected  # the restore probed
+    probe = foreign.nextPendingConnection()
+    probe.waitForReadyRead(200)
+    assert bytes(probe.readAll().data()) == b""  # ...but delivered nothing
+    assert foreign.isListening()  # ...and did not unlink the foreign socket
+    assert any("could not restore" in r.message for r in caplog.records)
+
+    foreign.close()
 
 
 def test_shutdown_with_connection_in_flight(qtbot: QtBot, make_singleton: Factory) -> None:
