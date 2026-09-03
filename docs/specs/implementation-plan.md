@@ -166,10 +166,12 @@ Three principles hold across the split:
   makes it a real searchable catalog; WatchTutorial adds tablet watching; Borrowing adds offline borrow. Value lands at
   every milestone boundary.
 
-Heavier work beyond these four — acquisition/LLM tooling ([[acquisition-tooling#overview]]), reference-image richness,
+Heavier work beyond these four — the LLM extraction fallback ([[acquisition-tooling#llm-url-extract]]), reference-image richness,
 3D objects, multi-user auth, native installers — is deferred (see
 [What is deliberately deferred](#what-is-deliberately-deferred-past-these-four)); the full swarm and Daz3D are further
-milestones (**Swarm**, **Daz3D**), not part of the near-term four.
+milestones (**Swarm**, **Daz3D**), not part of the near-term four. **WebScrapping** — browser drops and site scrapers
+feeding the editor ([[acquisition-tooling#drag-drop-aids]]) — is a small single-machine family of its own, sliced
+below, that can start any time after LocalEdit.
 
 ---
 
@@ -242,6 +244,13 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   its claim is in the `.checksum` instead of shadowing it forever ([[data-model#resource-scoping]],
   [[data-model#checksums]]). Carries the task dock's own polish alongside it, and is where a `.tc`-era resource stops
   being a special case anywhere but the importer.
+- **LocalEdit10 — Docks that were missing.** Four surfaces the editor turned out to need once it was used daily, none
+  of them a new spine: the documents area becomes a hideable dock that any file open shows and raises
+  ([[plugins#dock-shell]]); the Tasks dock grows a Log sub-dock following the selected job, which needs a record to
+  carry every scope open when it was written and the queue to open a per-job scope
+  ([[appendices.logging#scopes]], [[appendices.task-queue#scopes]]); a Files sub-dock over the resource's own folder
+  ([[plugins#files-subdock]]); and a conversion's `.orig` screenshots listed in the images sub-dock, adoptable one at
+  a time ([[acquisition-tooling#adopted-backups]]).
 - **LocalEditX — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences. Last in the
   milestone by construction: the catch-all polish slice, named like an audit run because it is never "next", only "after
   everything else".
@@ -369,14 +378,34 @@ Touches, thinly: [[borrowing#another-instance-role]] (borrow as instance role),
 
 ---
 
+## WebScrapping — Browser drops and site scrapers (single machine, after LocalEdit)
+
+**Goal:** feed the editor from a browser instead of by hand — a selection, a URL, or a page's images dropped on the
+open document ([[acquisition-tooling#drag-drop-aids]]), with site knowledge in scrapers the user can override
+([[acquisition-tooling#url-extract]]). No node, no network beyond the fetch the drop asks for, no LLM.
+
+| Slice | Spine | Depends on |
+| --- | --- | --- |
+| **WebScrapping1** (tracer) | a spike on what a browser drop actually carries per platform ([[acquisition-tooling#drop-source-url]]), then the HTML→Markdown drop on the description editor — the first drop handler and the first HTML dependency | LocalEdit |
+| WebScrapping2 | the scraper Protocols, typed results, the registry with the user's scripts folder and its settings page, the scrape job, and the URL drop on the main editor; ArtStation and Udemy as the built-ins ([[acquisition-tooling#scraper-protocols]], [[acquisition-tooling#scraper-registry]], [[acquisition-tooling#scrape-job]]) | WebScrapping1 |
+| WebScrapping3 | the image pipeline — local copy, image URL or data, referrer, rescale, next `<stem>NN` — and the picker for page and selection drops on the images sub-dock | WebScrapping2 |
+| WebScrappingX | polish catch-all, never "next" | — |
+
+**Exit criteria:** a course page dropped on an empty tutorial fills its title, authors, publisher, description and
+screenshots, and a selection dropped on the description lands as clean Markdown — with the user reading each before
+saving.
+
+---
+
 ## What is deliberately deferred past these four
 
 Everything that isn't on the personal critical path, per the architecture doc's own scoping. (The full multi-node
 **Swarm** and **Daz3D** support are themselves later milestones, not part of the near-term four — see the roadmap.)
 
-- **Acquisition tooling** (LLM URL extraction, image-drag, HTML→Markdown) — [[acquisition-tooling#overview]]. Explicitly
-  deferred until after the tutorial web viewer; manual entry suffices meanwhile. (HTML→Markdown and image-drag are cheap
-  enough to slip into LocalEdit if convenient.)
+- **LLM URL extraction** — [[acquisition-tooling#llm-url-extract]], the fallback for hosts no scraper matches. The
+  drops and the site scrapers themselves are the **WebScrapping** family above, no longer deferred. Explicitly
+  deferred until a real run of unmatched hosts says it is worth a model; a user-written scraper covers the gap
+  meanwhile.
 - **Reference-image richness** (auto-tagging, blur, tag/semantic search, practice mode, drawing critique) —
   [[plugins#refimages-plugin]], designed in full in [[reference-images]]. It is its own milestone family,
   **RefImages**, whose slices hang off the near-term four by dependency rather than sitting at one fixed

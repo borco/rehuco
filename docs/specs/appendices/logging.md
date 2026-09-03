@@ -33,6 +33,15 @@ This is sound because a `logging.Handler` runs synchronously on the thread that 
 reads the same context the caller set. Naming a scope on one call (`extra={"log_scope": key}`) beats
 whatever block is open, because it is the more specific statement.
 
+**Scopes nest, and a record keeps every one that was open.** An operation about a document that runs as a queued
+job is about the job too, and neither surface should have to lose the other's records to exist. So a record carries
+the **stack** of open scopes, innermost last — `(document.path, job_serial)` for a job enqueued from a document —
+and a sink attached to a scope receives a record when that scope is **anywhere** in the stack, not only innermost.
+`LogScope.current()` still answers with the innermost, and a call-site `extra=` still names one scope, which then
+stands alone. The stack is the one place this library holds more than one key per record, and it is what lets the
+task queue add a job scope of its own without the document's surface going quiet
+([[appendices.task-queue#scopes]]).
+
 > [!IMPORTANT]
 > **A thread does not inherit a scope.** A worker started from inside a scoped block logs unscoped
 > unless the context is carried to it deliberately: `contextvars.copy_context()` at submission, and
@@ -188,11 +197,14 @@ spin box can offer, converted where the setting is read.
 
 [[[appendices.logging#surfaces]]]
 
-One widget, hosted twice: the window's own **Log** dock, and a **Log** dock inside every open resource.
-Both are hidden by default and share the same icon — they are the same kind of thing about different
+One widget, hosted three times: the window's own **Log** dock, a **Log** dock inside every open resource, and a
+**Log** sub-dock in the Tasks dock, attached to whichever job is selected ([[appendices.task-queue#dock]]).
+All three are hidden by default and share the same icon — they are the same kind of thing about different
 subjects, which is what the surrounding toolbar already says. The app-wide one is toggled from the
 action bar (between the theme and settings buttons) and from `View`; a resource's from its own view
-toolbar, beside the inspection docks.
+toolbar, beside the inspection docks; the Tasks dock's from its own. A job's records are therefore reachable three
+ways — the Tasks dock and its row, the document the job was enqueued from, and the window — because a record carries
+every scope that was open when it was written ([[appendices.logging#scopes]]).
 
 **Level and message, and the entry behind them.** The level cell is tinted by the record's band, in the
 same colors the inline notice banner uses for its severities, and annotated with the record's serial.

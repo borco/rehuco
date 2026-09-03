@@ -238,11 +238,18 @@ Each open resource has a **viewer surface** and (for now) one **editor surface**
 
 [[[plugins#dock-shell]]]
 
-The agent hosts open resources in a **document-dock shell**: a `MainWindow` whose central area is a
-QtAds dock-in-dock, with **one dock per open `.rehu`**. Opening a file adds its dock to the currently
-focused document's area (tabbed) and focuses it; opening a file that is **already open focuses the
-existing dock** rather than opening a second. Each document dock is itself a nested dock area holding
-that resource's viewer/editor surfaces ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
+The agent hosts open resources in a **document-dock shell**: a `MainWindow` holding a **Documents** dock — an ordinary
+QtAds dock the user hides and shows like the Log and Tasks docks, not the central widget — whose own nested dock
+manager holds **one dock per open `.rehu`**. Opening a file shows the Documents dock if it is hidden and raises it,
+then adds the new dock to the currently
+focused document's area (tabbed) and makes it current — what was just opened is on screen whatever the layout was;
+opening a file that is **already open focuses the
+existing dock** rather than opening a second. Each document dock is itself a nested dock area holding that resource's
+**sub-docks** — the word for a dock inside a document dock, three managers deep
+([[appendices.qt-ads#focus-highlighting]]): the viewer, the main editor, the description and the images, plus the
+hidden-by-default inspection set — save preview, on disk, log, checksums, and files ([[plugins#files-subdock]]) — with
+the images sub-dock doubling as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are
+the viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
 is the
 same shell the catalog browser later opens viewers into ([[plugins#browsers]]). See [[sequence-open-document]] and
 [[activity-open-document]] for this flow traced end-to-end.
@@ -253,6 +260,21 @@ later slice (LocalEdit2.1/#21). A nested surface toggle must carry the [[packagi
 workaround
 (stash `splitterSizes` on `viewToggled(False)` — `closeRequested` never fires on a toggle-hide — reapply on
 `viewToggled(True)`).
+
+### §13.2.5 The files sub-dock
+
+[[[plugins#files-subdock]]]
+
+Every document dock carries a **Files** sub-dock, hidden by default beside the inspection set: a table over the
+resource's own directory — name, size, modified, and what the file is to the resource (the record, a screenshot, a
+conversion backup, content) — so what the app's own renames, conversions and drops did to the folder can be read
+without leaving it. It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this
+sub-dock — and never in between. Deliberately **not `QFileSystemModel`**: that model installs a file-system watcher
+that holds handles open on Windows, and a held handle is exactly what makes a rename or a delete of the resource's own
+files fail — the app would be locking what it is about to move. The same reasoning already keeps a watcher out of the
+node ([[mounts-and-storage#out-of-band]]). A plain listing costs one `scandir` per refresh and holds nothing between
+them. Double-clicking an image opens it maximized through the same owner-routed activation the strip uses
+([[plugins#tutorial-plugin]]); double-clicking anything else hands it to the system's default handler.
 
 ## §13.3 Plugin blocks: keyed, versioned, single-active-type
 
@@ -451,6 +473,12 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   that no Revert can undo. Deliberately single-select: every action names one file. A resource nothing can
   rearrange — one not yet saved anywhere, or a legacy `.tc` whose screenshots are still conversion's to read —
   keeps the list and greys the buttons.
+  **A conversion's backups are listed too**, after the numbered set and with their own icon: every `.orig` sibling
+  that is an image ([[acquisition-tooling#adopted-backups]]). A backup row is not checkable — it is not in the
+  strip and cannot be — and the ordering buttons are disabled on it; what it offers is **Adopt**, which renames it to
+  the next free `<stem>NN` so it joins the numbered set and can be reordered from then on, and **Delete**, confirmed
+  like any other. Both are what the conversion's own rename discipline allows a single file: a rename or a delete,
+  never a copy, since a copy would leave the backup manager counting a file the user has already decided about.
 - **Editor**: field editing including the Markdown description; rename from the predefined-candidates list
   ([[data-model#rehu-format]]), which renames on disk. Each scope moves what its own naming convention owns
   ([[data-model#resource-scoping]]): a directory-scoped `info.rehu` renames its **parent directory**, one atomic

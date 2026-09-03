@@ -291,6 +291,13 @@ worker where the caller's context is already gone — and the job is run inside 
 generic: the engine never learns what is in a context, only that the caller's belongs to the work. That
 is also what keeps this out of `borco-pyside`'s reach and leaves `rehuco-core` importing nothing new.
 
+**The job adds a scope of its own, inside the caller's.** Running the job, the engine opens a **job scope** — the
+job's serial — nested inside the captured context, so every record the job logs carries the document it was
+enqueued for *and* the job that made it ([[appendices.logging#scopes]]). That is what lets one record be read
+three ways ([[appendices.logging#surfaces]]): from the Tasks dock, by selecting the row; from the document's own
+log; and from the window's. The engine still learns nothing about what a scope means — a serial is one more
+opaque key, opened with the same `LogScope.open` any caller uses.
+
 ## 6. The queue survives a restart, for the jobs that opt in
 
 [[[appendices.task-queue#lifetime]]]
@@ -489,6 +496,14 @@ rather than a discipline someone has to remember.
 **Reorder is buttons only, no drag-and-drop.** Qt's internal-move drag-and-drop needs the *model* to
 perform the move, contradicting a pure view; the engine clamps an out-of-range move, so a drop would
 visibly spring back; and buttons are the only usable gesture at thousands of rows.
+
+**The dock is a nested dock shell, and carries the selected job's log.** Like a document dock
+([[plugins#dock-shell]]), the Tasks dock hosts its own dock manager: the queue table in one sub-dock and a **Log**
+sub-dock beside it — the same log widget the window and every document host
+([[appendices.logging#surfaces]]), attached to the scope of whichever row is selected (§5) and to nothing when none
+is. Selecting a job is how its records are reached from here; a job that logged nothing shows an empty surface, which
+is the truth about it. The sub-dock is hidden by default and stays hidden until asked, so the table alone is what a
+reader who only wants progress sees.
 
 **The third column is `Info`, and each job decides how its own progress reads there**
 ([#248](https://github.com/borco/rehuco/issues/248)). Core declares the unit (§3.2) and the agent holds a

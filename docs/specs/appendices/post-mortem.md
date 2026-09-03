@@ -36,8 +36,12 @@ doc is the detailed home and the entry here is a one-line pointer.
   hardware that mounts it. Detail: [[packaging-deployment#ts230-as-nas]]. The glibc-compatibility canary run for
   that abandoned path is kept as reference in [[packaging-deployment#glibc-canary]].
 - **Per-site HTML scrapers (geckodriver + BeautifulSoup).** The predecessor projects' acquisition approach:
-  brittle, per-site, and repeatedly broken by site changes. Deferred and slated for replacement by LLM-assisted
-  URL extraction rather than revival. Detail: [[acquisition-tooling#overview]] (and the predecessor
+  brittle, per-site, and repeatedly broken by site changes. Abandoned as *shipped code the release owns*, and revived
+  as user-overridable scraper Protocols loaded from a scripts folder ([[acquisition-tooling#scraper-registry]]) — the
+  brittleness is real and now belongs to a `.py` the user edits, with LLM-assisted extraction kept as the fallback for
+  hosts no script matches rather than as the replacement. An earlier draft had it the other way round: LLM-assisted
+  URL extraction as the successor, per-site code never to return. Detail: [[acquisition-tooling#url-extract]] (and the
+  predecessor
   [histories](../history/README.md) that carried it).
 
 ## Process

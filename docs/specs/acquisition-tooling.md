@@ -10,31 +10,142 @@ These features don't belong to the core data/swarm architecture, but they're wha
 maintainable* at scale (thousands of tutorials), so they matter for day-to-day usability. All are productivity aids
 feeding the editor the user reviews — assistive, not unattended.
 
-## §15.1 Three drag-and-drop input aids (restored from TutCatalog4)
+## §15.1 Three drag-and-drop input aids
 
 [[[acquisition-tooling#drag-drop-aids]]]
 
-- **HTML selection → Markdown into the description editor.** Selecting content on a web page and dropping it on the
-  description editor: the drop's `text/html` payload is converted to Markdown by a deterministic library
-  (html2text-style) and inserted at the cursor. No LLM, no per-site logic, no fetching — it just transforms whatever
-  HTML the browser handed over (with a sanitize/clean pass first, since pasted web HTML is messy). The cheapest and
-  lowest-maintenance of the three; restore it early.
-- **Image drag → download, rescale, auto-name screenshot.** Dragging an image from a browser onto a designated widget:
-  download it, rescale to ≤300px wide (Pillow), and save under the next unused basename-derived screenshot name
-  (`infoXX` for a directory-scoped resource, [[data-model#resource-scoping]]). No LLM. Pairs with the screenshot-name
-  normalization in migration ([[acquisition-tooling#tc-to-rehu]]).
-- **URL drop → extract tutorial info.** Dropping a URL: fetch/render the page and extract
-  `{title, author, publisher, duration, description, …}` into the resource's fields. See
-  [[acquisition-tooling#llm-url-extract]] — this is the one with real nuance.
+Three drops, on three surfaces of an open document, each taking what a browser hands over. Restored from TutCatalog4,
+whose QML drop areas and Scintilla drop override are the shape these follow.
 
-## §15.2 URL extraction via a local small LLM
+- **A selection dropped on the description editor becomes Markdown at the drop point.** The drop's `text/html` is
+  converted by markdownify (ATX headings, `*` bullets) and then cleaned the way tc4's converter did — unicode spaces
+  normalized, a hard line break kept to two trailing spaces, runs of blank lines collapsed — because what a browser puts
+  in a drag is messy. The editor substitutes the converted text for the drop's mime data and hands the drop on to
+  Scintilla, so it lands exactly where a plain-text drop would; holding **Shift** skips the conversion and drops the
+  plain text. Generic: no site knows about it, and it fetches nothing.
+- **A URL dropped on the main editor fills the fields.** A `text/uri-list` drop, or a plain-text drop that parses as one
+  `http(s)` URL, queues a scrape job ([[acquisition-tooling#scrape-job]]) and applies its result to the editor as an
+  ordinary **dirty, reviewable edit** — never a save; the user reads it and decides. A selection drop whose `text/html`
+  is more than the URL itself hands that fragment to the scraper as the page — the tc4 rule that let a page already
+  rendered in the browser be scraped without fetching it again — with the page URL alongside, where the platform
+  provides one ([[acquisition-tooling#drop-source-url]]).
+- **Anything dropped on the images sub-dock ends as screenshots.** A local image file is copied in. A drop carrying
+  `image/*` data is written from that data; an image URL is downloaded, with the page it came from as referrer where
+  known. A page URL, or a selection, is **parsed for candidates** — `<img>` sources, the largest `srcset` entry,
+  `data-src`, `og:image`, with a matching site scraper allowed to rewrite thumbnail URLs to their full-size originals —
+  and shown in a **picker**: a checkable list with thumbnails, nothing downloaded until the user chooses. Every image
+  then takes the same path: rescaled to a configurable maximum width (300 px by default, Pillow) and saved under the
+  next free `<stem>NN.jpg` ([[data-model#image-meanings]]), which makes the drop the second client of the screenshot
+  naming the conversion already serves ([[acquisition-tooling#tc-to-rehu]]). A legacy `.tc` refuses the drop, as it
+  refuses every other screenshot edit. The browser's own cache is not reachable from a drop, so an image already on
+  screen is fetched again rather than copied out of it.
+
+### §15.1.1 What a drop carries, and where the page URL is
+
+[[[acquisition-tooling#drop-source-url]]]
+
+A browser selection arrives as `text/html` and `text/plain`, and a link or an image adds `text/uri-list`; none of the
+three names the page the selection was taken from. On Windows the selection is also handed over as the `HTML Format`
+clipboard format, whose header carries a `SourceURL:` line; Qt strips that header when it synthesizes `text/html`, but
+the raw payload stays reachable under `application/x-qt-windows-mime;value="HTML Format"`. macOS and Linux carry no
+such header for a plain selection, so there the page URL is unknown unless the user drops the link as well. **To be
+confirmed by a spike** before the main-editor and images drops are built — the browser-by-platform matrix is exactly
+the kind of fact that is cheaper to measure than to remember; the spike's lesson replaces this paragraph.
+
+## §15.2 URL extraction: site scrapers, with an LLM fallback
+
+[[[acquisition-tooling#url-extract]]]
+
+The predecessors extracted a tutorial's fields with per-site scrapers — BeautifulSoup over a fetched or browser-rendered
+page — and every one of them broke the day its site changed its markup. An earlier draft of this section replaced them
+wholesale with a local LLM. The decision now runs the other way: **site scrapers are primary, and are the user's to
+keep working**. The fields that matter — a title, the authors, a description with its images, a duration — sit in a
+site's markup in places a few CSS selectors name exactly, and a scraper that breaks is a script the user edits that
+afternoon rather than a model to re-prompt. The LLM stays, as the fallback for hosts nobody has written a scraper for
+([[acquisition-tooling#llm-url-extract]]).
+
+### §15.2.1 One Protocol per resource type
+
+[[[acquisition-tooling#scraper-protocols]]]
+
+Scraping is a **desktop concern** and lives in `rehuco-agent`: a productivity aid feeding the editor, not something a
+node does unattended, so `rehuco-core` learns no HTTP client and no HTML parser. Three kinds of Protocol, all
+structural, all plain classes:
+
+- **`PageFetcher`** — `fetch(url) -> Page`, a `Page` being the URL asked for, the URL it resolved to, and the HTML. The
+  default fetches over plain HTTP with a browser User-Agent. A **browser-driven fetcher** — a headless browser, the
+  geckodriver / undetected-chromedriver route the predecessors ended on — is an opt-in extra a scraper may declare it
+  needs, or that a paywalled site makes necessary: the heaviest dependency in the app should be paid for by the site
+  that needs it. See [[acquisition-tooling#browser-persona]] for what it drives.
+- **`SiteScraper`** — what every scraper is: `matches(url) -> bool`, a host or prefix test as tc4's `can_scrap` was, a
+  `label`, and the `publisher` it fills in.
+- **One Protocol per resource type** — `TutorialScraper.scrape_tutorial(page)`,
+  `ReferenceImagesScraper.scrape_reference_images(page)`, `CollectionScraper.scrape_collection(page)`, one per plugin
+  key ([[plugins#plugin-blocks]]). Each returns a **typed result**: field values keyed by the plugin's own field names
+  ([[field-schema#resource-types]]); a Markdown description whose image links are already rewritten to the placeholder
+  `<stem>NN` names the images will get, in order; and those `images` as `(name, url, referrer)` triples the image
+  pipeline of [[acquisition-tooling#drag-drop-aids]] downloads. A concrete scraper implements **as many type Protocols
+  as its site can serve** — ArtStation sells tutorials and reference packs from the same product page — and dispatch
+  asks for the document's *current* type, skipping a scraper that matches the host but does not implement that type.
+
+A result is a proposal. A field the scraper could not find is absent, never filled with a guess, and the editor shows
+what arrived beside what was there.
+
+### §15.2.2 The registry, and the user's own scrapers
+
+[[[acquisition-tooling#scraper-registry]]]
+
+Scrapers are looked up in an **ordered list**, first `matches()` wins, and the list is the **user's scripts folder
+first, then the built-ins** — so a user's module overrides a shipped scraper for the same host. That is the whole answer
+to brittleness: when a site changes, the fix is a `.py` file in a folder, not a release. The folder is a settings page,
+**Scrapers** ([[appendices.settings-pages#category-groups]]): the folder path; a table of what loaded — module, the
+hosts it matches, the type Protocols it satisfies — and, per module, the import error when it failed, since a scraper
+that silently did not load is indistinguishable from one that matched nothing; and a **Reload** that re-imports without
+a restart. Scripts in that folder are **trusted local code**, run with the app's own privileges; the page says so and
+the app does nothing to sandbox them. Built-in scrapers ship for **ArtStation** and **Udemy** first, the two the
+predecessors kept alive longest.
+
+### §15.2.3 The browser fetcher and its persona
+
+[[[acquisition-tooling#browser-persona]]]
+
+The browser-driven fetcher launches a real browser through Selenium with a **persona**: a browser profile directory
+of its own, under the app's config directory, that keeps its cookies and local storage between runs. That is what
+lets it read a **paywalled or members-only page** — the user logs in once, by hand, and every later automated load
+carries the session, the way tutcatalogpy3's driver launched Firefox on a dedicated profile. Three controls on the
+Scrapers settings page ([[acquisition-tooling#scraper-registry]]) belong to it:
+
+- **Use the browser fetcher** — off by default; when on, every scrape that does not refuse it goes through the
+  browser, not only the ones a scraper declared it needs. Which browser (Firefox via geckodriver, Chrome via
+  undetected-chromedriver) is a choice beside it, since bot detection differs per site and the second exists because
+  the first is flagged on some.
+- **Show the browser while scraping** — headless is the default; visible is how a page that came back empty is
+  inspected, and how a challenge page is solved in the same profile the fetcher will use next.
+- **Open the browser** — launches the persona's browser on nothing in particular, so the user can log in to a site
+  and close it; the session is then the fetcher's. This is also the remedy when a session has expired, so it stays
+  one click away rather than buried in a first-run flow.
+
+The profile is a **credential store**: it lives only under the config directory, is never inside a resource folder,
+and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
+not try to keep a login alive, it only keeps the door to renewing one open.
+
+### §15.2.4 The scrape is a job
+
+[[[acquisition-tooling#scrape-job]]]
+
+A drop queues one job on the app-wide task queue ([[appendices.task-queue]]), under the document's log scope so its
+fetch and its parse are readable in that document's log ([[appendices.logging#scopes]]), cancellable like any other.
+Its result is applied on the GUI thread, and only if the document is still open at the same path; a document closed or
+renamed while its page was being fetched simply discards the result. `markdownify`, `beautifulsoup4` and `requests`
+become runtime dependencies of `rehuco-agent`; the browser driver goes under an opt-in extra.
+
+### §15.2.5 The LLM fallback, deferred
 
 [[[acquisition-tooling#llm-url-extract]]]
 
-The TutCatalog4 approach (geckodriver + BeautifulSoup + hand-maintained per-site scrapers) broke constantly because each
-site needed bespoke parsing logic kept up to date by hand. The modern approach removes that maintenance burden: fetch
-the page text and hand it to a model for **structured extraction into a fixed JSON schema**, eliminating per-site
-parsing code.
+For a host no scraper matches, the earlier design still stands — as a fallback, and still deferred: fetch the page text
+and hand it to a small local model for **structured extraction into a fixed JSON schema**, the same typed result a
+scraper returns, with no per-site code at all.
 
 - **Local model is the right call** — zero per-call cost (run thousands of times across the catalog), no external
   dependency, offline, private. This is high-volume personal productivity, where a small local model beats a cloud API
@@ -54,7 +165,8 @@ parsing code.
   headless browser to render before extraction, and a readability/main-content trim before the model keeps quality up on
   long pages. So per-site effort drops a lot but doesn't vanish — it moves from "parse this site's DOM" (brittle) to
   "render and trim this site's page" (more robust).
-- Implemented as a **task-queue job** ([[architecture-design#components]]), like other heavy work.
+- Implemented as a **task-queue job** ([[architecture-design#components]]), the same one a scraper runs as
+  ([[acquisition-tooling#scrape-job]]).
 
 ## §15.3 Migration: `.tc` → `.rehu` (the oldest source format)
 
@@ -221,7 +333,18 @@ divergence it creates is detectable ([[field-schema#record-timestamps]]) and is 
 deliberate and confirmed or it is not discarding at all, and the `.orig` set is also the only copy of the original
 `.tc` and of the tie-break's losers.
 
-### §15.3.2 Legacy screenshot naming rules
+### §15.3.2 Adopting a backup screenshot
+
+[[[acquisition-tooling#adopted-backups]]]
+
+A backup can also leave the set one screenshot at a time. The images sub-dock lists a resource's `.orig` screenshots
+after its numbered set ([[plugins#tutorial-plugin]]) and
+offers each one an **Adopt** — renamed to the next free `<stem>NN`, so it becomes an ordinary screenshot the curation
+editor can reorder and the strip shows — or a **Delete**. Either takes the file out of the backup set, so a later revert
+restores less than the conversion backed up; whether a revert should then refuse, warn, or restore what is left is
+deliberately undecided until the revert is next touched ([[appendices.open-questions#still-open]]).
+
+### §15.3.3 Legacy screenshot naming rules
 
 [[[acquisition-tooling#screenshot-schemes]]]
 
@@ -271,7 +394,7 @@ part of the editable rules: it applies whatever they say.
 screenshots, and it is handed the rules the conversion is handed — otherwise a file a user's added rule renames aside
 would count as content before conversion and as bookkeeping after it, moving `current_size` for no reason but a rename.
 
-### §15.3.3 Legacy size and duration string parsing
+### §15.3.4 Legacy size and duration string parsing
 
 [[[acquisition-tooling#legacy-parsing]]]
 
@@ -293,7 +416,12 @@ tc4 stored size and duration as human-readable strings; the reader parses them b
 
 [[[acquisition-tooling#deferral]]]
 
-Per the user's stated priorities, the acquisition aids (especially [[acquisition-tooling#llm-url-extract]]'s LLM
-extraction) are **deferred until after the tutorial web viewer is working** — manual entry suffices in the interim. The
-HTML→Markdown and image-drag aids ([[acquisition-tooling#drag-drop-aids]]) are cheap enough to restore earlier if
-convenient, but none of [[acquisition-tooling#overview]] blocks the core local-viewer / tablet-watching milestones.
+The drop aids and the site scrapers are their own milestone family, **WebScrapping** ([[implementation-plan]]),
+scheduled after the LocalEdit polish rather than after the web viewer as this section once said: they are single-machine
+work that makes the editor faster to feed, and nothing in them waits on a node. Only the LLM fallback
+([[acquisition-tooling#llm-url-extract]]) stays deferred, until a real run of unmatched hosts says it is worth a model.
+Migration ([[acquisition-tooling#tc-to-rehu]]) landed in LocalEdit8 and LocalEdit9.
+
+The HTML→Markdown drop ([[acquisition-tooling#drag-drop-aids]]) is that family's tracer: the cheapest of the three, and
+the one that proves the drop seam the other two build on. None of [[acquisition-tooling#overview]] blocks the
+local-viewer or tablet-watching milestones.

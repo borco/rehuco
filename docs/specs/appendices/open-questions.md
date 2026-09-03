@@ -93,9 +93,10 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Resource browsers** — resolved ([[plugins#browsers]]): generic browser (common columns) + per-type browsers
   (plugin-contributed columns + cover rendering), table/shelf modes, click-to-filter on tag/author/publisher restored
   from TutCatalog4.
-- **Acquisition & migration tooling** — specced ([[acquisition-tooling#overview]]): three drag-drop aids (HTML→Markdown,
-  image→screenshot, URL→extract), local-LLM extraction with constrained decoding, `.tc`→`.rehu` migration as format-v0.
-  Deferred until after the tutorial web viewer.
+- **Acquisition & migration tooling** — specced ([[acquisition-tooling#overview]]): three drops (HTML→Markdown,
+  image→screenshot, URL→fields), user-overridable site-scraper Protocols with a deferred local-LLM fallback
+  ([[acquisition-tooling#url-extract]]), `.tc`→`.rehu` migration (landed, LocalEdit8/9). The drops and scrapers are
+  the **WebScrapping** milestone family ([[acquisition-tooling#deferral]]).
 - **Code organization, packaging & deployment** — resolved ([[packaging-deployment#overview]]): monorepo with uv
   workspaces (single `.venv` fixes the venv-confusion and makes cross-package refactors atomic); three published
   packages (`rehuco-core`, `rehuco-node`, `rehuco-agent`) mapping onto the shared-lib/node/agent split;
@@ -171,7 +172,11 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Admin identity permanence** — flagged in [[discovery-trust-access#admin-portability]], not resolved (distinct from
   registry home, which is decided).
 - **Online-only and mixed local/online resources** — needs schema representation; not detailed.
-- **Udemy integration** — registered courses are hard to track; no scraping/API/import approach discussed.
+- **Udemy integration** — registered courses are hard to track. A Udemy page scraper is a built-in of
+  [[acquisition-tooling#scraper-registry]]; an account-side import of *what the user owns* is not discussed.
+- **Revert after an adopted or deleted backup** — a conversion's `.orig` screenshot can now leave the backup set one
+  at a time ([[acquisition-tooling#adopted-backups]]), so a later revert has less to restore than the conversion backed
+  up. Whether the revert refuses, warns, or restores what is left is undecided until the revert is next touched.
 - **3D objects as a resource category** — mentioned alongside Daz3D but not mapped to a plugin design.
 - **Shared timed-presentation capability** — identified as worth extracting ([[plugins#shared-capability]]) but not
   designed.

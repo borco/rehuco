@@ -49,7 +49,8 @@ working editor teaches readers to discount the status line, which is what makes 
 
 `Pre-work` (monorepo setup, integration spikes, de-risking), then the feature milestones — **LocalEdit** (local
 view/edit), **CacheDB** (cached database), **WatchTutorial** (watch a tutorial), **Borrowing** (offline borrow),
-**Swarm** (full multi-node), **Daz3D** (daz3d-personal-database migration), **RefImages** (image tagging, search,
+**Swarm** (full multi-node), **Daz3D** (daz3d-personal-database migration), **WebScrapping** (browser drops and
+site scrapers feeding the editor), **RefImages** (image tagging, search,
 practice; slices hang off the others by dependency) — each sliced `LocalEdit1`,
 `LocalEdit2`, …, with a terminal catch-all polish slice named `<Milestone>X` (e.g. `LocalEditX`) that is
 never "next". Audit runs are `X1`, `X2`, …. GH milestone names track the per-slice labels in

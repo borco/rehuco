@@ -100,8 +100,8 @@ logging). The pieces with no rehuco equivalent yet, worth mining when the Daz3D 
   install/uninstall with tracked side effects, exactly the custom-action shape [[plugins#daz3d-plugin]]
   calls for. The recording format would change; the file-ownership bookkeeping idea carries.
 - **Store scrapers** — the six Selenium scrapers encode per-store page structure; likely bit-rotted, but a
-  reference for which fields each store exposes. The LLM-based URL extraction planned in
-  [[acquisition-tooling#llm-url-extract]] is the more maintainable successor.
+  reference for which fields each store exposes. The user-overridable scraper Protocols planned in
+  [[acquisition-tooling#scraper-protocols]] are the successor, with an LLM fallback for unmatched hosts.
 - **v1's field vocabulary** — `sku`, `figures`, `requires`/`provides` (name+URL pairs) is a
   field-tested schema for the Daz3D plugin block, distilled from ~2 years of real cataloging.
 
