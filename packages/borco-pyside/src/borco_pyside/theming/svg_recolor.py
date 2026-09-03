@@ -1,9 +1,9 @@
 """Recolor a monochrome SVG icon, rendering fresh at whatever exact size Qt requests.
 
-Unlike rasterizing once and recoloring pixels (see :mod:`~borco_pyside.theming.icon_recolor`), this
-rewrites the SVG's own fill color and keeps it as a real, infinitely-scalable icon -- exactly as
-crisp at any requested size as an untouched SVG-backed ``QIcon``, since nothing is ever cached at
-a fixed resolution. Only works correctly for a genuinely monochrome source (see
+Unlike rasterizing once and recoloring pixels, this rewrites the SVG's own fill color and keeps it
+as a real, infinitely-scalable icon -- exactly as crisp at any requested size as an untouched
+SVG-backed ``QIcon``, since nothing is ever cached at a fixed resolution. Only works correctly for
+a genuinely monochrome source (see
 :func:`recolor_svg` for the exact, narrower rule it actually applies) -- feeding it a multi-color
 icon collapses every recognized shape to one flat color rather than preserving their distinctions.
 """
