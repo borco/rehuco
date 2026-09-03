@@ -116,9 +116,12 @@ class ApplicationSingleton(QObject):
             # a primary raced us to the name after our initial probe missed it; argv was forwarded
             LOG.info("primary raced to %r during stale-socket recovery; forwarded argv and exiting", app_id)
             return False
-        # could not claim the role; restore the previous binding if this was a runtime rebind
+        # could not claim the role; restore the previous binding if this was a runtime rebind.
+        # the restore carries no payload: the name was released a moment ago, so another
+        # instance may already own it, and this call's argv belongs to this process alone.
         if previous_name is not None and previous_name != name:
-            self.__claim_role(previous_name, message)
+            if self.__claim_role(previous_name, None) is not self.Claim.PRIMARY:
+                LOG.warning("could not restore the previous single-instance binding %r", previous_name)
         detail = f"could not claim single-instance role for {name!r}"
         if self.__strict:
             raise RuntimeError(detail)
@@ -142,7 +145,7 @@ class ApplicationSingleton(QObject):
             self.__server = None
             self.__server_name = None
 
-    def __claim_role(self, name: str, message: bytes) -> ApplicationSingleton.Claim:
+    def __claim_role(self, name: str, message: bytes | None) -> ApplicationSingleton.Claim:
         """Start serving on ``name``, recovering from a stale socket left by a crash.
 
         On ``AddressInUseError`` the name may be held by either a crashed primary's stale
@@ -152,8 +155,14 @@ class ApplicationSingleton(QObject):
         :attr:`Claim.FORWARDED` is returned; only if none answers is the socket treated as stale
         and reclaimed via :meth:`~QLocalServer.removeServer`.
 
+        Pass ``message=None`` to *restore* a binding rather than claim a new one: the re-probe
+        then delivers nothing, and a primary answering means the name has been taken over since
+        this process released it, which is reported as :attr:`Claim.FAILED` — an unrelated
+        primary's socket is neither handed a payload that is not addressed to it nor unlinked.
+
         :param name: local-server name to listen on.
-        :param message: framed payload to forward if the re-probe finds a live primary.
+        :param message: framed payload to forward if the re-probe finds a live primary, or
+            ``None`` to probe without delivering anything (see above).
         :returns: which role was claimed (see :class:`Claim`).
         """
         self.shutdown()
@@ -162,6 +171,9 @@ class ApplicationSingleton(QObject):
             server.deleteLater()
             for _ in range(STALE_RECOVERY_ATTEMPTS):
                 if self.__forward_to_primary(name, message):
+                    if message is None:
+                        LOG.warning("%r is held by another instance; leaving it to that primary", name)
+                        return self.Claim.FAILED
                     return self.Claim.FORWARDED
             # no primary answered across the bounded re-probes: the socket is stale, so reclaim it
             QLocalServer.removeServer(name)
@@ -176,19 +188,24 @@ class ApplicationSingleton(QObject):
         self.__server_name = name
         return self.Claim.PRIMARY
 
-    def __forward_to_primary(self, name: str, message: bytes) -> bool:
+    def __forward_to_primary(self, name: str, message: bytes | None) -> bool:
         """Try to hand ``message`` to an already-running primary listening on ``name``.
 
+        With ``message=None`` this is a pure liveness probe: the connection is opened and closed
+        without a write, so a foreign primary is never handed argv that was not addressed to it.
+
         :param name: local-server name the primary would be listening on.
-        :param message: framed payload to write (see :meth:`__encode`).
-        :returns: ``True`` if a primary answered and the payload was forwarded.
+        :param message: framed payload to write (see :meth:`__encode`), or ``None`` to only
+            test whether a primary is listening, connecting and disconnecting without writing.
+        :returns: ``True`` if a primary answered (and the payload, if any, was forwarded).
         """
         socket = QLocalSocket()
         socket.connectToServer(name)
         if not socket.waitForConnected(CONNECT_TIMEOUT_MS):
             return False
-        socket.write(message)
-        self.__flush(socket)
+        if message is not None:
+            socket.write(message)
+            self.__flush(socket)
         socket.disconnectFromServer()
         if socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
             socket.waitForDisconnected(WRITE_TIMEOUT_MS)
