@@ -43,16 +43,25 @@ def delete_key_tree(path: str) -> None:
     of being reported as success -- but it is not re-raised: unregistration is best-effort cleanup
     and must not crash the caller.
 
+    Child names are snapshotted before any of them is deleted, then recursed over that snapshot --
+    re-enumerating from index 0 after each child would repeat a child whose own deletion failed
+    (permission denied partway through the tree) forever, since ``EnumKey(key, 0)`` keeps returning
+    the same still-present child.
+
     :param path: registry path relative to ``HKEY_CURRENT_USER``.
     """
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, access=winreg.KEY_ALL_ACCESS) as key:
+            children: list[str] = []
+            index = 0
             while True:
                 try:
-                    child = winreg.EnumKey(key, 0)
-                    delete_key_tree(rf"{path}\{child}")
+                    children.append(winreg.EnumKey(key, index))
+                    index += 1
                 except OSError:
                     break
+            for child in children:
+                delete_key_tree(rf"{path}\{child}")
             winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
             LOG.debug("deleted HKCU\\%s", path)
     except FileNotFoundError:
