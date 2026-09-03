@@ -7,6 +7,7 @@ from PySide6.QtGui import QValidator
 from PySide6.QtWidgets import QAbstractSpinBox, QWidget
 
 from ..core import SimpleProperty
+from .line_edit_helpers import resync_line_edit
 
 
 class UnboundedSpinBox(QAbstractSpinBox):
@@ -149,12 +150,27 @@ class UnboundedSpinBox(QAbstractSpinBox):
     def __render(self, value: int | None) -> None:
         """Re-sync the line edit to ``value`` (echo guard).
 
+        A concrete ``int`` compares the line edit's *parsed* text against ``value``, not the raw
+        text -- so a non-canonical but valid keystroke (``"+5"``, ``"007"``, a trailing space) that
+        round-trips through ``value`` isn't bounced back and rewritten mid-typing. The empty state
+        keeps a raw blank check instead: parsing also maps mid-typing text (a bare ``-``) to
+        ``None``, which would otherwise leave it on screen over a ``None`` value.
+
         :param value: the new value, or ``None`` for the empty state (rendered as blank text).
         """
-        text = str(value) if value is not None else ""
-        if self.lineEdit().text() != text:
-            with QSignalBlocker(self.lineEdit()):
-                self.lineEdit().setText(text)
+        if value is None:
+            if self.lineEdit().text():
+                with QSignalBlocker(self.lineEdit()):
+                    self.lineEdit().clear()
+            return
+        resync_line_edit(self.lineEdit(), value, self.__parse_value, str)
+
+    @staticmethod
+    def __parse_value(text: str) -> int | None:
+        try:
+            return int(text.strip())
+        except ValueError:
+            return None
 
     def __clamp(self, value: int) -> int:
         """Box ``value`` into ``minimum``/``maximum``.

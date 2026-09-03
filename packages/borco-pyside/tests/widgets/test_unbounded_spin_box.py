@@ -403,6 +403,56 @@ def test_value_change_re_renders_the_line_edit(qtbot: QtBot) -> None:
     assert spin_box.lineEdit().text() == "123"
 
 
+@mark.parametrize(
+    ("text", "expected_value"),
+    [
+        param("+5", 5, id="leading-plus"),
+        param("007", 7, id="leading-zeros"),
+        param("5 ", 5, id="trailing-space"),
+    ],
+)
+def test_non_canonical_valid_text_is_not_rewritten_mid_typing(qtbot: QtBot, text: str, expected_value: int) -> None:
+    """A non-canonical but valid keystroke that round-trips through ``value`` (e.g. ``"+5"``,
+    ``"007"``, a trailing space) is left as typed, not snapped back to its canonical rendering -- the
+    write-through re-enters the echo guard via ``value_changed``, which must compare *parsed* text,
+    not raw text, or the field gets rewritten out from under the cursor.
+
+    **Test steps:**
+
+    * build a widget
+    * type ``text`` into the line edit
+    * verify ``value`` parses as ``expected_value`` and the line edit still shows ``text`` verbatim
+    """
+    spin_box = UnboundedSpinBox()
+    qtbot.addWidget(spin_box)
+
+    spin_box.lineEdit().setText(text)
+
+    assert spin_box.value == expected_value
+    assert spin_box.lineEdit().text() == text
+
+
+def test_value_change_to_none_blanks_mid_typing_text_too(qtbot: QtBot) -> None:
+    """Setting ``value`` to ``None`` blanks the line edit even while it holds mid-typing text (a bare
+    ``-``) that never wrote through -- the empty state is a raw blank check, not a parsed compare,
+    which would read ``-`` as ``None`` and leave it on screen over the empty value.
+
+    **Test steps:**
+
+    * build a widget holding a concrete value, type a bare ``-`` (which does not write through)
+    * set ``value`` to ``None``
+    * verify the line edit's text is blank
+    """
+    spin_box = UnboundedSpinBox(value=5)
+    qtbot.addWidget(spin_box)
+    spin_box.lineEdit().setText("-")
+    assert spin_box.value == 5
+
+    spin_box.value = None
+
+    assert spin_box.lineEdit().text() == ""
+
+
 def test_value_change_to_none_blanks_the_line_edit(qtbot: QtBot) -> None:
     """Setting ``value`` to ``None`` directly re-renders the line edit as blank, not the string
     ``"None"``.
