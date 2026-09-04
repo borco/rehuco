@@ -25,7 +25,8 @@ from typing import Final, cast
 
 import cbor2
 import PySide6QtAds as QtAds
-from borco_pyside.logging import LOG_SCOPE_ATTRIBUTE, LogEntry, LogScope, LogWidget
+from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
+from borco_pyside.logging import LogEntry, LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
 from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner

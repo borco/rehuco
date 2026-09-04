@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Final, override
 
 import PySide6QtAds as QtAds
+from borco_core.logging import LogScope
 from borco_pyside.dialogs import DockableDialog, DockableDialogManager
-from borco_pyside.logging import LogScope, LogWidget
+from borco_pyside.logging import LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
 from PySide6.QtGui import QAction, QCloseEvent, QIcon

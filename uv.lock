@@ -133,6 +133,7 @@ source = { editable = "packages/borco-core" }
 name = "borco-pyside"
 source = { editable = "packages/borco-pyside" }
 dependencies = [
+    { name = "borco-core" },
     { name = "colorama" },
     { name = "pyside6-essentials" },
     { name = "pyside6-qtads" },
@@ -145,6 +146,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "borco-core", editable = "packages/borco-core" },
     { name = "colorama", specifier = ">=0.4.6" },
     { name = "pyside6-essentials", specifier = ">=6.9" },
     { name = "pyside6-qtads", specifier = ">=5.0.0.2" },

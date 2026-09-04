@@ -5,11 +5,11 @@ from collections.abc import Hashable, Iterable, Sequence
 from logging import Handler, LogRecord
 from typing import Final, override
 
+from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Qt, Signal
 
 from .log_entry import LogEntry
 from .log_record_sink import LogRecordSink
-from .log_scope import LogScope
 
 DEFAULT_LOG_LIMIT: Final = 500
 """How many entries a ring buffer holds unless told otherwise.
@@ -50,7 +50,7 @@ class LogBridge(Handler):
     **It routes, so surfaces do not have to filter.** A sink added with :meth:`add_sink` sees
     everything; one added with :meth:`add_scoped_sink` sees only records made under its scope, wherever
     that scope sits in the record's stack
-    (:class:`~.log_scope.LogScope`). Every sink keeps its own history and clears it independently --
+    (:class:`~borco_core.logging.log_scope.LogScope`). Every sink keeps its own history and clears it independently --
     this class holds no opinion about what any of them contains, which is why no sink is asked for a
     ``cleared`` signal.
 
@@ -170,7 +170,7 @@ class LogBridge(Handler):
         would be a surface that is the log of two things, which no reader has asked for.
 
         :param sink: where to put matching entries from now on.
-        :param scope: the scope to match, compared by equality (:class:`~.log_scope.LogScope`).
+        :param scope: the scope to match, compared by equality (:class:`~borco_core.logging.log_scope.LogScope`).
         """
         self.__attach(sink, (entry for entry in self.__entries if scope in entry.scopes))
         self.__scoped_sinks.append((sink, scope))

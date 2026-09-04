@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Final
 
 import PySide6QtAds as QtAds
-from borco_pyside.logging import LogScope
+from borco_core.logging import LogScope
 from borco_pyside.qtads import QtAdsFocusTracker
 from PySide6.QtCore import QByteArray, Signal
 from PySide6.QtWidgets import QMainWindow, QMessageBox, QWidget

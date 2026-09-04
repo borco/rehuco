@@ -25,9 +25,9 @@ class LogEntry:
     differently depending on when it was scrolled into view."""
 
     scopes: tuple[Hashable, ...]
-    """Everything the record is about (:class:`~.log_scope.LogScope`), outermost first -- empty when it
-    is about nothing in particular. Resolved when the record arrived, on the thread that logged it,
-    because that is the only moment the answer exists.
+    """Everything the record is about (:class:`~borco_core.logging.log_scope.LogScope`), outermost first
+    -- empty when it is about nothing in particular. Resolved when the record arrived, on the thread that
+    logged it, because that is the only moment the answer exists.
 
     A sink is routed this by **membership**, not equality: work on a document, run as a queued job, is
     about both, and each surface is owed the record without the other losing it."""
