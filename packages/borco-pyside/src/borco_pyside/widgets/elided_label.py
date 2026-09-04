@@ -59,6 +59,13 @@ class ElidedLabel(QLabel):
             self.setToolTip("")
             return
         elided = self.fontMetrics().elidedText(self.__full, Qt.TextElideMode.ElideMiddle, self.width())
-        escaped = html.escape(elided)
-        self.setText(f'<a href="{html.escape(self.__href)}">{escaped}</a>' if self.__href else escaped)
+        # the format is set explicitly per branch: under the default ``AutoText`` a plain name is
+        # parsed as markup only when it happens to contain a ``<``, so escaping it would show ``&amp;``
+        # literally while not escaping would mangle a ``<`` -- plain text is plain, a link is rich.
+        if self.__href:
+            self.setTextFormat(Qt.TextFormat.RichText)
+            self.setText(f'<a href="{html.escape(self.__href)}">{html.escape(elided)}</a>')
+        else:
+            self.setTextFormat(Qt.TextFormat.PlainText)
+            self.setText(elided)
         self.setToolTip(self.__full if elided != self.__full else "")
