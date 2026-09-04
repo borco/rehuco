@@ -2,7 +2,7 @@
 
 `rehuco_core.rehu_content_images.enumerate_content_images` takes the recognized image extensions as a
 parameter rather than reading a constant, so this is where that set comes from: one editable list, shown
-as a block on the `Plugins > Images` settings page. A pack in a format the shipped set omits (``.bmp``,
+as a block on the `Images` settings page. A pack in a format the shipped set omits (``.bmp``,
 ``.tif``, ``.tga``, ``.psd``) is a preference change rather than a rebuild. Readers ask
 :attr:`ReferenceImagesSettings.content_image_extensions` and never read the stored list directly -- one
 naming nothing resolves to :data:`~rehuco_core.CONTENT_IMAGE_EXTENSIONS`, so a list left empty never makes

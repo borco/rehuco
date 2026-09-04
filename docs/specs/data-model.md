@@ -136,7 +136,7 @@ What a **reference-images** resource's content *is* was settled by #197: content
 - **Not** a curated list of member archives — a reference-images resource is one file or one directory; the manifest
   block contemplated above is not needed here.
 - **Which archive entries count as images is the user's to set** — the enumeration takes the recognized extension set
-  as a parameter, and the `Plugins > Images` settings page (#222) supplies it — one editable list, one
+  as a parameter, and the `Images` settings page (#222) supplies it — one editable list, one
   format per entry, starting from `jpg, jpeg, png, webp, avif` and resolving back to that shipped set whenever it names
   nothing ([[appendices.settings-pages#category-groups]]). A pack in a format the shipped set
   omits (`.bmp`, `.tif`, `.tga`, `.psd`) is a preference change, not a rebuild.

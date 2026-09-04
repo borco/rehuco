@@ -1,6 +1,6 @@
 """VLC-preferences-style settings shell: filterable category tree + per-category page (#47)."""
 
-from typing import Final, cast, override
+from typing import Final, cast, overload, override
 
 from borco_pyside.widgets import WrappingCheckBox
 from PySide6.QtCore import (
@@ -29,6 +29,14 @@ PAGE_ROLE: Final = Qt.ItemDataRole.UserRole + 1
 
 FILTER_ROLE: Final = Qt.ItemDataRole.UserRole + 2
 """Item-data role storing each row's `SettingsFrameFilter`, for page- and frame-level filtering."""
+
+TITLE_ROLE: Final = Qt.ItemDataRole.UserRole + 3
+"""Item-data role storing each row's title -- a page's or a group's -- as `add_page` was given it (#277).
+
+**A row's identity, kept apart from what it displays.** The display text carries the dirty badge (#77),
+so everything that has to recognize a row rather than draw it (`restore_selected_page`,
+`save_filter_state`, the tree filter, a group column's headings) reads this instead of unpicking a
+prefix from the text."""
 
 DIRTY_POLL_INTERVAL_MS: Final = 200
 """How often the dialog re-derives dirty state (#77) -- page badges, frame highlights, Apply/Reset
@@ -158,21 +166,47 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         super().hideEvent(event)
         self.__dirty_poll_timer.stop()
 
-    def add_page(self, page: SettingsPage, group: str | None = None) -> None:
-        """Register ``page`` as a new category: adds its tree row and stacked page.
+    @overload
+    def add_page(self, title: str, page: SettingsPage, /) -> None: ...
+
+    @overload
+    def add_page(self, group: str, title: str, page: SettingsPage, /) -> None: ...
+
+    def add_page(self, *args: str | SettingsPage) -> None:
+        """Register a page as a new category: adds its tree row and stacked page.
+
+        **The caller names the page**, rather than the page naming itself (#277): a title is what the
+        tree shows and where the row sits, both of which are the tree's business, so they belong at the
+        one call site that can see the whole list (`MainWindow.__register_settings_pages`) instead of
+        being spread over a dozen page classes that each know only themselves.
+
+        Two forms, per the overloads above -- ``add_page(title, page)`` for a top-level row, and
+        ``add_page(group, title, page)`` to nest it under that group's row, creating the group's row on
+        first use (#76). Positional in that order so the call sites read as the tree does, and a run of
+        them sorts into tree order as plain lines of text.
+
+        The row is **appended**: registration order is tree order, deliberately, so what the reader
+        sees is decided by the caller's list rather than by a rule in here
+        ([[appendices.settings-pages#category-groups]]).
 
         The first page added becomes the initially-selected one. The page is shown through a scroll
         area of its own (:meth:`__scroll_area_for`), so it is the stack -- and nothing around it -- that
         runs out of room when the dialog is small.
 
-        :param page: the page to add -- a ``QWidget`` that also satisfies `SettingsPage`.
-        :param group: the group to nest this page's row under, creating that group's row on first
-            use; ``None`` (the default) makes it a top-level row of its own (#76).
+        :param args: ``(title, page)`` or ``(group, title, page)``.
+        :raises TypeError: if given anything other than two or three arguments.
         """
+        if len(args) not in (2, 3):
+            raise TypeError(f"add_page() takes (title, page) or (group, title, page), got {len(args)} arguments")
+        group = cast(str, args[0]) if len(args) == 3 else None
+        title = cast(str, args[-2])
+        page = cast(SettingsPage, args[-1])
+
         widget = cast(QWidget, page)
-        item = QStandardItem(page.title)
+        item = QStandardItem(title)
         item.setData(widget, PAGE_ROLE)
-        frame_filter = SettingsFrameFilter(widget, page.title)
+        item.setData(title, TITLE_ROLE)
+        frame_filter = SettingsFrameFilter(widget, title)
         item.setData(frame_filter, FILTER_ROLE)
         item.setEditable(False)
         self.__record_blocks(page, frame_filter)
@@ -340,6 +374,7 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """
         if (item := self.__groups.get(group)) is None:
             item = QStandardItem(group)
+            item.setData(group, TITLE_ROLE)
             item.setEditable(False)
             self.__model.appendRow(item)
             self.__groups[group] = item  # pylint: disable=unsupported-assignment-operation
@@ -403,9 +438,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         group = group_item.text()
         sections: list[tuple[str, list[QFrame]]] = []
         for row in range(group_item.rowCount()):
-            page = cast(SettingsPage, group_item.child(row).data(PAGE_ROLE))
+            child = group_item.child(row)
+            page = cast(SettingsPage, child.data(PAGE_ROLE))
             blocks = [block for block, _, _ in self.__page_blocks.get(cast(QWidget, page), [])]
-            sections.append((page.title, blocks))
+            sections.append((cast(str, child.data(TITLE_ROLE)), blocks))
         self.__group_columns[group].set_sections(sections)
         self.__ui.page_stack.setCurrentWidget(self.__group_scroll_areas[group])
 
@@ -446,9 +482,9 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         (#228, #230).
 
         A group's own title matches too, since #230 made a group row something `restore_selected_page`
-        can show on its own (its stacked column), not just a stand-in for one of its pages. Compared
-        with :data:`DIRTY_DOCK_MARKER` stripped off (:meth:`__unbadged`): a dirty page's row carries
-        that prefix (#77), which is display state, not part of its identity.
+        can show on its own (its stacked column), not just a stand-in for one of its pages. Matched on
+        :data:`TITLE_ROLE` rather than the row's text, so a dirty page's badge (#77) -- display state,
+        not identity -- never has to be unpicked from it.
 
         :param title: the title to look for.
         :returns: that row, or ``None``.
@@ -457,24 +493,15 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             item = self.__model.item(row)
             if item is None:  # pragma: no cover  (a row within rowCount() always has an item)
                 continue
-            if self.__unbadged(item.text()) == title:
+            if item.data(TITLE_ROLE) == title:
                 return item
             if item.data(PAGE_ROLE) is not None:
                 continue
             for child_row in range(item.rowCount()):  # a page-less row is a group: its children are pages
                 child = item.child(child_row)
-                if self.__unbadged(child.text()) == title:
+                if child.data(TITLE_ROLE) == title:
                     return child
         return None
-
-    @staticmethod
-    def __unbadged(text: str) -> str:
-        """``text`` with a leading :data:`DIRTY_DOCK_MARKER` stripped, if present (#77).
-
-        :param text: a tree row's displayed text.
-        :returns: the row's title, with the dirty badge (if any) removed.
-        """
-        return text.removeprefix(DIRTY_DOCK_MARKER)
 
     def __pages(self) -> list[SettingsPage]:
         """Every registered page, in tree order (a group's pages together, at the group's position)."""
@@ -516,10 +543,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         Read off :attr:`__shown_row` rather than the widget in the stack, so it holds a title for the
         blank page too: what that blank stands in for is the row it will return to, which is what the
         next launch should restore (#230). Distinct from :meth:`__current_pages` (the tree's *selected*
-        row): the two diverge whenever the live filter hides the shown row (#228). Unbadged
-        (:meth:`__unbadged`), so a dirty row's persisted title stays its plain one (#77).
+        row): the two diverge whenever the live filter hides the shown row (#228). Read off
+        :data:`TITLE_ROLE`, so a dirty row's persisted title stays its plain one (#77).
         """
-        return None if self.__shown_row is None else self.__unbadged(self.__shown_row.text())
+        return None if self.__shown_row is None else cast(str, self.__shown_row.data(TITLE_ROLE))
 
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Show the newly-selected row's page (or, for a group row, every page under it) in the stack.
@@ -642,9 +669,10 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         """Prefix :data:`DIRTY_DOCK_MARKER` on every dirty page's tree row, the same idiom a dirty
         document tab uses (#77, #148)."""
         for item, page in self.__page_items():
-            title = f"{DIRTY_DOCK_MARKER}{page.title}" if page.is_dirty() else page.title
-            if item.text() != title:
-                item.setText(title)
+            title = cast(str, item.data(TITLE_ROLE))
+            text = f"{DIRTY_DOCK_MARKER}{title}" if page.is_dirty() else title
+            if item.text() != text:
+                item.setText(text)
 
     def __refresh_action_enablement(self) -> None:
         """Enable Apply/Reset only while there is something for them to act on (#77)."""
@@ -783,11 +811,13 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
             :param item: the page's source-model row.
             :returns: whether the page should be shown.
             """
-            page = cast(SettingsPage, item.data(PAGE_ROLE))
+            title = cast(str, item.data(TITLE_ROLE))
             frame_filter = cast(SettingsFrameFilter, item.data(FILTER_ROLE))
             needle = self.__filter_text.lower()
-            haystacks = [page.title, *frame_filter.field_labels()]
+            haystacks = [title, *frame_filter.field_labels()]
             if any(needle in haystack.lower() for haystack in haystacks):
                 return True
             group = item.parent()
-            return self.__show_full_group and group is not None and needle in group.text().lower()
+            if group is None:
+                return False
+            return self.__show_full_group and needle in cast(str, group.data(TITLE_ROLE)).lower()

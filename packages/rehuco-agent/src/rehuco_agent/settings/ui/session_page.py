@@ -24,11 +24,6 @@ class SessionPage(QWidget):
         self.__ui.setupUi(self)
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Session"
-
     def is_dirty(self) -> bool:
         """Whether the staged checkbox differs from what's saved."""
         saved = SessionRestoreSettings()

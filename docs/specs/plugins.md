@@ -430,7 +430,7 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
 
 - **Viewer** (triggered by double-clicking `.rehu` in File Explorer): read-only field display; rendered Markdown
   description; horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
-  close. **Where** a clicked screenshot maximizes is a user preference ("Viewers > Images",
+  close. **Where** a clicked screenshot maximizes is a user preference (the "Images" settings page,
   [[appendices.settings-pages#category-groups]]), not a fixed choice: an overlay over the open document's own client
   area (the default — the surrounding dock chrome, menus, and toolbars stay visible), an overlay over the whole main
   window's client area, or a frameless full-screen window. The strip itself only reports *which* screenshot was

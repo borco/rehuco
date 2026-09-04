@@ -211,19 +211,6 @@ def test_check_button_reports_a_stale_registration(qtbot: QtBot, mocker: MockerF
     assert ui.status_label.text() == desktop_integration_page.STALE_STATUS
 
 
-def test_title_is_system_integration(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page's category-tree title matches the Windows page's, since they fill the same slot (#76).
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page, _ = build_page(qtbot, mocker)
-
-    assert page.title == "System Integration"
-
-
 def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot, mocker: MockerFixture) -> None:
     """A `SettingsFrameFilter` finds the page's registration frame and filters it by its text (#67).
 
@@ -236,7 +223,7 @@ def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot
     * verify its text includes an action, then filter by nothing-matching text and check it hides
     """
     page, ui = build_page(qtbot, mocker)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "System Integration")
 
     assert any("register" in text for text in frame_filter.field_labels())
 

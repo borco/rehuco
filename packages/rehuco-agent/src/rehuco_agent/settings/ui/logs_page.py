@@ -46,11 +46,6 @@ class LogsPage(QWidget):
 
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Logs"
-
     def is_dirty(self) -> bool:
         """Whether either staged limit differs from what the shared settings currently hold."""
         settings = shared_logs_settings()

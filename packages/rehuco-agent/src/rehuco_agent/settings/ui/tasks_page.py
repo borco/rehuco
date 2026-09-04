@@ -26,11 +26,6 @@ class TasksPage(QWidget):
         self.__ui.setupUi(self)
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Tasks"
-
     def is_dirty(self) -> bool:
         """Whether any staged checkbox differs from what's saved."""
         saved = TasksSettings()

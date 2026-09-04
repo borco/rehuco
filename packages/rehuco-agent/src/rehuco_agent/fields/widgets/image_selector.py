@@ -60,7 +60,7 @@ LIST_PANE: Final = 1
 
 PREVIEW_HEIGHT: Final = 100
 """How tall the preview pane opens, in pixels, when its owner names no height (#72). The user's own
-choice reaches this widget from the owner ("Plugins > Images"); the number lives next to the widget it
+choice reaches this widget from the owner (the "Images" settings page); the number lives next to the widget it
 sizes, and the settings section reads it from here as its default -- the same arrangement
 :data:`~rehuco_agent.fields.images_field.IMAGE_STRIP_HEIGHT` already has with the strip."""
 

@@ -14,10 +14,6 @@ class SettingsPage(Protocol):
     back to ``QWidget`` where it actually needs one (e.g. to add it to the stacked widget).
     """
 
-    @property
-    def title(self) -> str:  # pyright: ignore[reportReturnType]
-        """This page's label in the category tree."""
-
     def is_dirty(self) -> bool:  # pyright: ignore[reportReturnType]
         """Whether this page has unsaved changes.
 

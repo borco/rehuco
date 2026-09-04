@@ -559,14 +559,31 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __register_settings_pages(self) -> None:
         """Register every settings category page this platform supports (#47).
 
-        Identity (#99) is cross-platform and top-level -- registered first, so it is the page the
-        dialog initially shows. Every other cross-platform page nests under one "Plugins" group (#76,
-        #230), registered alphabetically by title: Descriptions, Excluded Files (#226), Images. The
+        **Registration order is the tree's order** ([[appendices.settings-pages#category-groups]]): the
+        dialog appends each row where it is told to, so what the reader sees is decided here, in one
+        readable list, rather than by a sorting rule buried in the shell. These calls are therefore in
+        alphabetical order of title, platform pages included -- the three ``if sys.platform`` blocks sit
+        between Session and Tasks, where the title all three of them share ("System Integration") sorts,
+        rather than after everything else. Checksums, first alphabetically, is registered first and so
+        is the page the dialog initially shows before `SettingsDialog.restore_selected_page` corrects
+        that guess.
+
+        **The titles are here, not on the pages** (#277). A page used to name itself through a
+        ``title`` property, which put the tree's labels in a dozen classes that each knew only
+        themselves -- so no one place could be read, or sorted, to see the tree. `add_page` takes the
+        title instead, and its second overload takes a group before it
+        (``add_page("Plugins", "Videos", VideosPage())``), which is what makes each of these one
+        sortable line.
+
+        There is no **Plugins** group any more (#277): the four pages a resource type owns --
+        Descriptions, Excluded Files, Images, Videos -- are top-level rows like the rest, because
+        "Videos" is findable by its own name while "Plugins" only hides it behind a word the reader has
+        to know first. The grouping overload stays for the next tree that wants a tier. The
         reference-images extension list is a block on Images rather than a page of its own (#222): a
         page holding one list, whose subject was images, is what a reader looking for images had to
         know a plugin name to find.
 
-        The top-level "System Integration" page is per-platform, and **every** platform has one:
+        The "System Integration" page is per-platform, and **every** platform has one:
         Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
         the `DesktopIntegrationPage` wrapping the XDG desktop entry / MIME type / icon (#209), and
         macOS the `SystemIntegrationPage` -- which registers nothing, since there the association
@@ -581,41 +598,38 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         line is excluded off Windows, which would silently drop the other branches from the report
         there.
         """
-        self.__settings_dialog.add_page(IdentityPage())
-        # top-level, not under "Plugins": how much log to keep is about the app itself, and a reader
-        # looking for it has no plugin name to guess (#200)
-        self.__settings_dialog.add_page(LogsPage())
-        # same reasoning, for the task queue's restart choices (#202)
-        self.__settings_dialog.add_page(TasksPage())
-        # and again for whether a restart restores the previous session's open documents (#65)
-        self.__settings_dialog.add_page(SessionPage())
-        # and again for the checksum defaults (#242): they govern every resource type rather than one
-        # plugin's, and the sweep that reads them is reached from File rather than from a document
-        self.__settings_dialog.add_page(ChecksumsPage())
-        # and again for the legacy screenshot rules (#53): they govern converting a `.tc` of any
-        # resource type, and the import wizard that reads them is reached from File as well
-        self.__settings_dialog.add_page(LegacyScreenshotsPage())
-        self.__settings_dialog.add_page(DescriptionsPage(), group="Plugins")
-        self.__settings_dialog.add_page(ExcludedFilesPage(), group="Plugins")
-        self.__settings_dialog.add_page(ImagesPage(), group="Plugins")
-        self.__settings_dialog.add_page(VideosPage(), group="Plugins")
+        self.__settings_dialog.add_page("Checksums", ChecksumsPage())
+        self.__settings_dialog.add_page("Descriptions", DescriptionsPage())
+        self.__settings_dialog.add_page("Excluded Files", ExcludedFilesPage())
+        self.__settings_dialog.add_page("Identity", IdentityPage())
+        self.__settings_dialog.add_page("Images", ImagesPage())
+        self.__settings_dialog.add_page("Legacy Screenshots", LegacyScreenshotsPage())
+        self.__settings_dialog.add_page("Logs", LogsPage())
+        self.__settings_dialog.add_page("Session", SessionPage())
+
+        # the three system-integration pages, one per platform: registered here, between Session and
+        # Tasks, because that is where the title all three share sorts
+        system_integration_title = "System Integration"
         if sys.platform == "win32":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.registry_page import RegistryPage
 
-            self.__settings_dialog.add_page(RegistryPage(ARCHIVE_EXTENSIONS))
+            self.__settings_dialog.add_page(system_integration_title, RegistryPage(ARCHIVE_EXTENSIONS))
 
         if sys.platform == "linux":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.desktop_integration_page import DesktopIntegrationPage
 
-            self.__settings_dialog.add_page(DesktopIntegrationPage())
+            self.__settings_dialog.add_page(system_integration_title, DesktopIntegrationPage())
 
         if sys.platform == "darwin":
             # pylint: disable-next=import-outside-toplevel
             from .settings.ui.system_integration_page import SystemIntegrationPage
 
-            self.__settings_dialog.add_page(SystemIntegrationPage())
+            self.__settings_dialog.add_page(system_integration_title, SystemIntegrationPage())
+
+        self.__settings_dialog.add_page("Tasks", TasksPage())
+        self.__settings_dialog.add_page("Videos", VideosPage())
 
     def __setup_docking_system(self) -> None:
         central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")

@@ -85,16 +85,6 @@ def test_satisfies_the_settings_page_protocol(page: TasksPage) -> None:
     assert isinstance(page, SettingsPage)
 
 
-def test_is_titled_tasks(page: TasksPage) -> None:
-    """The category tree calls it Tasks.
-
-    **Test steps:**
-
-    * Assert the title.
-    """
-    assert page.title == "Tasks"
-
-
 def test_all_three_checkboxes_start_unchecked(page: TasksPage) -> None:
     """A freshly opened page shows the shipped default: nothing is swept or restarted unless asked.
 

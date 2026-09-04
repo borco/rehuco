@@ -213,7 +213,7 @@ def test_the_page_filters_by_its_two_frames(page: LegacyScreenshotsPage) -> None
     * filter by a non-matching term and verify both hide
     """
     ui = page._LegacyScreenshotsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Legacy Screenshots")
 
     frame_filter.apply("legacy screenshot rules", show_full_on_title_match=False)
     assert ui.rules_frame.isVisibleTo(page) is True
@@ -226,16 +226,6 @@ def test_the_page_filters_by_its_two_frames(page: LegacyScreenshotsPage) -> None
     frame_filter.apply("nothing on this page", show_full_on_title_match=False)
     assert ui.rules_frame.isVisibleTo(page) is False
     assert ui.tie_break_frame.isVisibleTo(page) is False
-
-
-def test_the_page_names_itself(page: LegacyScreenshotsPage) -> None:
-    """The category-tree label.
-
-    **Test steps:**
-
-    * read the title
-    """
-    assert page.title == "Legacy Screenshots"
 
 
 # endregion

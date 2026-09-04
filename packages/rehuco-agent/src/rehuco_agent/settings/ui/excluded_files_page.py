@@ -59,11 +59,6 @@ class ExcludedFilesPage(QWidget):
 
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Excluded Files"
-
     def is_dirty(self) -> bool:
         """Whether applying would change the set the shared settings resolve to.
 

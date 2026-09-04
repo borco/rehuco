@@ -171,22 +171,6 @@ def test_drop_changes_reverts_the_checkbox(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_system_integration(qtbot: QtBot) -> None:
-    """The page's category-tree title is "System Integration" -- the same title its Windows and
-    Linux counterparts carry, so the tray setting is found in the same place on every platform
-    (#76, #205).
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page = SystemIntegrationPage()
-    qtbot.addWidget(page)
-
-    assert page.title == "System Integration"
-
-
 def test_unavailable_label_hidden_when_a_tray_is_available(qtbot: QtBot, mocker: MockerFixture) -> None:
     """The "no system tray" note is hidden when a tray is actually available.
 

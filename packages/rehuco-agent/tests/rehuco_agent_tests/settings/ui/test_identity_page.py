@@ -227,20 +227,6 @@ def test_drop_changes_reverts_both_edits(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_identity(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Identity".
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page = IdentityPage()
-    qtbot.addWidget(page)
-
-    assert page.title == "Identity"
-
-
 def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> None:
     """A `SettingsFrameFilter` finds the page's labeled frame and filters it by its text (#67).
 
@@ -254,7 +240,7 @@ def test_frame_filter_discovers_the_pages_frame_and_its_text(qtbot: QtBot) -> No
     """
     page = IdentityPage()
     qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Identity")
     ui = page._IdentityPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     frame_filter.apply("current user", show_full_on_title_match=False)

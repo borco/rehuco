@@ -40,11 +40,6 @@ class ChecksumsPage(QWidget):
         self.__algorithms.idToggled.connect(self.__resync_migrate_label)
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Checksums"
-
     def is_dirty(self) -> bool:
         """Whether any staged control differs from what's saved."""
         saved = ChecksumSettings()
