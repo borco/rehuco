@@ -1,0 +1,3850 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/data-model/">
+      
+      
+        <link rel="prev" href="../architecture-design/">
+      
+      
+        <link rel="next" href="../nodes/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Data Model - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#4-data-model" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Data Model
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#41-rehu-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.1 .rehu format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#42-stable-identity-independent-of-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.2 Stable identity, independent of location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#43-single-file-not-split-metadatastate-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.3 Single file, not split metadata/state files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#44-resource-scoping-directory-scoped-vs-file-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.4 Resource scoping: directory-scoped vs. file-scoped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#45-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.5 Checksums
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#46-two-distinct-meanings-of-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.6 Two distinct meanings of "image"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#47-scanning-strategy-and-staleness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.7 Scanning strategy and staleness detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#48-per-node-local-file-trio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.8 Per-node local file trio
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#49-write-integrity-atomic-writes-single-writer-per-managed-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9 Write integrity: atomic writes + single-writer-per-managed-file
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§4.9 Write integrity: atomic writes + single-writer-per-managed-file">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#491-the-lock-reason-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9.1 The lock-reason vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#410-schema-format-versioning-of-rehu-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.10 Schema format versioning of .rehu itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../acquisition-tooling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#41-rehu-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.1 .rehu format
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#42-stable-identity-independent-of-location" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.2 Stable identity, independent of location
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#43-single-file-not-split-metadatastate-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.3 Single file, not split metadata/state files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#44-resource-scoping-directory-scoped-vs-file-scoped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.4 Resource scoping: directory-scoped vs. file-scoped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#45-checksums" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.5 Checksums
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#46-two-distinct-meanings-of-image" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.6 Two distinct meanings of "image"
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#47-scanning-strategy-and-staleness-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.7 Scanning strategy and staleness detection
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#48-per-node-local-file-trio" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.8 Per-node local file trio
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#49-write-integrity-atomic-writes-single-writer-per-managed-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9 Write integrity: atomic writes + single-writer-per-managed-file
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§4.9 Write integrity: atomic writes + single-writer-per-managed-file">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#491-the-lock-reason-vocabulary" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.9.1 The lock-reason vocabulary
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#410-schema-format-versioning-of-rehu-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §4.10 Schema format versioning of .rehu itself
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="4-data-model">§4. Data Model</h1>
+<p><span class="slug-ref">[[[data-model]]]</span></p>
+<h2 id="41-rehu-format">§4.1 <code>.rehu</code> format</h2>
+<p><span class="slug-ref">[[[data-model#rehu-format]]]</span></p>
+<p>JSON, replacing the YAML <code>.tc</code>. The full schema is being designed separately (<span class="slug-ref">[[field-schema#overview]]</span>, the concrete
+v1 field list derived from the <code>.tc</code> format) and isn't detailed here, but its scope is settled:</p>
+<p><strong>A <code>.rehu</code> is <code>format_version</code> plus a map of keyed blocks</strong> — nothing else lives at the top level:</p>
+<ul>
+<li><strong>The <code>core</code> block</strong>, holding the common fields available to every resource type regardless of plugin. The concrete v1
+  list is <span class="slug-ref">[[field-schema#resource-types]]</span>: <code>type</code>, <code>id</code>, <code>sources</code> (title/publisher/url per platform), <code>authors</code>,
+  <code>released</code> (partial-precision date), <code>description</code> (Markdown, can embed local images), <code>hidden_images</code> (screenshot
+  basenames curated out of the lightbox, <span class="slug-ref">[[data-model#image-meanings]]</span>), the tag lists, the measured
+  <code>original_size</code>/<code>current_size</code> pair (<span class="slug-ref">[[field-schema#duration-size]]</span> — empty for a type with no files of its own, e.g.
+  Collection), and the <code>created</code>/<code>updated</code> record timestamps.</li>
+<li><strong>One block per plugin</strong>, holding that resource type's own fields (<span class="slug-ref">[[plugins#plugin-blocks]]</span>), e.g.:</li>
+<li><em>Tutorial</em>: <code>duration</code> (general), <code>progress</code> (per user)</li>
+<li><em>Daz3D</em>: <code>installed</code> (per user, per box)</li>
+<li><em>Reference images</em>: <code>count</code> (general), <code>tag</code> (general and per-image), <code>mosaic</code> (per-image redaction regions)</li>
+</ul>
+<p><strong>Why the common fields are nested rather than top-level</strong> (they were, through format v1): a block has to be
+<em>recognizable</em>, and while the common fields sat beside the blocks the only way to tell them apart was a <strong>list of every
+common field name</strong> — which had to be maintained in lockstep forever, and still could not classify a common field added
+by a <em>newer</em> build, since an unknown object-valued key is indistinguishable from an uninstalled plugin's block. Nesting
+the core replaces that whole list with a single reserved name: <strong>every top-level key except <code>format_version</code> and <code>core</code>
+is a plugin block.</strong> <code>core</code> is declared exactly like a plugin (<span class="slug-ref">[[plugins#core-vs-plugin]]</span>), which is also what reserves
+the name — no plugin may claim it. Unlike a real plugin's block it is never active or inactive
+(<span class="slug-ref">[[plugins#plugin-blocks]]</span>): no document is ever <code>type: "core"</code>.</p>
+<p><code>format_version</code> stays at the top level because it describes the file's own layout rather than holding fields; a v1 file
+is migrated in memory on load and re-stamped the first time it is saved (<span class="slug-ref">[[data-model#schema-version]]</span>).</p>
+<p>See <span class="slug-ref">[[plugins#overview]]</span> for how plugins own their field sets without the core app needing to understand their shape.</p>
+<p>A few field-level decisions carried over from the old <code>.tc</code> format, worth keeping in mind when the schema is finalized:</p>
+<ul>
+<li><code>date</code> must support partial precision — year only, year+month, or full date — with sensible comparison/sorting across
+  mixed precision.</li>
+<li>Fields like publisher/title and learning-path membership must support <strong>multiple values</strong>, not a single scalar — the
+  same tutorial can be sold on more than one platform under slightly different names, and can belong to more than one
+  learning path.</li>
+<li>A field like the old <code>online</code> flag means "is the original source still available," not "is this an online-only
+  resource" — worth being careful that the new schema's naming doesn't repeat that ambiguity.</li>
+<li>A field like the old <code>complete</code> flag means "are all expected files present," unrelated to viewing/watching status.</li>
+<li>Old single-purpose boolean flags (e.g. <code>keep</code>) may eventually fold into general-purpose tags, but that consolidation
+  is <strong>deferred</strong> — v1 keeps them as individual booleans, imported 1:1 (<span class="slug-ref">[[field-schema#boolean-flags]]</span>).</li>
+<li>Some fields (publisher, title, author, date) are also used to generate candidate folder-name suggestions, which the
+  user picks from to rename a resource's directory — a convenience feature carried forward from the old app. With
+  multi-valued fields, this needs a notion of a "primary" value per field to build the suggestion from, with others as
+  alternates.</li>
+</ul>
+<h2 id="42-stable-identity-independent-of-location">§4.2 Stable identity, independent of location</h2>
+<p><span class="slug-ref">[[[data-model#stable-identity]]]</span></p>
+<p>Because resources can move between folders, disks, and nodes, <strong>path cannot be the identifier</strong>. Every <code>.rehu</code> carries a
+UUID minted once at creation time. This UUID identifies the <strong>resource's lineage</strong> — see
+<span class="slug-ref">[[instances-and-dedup#uuid-is-lineage]]</span> for why this is a
+many-to-one relationship (one UUID, potentially many physical instances) rather than "one UUID, one legitimate copy."</p>
+<h2 id="43-single-file-not-split-metadatastate-files">§4.3 Single file, not split metadata/state files</h2>
+<p><span class="slug-ref">[[[data-model#single-file]]]</span></p>
+<p>Considered splitting <code>.rehu</code> into separate metadata vs. per-user-state files to simplify conflict resolution, but
+rejected this: it breaks the "one self-sufficient file" property that makes the design work in the first place. Instead,
+conflict resolution is scoped to the relevant sub-block <em>within</em> the one file (<span class="slug-ref">[[sync#overview]]</span>).</p>
+<h2 id="44-resource-scoping-directory-scoped-vs-file-scoped">§4.4 Resource scoping: directory-scoped vs. file-scoped</h2>
+<p><span class="slug-ref">[[[data-model#resource-scoping]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/197">#197: feat: enumerate a reference-images resource's content images (.zip/.cbz entries, injected extension set)</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/222">#222: feat: Plugin &gt; Reference Images settings page — configurable content-image extension list</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/198">#198: feat: compute the content-image count — advertised_count / current_count with a measure/apply
+  row</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/250">#250: fix: info.tc is a directory-scoped resource</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/254">#254: feat: a record counts only what it covers</a></li>
+</ul>
+<p>Two patterns for what a <code>.rehu</code> describes:</p>
+<ul>
+<li><strong>Directory-scoped</strong>: <code>info.rehu</code> — or the legacy <code>info.tc</code> a conversion has not reached yet, which tc4 wrote one
+  of per resource directory and which is therefore directory-scoped in exactly the same sense (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/250" title="GitHub Issue: borco/rehuco #250">#250</a>) — alongside
+  <code>infoXX.jpg/png/gif/webp</code> images and an <code>info.checksum</code> record
+  (<span class="slug-ref">[[data-model#checksums]]</span>). Covers tutorials (flat or nested) and folder-based resources generally. The record covers
+  everything in the directory <strong>except</strong> <code>info.rehu</code> and the <code>infoXX.*</code> images, so description/images stay freely
+  editable without invalidating integrity checks.</li>
+<li><strong>File-scoped</strong>: <code>foo.rehu</code> + <code>foo00.jpg</code>, <code>foo01.jpg</code>, ... + <code>foo.checksum</code>, describing a single file like
+  <code>foo.zip</code>. Whether this must extend to <strong>multiple files</strong> treated as one logical resource via an explicit manifest
+  block in the <code>.rehu</code> is a Daz3D-milestone question (<span class="slug-ref">[[daz3d-personal-database#multi-part]]</span>), and its only remaining
+  caller: reference-images resources are decided <em>not</em> to need it (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/197" title="GitHub Issue: borco/rehuco #197">#197</a>, below), and DAZ multi-part archives share a
+  stem and differ by index — a shape a naming convention may already express, unlike the <code>foo.zip</code> + <code>bar.zip</code> example
+  this block was originally justified by.</li>
+<li><strong>Coexistence</strong>: a directory may end up containing both a directory-scoped <code>info.rehu</code> and one or more file-scoped
+  <code>*.rehu</code> entries (normally this shouldn't happen — it's meant to be one or the other). Rather than forbid this
+  outright, the app caches and displays all such entries and flags the situation with a warning, leaving resolution to
+  the user.</li>
+<li><strong>The rule is stated once and every layer reads it</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/250" title="GitHub Issue: borco/rehuco #250">#250</a>). <em>Which</em> filenames mean <em>this record describes its
+  directory</em> is one predicate — <code>is_directory_scoped</code> — asked by the content walk, the content-image walk, the rename
+  plan, every job label and the agent's tab title. It used to be spelled out at each of those eight places, all of them
+  agreeing on <code>info.rehu</code> and all of them blind to <code>info.tc</code>: a catalog opened before conversion got five tabs titled
+  <code>info.tc</code> and a <code>Verify checksums</code> that hashed the <code>.tc</code> file rather than the resource it describes, writing an
+  <code>info.checksum</code> whose baseline was one small YAML file. A named <code>foo.tc</code> behaves as <code>foo.rehu</code> does, unchanged —
+  the rule is about the one filename, not the extension.</li>
+<li><strong>A record counts only what it covers</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/254" title="GitHub Issue: borco/rehuco #254">#254</a>). Coverage is decided by <strong>the records present</strong>, never by what is on
+  disk, and it is exclusive: a subdirectory holding an <code>info.rehu</code>/<code>info.tc</code> is out of every ancestor's content
+  <strong>wholesale</strong> — files, subtree and all — because that record covers its own directory; a file-scoped <code>foo.rehu</code> takes
+  its same-stem siblings out of the enclosing record's content, because those siblings are the whole of what it
+  describes; and whatever no record claims belongs to the nearest enclosing directory-scoped record, at any depth.
+  This reverses the overlap the rest of this document used to record as accepted, on one argument: <strong>summing every
+  record's measured size has to answer a library's</strong>, which is the aggregation the catalog cache exists to do
+  (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>), and under an overlap it cannot — a nested resource was counted once for itself
+  and again for each of its ancestors. Everything downstream of the walk follows: sizes, content-image counts and
+  checksums alike, since they are all one enumeration (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>). The stem is compared <strong>whole</strong>, so <code>foo.part2.zip</code> is
+  not <code>foo.rehu</code>'s.</li>
+<li><strong>A legacy document keeps its checksum actions.</strong> Verifying an unconverted resource against the <code>.sfv</code> a predecessor
+  left beside it is the case <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a> exists for, and the record it seeds is the one the converted resource inherits.
+  Refusing the actions while a document is locked would have been the cheaper fix and throws that away.</li>
+</ul>
+<p>What a <strong>reference-images</strong> resource's content <em>is</em> was settled by <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/197" title="GitHub Issue: borco/rehuco #197">#197</a>: content lives inside archives — <code>.zip</code> or
+<code>.cbz</code>, a comic-book zip being the same container under another name — never as loose image files beside the <code>.rehu</code>.</p>
+<ul>
+<li>File-scoped <code>foo.rehu</code> → the single same-stem archive (<code>foo.zip</code>/<code>foo.cbz</code>) <strong>and nothing else</strong>. Siblings in the
+  same directory belong to other resources or to none, and are never opened — a whitelist of one, not a directory walk
+  with filters.</li>
+<li>Directory-scoped <code>info.rehu</code> of type <code>reference_images</code> → every archive under its directory <strong>that no other record
+  covers</strong>, root and
+  subdirectories, recursively. A nested <code>info.rehu</code> <strong>is</strong> a boundary (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/254" title="GitHub Issue: borco/rehuco #254">#254</a>): a subdirectory carrying its own document
+  is another resource, handled per its own type, and its archives are counted there rather than here — as is an archive
+  sitting beside a same-stem <code>foo.rehu</code> of its own. The overlap this used to accept is resolved by the coverage rule
+  above, for the reason it gives.</li>
+<li><strong>Not</strong> a curated list of member archives — a reference-images resource is one file or one directory; the manifest
+  block contemplated above is not needed here.</li>
+<li><strong>Which archive entries count as images is the user's to set</strong> — the enumeration takes the recognized extension set
+  as a parameter, and the <code>Images</code> settings page (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/222" title="GitHub Issue: borco/rehuco #222">#222</a>) supplies it — one editable list, one
+  format per entry, starting from <code>jpg, jpeg, png, webp, avif</code> and resolving back to that shipped set whenever it names
+  nothing (<span class="slug-ref">[[appendices.settings-pages#category-groups]]</span>). A pack in a format the shipped set
+  omits (<code>.bmp</code>, <code>.tif</code>, <code>.tga</code>, <code>.psd</code>) is a preference change, not a rebuild.</li>
+<li><strong>Counting them fills <code>current_count</code>, and only when asked</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/198" title="GitHub Issue: borco/rehuco #198">#198</a>) — the editor shows the measured count beside
+  the stored one and stores it on an explicit apply, never on open. The two disagreeing is <em>information</em>: the archive
+  was refreshed behind the app's back (<span class="slug-ref">[[data-model#image-meanings]]</span>), which an automatic fill would erase before
+  anyone saw it. What the pack itself claims lives separately, in <code>advertised_count</code> (<span class="slug-ref">[[field-schema#field-types]]</span>).</li>
+</ul>
+<h2 id="45-checksums">§4.5 Checksums</h2>
+<p><span class="slug-ref">[[[data-model#checksums]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/226">#226: feat: excluded-files settings page — one pattern list shared by the size scan and checksums</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/203">#203: feat: the .checksum record — per-file hash, verification date and status, generate and verify</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/241">#241: feat: rename-aware jobs — a rename never waits for a scan, and a job follows the resource it moved</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/204">#204: feat: checksum actions — generate/verify from the app as task-queue jobs</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/245">#245: bug: an unreachable resource reads as an empty one — a clean verify, and a generate that drops entries</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/242">#242: feat: periodic checksum sweep — verify a catalog recursively, skipping what was checked recently</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/243">#243: feat: seed a .checksum from a legacy .sfv/.md5/.sha* manifest on first verify</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/244">#244: feat: checksum viewer dock — per-file status and date, with verify/generate actions</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/254">#254: feat: a record counts only what it covers</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/257">#257: feat: a pruned claim moves to the record that now covers it</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/256">#256: feat: import options — convert the .sfv, and optionally verify</a></li>
+<li>
+<p><a href="https://github.com/borco/rehuco/issues/259">#259: fix: a legacy manifest is never retired once its claim is in the record</a></p>
+</li>
+<li>
+<p><strong>The algorithm was measured rather than inherited</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/203" title="GitHub Issue: borco/rehuco #203">#203</a>). This section used to say the choice was <em>"subject to
+  change pending benchmarking"</em> and named nobody to run it — the only benchmarking job the specs describe
+  (<span class="slug-ref">[[mounts-and-storage#node-benchmark]]</span>) grades a <em>node's</em> cold-read throughput for dispatch and never compares
+  algorithms. <code>test_checksum_algorithms_benchmark</code> is that comparison, kept in the repository and re-runnable with
+  <code>make checksum-bench</code>: it folds one fixed 64 MiB in-memory block through each candidate, because the read loop moves
+  the same bytes whichever digest consumes them, so I/O is a constant and only the fold is the variable.</p>
+</li>
+</ul>
+<p>Median of 15 rounds, AMD Ryzen 5 5600, Python 3.14.6, 2026-08-04:</p>
+<table>
+<thead>
+<tr>
+<th>algorithm</th>
+<th>ms / 64 MiB</th>
+<th>throughput</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>XXH3-64</strong></td>
+<td><strong>2.94</strong></td>
+<td><strong>22.9 GB/s</strong></td>
+</tr>
+<tr>
+<td>CRC-32</td>
+<td>7.14</td>
+<td>9.4 GB/s</td>
+</tr>
+<tr>
+<td>BLAKE3</td>
+<td>14.40</td>
+<td>4.7 GB/s (measured, not shipped)</td>
+</tr>
+<tr>
+<td>SHA-1</td>
+<td>29.41</td>
+<td>2.3 GB/s (measured, not shipped)</td>
+</tr>
+<tr>
+<td>SHA-256</td>
+<td>31.48</td>
+<td>2.1 GB/s</td>
+</tr>
+<tr>
+<td>SHA-512</td>
+<td>68.6</td>
+<td>0.98 GB/s (SHA-384 measures the same; not shipped)</td>
+</tr>
+<tr>
+<td>MD5</td>
+<td>70.52</td>
+<td>0.95 GB/s</td>
+</tr>
+</tbody>
+</table>
+<p><strong>XXH3 is the default.</strong> Nothing outside this app reads a checksum record, so there is no interop to trade the speed
+  against; CRC-32 stays available because that is what the existing catalog's <code>.sfv</code> files hold. MD5 losing to SHA-512
+  is not a mistake in the table: SHA-2 has hardware acceleration on this CPU and MD5 has none. Every candidate is far
+  above any disk this reads from, so a sweep is I/O-bound whichever is chosen — what the choice buys is headroom for
+  the day the storage is not the bottleneck.</p>
+<p><strong>Five ship, and only five</strong>: XXH3 for what is written, and CRC-32, MD5, SHA-256 and SHA-512 because those are the
+  spellings a legacy manifest is realistically written in, so an entry seeded from one (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>) stays checkable. SHA-1,
+  SHA-224 and SHA-384 were <strong>dropped from the shipped set</strong> — nothing writes them, they are not what the legacy
+  catalog's manifests hold, and every offered algorithm is a row in a radio group about a question most users never
+  ask. Naming an algorithm
+  costs a line; <em>offering</em> it costs the reader's attention, and a longer list makes the one that matters harder to
+  find. Dropping one is safe because the record already answers for it: an entry whose hash sits under a key this
+  build has no algorithm for is <strong><code>malformed</code></strong> — reported, and carried through byte-for-byte. It is never re-hashed
+  under the current algorithm, which would replace a claim that was never checked with one that trivially passes.
+  That is the same rule as <em>a new hash is only ever kept for a matched file</em>, reached from the other direction.</p>
+<p><strong><code>gxhash</code> was measured and rejected</strong> (0.7.0, MIT). At <strong>23.3 GB/s (64-bit) / 28.9 GB/s (128-bit)</strong> one-shot it is
+  the fastest thing tested, and it is unusable here: upstream states plainly that <em>"GxHash is not an incremental
+  hasher, and all inputs provided to the <code>update</code> method will be accumulated internally"</em>. Through the chunked read
+  loop this app actually uses it measures <strong>0.09 GB/s</strong> — 100× slower than CRC-32 — while buffering the whole input,
+  which for an 8 GB video means an 8 GB resident buffer. A hash that must see the file in one piece cannot hash the
+  files this catalog holds.</p>
+<ul>
+<li>
+<p><strong>The read chunk is 1 MiB</strong>, from the same benchmark's 64 KiB–16 MiB sweep: below 256 KiB the per-<code>update</code> call is
+  visible on the cheapest fold (CRC-32 costs 4% more at 64 KiB), above it nothing changes but the resident buffer.
+  It is also the granularity at which a running job releases a file handle, so a rename never waits longer than one
+  chunk read (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/241" title="GitHub Issue: borco/rehuco #241">#241</a>).</p>
+</li>
+<li>
+<p><strong>Every algorithm ships; the set is closed.</strong> <code>xxhash</code> (BSD-2-Clause) is a dependency, and the SHA-2 family and MD5
+  come from <code>hashlib</code> — so an algorithm is added by editing one file, never by dropping a package into an install, and
+  there is no optional-backend path to reason about. <strong>BLAKE3 was dropped</strong>: it existed to be written in <code>b3sum</code>'s
+  format for an external checker to verify, that interop is gone, and it folds a third of XXH3's throughput. What a
+  record written by some <em>other</em> build names, and this one has no entry for, is a question for whoever reads the
+  record — it is not answered by keeping an entry that cannot hash anything.</p>
+</li>
+<li>
+<p><strong>A <code>.checksum</code> is a record of verification over time, not a manifest</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/203" title="GitHub Issue: borco/rehuco #203">#203</a>) — per content file: which hash, when
+  it was last checked, and what the answer was. That is what lets a sweep skip what was checked recently (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>), and
+  it is not expressible in any format an external checker reads, so <code>cfv</code> interop is dropped deliberately. It is JSON,
+  sits beside the <code>.rehu</code> under the same stem (<code>info.rehu</code> → <code>info.checksum</code>), and carries its own <code>version</code> for the
+  migration chain to climb:</p>
+</li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;version&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;files&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;foo1/bar1.zip&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;crc32&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;42342424&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;verified&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-08-04T23:34:56Z&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;matched&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bar2.zip&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;unexpected&quot;</span><span class="w"> </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;foo3/bar3.zip&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;xxh3&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;42342424&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;verified&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-08-04T23:34:56Z&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mismatched&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+<p><code>name</code> is relative to the <code>.rehu</code>, POSIX-separated, never absolute and never escaping the directory. <strong>The hash key
+  is the algorithm tag</strong>, at most one per entry and present only once hashed — which is how <em>record which algorithm was
+  used per entry</em> is satisfied literally, and it is genuinely per entry, so <code>crc32</code> and <code>xxh3</code> entries sit side by side
+  and changing the configured algorithm invalidates nothing. <code>status</code> is <code>matched</code> / <code>mismatched</code> / <code>missing</code> /
+  <code>unexpected</code> / <code>malformed</code>; a <code>malformed</code> entry is one the reading build cannot read, and it costs itself while its
+  neighbours still verify.</p>
+<ul>
+<li>
+<p><strong>Generate and verify take the same selection</strong>, because they are two halves of one workflow and a selection meaning
+  different things in each would be a trap: which files (one, a set, or everything), and a staleness window whose
+  <em>absence</em> is how force is expressed — no separate force flag to drift out of step. <strong>A targeted generate re-baselines
+  exactly the named entries and carries every other byte-for-byte</strong>, which is what makes the real loop work: verify,
+  inspect what came back <code>mismatched</code>, decide whether the change was genuine (an archive legitimately repacked; or
+  corruption with no backup, where keeping a checksum that can only ever fail helps nobody), then re-baseline just
+  those files without re-reading the terabyte that was fine.</p>
+</li>
+<li>
+<p><strong>Migration happens in one pass, and never launders corruption</strong> — with <em>Update checksums on verify</em> on, an entry
+  recorded under a non-default algorithm is read <strong>once</strong> and fed to two digests at the same time, its own and the
+  default. The <em>recorded</em> algorithm decides the verdict: if it matches, the old key is dropped and the new replaces it;
+  if it fails, the entry is <code>mismatched</code>, keeps its old key, and the new hash is discarded. Blessing bad bytes under a
+  new name would produce a record that then looks clean forever.</p>
+</li>
+<li>
+<p><strong>A sweep adopts</strong> a content file with no recorded hash — hash it, date it, record it <code>matched</code> — so <code>unexpected</code> is
+  a report state rather than a resting one.</p>
+</li>
+<li>
+<p><strong>A resource checksummed before this app existed is verified, not baselined</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>). The catalog carries <code>.sfv</code>
+  files written by tutcatalog4 and by external checkers, with <code>.md5</code>/<code>.sha*</code> here and there. Those suffixes were
+  already recognized as bookkeeping so they never count as content, and nothing writes one — but nothing <em>read</em> one
+  either, so a resource checksummed for years read to this app as a resource with no checksums, and its first verify
+  would have recorded today's bytes as <code>matched</code> about bytes nobody ever compared. The old file is a <strong>claim, made
+  when the files were known good</strong>, and it can still be checked today. A verify that finds no <code>.checksum</code> and does
+  find a <strong>same-stem</strong> manifest beside it — <code>info.sfv</code> next to <code>info.rehu</code> — seeds its entries from that file and
+  behaves as a verify against them, writing the <code>.checksum</code> once at the end. Six decisions carry it:</p>
+</li>
+<li><strong>Seeding produces entries, not a second kind of run.</strong> Each line becomes <code>{name, &lt;algorithm&gt;: &lt;digest&gt;}</code> with no
+    date and no status, which is a shape verify already knows: present files are hashed and compared under the
+    algorithm the <em>suffix</em> named, an absent one is <code>missing</code> and <strong>keeps its recorded hash</strong> so the claim survives the
+    file's return, and content the manifest never listed is adopted exactly as any unlisted file is. <code>only</code>, the
+    staleness window, the progress denominator and the migration therefore compose for free — a seeded <code>crc32</code> entry
+    read with <em>Update checksums on verify</em> on is checked as <code>crc32</code> and re-recorded as XXH3 from the same single read,
+    and the corruption rule is unchanged.</li>
+<li><strong>Seeding is finding a record, not creating one</strong>, so it happens with <em>Create missing checksum on verify</em> off.
+    That setting means <em>start from an empty record when there is nothing at all to start from</em>, and a resource with a
+    <code>.sfv</code> has something. A manifest that yields no usable entry yields no record either, and the run refuses as it
+    would have before — the setting's meaning is untouched.</li>
+<li><strong>Only content is seeded, and <em>not there</em> is not the same as <em>excluded</em>.</strong> A name that resolves to a file today's
+    enumeration leaves out — a screenshot, a <code>Thumbs.db</code>, another record's bookkeeping — is dropped, because a
+    predecessor was free to checksum files this app deliberately does not, and carrying such an entry would make every
+    screenshot edit a permanent <code>mismatched</code> in a record that can never come clean. A name with nothing there at all
+    is the opposite case and is kept: it is the claim about a file that has gone.</li>
+<li><strong>One manifest is read, by a fixed suffix precedence</strong> — <code>sha512</code>, <code>sha384</code>, <code>sha256</code>, <code>sha224</code>, <code>sha1</code>, <code>md5</code>,
+    <code>sfv</code> — and the others beside it are reported ignored. Merging several is not worth the ambiguity about which one
+    wins per file, and a silent pick would be worse than a stated one. A suffix naming an algorithm the shipped five
+    omit is passed over rather than chosen and then failed, so a readable <code>.md5</code> is not shadowed by a <code>.sha1</code>.</li>
+<li><strong>A line this build cannot read costs itself</strong> — reported, and the rest of the file still seeds — the same rule a
+    malformed record entry is under. Names are normalized to POSIX <code>/</code> (these files mix separators freely) and must
+    land <em>inside</em> the resource; an absolute name, a drive letter or an escaping <code>..</code> is dropped and never resolved.
+    Encoding is UTF-8 falling back to cp1252, since a non-ASCII filename in a file a Windows tool wrote years ago is
+    a cp1252 byte sequence rather than invalid UTF-8 to give up on.</li>
+<li><strong>A manifest is retired once its claim is absorbed</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>) — the run that wrote the record renames <code>info.sfv</code> to
+    <code>info.sfv.orig</code>, and every weaker same-stem manifest the precedence passed over with it. The sixth decision, and
+    the one this section shipped without: it was made in the seeding module's docstring rather than here, so the design
+    went out with the question unasked. Leaving the file is not the harmless no-op it reads as. Nothing consults it
+    while the record is there, so it surfaces nowhere and looks inert — and it becomes the authority again the moment
+    the record is lost or deleted, at which point a verify re-seeds from it and reports <code>mismatched</code> for every file
+    legitimately changed since; after <em>Update checksums on verify</em> has re-keyed the matched entries the two cannot even
+    be reconciled to detect that one supersedes the other. <strong>Renamed, not deleted</strong>: <code>.orig</code> is the conversion's own
+    backup suffix (<span class="slug-ref">[[acquisition-tooling#convert-mechanics]]</span>), so a retired manifest joins the resource's backup set
+    for Revert and Discard with no new vocabulary, and the content walk already skips it. No marker is needed and none
+    is written — the run that absorbed the claim is the one retiring it, which is also the moment <em>unrepeatable if the
+    record is lost</em> is at its weakest, the record having been written atomically from that very file a moment earlier.
+    A manifest naming an algorithm the shipped five omit is <strong>not</strong> retired: nothing read it and nothing considered it,
+    and a build that ships that algorithm can still use it.</li>
+</ul>
+<p>It is <strong>one-way and it happens once</strong>: from then on there is a <code>.checksum</code>, so the next verify reads that and the
+  legacy file is never consulted again — and it is renamed aside, by the decision above, so that stops being a promise
+  about what nobody reads and becomes a fact about what is there. <strong>It is never deleted</strong>, only retired: it stays
+  out of the content set either way, and deleting it would make the step unrepeatable if the new record were lost —
+  which retiring, being one rename away from undone, does not.
+  Normalization lives in the conversion, which is the seam that knows the file came from a Windows tool; the record
+  reader stays strict and is <strong>not</strong> taught to normalize, since a reader that did would make one <code>.checksum</code> mean
+  different things to a Windows agent and a Linux node.</p>
+<ul>
+<li>
+<p><strong>Seeding is also an operation of its own, and it hashes nothing</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/256" title="GitHub Issue: borco/rehuco #256">#256</a>). The step above happens <em>on the way past</em>
+  a verify, which then reads every file — fine for one resource a person is looking at, useless for a catalog-wide
+  migration, which would have to read the whole library to carry claims it has not been asked to check. So a
+  <strong>seed-only</strong> call writes the record from the manifest and stops. It is what a bulk import runs, once per converted
+  resource, and it is <strong>not optional</strong>: there is no version of <em>converted</em> that leaves a years-old claim behind as a
+  file nothing reads. Two things make it safe to stop there. The entries land <strong>dateless</strong>, and a dateless entry is
+  never fresh whatever the staleness window, so the next sweep checks every one of them with no force asked for and
+  nobody tracking which resources were done — a converted-but-unread catalog is <strong>self-healing</strong> rather than a state
+  to remember. And a resource that already has a <code>.checksum</code> is <strong>left alone</strong>, the same one-way rule: the record is
+  what supersedes the manifest, and re-seeding over it would replace dated verdicts with an old claim. An unreachable
+  resource refuses (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/245" title="GitHub Issue: borco/rehuco #245">#245</a>) rather than seeding a record whose every line would read as a claim about a file that has
+  gone. Where a record <em>is</em> already there and a manifest is still beside it, the remediation below applies instead.</p>
+</li>
+<li>
+<p><strong>A record written before its manifest was absorbed is remediated, not left</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>). What retirement leaves is a
+  clean rule going forward and a catalog that predates it — resources hand-converted into <code>.rehu</code> + <code>.sfv</code> +
+  <code>.checksum</code>, where nothing in the files says whether the record came from that manifest or was baselined
+  independently of it. The answer is a re-seed that <strong>merges</strong> rather than overwrites:</p>
+</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>record entry</th>
+<th>named by the manifest, not excluded</th>
+<th>outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>any</td>
+<td><strong>yes</strong></td>
+<td>digest replaced with the legacy claim, <code>verified</code> <strong>cleared</strong></td>
+</tr>
+<tr>
+<td>any</td>
+<td>no</td>
+<td><strong>untouched</strong> — digest and date kept</td>
+</tr>
+</tbody>
+</table>
+<p>So a file added after the manifest was written keeps its baseline and its timestamp, and a <code>missing</code> entry the
+  manifest never mentioned keeps its claim about a file that has gone; only what the manifest is actually
+  authoritative about is reset, and it is re-checked, honestly, on the next verify. A name the manifest carries that
+  the record has never held becomes an entry, since it is a claim held nowhere else. The exclusion half is
+  <strong>inherited, not built</strong> — a line naming something the enumeration leaves out never becomes an entry at all, so it
+  can clear nothing — and the manifest is retired afterwards, as above. This is remediation and is <strong>allowed to be
+  narrow</strong>: the seeding path no longer produces the state, and the one door it recurs through — a revert restores a
+  retired manifest wholesale, beside the record it deliberately keeps (<span class="slug-ref">[[acquisition-tooling#convert-mechanics]]</span>) —
+  heals on reconversion, since a conversion merges and retires whether or not a record is present. So the merge takes
+  no options and generalizes to nothing.
+  The bulk import is where it is offered, since that is where a legacy catalog is already being walked
+  (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>).</p>
+<ul>
+<li><strong>A verify has three modes, not two, and the fourth is refused</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/256" title="GitHub Issue: borco/rehuco #256">#256</a>). Two independent choices — may this run
+  <em>create</em> a record, and may it <em>seed</em> one — make four combinations, and one of them is incoherent:</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>create</th>
+<th>seed</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>off</td>
+<td>on</td>
+<td>the ordinary verify — seed from a manifest, else refuse (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>)</td>
+</tr>
+<tr>
+<td>off</td>
+<td><strong>off</strong></td>
+<td><strong>check what is recorded</strong> — refuse where nothing is</td>
+</tr>
+<tr>
+<td>on</td>
+<td>on</td>
+<td>the sweep with <em>Create missing checksum on verify</em> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>)</td>
+</tr>
+<tr>
+<td>on</td>
+<td>off</td>
+<td><strong>refused</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The middle one is what a run queued <em>behind</em> a seed asks for: the claim is already in the record, and seeding again
+  would spend the resource's one seed on a file that has been read. It also dissolves an ordering question rather than
+  answering it — a check that somehow runs before its record exists costs a <code>stat</code>, refuses with a sentence, and Retry
+  is the recovery, so nothing has to arrange the two. The last combination would adopt every file on disk as a fresh
+  baseline while a perfectly good manifest sat beside it unread, which is precisely the throwing away of an old claim
+  seeding exists to prevent; a <strong>generate</strong> says that honestly and is what a caller who means it should ask for.</p>
+<ul>
+<li>Checksums cover only <strong>immutable original content</strong> — the actual tutorial/resource files — never <code>.rehu</code> or the
+  <code>infoXX.*</code> images, which are designed to be freely editable.</li>
+<li><strong>What a resource's content <em>is</em> is computed once and shared</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>) — <code>rehuco_core.rehu_content_files</code> resolves it
+  from the <code>.rehu</code> path, and both the size-on-disk scan and checksum generate/verify read that one answer. A file
+  summed by one and skipped by the other is a bug with no honest resolution: a verify would report an
+  <em>unexpected new file</em> the size the user was shown already counted.</li>
+<li><strong>Two tiers of exclusion, and only one is the user's.</strong> <strong>Structural</strong> — <strong>every record</strong> a scan meets, at any
+  depth, together with the files that belong to it: its <code>&lt;record&gt;NN</code> screenshots (<code>&lt;record&gt;NN</code> plus an image
+  extension, the same shape <span class="slug-ref">[[data-model#image-meanings]]</span> defines, so a numbered <em>video</em> stays content) and its
+  <code>&lt;record&gt;.checksum</code> record -- and the legacy manifest suffixes a predecessor or an external checker may have left
+  beside it. Not only the scanning resource's own — a nested <code>bar/info.rehu</code> and a
+  file-scoped <code>baz.rehu</code> in the tree bring their own bookkeeping, and all of it is skipped. <strong>Find the records
+  first, drop what each one claims, and count what is left</strong> — with two conditions that fall out of that order.
+  A record claims <strong>only its own directory</strong>, since screenshots and a manifest are its siblings: a root
+  <code>info.rehu</code> does not reach down and claim a <code>bar/info00.jpg</code> that has no <code>bar/info.rehu</code>, while a
+  <code>baz/info00.jpg</code> beside <code>baz/info.rehu</code> is skipped. And <strong>the record has to exist</strong> — a name is bookkeeping
+  because a record claims it, never because of its shape, so <code>xxx00.jpg</code> with no <code>xxx.rehu</code> and <code>yyy.sfv</code> with no
+  <code>yyy.rehu</code> are ordinary files that merely look like bookkeeping. <strong>A record is a <code>.rehu</code> or a legacy <code>.tc</code></strong>
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/250" title="GitHub Issue: borco/rehuco #250">#250</a>) — so an unconverted <code>info.tc</code> is its directory's bookkeeping and claims the <code>info.sfv</code>, <code>info.checksum</code> and
+  <code>infoNN</code> siblings beside it, exactly as the <code>info.rehu</code> replacing it will. Otherwise the same directory measures a
+  different set the moment it is converted, for a reason that has nothing to do with its content, and a claim seeded
+  from the old manifest (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>) would describe a resource that no longer exists. <strong>A legacy record claims its
+  screenshots by naming rule rather than by stem</strong> — <code>01.jpg</code>, <code>cover.jpg</code>, <code>sample-01.jpg</code>, <code>file(2).jpg</code>,
+  <code>file-01.jpg</code> under the shipped defaults (<span class="slug-ref">[[acquisition-tooling#screenshot-schemes]]</span>), none of them named after the
+  record, so the <code>&lt;record&gt;NN</code> rule cannot reach them and only a <code>.tc</code> in the same directory says whose they are. The
+  rules are the caller's, and the walk is handed the same set the conversion is: that is what makes <em>what is skipped</em>
+  exactly <em>what a conversion renames aside</em>, winners and losing variants alike, however a user has edited them. Where
+  no <code>.tc</code> sits, a <code>01.jpg</code> is an ordinary file and stays counted.
+  <strong>A retained <code>.orig</code> conversion backup is
+  structural as well</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/253" title="GitHub Issue: borco/rehuco #253">#253</a>), and is the one exception to that last condition: a backup belongs to the directory it
+  sits in rather than to a stem — a legacy screenshot is named <code>cover.jpg</code>, carrying nothing that ties it to its
+  resource (<span class="slug-ref">[[acquisition-tooling#convert-mechanics]]</span>) — so there is no record to look it up against, and <strong>any</strong>
+  <code>.orig</code> counts. That definition is asked of the backups module rather than restated here, which is what keeps the
+  set a walk skips identical to the set a revert would restore. A bulk import retains every backup by default, so
+  counting them would bake each converted resource's own <code>info.tc.orig</code> into its first checksum baseline, and
+  discarding the backups afterwards — the encouraged cleanup — would then report a missing file for every resource in
+  the catalog. It is deliberately not
+  editable, and the reason is mutability rather than ownership: a record, its screenshots and its manifest can
+  change at any moment, so a size or a manifest that counted them would need recomputing every time anyone edited a
+  description or added a screenshot. Excluding them is what lets a measurement stay valid until the <em>content</em>
+  changes. A nested record's real content leaves too, but under the coverage rule rather than this one (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/254" title="GitHub Issue: borco/rehuco #254">#254</a>): the
+  subdirectory holding it is out wholesale, and a file-scoped record's same-stem siblings are its own
+  (<span class="slug-ref">[[data-model#resource-scoping]]</span>). <strong>Junk</strong> — <code>Thumbs.db</code>,
+  <code>ehthumbs.db</code>, <code>desktop.ini</code>, <code>.DS_Store</code>, <code>._*</code> by default — is the tier the <code>Excluded Files</code> settings page
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>) edits, as filename globs matched case-insensitively. <code>Thumbs.db</code> earns its place because Windows still
+  writes per-folder thumbnail caches on network shares (<span class="slug-ref">[[packaging-deployment#ts230-as-nas]]</span>), and <code>._*</code> is the
+  macOS AppleDouble residue that appears for the same reason; neither is content, and both change a size and a
+  checksum without anyone touching the resource.</li>
+<li><strong>The junk list falls back to the shipped defaults when it names nothing</strong> — empty, absent or unreadable. Falling
+  back to <em>no exclusions</em> instead would silently start counting every share's <code>Thumbs.db</code>, which is the churn the
+  list exists to prevent.</li>
+<li><strong>Exclusions govern the directory-scoped case only.</strong> A file-scoped <code>foo.rehu</code>'s content is its same-stem siblings
+  — a whitelist named by the <code>.rehu</code> itself (<span class="slug-ref">[[data-model#resource-scoping]]</span>) — so a neighboring <code>info.rehu</code>,
+  <code>bar00.jpg</code> or <code>bar.zip</code> is out of scope <em>before</em> any pattern is consulted, and emptying the list cannot change
+  that.</li>
+<li><strong>The record does not store the list it was generated under, and it does not need to</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/203" title="GitHub Issue: borco/rehuco #203">#203</a>, answering this
+  section's own open question). Verify checks <em>what the record lists</em>: every file with a recorded checksum is hashed
+  and compared, so matched / mismatched / missing are decided without consulting the setting at all. The exclusion
+  list decides what gets hashed at <strong>generate</strong> time, and at verify time it shapes one thing — the list of content
+  files the record does not cover, which is advisory and never makes a resource dirty. So a changed junk list can move
+  a file in and out of that advisory list and can never turn a match into a mismatch. Storing it would buy an
+  exactness nothing needs, at the cost of a record that disagrees with the setting the user is looking at.</li>
+<li><strong>An unreachable resource is neither an empty one nor a resource without checksums</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/245" title="GitHub Issue: borco/rehuco #245">#245</a>). The walk
+  reports the directories that would not list rather than answering <em>nothing found</em>, because the two
+  readings had become one: a verify over an away mount reported a clean run against a record it had
+  invented, and a full generate over a partly-offline tree <strong>deleted</strong> the hashes for the branch it could
+  not see. Three answers fall out of one enumeration, and they differ because the callers do:</li>
+<li><strong>A run over a resource whose own directory will not list refuses</strong>, before it looks for a record —
+    <em>the mount is away</em> outranks <em>this resource has no checksums</em>, and a job (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/204" title="GitHub Issue: borco/rehuco #204">#204</a>) can then say the
+    first rather than the second.</li>
+<li><strong>A full generate may drop an entry only where the walk was complete.</strong> Dropping what a walk did not
+    find is safe exactly when the walk could see, so entries under an unreadable branch are carried
+    untouched and reported. A verify was never exposed: it checks what the record lists rather than what
+    a walk finds, which is the property that saved it.</li>
+<li><strong>A measurement over the whole resource refuses rather than reporting low.</strong> A size or a duration
+    summed over the branches that happened to answer is not this resource's, and a number that reads as
+    authority is worse than no number — the same rule as <em>a backend that cannot run reports that rather
+    than measuring <code>0</code></em> (<span class="slug-ref">[[field-schema#duration-size]]</span>), one step earlier in the same walk.</li>
+<li><strong>A verify drops the entries the coverage rule says were never content</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/254" title="GitHub Issue: borco/rehuco #254">#254</a>), and says how many and why. A verify
+  otherwise only ever <em>adds</em>, so a record written before <em>a record counts only what it covers</em> would carry its
+  resource's own <code>info.tc.orig</code> backups, a <code>Thumbs.db</code> a Windows browse dropped in, and a nested record's bookkeeping
+  forever — every one of them adopted, hashed and dated by an earlier run. Four decisions:</li>
+<li><strong>What goes is decided by the name, never by absence.</strong> The enumeration is a disk walk, so <em>deleted</em> and <em>excluded</em>
+    look identical to it; an entry is dropped for what it <strong>is</strong>, which is why a file that is merely gone keeps its
+    entry and its hash as the <code>missing</code> it has always been.</li>
+<li><strong>An entry another record now covers is not dropped.</strong> Those bytes are still somebody's content, and dropping the
+    entry would destroy a real claim — its digest, its algorithm, and the date saying when the file was last known
+    good. It <strong>moves</strong> to the record that now covers it instead, which is the bullet below.</li>
+<li><strong>Freshness does not protect an entry from pruning.</strong> The staleness window buys a skipped <em>read</em>, and an entry that
+    was never content has nothing to read; a 90-day window would otherwise leave a catalog's stale entries in place
+    indefinitely.</li>
+<li><strong>The selection is respected, and the run reports what it dropped.</strong> <em>Verify Selection</em> over three rows may not
+    quietly rewrite the two hundred it was not shown. The count joins the run's summary line and each dropped name and
+    reason lands on the resource's own log (<span class="slug-ref">[[appendices.logging#scopes]]</span>), the same division a legacy seed's dropped
+    lines already use — entries vanishing silently is the failure mode this is written against.</li>
+<li><strong>A pruned claim moves to the record that now covers it</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/257" title="GitHub Issue: borco/rehuco #257">#257</a>) — the other half of the rule above, and the half
+  the pruning had to wait for. An entry for a file another record owns cannot simply be dropped: its digest, its
+  algorithm and the date the file was last known good exist nowhere else, and a later baseline on the covering record
+  would re-read from disk and record whatever is there <strong>now</strong>, including bytes that rotted before the split. That is
+  the argument <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a> makes for a legacy manifest, reached from the other side — this is a seed from a <code>.checksum</code>
+  instead of from an <code>.sfv</code>. The entry is written into the covering record under the name <em>that</em> record spells it with
+  (<code>sub/movie.mp4</code> becomes <code>movie.mp4</code> under <code>sub/info.rehu</code>), and then pruned from the one that no longer covers it.
+  Five decisions:</li>
+<li><strong>The incoming claim wins</strong>, and any resident entry of that name goes. <strong>Provenance beats recency</strong>: an
+    <code>.sfv</code>-seeded crc32 was recorded when the files were made, where a locally-baselined XXH3 entry recorded only
+    whatever was on disk the first time this app looked — so the arriving claim wins even when it is older and weaker.</li>
+<li><strong>The date is cleared, and the verdict with it.</strong> Neither is true of a record that has never checked the file, and
+    clearing them is what makes everything downstream work with no special case: a dateless entry is never fresh, so
+    the next ordinary verify reads that file whatever the staleness window says — no force, no <code>stale_after=None</code> — and
+    checks it under its <strong>own</strong> recorded algorithm, with <em>Update checksums on verify</em> re-keying it only on a match.</li>
+<li><strong>The covering record is written first, and the losing one after.</strong> A failure between the two leaves the claim in
+    both records, which the next run resolves; the other order loses it outright. A covering record that cannot be
+    written keeps its claims where they are, so one unwritable record never strands another resource's — as does one
+    that has no record yet but a legacy manifest beside it: seeding is one-way (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>), so a record created by a
+    hand-over would spend that resource's one seed on the arriving names and silence the manifest's claims for
+    everything else it covers. The move waits until that resource has seeded, and completes on a later run. Sweep order
+    does not matter either: a claim arriving after the covering resource has already been verified is dateless, so the
+    next sweep checks it.</li>
+<li><strong>A verify therefore writes a record it is not about</strong>, which crosses the one-resource-at-a-time assumption the
+    rename barrier is built on (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/241" title="GitHub Issue: borco/rehuco #241">#241</a>). The write happens inside that barrier's hold, so a rename of the covering
+    resource waits the milliseconds it takes rather than colliding with it, and the queue is serial
+    (<span class="slug-ref">[[appendices.task-queue#serial]]</span>), so no second job can be verifying that record at the same moment. What is not
+    covered is another process, or this app's own in-place <em>Delete Missing</em>, touching it in the same instant — the
+    last-writer-wins window every record already has, one resource further away than usual.</li>
+<li><strong>The known cost is a false alarm, never a false clean.</strong> An incoming claim that is itself stale — recorded before
+    a legitimate edit — makes the covering record's next verify report <code>mismatched</code> on a file that is fine, and
+    accepting it takes a targeted Generate. It fails in the safe direction: a false alarm rather than a clean-looking
+    record over bad bytes.</li>
+<li><strong>Excluded files are never reported as unexpected</strong>, in either tier — that list comes from the same enumeration the
+  record was generated over (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/226" title="GitHub Issue: borco/rehuco #226">#226</a>), so a <code>Thumbs.db</code> a Windows browse dropped into the directory, and an edited or
+  newly added screenshot, all leave a verify clean.</li>
+<li>
+<p>The Qt app provides UI to generate and verify checksums on demand; each such operation is a task in the task queue
+  (<span class="slug-ref">[[architecture-design#components]]</span>), and multi-selecting many resources serializes the work rather than running it
+  all at once. <strong>Core ships generate and verify as plain callables</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/203" title="GitHub Issue: borco/rehuco #203">#203</a>) taking a progress callback and a
+  checkpoint that is called between chunks and never caught, so a job's pause and cancel travel out untouched and core
+  never learns a queue exists (<span class="slug-ref">[[appendices.task-queue#job-responsibility]]</span>). <strong>The job class wrapping them is
+  <code>ChecksumJob</code></strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/204" title="GitHub Issue: borco/rehuco #204">#204</a>), one subclass per run, each a registered kind so a queued run survives a restart
+  (<span class="slug-ref">[[appendices.task-queue#lifetime]]</span>); the document's toolbar carries Verify and Generate, a run's summary reports
+  through the same inline strip every other finding uses, and the detail lands on the resource's own log
+  (<span class="slug-ref">[[appendices.logging#scopes]]</span>). Progress counts
+  <strong>bytes, not files</strong> — a tutorial is
+  three eight-gigabyte videos, and a bar that moves three times in twenty minutes says nothing.</p>
+</li>
+<li>
+<p><strong>The per-file surface is a dock on the document</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/244" title="GitHub Issue: borco/rehuco #244">#244</a>), hidden by default beside the two inspection docks
+  (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/111" title="GitHub Issue: borco/rehuco #111">#111</a>): one row per file, holding the path as the record spells it, the recorded status, and when that status was
+  recorded — the record's UTC rendered in local time, which is not what anyone wants to read off a table. It exists
+  because a verify over two hundred videos reports three mismatches into a log line, and deciding which of them is a
+  legitimate repack and accepting <em>just that one</em> is the loop the targeted generate was built for. Six decisions:</p>
+</li>
+<li><strong>Rows come from the record <em>and</em> from the content enumeration.</strong> An entry shows its status and date; a content
+    file the record does not cover shows its path with both cells empty, which is what <em>not checked yet</em> honestly
+    looks like — and is what makes the dock worth opening on a resource that has never been checksummed.</li>
+<li><strong>The row number is the vertical header, not a column</strong>, so it always numbers what is on screen: sorting by
+    status renumbers <code>1..N</code> instead of carrying stale numbers down the view. A summary line under the table —
+    <code>214 files · 210 matched · 2 mismatched · 1 not recorded</code> — answers <em>how many of what</em>, which the numbering
+    cannot.</li>
+<li><strong>The toolbar only checks; changing the record needs a selection.</strong> <em>Verify Old</em> (the staleness window, named on
+    the action's own label) and <em>Verify All</em> (<code>stale_after=None</code>, force) are the whole of the toolbar; <em>Verify
+    Selection</em>, <em>Generate Selection</em> and <em>Delete Missing</em> live behind a right-click, where the selection is itself
+    the deliberate act — so none of them needs a confirmation, and the accept-a-change loop stays unprompted.</li>
+<li><strong>There is no blanket re-baseline over a record that already exists.</strong> It would record whatever is on disk as
+    correct, including bytes a verify has just called <code>mismatched</code> — corruption laundered into a record that then
+    looks clean forever, which is the outcome the migration rule already forbids from the other direction.
+    Generate stays reachable for exactly one case, a resource with <strong>no</strong> record, where there is no recorded hash to
+    overwrite and it is the honest name for what a first run does; the toolbar shows it only then. Re-baselining
+    anything else is <code>Ctrl+A</code> plus <em>Generate Selection</em>.</li>
+<li><strong>Delete Missing is scoped to <code>missing</code> rows</strong>, and means <em>the missing ones among what you selected</em>. Dropping
+    the entry of a file that is still on disk achieves nothing — the next verify adopts it straight back, since
+    <code>unexpected</code> is a report state rather than a resting one — so scoping the action removes that trap instead of
+    explaining it. It hashes nothing, so it is one atomic write in place rather than a queued run: forgetting
+    entries is core's third operation over a record, taking <strong>names</strong> rather than a status, because which entries
+    deserve dropping is the view's judgement and the format is core's.</li>
+<li><strong>An unreachable resource greys every action</strong>, decided at the enumeration rather than from the rows: the record
+    lives beside the files and shares their fate, so <em>this resource is not reachable right now</em> is the honest thing
+    to draw, where an empty table would look exactly like a resource with no files (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/245" title="GitHub Issue: borco/rehuco #245">#245</a>). The read itself is a
+    directory walk and never runs on the GUI thread.</li>
+</ul>
+<p>Two more things it deliberately does not do. <strong>The table shows the record, not the last run's report</strong> — the two
+  differ on purpose, and a view of the report would go stale the moment anything else touched the resource; the
+  transient summary is the inline strip's and the log's. And <strong>there is no progress bar here</strong>, because the queue
+  dock already shows progress per job, in bytes.
+- <strong><code>Settings &gt; Checksums</code> is the one place the checksum defaults live</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>), and they reach every run: the
+  <strong>default algorithm</strong> new hashes are recorded under, <strong>Update checksums to {default} on verify</strong> (the label is
+  rebuilt when the algorithm changes, so it always names what it would migrate to), <strong>Create missing checksum on
+  verify</strong>, and the <strong>staleness window</strong> in days, 0–1000, default 90. Both toggles ship <strong>off</strong>: migration rewrites
+  records nobody asked to change — the first sweep over a catalog seeded from legacy manifests (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/243" title="GitHub Issue: borco/rehuco #243">#243</a>) would re-key
+  all of it — and adoption is the decision the bullet below keeps deliberate. <strong>A window of 0 days means nothing is
+  ever fresh</strong>, so every sweep re-reads everything; the page has to say so out loud, since <code>0</code> reads just as naturally
+  as <em>never</em>. The agent resolves all four when a run is enqueued and captures them into the job — core never reads a
+  setting, and a restored job is <em>the job that was queued</em>.
+- <strong>A sweep verifies a folder recursively, skipping what was checked recently</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>). The user points it at a
+  folder, a walk finds every <code>.rehu</code> under it, and each resource is verified with the staleness window in force —
+  which is what makes a multi-terabyte library checkable more than once. Four things follow:
+  - <strong>The records it writes are its cursor.</strong> A sweep keeps nothing between runs: paused, quit or restarted, it walks
+    again and every resource the last pass finished is skipped file by file, because their recorded dates are now
+    inside the window. That is the resumability <span class="slug-ref">[[appendices.task-queue#cursor]]</span> asks for, obtained from the job's own
+    output — and it is <em>better</em> than a saved list of paths, which would send a resumed sweep at files that have moved.
+    The granularity is the resource, since a verify writes its record once at the end of one.
+  - <strong>The walk finds every record at any depth, and each one's content is hashed exactly once</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/254" title="GitHub Issue: borco/rehuco #254">#254</a>). A nested
+    record is not a <em>scan</em> boundary — the sweep is asked to find it — but it <strong>is</strong> a coverage boundary
+    (<span class="slug-ref">[[data-model#resource-scoping]]</span>), so the bytes beneath it belong to the inner record alone and no ancestor holds
+    an entry for them. This reverses the double-verify this section used to record as accepted; the worry it was
+    accepted against, that the outer record's entry for those bytes would go permanently unverified, does not arise
+    once the outer record has no such entry. What such an entry becomes for a record written earlier is the pruning
+    rule below.
+  - <strong>The walk excludes nothing.</strong> The junk list is a rule about <em>content</em> files; no <code>.rehu</code> can match one, and
+    letting the list decide which resources a sweep can see would let an unrelated settings edit hide a resource from
+    verification. The list goes to each resource's run, where it means something.
+  - <strong>One bad resource costs itself.</strong> A branch that will not list, a refused read or a record this build cannot parse
+    is counted and logged and the sweep carries on; a resource with no record is counted as such rather than as a
+    failure. The one refusal is the folder itself — a root that will not list means the run has nothing to say (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/245" title="GitHub Issue: borco/rehuco #245">#245</a>).
+    Progress counts <strong>resources</strong>, not bytes: a catalog's byte total is not knowable without <code>stat</code>-ing every file
+    under it first, and the resource count is exact and free once the walk has run.
+- <strong>A cancelled run reports nothing it did not establish.</strong> A verdict is only produced once a file's whole digest has
+  been computed and compared, and a stop leaves through the checkpoint rather than returning a half-filled report, so
+  a cancel can never manufacture a mismatch. A generate writes its record <strong>once, at the end</strong>, through the atomic
+  writer: a stopped or crashed run leaves the previous record intact rather than a truncated one that a later verify
+  would read as authority for half the resource.
+- <strong>Asking twice is not asking again</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/204" title="GitHub Issue: borco/rehuco #204">#204</a>). A resource that already has an unfinished job of the same kind waiting
+  is left alone rather than given a second one: the queue is serial, so a duplicate would only make the first take
+  longer to matter, and two identical runs over the same terabyte is never what was meant. Matched on the row a reader
+  can see — the job's label and its source — rather than on an identity the surface would have to keep, which is what
+  keeps it true for a job restored from the last session.
+- <strong>A verify never creates the record it is checking against, unless it was told it may</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/204" title="GitHub Issue: borco/rehuco #204">#204</a>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/242" title="GitHub Issue: borco/rehuco #242">#242</a>). By default a
+  resource with no manifest is offered <em>Generate</em>, and a verify enqueued against one refuses at validation with a
+  sentence naming the record rather than quietly adopting every file it finds. <em>Create missing checksum on verify</em>
+  is what lifts that, and it ships off: it reaches the document's own Verify as well as the sweep, so turning it on
+  makes every Verify a Generate for a resource that has no record — which is a decision, and is why it is a setting
+  rather than a default.
+- <strong>Execution location is a dispatch decision, not fixed.</strong> A checksum job can run: (a) on the node that owns the files
+  (cheapest when the Qt app would otherwise have to pull bytes over the network just to hash them), (b) in the Qt app
+  directly against a locally/mount-accessible path (cheapest when that path is faster than going through a node's API,
+  or when no node is reachable at all — e.g. an offline checkout on a USB stick), or (c) via a locally mounted path that
+  happens to also be served by a node — see <span class="slug-ref">[[mounts-and-storage#nodes-serve-mounted]]</span>. The general rule: <strong>prefer
+  whichever route gives local-disk-speed access to the actual bytes</strong>; fall back to delegating to the owning node
+  otherwise.</p>
+<h2 id="46-two-distinct-meanings-of-image">§4.6 Two distinct meanings of "image"</h2>
+<p><span class="slug-ref">[[[data-model#image-meanings]]]</span></p>
+<p>The design uses "image" for two unrelated things; conflating them caused real ambiguity, so they're separated
+explicitly:</p>
+<ul>
+<li><strong>Screenshots (<code>infoXX.jpg</code>/<code>.png</code>/<code>.gif</code>/<code>.webp</code> — the basename-matched, two-digit-numbered siblings of the <code>.rehu</code>,
+  <span class="slug-ref"><span class="slug-ref">[[data-model#resource-scoping]]</span></span>)</strong> — app-managed presentation metadata that accompanies a <code>.rehu</code>. Editable, <strong>not</strong>
+  checksummed, part of the editable record (subject to the online-only-editing rule for resource metadata in v1,
+  <span class="slug-ref">[[sync#overview]]</span>/<span class="slug-ref">[[offline-editing#overview]]</span>). These are what "images" refers to in the viewer's image strip and in
+  description embeds. <strong>Their order is their numbering</strong> — nothing in the <code>.rehu</code> records it — so
+  reordering or deleting one is a <em>rename</em>, carried out immediately rather than staged until a Save, and
+  the canonical set is gap-free from <code>00</code>. Deleting therefore renumbers everything after the hole, and a
+  set that arrives numbered from <code>01</code> is renumbered the first time it is rearranged. The one piece of
+  screenshot state that <em>is</em> stored, the curated-out list (below), is filenames, so it follows the renames.</li>
+<li><strong>Content images inside a reference-image zip</strong> — part of the <strong>monolithic, immutable, checksummed resource</strong>, exactly
+  like a tutorial's video files. The app never edits these. Refreshing such a zip is a deliberate, manual, out-of-band
+  action that also requires manually refreshing its checksum; it is not done through this app.</li>
+</ul>
+<p>The reference-images plugin's per-image tags and redaction overlays (<span class="slug-ref">[[plugins#refimages-plugin]]</span>) describe <em>content
+images inside the zip</em> but are stored as <strong>app-managed mutable metadata alongside <code>.rehu</code>/screenshots</strong>, keyed to images
+inside the zip by index/filename — they never modify the immutable zip. Consequence worth handling: if a zip is manually
+refreshed (new content, new checksum), per-image overlays may now point at the wrong images. The app should detect the
+checksum change and warn that per-image overlays may be stale, rather than silently rendering redactions over the wrong
+images. That per-image metadata has three layers with three homes — machine-derived output in a sidecar beside the
+<code>.rehu</code>, an admin-authored default inline in the block, per-user overrides in the block's <code>users</code> map — and a
+per-image identity that makes the staleness check cheap; both are <span class="slug-ref">[[reference-images#layers]]</span> and
+<span class="slug-ref">[[reference-images#image-identity]]</span>. The cross-pack search index built from those sidecars is <code>.rehudb</code>-class
+(<span class="slug-ref">[[data-model#local-file-trio]]</span>): disposable, rebuilt by reading, never by re-running models.</p>
+<h2 id="47-scanning-strategy-and-staleness-detection">§4.7 Scanning strategy and staleness detection</h2>
+<p><span class="slug-ref">[[[data-model#scan-and-staleness]]]</span></p>
+<p>Scanning is load-bearing (<span class="slug-ref">[[architecture-design#why-distributed]]</span>, <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>) but the
+<em>strategy</em> was previously undefined. Two principles:</p>
+<ul>
+<li><strong>Incremental, version-aware reconciliation is the normal mode; full rescan is a recovery tool.</strong> A node/app should
+  detect what actually changed (e.g. by file mtime/size, or by comparing a cheap <code>resource_version</code>/timestamp marker)
+  and re-read only those <code>.rehu</code> files, rather than re-parsing the whole catalog on the hot path. The original
+  startup-slowness problem was a full-scan problem; the SQLite cache plus incremental scanning — not raw per-file parse
+  speed — is the real lever. (JSON-over-YAML is still chosen for tooling, validation, and benchmarked parse speed, but
+  parse speed of a single file is not the primary startup-time factor once the cache exists.)</li>
+<li><strong>Retained copies record the version they were copied at.</strong> Any locally retained copy of another source's metadata
+  (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>) stores the source's <code>resource_version</code>/timestamp at copy time, so staleness
+  is a cheap version comparison when the source is reachable again — not a full re-read. This bounds "am I looking at
+  stale data?" to a fast check, removing the historical motive for nervous full rebuilds.</li>
+<li><strong>Verify-on-access closes the out-of-band gap lazily.</strong> The cache records, per resource, the <code>.rehu</code> file's own stat
+  signature (mtime/size) and a content hash captured at last read — distinct from the <span class="slug-ref">[[data-model#checksums]]</span> content
+  checksums, which deliberately exclude <code>.rehu</code>. Opening, browsing to, or serving a resource re-checks the stat
+  signature against the cache (hashing only to confirm a suspected change, off the hot path); a mismatch means the file
+  changed out-of-band (<span class="slug-ref">[[mounts-and-storage#out-of-band]]</span>), and it is reintegrated on the spot — re-read,
+  version-compared, propagated — instead of waiting for a scan. "Just reopen the file" is thus enough to bring an
+  out-of-band edit back into the swarm; the incremental scan remains the catch-all for files never touched again.</li>
+</ul>
+<p><strong>Type-directed descent (design note; replaces tc4's stop-at-first-sidecar).</strong> Whether the scanner descends past a
+directory-scoped document is a property its <strong>type declares</strong> (in the plugin's non-GUI core layer,
+<span class="slug-ref">[[plugins#core-vs-plugin]]</span>): a <em>tutorial</em> is a <strong>scan boundary</strong> — its nested folders are its own content
+(<span class="slug-ref">[[data-model#resource-scoping]]</span>) — while a <em>collection</em> is not, which is what lets a containment-shaped collection's
+<code>info.rehu</code> sit in the parent directory whose subdirectories are its members (<span class="slug-ref">[[plugins#grouping-entities]]</span>).
+File-scoped documents never terminate descent — they describe named files, not the directory. Two caveats travel with
+the rule: a mis-typed boundary document hides its subtree (an optimization's failure mode — verify-on-access and
+explicit notifications still reach nested files, and the scanner may cheaply flag "boundary document with <code>.rehu</code>
+files beneath it", in the coexistence-warning spirit of <span class="slug-ref">[[data-model#resource-scoping]]</span>); and tc4's two-phase
+collect-then-parse scan existed only to give its progress bar a denominator — with parse-on-find, progress is
+reported against the previous scan's totals (an estimate that is right when little changed, the common case under
+incremental scanning), and a first-ever scan shows a running count instead of a percentage.</p>
+<h2 id="48-per-node-local-file-trio">§4.8 Per-node local file trio</h2>
+<p><span class="slug-ref">[[[data-model#local-file-trio]]]</span></p>
+<p>Each node keeps three files of the same basename, sitting together, with sharply different roles and lifecycles:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Holds</th>
+<th>Category</th>
+<th>Lifecycle</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>.rehuco</code></td>
+<td>Per-machine config: folder roots, mounts, primary/remote ownership flags (<span class="slug-ref">[[mounts-and-storage#folder-add]]</span>), plugin list (<span class="slug-ref">[[plugins#overview]]</span>), retention opt-ins (<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>), auth-trusted flag</td>
+<td>Local, legitimately <em>different</em> per box</td>
+<td>Authored locally; never propagated</td>
+</tr>
+<tr>
+<td><code>.rehudb</code></td>
+<td>The SQLite catalog cache</td>
+<td>Derived cache</td>
+<td>Rebuildable within the <span class="slug-ref">[[architecture-design#why-distributed]]</span> boundary; disposable/regenerable</td>
+</tr>
+<tr>
+<td><code>.rehusw</code></td>
+<td>Swarm info: membership, users + salted hashes, access rules</td>
+<td>Swarm-identical, <em>propagated</em></td>
+<td><strong>Durable, not disposable</strong> — updated by resync, never regenerated from scratch</td>
+</tr>
+</tbody>
+</table>
+<p><code>.rehusw</code> is the concrete on-disk home of the propagated registry that <span class="slug-ref">[[discovery-trust-access#membership-model]]</span>–6.9
+refer to abstractly. Crucially it is <strong>not</strong> treated like <code>.rehudb</code>: a cache rebuild must not wipe it, because a node
+that is offline (and may rebuild its cache) must still remember the last-known users/access rules so it isn't blind
+until it can resync (<span class="slug-ref">[[discovery-trust-access#serve-after-resync]]</span>). It is persisted state that gets <em>updated</em>, not
+regenerated. Because it carries the user list with salted password hashes (<span class="slug-ref">[[discovery-trust-access#user-auth]]</span>), a node
+creates it owner-readable only (0600-equivalent).</p>
+<h2 id="49-write-integrity-atomic-writes-single-writer-per-managed-file">§4.9 Write integrity: atomic writes + single-writer-per-managed-file</h2>
+<p><span class="slug-ref">[[[data-model#write-integrity]]]</span></p>
+<ul>
+<li><a href="https://github.com/borco/rehuco/issues/93">#93: feat: lock reasons — named lock causes; unparseable and missing files open locked, empty</a></li>
+<li><a href="https://github.com/borco/rehuco/issues/94">#94: feat: MessageBanner — inline document notices replace modal error boxes</a></li>
+</ul>
+<p>A <code>.rehu</code> is the source of truth, and several actors can want to write one (an agent edit, the owning node's metadata
+writes, sync reconciliation). Two writers touching one file at once would corrupt it. Two mechanisms compose to prevent
+this — and which applies depends on whether the file is <strong>managed</strong> (a node owns its storage,
+<span class="slug-ref">[[mounts-and-storage#folder-add]]</span>) or <strong>unmanaged</strong> (a loose file no node watches — a fresh export being adjusted, a
+single file received from someone; note that local-file mode <span class="slug-ref">[[nodes#local-vs-swarm]]</span> can open both kinds):</p>
+<ul>
+<li><strong>Atomic write is universal — every <code>.rehu</code> write, by anyone, is temp-then-rename.</strong> Write to a temp file in the same
+  directory, fsync, then atomically rename over the original (POSIX same-FS rename; Windows <code>ReplaceFile</code>/<code>MoveFileEx</code>).
+  A reader never sees a half-written file, and a crash mid-write leaves either the complete old file or the complete new
+  file — never a torn one. This prevents <em>torn</em> files.</li>
+<li><strong>Managed files: the owning node is the sole writer — whenever a route to it exists.</strong> An edit to a managed <code>.rehu</code>
+  that can reach the owning node — from the agent (a node client, <span class="slug-ref">[[nodes#two-roles]]</span>), from sync reconciliation, or
+  from the node itself — goes <em>through that node</em>, which serializes all writes to the file. (Consequently the
+  <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span> "agent edits through a mount, then notifies the node to re-read" path is <strong>retired
+  as the normal editing flow</strong> — the agent asks the node to make the change rather than writing the file the node also
+  writes.) When no route exists (local-file mode with no session or no reachable node, <span class="slug-ref">[[nodes#local-vs-swarm]]</span>), the
+  agent may still write the file directly: that is a tolerated <strong>out-of-band change</strong>, detected and reintegrated via
+  <span class="slug-ref">[[mounts-and-storage#out-of-band]]</span> (notification, verify-on-access, or scan) rather than prevented. Atomic writes
+  bound the residual race to lose-one-never-corrupt, and reintegration is ordered by the <strong>version vector</strong>
+  (<span class="slug-ref">[[sync#overview]]</span>), not a scalar counter: if the file's embedded vector still matches the node's last-read state, the
+  out-of-band edit is a clean fast-forward (the node integrates it and bumps its own component); if the node advanced
+  meanwhile, the two vectors are <em>incomparable</em> — detected as genuinely concurrent and sent through <span class="slug-ref">[[sync#overview]]</span>'s
+  merge rules / verdict queue instead of silently colliding.</li>
+<li><strong>Unmanaged files: the agent writes directly, atomically.</strong> No node exists to route through (local-file mode,
+  <span class="slug-ref">[[nodes#local-vs-swarm]]</span>), so the agent writes the file itself using the same temp-then-rename discipline. The
+  single-instance design (<span class="slug-ref">[[nodes#single-instance]]</span>) already prevents two agent windows from contending; atomic write
+  makes even a pathological double-write lose-one-rather-than-corrupt.</li>
+</ul>
+<p><strong>Import is the explicit unmanaged → managed hand-off.</strong> A received export (unmanaged, stripped of swarm bookkeeping per
+<span class="slug-ref">[[discovery-trust-access#cross-swarm-sharing]]</span>) is edited freely in local-file mode (agent writes directly). <strong>Import</strong>
+is the discrete act of a node taking ownership — assigning the file to a primary root and minting fresh swarm
+bookkeeping (new version vector, instance entry, <span class="slug-ref">[[instances-and-dedup#instance-registry]]</span>). Before import, no node
+knows the file exists (agent is sole writer); after import, exactly one node owns it (node is sole writer). There is no
+window where both believe they own the write, because import is a deliberate, atomic transition. At import the node
+treats the file as untrusted outside input — validate it, upgrade its format if older (<span class="slug-ref">[[data-model#schema-version]]</span>),
+mint new bookkeeping — rather than assuming it is well-formed just because it has a <code>.rehu</code> extension. The same
+defensive posture applies to <em>reading</em> any <code>.rehu</code> (a double-clicked file is untrusted input too,
+<span class="slug-ref">[[nodes#local-vs-swarm]]</span>): parsing enforces sanity caps (<code>rehu_parse_limits</code>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/88" title="GitHub Issue: borco/rehuco #88">#88</a>) — total file size, entry
+counts and sizes (covering a future <code>versions</code> list the same as any other collection), JSON nesting depth
+— so a file exceeding them is refused at load, <code>RehuDocument.load</code> raising <code>RehuFormatError</code>. The normal
+open path (<code>RehuDocument.open_or_locked</code>) turns that refusal into a read-only view with a warning rather
+than a dialog, the same as any other unparseable file, instead of exhausting memory or wedging the app.</p>
+<p><strong>A malformed value gets one of three responses, and which one is not a matter of severity.</strong> It follows from two
+questions: <em>is this field ours to interpret</em>, and <em>does the file still have a coherent reading</em>.</p>
+<table>
+<thead>
+<tr>
+<th>Response</th>
+<th>When</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Carry verbatim</strong></td>
+<td>The content isn't ours. We don't understand it, so we have no standing to change or drop it.</td>
+<td>An inactive plugin block; an unknown key inside the active block; a stray top-level scalar (<span class="slug-ref">[[plugins#plugin-blocks]]</span>, <span class="slug-ref">[[plugins#fallback-editor]]</span>).</td>
+</tr>
+<tr>
+<td><strong>Coerce to the default</strong></td>
+<td>Ours, malformed, but what it <em>means</em> is not in doubt.</td>
+<td><code>format_version: "v1"</code> → <code>0</code> (unversioned); a <code>core</code> that isn't an object → an empty core; <code>sources: ["junk"]</code> → the non-object entry is skipped. A getter must never crash on a value's <em>type</em>.</td>
+</tr>
+<tr>
+<td><strong>Refuse, with a reason</strong></td>
+<td>The file contradicts the format's own grammar, so there is nothing to fall back <em>to</em>.</td>
+<td><code>format_version</code> holding an object — it is the file's version, not a plugin block; a <code>type</code> naming a reserved key — <code>core</code> and <code>format_version</code> are not resource types.</td>
+</tr>
+</tbody>
+</table>
+<p>The middle row is the older rule and the wide one: nearly every malformed value has an obvious reading, and reading it
+is better than refusing a file over one bad field. The last row is narrow on purpose — reserved for the cases where
+<em>guessing would be a lie</em>, because the key's meaning in the format is what has been violated. Refusing must name the
+offending key and why, since the user's next move (fix the file, or stop trusting its source) depends on knowing which.</p>
+<p>Carrying and coercing are not in tension: they apply to different content. The first is about payload this file is
+merely custodian of; the second about fields this build owns and can rebuild.</p>
+<p><strong>A coerced reading is safe to display, not to silently save over.</strong> Coercion governs <em>reading</em>: it keeps a getter from
+crashing and a viewer honest about what the file most plausibly means. But when a field this build owns is <strong>present
+and fails coercion</strong> — as opposed to merely absent, which reads as a clean default — letting an edit session write the
+coerced default back would quietly replace the malformed-but-possibly-recoverable original. So such a document loads
+<strong>locked</strong>: the same read-only lock a newer-than-understood file gets (<span class="slug-ref">[[data-model#schema-version]]</span>), with the
+offending key(s) named in a persistent, non-modal notice in the viewer (never a dismiss-and-it's-gone dialog — the
+lock is state, and its explanation must outlive a click). The remedy is the one refusal would have forced anyway — fix
+the file in a text editor, then revert/reopen to drop the lock — without making the file unopenable in exactly the
+tool best suited to inspecting it. The <code>format_version</code> stamp is the one deliberate exception: repairing a missing or
+malformed stamp is a specified deduction (<span class="slug-ref">[[data-model#schema-version]]</span>'s repair rule), not a default masking data, so
+it never locks on its own.</p>
+<p>The same presentation extends to the <em>refuse</em> row and beyond it — <strong>every open attempt yields a document view, never a
+modal error box.</strong> A file that is refused (the grammar row above), one that cannot be parsed at all (or trips the
+read-time sanity caps), and one that is simply <em>gone</em> (deleted between sessions) each open as an <strong>empty, locked</strong>
+view — never dirty, never savable — whose notice names the failure (for a parse error, including the parser's own
+line/column). Fixing the file by hand and reverting retries in place, refreshing the notice with any new failure, so
+there is no reopen-and-fail loop. "Missing" stays a distinct cause from "unparseable": bulk-closing the docks of
+vanished files must never sweep away a dock whose file the user is mid-repair.</p>
+<p><strong>A failing save gets the same treatment from the other side — a surface, not a traceback.</strong> Reading is not the only
+place file I/O can fail: a save writes bytes, and the write itself can fail transiently — most importantly onto an
+<strong>offline SMB mount</strong> (<span class="slug-ref">[[mounts-and-storage#offline-mounts]]</span>), an explicitly supported scenario. Rather than letting the
+<code>OSError</code> escape as a stderr traceback (worst of all at app close, where it would abort the shutdown, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/146" title="GitHub Issue: borco/rehuco #146">#146</a>), every save
+call site funnels through <strong>one seam</strong> that offers a <strong>Retry / Cancel</strong> loop naming the failure — the Save and Upgrade
+actions, Save All, the per-tab and batch close guards, and the whole-app close all share it, so the failure is surfaced
+(and the choice to abort whatever the save was gating) in exactly one place. Only <code>OSError</code> is caught: a save-blocking
+lock raises instead of doing I/O, but editing is disabled while a document is locked, so a lock never reaches a save
+site — only the file I/O can actually fail. Cancelling means nothing was written and the caller aborts what the save was
+gating (a close is called off, the dock stays open).</p>
+<h3 id="491-the-lock-reason-vocabulary">§4.9.1 The lock-reason vocabulary</h3>
+<p><span class="slug-ref">[[[data-model#lock-vocabulary]]]</span></p>
+<p>A document opens read-only for a <strong>named cause</strong>, never a bare "locked" bool — so a viewer can say <em>why</em> and act per
+kind, and so <code>save()</code> can refuse exactly the kinds that would clobber recoverable data. Each cause pairs a <strong>kind</strong> with
+a human-readable <strong>message</strong> naming the specifics (the offending key, the parser's line/column) for the persistent
+non-modal notice (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/94" title="GitHub Issue: borco/rehuco #94">#94</a>). The vocabulary is what several layers speak — the core produces it, the agent's view-model
+mirrors it, the inline notice renders it — so it lives apart from the document itself. The six kinds:</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>what it means</th>
+<th>remedy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>legacy_tc</code></td>
+<td>a legacy <code>.tc</code> mapped to the current layout, with no <code>.rehu</code> on disk yet (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>)</td>
+<td>convert, not a text edit</td>
+</tr>
+<tr>
+<td><code>newer_format</code></td>
+<td>the file's <code>format_version</code> is newer than this build understands (<span class="slug-ref">[[data-model#schema-version]]</span>'s fail-safe rule)</td>
+<td>upgrade this build; fields are carried verbatim, never downgraded</td>
+</tr>
+<tr>
+<td><code>newer_block_format</code></td>
+<td>the <strong>active</strong> plugin block's own <code>format_version</code> is newer than the installed plugin (<span class="slug-ref">[[plugins#plugin-blocks]]</span>, the per-block refinement of the fail-safe rule)</td>
+<td>upgrade the plugin; the block is carried verbatim, never restamped</td>
+</tr>
+<tr>
+<td><code>invalid_field</code></td>
+<td>an owned field is <strong>present but fails coercion</strong> — reading coerces it for display, but a save must not write the coerced default over the malformed original</td>
+<td>fix the named key in a text editor, then revert/reopen</td>
+</tr>
+<tr>
+<td><code>invalid_file</code></td>
+<td>the file exists but cannot be parsed at all (<code>RehuFormatError</code>, or a non-missing <code>OSError</code>); opens as an <strong>empty</strong> view bound to the path</td>
+<td>fix the file by hand (the message carries the parser's own line/column)</td>
+</tr>
+<tr>
+<td><code>missing</code></td>
+<td>the file is gone (<code>FileNotFoundError</code>) — deleted between sessions, an unmounted share; same empty locked view as <code>invalid_file</code></td>
+<td>restore or remount the file, or close the dock</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Which kinds block save is a split, not a severity ranking.</strong> Three — <code>invalid_field</code>, <code>invalid_file</code>, <code>missing</code> — make
+<code>save()</code> itself <strong>refuse</strong> (a frozen set the save path consults), because writing would overwrite a
+malformed-but-recoverable field or an absent/broken file with coerced defaults or an empty document. The other three —
+<code>legacy_tc</code>, <code>newer_format</code>, <code>newer_block_format</code> — <strong>do not</strong> touch <code>save()</code>: a <code>.tc</code> saves <em>through conversion</em>, and a
+newer file or block is <em>carried verbatim, never downgraded</em> (<span class="slug-ref">[[data-model#schema-version]]</span>). They are gated at the UI
+(the edit affordances are disabled) rather than by refusing the write, keeping the two mechanisms — what <code>save()</code> refuses
+vs. what the editor greys out — from being conflated. <code>missing</code> is kept distinct from <code>invalid_file</code> precisely so a bulk
+"close vanished files" sweep never closes a dock whose file the user is mid-repair on.</p>
+<h2 id="410-schema-format-versioning-of-rehu-itself">§4.10 Schema format versioning of <code>.rehu</code> itself</h2>
+<p><span class="slug-ref">[[[data-model#schema-version]]]</span></p>
+<p>The <code>.rehu</code> schema will gain fields over time (it is still being designed). Because the offline-media design
+(<span class="slug-ref">[[mounts-and-storage#durable-retention]]</span>, <span class="slug-ref">[[instances-and-dedup#uuid-is-lineage]]</span>) guarantees old files <em>will</em>
+resurface years later — off a USB stick, a
+sealed DVD, a received export — every <code>.rehu</code> must carry its own <strong>format-version field</strong>. Rules:</p>
+<ul>
+<li><strong>A newer agent/node reads an older file and upgrades it</strong> to the current format on write (the upgrade is itself an
+  atomic write, <span class="slug-ref">[[data-model#write-integrity]]</span>, and for managed files happens through the owning node).</li>
+<li><strong>An older agent/node encountering a newer file must fail safe, not lossy.</strong> It must not silently drop fields it
+  doesn't understand and write the file back — that would quietly delete data. It should refuse to write (read-only
+  view), or preserve unknown fields verbatim on round-trip. The cheap robust default: <strong>preserve unknown fields
+  untouched</strong> so a round-trip through an older version never loses data.</li>
+<li><strong>Import is a natural upgrade point</strong> (<span class="slug-ref">[[data-model#write-integrity]]</span>): a received older-format file is upgraded as
+  the node takes ownership.</li>
+<li>This replaces the historical "rebuild the whole DB on every schema change" habit (<span class="slug-ref">[[data-model#scan-and-staleness]]</span>),
+  which only existed because the old app lacked both DB migrations <em>and</em> file-format versioning. With a format-version
+  field plus DB migrations, schema evolution no longer requires a destructive full rescan.</li>
+<li><strong>Plugin fields are versioned per-block, not under the file-wide version</strong> (<span class="slug-ref">[[plugins#plugin-blocks]]</span>): each plugin's
+  keyed block carries its own independent format version, so a plugin's schema can evolve without bumping the
+  common-field version or any other plugin's. The same upgrade/preserve-unknown rules apply at block granularity.</li>
+<li><strong>Upgrades happen in memory, on load; the <em>file</em> changes only on save.</strong> Opening an old file never rewrites it — the
+  upgraded layout reaches disk together with the new version stamp, on the first save, as one atomic write. This also
+  keeps the readers simple: only the <em>current</em> layout is understood past the load boundary.</li>
+<li><strong>An upgrade sets the version stamp too — layout and stamp move together, never separately.</strong> A payload whose layout
+  and stamp disagree is wrong, not merely un-finalized, and stays wrong for anything that serializes it without going
+  through the save path (a node reply, an export). So the load-time upgrade leaves the in-memory document <em>wholly</em>
+  consistent, and saving is then a plain dump rather than the place the stamp gets fixed up. The same step repairs a
+  stamp that was missing or malformed, which is what makes "the version this document reports" trustworthy everywhere
+  else — notably for the read-only lock on a newer-than-understood file. <strong>Repairing never lowers</strong>: a newer file keeps
+  its own version.</li>
+<li><strong>Migrations dispatch on the version, resolved once at the load boundary.</strong> Each step declares the version it upgrades
+  <em>from</em>, so a future migration whose change leaves no detectable shape marker (renaming a field <em>inside</em> <code>core</code>, say)
+  dispatches exactly like one that does.</li>
+<li><strong>Resolving the version is not the same as reading the stamp.</strong> The stamp is authoritative whenever it is present and
+  sane. A <strong>missing or malformed</strong> one is v0 — malformed is not trusted, matching the defensive coercion every other
+  field gets, since a <code>.rehu</code> is untrusted input (<span class="slug-ref">[[data-model#write-integrity]]</span>) — and v0 is the <em>only</em> case where the
+  payload's shape is consulted, because v0 names no layout to dispatch on. Everything a version stamp is used for
+  therefore depends on the stamp being <strong>written where it is known</strong>: whatever builds a payload stamps it, rather than
+  leaving a later reader to infer what the writer already knew.</li>
+</ul>
+<p><strong>The agent surfaces the load-time upgrade as an explicit action.</strong> Because the upgraded layout reaches disk only on the
+first save, a file that is opened, read, and closed untouched stays at its old version on disk indefinitely. The agent
+offers an <strong>Upgrade</strong> action (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/89" title="GitHub Issue: borco/rehuco #89">#89</a>) to force that write on demand — but it is <strong>not a separate migrate call</strong>: it is
+literally a <strong>save</strong>, since <code>save()</code> already writes the in-memory-upgraded layout (<span class="slug-ref">[[data-model#write-integrity]]</span>), so it
+shares the Save action's failing-save guard. It is offered <strong>only when the on-disk file is stale</strong> — its file-wide <em>or</em>
+active-block <code>format_version</code> is older than this build — <strong>and</strong> the document is clean and unlocked (a dirty document
+upgrades on its next ordinary save anyway; a locked one cannot be written at all, which is also why a legacy <code>.tc</code> — always
+locked — is never "upgradable" and is handled by conversion instead, <span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>). The action thus
+makes visible, and available without a dummy edit, what would otherwise happen silently on the next save.</p>
+<p><strong>A foreign format is never a migration.</strong> Two things look alike from a distance — "old shape becomes new
+shape" — and must not be merged:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><strong>Migration</strong></th>
+<th><strong>Importer</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Input</td>
+<td>a <code>.rehu</code> payload</td>
+<td>a <em>different file format</em> — <code>.tc</code> (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>), <code>.dpdml</code> (<span class="slug-ref">[[daz3d-personal-database#import-needs]]</span>)</td>
+</tr>
+<tr>
+<td>Effects</td>
+<td>the in-memory payload, nothing else</td>
+<td>writes files, renames siblings, deletes originals</td>
+</tr>
+<tr>
+<td>Identity</td>
+<td>never mints any</td>
+<td>mints the UUID and record timestamps (<span class="slug-ref">[[data-model#stable-identity]]</span>)</td>
+</tr>
+<tr>
+<td>Trigger</td>
+<td><strong>automatic</strong>, on every load</td>
+<td><strong>deliberate</strong> — a user action, confirmed</td>
+</tr>
+</tbody>
+</table>
+<p>The trigger follows from the rest: a migration may run unasked precisely <em>because</em> it is in-memory,
+idempotent and lossless. An importer is none of those, so it must never fire merely because a file was
+opened — a <code>.tc</code> opens <strong>read-only</strong> and offers conversion instead. The line between them is the same one
+that decides what an adapter may fill in: the <strong>encoding</strong>'s version is knowable and free to stamp, while
+the <em>resource</em>'s identity and timestamps are an import's to mint, once
+(<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>).</p>
+<p>Consequently a <code>.tc</code> is <em>not</em> "format v0" — it never carried a <code>.rehu</code> version to upgrade from, and the
+adapter that reads one emits the <strong>current</strong> layout, stamp included.</p>
+<p><strong>File-wide versions so far:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Version</th>
+<th>Layout</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>0</strong></td>
+<td><strong>No stamp at all</strong> — a gap, not a layout. Nothing rehuco writes lands here (saving stamps, and the <code>.tc</code> mapping stamps what it builds, <span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>), so an unstamped file came from outside rehuco or from before stamping existed. Its layout is <em>inferred</em>: the v1 flat shape, unless it already carries a <code>core</code> block.</td>
+</tr>
+<tr>
+<td><strong>1</strong></td>
+<td>Common fields at the top level, beside the plugin blocks.</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Common fields nested in the reserved <code>core</code> block (<span class="slug-ref">[[data-model#rehu-format]]</span>), so a plugin block is recognizable without a list of common field names.</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../architecture-design/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../nodes/" class="md-footer__link md-footer__link--next" aria-label="Next: Node Communication">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Node Communication
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>

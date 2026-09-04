@@ -1,0 +1,3300 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Distributed resource management system for tutorials and reference images">
+      
+      
+      
+        <link rel="canonical" href="https://borco.github.io/rehuco/specs/acquisition-tooling/">
+      
+      
+        <link rel="prev" href="../requirements/">
+      
+      
+        <link rel="next" href="../packaging-deployment/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.svg">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Acquisition Tooling - rehuco</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+      <link rel="stylesheet" href="../../assets/mkdocs_puml/puml.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#15-acquisition-and-migration-tooling" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="rehuco" class="md-header__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            rehuco
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Acquisition Tooling
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../how-it-works/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Design Specs
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../implementation-plan/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Implementation Plan
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../changelog/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Changelog
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../license/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  License
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="rehuco" class="md-nav__button md-logo" aria-label="rehuco" data-md-component="logo">
+      
+  <img src="../../assets/images/logo.svg" alt="logo">
+
+    </a>
+    rehuco
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/borco/rehuco" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    borco/rehuco
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Specs
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Design Specs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture-design/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../nodes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Node Communication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../discovery-trust-access/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Discovery & Trust
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sync/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sync & Conflicts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../multiplicity/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multiplicity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mounts-and-storage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Mounts & Storage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../instances-and-dedup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Identity & Dedup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../borrowing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Borrowing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../offline-editing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Offline Editing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plugins/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plugins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../requirements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Requirements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Acquisition Tooling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#151-three-drag-and-drop-input-aids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.1 Three drag-and-drop input aids
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.1 Three drag-and-drop input aids">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1511-what-a-drop-carries-and-where-the-page-url-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.1.1 What a drop carries, and where the page URL is
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#152-url-extraction-site-scrapers-with-an-llm-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2 URL extraction: site scrapers, with an LLM fallback
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.2 URL extraction: site scrapers, with an LLM fallback">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1521-one-protocol-per-resource-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.1 One Protocol per resource type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1522-the-registry-and-the-users-own-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.2 The registry, and the user's own scrapers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1523-the-browser-fetcher-and-its-persona" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.3 The browser fetcher and its persona
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1524-the-scrape-is-a-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.4 The scrape is a job
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1525-the-llm-fallback-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.5 The LLM fallback, deferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#153-migration-tc-rehu-the-oldest-source-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3 Migration: .tc → .rehu (the oldest source format)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.3 Migration: .tc → .rehu (the oldest source format)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1531-convert-actions-and-the-backuprollback-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.1 Convert actions and the backup/rollback contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1532-adopting-a-backup-screenshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.2 Adopting a backup screenshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1533-legacy-screenshot-naming-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.3 Legacy screenshot naming rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1534-legacy-size-and-duration-string-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.4 Legacy size and duration string parsing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#154-deferral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.4 Deferral
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../packaging-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Packaging & Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../field-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference-images/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference Images
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_19" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../diagrams/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Diagrams
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_19" id="__nav_2_19_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_19_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_19">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Diagrams
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/activity-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Activity: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/component-decomposition/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Component: Containment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../diagrams/sequence-open-document/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sequence: Open a Path
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_20" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_20" id="__nav_2_20_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Appendices
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_20_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_20">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Appendices
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/briefcase-packaging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Briefcase Packaging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/code-conventions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Conventions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/continuous-integration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Continuous Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/logging/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Logging
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/open-questions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Open Questions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/post-mortem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Post-Mortem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/project-management/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Management
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/qt-ads/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QtAds
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/release-runbook/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Release Runbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/settings-pages/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Settings Pages
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/task-queue/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Task Queue
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/theming_and_styling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theming & Styling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../appendices/windows-dev-launcher/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Windows Dev Launcher
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2_21" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../history/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    History
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2_21" id="__nav_2_21_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_21_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_21">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    History
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/ibocator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ibocator
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutcatalog 3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalogpy3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalogPy3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/tutcatalog5/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    TutCatalog5
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/resource-hub/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Resource Hub
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/daz3d-personal-database/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Daz3D Personal Database
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../history/pyside-ibo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pyside-ibo (shared library)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../implementation-plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Implementation Plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../changelog/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Changelog
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/rehuco-node/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rehuco-node
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../changelog/borco-pyside/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    borco-pyside
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../license/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    License
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#151-three-drag-and-drop-input-aids" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.1 Three drag-and-drop input aids
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.1 Three drag-and-drop input aids">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1511-what-a-drop-carries-and-where-the-page-url-is" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.1.1 What a drop carries, and where the page URL is
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#152-url-extraction-site-scrapers-with-an-llm-fallback" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2 URL extraction: site scrapers, with an LLM fallback
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.2 URL extraction: site scrapers, with an LLM fallback">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1521-one-protocol-per-resource-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.1 One Protocol per resource type
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1522-the-registry-and-the-users-own-scrapers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.2 The registry, and the user's own scrapers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1523-the-browser-fetcher-and-its-persona" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.3 The browser fetcher and its persona
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1524-the-scrape-is-a-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.4 The scrape is a job
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1525-the-llm-fallback-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.2.5 The LLM fallback, deferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#153-migration-tc-rehu-the-oldest-source-format" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3 Migration: .tc → .rehu (the oldest source format)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="§15.3 Migration: .tc → .rehu (the oldest source format)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1531-convert-actions-and-the-backuprollback-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.1 Convert actions and the backup/rollback contract
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1532-adopting-a-backup-screenshot" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.2 Adopting a backup screenshot
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1533-legacy-screenshot-naming-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.3 Legacy screenshot naming rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#1534-legacy-size-and-duration-string-parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.3.4 Legacy size and duration string parsing
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#154-deferral" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        §15.4 Deferral
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="15-acquisition-and-migration-tooling">§15. Acquisition and Migration Tooling</h1>
+<p><span class="slug-ref">[[[acquisition-tooling]]]</span></p>
+<h2 id="overview">Overview</h2>
+<p><span class="slug-ref">[[[acquisition-tooling#overview]]]</span></p>
+<p>These features don't belong to the core data/swarm architecture, but they're what makes the catalog <em>populatable and
+maintainable</em> at scale (thousands of tutorials), so they matter for day-to-day usability. All are productivity aids
+feeding the editor the user reviews — assistive, not unattended.</p>
+<h2 id="151-three-drag-and-drop-input-aids">§15.1 Three drag-and-drop input aids</h2>
+<p><span class="slug-ref">[[[acquisition-tooling#drag-drop-aids]]]</span></p>
+<p>Three drops, on three surfaces of an open document, each taking what a browser hands over. Restored from TutCatalog4,
+whose QML drop areas and Scintilla drop override are the shape these follow.</p>
+<ul>
+<li><strong>A selection dropped on the description editor becomes Markdown at the drop point.</strong> The drop's <code>text/html</code> is
+  converted by markdownify (ATX headings, <code>*</code> bullets) and then cleaned the way tc4's converter did — unicode spaces
+  normalized, a hard line break kept to two trailing spaces, runs of blank lines collapsed — because what a browser puts
+  in a drag is messy. The editor substitutes the converted text for the drop's mime data and hands the drop on to
+  Scintilla, so it lands exactly where a plain-text drop would; holding <strong>Shift</strong> skips the conversion and drops the
+  plain text. Generic: no site knows about it, and it fetches nothing.</li>
+<li><strong>A URL dropped on the main editor fills the fields.</strong> A <code>text/uri-list</code> drop, or a plain-text drop that parses as one
+  <code>http(s)</code> URL, queues a scrape job (<span class="slug-ref">[[acquisition-tooling#scrape-job]]</span>) and applies its result to the editor as an
+  ordinary <strong>dirty, reviewable edit</strong> — never a save; the user reads it and decides. A selection drop whose <code>text/html</code>
+  is more than the URL itself hands that fragment to the scraper as the page — the tc4 rule that let a page already
+  rendered in the browser be scraped without fetching it again — with the page URL alongside, where the platform
+  provides one (<span class="slug-ref">[[acquisition-tooling#drop-source-url]]</span>).</li>
+<li><strong>Anything dropped on the images sub-dock ends as screenshots.</strong> A local image file is copied in. A drop carrying
+  <code>image/*</code> data is written from that data; an image URL is downloaded, with the page it came from as referrer where
+  known. A page URL, or a selection, is <strong>parsed for candidates</strong> — <code>&lt;img&gt;</code> sources, the largest <code>srcset</code> entry,
+  <code>data-src</code>, <code>og:image</code>, with a matching site scraper allowed to rewrite thumbnail URLs to their full-size originals —
+  and shown in a <strong>picker</strong>: a checkable list with thumbnails, nothing downloaded until the user chooses. Every image
+  then takes the same path: rescaled to a configurable maximum width (300 px by default, Pillow) and saved under the
+  next free <code>&lt;stem&gt;NN.jpg</code> (<span class="slug-ref">[[data-model#image-meanings]]</span>), which makes the drop the second client of the screenshot
+  naming the conversion already serves (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>). A legacy <code>.tc</code> refuses the drop, as it
+  refuses every other screenshot edit. The browser's own cache is not reachable from a drop, so an image already on
+  screen is fetched again rather than copied out of it.</li>
+</ul>
+<h3 id="1511-what-a-drop-carries-and-where-the-page-url-is">§15.1.1 What a drop carries, and where the page URL is</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#drop-source-url]]]</span></p>
+<p>A browser selection arrives as <code>text/html</code> and <code>text/plain</code>, and a link or an image adds <code>text/uri-list</code>; none of the
+three names the page the selection was taken from. On Windows the selection is also handed over as the <code>HTML Format</code>
+clipboard format, whose header carries a <code>SourceURL:</code> line; Qt strips that header when it synthesizes <code>text/html</code>, but
+the raw payload stays reachable under <code>application/x-qt-windows-mime;value="HTML Format"</code>. macOS and Linux carry no
+such header for a plain selection, so there the page URL is unknown unless the user drops the link as well. <strong>To be
+confirmed by a spike</strong> before the main-editor and images drops are built — the browser-by-platform matrix is exactly
+the kind of fact that is cheaper to measure than to remember; the spike's lesson replaces this paragraph.</p>
+<h2 id="152-url-extraction-site-scrapers-with-an-llm-fallback">§15.2 URL extraction: site scrapers, with an LLM fallback</h2>
+<p><span class="slug-ref">[[[acquisition-tooling#url-extract]]]</span></p>
+<p>The predecessors extracted a tutorial's fields with per-site scrapers — BeautifulSoup over a fetched or browser-rendered
+page — and every one of them broke the day its site changed its markup. An earlier draft of this section replaced them
+wholesale with a local LLM. The decision now runs the other way: <strong>site scrapers are primary, and are the user's to
+keep working</strong>. The fields that matter — a title, the authors, a description with its images, a duration — sit in a
+site's markup in places a few CSS selectors name exactly, and a scraper that breaks is a script the user edits that
+afternoon rather than a model to re-prompt. The LLM stays, as the fallback for hosts nobody has written a scraper for
+(<span class="slug-ref">[[acquisition-tooling#llm-url-extract]]</span>).</p>
+<h3 id="1521-one-protocol-per-resource-type">§15.2.1 One Protocol per resource type</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#scraper-protocols]]]</span></p>
+<p>Scraping is a <strong>desktop concern</strong> and lives in <code>rehuco-agent</code>: a productivity aid feeding the editor, not something a
+node does unattended, so <code>rehuco-core</code> learns no HTTP client and no HTML parser. Three kinds of Protocol, all
+structural, all plain classes:</p>
+<ul>
+<li><strong><code>PageFetcher</code></strong> — <code>fetch(url) -&gt; Page</code>, a <code>Page</code> being the URL asked for, the URL it resolved to, and the HTML. The
+  default fetches over plain HTTP with a browser User-Agent. A <strong>browser-driven fetcher</strong> — a headless browser, the
+  geckodriver / undetected-chromedriver route the predecessors ended on — is an opt-in extra a scraper may declare it
+  needs, or that a paywalled site makes necessary: the heaviest dependency in the app should be paid for by the site
+  that needs it. See <span class="slug-ref">[[acquisition-tooling#browser-persona]]</span> for what it drives.</li>
+<li><strong><code>SiteScraper</code></strong> — what every scraper is: <code>matches(url) -&gt; bool</code>, a host or prefix test as tc4's <code>can_scrap</code> was, a
+  <code>label</code>, and the <code>publisher</code> it fills in.</li>
+<li><strong>One Protocol per resource type</strong> — <code>TutorialScraper.scrape_tutorial(page)</code>,
+  <code>ReferenceImagesScraper.scrape_reference_images(page)</code>, <code>CollectionScraper.scrape_collection(page)</code>, one per plugin
+  key (<span class="slug-ref">[[plugins#plugin-blocks]]</span>). Each returns a <strong>typed result</strong>: field values keyed by the plugin's own field names
+  (<span class="slug-ref">[[field-schema#resource-types]]</span>); a Markdown description whose image links are already rewritten to the placeholder
+  <code>&lt;stem&gt;NN</code> names the images will get, in order; and those <code>images</code> as <code>(name, url, referrer)</code> triples the image
+  pipeline of <span class="slug-ref">[[acquisition-tooling#drag-drop-aids]]</span> downloads. A concrete scraper implements <strong>as many type Protocols
+  as its site can serve</strong> — ArtStation sells tutorials and reference packs from the same product page — and dispatch
+  asks for the document's <em>current</em> type, skipping a scraper that matches the host but does not implement that type.</li>
+</ul>
+<p>A result is a proposal. A field the scraper could not find is absent, never filled with a guess, and the editor shows
+what arrived beside what was there.</p>
+<h3 id="1522-the-registry-and-the-users-own-scrapers">§15.2.2 The registry, and the user's own scrapers</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#scraper-registry]]]</span></p>
+<p>Scrapers are looked up in an <strong>ordered list</strong>, first <code>matches()</code> wins, and the list is the <strong>user's scripts folder
+first, then the built-ins</strong> — so a user's module overrides a shipped scraper for the same host. That is the whole answer
+to brittleness: when a site changes, the fix is a <code>.py</code> file in a folder, not a release. The folder is a settings page,
+<strong>Scrapers</strong> (<span class="slug-ref">[[appendices.settings-pages#category-groups]]</span>): the folder path; a table of what loaded — module, the
+hosts it matches, the type Protocols it satisfies — and, per module, the import error when it failed, since a scraper
+that silently did not load is indistinguishable from one that matched nothing; and a <strong>Reload</strong> that re-imports without
+a restart. Scripts in that folder are <strong>trusted local code</strong>, run with the app's own privileges; the page says so and
+the app does nothing to sandbox them. Built-in scrapers ship for <strong>ArtStation</strong> and <strong>Udemy</strong> first, the two the
+predecessors kept alive longest.</p>
+<h3 id="1523-the-browser-fetcher-and-its-persona">§15.2.3 The browser fetcher and its persona</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#browser-persona]]]</span></p>
+<p>The browser-driven fetcher launches a real browser through Selenium with a <strong>persona</strong>: a browser profile directory
+of its own, under the app's config directory, that keeps its cookies and local storage between runs. That is what
+lets it read a <strong>paywalled or members-only page</strong> — the user logs in once, by hand, and every later automated load
+carries the session, the way tutcatalogpy3's driver launched Firefox on a dedicated profile. Three controls on the
+Scrapers settings page (<span class="slug-ref">[[acquisition-tooling#scraper-registry]]</span>) belong to it:</p>
+<ul>
+<li><strong>Use the browser fetcher</strong> — off by default; when on, every scrape that does not refuse it goes through the
+  browser, not only the ones a scraper declared it needs. Which browser (Firefox via geckodriver, Chrome via
+  undetected-chromedriver) is a choice beside it, since bot detection differs per site and the second exists because
+  the first is flagged on some.</li>
+<li><strong>Show the browser while scraping</strong> — headless is the default; visible is how a page that came back empty is
+  inspected, and how a challenge page is solved in the same profile the fetcher will use next.</li>
+<li><strong>Open the browser</strong> — launches the persona's browser on nothing in particular, so the user can log in to a site
+  and close it; the session is then the fetcher's. This is also the remedy when a session has expired, so it stays
+  one click away rather than buried in a first-run flow.</li>
+</ul>
+<p>The profile is a <strong>credential store</strong>: it lives only under the config directory, is never inside a resource folder,
+and is never synced or copied by anything the app does. Sessions expire and two-factor sites re-ask; the app does
+not try to keep a login alive, it only keeps the door to renewing one open.</p>
+<h3 id="1524-the-scrape-is-a-job">§15.2.4 The scrape is a job</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#scrape-job]]]</span></p>
+<p>A drop queues one job on the app-wide task queue (<span class="slug-ref">[[appendices.task-queue]]</span>), under the document's log scope so its
+fetch and its parse are readable in that document's log (<span class="slug-ref">[[appendices.logging#scopes]]</span>), cancellable like any other.
+Its result is applied on the GUI thread, and only if the document is still open at the same path; a document closed or
+renamed while its page was being fetched simply discards the result. <code>markdownify</code>, <code>beautifulsoup4</code> and <code>requests</code>
+become runtime dependencies of <code>rehuco-agent</code>; the browser driver goes under an opt-in extra.</p>
+<h3 id="1525-the-llm-fallback-deferred">§15.2.5 The LLM fallback, deferred</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#llm-url-extract]]]</span></p>
+<p>For a host no scraper matches, the earlier design still stands — as a fallback, and still deferred: fetch the page text
+and hand it to a small local model for <strong>structured extraction into a fixed JSON schema</strong>, the same typed result a
+scraper returns, with no per-site code at all.</p>
+<ul>
+<li><strong>Local model is the right call</strong> — zero per-call cost (run thousands of times across the catalog), no external
+  dependency, offline, private. This is high-volume personal productivity, where a small local model beats a cloud API
+  on every axis except peak quality, and extraction doesn't need peak quality.</li>
+<li><strong>Hardware fit:</strong> a 7–8B model at 4-bit quantization (e.g. Qwen2.5-7B-Instruct) runs comfortably on the RTX 4070 (12
+  GB, fast) and on the Mac mini M1 (16 GB unified, slower but usable). Worth testing whether a 3–4B (Qwen2.5-3B)
+  suffices for even more speed; reserve 14B (4070 only) for if 7B visibly struggles. Dispatch this to a capable node
+  (4070 box or Mac mini), explicitly <strong>not</strong> the QNAP
+  (<span class="slug-ref">[[mounts-and-storage#example-deploy]]</span>/<span class="slug-ref">[[mounts-and-storage#node-benchmark]]</span>).</li>
+<li><strong>Reliability comes from constraining output, not from model size.</strong> Use <strong>grammar/JSON-schema-constrained decoding</strong>
+  (llama.cpp GBNF, Ollama format, Outlines, LM Format Enforcer) so the model <em>cannot</em> emit invalid structure or extra
+  fields — this removes the entire "formatting" failure class and leaves only "did it find the right value," which small
+  models do well. Pair with an explicit <strong>"return null when a field isn't present"</strong> instruction so the model leaves
+  blanks rather than hallucinating a plausible-but-wrong value. With both, a constrained 7B is "right on common cases,
+  never confidently wrong" — exactly the bar for an assistive tool the user reviews before saving.</li>
+<li><strong>The harder half is fetching/rendering, not extraction.</strong> JS-heavy course pages (Udemy, Gumroad) may still need a
+  headless browser to render before extraction, and a readability/main-content trim before the model keeps quality up on
+  long pages. So per-site effort drops a lot but doesn't vanish — it moves from "parse this site's DOM" (brittle) to
+  "render and trim this site's page" (more robust).</li>
+<li>Implemented as a <strong>task-queue job</strong> (<span class="slug-ref">[[architecture-design#components]]</span>), the same one a scraper runs as
+  (<span class="slug-ref">[[acquisition-tooling#scrape-job]]</span>).</li>
+</ul>
+<h2 id="153-migration-tc-rehu-the-oldest-source-format">§15.3 Migration: <code>.tc</code> → <code>.rehu</code> (the oldest source format)</h2>
+<p><span class="slug-ref">[[[acquisition-tooling#tc-to-rehu]]]</span></p>
+<p>Opening an old <code>.tc</code> file offers migration actions: convert <code>.tc</code> (YAML) → <code>.rehu</code> (JSON), and normalize the non-uniform
+screenshot names into the uniform basename-derived <code>infoXX</code> scheme (<span class="slug-ref">[[data-model#resource-scoping]]</span>). This is the
+<strong>first concrete use of the read/import upgrade path (<span class="slug-ref"><span class="slug-ref">[[data-model#schema-version]]</span></span>)</strong> rather than a one-off script —
+though a <code>.tc</code> is <em>not</em> itself "format v0": it is a different file format that never carried a <code>.rehu</code> version to
+upgrade from, so the adapter reads one and emits the <strong>current</strong> <code>.rehu</code> layout, stamp included (v0 means an
+<em>unstamped</em> <code>.rehu</code>, <span class="slug-ref">[[data-model#schema-version]]</span>). Checksum generate/verify (<span class="slug-ref">[[data-model#checksums]]</span>) belongs
+alongside the migration actions in the same tooling.</p>
+<h3 id="1531-convert-actions-and-the-backuprollback-contract">§15.3.1 Convert actions and the backup/rollback contract</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#convert-mechanics]]]</span></p>
+<p>Conversion is offered on an open legacy <code>.tc</code> as two toolbar actions — <strong>Convert, Keep Backups</strong> and <strong>Convert, Discard
+Originals</strong> — differing only in whether the <code>.orig</code> backups survive a successful run. They are visible <strong>only while the
+document is a legacy <code>.tc</code></strong> (Save and Revert hide in their place); if the <code>.rehu</code> target already exists, an overwrite
+confirmation precedes the write. On success the <strong>same dock adopts the converted document in place</strong> — no reopen
+round-trip: it becomes the <code>.rehu</code>, now unlocked (the result is never <code>legacy_tc</code>, <span class="slug-ref">[[data-model#lock-vocabulary]]</span>), its
+dirty flag cleared and the dock's persisted identity resynced to the new path.</p>
+<p>The conversion is the concrete importer of the migration-vs-importer split (<span class="slug-ref">[[data-model#schema-version]]</span>): it <strong>mints</strong>
+a fresh UUID <code>id</code> and seeds <code>created</code>/<code>updated</code> from the <code>.tc</code> file's mtime — identity an import owns, once
+(<span class="slug-ref">[[data-model#stable-identity]]</span>) — and it is a <strong>deliberate, confirmed</strong> act, never automatic on open. Its file-system
+discipline is a strict <strong>never-overwrite, never-delete-then-write</strong> contract:</p>
+<ul>
+<li><strong>Every original the conversion touches is renamed to a <code>.orig</code> sibling before any new file is written</strong> — the <code>.tc</code>
+  itself, every recognized legacy screenshot (winners <em>and</em> losers, <span class="slug-ref">[[acquisition-tooling#screenshot-schemes]]</span>), and a
+  pre-existing <code>.rehu</code> target when overwriting.</li>
+<li><strong>Order:</strong> back up all originals → write the <code>.rehu</code> → copy each winning screenshot to its new <code>&lt;stem&gt;NN</code> name.</li>
+<li><strong>Rollback on any failure:</strong> delete every new file created so far, then rename every <code>.orig</code> back to its original name,
+  then re-raise — so a failed conversion leaves the directory exactly as it was found.</li>
+<li><strong>A stale-backup guard refuses to start</strong> if any <code>.orig</code> sibling already exists (a leftover from a prior interrupted
+  run), so a rollback target is never silently clobbered.</li>
+<li><strong>Backups are deleted only after full success</strong>, and only for the discard-originals variant; keep-backups leaves them
+  in place.</li>
+</ul>
+<p>The I/O failure of a convert surfaces through the same Retry/Cancel discipline as a save (<span class="slug-ref">[[data-model#write-integrity]]</span>),
+as a "Conversion Failed" dialog.</p>
+<p>Before a bulk import over a folder tree runs, a <strong>dry-run plan</strong> reports what it would do without writing
+anything: the mapped <code>.rehu</code> payload and screenshot rename plan for every <code>.tc</code> found, and per-resource flags
+naming why a human might want to look — a screenshot tie-break, a target <code>.rehu</code> or stale backup that would
+block the resource, a size/duration string that failed to parse or stayed merely advisory, a <code>.tc</code> key the
+mapper does not consume, or an mtime sitting in a run's worth of near-identical ones (the signature of a NAS
+restore, bulk copy, or archive extraction clobbering it, <span class="slug-ref">[[data-model#stable-identity]]</span>) that would otherwise
+seed <code>created</code>/<code>updated</code> from a lie. A directory holding a <code>.tc</code> is a resource and is not descended past, the
+same one-resource-one-directory assumption the backups above are built on. A directory that will not list or a
+<code>.tc</code> that will not read or parse costs its own entry and is named, never the whole plan — the walk says what
+it could not see, the discipline the checksum sweep already follows (<span class="slug-ref">[[mounts-and-storage#offline-mounts]]</span>).</p>
+<p><code>File ▸ Import Legacy Catalog…</code> is the wizard that runs the plan and then acts on it, over as many
+resources as the folder holds — thousands, for a real catalog. Five steps: choose a root (remembering
+recent ones); run the scan on a worker thread, cancellable; show the plan as a checkbox table, one row per
+resource, sortable and filterable by flag, with a header summary (<em>"9,847 clean · 153 flagged · 12
+blocked"</em>) and the <code>suspect_mtime</code> count named on its own line when it is not zero, since a wall of
+clobbered timestamps is a reason to stop and look rather than one flag among six; enqueue one
+<code>TcImportJob</code> per checked resource onto the app-wide task queue and watch them finish; then a result table
+with an outcome per row and <strong>Retry Failed</strong>. <strong>No per-item review gate</strong> — the conversion offers no
+choices to confirm, so a per-resource pass over thousands of items would be ceremony nobody would ever
+finish. Safety is the backups and the revert above, plus every resource keeping its backups
+unconditionally on this path (the discard variant is never offered here — that is the backups manager,
+afterwards, deliberately). A blocked row starts unchecked; checking one <strong>is</strong> the explicit per-row
+opt-in <code>rehu_exists</code> needs to proceed with <code>overwrite</code>, and the only such opt-in offered — a
+<code>stale_backup</code> row cannot be unblocked this way, so checking one simply enqueues a job that fails with a
+message. Cancelling mid-import cancels every job still queued outright and lets the one already running
+finish on its own, so a resource is never left half-converted.</p>
+<p><strong>Converting a resource converts its checksums too</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/256" title="GitHub Issue: borco/rehuco #256">#256</a>). The <code>info.sfv</code> a predecessor left beside the <code>.tc</code> — a
+claim made when the files were known good — is seeded into an <code>info.checksum</code> as part of the conversion job, reading
+no content (<span class="slug-ref">[[data-model#checksums]]</span>). It is not an option: leaving it as a file nothing reads is what the seeding
+step exists to end, and it costs nothing, so there is nothing to choose. No manifest means no record, and inventing
+a baseline from disk instead is what the one option is for. The manifest is <strong>retired</strong> once its claim is in the
+record (<span class="slug-ref">[[data-model#checksums]]</span>, <a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>) — renamed to an <code>info.sfv.orig</code> that joins the resource's retained backups —
+so a converted resource never keeps a file that is superseded and does not say so.</p>
+<p><strong>The scan reports a second kind of row</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>): an already-converted resource still carrying that manifest beside
+its <code>.checksum</code>, which is what hand-converting produced before retirement existed. Free to find — the walk reads every
+directory's listing for the conversions anyway, and this is three names out of one listing — and executed as <strong>one
+job per resource, like the conversions</strong>, merging the stranded claim into the record and retiring the file. It sits on
+the same plan table as the conversions, because that is one resource, one job and one outcome, which is the whole of
+what a row means there; it is checked by default, since nothing blocks it and no judgement is being made; and the
+content-check option does not reach it, since it reads no bytes and its record lands dateless like a seeded one, which
+a later sweep settles. A <code>.tc</code> in that state gets no row of its own: the conversion ahead of it carries the manifest
+forward and retires it either way, and a second job against a path the first one renames away would be a race with
+nothing to win.</p>
+<p>That option is <strong>whether to check the content</strong>, and it is <strong>off by default</strong> because on it reads the whole library.
+Ticked, it queues a <strong>second job per resource</strong> — verifying the just-seeded record where a manifest made a claim, and
+generating one from disk where none did. A second job rather than more work in the first: a conversion is not safely
+interruptible, since it is renaming files, and folding a multi-hour read into it would make a catalog-wide import
+unstoppable. As its own job the hashing is pausable, cancellable and retryable, and stopping between the pair is
+harmless — the resource is converted with a dateless record, which any later sweep settles. Cancelling the import
+cancels these too, or stopping it would leave the library being read for hours afterwards. They are otherwise <strong>not
+the wizard's to report</strong>: their outcome is not a conversion's and belongs on no row of its table, they outlive the
+dialog, and the task queue is where a run measured in hours is watched. The result step says how many were queued, so
+<em>the import is finished</em> is not read off a page with hours of hashing still to run.</p>
+<p>Retained backups stay usable <strong>after</strong> a run, not only during one: a completed conversion can be <strong>reverted</strong> — the
+written <code>.rehu</code> and the <code>&lt;stem&gt;NN</code> screenshots it installed are deleted and every <code>.orig</code> renamed back — or its backups
+<strong>discarded</strong>, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every
+item can be undone one at a time. The same discipline applies as to the forward direction:</p>
+<ul>
+<li><strong>It refuses rather than half-reverts.</strong> No backed-up <code>.tc</code> beside the resource means this is not a conversion to
+  undo; a restore target occupied by a file the revert would not itself delete — a legacy name the user has since put
+  back by hand — refuses the whole operation rather than overwriting it.</li>
+<li><strong>Nothing is deleted while a rename can still fail.</strong> The written files are moved aside first, every backup is renamed
+  back, and only then are the moved-aside files deleted — so a failure part-way leaves the resource <strong>converted</strong>, the
+  mirror of the forward rollback leaving it unconverted.</li>
+<li><strong>A revert discards edits made since the conversion</strong>, since it deletes the <code>.rehu</code> outright. That drift is
+  detectable — a conversion seeds <code>created</code> and <code>updated</code> with the same stamp and only a changed save moves <code>updated</code>
+  (<span class="slug-ref">[[field-schema#record-timestamps]]</span>) — so the caller can warn before losing them.</li>
+<li><strong>Backups are the directory's <code>.orig</code> siblings</strong>, not a stem-scoped set: a legacy screenshot is named <code>cover.jpg</code> or
+  <code>sample-01.jpg</code>, carrying nothing that ties it to the resource it belongs to. Exact for the directory-scoped
+  resources tc4 catalogs are made of, and why a revert names a directory rather than a file.</li>
+<li><strong>A revert restores a retired manifest</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>). The backups are restored wholesale — that is what <em>put the
+  directory back</em> means — so <code>info.sfv.orig</code> becomes a live <code>info.sfv</code> again, beside the <code>.checksum</code> the conversion
+  seeded from it, which a revert deliberately does not delete (it deletes only what the conversion wrote, and the
+  record may since hold verify work worth keeping). This is the one door through which the manifest-beside-record
+  state recurs, on a resource that is now a <code>.tc</code> again — and it heals on reconversion, which merges and retires the
+  manifest whether or not a record is present. Deliberately not a scan target: the stranded rows the import wizard
+  offers are <code>.rehu</code> resources only, since a <code>.tc</code>'s conversion carries its manifest forward itself.</li>
+<li><strong>And a backup is never the resource's content</strong> (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/253" title="GitHub Issue: borco/rehuco #253">#253</a>): the same definition is what the content walk asks
+  (<span class="slug-ref">[[data-model#checksums]]</span>), so the files a revert is holding are exactly the files a size scan and a checksum skip.
+  Otherwise a bulk import would bake each resource's own <code>info.tc.orig</code> into its first baseline, and the discard this
+  manager exists to offer would report a missing file for every resource in the catalog.</li>
+</ul>
+<p>Reading what a revert <em>would</em> do — how many files, how many bytes, under what names, and whether it is possible at all
+— is a separate query that writes nothing, so a surface can list retained backups without performing anything. Run
+over a folder tree it becomes a <strong>scan</strong>, composed of that same per-resource query and the catalog walk the checksum
+sweep already uses: only resources that still hold backups are reported, how many were examined survives alongside
+them, and an unreadable branch is named rather than reducing the answer.</p>
+<p><code>File ▸ Conversion Backups…</code> is the manager over both, <strong>grouped per resource, not per file</strong> — six <code>.orig</code> files are
+one decision, and six rows would put five of them in front of a reader who cannot act on any one alone. A row names
+the resource, the date its conversion minted, what its backups amount to (<em>"6 files, 14 MB"</em>), and the flags worth a
+look: a screenshot <strong>tie-break</strong>, a <code>.rehu</code> <strong>edited since</strong> the conversion, or a resource <strong>not revertible</strong> at all.
+The header leads with the reclaimable total across the current selection, since that is the number the decision turns
+on. Filtering by a flag's own word is how the review pass the bulk import deliberately skipped is actually done —
+narrow to the tie-breaks, revert the few that went wrong, then select-all-discard the rest. <em>Select all</em> acts on the
+filtered view, because having filtered, selecting all of <em>those</em> and selecting the whole scan are different asks.
+Every action from here goes on the task queue, one job per resource whatever the selection size, so cancelling stops
+after the current resource. A revert the inventory already knows cannot run is <strong>refused on its row with the reason</strong>
+rather than enqueued to fail later, and a revert that can run is confirmed <strong>per resource</strong> about the edits it would
+discard — never as a blanket disclaimer, which a reader can only agree to blindly. Discard, the one irreversible step
+in the whole import flow, names the resource count and the byte total.</p>
+<p>The same two remedies sit on an open converted document, as toolbar actions offered exactly while each has something
+to do — the mirror of the convert actions' own visible-while-<code>legacy_tc</code> rule. <strong>Discard is offered while backups are
+retained; Revert only while one of them restores a <code>.tc</code>.</strong> The two conditions differ precisely because backups are
+any <code>.orig</code> sibling: a resource converted with its originals discarded, whose manifest had already been retired beside
+it (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/259" title="GitHub Issue: borco/rehuco #259">#259</a>), holds an <code>info.sfv.orig</code> and nothing to revert <em>to</em>, and a Revert offered there could only ever refuse. An
+occupied restore target is the other refusal and keeps its button — that is a conversion which can be undone once the
+file in the way is moved, and hiding it would leave a reader nothing to act on and no reason given. The inline notice
+strip says what is true and nothing more (<span class="slug-ref">[[plugins#viewer-editor-both]]</span>'s message-only banner discipline), so where
+no revert is on offer it drops the warning about the edits one would cost. Both run inline
+there: one resource is a handful of renames, and the forward conversion is already inline. <strong>A revert adopts the
+restored <code>.tc</code> in place</strong>, the exact mirror of a convert: the same dock keeps showing the same resource, now a locked
+legacy document again, re-convertible without a reopen round-trip. <strong>A save never discards the backups</strong> — the
+divergence it creates is detectable (<span class="slug-ref">[[field-schema#record-timestamps]]</span>) and is <em>warned about</em>, since discarding is
+deliberate and confirmed or it is not discarding at all, and the <code>.orig</code> set is also the only copy of the original
+<code>.tc</code> and of the tie-break's losers.</p>
+<h3 id="1532-adopting-a-backup-screenshot">§15.3.2 Adopting a backup screenshot</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#adopted-backups]]]</span></p>
+<p>A backup can also leave the set one screenshot at a time. The images sub-dock lists a resource's <code>.orig</code> screenshots
+after its numbered set (<span class="slug-ref">[[plugins#tutorial-plugin]]</span>) and
+offers each one an <strong>Adopt</strong> — renamed to the next free <code>&lt;stem&gt;NN</code>, so it becomes an ordinary screenshot the curation
+editor can reorder and the strip shows — or a <strong>Delete</strong>. Either takes the file out of the backup set, so a later revert
+restores less than the conversion backed up; whether a revert should then refuse, warn, or restore what is left is
+deliberately undecided until the revert is next touched (<span class="slug-ref">[[appendices.open-questions#still-open]]</span>).</p>
+<h3 id="1533-legacy-screenshot-naming-rules">§15.3.3 Legacy screenshot naming rules</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#screenshot-schemes]]]</span></p>
+<p>tc4 catalogs accumulated screenshots under several naming conventions, and which ones a given catalog holds is a
+property of that catalog rather than of the format. Conversion therefore takes an <strong>ordered list of rules</strong>, shipped
+with a default set and editable in the agent's Legacy Screenshots settings page (<a class="magiclink magiclink-github magiclink-issue" href="https://github.com/borco/rehuco/issues/53" title="GitHub Issue: borco/rehuco #53">#53</a>), and renumbers the winners into
+the uniform basename-derived <code>&lt;stem&gt;NN</code> scheme (<span class="slug-ref">[[data-model#resource-scoping]]</span>).</p>
+<p><strong>A rule is a series, not a filename pattern.</strong> It has two fields: a <strong>cover</strong>, the literal filename stem that becomes
+the series' first screenshot, and a <strong>rest</strong> template that the files after it match. A run of <code>#</code> in the template marks
+where the number sits, and its length is that number's minimum zero-padded width — <code>#</code> counts <code>0, 1, … 10</code>, <code>##</code> counts
+<code>00, 01 … 99, 100</code>, <code>###</code> counts <code>000 … 999, 1000</code>. A digit run is accepted only when re-rendering its value at that
+width reproduces it exactly, so <code>##</code> takes <code>09</code> and <code>100</code> but refuses <code>0100</code>. Everything outside the <code>#</code> run is literal,
+so <code>file(#)</code>'s parentheses are parentheses: a rule is never a regular expression, which is what keeps a settings string
+free of both a capture-group contract and a backtracking cost.</p>
+<p>The shipped defaults:</p>
+<table>
+<thead>
+<tr>
+<th>cover</th>
+<th>rest</th>
+<th>the series it reads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>00</code></td>
+<td><code>##</code></td>
+<td><code>00</code>, <code>01</code>, <code>02</code>, …</td>
+</tr>
+<tr>
+<td><code>sample-00</code></td>
+<td><code>sample-##</code></td>
+<td><code>sample-00</code>, <code>sample-01</code>, …</td>
+</tr>
+<tr>
+<td><code>image-00</code></td>
+<td><code>image-##</code></td>
+<td><code>image-00</code>, <code>image-01</code>, …</td>
+</tr>
+<tr>
+<td><code>image-01</code></td>
+<td><code>image-##</code></td>
+<td><code>image-01</code>, <code>image-02</code>, …</td>
+</tr>
+<tr>
+<td><code>file</code></td>
+<td><code>file(#)</code></td>
+<td><code>file</code>, <code>file(2)</code>, <code>file(3)</code>, … — Windows duplicate numbering</td>
+</tr>
+<tr>
+<td><code>cover</code></td>
+<td><code>file-##</code></td>
+<td><code>cover</code>, <code>file-01</code>, <code>file-02</code>, …</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Slots are ordinal, not the numbers themselves.</strong> The cover is slot 0; the files matching the rest template follow it
+in ascending numeric order as slots 1, 2, 3, … So an <code>image-01</code>-covered series numbers <code>image-02</code> as slot 1, and <code>file</code>
+is followed by <code>file(2)</code> at slot 1 — the numbering is an ordering, and a rule carries no start value to read one from.
+A gap therefore closes: <code>00</code>, <code>01</code>, <code>05</code> converts to <code>&lt;stem&gt;00</code>, <code>&lt;stem&gt;01</code>, <code>&lt;stem&gt;02</code>.</p>
+<p><strong>Which rule applies is a question about a directory, not a filename.</strong> The two <code>image-##</code> rules above differ <em>only</em> in
+their cover, and no single name distinguishes them: given <code>image-01.jpg</code> and <code>image-02.jpg</code>, the right reading is the
+second rule, and the only evidence is that <code>image-00</code> is absent. So the winning rule is the <strong>first in list order whose
+cover file is present</strong>, which is what makes the list's order significant and its reordering a real edit. A file the
+winner does not recognize falls to the first other rule that does, folding into that rule's slot as a losing variant —
+which is what keeps a thumbnail <code>cover.jpg</code> paired with the full-size <code>sample-00.jpg</code> it duplicates. When no rule's
+cover is present at all, every rule simply participates in list order.</p>
+<p>When several files resolve to the <strong>same slot</strong>, the winner is chosen by a fixed tie-break: <strong>largest pixel area</strong> first,
+then <code>.jpg</code>/<code>.jpeg</code> preferred over other extensions, then the alphabetically-first filename. The losers are still backed
+up (they are recognized files the conversion touches) but are not installed under a new name. The tie-break is <strong>not</strong>
+part of the editable rules: it applies whatever they say.</p>
+<p><strong>The same rule set reaches the content walk.</strong> <span class="slug-ref">[[data-model#resource-scoping]]</span>'s coverage rule skips a legacy record's
+screenshots, and it is handed the rules the conversion is handed — otherwise a file a user's added rule renames aside
+would count as content before conversion and as bookkeeping after it, moving <code>current_size</code> for no reason but a rename.</p>
+<h3 id="1534-legacy-size-and-duration-string-parsing">§15.3.4 Legacy size and duration string parsing</h3>
+<p><span class="slug-ref">[[[acquisition-tooling#legacy-parsing]]]</span></p>
+<p>tc4 stored size and duration as human-readable strings; the reader parses them back to the canonical integer units
+(<span class="slug-ref">[[field-schema#duration-size]]</span>), mirroring tc4's own <code>parsedFileSize</code> / <code>parsedDuration</code>:</p>
+<ul>
+<li><strong>Size</strong> — base-1000 suffixes (<code>B</code>, <code>KB</code>, <code>MB</code>, <code>GB</code>, <code>TB</code>, <code>PB</code>, <code>EB</code>); the magnitude may be <strong>fractional</strong>, so
+  <code>"1.5 GB"</code> → <code>int(1.5 × 1000³)</code> = <code>1500000000</code> bytes. A plain integer passes through unchanged; an unknown suffix, an
+  unparseable magnitude, or a non-finite result yields <strong><code>None</code></strong> — omitted, never fabricated as <code>0</code>
+  (<span class="slug-ref">[[field-schema#deferred-items]]</span>).</li>
+<li><strong>Duration</strong> — additive <code>h</code> / <code>m</code> / <code>s</code> tokens (<code>"1h 23m"</code> → <code>1×3600 + 23×60</code> = <code>4980</code> s); each token's magnitude must
+  be an <strong>integer</strong> digit run (a non-numeric token contributes nothing). A plain integer passes through; absent, or a
+  string in which <strong>no</strong> token was recognized, yields <code>None</code> — omitted, never fabricated as <code>0</code>. The single tc4
+  <code>duration</code> maps into the <code>original_duration</code> slot and stays <strong>advisory until a real scan overwrites it</strong> — the
+  untrusted-legacy-duration rule, with <strong>no</strong> "divide by 1000 if it looks too big" heuristic
+  (<span class="slug-ref">[[field-schema#ms-leak-history]]</span>).</li>
+</ul>
+<h2 id="154-deferral">§15.4 Deferral</h2>
+<p><span class="slug-ref">[[[acquisition-tooling#deferral]]]</span></p>
+<p>The drop aids and the site scrapers are their own milestone family, <strong>WebScrapping</strong> (<span class="slug-ref">[[implementation-plan]]</span>),
+scheduled after the LocalEdit polish rather than after the web viewer as this section once said: they are single-machine
+work that makes the editor faster to feed, and nothing in them waits on a node. Only the LLM fallback
+(<span class="slug-ref">[[acquisition-tooling#llm-url-extract]]</span>) stays deferred, until a real run of unmatched hosts says it is worth a model.
+Migration (<span class="slug-ref">[[acquisition-tooling#tc-to-rehu]]</span>) landed in LocalEdit8 and LocalEdit9.</p>
+<p>The HTML→Markdown drop (<span class="slug-ref">[[acquisition-tooling#drag-drop-aids]]</span>) is that family's tracer: the cheapest of the three, and
+the one that proves the drop seam the other two build on. None of <span class="slug-ref">[[acquisition-tooling#overview]]</span> blocks the
+local-viewer or tablet-watching milestones.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../requirements/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Requirements">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Requirements
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../packaging-deployment/" class="md-footer__link md-footer__link--next" aria-label="Next: Packaging &amp; Deployment">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Packaging & Deployment
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.indexes", "navigation.top", "navigation.tracking", "navigation.footer", "toc.follow", "search.suggest", "search.highlight", "search.share", "content.code.copy", "content.code.annotate", "content.tabs.link"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../javascripts/diagram-open.js"></script>
+      
+        <script src="../../assets/mkdocs_puml/puml.js"></script>
+      
+    
+  </body>
+</html>
