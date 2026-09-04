@@ -44,18 +44,24 @@ working editor teaches readers to discount the status line, which is what makes 
 - **Model**, one per issue — `sonnet`, `opusplan`, `opus`, `fable`. Work needing two of them is two
   issues, split along the core/agent seam rather than mixed into one. The issue body closes with a
   `## Model` section saying which and why.
+- **Category**, one per issue — the feature family it belongs to, which is what the old per-family milestones
+  became. All nine are listed with their meanings in [[appendices.project-management#category-labels]], and
+  all nine exist on the tracker — `gh label list` stays the live register.
+  `deferred` replaces the category on work that is filed but deliberately unplanned, and `audit` (a finding
+  from a codebase sweep) is orthogonal to it rather than a substitute.
 
 ### Milestones
 
-`Pre-work` (monorepo setup, integration spikes, de-risking), then the feature milestones — **LocalEdit** (local
-view/edit), **CacheDB** (cached database), **WatchTutorial** (watch a tutorial), **Borrowing** (offline borrow),
-**Swarm** (full multi-node), **Daz3D** (daz3d-personal-database migration), **WebScrapping** (browser drops and
-site scrapers feeding the editor), **RefImages** (image tagging, search,
-practice; slices hang off the others by dependency) — each sliced `LocalEdit1`,
-`LocalEdit2`, …, with a terminal catch-all polish slice named `<Milestone>X` (e.g. `LocalEditX`) that is
-never "next". Audit runs are `Audit1`, `Audit2`, … (`X1`/`X2` is the retired form — those two are already
-closed and stay as-is). GH milestone names track the per-slice labels in `implementation-plan.md`; keep the
-two in step.
+**A GH milestone is a release**, and only a release — the use they were always meant for. `Release 0.2.0` is
+the only one today. An issue joins one when it is cut into that release, so a milestone answers *what ships
+next* and nothing else: which feature family work belongs to is its **category** label above, and the order
+it is done in is recorded on neither.
+
+The per-family and per-slice milestones this replaced are gone from GH: `Pre-work`, `LocalEdit`,
+`WebScrapping`, `RefImages`, their `LocalEdit1`/`LocalEdit2`/`<Milestone>X` slices, and the `Audit1`/`Audit2`
+audit runs (`X1`/`X2` in their earlier form). Those names survive as planning vocabulary in
+`implementation-plan.md`, which still describes the roadmap that way, and as nothing on GitHub — so there is
+no longer anything to keep in step between the two.
 
 ## Monorepo layout
 
@@ -118,4 +124,5 @@ serve-after-resync, cross-filesystem safe move.
 Agile cadence + tracer-bullet first slices + occasional spikes. **Tracer bullet** — minimal but real,
 production-grade, kept; proves the layers connect end-to-end. **Spike** — throwaway; answers one sharp
 question; keep the lesson, delete the code. The current phase and next slice are deliberately not recorded
-here (they'd go stale) — read them off the GH milestones (`gh issue list`) before picking up work.
+here (they'd go stale) — read them off the category labels (`gh issue list --label 'local edit'`) and the
+project board before picking up work.

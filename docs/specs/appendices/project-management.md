@@ -7,22 +7,23 @@
 [[[appendices.project-management#overview]]]
 
 How work is labeled on the [issue tracker](https://github.com/borco/rehuco/issues).
-Two orthogonal label families annotate every implementation issue: a **model label** (which agent
-model executes it, and in what mode) and a **size label** (how long it is expected to take that
-agent). Both exist so the issue list can be triaged at a glance — pick by capability first, then by
-available time — and so estimates stay comparable across issues.
+Three orthogonal label families annotate every implementation issue: a **category label** (which feature
+family the work belongs to), a **model label** (which agent model executes it, and in what mode) and a
+**size label** (how long it is expected to take that agent). They exist so the issue list can be triaged
+at a glance — pick a family, then by capability, then by available time — and so estimates stay
+comparable across issues.
 
-Each issue's body carries the matching prose sections: a `## Model` section naming the model/mode,
-and a `## Estimate` section with the expected agent time. The label is the skimmable index; the
-body section is the record (and can carry a one-line rationale). Keep the two in step.
+The model and size labels carry matching prose sections in the issue body: a `## Model` section naming
+the model/mode, and a `## Estimate` section with the expected agent time. The label is the skimmable
+index; the body section is the record (and can carry a one-line rationale). Keep the two in step.
 
 ## Audit runs
 
 [[[appendices.project-management#audit-runs]]]
 
-Maintenance is collected into **audit-run milestones** — `X1`, `X2`, … — one per sweep of the codebase.
+Maintenance is collected under the **`audit`** label — one sweep of the codebase at a time.
 A run reads the code as a whole rather than following a feature, and each finding becomes an ordinary
-issue on that run's milestone, sized and labeled like any other. The point of a numbered run is that
+issue carrying `audit`, sized and labeled like any other. The point of running a sweep at all is that
 quality work is **periodic and bounded**: a sweep that produces 24 issues is a batch to schedule, where
 the same 24 noticed one at a time are noise to be ignored.
 
@@ -37,6 +38,41 @@ Standing sweeps, each looking for a different kind of rot:
   the failure is a sentence written in the present tense too early, which no checker recognizes — and a
   checker would need its own hand-maintained table of claims and their proof, drifting exactly like the
   thing it polices.
+
+## Category labels
+
+[[[appendices.project-management#category-labels]]]
+
+One category label per issue — the feature family the work belongs to, named for the milestone family
+that carries it in [[implementation-plan]]. This is what GH milestones used to express; they now mark
+**releases** and nothing else, so the family an issue belongs to and the release it is cut into are two
+independent facts rather than one overloaded field.
+
+| Label | Family | Meaning |
+| --- | --- | --- |
+| `pre-work` | Pre-work | Monorepo setup, integration spikes, de-risking. |
+| `local edit` | LocalEdit | Local view/edit of resources. |
+| `cache db` | CacheDB | Cached database. |
+| `watch tutorial` | WatchTutorial | Watch a tutorial. |
+| `borrowing` | Borrowing | Offline borrow. |
+| `swarm` | Swarm | Full multi-node. |
+| `daz3d` | Daz3D | daz3d-personal-database migration. |
+| `web scrapping` | WebScrapping | Browser drops and site scrapers feeding the editor. |
+| `reference images` | RefImages | Image tagging, search, practice. |
+
+The table fixes each name in advance, which is its main job: a label invented at the moment the first
+issue of a family is filed gets invented twice, and a near-miss (`webscraping` beside `web scrapping`)
+splits a family's issue list in a way nothing catches. Every row above exists on the tracker, including
+the families with no issue filed against them yet; a family added to this table later gets its label the
+same way, and `gh label list` stays the live register.
+
+Two labels stand where a category would be, and neither is one:
+
+- **`deferred`** — filed but deliberately unplanned. It replaces the category rather than joining it,
+  because assigning a family to work nobody has decided to do implies a schedule that does not exist.
+  Such an issue needs a decision or a split before it can be scheduled, and picks up its category then.
+- **`audit`** — a finding from a codebase sweep (above). Orthogonal, not a substitute: an audit finding
+  about the editor still carries `local edit`.
 
 ## Model labels
 

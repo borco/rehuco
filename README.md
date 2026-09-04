@@ -65,8 +65,8 @@ be: it is what the architecture is shaped to allow, and each piece has to earn i
 turn comes. The [design specs](docs/specs/README.md) explore that territory in depth — as intent, not
 as a description of the current build.
 
-Maintenance is tracked separately in **audit-run milestones** `X1`, `X2`, … — each collects the
-issues found during the N-th codebase audit.
+Maintenance is tracked separately under the **`audit`** label — it collects the issues found during a
+codebase audit, one sweep at a time.
 
 ## Monorepo layout
 
