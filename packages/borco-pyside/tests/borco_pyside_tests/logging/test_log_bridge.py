@@ -10,10 +10,10 @@ import logging
 import threading
 from collections.abc import Callable, Iterator, Sequence
 
+from borco_core.logging import LOG_SCOPE_ATTRIBUTE, LogScope
 from borco_pyside.logging.log_bridge import DEFAULT_LOG_LIMIT, LogBridge
 from borco_pyside.logging.log_entry import LogEntry
 from borco_pyside.logging.log_record_sink import LogRecordSink
-from borco_pyside.logging.log_scope import LOG_SCOPE_ATTRIBUTE, LogScope
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot

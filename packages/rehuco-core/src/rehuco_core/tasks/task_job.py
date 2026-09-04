@@ -15,6 +15,21 @@ from pathlib import Path
 from typing import Final, Protocol, runtime_checkable
 
 
+@dataclass(frozen=True)
+class JobScope:
+    """What a job's own log records are opened under while it runs ([[appendices.task-queue#scopes]]).
+
+    A serial, wrapped rather than used bare, so it is never confused with another integer-keyed
+    :class:`~borco_core.logging.log_scope.LogScope` -- the engine opens one of these nested inside the context
+    captured at enqueue, so a job's records carry both the thing it was enqueued for and the job that
+    made them.
+
+    :param serial: the job's serial, as minted by :meth:`~rehuco_core.tasks.TaskQueue.enqueue`.
+    """
+
+    serial: int
+
+
 class JobState(StrEnum):
     """Where a job is in its life ([[appendices.task-queue#jobs]]).
 
@@ -246,7 +261,8 @@ class TaskJob(Protocol):
 
         Touches no GUI object and no state another thread reads without a lock of its own. Progress
         goes through ``control``; anything else it wants to say, it logs (its records land under the
-        scope open when it was enqueued, [[appendices.task-queue#scopes]]).
+        scope open when it was enqueued, plus this job's own :class:`JobScope`,
+        [[appendices.task-queue#scopes]]).
 
         :param control: the engine's face to this job.
         :raises JobCancelled: to report that it obeyed a cancel; the engine catches it.
@@ -358,3 +374,12 @@ class JobStatus:
     safely_interruptible: bool = True
     resumes_where_it_stopped: bool = False
     persistable: bool = False
+
+    @property
+    def scope(self) -> JobScope:
+        """The :class:`JobScope` this job's own records are opened under, for a sink that wants only
+        this row's records rather than the whole queue's.
+
+        :returns: the job's scope, built from :attr:`serial`.
+        """
+        return JobScope(self.serial)

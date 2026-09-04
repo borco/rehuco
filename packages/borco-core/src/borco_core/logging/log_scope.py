@@ -46,7 +46,7 @@ class LogScope:
     variable holding a per-context value, not shared state to be given out per object.
     """
 
-    __CONTEXT: Final[ContextVar[tuple[Hashable, ...]]] = ContextVar("borco_pyside_log_scope", default=())
+    __CONTEXT: Final[ContextVar[tuple[Hashable, ...]]] = ContextVar("borco_core_log_scope", default=())
     """Every scope open in this context, outermost first; empty for unscoped.
 
     A tuple rather than a `set`, because it has to be immutable to be a `ContextVar` value that
@@ -109,7 +109,7 @@ class LogScope:
         -- which is exactly where a `logging.Handler` runs: handlers are called synchronously from
         ``LOG.info(...)`` itself, on the calling thread, so the context read here is still the
         caller's. A handler that queued records and resolved their scope later would read whatever
-        context it happened to be in instead, which is why :class:`~.log_bridge.LogBridge` resolves
+        context it happened to be in instead, which is why :class:`~borco_pyside.logging.log_bridge.LogBridge` resolves
         this in ``emit`` and carries the answer rather than the record alone.
 
         :param record: the record to place.

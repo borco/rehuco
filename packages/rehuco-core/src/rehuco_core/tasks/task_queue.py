@@ -20,11 +20,14 @@ from pathlib import Path
 from threading import Condition, RLock, Thread
 from typing import Any, Final
 
+from borco_core.logging import LogScope
+
 from .persistable_task_job import PersistableTaskJob, TaskQueueItem
 from .task_job import (
     FINISHED_JOB_STATES,
     JobCancelled,
     JobPaused,
+    JobScope,
     JobState,
     JobStatus,
     StopRequest,
@@ -1097,6 +1100,11 @@ class TaskQueue:
         by the caller: a record written after the context was left would land under nothing, and the
         one place a failed job's detail is meant to be readable afterwards is the log.
 
+        **Opens the job's own scope**, nested inside whatever the caller's context already has open
+        ([[appendices.task-queue#scopes]]): every record this job logs, including the failure line
+        below, carries the document it was enqueued for *and* the job that made it, so a reader can
+        find it from the Tasks dock, the document's own log, or the window's.
+
         The blanket catch is the point rather than a shortcut: a job is arbitrary caller code, and an
         exception escaping it must cost that job and nothing else -- a queue that stopped on the first
         failure would strand every job behind it ([[appendices.task-queue#failure]]).
@@ -1110,17 +1118,18 @@ class TaskQueue:
         :param control: what it was handed.
         :returns: the state it ended in, and the failure text for a failed job.
         """
-        try:
-            entry.job.run(control)
-        except JobCancelled:
-            LOG.debug("Task cancelled: %s", entry.label)
-            return JobState.CANCELLED, None
-        except JobPaused:
-            LOG.debug("Task paused: %s", entry.label)
-            return JobState.PAUSED, None
-        except Exception as error:  # pylint: disable=broad-exception-caught
-            LOG.error("Task failed: %s", entry.label, exc_info=error)
-            return JobState.FAILED, f"{type(error).__name__}: {error}"
+        with LogScope.open(JobScope(entry.serial)):
+            try:
+                entry.job.run(control)
+            except JobCancelled:
+                LOG.debug("Task cancelled: %s", entry.label)
+                return JobState.CANCELLED, None
+            except JobPaused:
+                LOG.debug("Task paused: %s", entry.label)
+                return JobState.PAUSED, None
+            except Exception as error:  # pylint: disable=broad-exception-caught
+                LOG.error("Task failed: %s", entry.label, exc_info=error)
+                return JobState.FAILED, f"{type(error).__name__}: {error}"
         return JobState.DONE, None
 
     # endregion

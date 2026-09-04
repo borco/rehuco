@@ -17,7 +17,7 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Final
 
-from borco_pyside.logging import LogScope
+from borco_core.logging import LogScope
 from borco_pyside.theming import ActionIconThemeHandler
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QAction

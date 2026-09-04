@@ -5,7 +5,7 @@ from collections.abc import Hashable
 from contextvars import copy_context
 from threading import Thread
 
-from borco_pyside.logging.log_scope import LOG_SCOPE_ATTRIBUTE, LogScope
+from borco_core.logging.log_scope import LOG_SCOPE_ATTRIBUTE, LogScope
 
 # region helpers
 

@@ -17,7 +17,7 @@ neither should its tests.
 # pylint: disable=too-many-lines
 
 import logging
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Hashable, Iterator, Sequence
 from contextvars import ContextVar
 from pathlib import Path
 from threading import Event, active_count, get_ident
@@ -25,6 +25,7 @@ from time import monotonic, sleep
 from typing import Final
 
 import pytest
+from borco_core.logging import LogScope
 from pytest import fixture
 from rehuco_core import (
     FINISHED_JOB_STATES,
@@ -33,6 +34,7 @@ from rehuco_core import (
     JobCancelled,
     JobControl,
     JobPaused,
+    JobScope,
     JobState,
     JobStatus,
     StopRequest,
@@ -405,6 +407,27 @@ class ScopeReadingJob(SampleJob):
         self.done.set()
 
 
+class ScopeStackReadingJob(SampleJob):
+    """A job that records `LogScope.stack()` as seen from inside its own ``run``.
+
+    :param label: the job's label.
+    """
+
+    def __init__(self, label: str = "scoped") -> None:
+        super().__init__(label)
+        self.seen: tuple[Hashable, ...] | None = None
+        self.done: Final = Event()
+
+    def run(self, control: JobControl) -> None:
+        """Read the open log-scope stack and announce that it was read.
+
+        :param control: unused.
+        """
+        del control
+        self.seen = LogScope.stack()
+        self.done.set()
+
+
 class RaisingListener:
     """A listener that raises on every call -- the broken observer the engine must survive."""
 
@@ -731,6 +754,59 @@ def test_the_scope_open_at_enqueue_is_the_one_the_job_runs_in(queue: TaskQueue) 
     assert job.done.wait(TIMEOUT)
 
     assert job.seen == "the document being converted"
+
+
+def test_a_jobs_records_carry_the_callers_scope_and_the_jobs_own_scope(queue: TaskQueue) -> None:
+    """The engine opens a job scope nested inside whatever the caller had open ([[appendices.task-queue#scopes]]).
+
+    **Test steps:**
+
+    * open a log scope, enqueue a job that reads the open stack, and note its serial
+    * wait for the job to run
+    * verify it saw the caller's scope outermost and its own serial's :class:`JobScope` innermost
+    """
+    job = ScopeStackReadingJob()
+    with LogScope.open("document"):
+        serial = queue.enqueue(job)
+
+    assert job.done.wait(TIMEOUT)
+
+    assert job.seen == ("document", JobScope(serial))
+
+
+def test_a_job_enqueued_unscoped_still_carries_its_own_job_scope(queue: TaskQueue) -> None:
+    """A job enqueued with nothing open is still about itself, never about nothing.
+
+    **Test steps:**
+
+    * enqueue a job that reads the open stack with no log scope open
+    * wait for the job to run
+    * verify it saw only its own serial's :class:`JobScope`
+    """
+    job = ScopeStackReadingJob()
+    serial = queue.enqueue(job)
+
+    assert job.done.wait(TIMEOUT)
+
+    assert job.seen == (JobScope(serial),)
+
+
+def test_a_jobs_status_exposes_the_scope_a_sink_would_attach_to(queue: TaskQueue, listener: RecordingListener) -> None:
+    """`JobStatus.scope` names the same key the engine opens while the job runs, so a dock can attach a
+    sink to one row without minting the key itself.
+
+    **Test steps:**
+
+    * enqueue a job and wait for it to finish
+    * verify its status's ``scope`` is the :class:`JobScope` built from its own serial
+    """
+    job = RecordingJob("job")
+    serial = queue.enqueue(job)
+
+    assert wait_for_state(listener, serial, JobState.DONE)
+
+    status = queue.jobs()[0]
+    assert status.scope == JobScope(serial)
 
 
 # endregion

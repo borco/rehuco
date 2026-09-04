@@ -20,7 +20,7 @@ from threading import Event
 from typing import Any, Final
 
 import pytest
-from borco_pyside.logging import LogScope
+from borco_core.logging import LogScope
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -30,6 +30,7 @@ from rehuco_agent.settings.checksum_settings import shared_checksum_settings
 from rehuco_core import (
     ChecksumReport,
     JobControl,
+    JobScope,
     JobState,
     JobStatus,
     RehuDocument,
@@ -434,12 +435,13 @@ def test_asking_twice_does_not_queue_the_same_work_twice(
 def test_a_run_s_records_land_on_the_resource_s_own_log(
     qtbot: QtBot, mocker: MockerFixture, actions: ChecksumActions, queue: TaskQueue
 ) -> None:
-    """The enqueue opens the document's log scope, so the worker's records are placed under it (#200).
+    """The enqueue opens the document's log scope, and the engine nests the job's own scope inside it, so
+    the worker's records are placed under both (#200, #271).
 
     **Test steps:**
 
     * trigger Verify and let the job log from the worker thread
-    * check the record carried this resource's path, and only it, as its scope stack
+    * check the record carried this resource's path and the job's own scope, outermost first
     """
     mocker.patch(
         "rehuco_core.checksum_jobs.verify_checksums",
@@ -457,7 +459,8 @@ def test_a_run_s_records_land_on_the_resource_s_own_log(
         logger.removeHandler(handler)
         logger.setLevel(logging.NOTSET)
 
-    assert scopes == [(INFO_PATH,)]
+    serial = queue.jobs()[0].serial
+    assert scopes == [(INFO_PATH, JobScope(serial))]
 
 
 # endregion

@@ -28,7 +28,7 @@ from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import Final, override
 
-from borco_pyside.logging import LogScope
+from borco_core.logging import LogScope
 from PySide6.QtCore import QByteArray, QObject, Qt, QThread, Signal
 from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 from rehuco_core import (

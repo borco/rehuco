@@ -20,7 +20,7 @@ import logging
 from typing import Final
 
 import humanize
-from borco_pyside.logging import LogScope
+from borco_core.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMessageBox, QWidget

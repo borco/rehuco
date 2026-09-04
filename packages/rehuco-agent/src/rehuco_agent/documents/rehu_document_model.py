@@ -12,8 +12,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Final
 
+from borco_core.logging import LogScope
 from borco_pyside.core import SimpleProperty
-from borco_pyside.logging import LogScope
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
