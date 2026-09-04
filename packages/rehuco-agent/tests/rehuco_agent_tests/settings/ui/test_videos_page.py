@@ -536,20 +536,6 @@ def test_drop_changes_reverts_every_staged_choice(qtbot: QtBot) -> None:
 # region the page shell
 
 
-def test_title_is_videos(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Videos".
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page = VideosPage()
-    qtbot.addWidget(page)
-
-    assert page.title == "Videos"
-
-
 def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None:
     """Each note gets the height its text needs at the width it is given, and gives it back on widening.
 
@@ -592,7 +578,7 @@ def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:
     """
     page = VideosPage()
     qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Videos")
     ui = page_ui(page)
 
     frame_filter.apply("duration probe", show_full_on_title_match=False)

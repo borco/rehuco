@@ -15,11 +15,25 @@ style already used for the field toolkit's `StatefulWidget`/`FieldModel` ([[plug
 
 ```python
 class SettingsPage(Protocol):
-    title: str
     def is_dirty(self) -> bool: ...
     def save_changes(self) -> None: ...
     def drop_changes(self) -> None: ...
 ```
+
+**A page does not name itself** (#277). It used to carry a `title` property, which put the tree's
+labels in a dozen classes that each knew only themselves, so no single place could be read — or
+sorted — to see what the tree would look like. `add_page` takes the title instead, in two overloads:
+
+```python
+def add_page(self, title: str, page: SettingsPage, /) -> None: ...
+def add_page(self, group: str, title: str, page: SettingsPage, /) -> None: ...
+```
+
+Positional, in that order, so a run of registrations reads the way the tree does and sorts as plain
+lines of text. The dialog stores the title on the row itself (`TITLE_ROLE`), apart from the row's
+displayed text, which can carry a dirty badge ([[appendices.settings-pages#dirty-state-ui]]) — so
+everything that has to *recognize* a row rather than draw it reads that role instead of unpicking a
+prefix.
 
 **Two-level filtering (#67).** The one filter box drives two nested filters off the same text, and a
 page implements *neither* — both are the dialog's job, driven by a `SettingsFrameFilter`
@@ -57,33 +71,45 @@ wrapped either: a `QTreeView` already is a scroll area, and nesting them gives t
 and a tree that can be scrolled out of its own viewport.
 
 `MainWindow.__register_settings_pages` constructs each page and calls
-`SettingsDialog.add_page(page)`; the dialog itself lives inside a floating-first, dockable
+`SettingsDialog.add_page(title, page)`; the dialog itself lives inside a floating-first, dockable
 `DockableDialog` on the outer `CDockManager` (#47's dockable-dialog framework — out of scope here).
 
-## 1. Category groups (#76)
+## 1. The category tree (#76, #277)
 
 [[[appendices.settings-pages#category-groups]]]
 
-The category tree is **two levels deep at most**: `add_page(page, group="Plugins")` nests the page's
-row under that group's row, creating the group's row on first use; `add_page(page)` leaves it a
-top-level row of its own. Today **Plugins** holds "Descriptions" (`DescriptionsPage`), "Excluded
-Files" (`ExcludedFilesPage`, #226), "Images" (`ImagesPage`) and "Videos" (`VideosPage`, #225) —
-registered in that alphabetical
-order. Group names are plural — a group holds pages, and **Plugins** is where a resource type's own
-settings go.
+**Today the tree is one flat list, in alphabetical order** (#277): "Checksums" (`ChecksumsPage`, #242),
+"Descriptions" (`DescriptionsPage`), "Excluded Files" (`ExcludedFilesPage`, #226), "Identity"
+(`IdentityPage`, #99), "Images" (`ImagesPage`), "Legacy Screenshots" (`LegacyScreenshotsPage`, #53),
+"Logs" (`LogsPage`, #200), "Session" (`SessionPage`, #65), "System Integration", "Tasks"
+(`TasksPage`, #202) and "Videos" (`VideosPage`, #225).
 
-**Top-level is for what is about the app rather than about a resource type**: "Identity"
-(`IdentityPage`, #99), "Logs" (`LogsPage`, #200), "Tasks" (`TasksPage`, #202), "Checksums"
-(`ChecksumsPage`, #242), "Legacy Screenshots" (`LegacyScreenshotsPage`, #53), and "System Integration"
-— one page on every platform, a different class behind
-each (`RegistryPage` on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS,
-which registers nothing because the association comes from the app bundle). macOS has that page at all
-only because the tray block lives on it (#205): a setting deciding what the window's close button does has
-to be reachable wherever there is a window. The test each of them passes is the same: a reader looking for it has
-no plugin name to guess. Checksums govern every resource type and the sweep that reads them is reached
-from `File` rather than from a document, so filing them under a plugin would hide them behind a word the
-reader never thought of. Legacy screenshot rules pass it the same way (#53): converting a `.tc` happens
-to a resource of any type, and the import wizard that reads them is reached from `File` as well.
+"System Integration" is one page on every platform with a different class behind each (`RegistryPage`
+on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS, which registers
+nothing because the association comes from the app bundle) — all three sharing that one title, which is
+why all three registrations sit at the same point in the order. macOS has that page at all only because
+the tray block lives on it (#205): a setting deciding what the window's close button does has to be
+reachable wherever there is a window.
+
+**The order is the registration order**, not a rule the dialog applies: `add_page` appends, and
+`MainWindow.__register_settings_pages` makes its calls alphabetically — platform pages included, each
+`if sys.platform` block sitting at its own page's position rather than after everything else. Ordering
+that a caller can see and change beats a `QSortFilterProxyModel` layer over the existing filter proxy,
+which would also complicate the current-row and restore-on-show paths (#228, #230) to take the decision
+away from the one place that has the context to make it.
+
+**There is no group in use, and the machinery for one is kept** (#277). Until #277 the four pages a
+resource type owns — Descriptions, Excluded Files, Images, Videos — nested under a **Plugins** group
+row. What that bought was a word the reader has to know before they can look under it: "Videos" is
+findable by its own name, and "Plugins" only hides it behind an implementation term. So they were
+promoted to top-level rows. The `group=` parameter and everything behind it (below) stay: a settings
+tree may want a tier again, and a working, tested one is worth more dormant than rebuilt.
+
+The test a top-level row passes is that a reader looking for it has no plugin name to guess. Checksums
+govern every resource type and the sweep that reads them is reached from `File` rather than from a
+document, so filing them under a plugin would hide them behind a word the reader never thought of.
+Legacy screenshot rules pass it the same way (#53): converting a `.tc` happens to a resource of any
+type, and the import wizard that reads them is reached from `File` as well.
 
 **One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
 owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
@@ -93,6 +119,32 @@ the cap was a block on Descriptions, the extension list a "Reference Images" pag
 that list. Both were filed where the *code* owned them, so finding either meant knowing which plugin
 or settings object to look under, when what the reader had was the word "images". A page whose one
 block is a list is also a tree row that costs a click to learn it holds one thing.
+
+**The whole filter state persists** across restarts — the filter text and both toggles — via
+`SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in
+`__init__`, *before* wiring the widgets' signals up, so seeding them doesn't immediately re-save what
+was just loaded; the proxy is seeded by hand for the same reason (no signal to ride in on). Each
+page's own frame filter needs no seeding: a page is frame-filtered when it becomes current, and the
+first page added becomes current immediately.
+
+Saving is `SettingsDialog.save_filter_state()`, called from `MainWindow.closeEvent` alongside the
+app's other at-shutdown saves (window state, session, recent files, theme) — the dialog lives in a
+dock, so it has no close/done path of its own to save from the way `UnsavedChangesDialog` (a real
+`QDialog`) does from `done()`. Saving per keystroke instead would mean one ini write per character
+typed into the filter box, for no gain.
+
+**Testing note:** because construction alone touches persistent storage, the autouse
+`isolate_settings_dialog_settings` fixture in `packages/rehuco-agent/tests/rehuco_agent_tests/conftest.py` patches the
+dialog's `persistent_settings()` — otherwise any test building one (directly, or via `MainWindow`)
+would read and overwrite the developer's real settings file, and leak toggle state into later tests.
+
+### The group tier, retained but unused (#277)
+
+Nothing calls for a group today; all of this stays working and tested, for the next tree that wants a
+tier. The tree is **two levels deep at most**: `add_page("Plugins", "Videos", page)` nests the page's
+row under that group's row, creating the group's row on first use; the two-argument
+`add_page("Videos", page)` — what every caller uses now — leaves it a top-level row of its own. Group
+names are plural: a group holds pages.
 
 A group row **carries no page of its own** — it is a header. Selecting it shows everything under it at
 once, in one scrolling column, each page's contribution under its own title as a heading — since the
@@ -137,24 +189,6 @@ shown exactly when at least one page under it is: Qt hides a rejected parent's w
 can never be shown empty, and a page can never be hidden by its group alone). A filtered-out group row
 takes its leaves' expansion state with it, so the dialog re-expands the tree after every re-filter —
 otherwise a page could survive the filter yet stay unseen.
-
-**The whole filter state persists** across restarts — the filter text and both toggles — via
-`SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in
-`__init__`, *before* wiring the widgets' signals up, so seeding them doesn't immediately re-save what
-was just loaded; the proxy is seeded by hand for the same reason (no signal to ride in on). Each
-page's own frame filter needs no seeding: a page is frame-filtered when it becomes current, and the
-first page added becomes current immediately.
-
-Saving is `SettingsDialog.save_filter_state()`, called from `MainWindow.closeEvent` alongside the
-app's other at-shutdown saves (window state, session, recent files, theme) — the dialog lives in a
-dock, so it has no close/done path of its own to save from the way `UnsavedChangesDialog` (a real
-`QDialog`) does from `done()`. Saving per keystroke instead would mean one ini write per character
-typed into the filter box, for no gain.
-
-**Testing note:** because construction alone touches persistent storage, the autouse
-`isolate_settings_dialog_settings` fixture in `packages/rehuco-agent/tests/rehuco_agent_tests/conftest.py` patches the
-dialog's `persistent_settings()` — otherwise any test building one (directly, or via `MainWindow`)
-would read and overwrite the developer's real settings file, and leak toggle state into later tests.
 
 ## 2. Save/Drop: what the toolbar actions do
 
@@ -318,8 +352,9 @@ refreshes once synchronously after every `add_page` and after every toolbar comm
 state never waits a whole tick to catch up with an explicit action.
 
 **Dirty-marker identity note:** a tree row's *displayed* text carries the badge, but its identity
-(what `restore_selected_page`/`save_filter_state` compare and persist) is always the unbadged title —
-`SettingsDialog.__unbadged` strips the marker before either reads a row's text.
+(what `restore_selected_page`/`save_filter_state` compare and persist) is the title `add_page` was
+given, kept on the row under `TITLE_ROLE` ([[appendices.settings-pages#overview]]) — so nothing has to
+strip a marker back off the text to recognize a row (#277).
 
 ## 5. Adding a new settings page
 
@@ -329,9 +364,12 @@ state never waits a whole tick to catch up with an explicit action.
   matches the one-file-per-unit convention already used for `fields/*.py`).
 - Implement `SettingsPage` structurally: an ordinary `.ui`-backed `QWidget` subclass
   ([[appendices.code-conventions]]), no base class to inherit.
-- Register it in `MainWindow.__register_settings_pages` via `self.__settings_dialog.add_page(...)`
-  — the *first* page added becomes the initially-selected one. Pass `group="..."` to nest it under a
-  category group ([[appendices.settings-pages#category-groups]]); leave it off for a top-level row.
+- Register it in `MainWindow.__register_settings_pages` via
+  `self.__settings_dialog.add_page("Its Title", ItsPage())` — **at its alphabetical position among the
+  existing calls**, since registration order is tree order
+  ([[appendices.settings-pages#category-groups]]). The page itself declares no title, and nothing uses
+  the grouping overload today. The
+  *first* page registered is the initially-selected one.
 - A platform-gated page (like `RegistryPage` — "System Integration", Windows-only) is imported
   lazily inside the `if sys.platform == "win32":` branch, and takes whatever app-level data it needs
   (e.g. `ARCHIVE_EXTENSIONS`) as a constructor parameter rather than importing it back from

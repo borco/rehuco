@@ -52,7 +52,7 @@ from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.legacy_screenshots_page import LegacyScreenshotsPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
-from rehuco_agent.settings.ui.settings_dialog import SettingsDialog
+from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
@@ -373,8 +373,8 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
-def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Excluded Files page (#226) is registered into the settings dialog, under "Plugins".
+def test_registers_the_excluded_files_page(qtbot: QtBot) -> None:
+    """The Excluded Files page (#226) is registered into the settings dialog.
 
     **Test steps:**
 
@@ -392,8 +392,8 @@ def test_registers_the_excluded_files_page_under_the_plugins_group(qtbot: QtBot)
     assert any(isinstance(page, ExcludedFilesPage) for page in pages)
 
 
-def test_registers_the_videos_page_under_the_plugins_group(qtbot: QtBot) -> None:
-    """The Videos page (#225) is registered into the settings dialog, under "Plugins".
+def test_registers_the_videos_page(qtbot: QtBot) -> None:
+    """The Videos page (#225) is registered into the settings dialog.
 
     **Test steps:**
 
@@ -411,37 +411,51 @@ def test_registers_the_videos_page_under_the_plugins_group(qtbot: QtBot) -> None
     assert any(isinstance(page, VideosPage) for page in pages)
 
 
-def test_the_plugins_group_lists_every_page_alphabetically(qtbot: QtBot) -> None:
-    """Descriptions, Images and Viewers folded into one "Plugins" group, sorted by title (#230).
+def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
+    """Every page is a top-level row, and the rows are in alphabetical order (#277).
+
+    The pages that used to nest under "Plugins" are among them, so a reader looking for "Videos" no
+    longer has to know it is a plugin's setting to find it. Order is registration order (nothing sorts
+    the tree), which is what the sorted assertion actually guards. This platform's own page is left out
+    of the expected set -- that it lands in the right place is covered by that same assertion, on
+    whichever platform is running.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's category tree holds a single "Plugins" row, its children in
-      alphabetical order -- Reference Images among them no longer, its list being a block on Images
+    * verify no row has children, the cross-platform pages are all top-level rows, and the whole
+      list is sorted case-insensitively
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    groups = [model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Plugins"]
-    assert len(groups) == 1
-    assert [groups[0].child(row).text() for row in range(groups[0].rowCount())] == [
+    items = [model.item(row) for row in range(model.rowCount())]
+    titles = [item.text() for item in items]
+    assert [item.rowCount() for item in items] == [0] * len(items)
+    assert set(titles) >= {
+        "Checksums",
         "Descriptions",
         "Excluded Files",
+        "Identity",
         "Images",
+        "Legacy Screenshots",
+        "Logs",
+        "Session",
+        "Tasks",
         "Videos",
-    ]
+    }
+    assert titles == sorted(titles, key=str.casefold)
 
 
-def test_registers_the_checksums_page_at_the_top_level(qtbot: QtBot) -> None:
-    """Checksums govern every resource type rather than one plugin's, so the page is not in Plugins (#242).
+def test_registers_the_checksums_page(qtbot: QtBot) -> None:
+    """The Checksums page (#242) is registered into the settings dialog, once.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the page stack holds a `ChecksumsPage` and the category tree lists it at the top level
+    * verify the page stack holds a `ChecksumsPage` and the category tree lists it exactly once
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -456,15 +470,13 @@ def test_registers_the_checksums_page_at_the_top_level(qtbot: QtBot) -> None:
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
 
 
-def test_registers_the_legacy_screenshots_page_at_the_top_level(qtbot: QtBot) -> None:
-    """Legacy screenshot rules govern converting a `.tc` of any resource type, so the page is not in
-    Plugins either (#53) -- the same reasoning the Checksums page records.
+def test_registers_the_legacy_screenshots_page(qtbot: QtBot) -> None:
+    """The Legacy Screenshots page (#53) is registered into the settings dialog, once.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the page stack holds a `LegacyScreenshotsPage` and the category tree lists it at the
-      top level
+    * verify the page stack holds a `LegacyScreenshotsPage` and the category tree lists it once
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -505,17 +517,14 @@ def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify no registered page is titled "Reference Images"
+    * verify no row in the category tree is titled "Reference Images"
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    # each page is shown through a scroll area of its own (#229), so read it back out of one
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert "Reference Images" not in [getattr(page, "title", None) for page in pages]
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert "Reference Images" not in [model.item(row).text() for row in range(model.rowCount())]
 
 
 def test_on_document_focus_changed_shows_the_label_alongside_the_base_title(
@@ -2051,24 +2060,22 @@ def test_the_tray_setting_lives_on_the_system_integration_page(qtbot: QtBot) -> 
 
     Asserted by title and by the checkbox's object name rather than by page class: which class fills
     that slot is per-platform (`RegistryPage`, `DesktopIntegrationPage`, `SystemIntegrationPage`),
-    and what matters here is that whichever one this platform built carries the tray block.
+    and what matters here is that whichever one this platform built carries the tray block. The title
+    is read off the tree row, since a page no longer carries one of its own (#277).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * find the registered page titled "System Integration"
+    * find the page registered under the title "System Integration"
     * verify it holds the tray checkbox
     """
     window = MainWindow()
     qtbot.addWidget(window)
 
     settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
-    pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    system_integration = [
-        page for page in pages if page is not None and getattr(page, "title", None) == "System Integration"
-    ]
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    rows = [model.item(row) for row in range(model.rowCount())]
+    system_integration = [item.data(PAGE_ROLE) for item in rows if item.data(TITLE_ROLE) == "System Integration"]
 
     assert len(system_integration) == 1, "every platform registers exactly one System Integration page"
     assert system_integration[0].findChild(QCheckBox, "enabled_check_box") is not None

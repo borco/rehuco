@@ -11,7 +11,7 @@ from typing import Any
 from borco_pyside.widgets import WrappingCheckBox
 from PySide6.QtCore import QModelIndex
 from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QLabel, QLineEdit, QScrollArea, QVBoxLayout, QWidget
-from pytest import fixture
+from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_dock import DIRTY_DOCK_MARKER
@@ -68,13 +68,15 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
 class FakePage(QWidget):
     """A minimal `SettingsPage` stand-in for exercising `SettingsDialog` without a real page.
 
-    Builds one top-level ``QFrame`` per entry in ``groups`` (each holding a ``QLabel`` for every
+    Builds one top-level ``QFrame`` per entry in ``blocks`` (each holding a ``QLabel`` for every
     term), so the dialog's introspecting `SettingsFrameFilter` has real frames to show/hide.
+
+    **It carries no title**, exactly like a real page since #277: what a page is called is the
+    caller's to say, at `SettingsDialog.add_page` -- see :func:`register_page`.
     """
 
-    def __init__(self, title: str, groups: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
+    def __init__(self, blocks: list[list[str]] | None = None, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.__title = title
         self.dirty = False
         self.save_calls = 0
         self.drop_calls = 0
@@ -87,7 +89,7 @@ class FakePage(QWidget):
         # way a real page's controller does, and QWidget.layout() answers the untyped base class
         self.main_layout = QVBoxLayout(self)
         layout = self.main_layout
-        for terms in groups or []:
+        for terms in blocks or []:
             frame = QFrame(self)
             frame_layout = QVBoxLayout(frame)
             for term in terms:
@@ -97,11 +99,6 @@ class FakePage(QWidget):
             layout.addWidget(frame)
             self.frames.append(frame)
             self.edits.append(edit)
-
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return self.__title
 
     def is_dirty(self) -> bool:
         """Whatever :attr:`dirty` was last set to -- ``False`` unless a test opts in."""
@@ -121,6 +118,33 @@ class FakePage(QWidget):
 
 
 # endregion
+
+
+def register_page(
+    dialog: SettingsDialog,
+    title: str,
+    blocks: list[list[str]] | None = None,
+    *,
+    group: str | None = None,
+) -> FakePage:
+    """Build a `FakePage` and register it under ``title``, optionally nested under ``group``.
+
+    Most tests here are about a registered page rather than about how it got registered, so this
+    drives whichever `SettingsDialog.add_page` overload the arguments call for (#277) and hands the
+    page back to assert on.
+
+    :param dialog: the dialog to register into.
+    :param title: the page's title, as the tree should show it.
+    :param blocks: the page's blocks, as `FakePage` takes them.
+    :param group: the group to nest the page's row under, or ``None`` for a top-level row.
+    :returns: the page just registered.
+    """
+    page = FakePage(blocks)
+    if group is None:
+        dialog.add_page(title, page)
+    else:
+        dialog.add_page(group, title, page)
+    return page
 
 
 def dialog_ui(dialog: SettingsDialog) -> object:
@@ -195,7 +219,7 @@ def stacked_pages(dialog: SettingsDialog) -> list[QWidget]:
     :returns: the pages themselves, not the scroll areas holding them.
     """
     pages = [area.widget() for area in page_scroll_areas(dialog)]
-    return [page for page in pages if page is not None and hasattr(page, "title")]
+    return [page for page in pages if isinstance(page, FakePage)]
 
 
 def current_page(dialog: SettingsDialog) -> QWidget | None:
@@ -281,7 +305,7 @@ def select_page(dialog: SettingsDialog, title: str) -> None:
     """Select the tree row for the page titled ``title``.
 
     :param dialog: the dialog whose tree to select in.
-    :param title: the page's title, as passed to :meth:`SettingsDialog.add_page`'s page.
+    :param title: the page's title, as passed to :meth:`SettingsDialog.add_page`.
     :raises AssertionError: if no visible row has that title (e.g. filtered out).
     """
     tree = dialog_ui(dialog).category_tree  # type: ignore[attr-defined]
@@ -292,7 +316,7 @@ def select_group(dialog: SettingsDialog, title: str) -> None:
     """Select the tree row for the group titled ``title`` (#230).
 
     :param dialog: the dialog whose tree to select in.
-    :param title: the group's title, as passed to :meth:`SettingsDialog.add_page`'s ``group``.
+    :param title: the group's title, as passed to :meth:`SettingsDialog.add_page`'s grouping overload.
     """
     dialog_ui(dialog).category_tree.setCurrentIndex(visible_index(dialog, title))  # type: ignore[attr-defined]
 
@@ -360,6 +384,78 @@ def stacked_group_headings(dialog: SettingsDialog) -> list[str]:
     return [widget.text() for widget in stacked_group_widgets(dialog) if isinstance(widget, QLabel)]
 
 
+# region how a page is named and placed (#277)
+
+
+def test_add_page_titles_the_row_from_its_argument(qtbot: QtBot) -> None:
+    """The caller names the page; the page itself has no say (#277).
+
+    **Test steps:**
+
+    * register a page under a title of the caller's choosing
+    * verify the tree row carries it
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.add_page("Registry", FakePage())
+
+    assert visible_titles(dialog) == ["Registry"]
+
+
+def test_add_page_nests_the_row_when_given_a_group(qtbot: QtBot) -> None:
+    """The three-argument overload names the group ahead of the page's own title (#76, #277).
+
+    **Test steps:**
+
+    * register a page with a group named before its title
+    * verify the group is the top-level row and the page is its child
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    dialog.add_page("Plugins", "Videos", FakePage())
+
+    assert visible_titles(dialog) == ["Plugins", "Videos"]
+
+
+def test_add_page_rejects_a_call_matching_neither_form(qtbot: QtBot) -> None:
+    """Anything but ``(title, page)`` or ``(group, title, page)`` is refused outright, rather than
+    registering a row named after whatever happened to be passed (#277).
+
+    **Test steps:**
+
+    * call ``add_page`` with a page and no title
+    * verify it raises, naming the call it refused
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    with raises(TypeError, match="add_page"):
+        dialog.add_page(FakePage())  # type: ignore[call-overload]
+
+
+def test_the_tree_keeps_the_order_it_was_given(qtbot: QtBot) -> None:
+    """Rows are appended, so registration order is tree order and nothing here re-sorts it (#277).
+
+    **Test steps:**
+
+    * register three pages in an order that is not alphabetical
+    * verify the tree lists them exactly that way
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+
+    register_page(dialog, "Videos")
+    register_page(dialog, "Checksums")
+    register_page(dialog, "Images")
+
+    assert visible_titles(dialog) == ["Videos", "Checksums", "Images"]
+
+
+# endregion
+
+
 def test_add_page_creates_a_tree_row_and_stacked_page(qtbot: QtBot) -> None:
     """Adding a page gives it both a category-tree row and a page in the stacked widget.
 
@@ -370,9 +466,8 @@ def test_add_page_creates_a_tree_row_and_stacked_page(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
 
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
 
     ui = dialog_ui(dialog)
     model = ui.category_tree.model()  # type: ignore[attr-defined]
@@ -392,9 +487,8 @@ def test_first_added_page_becomes_the_initially_selected_one(qtbot: QtBot) -> No
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
 
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
 
     assert current_page(dialog) is page
 
@@ -410,9 +504,8 @@ def test_the_first_added_page_is_selected_even_when_grouped(qtbot: QtBot) -> Non
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions")
 
-    dialog.add_page(page, group="Editors")
+    page = register_page(dialog, "Descriptions", group="Editors")
 
     assert current_page(dialog) is page
 
@@ -428,10 +521,8 @@ def test_selecting_a_tree_row_switches_the_stacked_page(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
 
     select_page(dialog, "Markdown Rendering")
 
@@ -448,8 +539,8 @@ def test_empty_filter_shows_every_page(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry"))
-    dialog.add_page(FakePage("Markdown Rendering"))
+    register_page(dialog, "Registry")
+    register_page(dialog, "Markdown Rendering")
 
     assert dialog_ui(dialog).category_tree.model().rowCount() == 2  # type: ignore[attr-defined]
 
@@ -465,8 +556,8 @@ def test_filter_hides_a_page_whose_title_and_field_labels_dont_match(qtbot: QtBo
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", [["Register", "Unregister"]]))
-    dialog.add_page(FakePage("Markdown Rendering", [["Engine", "CSS"]]))
+    register_page(dialog, "Registry", [["Register", "Unregister"]])
+    register_page(dialog, "Markdown Rendering", [["Engine", "CSS"]])
 
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
 
@@ -486,7 +577,7 @@ def test_filter_matches_case_insensitively_against_field_labels(qtbot: QtBot) ->
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Markdown Rendering", [["Maximum image width"]]))
+    register_page(dialog, "Markdown Rendering", [["Maximum image width"]])
 
     dialog_ui(dialog).filter_edit.setText("WIDTH")  # type: ignore[attr-defined]
 
@@ -504,8 +595,8 @@ def test_clearing_the_filter_shows_every_page_again(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", [["Register"]]))
-    dialog.add_page(FakePage("Markdown Rendering", [["Engine"]]))
+    register_page(dialog, "Registry", [["Register"]])
+    register_page(dialog, "Markdown Rendering", [["Engine"]])
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
 
     dialog_ui(dialog).filter_edit.setText("")  # type: ignore[attr-defined]
@@ -524,10 +615,8 @@ def test_apply_current_page_action_saves_only_the_selected_page(qtbot: QtBot) ->
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     select_page(dialog, "Markdown Rendering")
     second.dirty = True
     refresh_dirty_state(dialog)
@@ -549,10 +638,8 @@ def test_apply_all_action_saves_every_page(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     first.dirty = True
     second.dirty = True
     refresh_dirty_state(dialog)
@@ -574,10 +661,8 @@ def test_reset_current_page_action_drops_only_the_selected_page(qtbot: QtBot) ->
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     select_page(dialog, "Markdown Rendering")
     second.dirty = True
     refresh_dirty_state(dialog)
@@ -599,10 +684,8 @@ def test_reset_all_action_drops_every_page(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     first.dirty = True
     second.dirty = True
     refresh_dirty_state(dialog)
@@ -624,8 +707,7 @@ def test_clearing_the_tree_selection_leaves_the_stack_untouched(qtbot: QtBot) ->
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
 
     dialog_ui(dialog).category_tree.setCurrentIndex(QModelIndex())  # type: ignore[attr-defined]
 
@@ -661,8 +743,7 @@ def test_typing_filter_text_hides_the_current_pages_non_matching_frames(qtbot: Q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry", [["Register"], ["Check registration"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry", [["Register"], ["Check registration"]])
 
     dialog_ui(dialog).filter_edit.setText("register")  # type: ignore[attr-defined]
 
@@ -682,8 +763,7 @@ def test_toggling_show_full_page_reveals_the_whole_page_on_a_title_match(qtbot: 
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry", [["Register"], ["Check status"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry", [["Register"], ["Check status"]])
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
     assert page.frames[1].isVisibleTo(page) is False  # pylint: disable=no-member
 
@@ -702,10 +782,8 @@ def test_selecting_a_page_applies_the_active_filter_to_it(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry", [["Register"]])
-    second = FakePage("Markdown Rendering", [["Engine"], ["Images"]])
-    dialog.add_page(first)
-    dialog.add_page(second)
+    register_page(dialog, "Registry", [["Register"]])
+    second = register_page(dialog, "Markdown Rendering", [["Engine"], ["Images"]])
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
 
     select_page(dialog, "Markdown Rendering")
@@ -716,7 +794,7 @@ def test_selecting_a_page_applies_the_active_filter_to_it(qtbot: QtBot) -> None:
 
 
 def test_adding_a_grouped_page_nests_its_row_under_a_group_row(qtbot: QtBot) -> None:
-    """A page added with a ``group`` gets a leaf row under that group's own (page-less) row (#76).
+    """A page added with a group gets a leaf row under that group's own (page-less) row (#76).
 
     **Test steps:**
 
@@ -727,8 +805,8 @@ def test_adding_a_grouped_page_nests_its_row_under_a_group_row(qtbot: QtBot) -> 
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("Descriptions"), group="Editors")
-    dialog.add_page(FakePage("System Integration"))
+    register_page(dialog, "Descriptions", group="Editors")
+    register_page(dialog, "System Integration")
 
     model = dialog_ui(dialog).category_tree.model()  # type: ignore[attr-defined]
     assert [model.data(model.index(row, 0)) for row in range(model.rowCount())] == [
@@ -751,8 +829,8 @@ def test_pages_in_the_same_group_share_one_group_row(qtbot: QtBot) -> None:
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("Descriptions"), group="Editors")
-    dialog.add_page(FakePage("Tags"), group="Editors")
+    register_page(dialog, "Descriptions", group="Editors")
+    register_page(dialog, "Tags", group="Editors")
 
     model = dialog_ui(dialog).category_tree.model()  # type: ignore[attr-defined]
     assert model.rowCount() == 1
@@ -770,10 +848,8 @@ def test_selecting_a_grouped_page_switches_the_stacked_page(qtbot: QtBot) -> Non
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("System Integration")
-    grouped = FakePage("Descriptions")
-    dialog.add_page(first)
-    dialog.add_page(grouped, group="Editors")
+    register_page(dialog, "System Integration")
+    grouped = register_page(dialog, "Descriptions", group="Editors")
 
     select_page(dialog, "Descriptions")
 
@@ -790,8 +866,7 @@ def test_selecting_a_group_with_one_page_shows_that_pages_frames(qtbot: QtBot) -
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Images"]])
-    dialog.add_page(page, group="Editors")
+    page = register_page(dialog, "Descriptions", [["Engine"], ["Images"]], group="Editors")
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
 
     select_group(dialog, "Editors")
@@ -811,10 +886,8 @@ def test_selecting_a_group_with_several_pages_stacks_them_in_tree_order(qtbot: Q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"], ["Fonts"]])
-    second = FakePage("Tags", [["Separator"], ["Casing"]])
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", [["Engine"], ["Fonts"]], group="Editors")
+    second = register_page(dialog, "Tags", [["Separator"], ["Casing"]], group="Editors")
 
     select_group(dialog, "Editors")
 
@@ -834,12 +907,9 @@ def test_reselecting_an_already_shown_group_does_not_duplicate_its_blocks(qtbot:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Tags", [["Separator"]])
-    other = FakePage("System Integration", [["Register"]])
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
-    dialog.add_page(other)
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    second = register_page(dialog, "Tags", [["Separator"]], group="Editors")
+    register_page(dialog, "System Integration", [["Register"]])
     select_group(dialog, "Editors")
 
     select_page(dialog, "System Integration")
@@ -866,12 +936,9 @@ def test_reselecting_a_group_after_visiting_one_of_its_leaves_keeps_tree_order(q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Excluded Files", [["Patterns"]])
-    third = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(first, group="Plugins")
-    dialog.add_page(second, group="Plugins")
-    dialog.add_page(third, group="Plugins")
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
+    second = register_page(dialog, "Excluded Files", [["Patterns"]], group="Plugins")
+    third = register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     select_group(dialog, "Plugins")
 
     select_page(dialog, "Descriptions")
@@ -892,10 +959,8 @@ def test_selecting_a_leaf_page_after_a_group_shows_it_alone_with_no_group_leftov
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions")
-    second = FakePage("Tags")
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", group="Editors")
+    register_page(dialog, "Tags", group="Editors")
     select_group(dialog, "Editors")
 
     select_page(dialog, "Descriptions")
@@ -914,8 +979,7 @@ def test_a_pages_state_survives_moving_from_a_group_view_to_a_leaf_view(qtbot: Q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions")
-    dialog.add_page(page, group="Editors")
+    page = register_page(dialog, "Descriptions", group="Editors")
     select_group(dialog, "Editors")
     page.save_calls = 5  # stands in for an in-progress edit: state that must survive re-parenting
 
@@ -936,10 +1000,8 @@ def test_apply_current_page_on_a_group_row_saves_every_page_under_it(qtbot: QtBo
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions")
-    second = FakePage("Tags")
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", group="Editors")
+    second = register_page(dialog, "Tags", group="Editors")
     select_group(dialog, "Editors")
     first.dirty = True
     second.dirty = True
@@ -962,10 +1024,8 @@ def test_reset_current_page_on_a_group_row_drops_every_page_under_it(qtbot: QtBo
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions")
-    second = FakePage("Tags")
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", group="Editors")
+    second = register_page(dialog, "Tags", group="Editors")
     select_group(dialog, "Editors")
     first.dirty = True
     second.dirty = True
@@ -989,10 +1049,8 @@ def test_typing_filter_text_with_a_group_row_selected_filters_every_pages_blocks
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Tags", [["Separator"]])
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "Tags", [["Separator"]], group="Editors")
     select_group(dialog, "Editors")
 
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
@@ -1011,10 +1069,8 @@ def test_apply_all_action_saves_grouped_pages_too(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    grouped = FakePage("Descriptions")
-    ungrouped = FakePage("System Integration")
-    dialog.add_page(grouped, group="Editors")
-    dialog.add_page(ungrouped)
+    grouped = register_page(dialog, "Descriptions", group="Editors")
+    ungrouped = register_page(dialog, "System Integration")
     grouped.dirty = True
     ungrouped.dirty = True
     refresh_dirty_state(dialog)
@@ -1036,8 +1092,8 @@ def test_a_group_row_is_hidden_when_none_of_its_pages_match(qtbot: QtBot) -> Non
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
-    dialog.add_page(FakePage("System Integration", [["Register"]]))
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "System Integration", [["Register"]])
 
     dialog_ui(dialog).filter_edit.setText("regist")  # type: ignore[attr-defined]
 
@@ -1056,8 +1112,8 @@ def test_a_group_row_stays_visible_when_one_of_its_pages_matches(qtbot: QtBot) -
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
-    dialog.add_page(FakePage("Tags", [["Separator"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "Tags", [["Separator"]], group="Editors")
 
     dialog_ui(dialog).filter_edit.setText("separator")  # type: ignore[attr-defined]
 
@@ -1075,8 +1131,8 @@ def test_show_full_group_reveals_every_page_of_a_group_whose_title_matches(qtbot
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
-    dialog.add_page(FakePage("Tags", [["Separator"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "Tags", [["Separator"]], group="Editors")
     dialog_ui(dialog).show_full_group_check_box.set_checked(True)  # type: ignore[attr-defined]
 
     dialog_ui(dialog).filter_edit.setText("editors")  # type: ignore[attr-defined]
@@ -1095,7 +1151,7 @@ def test_a_group_title_match_shows_no_pages_while_show_full_group_is_off(qtbot: 
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
 
     dialog_ui(dialog).filter_edit.setText("editors")  # type: ignore[attr-defined]
 
@@ -1113,7 +1169,7 @@ def test_a_page_matching_on_its_own_is_shown_whatever_the_group_toggle(qtbot: Qt
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
 
     dialog_ui(dialog).filter_edit.setText("engine")  # type: ignore[attr-defined]
     assert visible_titles(dialog) == ["Editors", "Descriptions"]
@@ -1134,8 +1190,8 @@ def test_show_full_group_does_not_reveal_another_groups_pages(qtbot: QtBot) -> N
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
-    dialog.add_page(FakePage("Themes", [["Palette"]]), group="Appearance")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "Themes", [["Palette"]], group="Appearance")
     dialog_ui(dialog).show_full_group_check_box.set_checked(True)  # type: ignore[attr-defined]
 
     dialog_ui(dialog).filter_edit.setText("editors")  # type: ignore[attr-defined]
@@ -1154,8 +1210,8 @@ def test_show_full_group_leaves_an_ungrouped_page_page_scoped(qtbot: QtBot) -> N
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
-    dialog.add_page(FakePage("System Integration", [["Register"]]))
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    register_page(dialog, "System Integration", [["Register"]])
     dialog_ui(dialog).show_full_group_check_box.set_checked(True)  # type: ignore[attr-defined]
 
     dialog_ui(dialog).filter_edit.setText("editors")  # type: ignore[attr-defined]
@@ -1267,8 +1323,8 @@ def test_a_restored_filter_text_hides_non_matching_pages_from_the_start(
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("System Integration", [["Register"]]))
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
+    register_page(dialog, "System Integration", [["Register"]])
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
 
     assert visible_titles(dialog) == ["System Integration"]
 
@@ -1292,7 +1348,7 @@ def test_a_page_added_under_a_group_while_a_filter_is_live_still_shows(
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
 
     assert visible_titles(dialog) == ["Editors", "Descriptions"]
 
@@ -1311,9 +1367,8 @@ def test_a_restored_filter_text_hides_the_first_pages_non_matching_frames(
     SettingsDialogSettings(filter_text="engine").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Images"]])
 
-    dialog.add_page(page)
+    page = register_page(dialog, "Descriptions", [["Engine"], ["Images"]])
 
     assert [frame.isVisibleTo(page) for frame in page.frames] == [True, False]
 
@@ -1333,7 +1388,7 @@ def test_a_restored_show_full_group_toggle_filters_group_aware_from_the_start(
     SettingsDialogSettings(show_full_group_on_title_match=True).save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions", [["Engine"]]), group="Editors")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
 
     dialog_ui(dialog).filter_edit.setText("editors")  # type: ignore[attr-defined]
 
@@ -1354,8 +1409,7 @@ def test_a_restored_show_full_page_toggle_filters_frames_from_the_start(
     SettingsDialogSettings(show_full_page_on_title_match=True).save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Images"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Descriptions", [["Engine"], ["Images"]])
 
     dialog_ui(dialog).filter_edit.setText("descript")  # type: ignore[attr-defined]
 
@@ -1375,8 +1429,8 @@ def test_save_filter_state_persists_the_selected_pages_title(
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry"))
-    dialog.add_page(FakePage("Markdown Rendering"))
+    register_page(dialog, "Registry")
+    register_page(dialog, "Markdown Rendering")
     select_page(dialog, "Markdown Rendering")
 
     dialog.save_filter_state()
@@ -1402,7 +1456,7 @@ def test_save_filter_state_with_a_group_row_selected_stores_the_groups_own_title
     SettingsDialogSettings(selected_page_title="Stale Page").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    register_page(dialog, "Descriptions", group="Editors")
     select_group(dialog, "Editors")
 
     dialog.save_filter_state()
@@ -1427,9 +1481,8 @@ def test_restore_selected_page_shows_the_page_matching_the_stored_title(
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry"))
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(second)
+    register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
 
     dialog.restore_selected_page()
 
@@ -1453,10 +1506,8 @@ def test_restore_selected_page_shows_the_group_matching_the_stored_title(
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Tags", [["Separator"]])
-    dialog.add_page(first, group="Editors")
-    dialog.add_page(second, group="Editors")
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Editors")
+    second = register_page(dialog, "Tags", [["Separator"]], group="Editors")
 
     dialog.restore_selected_page()
 
@@ -1480,7 +1531,7 @@ def test_a_restored_group_selection_survives_the_next_save(
     SettingsDialogSettings(selected_page_title="Editors").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions"), group="Editors")
+    register_page(dialog, "Descriptions", group="Editors")
     dialog.restore_selected_page()
 
     dialog.save_filter_state()
@@ -1504,9 +1555,8 @@ def test_restore_selected_page_finds_a_grouped_pages_title_too(
     SettingsDialogSettings(selected_page_title="Descriptions").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("System Integration"))
-    grouped = FakePage("Descriptions")
-    dialog.add_page(grouped, group="Editors")
+    register_page(dialog, "System Integration")
+    grouped = register_page(dialog, "Descriptions", group="Editors")
 
     dialog.restore_selected_page()
 
@@ -1531,10 +1581,9 @@ def test_restore_selected_page_walks_past_a_group_whose_pages_all_miss(
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Descriptions"), group="Editors")
-    dialog.add_page(FakePage("Images"), group="Editors")
-    wanted = FakePage("System Integration")
-    dialog.add_page(wanted)
+    register_page(dialog, "Descriptions", group="Editors")
+    register_page(dialog, "Images", group="Editors")
+    wanted = register_page(dialog, "System Integration")
 
     dialog.restore_selected_page()
 
@@ -1555,9 +1604,8 @@ def test_restore_selected_page_leaves_the_first_page_when_the_stored_title_match
     SettingsDialogSettings(selected_page_title="Registry").save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Identity")
-    dialog.add_page(first)
-    dialog.add_page(FakePage("Markdown Rendering"))
+    first = register_page(dialog, "Identity")
+    register_page(dialog, "Markdown Rendering")
 
     dialog.restore_selected_page()
 
@@ -1575,9 +1623,8 @@ def test_restore_selected_page_leaves_the_first_page_when_nothing_was_ever_saved
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    dialog.add_page(first)
-    dialog.add_page(FakePage("Markdown Rendering"))
+    first = register_page(dialog, "Registry")
+    register_page(dialog, "Markdown Rendering")
 
     dialog.restore_selected_page()
 
@@ -1601,9 +1648,8 @@ def test_restore_selected_page_shows_a_page_the_restored_filter_hides_from_the_t
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", [["Register"]]))
-    second = FakePage("Markdown Rendering", [["Engine"]])
-    dialog.add_page(second)
+    register_page(dialog, "Registry", [["Register"]])
+    second = register_page(dialog, "Markdown Rendering", [["Engine"]])
 
     dialog.restore_selected_page()
 
@@ -1627,8 +1673,8 @@ def test_a_restored_page_hidden_by_the_filter_survives_the_next_save(
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry", [["Register"]]))
-    dialog.add_page(FakePage("Markdown Rendering", [["Engine"]]))
+    register_page(dialog, "Registry", [["Register"]])
+    register_page(dialog, "Markdown Rendering", [["Engine"]])
     dialog.restore_selected_page()
 
     dialog.save_filter_state()
@@ -1668,11 +1714,9 @@ def test_each_page_is_shown_through_a_widget_resizable_scroll_area_of_its_own(qt
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
 
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
 
     areas = page_scroll_areas(dialog)
     assert [area.widget() for area in areas] == [first, second]
@@ -1727,10 +1771,10 @@ def test_a_tall_page_leaves_the_dialog_free_to_shrink(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
+    page = FakePage()
     page.setMinimumHeight(2000)
 
-    dialog.add_page(page)
+    dialog.add_page("Registry", page)
 
     assert dialog.minimumSizeHint().height() < 400
 
@@ -1746,10 +1790,10 @@ def test_shrinking_the_dialog_scrolls_the_tall_page_and_moves_nothing_else(qtbot
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    tall = FakePage("Registry")
+    tall = FakePage()
     tall.setMinimumHeight(2000)
-    dialog.add_page(tall)
-    dialog.add_page(FakePage("Markdown Rendering"))
+    dialog.add_page("Registry", tall)
+    register_page(dialog, "Markdown Rendering")
     ui = dialog_ui(dialog)
     dialog.show()
 
@@ -1778,10 +1822,8 @@ def test_a_group_page_the_filter_empties_takes_its_heading_with_it(qtbot: QtBot)
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(first, group="Plugins")
-    dialog.add_page(second, group="Plugins")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
+    second = register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     select_group(dialog, "Plugins")
 
     dialog_ui(dialog).filter_edit.setText("thumbnail")  # type: ignore[attr-defined]
@@ -1803,10 +1845,8 @@ def test_clearing_the_filter_brings_an_emptied_group_page_back(qtbot: QtBot) -> 
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(first, group="Plugins")
-    dialog.add_page(second, group="Plugins")
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
+    second = register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     select_group(dialog, "Plugins")
     dialog_ui(dialog).filter_edit.setText("thumbnail")  # type: ignore[attr-defined]
 
@@ -1832,9 +1872,8 @@ def test_blocks_borrowed_by_a_group_go_home_when_the_page_is_shown_alone(qtbot: 
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Fonts"]])
-    dialog.add_page(page, group="Plugins")
-    dialog.add_page(FakePage("Images", [["Thumbnail"]]), group="Plugins")
+    page = register_page(dialog, "Descriptions", [["Engine"], ["Fonts"]], group="Plugins")
+    register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     select_group(dialog, "Plugins")
     assert [block.parentWidget() for block in page.frames] != [page, page]
 
@@ -1863,10 +1902,8 @@ def test_a_short_group_packs_its_blocks_from_the_top(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(first, group="Plugins")
-    dialog.add_page(second, group="Plugins")
+    register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
+    register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     select_group(dialog, "Plugins")
     dialog.resize(600, 1200)
     dialog.show()
@@ -1889,9 +1926,8 @@ def test_a_group_taller_than_the_viewport_still_scrolls(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    tall = FakePage("Descriptions", [["Engine"]])
+    tall = register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
     tall.frames[0].setMinimumHeight(3000)  # pylint: disable=no-member
-    dialog.add_page(tall, group="Plugins")
     select_group(dialog, "Plugins")
     dialog.resize(600, 400)
     dialog.show()
@@ -1917,8 +1953,8 @@ def test_a_filter_matching_nothing_blanks_the_right_hand_side(qtbot: QtBot) -> N
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Identity", [["Name"]]))
-    dialog.add_page(FakePage("Images", [["Thumbnail"]]))
+    register_page(dialog, "Identity", [["Name"]])
+    register_page(dialog, "Images", [["Thumbnail"]])
 
     dialog_ui(dialog).filter_edit.setText("no-such-setting")  # type: ignore[attr-defined]
 
@@ -1940,9 +1976,8 @@ def test_deleting_a_typo_puts_the_same_page_back(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Identity", [["Name"]]))
-    images = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(images)
+    register_page(dialog, "Identity", [["Name"]])
+    images = register_page(dialog, "Images", [["Thumbnail"]])
     select_page(dialog, "Images")
     dialog_ui(dialog).filter_edit.setText("thumbnailx")  # type: ignore[attr-defined]
     assert showing_blank_page(dialog) is True
@@ -1970,10 +2005,8 @@ def test_replacing_a_no_match_filter_wholesale_does_not_restore_the_old_page(qtb
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    identity = FakePage("Identity", [["Name"]])
-    images = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(identity)
-    dialog.add_page(images)
+    identity = register_page(dialog, "Identity", [["Name"]])
+    images = register_page(dialog, "Images", [["Thumbnail"]])
     select_page(dialog, "Images")
     dialog_ui(dialog).filter_edit.setText("thumbnailx")  # type: ignore[attr-defined]
 
@@ -1996,8 +2029,8 @@ def test_leaving_a_no_match_filter_never_leaves_rows_beside_a_blank(qtbot: QtBot
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Identity", [["Name"]]))
-    dialog.add_page(FakePage("Images", [["Thumbnail"]]))
+    register_page(dialog, "Identity", [["Name"]])
+    register_page(dialog, "Images", [["Thumbnail"]])
     dialog_ui(dialog).filter_edit.setText("no-such-setting")  # type: ignore[attr-defined]
     assert showing_blank_page(dialog) is True
 
@@ -2017,10 +2050,8 @@ def test_a_group_shown_before_a_no_match_filter_comes_back_as_the_group(qtbot: Q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Descriptions", [["Engine"]])
-    second = FakePage("Images", [["Engine"]])
-    dialog.add_page(first, group="Plugins")
-    dialog.add_page(second, group="Plugins")
+    first = register_page(dialog, "Descriptions", [["Engine"]], group="Plugins")
+    second = register_page(dialog, "Images", [["Engine"]], group="Plugins")
     select_group(dialog, "Plugins")
     dialog_ui(dialog).filter_edit.setText("enginex")  # type: ignore[attr-defined]
     assert showing_blank_page(dialog) is True
@@ -2045,8 +2076,8 @@ def test_closing_on_a_no_match_filter_stores_the_page_it_would_return_to(
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Identity", [["Name"]]))
-    dialog.add_page(FakePage("Images", [["Thumbnail"]]))
+    register_page(dialog, "Identity", [["Name"]])
+    register_page(dialog, "Images", [["Thumbnail"]])
     select_page(dialog, "Images")
     dialog_ui(dialog).filter_edit.setText("thumbnailx")  # type: ignore[attr-defined]
 
@@ -2070,9 +2101,8 @@ def test_a_restored_filter_matching_nothing_starts_blank(qtbot: QtBot, fake_pers
     saved_settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Identity", [["Name"]]))
-    images = FakePage("Images", [["Thumbnail"]])
-    dialog.add_page(images)
+    register_page(dialog, "Identity", [["Name"]])
+    images = register_page(dialog, "Images", [["Thumbnail"]])
 
     dialog.restore_selected_page()
 
@@ -2102,10 +2132,10 @@ def test_a_filling_block_fills_alone_and_packs_with_others(qtbot: QtBot) -> None
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Descriptions", [["Engine"], ["Fonts"]])
+    page = FakePage([["Engine"], ["Fonts"]])
     page.main_layout.setStretch(0, 1)  # the page stretches its first block, as DescriptionsPage does
-    dialog.add_page(page, group="Plugins")
-    dialog.add_page(FakePage("Images", [["Thumbnail"]]), group="Plugins")
+    dialog.add_page("Plugins", "Descriptions", page)
+    register_page(dialog, "Images", [["Thumbnail"]], group="Plugins")
     dialog.resize(600, 900)
     dialog.show()
 
@@ -2144,7 +2174,7 @@ def test_a_freshly_added_page_carries_no_dirty_marker(qtbot: QtBot) -> None:
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("Registry"))
+    register_page(dialog, "Registry")
 
     assert visible_titles(dialog) == ["Registry"]
 
@@ -2159,8 +2189,7 @@ def test_a_dirty_pages_row_gets_the_dirty_marker_prefix(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
 
     page.dirty = True
     refresh_dirty_state(dialog)
@@ -2178,8 +2207,7 @@ def test_a_settled_page_loses_its_dirty_marker(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
     page.dirty = True
     refresh_dirty_state(dialog)
 
@@ -2205,9 +2233,8 @@ def test_restore_selected_page_still_finds_a_dirty_pages_row(
     settings.save(fake_persistent_settings)  # type: ignore[arg-type]
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry"))
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(second)
+    register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     second.dirty = True
     refresh_dirty_state(dialog)
 
@@ -2228,7 +2255,7 @@ def test_apply_and_reset_actions_are_disabled_when_nothing_is_dirty(qtbot: QtBot
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
 
-    dialog.add_page(FakePage("Registry"))
+    register_page(dialog, "Registry")
 
     ui = dialog_ui(dialog)
     assert ui.apply_current_page_action.isEnabled() is False  # type: ignore[attr-defined]
@@ -2249,9 +2276,8 @@ def test_apply_all_action_enables_when_an_unselected_page_is_dirty(qtbot: QtBot)
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    dialog.add_page(FakePage("Registry"))
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(second)
+    register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
 
     second.dirty = True
     refresh_dirty_state(dialog)
@@ -2274,8 +2300,7 @@ def test_apply_current_page_action_enables_once_the_current_page_is_dirty(qtbot:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
 
     page.dirty = True
     refresh_dirty_state(dialog)
@@ -2297,8 +2322,7 @@ def test_committing_a_page_resyncs_its_frame_baseline_so_the_badge_clears(qtbot:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry", [["Name"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry", [["Name"]])
     page.edits[0].setText("changed")  # pylint: disable=no-member
     page.dirty = True
     refresh_dirty_state(dialog)
@@ -2327,8 +2351,7 @@ def test_editing_a_frames_field_tints_it(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry", [["Name"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry", [["Name"]])
 
     page.edits[0].setText("changed")  # pylint: disable=no-member
     refresh_dirty_state(dialog)
@@ -2348,8 +2371,7 @@ def test_a_clean_frame_has_no_tint(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry", [["Name"]])
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry", [["Name"]])
 
     refresh_dirty_state(dialog)
 
@@ -2368,8 +2390,7 @@ def test_auto_apply_commits_a_dirty_page_on_the_next_poll_tick(qtbot: QtBot) -> 
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
     auto_apply_check_box(dialog).set_checked(True)
     page.dirty = True
 
@@ -2390,10 +2411,8 @@ def test_auto_apply_leaves_a_clean_page_alongside_a_dirty_one_untouched(qtbot: Q
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    first = FakePage("Registry")
-    second = FakePage("Markdown Rendering")
-    dialog.add_page(first)
-    dialog.add_page(second)
+    first = register_page(dialog, "Registry")
+    second = register_page(dialog, "Markdown Rendering")
     auto_apply_check_box(dialog).set_checked(True)
     second.dirty = True
 
@@ -2415,8 +2434,7 @@ def test_auto_apply_off_leaves_a_dirty_page_uncommitted(qtbot: QtBot) -> None:
     """
     dialog = SettingsDialog()
     qtbot.addWidget(dialog)
-    page = FakePage("Registry")
-    dialog.add_page(page)
+    page = register_page(dialog, "Registry")
     page.dirty = True
 
     poll_dirty_state(dialog)

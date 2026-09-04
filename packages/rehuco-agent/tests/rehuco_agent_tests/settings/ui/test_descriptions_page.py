@@ -350,20 +350,6 @@ def test_drop_changes_reverts_the_editor_check_boxes(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-def test_title_is_descriptions(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Descriptions" (#76).
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page = DescriptionsPage()
-    qtbot.addWidget(page)
-
-    assert page.title == "Descriptions"
-
-
 def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) -> None:
     """A `SettingsFrameFilter` finds the page's labeled frames and filters them by their text (#67).
 
@@ -379,7 +365,7 @@ def test_frame_filter_discovers_the_pages_frames_and_their_text(qtbot: QtBot) ->
     """
     page = DescriptionsPage()
     qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Descriptions")
     ui = page._DescriptionsPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     frame_filter.apply("engine", show_full_on_title_match=False)

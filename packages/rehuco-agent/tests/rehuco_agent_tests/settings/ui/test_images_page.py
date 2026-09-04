@@ -210,7 +210,7 @@ def test_the_surface_group_is_filterable_by_its_captions(page: ImagesPage) -> No
     * build a frame filter over the page
     * verify a term from a radio button's label is part of its gathered text
     """
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Images")
 
     assert any("full-screen" in text for text in frame_filter.field_labels())
 
@@ -698,7 +698,7 @@ def test_both_moved_in_blocks_are_filterable_frames_of_their_own(page: ImagesPag
     * filter by a term only the extensions block carries
     * verify that frame stays shown and the description-width frame hides
     """
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Images")
     ui = page._ImagesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     frame_filter.apply("reference image extensions", show_full_on_title_match=False)

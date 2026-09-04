@@ -158,22 +158,6 @@ def test_check_button_shows_not_registered_when_false(qtbot: QtBot, mocker: Mock
 
 
 @mark.windows
-def test_title_is_system_integration(qtbot: QtBot, mocker: MockerFixture) -> None:
-    """The page's category-tree title is "System Integration" (#76).
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
-    page = registry_page.RegistryPage((".zip",))
-    qtbot.addWidget(page)
-
-    assert page.title == "System Integration"
-
-
-@mark.windows
 def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot, mocker: MockerFixture) -> None:
     """A `SettingsFrameFilter` finds the page's registration frame and filters it by its text (#67).
 
@@ -188,7 +172,7 @@ def test_frame_filter_discovers_the_registration_frame_and_its_text(qtbot: QtBot
     mocker.patch(f"{WINDOWS_REGISTRATION}.is_running_from_exe", return_value=True)
     page = registry_page.RegistryPage((".zip",))
     qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "System Integration")
 
     assert any("register" in text for text in frame_filter.field_labels())
 

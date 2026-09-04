@@ -38,11 +38,6 @@ class IdentityPage(QWidget):
 
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Identity"
-
     def is_dirty(self) -> bool:
         """Whether either staged username differs from the shared settings' current value."""
         settings = shared_identity_settings()

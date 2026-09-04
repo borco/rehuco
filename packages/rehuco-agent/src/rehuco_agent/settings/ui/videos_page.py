@@ -62,11 +62,6 @@ class VideosPage(QWidget):
 
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Videos"
-
     def is_dirty(self) -> bool:
         """Whether any staged choice differs from what the shared settings currently hold."""
         settings = shared_videos_settings()

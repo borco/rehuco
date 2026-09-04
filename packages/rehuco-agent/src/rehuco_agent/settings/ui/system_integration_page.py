@@ -27,11 +27,6 @@ class SystemIntegrationPage(QWidget):
         self.__ui.setupUi(self)
         self.__tray: Final = TrayBlock(self.__ui.enabled_check_box, self.__ui.unavailable_label)
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "System Integration"
-
     def is_dirty(self) -> bool:
         """Whether the staged tray checkbox differs from what's saved."""
         return self.__tray.is_dirty()

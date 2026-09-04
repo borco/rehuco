@@ -52,11 +52,6 @@ class DescriptionsPage(QWidget):
 
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Descriptions"
-
     def is_dirty(self) -> bool:
         """Whether any staged edit differs from the shared settings' current values."""
         settings = shared_markdown_rendering_settings()

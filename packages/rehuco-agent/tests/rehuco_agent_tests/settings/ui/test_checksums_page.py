@@ -110,10 +110,9 @@ def test_satisfies_the_settings_page_protocol(page: ChecksumsPage) -> None:
     **Test steps:**
 
     * build the page
-    * verify it satisfies the `SettingsPage` protocol and titles itself "Checksums"
+    * verify it satisfies the `SettingsPage` protocol
     """
     assert isinstance(page, SettingsPage)
-    assert page.title == "Checksums"
 
 
 def test_a_fresh_page_is_not_dirty(page: ChecksumsPage) -> None:

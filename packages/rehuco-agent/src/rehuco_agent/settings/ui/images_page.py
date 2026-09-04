@@ -79,11 +79,6 @@ class ImagesPage(QWidget):
         apply_item_action_icons(self.__ui.extensions_editor)
         self.drop_changes()
 
-    @property
-    def title(self) -> str:
-        """This page's category-tree label."""
-        return "Images"
-
     def is_dirty(self) -> bool:
         """Whether any staged choice differs from what its own settings object currently holds."""
         return (

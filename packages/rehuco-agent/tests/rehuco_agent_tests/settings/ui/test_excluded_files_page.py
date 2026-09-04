@@ -355,20 +355,6 @@ def test_drop_changes_reverts_the_staged_list(qtbot: QtBot) -> None:
 # region the page shell
 
 
-def test_title_is_excluded_files(qtbot: QtBot) -> None:
-    """The page's category-tree title is "Excluded Files".
-
-    **Test steps:**
-
-    * construct the page
-    * verify ``title``
-    """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
-    assert page.title == "Excluded Files"
-
-
 def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None:
     """Each note gets the height its text needs at the width it is given, and gives it back on widening.
 
@@ -418,7 +404,7 @@ def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:
     """
     page = ExcludedFilesPage()
     qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, page.title)
+    frame_filter = SettingsFrameFilter(page, "Excluded Files")
     ui = page_ui(page)
 
     frame_filter.apply("excluded file patterns", show_full_on_title_match=False)

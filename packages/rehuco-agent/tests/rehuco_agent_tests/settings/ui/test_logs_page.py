@@ -103,16 +103,6 @@ def test_satisfies_the_settings_page_protocol(page: LogsPage) -> None:
     assert isinstance(page, SettingsPage)
 
 
-def test_is_titled_logs(page: LogsPage) -> None:
-    """The category tree calls it Logs.
-
-    **Test steps:**
-
-    * Assert the title.
-    """
-    assert page.title == "Logs"
-
-
 def test_starts_showing_the_saved_limits(page: LogsPage) -> None:
     """A freshly opened page shows what the surfaces are actually keeping.
 

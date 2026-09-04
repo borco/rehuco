@@ -85,16 +85,6 @@ def test_satisfies_the_settings_page_protocol(page: SessionPage) -> None:
     assert isinstance(page, SettingsPage)
 
 
-def test_is_titled_session(page: SessionPage) -> None:
-    """The category tree calls it Session.
-
-    **Test steps:**
-
-    * Assert the title.
-    """
-    assert page.title == "Session"
-
-
 def test_checkbox_starts_checked(page: SessionPage) -> None:
     """A freshly opened page shows the shipped default: restore on.
 
