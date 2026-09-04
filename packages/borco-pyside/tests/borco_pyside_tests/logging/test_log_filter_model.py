@@ -32,7 +32,7 @@ def make_entry(level: int, message: str, serial: int) -> LogEntry:
     :returns: the entry.
     """
     record = logging.LogRecord("test", level, __file__, 1, message, None, None)
-    return LogEntry(record, message, None, serial)
+    return LogEntry(record, message, (), serial)
 
 
 def messages_of(model: LogFilterModel) -> list[str]:

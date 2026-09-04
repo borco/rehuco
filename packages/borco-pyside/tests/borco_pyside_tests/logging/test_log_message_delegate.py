@@ -39,7 +39,7 @@ def make_entry(message: str, serial: int = 0) -> LogEntry:
     :returns: the entry.
     """
     record = logging.LogRecord("test", logging.INFO, __file__, 1, message, None, None)
-    return LogEntry(record, message, None, serial)
+    return LogEntry(record, message, (), serial)
 
 
 # endregion
