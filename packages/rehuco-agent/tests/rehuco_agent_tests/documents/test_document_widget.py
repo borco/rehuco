@@ -3042,7 +3042,7 @@ def test_a_number_after_everything_caps_an_open_surface_again(widget: DocumentWi
             LogEntry(
                 logging.LogRecord("test", logging.INFO, __file__, 1, f"note {serial}", None, None),
                 f"note {serial}",
-                None,
+                (),
                 serial,
             )
             for serial in range(5)

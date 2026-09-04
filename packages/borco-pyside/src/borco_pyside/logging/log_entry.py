@@ -24,10 +24,13 @@ class LogEntry:
     every repaint of every visible row, and a record whose arguments are mutable would render
     differently depending on when it was scrolled into view."""
 
-    scope: Hashable | None
-    """What the record is about (:class:`~.log_scope.LogScope`), or ``None`` when it is about nothing
-    in particular. Resolved when the record arrived, on the thread that logged it, because that is the
-    only moment the answer exists."""
+    scopes: tuple[Hashable, ...]
+    """Everything the record is about (:class:`~.log_scope.LogScope`), outermost first -- empty when it
+    is about nothing in particular. Resolved when the record arrived, on the thread that logged it,
+    because that is the only moment the answer exists.
+
+    A sink is routed this by **membership**, not equality: work on a document, run as a queued job, is
+    about both, and each surface is owed the record without the other losing it."""
 
     serial: int
     """Position in the run, counted from the first record the bridge ever saw and never reused.

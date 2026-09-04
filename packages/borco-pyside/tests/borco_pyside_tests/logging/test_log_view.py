@@ -34,7 +34,7 @@ def make_entry(serial: int, level: int = logging.INFO) -> LogEntry:
     """
     message = f"record {serial}"
     record = logging.LogRecord("test", level, __file__, 1, message, None, None)
-    return LogEntry(record, message, None, serial)
+    return LogEntry(record, message, (), serial)
 
 
 def fill(model: LogModel, count: int = ROW_COUNT) -> None:
@@ -328,7 +328,7 @@ def test_resizing_re_measures_the_rows(view: LogView, model: LogModel, qtbot: Qt
     """
     long_message = " ".join(["a wordy message about a file that could not be read"] * 3)
     record = logging.LogRecord("test", logging.INFO, __file__, 1, long_message, None, None)
-    model.handle_log_records([LogEntry(record, long_message, None, 0)])
+    model.handle_log_records([LogEntry(record, long_message, (), 0)])
     view.resize(400, VIEWPORT_HEIGHT)
     qtbot.wait(10)
     wide = view.rowHeight(0)

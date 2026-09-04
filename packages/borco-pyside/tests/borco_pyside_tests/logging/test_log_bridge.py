@@ -445,6 +445,108 @@ def test_an_explicit_scope_on_one_call_routes_that_record(
     assert sink.messages == ["named at the call site"]
 
 
+def test_a_record_under_two_scopes_reaches_both_their_sinks(
+    bridge: LogBridge, log: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """A sink matches its scope anywhere in a record's stack, so neither surface loses the other's.
+
+    The shape a queued job makes: work on a document, run as a job, is about both.
+
+    **Test steps:**
+
+    * attach a sink scoped to the outer key, one scoped to the inner, and an unscoped one
+    * log one record inside both scopes
+    * verify all three were given it, exactly once each
+    """
+    outer_sink = RecordingSink()
+    inner_sink = RecordingSink()
+    every_sink = RecordingSink()
+    bridge.add_scoped_sink(outer_sink, "document")
+    bridge.add_scoped_sink(inner_sink, "job")
+    bridge.add_sink(every_sink)
+
+    with LogScope.open("document"):
+        with LogScope.open("job"):
+            log.info("hashing")
+    deliver()
+
+    assert outer_sink.messages == ["hashing"]
+    assert inner_sink.messages == ["hashing"]
+    assert every_sink.messages == ["hashing"]
+
+
+def test_a_sibling_scope_s_sink_is_left_out_of_a_nested_record(
+    bridge: LogBridge, log: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """Membership widens what a sink matches; it does not stop the match from being a match.
+
+    **Test steps:**
+
+    * attach a sink scoped to a key that is neither of the two opened
+    * log a record inside both of the others
+    * verify the sink was never called
+    """
+    sink = RecordingSink()
+    bridge.add_scoped_sink(sink, "another document")
+
+    with LogScope.open("document"):
+        with LogScope.open("job"):
+            log.info("hashing")
+    deliver()
+
+    assert not sink.batches
+
+
+def test_both_scopes_of_a_nested_record_are_replayed_on_attach(bridge: LogBridge, log: logging.Logger) -> None:
+    """A surface opened after the nested work was done still shows it, whichever scope it is the log of.
+
+    The case a document closed and reopened while its job was queued rests on.
+
+    **Test steps:**
+
+    * log one record inside two nested scopes, with no sink attached
+    * attach a sink scoped to the outer key and one scoped to the inner
+    * verify each was replayed the record, once
+    """
+    with LogScope.open("document"):
+        with LogScope.open("job"):
+            log.info("hashing")
+    outer_sink = RecordingSink()
+    inner_sink = RecordingSink()
+
+    bridge.add_scoped_sink(outer_sink, "document")
+    bridge.add_scoped_sink(inner_sink, "job")
+
+    assert outer_sink.messages == ["hashing"]
+    assert inner_sink.messages == ["hashing"]
+
+
+def test_a_sink_attached_with_a_nested_record_still_pending_is_given_it_once(
+    bridge: LogBridge, log: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """Attaching drains the pending batch before replaying, so nothing arrives twice.
+
+    The invariant that keeps a reopened surface from showing the same line twice: an entry waiting for
+    the GUI thread is still in the cache, so replaying without dispatching first would deliver it now
+    and again when the batch runs.
+
+    **Test steps:**
+
+    * log a record inside two nested scopes, without letting the batch be dispatched
+    * attach a sink scoped to the inner key, then let the pending batch run
+    * verify it holds the record exactly once
+    """
+    with LogScope.open("document"):
+        with LogScope.open("job"):
+            log.info("hashing")
+
+    sink = RecordingSink()
+    bridge.add_scoped_sink(sink, "job")
+    deliver()
+
+    assert sink.messages == ["hashing"]
+
+
 def test_a_detached_sink_is_given_nothing_further(
     bridge: LogBridge, log: logging.Logger, deliver: Callable[[], None]
 ) -> None:

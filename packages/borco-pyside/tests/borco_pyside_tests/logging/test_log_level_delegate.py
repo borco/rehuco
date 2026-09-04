@@ -35,7 +35,7 @@ def make_entry(level: int, serial: int = 0, message: str = "a message") -> LogEn
     :returns: the entry.
     """
     record = logging.LogRecord("test", level, __file__, 1, message, None, None)
-    return LogEntry(record, message, None, serial)
+    return LogEntry(record, message, (), serial)
 
 
 def paint_onto_image(delegate: LogLevelDelegate, option: QStyleOptionViewItem, index: object) -> QImage:

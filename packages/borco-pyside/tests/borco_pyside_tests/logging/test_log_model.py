@@ -24,12 +24,12 @@ def make_entry(message: str, *, level: int = logging.INFO, scope: Hashable | Non
 
     :param message: the formatted message.
     :param level: the record's level.
-    :param scope: what the record is about.
+    :param scope: the one thing the record is about, as a block opening a single scope would place it.
     :param serial: its position in the run.
     :returns: the entry.
     """
     record = logging.LogRecord("test", level, __file__, 1, message, None, None)
-    return LogEntry(record, message, scope, serial)
+    return LogEntry(record, message, () if scope is None else (scope,), serial)
 
 
 def make_entries(*messages: str) -> Sequence[LogEntry]:

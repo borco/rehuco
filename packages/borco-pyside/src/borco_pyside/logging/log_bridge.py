@@ -48,7 +48,8 @@ class LogBridge(Handler):
     call, and a sink that logs while handling a batch queues another batch instead of recursing.
 
     **It routes, so surfaces do not have to filter.** A sink added with :meth:`add_sink` sees
-    everything; one added with :meth:`add_scoped_sink` sees only records made under its scope
+    everything; one added with :meth:`add_scoped_sink` sees only records made under its scope, wherever
+    that scope sits in the record's stack
     (:class:`~.log_scope.LogScope`). Every sink keeps its own history and clears it independently --
     this class holds no opinion about what any of them contains, which is why no sink is asked for a
     ``cleared`` signal.
@@ -163,10 +164,15 @@ class LogBridge(Handler):
         A scoped sink is shown neither another scope's records nor unscoped ones: it is the log *of
         that thing*, and a reader who wants the rest has the unscoped surface for it.
 
+        **Matched anywhere in the record's stack**, not only innermost: a record about a document and
+        about the job hashing it belongs to both surfaces, and neither is a filtered copy of the other
+        (:class:`~.log_entry.LogEntry`). A sink is still attached under exactly one scope -- two of them
+        would be a surface that is the log of two things, which no reader has asked for.
+
         :param sink: where to put matching entries from now on.
         :param scope: the scope to match, compared by equality (:class:`~.log_scope.LogScope`).
         """
-        self.__attach(sink, (entry for entry in self.__entries if entry.scope == scope))
+        self.__attach(sink, (entry for entry in self.__entries if scope in entry.scopes))
         self.__scoped_sinks.append((sink, scope))
 
     def remove_sink(self, sink: LogRecordSink) -> None:
@@ -204,8 +210,8 @@ class LogBridge(Handler):
         """Cache one record and wake the GUI thread if it is not already awake.
 
         Runs on whatever thread logged, under the lock `logging.Handler.handle` holds. Everything that
-        can only be answered here is answered here: the record is formatted **once**, and its scope is
-        resolved while the context that set it is still the current one.
+        can only be answered here is answered here: the record is formatted **once**, and its scopes are
+        resolved while the context that opened them is still the current one.
 
         :param record: the record ``logging`` is handing over.
         """
@@ -249,10 +255,10 @@ class LogBridge(Handler):
         """Give one scoped sink its share of a batch, if it has one.
 
         :param sink: the scoped sink.
-        :param scope: the scope it was attached under.
+        :param scope: the scope it was attached under; matched anywhere in a record's stack.
         :param batch: the whole batch, oldest first.
         """
-        entries = [entry for entry in batch if entry.scope == scope]
+        entries = [entry for entry in batch if scope in entry.scopes]
         if entries:
             sink.handle_log_records(entries)
 

@@ -54,13 +54,13 @@ TIMEOUT: Final = 5000
 
 
 class ScopeRecordingHandler(logging.Handler):
-    """Keeps the **scope** of every record it is handed, so a test can assert where one was placed.
+    """Keeps the **scopes** of every record it is handed, so a test can assert where one was placed.
 
     Resolved in ``emit`` rather than afterwards, because that is the only place it is correct: a
-    handler runs synchronously on the thread that logged, and the scope lives in that thread's context
+    handler runs synchronously on the thread that logged, and the scopes live in that thread's context
     ([[appendices.logging#scopes]]) -- which here is the worker's copy of the enqueuer's.
 
-    :param scopes: the list to append each record's scope to.
+    :param scopes: the list to append each record's scope stack to.
     """
 
     def __init__(self, scopes: list[Any]) -> None:
@@ -439,7 +439,7 @@ def test_a_run_s_records_land_on_the_resource_s_own_log(
     **Test steps:**
 
     * trigger Verify and let the job log from the worker thread
-    * check the record carried this resource's path as its scope
+    * check the record carried this resource's path, and only it, as its scope stack
     """
     mocker.patch(
         "rehuco_core.checksum_jobs.verify_checksums",
@@ -457,7 +457,7 @@ def test_a_run_s_records_land_on_the_resource_s_own_log(
         logger.removeHandler(handler)
         logger.setLevel(logging.NOTSET)
 
-    assert scopes == [INFO_PATH]
+    assert scopes == [(INFO_PATH,)]
 
 
 # endregion

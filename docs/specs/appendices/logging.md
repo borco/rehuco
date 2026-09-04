@@ -83,7 +83,7 @@ inside the filter.
 | Attached with | Sees |
 | --- | --- |
 | `add_sink(sink)` | every record, scoped or not |
-| `add_scoped_sink(sink, scope)` | only records made under that scope |
+| `add_scoped_sink(sink, scope)` | only records with that scope anywhere in their stack ([[appendices.logging#scopes]]) |
 
 A scoped sink is shown neither another scope's records nor unscoped ones — it is the log *of that
 thing*, and a reader who wants the rest has the app-wide surface for it.
