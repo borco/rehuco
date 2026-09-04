@@ -15,20 +15,36 @@ surface may ask about, :attr:`~rehuco_core.JobStatus.resumes_where_it_stopped`
 # module reads better than an arbitrary split.
 # pylint: disable=too-many-lines
 
+import logging
 from collections.abc import Callable, Iterator
 from threading import Event
 from time import monotonic, sleep
 from typing import Final
 
-from PySide6.QtCore import QItemSelectionModel, QPoint
+import cbor2
+import PySide6QtAds as QtAds
+from borco_core.logging import LOG_SCOPE_ATTRIBUTE
+from borco_pyside.logging import LogWidget
+from borco_pyside.logging.log_model import MESSAGE_COLUMN
+from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
+from PySide6.QtCore import QItemSelectionModel, QPoint, Qt
 from PySide6.QtWidgets import QMessageBox, QToolBar
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
+from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.tasks import task_queue_widget as widget_module
 from rehuco_agent.tasks.task_queue_model import STARTS_OVER_HINT
-from rehuco_agent.tasks.task_queue_widget import PAUSE_TOOLTIP, STARTS_OVER_SOME_TOOLTIP, TaskQueueWidget
-from rehuco_core import JobControl, JobState, JobStatus, TaskJobBase, TaskQueue
+from rehuco_agent.tasks.task_queue_widget import (
+    PAUSE_TOOLTIP,
+    STARTS_OVER_SOME_TOOLTIP,
+    STATE_DOCK_MANAGER_KEY,
+    STATE_VERSION,
+    STATE_VERSION_KEY,
+    TaskQueueWidget,
+)
+from rehuco_core import JobControl, JobScope, JobState, JobStatus, TaskJobBase, TaskQueue
 
 TIMEOUT: Final = 5.0
 """How long a test waits for the worker before calling it a failure, in seconds -- a deadlock
@@ -139,6 +155,28 @@ def ui_of(widget: TaskQueueWidget) -> object:
     :returns: its UI object.
     """
     return widget._TaskQueueWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def log_dock_of(widget: TaskQueueWidget) -> QtAds.CDockWidget:
+    """Reach the shell's Log sub-dock.
+
+    :param widget: the widget to read.
+    :returns: the log sub-dock.
+    """
+    return widget._TaskQueueWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def log_messages(widget: TaskQueueWidget) -> list[str]:
+    """Every message currently on the shell's log surface, top to bottom.
+
+    Read through the surface's own model rather than its rows' painted text: what a record *says* is
+    the fact these tests are about, and the table is only how it is shown.
+
+    :param widget: the widget to read.
+    :returns: the messages.
+    """
+    model = widget.log_widget.model
+    return [model.data(model.index(row, MESSAGE_COLUMN)) for row in range(model.rowCount())]
 
 
 def select_rows(widget: TaskQueueWidget, *rows: int) -> None:
@@ -336,21 +374,26 @@ def test_a_move_the_engine_clamps_leaves_the_row_where_the_engine_put_it(
 # region the toolbar
 
 
-def test_clear_done_is_the_toolbar_s_last_action(widget: TaskQueueWidget) -> None:
-    """*Clear Done* acts on the whole queue rather than the selection, so it sits in its own trailing
-    slot after the reorder group -- the last action on the toolbar, not folded into the per-selection
-    run above it (#249).
+def test_clear_done_ends_the_toolbar_s_queue_controls(widget: TaskQueueWidget) -> None:
+    """*Clear Done* acts on the whole queue rather than the selection, so it sits in its own slot after
+    the reorder group, not folded into the per-selection run above it (#249) -- and the Log toggle, which
+    acts on this shell rather than on the queue at all, gets a separated trailing slot of its own after
+    it (#276).
 
     **Test steps:**
 
     * read the toolbar's own action list
-    * verify it ends with a separator followed by Clear Done
+    * verify Clear Done follows a separator, and the Log toggle a further one
     """
-    toolbar = widget.findChildren(QToolBar)[0]
+    # direct children only: the Log sub-dock's own surface carries a toolbar of its own, and a plain
+    # recursive search finds whichever of the two Qt built first
+    toolbar = widget.findChildren(QToolBar, options=Qt.FindChildOption.FindDirectChildrenOnly)[0]
     actions = toolbar.actions()
 
-    assert actions[-1] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
+    assert actions[-1] is log_dock_of(widget).toggleViewAction()
     assert actions[-2].isSeparator()
+    assert actions[-3] is ui_of(widget).clear_done_action  # type: ignore[attr-defined]
+    assert actions[-4].isSeparator()
 
 
 # endregion
@@ -1149,6 +1192,335 @@ def test_moving_up_from_the_top_of_the_movable_run_stays_put(
     deliver()
 
     assert [status.label for status in queue.jobs()] == ["blocker", "job-0", "job-1"]
+
+
+# endregion
+
+
+# region the Log sub-dock
+
+
+@fixture
+def scoped_logger() -> Iterator[logging.Logger]:
+    """Provide a logger feeding the shared bridge and nothing else.
+
+    Propagation off, so these records reach the bridge under test and never the console or another
+    handler a different test left behind.
+
+    :returns: the logger.
+    """
+    bridge = shared_log_bridge()
+    logger = logging.getLogger("rehuco_agent.tests.task_queue_log_dock")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    logger.addHandler(bridge)
+    yield logger
+    logger.removeHandler(bridge)
+
+
+def two_finished_jobs(queue: TaskQueue, deliver: Callable[[], None]) -> None:
+    """Leave the queue holding two ``done`` jobs -- ``first`` on row 0, ``second`` on row 1.
+
+    Finished rather than running, because what these tests are about is the surface following a
+    *selection*: a settled queue is what keeps the rows still while it does.
+
+    :param queue: the queue to fill.
+    :param deliver: pumps the event loop so the snapshot lands.
+    """
+    for label in ("first", "second"):
+        job = GatedJob(label)
+        job.let_finish()
+        queue.enqueue(job)
+        wait_for_state(queue, label, JobState.DONE)
+    deliver()
+
+
+def log_a_record_for(queue: TaskQueue, logger: logging.Logger, label: str) -> None:
+    """Write one record under the scope of the queue's job named ``label``.
+
+    Logged with the scope named at the call site rather than from inside the job: what the job's own
+    ``run`` is wrapped in is the engine's contract (#271), and what this module is about is the surface
+    that reads it.
+
+    :param queue: the queue holding the job.
+    :param logger: the logger feeding the shared bridge.
+    :param label: the job whose scope to write under; also the record's message.
+    """
+    logger.info(f"about {label}", extra={LOG_SCOPE_ATTRIBUTE: JobScope(job_serial(queue, label))})
+
+
+def test_the_log_sub_dock_exists_and_starts_hidden(widget: TaskQueueWidget) -> None:
+    """The shell's Log sub-dock is built, and hidden until asked for (#276).
+
+    The table alone is what a reader who only wants progress sees.
+
+    **Test steps:**
+
+    * build the widget
+    * verify the sub-dock exists, hosts this shell's ``log_widget``, and its toggle reports unchecked
+    """
+    assert isinstance(log_dock_of(widget).widget(), LogWidget)
+    assert widget.log_widget is log_dock_of(widget).widget()
+    assert log_dock_of(widget).toggleViewAction().isChecked() is False
+
+
+def test_the_log_sub_dock_toggle_carries_the_log_view_icon(widget: TaskQueueWidget) -> None:
+    """Its toggle wears the same log icon the window's and every resource's do (#276).
+
+    The same icon for all three on purpose: they are the same surface about different subjects
+    ([[appendices.logging#surfaces]]).
+
+    **Test steps:**
+
+    * find the ``ActionIconThemeHandler`` instances parented to the toggle action
+    * verify one was built from the log icon's SVG bytes
+    """
+    handlers = log_dock_of(widget).toggleViewAction().findChildren(ActionIconThemeHandler)
+    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert read_resource_bytes(LOG_VIEW_ICON_RESOURCE) in svgs
+
+
+def test_the_toggle_shows_the_hidden_sub_dock(widget: TaskQueueWidget) -> None:
+    """Asking for the log is what puts it on screen (#276).
+
+    **Test steps:**
+
+    * trigger the sub-dock's toggle action
+    * verify the dock is no longer closed
+    """
+    log_dock_of(widget).toggleViewAction().trigger()
+
+    assert log_dock_of(widget).isClosed() is False
+
+
+def test_nothing_selected_is_the_log_of_nothing(
+    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """With no row selected the surface stays empty, whatever the jobs have written (#276).
+
+    **Test steps:**
+
+    * settle two jobs and log a record under each one's scope
+    * verify the surface holds nothing
+    """
+    two_finished_jobs(queue, deliver)
+    log_a_record_for(queue, scoped_logger, "first")
+    log_a_record_for(queue, scoped_logger, "second")
+    deliver()
+
+    assert log_messages(widget) == []
+
+
+def test_selecting_a_row_shows_that_job_s_replayed_records(
+    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """Selecting a job attaches the surface to its scope and replays what that job wrote (#276).
+
+    The records were made *before* the row was ever selected and both jobs have already finished, which
+    is the case that makes replay-on-attach load-bearing here ([[appendices.logging#replay]]).
+
+    **Test steps:**
+
+    * settle two jobs and log a record under each one's scope
+    * select the first row
+    * verify only that job's record is shown
+    """
+    two_finished_jobs(queue, deliver)
+    log_a_record_for(queue, scoped_logger, "first")
+    log_a_record_for(queue, scoped_logger, "second")
+    deliver()
+
+    select_rows(widget, 0)
+
+    assert log_messages(widget) == ["about first"]
+
+
+def test_selecting_another_row_swaps_the_surface(
+    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """The surface follows the selection rather than accumulating the jobs it has visited (#276).
+
+    Unlike a renamed resource's, these rows do not stay: this is a different job, not the same one under
+    a new name.
+
+    **Test steps:**
+
+    * settle two jobs and log a record under each one's scope
+    * select the first row, then the second
+    * verify only the second job's record is shown
+    """
+    two_finished_jobs(queue, deliver)
+    log_a_record_for(queue, scoped_logger, "first")
+    log_a_record_for(queue, scoped_logger, "second")
+    deliver()
+
+    select_rows(widget, 0)
+    select_rows(widget, 1)
+
+    assert log_messages(widget) == ["about second"]
+
+
+def test_clearing_the_selection_empties_the_surface(
+    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """Selecting nothing is the log of nothing -- the current index left behind does not count (#276).
+
+    ``clearSelection`` rather than ``clear``: it leaves the current index exactly where it was, which is
+    the case a surface reading only that index would get wrong.
+
+    **Test steps:**
+
+    * settle two jobs, log under the first's scope, and select its row
+    * clear the selection, then log under that same scope again
+    * verify the surface emptied and stayed empty
+    """
+    two_finished_jobs(queue, deliver)
+    log_a_record_for(queue, scoped_logger, "first")
+    deliver()
+    select_rows(widget, 0)
+    assert log_messages(widget) == ["about first"]
+
+    ui_of(widget).task_view.selectionModel().clearSelection()  # type: ignore[attr-defined]
+    log_a_record_for(queue, scoped_logger, "first")
+    deliver()
+
+    assert log_messages(widget) == []
+
+
+def test_the_surface_follows_a_selected_job_live(
+    widget: TaskQueueWidget, queue: TaskQueue, scoped_logger: logging.Logger, deliver: Callable[[], None]
+) -> None:
+    """A record written while a row is selected lands on the surface without re-selecting it (#276).
+
+    **Test steps:**
+
+    * settle two jobs and select the first row
+    * log a record under each job's scope
+    * verify only the selected job's record arrived
+    """
+    two_finished_jobs(queue, deliver)
+    select_rows(widget, 0)
+
+    log_a_record_for(queue, scoped_logger, "first")
+    log_a_record_for(queue, scoped_logger, "second")
+    deliver()
+
+    assert log_messages(widget) == ["about first"]
+
+
+def test_the_surface_is_capped_at_the_per_resource_limit(queue: TaskQueue, qtbot: QtBot) -> None:
+    """A job's surface is capped like a resource's, not like the app's (#276).
+
+    Its lifetime shape is a document's -- one subject's records, for as long as that subject is on
+    screen -- so it reads
+    :attr:`~rehuco_agent.settings.logs_settings.LogsSettings.effective_resource_limit`.
+
+    **Test steps:**
+
+    * set the two configured limits so the per-resource one is the effective cap
+    * build a widget
+    * verify its surface carries that cap
+    """
+    settings = shared_logs_settings()
+    settings.app_limit = 500
+    settings.resource_limit = 17
+
+    built = TaskQueueWidget(queue)
+    qtbot.addWidget(built)
+
+    assert built.log_widget.limit == 17
+
+
+def test_the_surface_is_re_capped_as_either_limit_changes(widget: TaskQueueWidget) -> None:
+    """Lowering either configured limit reaches a surface that is already built (#236, #276).
+
+    **Test steps:**
+
+    * lower the per-resource limit, then hold it down with a lower app limit
+    * verify the surface followed both
+    """
+    settings = shared_logs_settings()
+    settings.app_limit = 500
+
+    settings.resource_limit = 40
+    assert widget.log_widget.limit == 40
+
+    settings.app_limit = 12
+    assert widget.log_widget.limit == 12
+
+
+def test_the_nested_layout_round_trips(queue: TaskQueue, qtbot: QtBot) -> None:
+    """A shown Log sub-dock is shown again in a shell restored from the saved blob (#276).
+
+    **Test steps:**
+
+    * show the log sub-dock on one shell and save its state
+    * build a second shell and restore that state into it
+    * verify the restore reported success and the second shell's log dock is open
+    """
+    source = TaskQueueWidget(queue)
+    qtbot.addWidget(source)
+    log_dock_of(source).toggleView(True)
+    state = source.save_state()
+
+    restored = TaskQueueWidget(queue)
+    qtbot.addWidget(restored)
+
+    assert restored.restore_state(state) is True
+    assert log_dock_of(restored).isClosed() is False
+
+
+def test_an_unusable_blob_keeps_the_built_layout(widget: TaskQueueWidget) -> None:
+    """An empty, malformed or foreign-versioned blob is refused, leaving the log hidden as built (#276).
+
+    Restoring one would succeed and then hide whichever sub-docks it had never heard of, which for a
+    two-dock shell is a blank Tasks dock.
+
+    **Test steps:**
+
+    * hand the widget an empty blob, a malformed one, one that is not a mapping at all, one carrying a
+      foreign version, and two of the right version whose layout bytes are unusable
+    * verify each was refused and the log dock is still closed
+    """
+    foreign = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION + 1, STATE_DOCK_MANAGER_KEY: b"whatever"})
+    # the right version, but nothing to restore from: an absent key, and a value of the wrong type.
+    # Handing either to ``restoreState`` is what Qt logs a spurious "Input data is corrupted" for
+    missing_layout = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION})
+    wrong_type_layout = cbor2.dumps({STATE_VERSION_KEY: STATE_VERSION, STATE_DOCK_MANAGER_KEY: 42})
+
+    assert widget.restore_state(b"") is False
+    assert widget.restore_state(b"not cbor at all") is False
+    assert widget.restore_state(cbor2.dumps(["not", "a", "mapping"])) is False
+    assert widget.restore_state(foreign) is False
+    assert widget.restore_state(missing_layout) is False
+    assert widget.restore_state(wrong_type_layout) is False
+    assert log_dock_of(widget).isClosed() is True
+
+
+def test_the_log_surface_s_own_filters_survive_a_restore(queue: TaskQueue, qtbot: QtBot) -> None:
+    """What the reader narrowed the log to is part of this shell's state (#276).
+
+    Restored ahead of the version guard, since a blob whose *dock set* no longer matches is still a
+    perfectly good answer about one widget's filters.
+
+    **Test steps:**
+
+    * turn the debug band off on one shell and save its state
+    * restore that state into a second shell
+    * verify the band came back off
+    """
+    source = TaskQueueWidget(queue)
+    qtbot.addWidget(source)
+    source_ui = source.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_ui.show_debugs_action.setChecked(False)
+    state = source.save_state()
+
+    restored = TaskQueueWidget(queue)
+    qtbot.addWidget(restored)
+    restored.restore_state(state)
+
+    restored_ui = restored.log_widget._LogWidget__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert restored_ui.show_debugs_action.isChecked() is False
 
 
 # endregion

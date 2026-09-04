@@ -4029,4 +4029,58 @@ def test_restored_unfinished_work_comes_back_held_unless_resuming_is_asked_for(
     assert restore.call_args.kwargs["unfinished_state"] is JobState.PAUSED
 
 
+def test_close_event_saves_the_tasks_dock_s_nested_layout(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Closing the app saves the Tasks dock's own sub-dock layout, not just the outer one (#276).
+
+    The outer manager's ``saveState()`` records where the Tasks dock sits; what its *nested* shell looks
+    like inside is a blob of the shell's own.
+
+    **Test steps:**
+
+    * construct ``MainWindow``
+    * mock ``MainWindowSettings.save`` and dispatch a close event
+    * verify a non-empty task queue state was recorded
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    save = mocker.patch.object(MainWindowSettings, "save")
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    window_settings = window._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    assert window_settings.task_queue_state != b""
+    save.assert_called_once()
+
+
+def test_the_tasks_dock_s_nested_layout_is_restored_on_start(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A restart brings the Tasks dock's Log sub-dock back open if that is how it was left (#276).
+
+    **Test steps:**
+
+    * open the Log sub-dock on one window's Tasks shell and save that shell's state
+    * seed ``MainWindowSettings.load`` with it and construct a second window
+    * verify the sub-dock came back open
+    """
+    source = MainWindow()
+    qtbot.addWidget(source)
+    source_widget = task_queue_dock(source).widget()
+    source_log_dock = source_widget._TaskQueueWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    source_log_dock.toggleView(True)
+    saved = source_widget.save_state()
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.task_queue_state = saved
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    widget = task_queue_dock(window).widget()
+    log_dock = widget._TaskQueueWidget__log_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert log_dock.isClosed() is False
+
+
 # endregion

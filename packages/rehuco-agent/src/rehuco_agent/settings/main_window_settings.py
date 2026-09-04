@@ -12,6 +12,7 @@ OUTER_DOCKS_STATE_KEY: Final = "outer_docks_state"
 OUTER_DOCKS_STATE_VERSION_KEY: Final = "outer_docks_state_version"
 TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
+TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
 
 OUTER_DOCKS_STATE_VERSION: Final = 3
 """Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the central
@@ -66,6 +67,15 @@ class MainWindowSettings:
     (:meth:`~borco_pyside.logging.LogWidget.restore_state`). A blob written before a filter existed is
     still a perfectly good answer about the others."""
 
+    task_queue_state: bytes = field(default=b"")
+    """The Tasks dock's **nested** shell blob (#276): its two sub-docks' layout and its log surface's own
+    filters, as :meth:`~rehuco_agent.tasks.TaskQueueWidget.save_state` writes them.
+
+    Outside :data:`OUTER_DOCKS_STATE_VERSION`'s guard for the same reason
+    :attr:`log_widget_state` is -- that version is about the *outer* dock set, and this blob carries a
+    version of its own for the inner one
+    (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`)."""
+
     def load(self, settings: QSettings) -> None:
         """Replace the current geometry, outer dock state, and toolbar state with what's in
         persistent storage.
@@ -88,6 +98,9 @@ class MainWindowSettings:
 
         log_widget_state = cast(QByteArray, settings.value(LOG_WIDGET_STATE_KEY, QByteArray(), type=QByteArray))
         self.log_widget_state = bytes(log_widget_state.data())
+
+        task_queue_state = cast(QByteArray, settings.value(TASK_QUEUE_STATE_KEY, QByteArray(), type=QByteArray))
+        self.task_queue_state = bytes(task_queue_state.data())
         settings.endGroup()
 
     def save(self, settings: QSettings) -> None:
@@ -101,6 +114,7 @@ class MainWindowSettings:
         settings.setValue(OUTER_DOCKS_STATE_VERSION_KEY, OUTER_DOCKS_STATE_VERSION)
         settings.setValue(TOOLBARS_STATE_KEY, QByteArray(self.toolbars_state))
         settings.setValue(LOG_WIDGET_STATE_KEY, QByteArray(self.log_widget_state))
+        settings.setValue(TASK_QUEUE_STATE_KEY, QByteArray(self.task_queue_state))
         settings.endGroup()
 
 
