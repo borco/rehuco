@@ -9,6 +9,7 @@ that result and surfacing the full text in a tooltip while shortened.
 from typing import Final
 
 from borco_pyside.widgets import ElidedLabel
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -93,6 +94,24 @@ def test_href_escapes_html_special_characters(qtbot: QtBot) -> None:
     assert "&lt;" in label.text()
     assert "&quot;" in label.text()
     assert '<b"c' not in label.text()
+
+
+def test_text_without_href_is_not_html_escaped(qtbot: QtBot) -> None:
+    """With no href, the text is plain -- special characters render literally, not escaped.
+
+    **Test steps:**
+
+    * build a wide label and set a value carrying ``&`` and ``<`` with no href
+    * verify the text is rendered verbatim as plain text -- neither escaped nor parsed as markup
+    """
+    label = ElidedLabel()
+    qtbot.addWidget(label)
+    label.setFixedWidth(4000)
+
+    label.set_text("Eye & Mouth <b> Nose")
+
+    assert label.text() == "Eye & Mouth <b> Nose"
+    assert label.textFormat() == Qt.TextFormat.PlainText
 
 
 def test_minimum_width_is_zero_so_it_never_forces_its_layout_wider(qtbot: QtBot) -> None:
