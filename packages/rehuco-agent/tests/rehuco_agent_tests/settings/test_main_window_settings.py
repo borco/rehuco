@@ -169,4 +169,62 @@ def test_load_defaults_to_empty_toolbars_state_when_nothing_was_saved(settings: 
     assert window_settings.toolbars_state == b""
 
 
+def test_save_then_load_round_trips_the_task_queue_state(settings: FakeSettings) -> None:
+    """Saving and reloading reproduces the Tasks dock's nested-shell bytes (#276).
+
+    **Test steps:**
+
+    * set some task queue state bytes and save
+    * load into a fresh instance from the same settings stand-in
+    * verify the state came back unchanged
+    """
+    window_settings = MainWindowSettings(task_queue_state=b"some-task-queue-blob")
+
+    window_settings.save(settings)  # type: ignore[arg-type]
+
+    restored = MainWindowSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.task_queue_state == b"some-task-queue-blob"
+
+
+def test_the_task_queue_state_survives_a_foreign_outer_docks_version(settings: FakeSettings) -> None:
+    """It is kept when the *outer* dock version is discarded, because it carries a version of its own.
+
+    That guard is about the outer dock set; the nested shell's own blob answers for itself
+    (:data:`~rehuco_agent.tasks.task_queue_widget.STATE_VERSION`), so dropping it here would throw away a
+    perfectly readable answer.
+
+    **Test steps:**
+
+    * save both states, then overwrite the stored outer version
+    * load into a fresh instance
+    * verify the outer state is gone and the task queue state is not
+    """
+    saved = MainWindowSettings(outer_docks_state=b"stale-blob", task_queue_state=b"some-task-queue-blob")
+    saved.save(settings)  # type: ignore[arg-type]
+    settings.setValue("main_window/outer_docks_state_version", OUTER_DOCKS_STATE_VERSION + 1)
+
+    restored = MainWindowSettings()
+    restored.load(settings)  # type: ignore[arg-type]
+
+    assert restored.outer_docks_state == b""
+    assert restored.task_queue_state == b"some-task-queue-blob"
+
+
+def test_load_defaults_to_empty_task_queue_state_when_nothing_was_saved(settings: FakeSettings) -> None:
+    """Loading from settings that never had a task queue state saved yields empty bytes.
+
+    **Test steps:**
+
+    * load into a fresh instance from an empty settings stand-in
+    * verify the task queue state is empty
+    """
+    window_settings = MainWindowSettings()
+
+    window_settings.load(settings)  # type: ignore[arg-type]
+
+    assert window_settings.task_queue_state == b""
+
+
 # pylint: enable=duplicate-code

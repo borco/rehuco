@@ -186,7 +186,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__task_queue: Final = TaskQueue()
         self.__task_queue_store: Final = TaskQueueStore(self.__task_queue)
         self.__restore_task_queue()
-        self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue)
+        self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue, stylesheet_host=self.__dock_manager)
         self.__task_queue_widget.attach()
 
         # the app's one rename coordinator: every document renames through it and every job that reads
@@ -217,6 +217,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             self.restoreGeometry(QByteArray(self.__window_settings.geometry))
         self.restoreState(QByteArray(self.__window_settings.toolbars_state), TOOLBARS_STATE_VERSION)
         self.__log_widget.restore_state(self.__window_settings.log_widget_state)
+        self.__task_queue_widget.restore_state(self.__window_settings.task_queue_state)
 
         self.__recent_files: Final = RecentFilesSettings()
         self.__recent_files.load(persistent_settings())
@@ -993,6 +994,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__window_settings.toolbars_state = bytes(self.saveState(TOOLBARS_STATE_VERSION).data())
         self.__window_settings.outer_docks_state = bytes(self.__dock_manager.saveState().data())
         self.__window_settings.log_widget_state = self.__log_widget.save_state()
+        self.__window_settings.task_queue_state = self.__task_queue_widget.save_state()
         self.__window_settings.save(persistent_settings())
 
     def __save_session(self) -> None:
