@@ -6,7 +6,7 @@ from typing import Final
 import pytest
 from pytest import fixture
 from pytest_mock import MockerFixture
-from rehuco_core import plan_screenshot_renumbering, renumber_screenshots
+from rehuco_core import UnlinkDeleter, delete_screenshot, plan_screenshot_renumbering, renumber_screenshots
 from rehuco_core.rehu_screenshot_ordering import TEMP_SUFFIX
 
 DIRECTORY: Final = Path("/fake/tutorial")
@@ -283,6 +283,67 @@ def test_a_rollback_that_also_fails_still_raises_the_original_error(renames: Ren
 
     assert len(renames.parked) == 2
     assert not renames.claimed
+
+
+# endregion
+
+# region delete_screenshot / Deleter (#265)
+
+
+class RecordingDeleter:
+    """A :class:`~rehuco_core.Deleter` that records what it was asked to delete instead of touching disk."""
+
+    def __init__(self) -> None:
+        self.deleted: list[Path] = []
+
+    def delete(self, path: Path) -> None:
+        """Record ``path`` rather than removing it."""
+        self.deleted.append(path)
+
+
+def test_delete_screenshot_goes_through_the_deleter() -> None:
+    """The choice of how a file disappears is entirely the injected deleter's.
+
+    **Test steps:**
+
+    * delete a screenshot through a recording deleter
+    * verify the deleter, not the filesystem, was asked
+    """
+    deleter = RecordingDeleter()
+
+    delete_screenshot(DIRECTORY / "info00.jpg", deleter)
+
+    assert deleter.deleted == [DIRECTORY / "info00.jpg"]
+
+
+def test_the_default_deleter_unlinks(mocker: MockerFixture) -> None:
+    """Absent an injected deleter, a screenshot is removed the plain, permanent way.
+
+    **Test steps:**
+
+    * delete a screenshot with no deleter given
+    * verify ``Path.unlink`` was called on it
+    """
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+
+    delete_screenshot(DIRECTORY / "info00.jpg")
+
+    unlink.assert_called_once_with(DIRECTORY / "info00.jpg")
+
+
+def test_unlink_deleter_unlinks_directly(mocker: MockerFixture) -> None:
+    """:class:`~rehuco_core.UnlinkDeleter` is a thin, permanent wrapper over ``Path.unlink``.
+
+    **Test steps:**
+
+    * delete a screenshot through a fresh ``UnlinkDeleter``
+    * verify ``Path.unlink`` was called on it
+    """
+    unlink = mocker.patch.object(Path, "unlink", autospec=True)
+
+    UnlinkDeleter().delete(DIRECTORY / "info00.jpg")
+
+    unlink.assert_called_once_with(DIRECTORY / "info00.jpg")
 
 
 # endregion

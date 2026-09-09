@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Final
 
 from PIL import UnidentifiedImageError
-from pytest import mark, param
+from pytest import mark, param, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
     SCREENSHOT_NAME_PATTERNS,
@@ -13,9 +13,11 @@ from rehuco_core import (
     ScreenshotRename,
     ScreenshotSkipReason,
     UnconvertedScreenshot,
+    convert_screenshot,
     is_legacy_screenshot,
     scan_tc_screenshot_files,
     scan_tc_screenshots,
+    scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
     screenshot_name_patterns_state,
 )
@@ -46,6 +48,15 @@ def mock_image_sizes(mocker: MockerFixture, sizes: dict[str, tuple[int, int]]) -
         return image
 
     mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=open_side_effect)
+
+
+def mock_existing(mocker: MockerFixture, present: set[str]) -> None:
+    """Mock ``Path.exists`` so only the names in ``present`` appear to exist.
+
+    :param mocker: pytest-mock fixture.
+    :param present: the filenames that should report as existing.
+    """
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self.name in present)
 
 
 # region scan_tc_screenshots (the rename plan)
@@ -389,6 +400,240 @@ def test_screenshot_files_is_empty_for_a_missing_directory(mocker: MockerFixture
     mocker.patch.object(Path, "iterdir", side_effect=OSError)
 
     assert not scan_tc_screenshot_files(DIRECTORY, STEM)
+
+
+# endregion
+
+# region scan_unconverted_screenshots (the images dock's second row, #265)
+
+
+def test_pattern_matched_images_not_yet_numbered_are_listed(mocker: MockerFixture) -> None:
+    """A pattern-matched image with no ``<stem>NN`` slot yet is the whole point of this scan.
+
+    **Test steps:**
+
+    * mock the directory to hold two un-numbered, pattern-matched images
+    * scan
+    * verify both come back, resolved against the directory
+    """
+    mock_directory(mocker, ["cover.jpg", "sample-01.png"])
+
+    assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "cover.jpg", DIRECTORY / "sample-01.png"]
+
+
+def test_already_numbered_files_are_left_out(mocker: MockerFixture) -> None:
+    """A file already sitting in a ``<stem>NN`` slot is not un-converted -- it has nothing to convert.
+
+    **Test steps:**
+
+    * mock the directory to hold a numbered file beside an un-numbered one
+    * scan
+    * verify only the un-numbered file is listed
+    """
+    mock_directory(mocker, ["info00.jpg", "sample-01.png"])
+
+    assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "sample-01.png"]
+
+
+def test_unrecognized_and_non_image_files_are_left_out(mocker: MockerFixture) -> None:
+    """A name no pattern claims, or a non-image extension, is not a screenshot at all.
+
+    **Test steps:**
+
+    * mock the directory to hold one recognized image beside an unrelated file and a non-image extension
+    * scan
+    * verify only the recognized image is listed
+    """
+    mock_directory(mocker, ["sample-00.jpg", "random.jpg", "sample-00.txt"])
+
+    assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "sample-00.jpg"]
+
+
+def test_results_come_back_in_natural_sort_order(mocker: MockerFixture) -> None:
+    """The listing is naturally sorted, so ``file-2`` comes before ``file-10``.
+
+    **Test steps:**
+
+    * mock the directory to hold the two out of natural-sort listing order
+    * scan
+    * verify the natural order rather than the listing order
+    """
+    mock_directory(mocker, ["file-10.jpg", "file-2.jpg"])
+
+    assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "file-2.jpg", DIRECTORY / "file-10.jpg"]
+
+
+def test_missing_directory_lists_nothing(mocker: MockerFixture) -> None:
+    """A missing/unreadable directory scans to an empty list, not a crash.
+
+    **Test steps:**
+
+    * mock ``Path.iterdir`` to raise ``OSError``
+    * scan
+    * verify the result is empty
+    """
+    mocker.patch.object(Path, "iterdir", side_effect=OSError)
+
+    assert not scan_unconverted_screenshots(DIRECTORY, STEM)
+
+
+# endregion
+
+# region convert_screenshot (single-file conversion, #265)
+
+
+def test_convert_takes_its_own_legacy_number_when_the_slot_is_free(mocker: MockerFixture) -> None:
+    """With no ``<stem>NN`` file already on that slot, conversion writes the number the legacy name
+    carries -- the ordinary case.
+
+    **Test steps:**
+
+    * mock a directory holding only the un-converted candidate
+    * convert it
+    * verify it is renamed onto the slot its own name carries
+    """
+    mock_directory(mocker, ["sample-01.png"])
+    mock_existing(mocker, set())
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    result = convert_screenshot(DIRECTORY / "sample-01.png", STEM)
+
+    assert result == DIRECTORY / "info01.png"
+    rename.assert_called_once_with(DIRECTORY / "sample-01.png", DIRECTORY / "info01.png")
+
+
+def test_convert_appends_past_the_end_when_its_own_slot_is_taken(mocker: MockerFixture) -> None:
+    """The two-click thumbnail fix: with ``info00`` already on disk, converting ``sample-00`` cannot
+    reuse slot 0, so it lands one past the current highest instead of being refused.
+
+    **Test steps:**
+
+    * mock a directory holding ``info00.jpg`` (slot 0 taken) beside ``sample-00.png``
+    * convert the un-converted file
+    * verify it lands on slot 1, not slot 0
+    """
+    mock_directory(mocker, ["info00.jpg", "sample-00.png"])
+    mock_existing(mocker, {"info00.jpg"})
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    result = convert_screenshot(DIRECTORY / "sample-00.png", STEM)
+
+    assert result == DIRECTORY / "info01.png"
+    rename.assert_called_once_with(DIRECTORY / "sample-00.png", DIRECTORY / "info01.png")
+
+
+def test_convert_lands_on_a_slot_a_delete_just_freed(mocker: MockerFixture) -> None:
+    """Deleting ``info00`` first and then converting ``sample-00`` lands it right back on slot 0 -- the
+    freed slot is free, not merely `not yet seen`.
+
+    **Test steps:**
+
+    * mock a directory holding only ``sample-00.png`` (``info00`` already gone)
+    * convert it
+    * verify it takes slot 0
+    """
+    mock_directory(mocker, ["sample-00.png"])
+    mock_existing(mocker, set())
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    result = convert_screenshot(DIRECTORY / "sample-00.png", STEM)
+
+    assert result == DIRECTORY / "info00.png"
+    rename.assert_called_once_with(DIRECTORY / "sample-00.png", DIRECTORY / "info00.png")
+
+
+def test_convert_appends_a_legacy_number_that_is_out_of_range(mocker: MockerFixture) -> None:
+    """A three-digit legacy number is the file the whole-directory conversion left for hand correction
+    ([[acquisition-tooling#tc-to-rehu]]): it is not a free slot, so Convert appends rather than writing
+    an ``info100`` that no reader -- numbered or pattern-matched -- would list again.
+
+    **Test steps:**
+
+    * mock ``info00.jpg`` beside ``sample-100.jpg``
+    * convert the three-digit file
+    * verify it lands one past the end, not on ``info100``
+    """
+    mock_directory(mocker, ["info00.jpg", "sample-100.jpg"])
+    mock_existing(mocker, {"info00.jpg"})
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    result = convert_screenshot(DIRECTORY / "sample-100.jpg", STEM)
+
+    assert result == DIRECTORY / "info01.jpg"
+    rename.assert_called_once_with(DIRECTORY / "sample-100.jpg", DIRECTORY / "info01.jpg")
+
+
+def test_convert_refuses_when_the_numbered_set_is_full(mocker: MockerFixture) -> None:
+    """Appending past ``info99`` would need a three-digit name, so it is refused instead of written.
+
+    **Test steps:**
+
+    * mock ``info99.jpg`` beside a ``sample-99.png`` whose own slot it takes
+    * attempt to convert
+    * verify it is refused and nothing is renamed
+    """
+    mock_directory(mocker, ["info99.jpg", "sample-99.png"])
+    mock_existing(mocker, {"info99.jpg"})
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    with raises(ValueError, match="full"):
+        convert_screenshot(DIRECTORY / "sample-99.png", STEM)
+    rename.assert_not_called()
+
+
+def test_convert_refuses_while_the_resource_is_still_a_tc(mocker: MockerFixture) -> None:
+    """A single screenshot is not converted ahead of the resource it belongs to.
+
+    **Test steps:**
+
+    * mock the directory-scoped ``.tc`` record as present
+    * attempt to convert
+    * verify it is refused and nothing is renamed
+    """
+    mock_directory(mocker, ["sample-01.png"])
+    mock_existing(mocker, {"info.tc"})
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    with raises(PermissionError):
+        convert_screenshot(DIRECTORY / "sample-01.png", STEM)
+    rename.assert_not_called()
+
+
+def test_convert_refuses_a_name_no_pattern_recognizes(mocker: MockerFixture) -> None:
+    """A name none of the patterns claim has no legacy number to preserve.
+
+    **Test steps:**
+
+    * mock a directory holding an unrecognized name
+    * attempt to convert it
+    * verify it is refused and nothing is renamed
+    """
+    mock_directory(mocker, ["random.jpg"])
+    mock_existing(mocker, set())
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    with raises(LookupError):
+        convert_screenshot(DIRECTORY / "random.jpg", STEM)
+    rename.assert_not_called()
+
+
+def test_convert_refuses_a_target_already_on_disk(mocker: MockerFixture) -> None:
+    """A ``<stem>NN`` name already on disk is never overwritten, even when nothing upstream expected
+    the collision.
+
+    **Test steps:**
+
+    * mock the chosen destination as already present, despite an empty numbered set
+    * attempt to convert
+    * verify it is refused and nothing is renamed
+    """
+    mock_directory(mocker, ["sample-01.png"])
+    mock_existing(mocker, {"info01.png"})
+    rename = mocker.patch.object(Path, "rename", autospec=True)
+
+    with raises(FileExistsError):
+        convert_screenshot(DIRECTORY / "sample-01.png", STEM)
+    rename.assert_not_called()
 
 
 # endregion
