@@ -15,6 +15,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
 
+from rehuco_core import Deleter
+
 
 class ImageOrganizer(Protocol):
     """What the curation editor needs to rearrange a resource's screenshots on disk (#72).
@@ -33,12 +35,23 @@ class ImageOrganizer(Protocol):
             already means "nothing needed renaming" -- a legitimate success.
         """
 
-    def remove(self, path: Path, remaining: Sequence[Path]) -> dict[str, str]:  # pyright: ignore[reportReturnType]
+    @property
+    def deletes_to_trash(self) -> bool:  # pyright: ignore[reportReturnType]
+        """Whether the next :meth:`remove` called with no explicit ``deleter`` will try to send the
+        file to a Recycle Bin / Trash, rather than unlinking it outright -- what the confirm dialog
+        reads to say which of the two is about to happen (#291)."""
+
+    def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete one screenshot and close the gap it leaves.
 
         :param path: the screenshot to delete.
         :param remaining: every other screenshot, in the order wanted.
+        :param deleter: how ``path`` is actually removed; ``None`` leaves the choice to the
+            organizer's own configured default (:attr:`deletes_to_trash`) -- a caller passes one
+            explicitly only to override it, e.g. a permanent-delete retry after a
+            `~rehuco_core.NoTrashBinError` (#291).
         :returns: ``{old filename: new filename}`` for each survivor actually renamed.
         :raises OSError: if the delete or the renumbering that follows it failed, or the
             rearrangement was refused -- the same rule, and for the same reason, as :meth:`reorder`.
         """
+        ...  # pylint: disable=unnecessary-ellipsis  # a long signature is what makes an inline pyright-ignore too long

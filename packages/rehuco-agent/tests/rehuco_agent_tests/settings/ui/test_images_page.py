@@ -9,13 +9,22 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.fields.widgets.image_lightbox import ImageViewerMode
-from rehuco_agent.settings import image_viewer_settings, markdown_rendering_settings, reference_images_settings
+from rehuco_agent.settings import (
+    image_viewer_settings,
+    markdown_rendering_settings,
+    reference_images_settings,
+    screenshot_deletion_settings,
+)
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
 from rehuco_agent.settings.markdown_rendering_settings import (
     MarkdownRenderingSettings,
     shared_markdown_rendering_settings,
 )
 from rehuco_agent.settings.reference_images_settings import ReferenceImagesSettings, shared_reference_images_settings
+from rehuco_agent.settings.screenshot_deletion_settings import (
+    ScreenshotDeletionSettings,
+    shared_screenshot_deletion_settings,
+)
 from rehuco_agent.settings.ui import images_page
 from rehuco_agent.settings.ui.images_page import ImagesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
@@ -56,15 +65,16 @@ def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
     """Stand in for ``persistent_settings()`` so save/load never touch real storage.
 
     Patched on every module holding its own reference to it: the page (used by
-    :meth:`ImagesPage.save_changes`) and each of the three settings modules whose shared instance the
-    page reads, so one store backs the lazy loads and the saves alike. Three, because this page holds
-    every image-shaped setting whoever owns it -- the viewer's own, the description width cap, and the
-    reference-images extension list.
+    :meth:`ImagesPage.save_changes`) and each of the four settings modules whose shared instance the
+    page reads, so one store backs the lazy loads and the saves alike. Four, because this page holds
+    every image-shaped setting whoever owns it -- the viewer's own, the description width cap, the
+    reference-images extension list, and the Recycle Bin choice for a deleted screenshot (#291).
     """
     fake = FakeSettings()
     mocker.patch.object(image_viewer_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(markdown_rendering_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=fake)
     mocker.patch.object(images_page, "persistent_settings", return_value=fake)
     return fake
 
@@ -76,6 +86,7 @@ def clear_shared_instance_cache() -> Iterator[None]:
         shared_image_viewer_settings,
         shared_markdown_rendering_settings,
         shared_reference_images_settings,
+        shared_screenshot_deletion_settings,
     ):
         shared.cache_clear()
     yield
@@ -83,6 +94,7 @@ def clear_shared_instance_cache() -> Iterator[None]:
         shared_image_viewer_settings,
         shared_markdown_rendering_settings,
         shared_reference_images_settings,
+        shared_screenshot_deletion_settings,
     ):
         shared.cache_clear()
 
@@ -687,6 +699,87 @@ def test_the_wrapping_extensions_note_is_never_clipped_at_any_width(page: Images
         ui.main_layout.activate()
         assert label.height() >= label.heightForWidth(label.width()), f"note clipped at page width {width}"
         assert first_seen.setdefault(width, label.height()) == label.height(), f"height ratcheted at {width}"
+
+
+# region deleting screenshots (#291)
+
+
+def recycle_bin_check_box(page: ImagesPage) -> QCheckBox:
+    """The page's Recycle Bin toggle.
+
+    :param page: the page under test.
+    :returns: the check box staging whether a delete goes through the Recycle Bin.
+    """
+    box = page.findChild(QCheckBox, "use_recycle_bin_check_box")
+    assert isinstance(box, QCheckBox)
+    return box
+
+
+def test_the_page_starts_on_the_saved_recycle_bin_choice(page: ImagesPage) -> None:
+    """A fresh page shows the shared settings' choice, on by default.
+
+    **Test steps:**
+
+    * build a page over settings that were never saved
+    * verify the check box is checked and nothing reads as pending
+    """
+    assert recycle_bin_check_box(page).isChecked() is True
+    assert not page.is_dirty()
+
+
+def test_toggling_the_recycle_bin_choice_makes_the_page_dirty(page: ImagesPage) -> None:
+    """Turning the Recycle Bin off is a staged change until it is applied.
+
+    **Test steps:**
+
+    * uncheck the Recycle Bin toggle
+    * verify the page is dirty and the shared settings are untouched
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    assert page.is_dirty()
+    assert shared_screenshot_deletion_settings().use_recycle_bin is True
+
+
+def test_save_changes_pushes_the_recycle_bin_choice_into_the_shared_settings(
+    page: ImagesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Applying writes the staged choice into the shared settings and persists it.
+
+    **Test steps:**
+
+    * uncheck the Recycle Bin toggle and apply
+    * verify the shared settings hold it, the page is clean, and a reload agrees
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    page.save_changes()
+
+    assert shared_screenshot_deletion_settings().use_recycle_bin is False
+    assert not page.is_dirty()
+
+    reloaded = ScreenshotDeletionSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert reloaded.use_recycle_bin is False
+
+
+def test_drop_changes_reverts_the_staged_recycle_bin_choice(page: ImagesPage) -> None:
+    """Resetting the page discards a staged Recycle Bin toggle along with everything else.
+
+    **Test steps:**
+
+    * uncheck the toggle without applying, then reset
+    * verify it is back on the saved (checked) value
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    page.drop_changes()
+
+    assert recycle_bin_check_box(page).isChecked() is True
+    assert not page.is_dirty()
+
+
+# endregion
 
 
 def test_both_moved_in_blocks_are_filterable_frames_of_their_own(page: ImagesPage) -> None:

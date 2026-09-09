@@ -34,7 +34,7 @@ from rehuco_agent.fields.widgets.image_selector import (
     ScreenshotListModel,
     ScreenshotOrdering,
 )
-from rehuco_core import plan_screenshot_renumbering
+from rehuco_core import Deleter, NoTrashBinError, plan_screenshot_renumbering
 
 DIRECTORY = Path("/fake")
 STEM = "info"
@@ -58,6 +58,11 @@ class FakeResource:
         self.removed: list[str] = []
         self.failure: OSError | None = None
         """Set to make every rearrangement refuse, standing in for a disk that would not take it."""
+        self.deletes_to_trash = False
+        """What :attr:`deletes_to_trash` (`ImageOrganizer`) answers -- the confirm dialog's own read."""
+        self.no_trash_bin: NoTrashBinError | None = None
+        """Set to make an un-deleter'd :meth:`remove` refuse with this, standing in for a location
+        with no Recycle Bin (#291) -- an explicit ``deleter`` (the caller's own fallback) bypasses it."""
 
     def files(self) -> list[Path]:
         """Every screenshot, in slot order (`ImageScanner`)."""
@@ -72,14 +77,18 @@ class FakeResource:
         """
         return self.__renumber(ordered)
 
-    def remove(self, path: Path, remaining: Sequence[Path]) -> dict[str, str]:
+    def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Drop ``path`` and renumber the survivors (`ImageOrganizer`).
 
         :param path: the screenshot deleted.
         :param remaining: the survivors, in the order wanted.
+        :param deleter: an explicit override, bypassing :attr:`no_trash_bin` (#291).
         :returns: what was renamed.
         :raises OSError: when the test declared this resource unwritable.
+        :raises NoTrashBinError: when the test declared no bin reachable and ``deleter`` is ``None``.
         """
+        if deleter is None and self.no_trash_bin is not None:
+            raise self.no_trash_bin
         renames = self.__renumber(remaining)
         self.removed.append(path.name)
         return renames
@@ -1104,6 +1113,93 @@ def test_deleting_asks_first_and_declining_changes_nothing(mocker: MockerFixture
 
     assert not resource.removed
     assert resource.names == ["info00.jpg", "info01.jpg"]
+
+
+def test_the_confirm_text_says_the_recycle_bin_when_the_organizer_uses_one(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The confirm dialog names which of the two outcomes is about to happen (#291).
+
+    **Test steps:**
+
+    * confirm the prompt on a resource that reports it deletes to the Recycle Bin
+    * verify the confirm text mentions the Recycle Bin and not a permanent removal
+    """
+    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    resource.deletes_to_trash = True
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    text = question.call_args.args[2]
+    assert "Recycle Bin" in text
+    assert "permanently" not in text
+
+
+def test_the_confirm_text_says_permanent_when_the_organizer_does_not_use_a_bin(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The other half of the same choice: no Recycle Bin means the dialog says so (#291).
+
+    **Test steps:**
+
+    * confirm the prompt on a resource that reports a permanent delete
+    * verify the confirm text says so and does not mention the Recycle Bin
+    """
+    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    resource.deletes_to_trash = False
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    text = question.call_args.args[2]
+    assert "permanently removed" in text
+    assert "Recycle Bin" not in text
+
+
+def test_no_bin_reachable_offers_a_permanent_delete_for_that_one_action(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Refused rather than silently falling through to a permanent delete -- the user is asked (#291).
+
+    **Test steps:**
+
+    * make the resource refuse an un-deleter'd remove with `NoTrashBinError`
+    * confirm both prompts (the delete, then the permanent-delete offer) and delete a screenshot
+    * verify it was removed anyway -- through the retry, not the first attempt -- and that the rows
+      agree with the disk, since the refused first attempt had already reported a removal
+    """
+    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    resource.no_trash_bin = NoTrashBinError("no bin for /fake")
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    assert resource.removed == ["info00.jpg"]
+    assert row_names(selector) == resource.names == ["info00.jpg"]
+
+
+def test_declining_the_permanent_delete_offer_leaves_the_resource_alone(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Declining the fallback offer is as final as declining the first confirm (#291).
+
+    **Test steps:**
+
+    * make the resource refuse an un-deleter'd remove with `NoTrashBinError`
+    * confirm the delete but decline the permanent-delete offer that follows
+    * verify nothing was removed and the rows still agree with the disk
+    """
+    mocker.patch.object(
+        QMessageBox,
+        "question",
+        side_effect=[QMessageBox.StandardButton.Yes, QMessageBox.StandardButton.No],
+    )
+    resource = FakeResource(["info00.jpg", "info01.jpg"])
+    resource.no_trash_bin = NoTrashBinError("no bin for /fake")
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+
+    assert not resource.removed
+    assert row_names(selector) == resource.names == ["info00.jpg", "info01.jpg"]
 
 
 def test_deleting_leaves_the_row_that_took_its_place_current(mocker: MockerFixture, qtbot: QtBot) -> None:

@@ -12,6 +12,9 @@ from typing import TYPE_CHECKING, Final
 
 from rehuco_core import DEFAULT_DELETER, Deleter, delete_screenshot, renumber_screenshots
 
+from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from .recycle_bin_deleter import RecycleBinDeleter
+
 if TYPE_CHECKING:
     from .rehu_document_model import RehuDocumentModel
 
@@ -43,7 +46,16 @@ class RehuDocumentImageOrganizer:
         directory, stem = self.__location()
         return renumber_screenshots(directory, stem, ordered)
 
-    def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter = DEFAULT_DELETER) -> dict[str, str]:
+    @property
+    def deletes_to_trash(self) -> bool:
+        """Whether the next :meth:`remove` called with no explicit ``deleter`` will try to send the
+        file to the Recycle Bin / Trash, per the **Move deleted images to the Recycle Bin** setting --
+        read live rather than cached, so a page Saved after this organizer was built is still honoured.
+        Purely informational: the confirm dialog is the only reader (#291).
+        """
+        return shared_screenshot_deletion_settings().use_recycle_bin
+
+    def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter | None = None) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.
 
         The delete comes first and the renumbering second, so a delete that fails leaves the set
@@ -51,15 +63,25 @@ class RehuDocumentImageOrganizer:
 
         :param path: the screenshot to delete.
         :param remaining: every other screenshot, in the order wanted.
-        :param deleter: how ``path`` is actually removed; defaults to a permanent unlink -- #291 is
-            what gives the dock a Recycle-Bin-capable one to inject instead.
+        :param deleter: how ``path`` is actually removed; ``None`` (the default) resolves the
+            **Move deleted images to the Recycle Bin** setting into a `RecycleBinDeleter` or a plain
+            unlink -- an explicit deleter is how a caller overrides that, e.g. the dock's permanent-
+            delete fallback after a `~rehuco_core.NoTrashBinError` (#291).
         :returns: ``{old filename: new filename}`` for each survivor actually renamed.
         :raises OSError: if the delete or the renumbering that follows it failed -- or the
             rearrangement was refused outright (:meth:`__location`), before anything is deleted.
         """
         directory, stem = self.__location()
-        delete_screenshot(path, deleter)
+        delete_screenshot(path, deleter if deleter is not None else self.__default_deleter())
         return renumber_screenshots(directory, stem, remaining)
+
+    def __default_deleter(self) -> Deleter:
+        """The deleter :meth:`remove` uses absent an explicit one, per the current setting.
+
+        :returns: a `RecycleBinDeleter` when **Move deleted images to the Recycle Bin** is on,
+            otherwise `~rehuco_core.DEFAULT_DELETER`.
+        """
+        return RecycleBinDeleter() if self.deletes_to_trash else DEFAULT_DELETER
 
     def __location(self) -> tuple[Path, str]:
         """Where this resource's screenshots live and what they are named after.
