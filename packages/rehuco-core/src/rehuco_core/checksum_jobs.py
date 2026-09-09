@@ -46,10 +46,10 @@ from .tasks import (
     TaskJobBase,
 )
 from .tc_screenshots import (
-    LEGACY_SCREENSHOT_RULES,
-    LegacyScreenshotRule,
-    legacy_screenshot_rules_from_state,
-    legacy_screenshot_rules_state,
+    SCREENSHOT_NAME_PATTERNS,
+    ScreenshotNamePattern,
+    screenshot_name_patterns_from_state,
+    screenshot_name_patterns_state,
 )
 
 LOG: Final = logging.getLogger(__name__)
@@ -76,7 +76,7 @@ STATE_PATH_KEY: Final = "path"
 STATE_ALGORITHM_KEY: Final = "algorithm"
 STATE_ONLY_KEY: Final = "only"
 STATE_EXCLUDED_PATTERNS_KEY: Final = "excluded_patterns"
-STATE_LEGACY_SCREENSHOT_RULES_KEY: Final = "legacy_screenshot_rules"
+STATE_SCREENSHOT_NAME_PATTERNS_KEY: Final = "screenshot_name_patterns"
 STATE_CREATE_IF_MISSING_KEY: Final = "create_if_missing"
 STATE_MIGRATE_TO_KEY: Final = "migrate_to"
 STATE_STALE_DAYS_KEY: Final = "stale_days"
@@ -120,7 +120,7 @@ class ChecksumJob(TaskJobBase):
         says otherwise.
     :param algorithm: what new hashes are recorded under.
     :param only: the record-relative names to work on, or ``None`` for the whole resource.
-    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by (#53),
+    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
         resolved by the caller alongside ``excluded_patterns`` and carried in the job's saved state.
     :param excluded_patterns: the filename globs the content walk leaves out (#226), resolved by the
         caller -- core never reads a setting.
@@ -167,7 +167,7 @@ class ChecksumJob(TaskJobBase):
         algorithm: str = DEFAULT_CHECKSUM_ALGORITHM,
         only: Collection[str] | None = None,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
         create_if_missing: bool | None = None,
         stale_after: timedelta | None = None,
         migrate_to: str | None = None,
@@ -180,7 +180,7 @@ class ChecksumJob(TaskJobBase):
         self.algorithm = algorithm
         self.only: tuple[str, ...] | None = None if only is None else tuple(only)
         self.excluded_patterns = excluded_patterns
-        self.legacy_screenshot_rules = legacy_screenshot_rules
+        self.screenshot_name_patterns = screenshot_name_patterns
         self.create_if_missing = self.creates_by_default if create_if_missing is None else create_if_missing
         self.stale_after = stale_after
         self.migrate_to = migrate_to
@@ -341,7 +341,7 @@ class ChecksumJob(TaskJobBase):
             STATE_ALGORITHM_KEY: self.algorithm,
             STATE_ONLY_KEY: None if self.only is None else list(self.only),
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
-            STATE_LEGACY_SCREENSHOT_RULES_KEY: legacy_screenshot_rules_state(self.legacy_screenshot_rules),
+            STATE_SCREENSHOT_NAME_PATTERNS_KEY: screenshot_name_patterns_state(self.screenshot_name_patterns),
             STATE_CREATE_IF_MISSING_KEY: self.create_if_missing,
             STATE_STALE_DAYS_KEY: None if self.stale_after is None else self.stale_after.days,
             STATE_MIGRATE_TO_KEY: self.migrate_to,
@@ -389,9 +389,9 @@ class ChecksumJob(TaskJobBase):
         self.stale_after = None if stale_days is None else timedelta(days=stale_days)
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
-        rules = legacy_screenshot_rules_from_state(state.get(STATE_LEGACY_SCREENSHOT_RULES_KEY))
+        rules = screenshot_name_patterns_from_state(state.get(STATE_SCREENSHOT_NAME_PATTERNS_KEY))
         if rules is not None:
-            self.legacy_screenshot_rules = rules
+            self.screenshot_name_patterns = rules
         self.label = self.__derived_label()
 
     # endregion
@@ -442,7 +442,7 @@ class GenerateChecksumsJob(ChecksumJob):
             only=self.only,
             create_if_missing=self.create_if_missing,
             excluded_patterns=self.excluded_patterns,
-            legacy_screenshot_rules=self.legacy_screenshot_rules,
+            screenshot_name_patterns=self.screenshot_name_patterns,
             progress=control.report,
             checkpoint=self.checkpoint,
         )
@@ -481,7 +481,7 @@ class VerifyChecksumsJob(ChecksumJob):
             seed_legacy=self.seed_legacy,
             migrate_to=self.migrate_to,
             excluded_patterns=self.excluded_patterns,
-            legacy_screenshot_rules=self.legacy_screenshot_rules,
+            screenshot_name_patterns=self.screenshot_name_patterns,
             progress=control.report,
             checkpoint=self.checkpoint,
         )
@@ -673,7 +673,7 @@ class SweepChecksumsJob(TaskJobBase):
     :param create_if_missing: whether a resource with no record is baselined rather than reported.
     :param migrate_to: what matched entries recorded under another algorithm are re-keyed to, or
         ``None`` to migrate nothing.
-    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by (#53),
+    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
         resolved by the caller alongside ``excluded_patterns``.
     :param excluded_patterns: the filename globs each resource's content walk leaves out (#226),
         resolved by the caller -- core never reads a setting.
@@ -699,7 +699,7 @@ class SweepChecksumsJob(TaskJobBase):
         create_if_missing: bool = False,
         migrate_to: str | None = None,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
         label: str | None = None,
     ) -> None:
         super().__init__()
@@ -710,7 +710,7 @@ class SweepChecksumsJob(TaskJobBase):
         self.create_if_missing = create_if_missing
         self.migrate_to = migrate_to
         self.excluded_patterns = excluded_patterns
-        self.legacy_screenshot_rules = legacy_screenshot_rules
+        self.screenshot_name_patterns = screenshot_name_patterns
         self.label = label if label is not None else self.__derived_label()
         self.__tally: SweepTally | None = None
 
@@ -808,7 +808,7 @@ class SweepChecksumsJob(TaskJobBase):
                 create_if_missing=self.create_if_missing,
                 migrate_to=self.migrate_to,
                 excluded_patterns=self.excluded_patterns,
-                legacy_screenshot_rules=self.legacy_screenshot_rules,
+                screenshot_name_patterns=self.screenshot_name_patterns,
                 checkpoint=self.checkpoint,
             )
         except FileNotFoundError:
@@ -865,7 +865,7 @@ class SweepChecksumsJob(TaskJobBase):
             STATE_CREATE_IF_MISSING_KEY: self.create_if_missing,
             STATE_MIGRATE_TO_KEY: self.migrate_to,
             STATE_EXCLUDED_PATTERNS_KEY: list(self.excluded_patterns),
-            STATE_LEGACY_SCREENSHOT_RULES_KEY: legacy_screenshot_rules_state(self.legacy_screenshot_rules),
+            STATE_SCREENSHOT_NAME_PATTERNS_KEY: screenshot_name_patterns_state(self.screenshot_name_patterns),
         }
 
     def restore_state(self, state: dict[str, Any]) -> None:
@@ -898,9 +898,9 @@ class SweepChecksumsJob(TaskJobBase):
         self.create_if_missing = bool(state.get(STATE_CREATE_IF_MISSING_KEY, False))
         if isinstance(excluded, list) and all(isinstance(pattern, str) for pattern in excluded):
             self.excluded_patterns = tuple(excluded)
-        rules = legacy_screenshot_rules_from_state(state.get(STATE_LEGACY_SCREENSHOT_RULES_KEY))
+        rules = screenshot_name_patterns_from_state(state.get(STATE_SCREENSHOT_NAME_PATTERNS_KEY))
         if rules is not None:
-            self.legacy_screenshot_rules = rules
+            self.screenshot_name_patterns = rules
         self.label = self.__derived_label()
 
     # endregion

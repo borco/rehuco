@@ -1,9 +1,10 @@
 """Frame-level filtering for one settings page: show only the QFrames whose text matches (#67)."""
 
-from borco_pyside.widgets import StringListEditor
+from borco_pyside.widgets import ItemListEditor
+from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt
 from PySide6.QtWidgets import QAbstractButton, QFrame, QGroupBox, QLabel, QLineEdit, QPlainTextEdit, QSpinBox, QWidget
 
-ValueWidget = QLineEdit | QPlainTextEdit | QAbstractButton | QSpinBox | StringListEditor
+ValueWidget = QLineEdit | QPlainTextEdit | QAbstractButton | QSpinBox | ItemListEditor
 """The settings-page control types whose value :class:`SettingsFrameFilter` knows how to read for its
 baseline snapshot (#77) -- exactly the ones the pages under `rehuco_agent.settings.ui` actually use."""
 
@@ -116,8 +117,8 @@ class SettingsFrameFilter:
         return {widget: self.__value(widget) for widget in self.__value_widgets(frame)}
 
     def __value_widgets(self, frame: QFrame) -> list[ValueWidget]:
-        """``frame``'s value widgets, a composite one (`StringListEditor`) counted once rather than
-        recursed into -- its own internal edit row is scratch space, not part of its ``values``.
+        """``frame``'s value widgets, a composite one (an `ItemListEditor`) counted once rather than
+        recursed into -- its buttons and any open cell editor are machinery, not values.
 
         :param frame: the frame to walk.
         :returns: the value widgets found, outermost first.
@@ -156,8 +157,18 @@ class SettingsFrameFilter:
             return widget.toPlainText()
         if isinstance(widget, QSpinBox):
             return widget.value()
-        if isinstance(widget, StringListEditor):
-            return widget.values
+        if isinstance(widget, ItemListEditor):
+            # every cell under EditRole, which is what the list *holds*: a derived, read-only column
+            # (the try-it table's slot, #287) answers nothing there, so a change upstream of it is not
+            # this frame's edit
+            model = widget.model
+            root = QModelIndex()
+            # a list model makes columnCount private -- a list has one column by definition
+            columns = range(1 if isinstance(model, QAbstractListModel) else model.columnCount(root))
+            return tuple(
+                tuple(model.index(row, column).data(Qt.ItemDataRole.EditRole) for column in columns)
+                for row in range(model.rowCount(root))
+            )
         return widget.isChecked()  # the remaining ValueWidget member: QAbstractButton
 
     def __set_all_visible(self, visible: bool) -> None:

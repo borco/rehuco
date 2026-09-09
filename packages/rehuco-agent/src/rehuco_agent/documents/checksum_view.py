@@ -27,7 +27,7 @@ from PySide6.QtGui import QAction, QShowEvent
 from PySide6.QtWidgets import QMenu, QToolBar, QWidget
 
 from ..settings.excluded_files_settings import shared_excluded_files_settings
-from ..settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
+from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .checksum_actions import GENERATE_ICON_RESOURCE, VERIFY_ICON_RESOURCE, ChecksumActions
 from .checksum_rows import (
     MISSING_STATUS,
@@ -141,7 +141,7 @@ class ChecksumView(QWidget):
         self.__loader.start(
             path,
             shared_excluded_files_settings().excluded_file_patterns,
-            shared_legacy_screenshots_settings().legacy_screenshot_rules,
+            shared_screenshot_patterns_settings().screenshot_name_patterns,
         )
 
     @override

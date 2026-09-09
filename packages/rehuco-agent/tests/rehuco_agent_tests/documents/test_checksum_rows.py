@@ -31,7 +31,7 @@ from rehuco_agent.documents.checksum_rows import (
     tally_rows,
     tally_text,
 )
-from rehuco_core import LEGACY_SCREENSHOT_RULES
+from rehuco_core import SCREENSHOT_NAME_PATTERNS
 
 
 # the listing fakes below are `test_excluded_files_settings`' and the core walks' near-verbatim --
@@ -79,7 +79,7 @@ ARCHIVE: Final = "extras/pack.zip"
 
 PATTERNS: Final = ("Thumbs.db",)
 
-RULES: Final = LEGACY_SCREENSHOT_RULES
+RULES: Final = SCREENSHOT_NAME_PATTERNS
 """The shipped legacy screenshot rules, which these tests take as given: what they exercise is the row
 merge, not which images a `.tc`'s conversion would rename."""
 

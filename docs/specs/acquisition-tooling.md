@@ -331,7 +331,7 @@ A pattern is an **ordinary regular expression** with a **slot convention**: one 
 match belongs to, read as an integer and zero-padded to two digits; no capture group means slot `00`. Matching is
 **case-insensitive**, and a malformed pattern — one that fails to compile, or that carries more than one capture
 group — is **skipped and flagged**, never allowed to crash a scan or a conversion over one bad entry. Patterns are an
-**ordered list**, shipped with a default set and editable on the Legacy Screenshots settings page
+**ordered list**, shipped with a default set and editable on the Screenshot Patterns settings page
 ([[appendices.settings-pages#category-groups]], #53) as a **try-it table**: a sample-filename column beside the slot
 each pattern would assign it, so an edit shows its effect on the catalog's actual names rather than only on the
 regex itself (#287).

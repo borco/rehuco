@@ -19,7 +19,7 @@ from rehuco_core import (
     DEFAULT_TASK_JOB_REGISTRY,
     EXCLUDED_FILE_PATTERNS,
     FINISHED_JOB_STATES,
-    LEGACY_SCREENSHOT_RULES,
+    SCREENSHOT_NAME_PATTERNS,
     TC_IMPORT_KIND,
     JobState,
     JobStatus,
@@ -29,7 +29,7 @@ from rehuco_core import (
     TaskJobRegistry,
     TaskQueue,
     TcImportJob,
-    legacy_screenshot_rules_state,
+    screenshot_name_patterns_state,
 )
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -242,7 +242,7 @@ def test_a_run_hands_its_parameters_to_the_conversion(
         overwrite=True,
         username="alice",
         excluded_patterns=("*.tmp",),
-        legacy_screenshot_rules=LEGACY_SCREENSHOT_RULES,
+        screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS,
     )
 
 
@@ -321,10 +321,10 @@ def test_a_run_carries_the_legacy_manifest_into_the_new_record(
     TcImportJob(TC_PATH, excluded_patterns=("*.tmp",)).run(control)  # pyright: ignore[reportArgumentType]
 
     seed.assert_called_once_with(
-        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), legacy_screenshot_rules=LEGACY_SCREENSHOT_RULES
+        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS
     )
     remediate.assert_called_once_with(
-        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), legacy_screenshot_rules=LEGACY_SCREENSHOT_RULES
+        DIRECTORY / "info.rehu", excluded_patterns=("*.tmp",), screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS
     )
 
 
@@ -429,7 +429,7 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "keep_backups": True,
         "username": "alice",
         "excluded_patterns": ["*.tmp"],
-        "legacy_screenshot_rules": legacy_screenshot_rules_state(LEGACY_SCREENSHOT_RULES),
+        "screenshot_name_patterns": screenshot_name_patterns_state(SCREENSHOT_NAME_PATTERNS),
     }
 
 
