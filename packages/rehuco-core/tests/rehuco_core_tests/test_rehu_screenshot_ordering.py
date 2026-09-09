@@ -290,8 +290,9 @@ def test_a_rollback_that_also_fails_still_raises_the_original_error(renames: Ren
 # region delete_screenshot / Deleter (#265)
 
 
-class RecordingDeleter:
-    """A :class:`~rehuco_core.Deleter` that records what it was asked to delete instead of touching disk."""
+class RecordingDeleter:  # pylint: disable=too-few-public-methods
+    """A :class:`~rehuco_core.Deleter` that records what it was asked to delete instead of touching disk
+    -- one method, because that is all a `Deleter` has."""
 
     def __init__(self) -> None:
         self.deleted: list[Path] = []
