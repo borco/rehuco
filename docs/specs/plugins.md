@@ -470,15 +470,32 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   ([[data-model#image-meanings]]), all of those are renames on disk: they take effect immediately rather than
   waiting for a Save, a delete renumbers everything after the hole it left, and a set arriving numbered from `01`
   is renumbered from `00` the first time it is rearranged. A delete is confirmed first — it is the one edit here
-  that no Revert can undo. Deliberately single-select: every action names one file. A resource nothing can
-  rearrange — one not yet saved anywhere, or a legacy `.tc` whose screenshots are still conversion's to read —
-  keeps the list and greys the buttons.
-  **A conversion's backups are listed too**, after the numbered set and with their own icon: every `.orig` sibling
-  that is an image ([[acquisition-tooling#adopted-backups]]). A backup row is not checkable — it is not in the
-  strip and cannot be — and the ordering buttons are disabled on it; what it offers is **Adopt**, which renames it to
-  the next free `<stem>NN` so it joins the numbered set and can be reordered from then on, and **Delete**, confirmed
-  like any other. Both are what the conversion's own rename discipline allows a single file: a rename or a delete,
-  never a copy, since a copy would leave the backup manager counting a file the user has already decided about.
+  that cannot be undone. Deliberately single-select: every ordering action names one file. A resource nothing can
+  rearrange — one not yet saved anywhere, or a legacy `.tc`, which refuses every screenshot edit as it refuses the
+  drop ([[acquisition-tooling#drag-drop-aids]]) — keeps the list and greys the buttons, both row kinds alike.
+
+  **Un-converted pattern-matched images are the dock's second row kind**, listed after the numbered set with their
+  own icon: an image the screenshot name patterns match ([[acquisition-tooling#screenshot-schemes]]) but that a
+  conversion has not renamed into the numbered set — left there by a legacy `.tc` not yet converted, or by a rename
+  collision a conversion left untouched under its own name ([[acquisition-tooling#tc-to-rehu]],
+  [[data-model#image-meanings]]), in natural-sort order. Both row kinds carry the **same enabled checkbox**, moved
+  to its own first column so the two align: it is the curation checkbox above (checked = in the lightbox, the
+  `hidden_images` list) on either kind, and an un-converted row starts **checked** — shown until the user says
+  otherwise, since a picture the patterns recognize is a screenshot whether or not it has a slot yet. The strip and
+  the lightbox show every checked row, numbered first, then the un-converted ones (#281). The ordering buttons stay
+  **disabled on a pattern-matched row** — it holds no position in the numbered set to move. Two actions are offered
+  on such a row, single-select like every other action here: **Convert** takes its own legacy number as its new
+  `<stem>NN` when that slot is free, and appends it past the current end of the numbered set otherwise — the
+  free-slot-or-append rule of #265 — after which the row re-lists among the numbered set with its checkbox state
+  carried across the rename by the same remap the curated-out list already follows; and **Delete**, confirmed like
+  any other, to the Recycle Bin behind a setting with a stated no-bin fallback (#291). Moving or deleting renumbers
+  files and **never rewrites the description** — an embed pointing at a name that moved or vanished is left exactly
+  as the user wrote it — and a one-line hint in the dock says so.
+
+  In a **multi-record directory** ([[data-model#resource-scoping]]) each record's dock shows **everything except
+  the *other* stems' `<stem>NN`**: its own numbered set, and every pattern-matched image in the directory, since a
+  loose `cover.jpg` carries nothing naming whose it is and either record may claim it with Convert. A delete from
+  either dock therefore deletes it for both, and the confirmation says so.
 - **Editor**: field editing including the Markdown description; rename from the predefined-candidates list
   ([[data-model#rehu-format]]), which renames on disk. Each scope moves what its own naming convention owns
   ([[data-model#resource-scoping]]): a directory-scoped `info.rehu` renames its **parent directory**, one atomic

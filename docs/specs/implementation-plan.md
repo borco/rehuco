@@ -230,9 +230,9 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   3. **Checksums** — generate/verify with algorithm-tagging, as task-queue jobs ([[data-model#checksums]])
      — pairs naturally with migration.
 - **LocalEdit8 — Legacy catalog import.** Bulk `.tc`→`.rehu` conversion across a folder tree, run as task-queue jobs
-  (LocalEdit7) over a dry-run plan, with backups retained by default and an in-app revert/discard surface replacing the
-  file-manager round-trip ([[acquisition-tooling#tc-to-rehu]]). This is the one-time migration of an existing tc4
-  catalog, and doing it here is what keeps `.tc` out of CacheDB's scanner entirely.
+  (LocalEdit7) over a dry-run plan, with the `info.tc.orig` backup retained by default and an in-app discard surface
+  replacing the file-manager round-trip ([[acquisition-tooling#tc-to-rehu]]). This is the one-time migration of an
+  existing tc4 catalog, and doing it here is what keeps `.tc` out of CacheDB's scanner entirely.
 - **LocalEdit9 — Migration correctness.** What pointing LocalEdit8's wizard at a real catalog surfaced, and the scoping
   rule it forced. The `.tc` walk halts at the first record it finds, so a template at a tree root — or any tc4
   **collection**, which *is* a parent record over member directories — hides everything beneath it. Conversion backups
@@ -249,8 +249,8 @@ Touches, thinly: [[nodes#single-instance]] (single-instance/association), [[data
   ([[plugins#dock-shell]]); the Tasks dock grows a Log sub-dock following the selected job, which needs a record to
   carry every scope open when it was written and the queue to open a per-job scope
   ([[appendices.logging#scopes]], [[appendices.task-queue#scopes]]); a Files sub-dock over the resource's own folder
-  ([[plugins#files-subdock]]); and a conversion's `.orig` screenshots listed in the images sub-dock, adoptable one at
-  a time ([[acquisition-tooling#adopted-backups]]).
+  ([[plugins#files-subdock]]); and un-converted pattern-matched images listed in the images sub-dock, alongside the
+  numbered set, with Convert/Delete per row ([[plugins#tutorial-plugin]]).
 - **LocalEditX — Tray + polish.** Close-to-tray/explicit-quit ([[nodes#single-instance]]), preferences. Last in the
   milestone by construction: the catch-all polish slice, named like an audit run because it is never "next", only "after
   everything else".

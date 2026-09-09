@@ -409,8 +409,9 @@ strip a marker back off the text to recognize a row (#277).
   under `ItemListEditor`, the shared machinery the `authors` record rows are built on too (#97), which is
   why a list edited on a settings page and one edited in a document behave identically.
 - Use `ContentSizedTableView` under `ItemListEditor` for a list whose entries are **more than one
-  field**, rather than packing them into one string with a separator. `LegacyScreenshotsPage`'s rules —
-  a cover and a template per row (#53) — are the worked example: a small `QAbstractTableModel` over the
+  field**, rather than packing them into one string with a separator. `LegacyScreenshotsPage`'s screenshot
+  name patterns — a regex and the slot it assigns, plus a try-it column showing a sample filename's match
+  (#287) — are the worked example: a small `QAbstractTableModel` over the
   domain objects supplies the columns, and everything about *how* the list is edited still comes from
   `ItemListEditor`, so it behaves exactly as a `StringListEditor` does. Override the editor's
   `row_is_blank` when a row is only abandonable with *every* cell empty; the base reads the first column
