@@ -8,6 +8,11 @@ storage -- checked = visible, and only the hidden exceptions are emitted -- beca
 reads more naturally ([[data-model#image-meanings]]).
 """
 
+# one cohesive widget: its rows, its preview, its split and the renames behind its move/delete buttons
+# -- a scoped disable reads better than an arbitrary file split (same precedent as
+# test_rehu_document_model.py, [[appendices.code-conventions]])
+# pylint: disable=too-many-lines
+
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -40,6 +45,7 @@ from PySide6.QtWidgets import (
     QTreeView,
     QWidget,
 )
+from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
 from ...item_action_icons import apply_action_column_icons
 from ..image_organizer import ImageOrganizer
@@ -358,13 +364,15 @@ class ScreenshotListModel(QAbstractTableModel):
         self.__report(renamed)
         return True
 
-    def remove_row(self, row: int) -> bool:
+    def remove_row(self, row: int, deleter: Deleter | None = None) -> bool:
         """Delete one screenshot, closing the gap it leaves, inside the same transaction.
 
         The unlink and the renumbering that follows it both run between ``beginRemoveRows`` and
         ``endRemoveRows``, for the reason :meth:`move_row` spells out.
 
         :param row: the row to delete.
+        :param deleter: overrides the organizer's own configured default (#291), e.g. a permanent
+            retry after a `~rehuco_core.NoTrashBinError`; ``None`` leaves that choice to it.
         :returns: whether it was deleted.
         :raises OSError: if the delete or the renumbering failed; see :meth:`move_row`.
         """
@@ -373,7 +381,9 @@ class ScreenshotListModel(QAbstractTableModel):
         self.beginRemoveRows(QModelIndex(), row, row)
         try:
             remaining = self.__rows[:row] + self.__rows[row + 1 :]
-            renames = self.__organizer.remove(self.__rows[row].path, [screenshot.path for screenshot in remaining])
+            renames = self.__organizer.remove(
+                self.__rows[row].path, [screenshot.path for screenshot in remaining], deleter
+            )
             renamed = self.__relabelled(remaining, renames)
             self.__rows = remaining
         finally:
@@ -699,7 +709,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
     def delete_screenshot(self, at: int) -> None:
         """Delete one screenshot from disk, closing the gap it leaves (#72).
 
-        Confirmed first: this unlinks a file and renumbers its neighbours, and neither half is
+        Confirmed first: this removes a file and renumbers its neighbours, and neither half is
         something a document Revert can undo -- unlike every other edit this editor makes, which sit
         in the model until a Save. The row that took its place is left current, so deleting several
         in a row does not send the selection back to the top each time.
@@ -711,24 +721,54 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             return
         if not self.__confirmed_delete(paths[at]):
             return
-        if self.__rearranged(lambda: self.__list_model.remove_row(at)):
+        if self.__rearranged(lambda: self.__remove_with_fallback(at)):
             self.set_current_index(min(at, len(paths) - 2))
 
+    def __remove_with_fallback(self, at: int) -> bool:
+        """Delete row ``at``, offering a permanent delete when `~rehuco_core.NoTrashBinError` refuses
+        it (#291) -- caught here rather than by :meth:`__rearranged`, whose generic rebuild would
+        otherwise swallow the choice this one refusal is meant to offer.
+
+        :param at: the row to delete.
+        :returns: whether it was deleted, permanently or otherwise.
+        """
+        try:
+            return self.__list_model.remove_row(at)
+        except NoTrashBinError as error:
+            # the model has already reported the row removed by the time the deleter refused, so the
+            # view is reset from disk first -- before the question, and whichever way it is answered:
+            # a retry must not stack a second removal on a row still there, and a decline is not the
+            # generic failure :meth:`__rearranged` would otherwise have rebuilt after
+            self.__rebuild(self.hidden_filenames())
+            title = "No Recycle Bin available"
+            text = f"{error}<br><br>Delete the file permanently instead? This cannot be undone."
+            if not self.__confirmed(title, text):
+                return False
+            return self.__list_model.remove_row(at, deleter=DEFAULT_DELETER)
+
     def __confirmed_delete(self, path: Path) -> bool:
-        """Ask before unlinking ``path``.
+        """Ask before deleting ``path``, saying which of the two outcomes it will have (#291).
 
         :param path: the screenshot about to be deleted.
         :returns: whether the user confirmed.
         """
-        answer = QMessageBox.question(
-            self,
-            "Delete screenshot",
-            f"Delete <b>{path.name}</b> from this resource?<br><br>"
-            "The file is removed from disk and the screenshots after it are renumbered to close the "
-            "gap. This cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        to_trash = self.image_organizer is not None and self.image_organizer.deletes_to_trash
+        outcome = "moved to the Recycle Bin." if to_trash else "permanently removed from disk. This cannot be undone."
+        text = (
+            f"Delete <b>{path.name}</b> from this resource?<br><br>The file is {outcome} "
+            "The screenshots after it are renumbered to close the gap."
         )
+        return self.__confirmed("Delete screenshot", text)
+
+    def __confirmed(self, title: str, text: str) -> bool:
+        """Ask a Yes/No question, defaulting to No -- the one dialog shape every delete confirm uses.
+
+        :param title: the dialog's title.
+        :param text: the dialog's body, rich text.
+        :returns: whether the user answered Yes.
+        """
+        buttons = QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        answer = QMessageBox.question(self, title, text, buttons, QMessageBox.StandardButton.No)
         return answer == QMessageBox.StandardButton.Yes
 
     def __rearranged(self, rearrange: Callable[[], bool]) -> bool:

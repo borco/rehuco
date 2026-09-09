@@ -11,6 +11,7 @@ from ..image_viewer_settings import DEFAULT_MODE, shared_image_viewer_settings
 from ..markdown_rendering_settings import shared_markdown_rendering_settings
 from ..persistent_settings import persistent_settings
 from ..reference_images_settings import normalize_extensions, shared_reference_images_settings
+from ..screenshot_deletion_settings import shared_screenshot_deletion_settings
 from .images_page_ui import Ui_ImagesPage
 
 
@@ -41,7 +42,7 @@ class ImagesPage(QWidget):
     """Every image-shaped setting in one place: what counts as an image, and how one is shown
     (#160, #161, #70).
 
-    Three settings objects meet here, which is the point -- a reader looking for "images" found the
+    Four settings objects meet here, which is the point -- a reader looking for "images" found the
     width cap under Descriptions and the recognized formats under a Reference Images page holding
     nothing else, and had to know which plugin owned which to find either:
 
@@ -54,6 +55,8 @@ class ImagesPage(QWidget):
       how a description *renders* rather than how an image is sized.
     - `ReferenceImagesSettings` -- which archive entries a reference-images resource counts as its
       images ([[data-model#resource-scoping]]).
+    - `ScreenshotDeletionSettings` -- whether deleting a screenshot from the images editor goes
+      through the Recycle Bin / Trash or unlinks it outright (#291).
 
     Everything is staged in the widgets until :meth:`save_changes` writes each object and persists it.
     The width cap is the one value with a live effect: it relays into
@@ -88,13 +91,15 @@ class ImagesPage(QWidget):
             # and auto-apply does not tear a fresh insert out from under its open cell (#53)
             or normalize_extensions(self.__ui.extensions_editor.values)
             != shared_reference_images_settings().content_image_extensions
+            or self.__ui.use_recycle_bin_check_box.isChecked() != shared_screenshot_deletion_settings().use_recycle_bin
         )
 
     def save_changes(self) -> None:
         """Push every staged choice into its settings object and persist it.
 
-        Three objects, saved independently -- the width cap belongs to `MarkdownRenderingSettings`
-        and the extensions to `ReferenceImagesSettings`, and each is written whole because that is
+        Four objects, saved independently -- the width cap belongs to `MarkdownRenderingSettings`,
+        the extensions to `ReferenceImagesSettings` and the Recycle Bin choice to
+        `ScreenshotDeletionSettings` -- and each is written whole because that is
         the unit its own ``save`` takes. Writing the shared markdown settings here re-persists the
         engine and CSS unchanged: what it holds is already the last-saved pair, so a `DescriptionsPage`
         edit still staged is neither picked up nor clobbered.
@@ -121,6 +126,10 @@ class ImagesPage(QWidget):
         # and a page still showing what was typed would disagree with what an enumeration matches
         self.__show_saved_extensions()
 
+        deletion = shared_screenshot_deletion_settings()
+        deletion.use_recycle_bin = self.__ui.use_recycle_bin_check_box.isChecked()
+        deletion.save(persistent_settings())
+
     def drop_changes(self) -> None:
         """Discard the staged choices, re-seeding every widget from its own settings object."""
         saved = self.__saved()
@@ -132,6 +141,7 @@ class ImagesPage(QWidget):
         self.__ui.editor_preview_height_spin_box.setValue(saved.editor_preview_height)
         self.__ui.max_image_width_spin_box.setValue(shared_markdown_rendering_settings().max_image_width)
         self.__show_saved_extensions()
+        self.__ui.use_recycle_bin_check_box.setChecked(shared_screenshot_deletion_settings().use_recycle_bin)
 
     def __show_saved_extensions(self) -> None:
         """Fill the extensions editor with the set the shared reference-images settings resolve to."""

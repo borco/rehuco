@@ -74,7 +74,21 @@ class Deleter(Protocol):  # pylint: disable=too-few-public-methods
     """
 
     def delete(self, path: Path) -> None:
-        """Remove ``path``."""
+        """Remove ``path``.
+
+        :raises NoTrashBinError: a Recycle-Bin-capable implementation's own way of refusing when no
+            bin is reachable for ``path`` -- never a silent fall-through to a permanent delete.
+        """
+
+
+class NoTrashBinError(OSError):
+    """Raised by a :class:`Deleter` that could not reach a Recycle Bin / Trash for a path (#291).
+
+    Core defines it, though only agent-side deleters (``send2trash``, kept out of this dependency-free
+    package) ever raise it: a shared vocabulary is what lets a caller catch this one case -- a Windows
+    SMB share, the mounted NAS ([[mounts-and-storage#offline-mounts]]) -- and offer a permanent delete
+    for just that one action, without either side depending on the other's deleter implementations.
+    """
 
 
 class UnlinkDeleter:  # pylint: disable=too-few-public-methods

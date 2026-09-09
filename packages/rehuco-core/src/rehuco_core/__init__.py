@@ -153,6 +153,7 @@ from .rehu_rename import (
 from .rehu_screenshot_ordering import (
     DEFAULT_DELETER,
     Deleter,
+    NoTrashBinError,
     UnlinkDeleter,
     delete_screenshot,
     plan_screenshot_renumbering,
@@ -356,6 +357,7 @@ __all__ = [
     "MAX_STRING_LENGTH",
     "MOVABLE_JOB_STATES",
     "MediaInfoDurationProbe",
+    "NoTrashBinError",
     "PROGRESS_UNIT_BYTES",
     "PROGRESS_UNIT_RESOURCES",
     "PRUNE_REASONS",

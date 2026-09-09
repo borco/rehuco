@@ -1,4 +1,4 @@
-"""Tests for RehuDocumentImageOrganizer: where a resource's screenshot renames are aimed (#72)."""
+"""Tests for RehuDocumentImageOrganizer: where a resource's screenshot renames are aimed (#72, #291)."""
 
 from pathlib import Path
 from typing import Final
@@ -8,7 +8,8 @@ from pytest import fixture
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_image_organizer import RehuDocumentImageOrganizer
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
-from rehuco_core import RehuDocument
+from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from rehuco_core import DEFAULT_DELETER, RehuDocument
 
 DIRECTORY: Final = Path("/fake/tutorial")
 PATHS: Final = [DIRECTORY / "info00.jpg", DIRECTORY / "info01.png"]
@@ -55,22 +56,103 @@ def test_reorder_renumbers_against_the_resources_own_directory_and_stem(renumber
     renumber.assert_called_once_with(DIRECTORY, "info", PATHS)  # type: ignore[attr-defined]
 
 
-def test_remove_unlinks_first_and_closes_the_gap_after(mocker: MockerFixture, renumber: MockerFixture) -> None:
+def test_remove_deletes_first_and_closes_the_gap_after(mocker: MockerFixture, renumber: MockerFixture) -> None:
     """The file goes, then the survivors renumber -- so a failed delete never closes a gap that is
     still occupied (#72).
 
     **Test steps:**
 
-    * remove the first of two screenshots
-    * verify it was unlinked and the survivor renumbered
+    * remove the first of two screenshots through an explicit deleter
+    * verify that deleter was asked to delete it and the survivor renumbered
     """
+    deleter = mocker.Mock()
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    organizer.remove(PATHS[0], PATHS[1:], deleter=deleter)
+
+    deleter.delete.assert_called_once_with(PATHS[0])
+    renumber.assert_called_once_with(DIRECTORY, "info", PATHS[1:])  # type: ignore[attr-defined]
+
+
+def test_remove_defaults_to_the_recycle_bin_when_the_setting_is_on(
+    mocker: MockerFixture, renumber: MockerFixture
+) -> None:
+    """Absent an explicit deleter, **Move deleted images to the Recycle Bin** (on by default, #291)
+    is what chooses one.
+
+    **Test steps:**
+
+    * remove a screenshot with no deleter passed, the setting left at its default
+    * verify ``send2trash`` -- not a plain unlink -- was asked to move it
+    """
+    del renumber
+    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
+    unlink = mocker.patch.object(Path, "unlink")
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    organizer.remove(PATHS[0], PATHS[1:])
+
+    send2trash.assert_called_once_with(str(PATHS[0]))
+    unlink.assert_not_called()
+
+
+def test_remove_unlinks_when_the_recycle_bin_setting_is_off(mocker: MockerFixture, renumber: MockerFixture) -> None:
+    """Turning the setting off is what makes an un-deleter'd remove permanent again (#291).
+
+    **Test steps:**
+
+    * turn **Move deleted images to the Recycle Bin** off
+    * remove a screenshot with no deleter passed
+    * verify it was unlinked and ``send2trash`` was never reached
+    """
+    del renumber
+    shared_screenshot_deletion_settings().use_recycle_bin = False
+    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
     unlink = mocker.patch.object(Path, "unlink")
     organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
 
     organizer.remove(PATHS[0], PATHS[1:])
 
     unlink.assert_called_once()
-    renumber.assert_called_once_with(DIRECTORY, "info", PATHS[1:])  # type: ignore[attr-defined]
+    send2trash.assert_not_called()
+
+
+def test_deletes_to_trash_reflects_the_live_setting(renumber: MockerFixture) -> None:
+    """Read live rather than cached, so a page Saved after this organizer was built is still honoured.
+
+    **Test steps:**
+
+    * read ``deletes_to_trash`` before and after flipping the setting on an existing organizer
+    * verify each read reflects what the setting held at that moment
+    """
+    del renumber
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    assert organizer.deletes_to_trash is True
+
+    shared_screenshot_deletion_settings().use_recycle_bin = False
+
+    assert organizer.deletes_to_trash is False
+
+
+def test_an_explicit_deleter_overrides_the_setting(mocker: MockerFixture, renumber: MockerFixture) -> None:
+    """A caller passing its own deleter (the permanent-delete fallback, #291) is never second-guessed
+    by the setting.
+
+    **Test steps:**
+
+    * remove a screenshot with the Recycle Bin setting on, but an explicit permanent deleter passed
+    * verify the explicit deleter ran and neither ``send2trash`` nor the setting's own choice did
+    """
+    del renumber
+    send2trash = mocker.patch("rehuco_agent.documents.recycle_bin_deleter.send2trash")
+    unlink = mocker.patch.object(Path, "unlink")
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    organizer.remove(PATHS[0], PATHS[1:], deleter=DEFAULT_DELETER)
+
+    unlink.assert_called_once()
+    send2trash.assert_not_called()
 
 
 def test_a_document_with_no_path_yet_refuses_to_rearrange(renumber: MockerFixture) -> None:

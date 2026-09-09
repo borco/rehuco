@@ -35,6 +35,7 @@ from rehuco_agent.settings import (
     logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
+    screenshot_deletion_settings,
     screenshot_patterns_settings,
     tray_settings,
     videos_settings,
@@ -48,6 +49,7 @@ from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_sett
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
+from rehuco_agent.settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
@@ -256,6 +258,24 @@ def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[
     mocker.patch.object(reference_images_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_reference_images_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def isolate_shared_screenshot_deletion_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ScreenshotDeletionSettings` singleton (#291).
+
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first calls
+    ``RehuDocumentImageOrganizer.remove`` with no explicit deleter (directly, or via `ImageSelector`)
+    would otherwise pin an instance loaded from the developer's real on-disk settings for the rest of
+    the session -- and decide, from that file, whether every later test's delete tries the Recycle Bin.
+
+    Tests that specifically exercise the screenshot-deletion settings patch ``persistent_settings``
+    themselves.
+    """
+    shared_screenshot_deletion_settings.cache_clear()
+    mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=FakeSettings())
+    yield
+    shared_screenshot_deletion_settings.cache_clear()
 
 
 @fixture(autouse=True)
