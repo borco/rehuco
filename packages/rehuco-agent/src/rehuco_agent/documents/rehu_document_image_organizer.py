@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from rehuco_core import renumber_screenshots
+from rehuco_core import DEFAULT_DELETER, Deleter, delete_screenshot, renumber_screenshots
 
 if TYPE_CHECKING:
     from .rehu_document_model import RehuDocumentModel
@@ -43,20 +43,22 @@ class RehuDocumentImageOrganizer:
         directory, stem = self.__location()
         return renumber_screenshots(directory, stem, ordered)
 
-    def remove(self, path: Path, remaining: Sequence[Path]) -> dict[str, str]:
+    def remove(self, path: Path, remaining: Sequence[Path], deleter: Deleter = DEFAULT_DELETER) -> dict[str, str]:
         """Delete ``path`` and renumber ``remaining`` onto the slot it vacated.
 
-        The unlink comes first and the renumbering second, so a delete that fails leaves the set
+        The delete comes first and the renumbering second, so a delete that fails leaves the set
         untouched rather than closing a gap around a file that is still there.
 
         :param path: the screenshot to delete.
         :param remaining: every other screenshot, in the order wanted.
+        :param deleter: how ``path`` is actually removed; defaults to a permanent unlink -- #291 is
+            what gives the dock a Recycle-Bin-capable one to inject instead.
         :returns: ``{old filename: new filename}`` for each survivor actually renamed.
         :raises OSError: if the delete or the renumbering that follows it failed -- or the
-            rearrangement was refused outright (:meth:`__location`), before anything is unlinked.
+            rearrangement was refused outright (:meth:`__location`), before anything is deleted.
         """
         directory, stem = self.__location()
-        path.unlink()
+        delete_screenshot(path, deleter)
         return renumber_screenshots(directory, stem, remaining)
 
     def __location(self) -> tuple[Path, str]:

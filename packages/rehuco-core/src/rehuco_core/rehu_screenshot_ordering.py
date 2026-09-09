@@ -12,7 +12,7 @@ however it needs to and hands over the order it wants.
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, Protocol
 
 TEMP_SUFFIX: Final = ".rehuco-reorder"
 """Appended to a screenshot's filename while it is parked mid-renumbering (:class:`ScreenshotRenumberer`).
@@ -64,6 +64,39 @@ def renumber_screenshots(directory: Path, stem: str, ordered: Sequence[Path]) ->
     if renames:
         ScreenshotRenumberer(directory).apply(renames)
     return renames
+
+
+class Deleter(Protocol):  # pylint: disable=too-few-public-methods
+    """How one screenshot's file is actually made to disappear ([[plugins#tutorial-plugin]], #291).
+
+    A plain protocol so the destination -- straight gone, or by way of the Recycle Bin -- is the
+    caller's choice: core only ever asks for one file to be deleted, never how (#265).
+    """
+
+    def delete(self, path: Path) -> None:
+        """Remove ``path``."""
+
+
+class UnlinkDeleter:  # pylint: disable=too-few-public-methods
+    """The default :class:`Deleter`: a plain, permanent `Path.unlink`."""
+
+    def delete(self, path: Path) -> None:
+        """Unlink ``path``."""
+        path.unlink()
+
+
+DEFAULT_DELETER: Final = UnlinkDeleter()
+"""What :func:`delete_screenshot` and its callers fall back to absent a Recycle-Bin-capable one -- #291
+is what gives the agent that one to inject instead."""
+
+
+def delete_screenshot(path: Path, deleter: Deleter = DEFAULT_DELETER) -> None:
+    """Delete one screenshot through ``deleter``.
+
+    :param path: the screenshot to delete.
+    :param deleter: how the file is actually removed; the Recycle Bin choice is the caller's (#291).
+    """
+    deleter.delete(path)
 
 
 # a class for one public method, because the rollback it needs cannot be a module-level helper:

@@ -150,7 +150,14 @@ from .rehu_rename import (
     rehu_rename_conflict,
     rename_rehu_resource,
 )
-from .rehu_screenshot_ordering import plan_screenshot_renumbering, renumber_screenshots
+from .rehu_screenshot_ordering import (
+    DEFAULT_DELETER,
+    Deleter,
+    UnlinkDeleter,
+    delete_screenshot,
+    plan_screenshot_renumbering,
+    renumber_screenshots,
+)
 from .rehu_screenshots import scan_rehu_screenshot_files
 from .rename_coordination import (
     DEFAULT_RENAME_COORDINATOR,
@@ -240,9 +247,11 @@ from .tc_screenshots import (
     TcScreenshotScanner,
     UnconvertedScreenshot,
     compiled_screenshot_name_patterns,
+    convert_screenshot,
     is_legacy_screenshot,
     scan_tc_screenshot_files,
     scan_tc_screenshots,
+    scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
     screenshot_name_patterns_state,
 )
@@ -304,6 +313,7 @@ __all__ = [
     "DEFAULT_CHECKSUM_ALGORITHM",
     "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
+    "DEFAULT_DELETER",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_RENAME_COORDINATOR",
@@ -313,6 +323,7 @@ __all__ = [
     "DEFAULT_UNKNOWN_USERNAME",
     "DIRECTORY_SCOPED_FILENAMES",
     "DURATION_PROBES",
+    "Deleter",
     "DiscardBackupsJob",
     "DurationProbe",
     "DurationProbeError",
@@ -400,6 +411,7 @@ __all__ = [
     "TcScreenshotScanner",
     "USERS_KEY",
     "UnconvertedScreenshot",
+    "UnlinkDeleter",
     "VerifyChecksumsJob",
     "VIDEO_EXTENSIONS",
     "__version__",
@@ -415,9 +427,11 @@ __all__ = [
     "content_duration",
     "content_size_on_disk",
     "conversion_backups",
+    "convert_screenshot",
     "convert_tc",
     "covering_content_records",
     "current_block_version",
+    "delete_screenshot",
     "discard_conversion_backups",
     "enumerate_catalog_resources",
     "enumerate_content_files",
@@ -465,6 +479,7 @@ __all__ = [
     "scan_rehu_screenshot_files",
     "scan_tc_screenshot_files",
     "scan_tc_screenshots",
+    "scan_unconverted_screenshots",
     "save_checksum_record",
     "screenshot_name_patterns_from_state",
     "screenshot_name_patterns_state",

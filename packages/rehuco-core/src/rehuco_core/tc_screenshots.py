@@ -19,7 +19,8 @@ from typing import Final
 
 from PIL import Image, UnidentifiedImageError
 
-from .constants import IMAGE_EXTENSIONS
+from .constants import IMAGE_EXTENSIONS, LEGACY_SUFFIX
+from .rehu_screenshots import scan_rehu_screenshot_files
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,6 +297,98 @@ def is_legacy_screenshot(filename: str, patterns: tuple[ScreenshotNamePattern, .
     return suffix.lower() in IMAGE_EXTENSIONS and compiled_screenshot_name_patterns(patterns).recognizes(stem)
 
 
+def natural_sort_key(filename: str) -> tuple[tuple[int, int, str], ...]:
+    """``filename`` as a natural-sort key, so ``file-2`` sorts before ``file-10``.
+
+    Shared between :class:`TcScreenshotScanner`, which orders same-pattern candidates by it, and
+    :func:`scan_unconverted_screenshots`, which orders the images dock's un-converted row by it (#265).
+
+    :param filename: the candidate filename.
+    :returns: one entry per digit/non-digit run, digits compared as numbers.
+    """
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part.lower()) for part in re.split(r"(\d+)", filename) if part
+    )
+
+
+def scan_unconverted_screenshots(
+    directory: Path, stem: str, patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS
+) -> list[Path]:
+    """List ``directory``'s pattern-matched images that have not yet been given a ``<stem>NN`` slot.
+
+    The images dock's second row kind ([[plugins#tutorial-plugin]], #265): a picture the screenshot name
+    patterns recognize but that no conversion -- whole-directory or single-file (:func:`convert_screenshot`)
+    -- has renamed into the numbered set yet. Unlike :func:`scan_tc_screenshots`, nothing here groups
+    same-stem variants or picks a winner between them: every recognized image is listed, and it is the
+    dock, not this scan, that a user settles one row at a time.
+
+    :param directory: the resource's directory to scan.
+    :param stem: the filename base already-numbered siblings carry (e.g. ``"info"``), so this can tell
+        them apart from the still-unclaimed images being listed.
+    :param patterns: the naming patterns to recognize; see :func:`scan_tc_screenshots`.
+    :returns: the matching paths, in natural-sort order, or empty when ``directory`` is
+        missing/unreadable (e.g. an offline mount, [[mounts-and-storage#offline-mounts]]).
+    """
+    numbered = re.compile(rf"^{re.escape(stem)}\d{{2}}$", re.IGNORECASE)
+    recognized = compiled_screenshot_name_patterns(patterns)
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return []
+    candidates = [
+        entry.name
+        for entry in entries
+        if entry.suffix.lower() in IMAGE_EXTENSIONS
+        and not numbered.match(entry.stem)
+        and recognized.recognizes(entry.stem)
+    ]
+    return [directory / name for name in sorted(candidates, key=natural_sort_key)]
+
+
+def convert_screenshot(
+    path: Path, stem: str, patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS
+) -> Path:
+    """Convert one un-converted, pattern-matched screenshot into its own ``<stem>NN`` slot.
+
+    ``path`` takes the legacy number its own name carries when that slot is free, and is appended past
+    the current end of the numbered set otherwise -- the free-slot-or-append rule of #265, and the fix
+    for the two-click case a whole-directory conversion (#288) cannot decide on its own: delete
+    ``info00``, then convert ``sample-00`` and it lands on the slot that just opened rather than being
+    refused as a collision. A legacy number at or above :data:`MAX_SCREENSHOT_SLOT` is not a free slot
+    either -- the whole-directory conversion leaves such a file alone for exactly this hand correction
+    ([[acquisition-tooling#tc-to-rehu]]) -- so it appends the same way rather than writing a
+    ``<stem>NNN`` no reader recognizes.
+
+    :param path: the image to convert, still under its legacy name.
+    :param stem: the filename base the numbered set shares (e.g. ``"info"``).
+    :param patterns: the naming patterns to recognize; see :func:`scan_tc_screenshots`.
+    :returns: the file's new path.
+    :raises PermissionError: ``path``'s resource is still a ``.tc``. Its images are numbered by the
+        whole-directory conversion and nothing else: the dock is a read-only view over an open ``.tc``
+        ([[plugins#tutorial-plugin]]), and the same lock applies here where that view cannot.
+    :raises LookupError: ``path``'s name matches no pattern in ``patterns``.
+    :raises ValueError: the numbered set is full -- appending would need a slot at or above
+        :data:`MAX_SCREENSHOT_SLOT`.
+    :raises FileExistsError: the chosen ``<stem>NN`` name is already on disk.
+    """
+    directory = path.parent
+    if (directory / f"{stem}{LEGACY_SUFFIX}").exists():
+        raise PermissionError(f"{path} belongs to a resource that is still a .tc")
+    match = compiled_screenshot_name_patterns(patterns).match(path.stem)
+    if match is None:
+        raise LookupError(f"{path.name} matches no screenshot name pattern")
+    taken = {int(existing.stem[len(stem) :]) for existing in scan_rehu_screenshot_files(directory, stem)}
+    free = match.slot < MAX_SCREENSHOT_SLOT and match.slot not in taken
+    slot = match.slot if free else max(taken, default=-1) + 1
+    if slot >= MAX_SCREENSHOT_SLOT:
+        raise ValueError(f"{path.name} cannot be numbered: the {stem}NN set is full")
+    destination = directory / f"{stem}{slot:02d}{path.suffix}"
+    if destination.exists():
+        raise FileExistsError(destination)
+    path.rename(destination)
+    return destination
+
+
 # one public entry point, because a scan is one operation: the classification half moved to
 # ScreenshotNamePatterns when the patterns became the caller's (#53, #287), leaving this class the
 # per-directory resolution, which nothing asks for separately
@@ -412,7 +505,7 @@ class TcScreenshotScanner:
             groups.setdefault(stem.lower(), []).append(filename)
             matches[stem.lower()] = match
         entries = [(matches[stem], *self.__narrowed(names)) for stem, names in groups.items()]
-        return sorted(entries, key=lambda entry: (entry[0].pattern_index, self.__natural_key(entry[1]), entry[1]))
+        return sorted(entries, key=lambda entry: (entry[0].pattern_index, natural_sort_key(entry[1]), entry[1]))
 
     def __narrowed(self, filenames: list[str]) -> tuple[str, list[str]]:
         """Pick which of one stem's files takes its slot: largest by pixel area, then the first
@@ -441,19 +534,6 @@ class TcScreenshotScanner:
         """
         suffix = Path(filename).suffix.lower()
         return -self.__pixel_area(filename), IMAGE_EXTENSIONS.index(suffix), filename
-
-    @staticmethod
-    def __natural_key(filename: str) -> tuple[tuple[int, int, str], ...]:
-        """``filename`` as a natural-sort key, so ``file-2`` sorts before ``file-10``.
-
-        :param filename: the candidate filename.
-        :returns: one entry per digit/non-digit run, digits compared as numbers.
-        """
-        return tuple(
-            (0, int(part), "") if part.isdigit() else (1, 0, part.lower())
-            for part in re.split(r"(\d+)", filename)
-            if part
-        )
 
     def __pixel_area(self, filename: str) -> int:
         """Read ``filename``'s pixel dimensions (a lazy, header-only read for these formats).
