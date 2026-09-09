@@ -520,19 +520,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     def __on_conversion_backups(self) -> None:
         """Open the conversion-backups manager (``File`` > ``Conversion Backups...``, #193).
 
-        Takes no identity, unlike :meth:`__on_import_legacy_catalog`: reverting and discarding move and
-        delete files, and file them under nobody -- there are no per-user flags being read or written
-        here for an identity to belong to.
-
-        Wired to the documents dock's open-paths seam (#246), which warns before a revert about an open
-        tab and refreshes it once reverted.
+        Takes no identity, unlike :meth:`__on_import_legacy_catalog`: discarding deletes files, and files
+        them under nobody -- there are no per-user flags being read or written here for an identity to
+        belong to.
         """
-        dialog = ConversionBackupsDialog(
-            self.__task_queue,
-            parent=self,
-            open_paths=self.__documents_dock.open_paths,
-            on_reverted=self.__documents_dock.adopt_reverted_conversion,
-        )
+        dialog = ConversionBackupsDialog(self.__task_queue, parent=self)
         dialog.exec()
 
     def __populate_recents_menu(self) -> None:

@@ -1,16 +1,17 @@
-"""`File ▸ Conversion Backups…`: act on the `.orig` backups a bulk import left behind (#193).
+"""`File ▸ Conversion Backups…`: discard the `.orig` backups a bulk import left behind (#193).
 
 **This is where the review pass lives.** #192 deliberately drops the per-item confirmation, because the
 conversion offers no choices worth confirming thousands of times; safety is that nothing was deleted.
-That safety is only real if the backups can be acted on afterwards, which is this dialog -- filter to the
-handful of resources a judgement was made about, revert the few that went wrong, then select-all-discard
-the rest.
+That safety is only real if the backups can be reviewed afterwards, which is this dialog -- filter to the
+handful of resources worth a closer look, then select-all-discard the rest. A conversion is
+number-preserving (#288), so nothing is lost by converting and there is nothing to revert -- discarding
+the backups is the only decision this dialog offers.
 
-**Every action runs on the task queue**, one :class:`~rehuco_core.TcBackupsJob` per resource, whatever
-the selection size: it is the same code path for three rows and nine hundred, it puts each operation
-under its own resource's log scope ([[appendices.task-queue#scopes]]), and cancelling stops after the
-current resource for free ([[appendices.task-queue#job-responsibility]]). The scan (#193's core module)
-runs on a worker thread so the dialog stays responsive and cancellable, the same shape
+**Every discard runs on the task queue**, one :class:`~rehuco_core.DiscardBackupsJob` per resource,
+whatever the selection size: it is the same code path for three rows and nine hundred, it puts each
+operation under its own resource's log scope ([[appendices.task-queue#scopes]]), and cancelling stops
+after the current resource for free ([[appendices.task-queue#job-responsibility]]). The scan (#193's core
+module) runs on a worker thread so the dialog stays responsive and cancellable, the same shape
 `rehuco_agent.dialogs.import_legacy_catalog_wizard` uses.
 
 **Discard is the only irreversible act in the whole import flow**, and its confirmation reads that way:
@@ -24,7 +25,7 @@ it names the resource count and the byte total rather than asking a reflexive ye
 # pylint: disable=duplicate-code
 
 import logging
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Final, override
 
@@ -37,7 +38,6 @@ from rehuco_core import (
     DiscardBackupsJob,
     JobState,
     JobStatus,
-    RevertConversionJob,
     TaskQueue,
     TcBackupsJob,
     scan_conversion_backups,
@@ -47,7 +47,6 @@ from ..settings.conversion_backups_dialog_settings import ConversionBackupsDialo
 from ..settings.persistent_settings import persistent_settings
 from .conversion_backups_dialog_ui import Ui_ConversionBackupsDialog
 from .conversion_backups_table_model import (
-    REFUSED_OUTCOME,
     ConversionBackupsFilterProxyModel,
     ConversionBackupsRow,
     ConversionBackupsTableModel,
@@ -62,48 +61,16 @@ bounded, the same discipline
 :data:`~rehuco_agent.dialogs.import_legacy_catalog_wizard.SCAN_THREAD_WAIT_MS` follows: the scan notices
 a cancel at its next resource, which is well inside this."""
 
-NOTHING_RETAINED: Final = "No conversion backups under this folder — nothing left to revert or discard."
+NOTHING_RETAINED: Final = "No conversion backups under this folder — nothing left to discard."
 """What the summary says for a scan that found nothing, which is a real answer rather than an empty
 table with no explanation."""
 
 UNREADABLE_WARNING: Final = "\n{count} folder(s) could not be read and were left out."
 
-NO_LEGACY_REASON: Final = "no backed-up .tc file"
-OBSTRUCTED_REASON: Final = "{path} is in the way"
-"""Why a revert was never enqueued. The inventory already knows both ([[acquisition-tooling#convert-mechanics]]),
-so asking the queue would buy the same refusal later and noisier -- and a row that says why is the whole
-of "a refused revert surfaces the reason and changes nothing"."""
-
-REVERT_TITLE: Final = "Revert Conversions"
-REVERT_QUESTION: Final = (
-    "Revert {count} conversion(s)?\n\n"
-    "Each restores its original .tc and legacy screenshots, and deletes the .rehu the conversion wrote."
-)
-EDITED_WARNING: Final = (
-    "\n{count} resource(s) have been saved again since they were converted, so reverting discards those edits:\n{names}"
-)
-MORE_EDITED: Final = "\n  …and {count} more"
-MAXIMUM_NAMED_EDITED: Final = 10
-"""How many edited-since resources the revert confirmation names one by one.
-
-**Per resource, not a blanket disclaimer** (#193): *some of these may have been edited* is a sentence a
-reader can only agree to blindly. Past this many the rest are counted, because a wall of names is a
-blanket disclaimer again. ``resource(s)``, the count convention every other string in this dialog
-already follows (:data:`REVERT_QUESTION`, :data:`DISCARD_QUESTION`, :data:`UNREADABLE_WARNING`) --
-*1 of these have* was a number disagreement in the commonest case."""
-
-OPEN_WARNING: Final = (
-    "\n{count} resource(s) are open in an editor tab; each is refreshed to show the restored file, "
-    "discarding any unsaved changes there."
-)
-"""What the revert confirmation adds when some of the selection is open (#246) -- a count in the same
-``resource(s)`` convention as :data:`EDITED_WARNING`, since which tabs are open is not a decision a
-reader made here and naming them would only repeat what their own title bars already say."""
-
 DISCARD_TITLE: Final = "Discard Backups"
 DISCARD_QUESTION: Final = (
     "Permanently delete the backups of {count} resource(s), freeing {size}?\n\n"
-    "This cannot be undone. Those conversions can no longer be reverted."
+    "This cannot be undone. Their original .tc and legacy screenshots are gone for good."
 )
 
 BUSY_STATUS: Final = "{done} / {total}"
@@ -175,7 +142,7 @@ class ScanWorker(QObject):
 
 
 class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-attributes
-    """The backups manager: scan a folder, review what still has backups, revert or discard it (#193).
+    """The backups manager: scan a folder, review what still has backups, and discard them (#193).
 
     Shown with :meth:`~PySide6.QtWidgets.QDialog.exec` from `File ▸ Conversion Backups…`, a task run over
     a tree rather than a view kept open -- so it is a dialog, not a dock, the same call
@@ -187,20 +154,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
     on whichever thread the change happened on ([[appendices.task-queue#observation]]), and touching a
     widget there would be a plain thread-safety bug.
 
-    **This dialog knows nothing about open documents by itself** (#246) -- it works over a folder tree,
-    not the editor's own state, so both halves of that seam are handed in rather than reached for:
-    ``open_paths`` says which selected resources to warn about before a revert runs, and ``on_reverted``
-    is where a finished one is reported, so whoever *does* track open documents (``MainWindow`` via
-    `~rehuco_agent.documents.DocumentsDock`) can refresh a tab left showing a file that just moved out
-    from under it. Neither is required: omitted, this dialog behaves exactly as it did before #246, over
-    a caller (a test, say) that has no documents open to protect.
-
     :param queue: the app-wide queue this dialog enqueues its jobs onto.
     :param parent: optional Qt parent.
-    :param open_paths: called fresh at each revert confirmation for the paths currently open in an editor
-        tab, to warn about how many of the selection that covers. ``None`` warns about none.
-    :param on_reverted: called with a resource's path once its ``RevertConversionJob`` has finished
-        successfully, so an open tab can adopt the restored ``.tc`` in place. ``None`` does nothing.
     """
 
     class Marshaller(QObject):
@@ -213,18 +168,9 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
 
         queue_changed = Signal()
 
-    def __init__(
-        self,
-        queue: TaskQueue,
-        parent: QWidget | None = None,
-        *,
-        open_paths: Callable[[], Collection[Path]] | None = None,
-        on_reverted: Callable[[Path], None] | None = None,
-    ) -> None:
+    def __init__(self, queue: TaskQueue, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.__queue: Final = queue
-        self.__open_paths: Final = open_paths
-        self.__on_reverted: Final = on_reverted
         self.__settings: Final = ConversionBackupsDialogSettings()
         self.__settings.load(persistent_settings())
 
@@ -253,8 +199,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__running_total = 0
         self.__closed = False
         """Whether :meth:`done` has run with jobs still unfinished, deferring the queue detach until
-        the batch settles (#246) -- what keeps a finishing revert reaching :attr:`__on_reverted` after
-        the dialog closes, instead of the tab it promised to refresh going stale anyway."""
+        the batch settles (#246) -- rows already enqueued stay in the Tasks dock and this dialog keeps
+        listening for them until every one has."""
 
         self.__marshaller: Final = ConversionBackupsDialog.Marshaller(self)
         self.__marshaller.queue_changed.connect(self.__on_queue_changed, Qt.ConnectionType.QueuedConnection)
@@ -265,7 +211,6 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__ui.recent_roots_combo.activated.connect(self.__on_recent_root_chosen)
         self.__ui.filter_edit.textChanged.connect(self.__on_filter_changed)
         self.__ui.select_all_check_box.clicked.connect(self.__on_select_all_clicked)
-        self.__ui.revert_button.clicked.connect(self.__on_revert)
         self.__ui.discard_button.clicked.connect(self.__on_discard)
         self.__ui.cancel_button.clicked.connect(self.__on_cancel)
         self.__ui.close_button.clicked.connect(self.accept)
@@ -294,13 +239,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         Close, the titlebar close button and Escape alike.
 
         Jobs already enqueued are left alone: closing this dialog does not cancel work already asked
-        for, and their rows stay in the Tasks dock. **And they are still listened for** (#246): the
-        confirmation promised any open tab a refresh once its revert lands, and the queue is serial and
-        app-wide, so a revert can sit behind hours of hashing while the dialog is long closed. The
-        detach is deferred until the batch settles (:meth:`__on_queue_changed`) rather than skipped --
-        safe because this dialog outlives its close (parented to the window) and ``MainWindow`` shuts
-        the queue down before teardown, so no callback can reach a deleted object. A revert persisted
-        across a restart (#238) is the one residue: it finishes with no dialog listening at all.
+        for, and their rows stay in the Tasks dock. **And they are still listened for** (#246), so their
+        rows in this dialog's own table keep updating for as long as it takes -- the detach is deferred
+        until the batch settles (:meth:`__on_queue_changed`) rather than skipped, safe because this
+        dialog outlives its close (parented to the window) and ``MainWindow`` shuts the queue down before
+        teardown, so no callback can reach a deleted object.
 
         :param result: the dialog's result code, passed straight through to :meth:`QDialog.done`.
         """
@@ -531,7 +474,6 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         self.__ui.browse_button.setEnabled(not busy)
         self.__ui.rescan_button.setEnabled(not busy and self.__root is not None)
         self.__ui.recent_roots_combo.setEnabled(not busy)
-        self.__ui.revert_button.setEnabled(not busy and bool(checked))
         self.__ui.discard_button.setEnabled(not busy and bool(checked))
         self.__ui.cancel_button.setEnabled(busy)
         self.__ui.select_all_check_box.setEnabled(not busy and bool(shown))
@@ -553,23 +495,6 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
 
     # region Acting
 
-    def __on_revert(self) -> None:
-        """Confirm, then enqueue a revert over every selected resource that can actually take one.
-
-        A row the inventory already calls not-revertible is **never enqueued**: it is marked refused
-        with the reason, since the queue would only reach the same refusal later and put a failure row
-        in the Tasks dock for something that was knowable here.
-        """
-        selected = self.__model.checked_rows()
-        runnable = [row for row in selected if row.backups.revertible]
-        refused = [row for row in selected if not row.backups.revertible]
-        if runnable and not self.__confirm_revert(runnable):
-            return
-        for row in refused:
-            self.__model.set_row_outcome(row.path, REFUSED_OUTCOME, self.__refusal_reason(row))
-        if runnable:
-            self.__enqueue(RevertConversionJob, runnable)
-
     def __on_discard(self) -> None:
         """Confirm, then enqueue a discard over every selected resource.
 
@@ -580,43 +505,6 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         if not selected or not self.__confirm_discard(selected):
             return
         self.__enqueue(DiscardBackupsJob, selected)
-
-    @staticmethod
-    def __refusal_reason(row: ConversionBackupsRow) -> str:
-        """Why this resource's conversion cannot be reverted.
-
-        :param row: the not-revertible row.
-        :returns: the reason, in the vocabulary :func:`~rehuco_core.revert_conversion` refuses in.
-        """
-        if row.backups.legacy_restored is None:
-            return NO_LEGACY_REASON
-        # pylint's astroid mis-infers a tuple element of `obstructions` (a `Path`) as a PySide6 signal
-        # descriptor in this module -- this is an ordinary attribute read
-        return OBSTRUCTED_REASON.format(path=row.backups.obstructions[0].name)  # pylint: disable=no-member
-
-    def __confirm_revert(self, rows: Sequence[ConversionBackupsRow]) -> bool:
-        """Ask before reverting, naming the resources whose edits it would discard and counting how many
-        are open in an editor tab right now (#246).
-
-        :param rows: the resources about to be reverted.
-        :returns: whether to go ahead.
-        """
-        question = REVERT_QUESTION.format(count=len(rows))
-        edited = [row for row in rows if row.backups.edited_since]
-        if edited:
-            named = "\n".join(f"  {row.path.parent.name}" for row in edited[:MAXIMUM_NAMED_EDITED])
-            if len(edited) > MAXIMUM_NAMED_EDITED:
-                named += MORE_EDITED.format(count=len(edited) - MAXIMUM_NAMED_EDITED)
-            question += EDITED_WARNING.format(count=len(edited), names=named)
-        if self.__open_paths is not None:
-            # resolved before matching: an open document's path is resolved (`MainWindow.open_file`),
-            # while these rows keep the spelling the scan root was browsed under -- a junction or
-            # mapped drive would otherwise hide exactly the tabs this warning is about (#246)
-            open_now = set(self.__open_paths())
-            open_count = sum(1 for row in rows if row.path in open_now or row.path.resolve() in open_now)
-            if open_count:
-                question += OPEN_WARNING.format(count=open_count)
-        return self.__ask(REVERT_TITLE, question)
 
     def __confirm_discard(self, rows: Sequence[ConversionBackupsRow]) -> bool:
         """Ask before discarding, naming the count and the bytes rather than asking a bare yes/no.
@@ -691,13 +579,9 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         follows: :meth:`__observe` writes to it from whichever thread the engine calls it on, which can
         be mid-iteration here on the GUI thread.
 
-        A resource whose ``RevertConversionJob`` just landed here is reported to :attr:`__on_reverted`
-        (#246), so a tab left open on it can catch up -- after the row itself is updated, the same order
-        :meth:`~rehuco_agent.documents.checksum_actions.ChecksumActions.__on_queue_changed` reports its
-        own finding in. And once the whole batch has settled with the dialog already closed, the
-        deferred queue detach :meth:`done` left behind finally runs -- checked even on a wake that
-        finished nothing, because a job removed without running settles the batch without ever
-        producing an outcome to read.
+        Once the whole batch has settled with the dialog already closed, the deferred queue detach
+        :meth:`done` left behind finally runs -- checked even on a wake that finished nothing, because a
+        job removed without running settles the batch without ever producing an outcome to read.
         """
         newly_finished = 0
         for serial, status in list(self.__seen.items()):
@@ -705,10 +589,8 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
                 continue
             self.__reported.add(serial)
             newly_finished += 1
-            outcome, message = self.__outcome_for(self.__jobs[serial], status)
+            outcome, message = self.__outcome_for(status)
             self.__model.set_row_outcome(status.source, outcome, message)
-            if outcome == "reverted" and self.__on_reverted is not None:
-                self.__on_reverted(status.source)
         if newly_finished:
             self.__completed += newly_finished
             self.__ui.scan_progress_bar.setValue(self.__completed)
@@ -721,15 +603,14 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
             self.__closed = False
 
     @staticmethod
-    def __outcome_for(job: TcBackupsJob, status: JobStatus) -> tuple[str, str | None]:
+    def __outcome_for(status: JobStatus) -> tuple[str, str | None]:
         """What a finished job's status means for its row.
 
-        :param job: the job that finished, for the verb its row should read.
         :param status: its last status.
         :returns: the outcome, and a failure's message.
         """
         if status.state is JobState.DONE:
-            return ("reverted" if isinstance(job, RevertConversionJob) else "discarded"), None
+            return "discarded", None
         if status.state is JobState.CANCELLED:
             return "cancelled", None
         return "failed", status.error

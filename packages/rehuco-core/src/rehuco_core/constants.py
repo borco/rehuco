@@ -10,8 +10,7 @@ rather than one of the files a resource is named after, which is the distinction
 LEGACY_SUFFIX: Final = ".tc"
 """A legacy tc4 record's file extension -- the source format a conversion consumes
 ([[acquisition-tooling#convert-mechanics]]), and the second thing that makes a file *a resource*
-(:data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`). Its ``.orig`` backup is what marks a directory
-as revertible (:mod:`rehuco_core.tc_conversion_backups`)."""
+(:data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`)."""
 
 INFO_REHU_FILENAME: Final = "info.rehu"
 """A directory-scoped resource's filename ([[data-model#resource-scoping]]) -- the one name that says a
@@ -111,5 +110,4 @@ exclusions -- the record, its screenshots, its checksum manifest, and the ``.ori
 retains (#253) -- are not listed here and are not the user's: :mod:`rehuco_core.rehu_content_files`
 derives them from *every* record it finds while scanning -- the resource's own and any nested or
 neighboring one's -- and the backups from
-:func:`~rehuco_core.tc_conversion_backups.is_conversion_backup`, so the set a walk skips stays the set a
-revert would restore. Both apply whatever this set says."""
+:func:`~rehuco_core.tc_conversion_backups.is_conversion_backup`. Both apply whatever this set says."""

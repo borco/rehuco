@@ -1,21 +1,19 @@
-"""Reverting a conversion, and discarding its backups, as task-queue jobs
-([[acquisition-tooling#convert-mechanics]], #193).
+"""Discarding a conversion's backups, as a task-queue job ([[acquisition-tooling#convert-mechanics]], #193).
 
-`rehuco_core.tc_conversion_backups` ships both operations as plain callables; these are the classes that
-wrap one call each in the queue's vocabulary, so the backups manager (#193) can act on a whole catalog's
-worth of resources without blocking the GUI thread on the first. The mirror of
-`rehuco_core.tc_import_job`, which does the same for the forward direction.
+`rehuco_core.tc_conversion_backups` ships the operation as a plain callable; this is the class that wraps
+it in the queue's vocabulary, so the backups manager (#193) can act on a whole catalog's worth of
+resources without blocking the GUI thread on the first. The mirror of `rehuco_core.tc_import_job`, which
+does the same for the forward direction.
 
-**Neither is safely interruptible, and neither resumes.** One resource, one call: the underlying
-operation either completes -- rolling back on its own failure, in the revert's case -- or never starts,
-and there is no natural division point inside it for
+**Not safely interruptible, and does not resume.** One resource, one call: the underlying operation
+either completes or never starts, and there is no natural division point inside it for
 :meth:`~rehuco_core.tasks.TaskJobBase.checkpoint` to divide. A pause or cancel asked of a *running* one
 has no effect until it returns on its own; a **queued** one is cancelled outright and never starts
 ([[appendices.task-queue#job-responsibility]]). That is the whole of what #192's "cancel stops after the
 current resource" means here too.
 
 **Not tracked through a** :class:`~rehuco_core.RenameCoordinator`, for the same reason
-`rehuco_core.tc_import_job` is not (#241): both operations rename the very files a coordinator would
+`rehuco_core.tc_import_job` is not (#241): the operation deletes the very files a coordinator would
 follow, so there is nothing stable for a running job's ``source`` to track. It answers the same path for
 its whole life, which costs nothing.
 """
@@ -26,13 +24,12 @@ from typing import Any, Final
 
 from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
-from .tc_conversion_backups import ConversionBackups, discard_conversion_backups, revert_conversion
+from .tc_conversion_backups import discard_conversion_backups
 
 LOG: Final = logging.getLogger(__name__)
 
-TC_REVERT_KIND: Final = "tc-revert"
 TC_DISCARD_KIND: Final = "tc-discard"
-"""What a saved queue spells these jobs as ([[appendices.task-queue#lifetime]]) -- a promise once written
+"""What a saved queue spells this job as ([[appendices.task-queue#lifetime]]) -- a promise once written
 into a user's queue file, never casually renamed."""
 
 STATE_PATH_KEY: Final = "path"
@@ -43,9 +40,10 @@ STATE_PATH_KEY: Final = "path"
 class TcBackupsJob(TaskJobBase):
     """One operation over one converted resource's retained backups, queued rather than run inline (#193).
 
-    Subclasses supply :attr:`kind`, :attr:`verb` and :meth:`perform`; the location, the label, the validation
-    and the saved state are the same for both, because what differs between reverting and discarding is
-    entirely inside the two callables `rehuco_core.tc_conversion_backups` already ships.
+    A base with a single subclass today, kept as a base because the location, the label, the validation
+    and the saved state are the shape any such job takes -- what differs is entirely inside the one
+    callable `rehuco_core.tc_conversion_backups` ships, supplied through :attr:`kind`, :attr:`verb` and
+    :meth:`perform`.
 
     :param rehu_path: the converted resource's ``.rehu`` file, or ``None`` for a job about to be handed a
         saved state -- the only way one is legitimately built without a path, and why the registry can
@@ -57,7 +55,7 @@ class TcBackupsJob(TaskJobBase):
     """The stable saved name; set by each subclass, empty on this base, which is never registered."""
 
     verb: str = ""
-    """What this job does, for the label and the log -- ``"Revert conversion"`` or ``"Discard backups"``."""
+    """What this job does, for the label and the log -- ``"Discard backups"``."""
 
     safely_interruptible = False
 
@@ -71,8 +69,7 @@ class TcBackupsJob(TaskJobBase):
 
         :returns: ``None`` when the resource's directory is still there, else what is wrong with it.
             The ``.rehu`` itself is deliberately **not** required to exist: a discard is about the
-            ``.orig`` siblings, and a revert over a resource whose ``.rehu`` was deleted by hand still
-            has originals to put back.
+            ``.orig`` siblings, whether or not the ``.rehu`` beside them is still there.
         """
         path = self.source
         if path is None:
@@ -146,7 +143,7 @@ class TcBackupsJob(TaskJobBase):
         self.label = self.__derived_label()
 
     def __derived_label(self) -> str:
-        """This job's own name for itself, e.g. ``"Revert conversion - Sculpting Series"``.
+        """This job's own name for itself, e.g. ``"Discard backups - Sculpting Series"``.
 
         A fallback rather than the usual answer: a restored item's saved label is used in preference
         ([[appendices.task-queue#lifetime]]), so a row comes back reading exactly as it was written.
@@ -155,48 +152,6 @@ class TcBackupsJob(TaskJobBase):
         if path is None:
             return self.verb
         return f"{self.verb} - {resource_name(path)}"
-
-
-class RevertConversionJob(TcBackupsJob):
-    """Undo one completed conversion from its retained backups, on the queue (#193).
-
-    **The written ``.rehu`` is deleted**, discarding any edit made since the conversion -- the honest
-    meaning of *undo the conversion* (:func:`~rehuco_core.revert_conversion`). Warning about that is the
-    enqueuer's job, before the row ever reaches the queue: by the time this runs there is nobody left to
-    ask.
-    """
-
-    kind = TC_REVERT_KIND
-    verb = "Revert conversion"
-
-    def __init__(self, rehu_path: Path | None = None, *, label: str | None = None) -> None:
-        super().__init__(rehu_path, label=label)
-        self.__reverted: ConversionBackups | None = None
-
-    @property
-    def reverted(self) -> ConversionBackups | None:
-        """What the last completed run put back, or ``None`` before one has finished.
-
-        Held for the surface that enqueued the job, the same discipline
-        :attr:`~rehuco_core.TcImportJob.document` is under: the engine carries progress and an outcome,
-        deliberately not a payload, so a caller that wants the result reads it off the job object it
-        built, once the job has finished.
-        """
-        return self.__reverted
-
-    def reset(self) -> None:
-        """Drop the last run's result along with the stop request, so a retry reports its own run."""
-        super().reset()
-        self.__reverted = None
-
-    def perform(self, rehu_path: Path) -> None:
-        """See :meth:`TcBackupsJob.perform` -- :func:`~rehuco_core.revert_conversion`.
-
-        :param rehu_path: the converted resource's ``.rehu`` file.
-        :raises FileNotFoundError: no backed-up ``.tc`` sits beside the resource.
-        :raises FileExistsError: a restore target is occupied, or a leftover staging file is in the way.
-        """
-        self.__reverted = revert_conversion(rehu_path)
 
 
 class DiscardBackupsJob(TcBackupsJob):
@@ -216,8 +171,13 @@ class DiscardBackupsJob(TcBackupsJob):
 
     @property
     def discarded(self) -> tuple[Path, ...] | None:
-        """What the last completed run deleted, or ``None`` before one has finished; see
-        :attr:`RevertConversionJob.reverted` for why this is read off the job rather than carried."""
+        """What the last completed run deleted, or ``None`` before one has finished.
+
+        Held for the surface that enqueued the job, the same discipline
+        :attr:`~rehuco_core.TcImportJob.document` is under: the engine carries progress and an outcome,
+        deliberately not a payload, so a caller that wants the result reads it off the job object it
+        built, once the job has finished.
+        """
         return self.__discarded
 
     def reset(self) -> None:
@@ -233,5 +193,4 @@ class DiscardBackupsJob(TcBackupsJob):
         self.__discarded = discard_conversion_backups(rehu_path)
 
 
-DEFAULT_TASK_JOB_REGISTRY.register(TC_REVERT_KIND, RevertConversionJob)
 DEFAULT_TASK_JOB_REGISTRY.register(TC_DISCARD_KIND, DiscardBackupsJob)

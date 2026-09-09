@@ -17,7 +17,7 @@
    <item>
     <widget class="QLabel" name="instructions_label">
      <property name="text">
-      <string>Choose a folder to look through for converted resources that still keep their .orig backups. Reverting undoes a conversion; discarding makes it permanent and cannot be undone.</string>
+      <string>Choose a folder to look through for converted resources that still keep their .orig backups. Discarding them makes the conversion permanent and cannot be undone.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -129,13 +129,6 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="button_layout">
-     <item>
-      <widget class="QPushButton" name="revert_button">
-       <property name="text">
-        <string>Revert Conversion</string>
-       </property>
-      </widget>
-     </item>
      <item>
       <widget class="QPushButton" name="discard_button">
        <property name="text">

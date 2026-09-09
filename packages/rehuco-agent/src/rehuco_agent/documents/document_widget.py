@@ -366,9 +366,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         toolbar.addAction(self.__upgrade_action)
         toolbar.addAction(self.__convert_keep_backups_action)
         toolbar.addAction(self.__convert_discard_originals_action)
-        # the reverse pair, offered exactly while the conversion they undo still has its backups --
-        # the same visible-while-the-condition-holds shape the two convert actions above have (#193)
-        toolbar.addAction(self.__conversion_backups.revert_action)
+        # offered exactly while the conversion's backups are still retained -- the same
+        # visible-while-the-condition-holds shape the two convert actions above have (#193)
         toolbar.addAction(self.__conversion_backups.discard_action)
         if self.__checksums is not None:
             # Verify Old carries Verify All as its menu, so one button offers both -- and Generate is
@@ -422,8 +421,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
 
     @property
     def conversion_backup_actions(self) -> ConversionBackupActions:
-        """This document's Revert Conversion / Discard Backups pair (#193), offered exactly while the
-        resource still holds retained backups."""
+        """This document's Discard Backups action (#193), offered exactly while the resource still holds
+        retained backups."""
         return self.__conversion_backups
 
     def detach(self) -> None:
@@ -749,13 +748,9 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             severity = MessageBannerSeverity.INFO if self.__checksums.finding_clean else MessageBannerSeverity.WARNING
             rows.append(MessageBannerRow(severity, self.__checksums.finding))
         if self.__conversion_backups.notice:
-            # a warning once a save has made a revert cost real edits, information until then: retained
-            # backups are insurance, and only their divergence from the record is a state worth an
-            # amber row (#193)
-            severity = (
-                MessageBannerSeverity.WARNING if self.__conversion_backups.edited_since else MessageBannerSeverity.INFO
-            )
-            rows.append(MessageBannerRow(severity, self.__conversion_backups.notice))
+            # information, not a warning: retained backups are the resource's own original .tc and
+            # screenshots, worth knowing about but nothing here is at risk (#193, #290)
+            rows.append(MessageBannerRow(MessageBannerSeverity.INFO, self.__conversion_backups.notice))
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:

@@ -537,9 +537,9 @@ def test_any_orig_sibling_is_a_backup_whatever_it_backs_up(mocker: MockerFixture
     no record and no stem (#253).
 
     A legacy screenshot is named ``cover.jpg`` or ``sample-01.jpg`` and carries nothing tying it to the
-    resource it belongs to, which is why a revert enumerates a directory rather than a stem. Following a
-    narrower rule here would count files a revert is holding -- and would drop them again the moment the
-    backups were discarded.
+    resource it belongs to, which is why backups are enumerated per directory rather than per stem.
+    Following a narrower rule here would count a retained backup as content -- and would drop it again the
+    moment the backups were discarded.
 
     **Test steps:**
 

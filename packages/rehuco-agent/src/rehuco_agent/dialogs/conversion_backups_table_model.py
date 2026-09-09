@@ -2,7 +2,7 @@
 conversion backups, a checkbox to select it, and -- once an action has run -- what became of it (#193).
 
 **Grouped per resource, not per file.** A converted tutorial holds six `.orig` files and one decision;
-listing the files would put six rows in front of a reader who can only revert or discard the resource as
+listing the files would put six rows in front of a reader who can only discard the resource's backups as
 a whole ([[acquisition-tooling#convert-mechanics]]). The file count and the bytes are what the resource's
 row *says*, not what it is split into.
 """
@@ -38,21 +38,12 @@ TEXT_COLUMNS: Final = (RESOURCE_COLUMN, CONVERTED_COLUMN, BACKUPS_COLUMN, FLAGS_
 """The columns the filter matches against -- everything except the checkbox."""
 
 TIE_BREAK_FLAG: Final = "tie-break"
-EDITED_SINCE_FLAG: Final = "edited since"
-NOT_REVERTIBLE_FLAG: Final = "not revertible"
-"""What a row's Flags column can say (#193).
-
-The three a :class:`~rehuco_core.ConversionBackups` can actually answer, and each is a reason to look:
-a **tie-break** dropped a recognized screenshot, an **edited since** row would lose real work to a
-revert, and a **not revertible** one has no backed-up `.tc` or an occupied restore target, so only
-discarding is left. Filtering by :data:`TIE_BREAK_FLAG` is the review pass #192 deliberately skipped."""
+"""What a row's Flags column can say (#193): a **tie-break** dropped a recognized screenshot -- the row
+the review pass #192 deliberately skipped exists to review. Filtering by :data:`TIE_BREAK_FLAG` is that
+review."""
 
 NO_FLAGS: Final = "—"
 NO_OUTCOME: Final = "—"
-
-REFUSED_OUTCOME: Final = "refused"
-"""What a row reads when the dialog declined to enqueue a revert over it at all -- the inventory already
-says it cannot run, so asking the queue would only buy the same answer later and noisier."""
 
 
 def format_size(total_bytes: int) -> str:
@@ -82,12 +73,11 @@ def describe_backups(backups: ConversionBackups) -> str:
 class ConversionBackupsRow:
     """One table row: a resource's inventory, whether it is selected, and what became of it.
 
-    :param backups: what this resource still holds, and what a revert would put back (#190).
+    :param backups: what this resource still holds (#190).
     :param checked: whether this row is selected for the next action.
     :param outcome: ``None`` before an action has run over this row; ``"pending"`` once its job is
-        enqueued; ``"reverted"``/``"discarded"``/``"failed"``/``"cancelled"`` once it finishes; or
-        :data:`REFUSED_OUTCOME` for a revert the dialog declined to enqueue at all.
-    :param message: why a ``"failed"`` or :data:`REFUSED_OUTCOME` row did not happen, else ``None``.
+        enqueued; ``"discarded"``/``"failed"``/``"cancelled"`` once it finishes.
+    :param message: why a ``"failed"`` row did not happen, else ``None``.
     """
 
     backups: ConversionBackups
@@ -109,10 +99,6 @@ class ConversionBackupsRow:
         active: list[str] = []
         if self.backups.dropped_screenshots:
             active.append(TIE_BREAK_FLAG)
-        if self.backups.edited_since:
-            active.append(EDITED_SINCE_FLAG)
-        if not self.backups.revertible:
-            active.append(NOT_REVERTIBLE_FLAG)
         return tuple(active)
 
 

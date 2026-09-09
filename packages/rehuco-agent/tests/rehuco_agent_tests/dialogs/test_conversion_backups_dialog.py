@@ -1,19 +1,13 @@
-"""Tests for the `File ▸ Conversion Backups…` manager (#193).
+"""Tests for the `File ▸ Conversion Backups…` manager (#193, #290).
 
 The scan is mocked at :func:`~rehuco_core.scan_conversion_backups` -- `test_tc_conversion_backups_scan`
-is its subject -- but the **queue is real** and the two operations are mocked one level below the jobs,
-so an action travels the way it does in the app: enqueued, run on the worker, read back off the job
-through the listener and marshalled onto the GUI thread. What these tests are about is which rows the
-dialog offers, what each confirmation says, and that nothing destructive happens without one.
+is its subject -- but the **queue is real** and the operation is mocked one level below the job, so an
+action travels the way it does in the app: enqueued, run on the worker, read back off the job through the
+listener and marshalled onto the GUI thread. What these tests are about is which rows the dialog offers,
+what the confirmation says, and that nothing destructive happens without one.
 """
 
-# one cohesive suite over the dialog's scan, selection, confirmations and both actions -- a scoped
-# disable reads better than an arbitrary split (same precedent as test_rehu_document_model.py,
-# [[appendices.code-conventions]])
-# pylint: disable=too-many-lines
-
 from collections.abc import Sequence
-from dataclasses import replace
 from pathlib import Path
 from threading import Event
 from typing import Any, Final
@@ -23,13 +17,8 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.dialogs.conversion_backups_dialog import (
-    MAXIMUM_NAMED_EDITED,
-    NO_LEGACY_REASON,
-    NOTHING_RETAINED,
-    ConversionBackupsDialog,
-)
-from rehuco_agent.dialogs.conversion_backups_table_model import REFUSED_OUTCOME, TIE_BREAK_FLAG
+from rehuco_agent.dialogs.conversion_backups_dialog import NOTHING_RETAINED, ConversionBackupsDialog
+from rehuco_agent.dialogs.conversion_backups_table_model import TIE_BREAK_FLAG
 from rehuco_agent.settings.conversion_backups_dialog_settings import ConversionBackupsDialogSettings
 from rehuco_core import (
     FINISHED_JOB_STATES,
@@ -45,11 +34,6 @@ SCULPTING: Final = ROOT / "Sculpting" / "info.rehu"
 ZBRUSH: Final = ROOT / "ZBrush" / "info.rehu"
 PAINTING: Final = ROOT / "Painting" / "info.rehu"
 
-RESOLVED_SCULPTING: Final = Path("/real/library/Sculpting/info.rehu")
-"""Where :data:`SCULPTING` *really* lives when :data:`ROOT` is a junction or mapped drive -- the
-spelling ``MainWindow.open_file`` stores after its ``resolve()``, and so the one an open document's
-model reports (#246)."""
-
 CONVERTED_STAMP: Final = "2023-11-14T22:13:20Z"
 
 DIALOG_MODULE: Final = "rehuco_agent.dialogs.conversion_backups_dialog"
@@ -60,38 +44,24 @@ TIMEOUT: Final = 5000
 
 
 # a builder's parameters *are* the shapes worth testing; see test_conversion_backups_table_model
-def make_backups(  # pylint: disable=too-many-arguments
-    rehu_path: Path,
-    *,
-    files: int = 2,
-    total_bytes: int = 14_000_000,
-    installed: int = 2,
-    edited_since: bool = False,
-    legacy: bool = True,
+def make_backups(
+    rehu_path: Path, *, files: int = 2, total_bytes: int = 14_000_000, dropped_screenshots: int = 0
 ) -> ConversionBackups:
     """One resource's inventory, as :func:`~rehuco_core.conversion_backups` would report it.
 
     :param rehu_path: the converted resource.
     :param files: how many image backups it retains.
     :param total_bytes: what they occupy.
-    :param installed: how many screenshots the conversion installed -- fewer than ``files`` is a tie-break.
-    :param edited_since: whether the ``.rehu`` has been saved again since the conversion.
-    :param legacy: whether a backed-up ``.tc`` is here -- without one there is nothing to revert.
+    :param dropped_screenshots: how many recognized legacy screenshots a tie-break dropped.
     :returns: the inventory.
     """
     directory = rehu_path.parent
-    backups = tuple(directory / f"sample-{index:02}.jpg.orig" for index in range(files))
-    if legacy:
-        backups = (*backups, directory / "info.tc.orig")
-    written = (rehu_path, *(directory / f"info{index:02}.jpg" for index in range(installed)))
+    backups = (*(directory / f"sample-{index:02}.jpg.orig" for index in range(files)), directory / "info.tc.orig")
     return ConversionBackups(
         rehu_path=rehu_path,
         backups=backups,
         total_bytes=total_bytes,
-        written=written,
-        obstructions=(),
-        legacy_restored=(directory / "info.tc") if legacy else None,
-        edited_since=edited_since,
+        dropped_screenshots=dropped_screenshots,
         converted=CONVERTED_STAMP,
     )
 
@@ -134,7 +104,7 @@ def fixture_queue(qapp: Any) -> Any:
 def fixture_scan(mocker: MockerFixture) -> Any:
     """The scan the dialog runs, patched at the seam it calls.
 
-    Three resources: a tie-break, an edited-since, and one with nothing left to revert.
+    Three resources: a tie-break and two clean ones.
 
     :param mocker: pytest-mock fixture.
     :returns: the patched :func:`~rehuco_core.scan_conversion_backups`.
@@ -143,9 +113,9 @@ def fixture_scan(mocker: MockerFixture) -> Any:
         f"{DIALOG_MODULE}.scan_conversion_backups",
         return_value=make_scan(
             [
-                make_backups(SCULPTING, files=3, installed=2),
-                make_backups(ZBRUSH, edited_since=True, total_bytes=1000),
-                make_backups(PAINTING, legacy=False, total_bytes=2000),
+                make_backups(SCULPTING, files=3, dropped_screenshots=1),
+                make_backups(ZBRUSH, total_bytes=1000),
+                make_backups(PAINTING, files=1, total_bytes=2000),
             ],
             examined=9,
         ),
@@ -159,20 +129,6 @@ def fixture_present(mocker: MockerFixture) -> None:
     :param mocker: pytest-mock fixture.
     """
     mocker.patch.object(Path, "exists", autospec=True, return_value=True)
-
-
-@fixture(name="scannable_library")
-def fixture_scannable_library(scan: Any, present: None) -> None:
-    """The scan seam patched and a filesystem where every resource is present -- the two side-effect
-    fixtures a test needs in place before it can :func:`choose_root` over a dialog it built itself.
-
-    Requested as one by every test that constructs its own dialog (to pass ``open_paths``/``on_reverted``,
-    #246), which is what keeps their signatures down to the collaborators they actually name.
-
-    :param scan: the patched scan seam.
-    :param present: the filesystem where each resource still exists.
-    """
-    del scan, present
 
 
 @fixture(name="dialog")
@@ -652,18 +608,17 @@ def test_the_select_all_box_shows_the_views_own_state(qtbot: QtBot, dialog: Conv
     assert ui_of(dialog).select_all_check_box.checkState() == Qt.CheckState.PartiallyChecked
 
 
-def test_neither_action_is_offered_with_nothing_selected(qtbot: QtBot, dialog: ConversionBackupsDialog) -> None:
+def test_the_discard_action_is_not_offered_with_nothing_selected(qtbot: QtBot, dialog: ConversionBackupsDialog) -> None:
     """A button that would act on nothing is a button that does nothing.
 
     **Test steps:**
 
     * clear the selection
-    * verify both action buttons are disabled
+    * verify the discard button is disabled
     """
     del qtbot
     dialog.model.set_checked([SCULPTING, ZBRUSH, PAINTING], False)
 
-    assert not ui_of(dialog).revert_button.isEnabled()
     assert not ui_of(dialog).discard_button.isEnabled()
 
 
@@ -757,407 +712,10 @@ def test_a_failed_operation_lands_on_its_own_row(
     assert all("read-only" in (row.message or "") for row in dialog.model.rows())
 
 
-# endregion
-
-
-# region Reverting
-
-
-def test_reverting_warns_per_resource_about_edits_saved_since(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """Per resource, not a blanket disclaimer: *some of these may have been edited* is a sentence a
-    reader can only agree to blindly.
-
-    **Test steps:**
-
-    * revert a selection holding one edited-since resource
-    * verify the question counts them and names the one
-    """
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "1 resource(s) have been saved again" in question_of(answer_yes)
-    assert "ZBrush" in question_of(answer_yes)
-
-
-def test_an_unrevertible_row_is_refused_here_rather_than_by_the_queue(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The inventory already knows it cannot run, so asking the queue would buy the same refusal later
-    and noisier -- and the reason belongs on the row.
-
-    **Test steps:**
-
-    * revert a selection holding one resource with no backed-up ``.tc``
-    * verify that row is refused with its reason, and the operation never ran over it
-    """
-    del answer_yes
-    revert = mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    outcomes = {row.path.parent.name: (row.outcome, row.message) for row in dialog.model.rows()}
-    assert outcomes["Painting"] == (REFUSED_OUTCOME, NO_LEGACY_REASON)
-    assert outcomes["Sculpting"][0] == "reverted"
-    assert revert.call_count == 2
-
-
-def test_a_declined_revert_leaves_every_row_alone(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_no: Any, mocker: MockerFixture
-) -> None:
-    """Answering No must not mark the unrevertible rows either -- nothing was asked for at all.
-
-    **Test steps:**
-
-    * revert with the confirmation answered No
-    * verify no row carries an outcome and nothing ran
-    """
-    del answer_no
-    revert = mocker.patch(f"{JOBS_MODULE}.revert_conversion")
-
-    ui_of(dialog).revert_button.click()
-    qtbot.wait(0)
-
-    revert.assert_not_called()
-    assert all(row.outcome is None for row in dialog.model.rows())
-
-
-def test_a_selection_of_only_unrevertible_rows_asks_nothing(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """There is nothing to agree to when nothing can run, so the refusals are simply recorded.
-
-    **Test steps:**
-
-    * select only the resource with no backed-up ``.tc``, then revert
-    * verify no confirmation was put and the row says why
-    """
-    revert = mocker.patch(f"{JOBS_MODULE}.revert_conversion")
-    dialog.model.set_checked([SCULPTING, ZBRUSH], False)
-
-    ui_of(dialog).revert_button.click()
-    qtbot.wait(0)
-
-    answer_yes.assert_not_called()
-    revert.assert_not_called()
-    outcomes = {row.path.parent.name: row.outcome for row in dialog.model.rows()}
-    assert outcomes["Painting"] == REFUSED_OUTCOME
-
-
-# endregion
-
-
-def test_an_occupied_restore_target_is_refused_by_name(
-    qtbot: QtBot, queue: TaskQueue, mocker: MockerFixture, answer_yes: Any, present: None
-) -> None:
-    """A legacy name the user has since put back by hand refuses the whole revert, and naming it is what
-    lets them decide what to do about it.
-
-    **Test steps:**
-
-    * revert a resource whose restore target is occupied
-    * verify the row names the file that is in the way
-    """
-    del answer_yes, present
-    obstructed = make_backups(SCULPTING)
-    mocker.patch(
-        f"{DIALOG_MODULE}.scan_conversion_backups",
-        return_value=make_scan([replace(obstructed, obstructions=(SCULPTING.parent / "sample-00.jpg",))]),
-    )
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion")
-    dialog = ConversionBackupsDialog(queue)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-
-    ui_of(dialog).revert_button.click()
-    qtbot.wait(0)
-
-    # pylint infers `rows()`'s tuple as empty from the model's initial state rather than from the scan
-    # this dialog was given, so the single-row unpack looks unbalanced to it
-    (row,) = dialog.model.rows()  # pylint: disable=unbalanced-tuple-unpacking
-    assert row.outcome == REFUSED_OUTCOME
-    assert row.message == "sample-00.jpg is in the way"
-
-
-def test_the_revert_warning_counts_the_rest_past_a_wall_of_names(
-    qtbot: QtBot, queue: TaskQueue, mocker: MockerFixture, answer_yes: Any, present: None
-) -> None:
-    """Naming every one of a hundred edited resources is a blanket disclaimer again, just longer.
-
-    **Test steps:**
-
-    * revert a selection where more resources were edited than the confirmation names
-    * verify the extras are counted rather than listed
-    """
-    del present
-    edited = [
-        make_backups(ROOT / f"Resource{index}" / "info.rehu", edited_since=True)
-        for index in range(MAXIMUM_NAMED_EDITED + 3)
-    ]
-    mocker.patch(f"{DIALOG_MODULE}.scan_conversion_backups", return_value=make_scan(edited))
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion")
-    dialog = ConversionBackupsDialog(queue)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "and 3 more" in question_of(answer_yes)
-
-
-def test_a_revert_with_nothing_edited_says_nothing_about_edits(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The warning is a fact about the selection, so a selection it is not true of must not carry it --
-    a disclaimer that always appears is one nobody reads.
-
-    **Test steps:**
-
-    * revert a selection holding no edited-since resource
-    * verify the question says nothing about discarded edits
-    """
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion")
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "saved again" not in question_of(answer_yes)
-
-
-def test_reverting_warns_about_resources_open_in_a_tab(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The bulk manager cannot see open documents on its own -- ``open_paths`` is the seam that tells it,
-    and what makes this warning possible at all (#246).
-
-    **Test steps:**
-
-    * revert a selection where one of the two runnable resources is reported as open
-    * verify the question counts it
-    """
-    del scannable_library
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-    dialog = ConversionBackupsDialog(queue, open_paths=lambda: {SCULPTING})
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "1 resource(s) are open in an editor tab" in question_of(answer_yes)
-
-
-def test_the_open_warning_matches_a_resolved_spelling_of_the_scan_path(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """An open document's path is resolved (``MainWindow.open_file``), while the scan keeps the spelling
-    the root was browsed under -- a junction or mapped drive must not hide the very tab the warning is
-    about (#246).
-
-    **Test steps:**
-
-    * report the open tab under the resolved spelling of a scanned resource
-    * verify the question still counts it
-    """
-    del scannable_library
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-    real = {SCULPTING: RESOLVED_SCULPTING}
-    mocker.patch.object(Path, "resolve", autospec=True, side_effect=lambda self, strict=False: real.get(self, self))
-    dialog = ConversionBackupsDialog(queue, open_paths=lambda: {RESOLVED_SCULPTING})
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "1 resource(s) are open in an editor tab" in question_of(answer_yes)
-
-
-def test_reverting_says_nothing_about_open_documents_with_no_seam_wired(
-    qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """With no ``open_paths`` wired -- the default -- the manager says nothing about tabs it has no way
-    to see.
-
-    **Test steps:**
-
-    * revert with the default dialog, built with no ``open_paths``
-    * verify the question says nothing about open tabs
-    """
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "open in an editor tab" not in question_of(answer_yes)
-
-
-def test_reverting_says_nothing_about_a_tab_open_on_a_resource_not_selected(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The warning is a fact about *this revert*, so a tab open on something the selection does not
-    cover must not carry it -- a disclaimer that always appears is one nobody reads (#246).
-
-    **Test steps:**
-
-    * revert only Sculpting, with the seam reporting a tab open on the deselected ZBrush
-    * verify the question says nothing about open tabs
-    """
-    del scannable_library
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-    dialog = ConversionBackupsDialog(queue, open_paths=lambda: {ZBRUSH})
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    assert "open in an editor tab" not in question_of(answer_yes)
-
-
-def test_a_finished_revert_reports_it_to_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """A successfully reverted resource is handed to ``on_reverted``, so an open tab can adopt the
-    restored ``.tc`` in place instead of going stale (#246).
-
-    **Test steps:**
-
-    * revert a selection restricted to one revertible resource
-    * verify ``on_reverted`` was called with its path once the job finished
-    """
-    del scannable_library, answer_yes
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", return_value=None)
-    on_reverted = mocker.Mock()
-    dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    on_reverted.assert_called_once_with(SCULPTING)
-
-
-def test_a_failed_revert_does_not_report_it_to_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """Only a resource that actually reverted is worth catching an open tab up on -- a failed operation
-    changed nothing on disk for it to adopt (#246).
-
-    **Test steps:**
-
-    * make the operation raise for the one resource selected
-    * verify ``on_reverted`` was never called
-    """
-    del scannable_library, answer_yes
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", side_effect=PermissionError("read-only"))
-    on_reverted = mocker.Mock()
-    dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    wait_for_outcomes(qtbot, dialog)
-
-    on_reverted.assert_not_called()
-
-
-def test_a_revert_finishing_after_close_still_reaches_the_open_documents_seam(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The confirmation promised the open tab a refresh, and the serial app-wide queue can hold that
-    revert behind hours of other work -- so closing the dialog defers the queue detach until the batch
-    settles, rather than orphaning the promise (#246).
-
-    **Test steps:**
-
-    * hold the revert inside the worker, close the dialog while it runs, then let it finish
-    * verify the dialog kept listening across the close, the seam was told, and only then detached
-    """
-    del scannable_library, answer_yes
-    running = Event()
-    release = Event()
-
-    def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
-        """Park the worker inside the revert until the test has closed the dialog."""
-        running.set()
-        assert release.wait(TIMEOUT / 1000)
-
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", side_effect=hold_the_worker)
-    on_reverted = mocker.Mock()
-    dialog = ConversionBackupsDialog(queue, on_reverted=on_reverted)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([ZBRUSH, PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    assert running.wait(TIMEOUT / 1000)
-    dialog.reject()
-
-    assert dialog in listeners_of(queue)
-    release.set()
-    qtbot.waitUntil(lambda: on_reverted.call_count == 1, timeout=TIMEOUT)
-    qtbot.waitUntil(lambda: dialog not in listeners_of(queue), timeout=TIMEOUT)
-    on_reverted.assert_called_once_with(SCULPTING)
-
-
-def test_a_deferred_detach_settles_when_the_last_job_is_removed_unrun(
-    qtbot: QtBot, queue: TaskQueue, scannable_library: None, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """A job deleted from the Tasks dock without running produces no outcome to read back, so the
-    settled-batch question is put to the queue's own snapshot -- and the removal itself is a wake, or a
-    deferred detach whose last job was removed would wait forever (#246).
-
-    **Test steps:**
-
-    * hold the first revert, pause the second, close the dialog, let the first finish
-    * verify the dialog is still listening for the paused job, then remove it and verify the detach
-    """
-    del scannable_library, answer_yes
-    running = Event()
-    release = Event()
-
-    def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
-        """Park the worker inside the first revert until the second has been paused."""
-        running.set()
-        assert release.wait(TIMEOUT / 1000)
-
-    mocker.patch(f"{JOBS_MODULE}.revert_conversion", side_effect=hold_the_worker)
-    dialog = ConversionBackupsDialog(queue)
-    qtbot.addWidget(dialog)
-    choose_root(qtbot, dialog, ROOT)
-    dialog.model.set_checked([PAINTING], False)
-
-    ui_of(dialog).revert_button.click()
-    assert running.wait(TIMEOUT / 1000)
-    queue.pause()
-    dialog.reject()
-    release.set()
-    qtbot.waitUntil(
-        lambda: sum(1 for status in queue.jobs() if status.state not in FINISHED_JOB_STATES) == 1, timeout=TIMEOUT
-    )
-
-    assert dialog in listeners_of(queue)
-    remaining = [status.serial for status in queue.jobs() if status.state not in FINISHED_JOB_STATES]
-    queue.remove(*remaining)
-    qtbot.waitUntil(lambda: dialog not in listeners_of(queue), timeout=TIMEOUT)
-
-
 def test_cancelling_a_run_stops_the_jobs_still_queued(
     qtbot: QtBot, dialog: ConversionBackupsDialog, answer_yes: Any, mocker: MockerFixture
 ) -> None:
-    """Neither operation is safely interruptible, so *cancel stops after the current resource* is the
+    """The operation is not safely interruptible, so *cancel stops after the current resource* is the
     only honest meaning -- the queued ones are dropped without ever starting.
 
     **Test steps:**
@@ -1192,6 +750,45 @@ def test_cancelling_a_run_stops_the_jobs_still_queued(
     # current resource", and asserting all three were cancelled would be asserting a race
     assert "cancelled" in outcomes
     assert discard.call_count < len(outcomes)
+
+
+def test_a_deferred_detach_settles_when_the_last_job_is_removed_unrun(
+    qtbot: QtBot, queue: TaskQueue, dialog: ConversionBackupsDialog, mocker: MockerFixture
+) -> None:
+    """A job deleted from the Tasks dock without running produces no outcome to read back, so the
+    settled-batch question is put to the queue's own snapshot -- and the removal itself is a wake, or a
+    deferred detach whose last job was removed would wait forever (#246).
+
+    **Test steps:**
+
+    * hold the first discard, pause the second, close the dialog, let the first finish
+    * verify the dialog is still listening for the paused job, then remove it and verify the detach
+    """
+    running = Event()
+    release = Event()
+
+    def hold_the_worker(*_args: Any, **_kwargs: Any) -> None:
+        """Park the worker inside the first discard until the second has been paused."""
+        running.set()
+        assert release.wait(TIMEOUT / 1000)
+
+    mocker.patch(f"{JOBS_MODULE}.discard_conversion_backups", side_effect=hold_the_worker)
+    mocker.patch.object(QMessageBox, "warning", return_value=QMessageBox.StandardButton.Yes)
+    dialog.model.set_checked([PAINTING], False)
+
+    ui_of(dialog).discard_button.click()
+    assert running.wait(TIMEOUT / 1000)
+    queue.pause()
+    dialog.reject()
+    release.set()
+    qtbot.waitUntil(
+        lambda: sum(1 for status in queue.jobs() if status.state not in FINISHED_JOB_STATES) == 1, timeout=TIMEOUT
+    )
+
+    assert dialog in listeners_of(queue)
+    remaining = [status.serial for status in queue.jobs() if status.state not in FINISHED_JOB_STATES]
+    queue.remove(*remaining)
+    qtbot.waitUntil(lambda: dialog not in listeners_of(queue), timeout=TIMEOUT)
 
 
 # endregion

@@ -14,10 +14,7 @@ from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
 ROOT: Final = Path("/fake/library")
 
 SEEDED_STAMP: Final = "2023-11-14T22:13:20Z"
-"""What a conversion wrote into both ``created`` and ``updated``."""
-
-EDITED_STAMP: Final = "2026-08-06T09:00:00Z"
-"""An ``updated`` that has drifted from the seeded ``created`` -- the resource was saved again."""
+"""What a conversion wrote into ``created``."""
 
 BACKUP_SIZE: Final = 1000
 """What every mocked file reports, so a total is a multiple of it."""
@@ -37,7 +34,6 @@ def mock_catalog(
     tree: Mapping[str, Sequence[str]],
     *,
     unreadable: Sequence[str] = (),
-    edited: Sequence[str] = (),
 ) -> None:
     """Mock a catalog of resource directories, listed both by the walk and by each inventory.
 
@@ -49,8 +45,6 @@ def mock_catalog(
     :param mocker: pytest-mock fixture.
     :param tree: ``{directory name under ROOT: the filenames it holds}``.
     :param unreadable: directory names whose listing raises -- an offline branch of a mount.
-    :param edited: directory names whose ``.rehu`` reports an ``updated`` that has drifted from its
-        ``created``, i.e. it was saved again since the conversion.
     """
     offline = {ROOT / name for name in unreadable}
     contents = {ROOT / name: [ROOT / name / filename for filename in filenames] for name, filenames in tree.items()}
@@ -73,8 +67,8 @@ def mock_catalog(
         return contents.get(self, [])
 
     def load(path: Path, **_kwargs: Any) -> Any:
-        updated = EDITED_STAMP if Path(path).parent.name in edited else SEEDED_STAMP
-        return mocker.MagicMock(created=SEEDED_STAMP, updated=updated)
+        del path
+        return mocker.MagicMock(created=SEEDED_STAMP)
 
     mocker.patch("rehuco_core.rehu_catalog.os.scandir", side_effect=scandir)
     mocker.patch.object(Path, "iterdir", autospec=True, side_effect=iterdir)
@@ -129,22 +123,19 @@ def test_the_totals_add_up_what_a_discard_would_reclaim(mocker: MockerFixture) -
 
 
 def test_the_scan_counts_the_rows_worth_reviewing(mocker: MockerFixture) -> None:
-    """Reverting is offered on what can be reverted, warned about on what has been edited since, and the
-    tie-break count is the ~1--2 % #193 exists to review -- so each is a count the header can name.
+    """The tie-break count is the ~1--2 % #193 exists to review, so it is a count the header can name.
 
     **Test steps:**
 
-    * mock a catalog whose two converted resources differ in tie-break and in edited-since
+    * mock a catalog whose two converted resources differ in tie-break
     * scan the root
-    * verify each count names exactly the resource it is about
+    * verify the tie-break count names exactly the resource it is about
     """
-    mock_catalog(mocker, {"Sculpting": TIE_BROKEN, "ZBrush": CLEAN_CONVERSION}, edited=["ZBrush"])
+    mock_catalog(mocker, {"Sculpting": TIE_BROKEN, "ZBrush": CLEAN_CONVERSION})
 
     scan = scan_conversion_backups(ROOT)
 
-    assert scan.revertible == 2
     assert scan.tie_break == 1
-    assert scan.edited_since == 1
 
 
 def test_an_unreadable_branch_is_named_rather_than_silently_dropped(mocker: MockerFixture) -> None:

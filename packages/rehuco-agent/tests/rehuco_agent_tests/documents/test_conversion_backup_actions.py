@@ -1,22 +1,19 @@
-"""Tests for one document's Revert Conversion / Discard Backups pair (#193).
+"""Tests for one document's Discard Backups action (#193, #290).
 
-The core operations themselves are `test_tc_conversion_backups`'s subject and are mocked here: what this
-module is about is which action is offered, what the inline strip says, what each confirmation warns
-about, and that a refusal changes nothing. Both operations run **inline**, not on the queue, so there is
-no engine in these tests -- which is itself the thing being asserted.
+The core operation itself is `test_tc_conversion_backups`'s subject and is mocked here: what this module
+is about is whether the action is offered, what the inline strip says, what the confirmation warns about,
+and that a refusal changes nothing. It runs **inline**, not on the queue, so there is no engine in these
+tests -- which is itself the thing being asserted.
 """
 
 from pathlib import Path
 from typing import Any, Final
 
 from PySide6.QtWidgets import QMessageBox
-from pytest import fixture, mark
+from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.documents.conversion_backup_actions import (
-    NO_LEGACY_REFUSAL,
-    ConversionBackupActions,
-)
+from rehuco_agent.documents.conversion_backup_actions import ConversionBackupActions
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_core import ConversionBackups, RehuDocument
 
@@ -29,34 +26,21 @@ CONVERTED_STAMP: Final = "2023-11-14T22:13:20Z"
 ACTIONS_MODULE: Final = "rehuco_agent.documents.conversion_backup_actions"
 
 
-def make_backups(
-    *,
-    files: int = 3,
-    total_bytes: int = 14_000_000,
-    edited_since: bool = False,
-    legacy: bool = True,
-    obstructed: bool = False,
-) -> ConversionBackups:
+def make_backups(*, files: int = 3, total_bytes: int = 14_000_000) -> ConversionBackups:
     """One resource's inventory, as :func:`~rehuco_core.conversion_backups` would report it.
 
     :param files: how many backups it retains; ``0`` means none at all.
     :param total_bytes: what they occupy.
-    :param edited_since: whether the ``.rehu`` has been saved again since the conversion.
-    :param legacy: whether a backed-up ``.tc`` is here.
-    :param obstructed: whether a restore target is occupied.
     :returns: the inventory.
     """
     backups = tuple(DIRECTORY / f"sample-{index:02}.jpg.orig" for index in range(files))
-    if files and legacy:
+    if files:
         backups = (*backups, DIRECTORY / "info.tc.orig")
     return ConversionBackups(
         rehu_path=INFO_PATH,
         backups=backups,
         total_bytes=total_bytes if files else 0,
-        written=(INFO_PATH,),
-        obstructions=(DIRECTORY / "sample-00.jpg",) if obstructed else (),
-        legacy_restored=LEGACY_PATH if (files and legacy) else None,
-        edited_since=edited_since,
+        dropped_screenshots=0,
         converted=CONVERTED_STAMP,
     )
 
@@ -93,7 +77,7 @@ def fixture_inventory(mocker: MockerFixture) -> Any:
 
 @fixture(name="actions")
 def fixture_actions(qtbot: QtBot, model: RehuDocumentModel, inventory: Any) -> ConversionBackupActions:
-    """The pair under test, over a converted resource that still has its backups.
+    """The action under test, over a converted resource that still has its backups.
 
     :param qtbot: pytest-qt fixture, for waiting on signals.
     :param model: the document the actions are about.
@@ -135,29 +119,28 @@ def question_of(warning: Any) -> str:
 # region What the document shows
 
 
-def test_both_actions_are_offered_while_backups_are_retained(actions: ConversionBackupActions) -> None:
+def test_the_action_is_offered_while_backups_are_retained(actions: ConversionBackupActions) -> None:
     """The same visible-while-the-condition-holds shape the two convert actions have for ``legacy_tc``.
 
     **Test steps:**
 
     * build the actions over a resource with retained backups
-    * verify both are visible and the resource reads as retained
+    * verify it is visible and the resource reads as retained
     """
     assert actions.retained is True
-    assert actions.revert_action.isVisible()
     assert actions.discard_action.isVisible()
 
 
-def test_neither_action_is_offered_without_backups(
+def test_the_action_is_not_offered_without_backups(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
 ) -> None:
-    """A resource that was never converted, or whose backups have been discarded, offers neither and
-    says nothing -- rather than two controls that would refuse.
+    """A resource that was never converted, or whose backups have been discarded, offers nothing and
+    says nothing -- rather than a control that would refuse.
 
     **Test steps:**
 
     * build the actions over a resource with no retained backups
-    * verify both are hidden and there is no notice
+    * verify it is hidden and there is no notice
     """
     del qtbot
     mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(files=0))
@@ -165,7 +148,6 @@ def test_neither_action_is_offered_without_backups(
     actions = ConversionBackupActions(model)
 
     assert actions.retained is False
-    assert not actions.revert_action.isVisible()
     assert not actions.discard_action.isVisible()
     assert actions.notice == ""
 
@@ -187,7 +169,7 @@ def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, moc
 
     assert inventory.call_count == 0
     assert actions.retained is False
-    assert not actions.revert_action.isVisible()
+    assert not actions.discard_action.isVisible()
 
     mocker.patch.object(
         Path, "read_text", return_value='{"type": "Tutorial", "sources": [{"title": "Foo", "primary": true}]}'
@@ -198,84 +180,13 @@ def test_a_pending_placeholder_takes_no_inventory_until_loaded(qtbot: QtBot, moc
     assert actions.retained is True
 
 
-def test_revert_is_not_offered_when_there_is_no_backed_up_tc(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
-) -> None:
-    """Backups are any ``.orig`` sibling, deliberately unscoped -- so *has backups* is not *has a
-    conversion to undo*, and offering Revert on the first was the defect (#246).
-
-    Regression: a *Convert, discard originals* run over a resource whose checksum manifest had already
-    been retired to an ``info.sfv.orig`` (#243) left that file as the directory's only ``.orig``. The
-    resource read as retained, Revert was offered, and clicking it could only ever answer that there is
-    no backed-up ``.tc``.
-
-    **Test steps:**
-
-    * report an inventory holding backups but no restorable ``.tc``
-    * verify Revert is hidden while Discard -- which really can delete them -- is not
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(legacy=False))
-
-    actions = ConversionBackupActions(model)
-
-    assert actions.retained is True
-    assert actions.undoable is False
-    assert not actions.revert_action.isVisible()
-    assert actions.discard_action.isVisible()
-
-
-def test_revert_is_still_offered_over_an_occupied_restore_target(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
-) -> None:
-    """An occupied target is a conversion that *can* be undone once the file in the way is moved -- so
-    the button stays, and the click names what is blocking it (#246).
-
-    The line between the two refusals: hiding this one would leave a reader with nothing to act on and
-    no reason given, where hiding the no-backed-up-``.tc`` one removes a button that could never work.
-
-    **Test steps:**
-
-    * report an inventory whose restore target is occupied
-    * verify Revert is offered even though the inventory calls it unrevertible
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(obstructed=True))
-
-    actions = ConversionBackupActions(model)
-
-    assert actions.undoable is True
-    assert actions.revert_action.isVisible()
-
-
-def test_the_notice_promises_nothing_about_a_revert_that_is_not_offered(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture
-) -> None:
-    """*Reverting now would discard those edits* is a warning about a choice -- with no revert on offer
-    there is no choice, and the edits cost nothing by being unrevertable (#246).
-
-    **Test steps:**
-
-    * report an edited-since inventory with no restorable ``.tc``
-    * verify the strip still names the backups but drops the revert warning, leaving the row informational
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(legacy=False, edited_since=True))
-
-    actions = ConversionBackupActions(model)
-
-    assert actions.edited_since is False
-    assert "3 files, 14.0 MB" in actions.notice
-    assert "discard those edits" not in actions.notice
-
-
 def test_a_document_with_no_path_reads_nothing(qtbot: QtBot, mocker: MockerFixture, qapp: Any) -> None:
     """A never-saved document has no directory to look in, so the inventory is never asked for at all.
 
     **Test steps:**
 
     * build the actions over a path-less document
-    * verify nothing was read and neither action is offered
+    * verify nothing was read and the action is not offered
     """
     del qtbot, qapp
     inventory = mocker.patch(f"{ACTIONS_MODULE}.conversion_backups")
@@ -297,35 +208,12 @@ def test_the_notice_names_what_the_backups_amount_to(actions: ConversionBackupAc
     * verify it counts the files and names the size
     """
     assert "4 files, 14.0 MB" in actions.notice
-    assert "discard those edits" not in actions.notice
-
-
-def test_a_save_makes_the_notice_say_what_a_revert_would_now_cost(
-    qtbot: QtBot, actions: ConversionBackupActions, inventory: Any, model: RehuDocumentModel
-) -> None:
-    """Once the ``.rehu`` has been saved again a revert stops being free, and a reader deserves to learn
-    that while looking at the resource rather than inside a confirmation they are halfway through.
-
-    **Test steps:**
-
-    * make the inventory report the resource as edited since, and clear the dirty flag as a save does
-    * verify the notice changed wording and the strip is told to rebuild
-    """
-    del qtbot
-    inventory.return_value = make_backups(edited_since=True)
-    model.dirty = True
-
-    model.dirty = False
-
-    assert actions.edited_since is True
-    assert "discard those edits" in actions.notice
 
 
 def test_a_save_never_discards_the_backups(
     qtbot: QtBot, actions: ConversionBackupActions, inventory: Any, model: RehuDocumentModel
 ) -> None:
-    """Discarding is the one irreversible step in the whole import flow, so it is never a side effect --
-    the divergence a save creates is warned about, not deleted away.
+    """Discarding is the one irreversible step in the whole import flow, so it is never a side effect.
 
     **Test steps:**
 
@@ -359,176 +247,6 @@ def test_the_strip_is_told_to_rebuild_when_the_inventory_moves(
         model.dirty = True
 
     assert actions.retained is False
-
-
-# endregion
-
-
-# region Reverting
-
-
-def test_reverting_asks_first_and_names_what_it_restores(
-    actions: ConversionBackupActions, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """A revert deletes the written ``.rehu``, so it is confirmed rather than done on a click.
-
-    **Test steps:**
-
-    * revert with the confirmation answered Yes
-    * verify what was asked, and that the model ran the operation
-    """
-    revert = mocker.patch.object(RehuDocumentModel, "revert_conversion")
-
-    actions.revert()
-
-    assert "4 files, 14.0 MB" in question_of(answer_yes)
-    revert.assert_called_once_with()
-
-
-def test_a_declined_revert_changes_nothing(
-    actions: ConversionBackupActions, answer_no: Any, mocker: MockerFixture
-) -> None:
-    """No means no: the default button is No, and answering it must leave the resource alone.
-
-    **Test steps:**
-
-    * revert with the confirmation answered No
-    * verify the operation never ran
-    """
-    del answer_no
-    revert = mocker.patch.object(RehuDocumentModel, "revert_conversion")
-
-    actions.revert()
-
-    revert.assert_not_called()
-
-
-def test_the_revert_confirmation_warns_about_edits_saved_since(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any
-) -> None:
-    """*A revert discards edits made since the conversion* has to be said before the revert, not after.
-
-    **Test steps:**
-
-    * revert a resource the inventory reports as edited since
-    * verify the question says the edits are discarded
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(edited_since=True))
-    mocker.patch.object(RehuDocumentModel, "revert_conversion")
-
-    ConversionBackupActions(model).revert()
-
-    assert "saved since it was converted" in question_of(answer_yes)
-
-
-def test_the_confirmation_describes_the_files_as_they_are_at_the_click(
-    actions: ConversionBackupActions, inventory: Any, answer_yes: Any, mocker: MockerFixture
-) -> None:
-    """The model's signals cover this app's own writes, but an out-of-band edit -- or the bulk manager
-    acting on the same directory -- moves the files without one, so the inventory is re-read at the
-    click rather than trusted from the last seam.
-
-    **Test steps:**
-
-    * change the inventory's answer without crossing any model seam
-    * revert
-    * verify the confirmation carries the fresh warning, not the cached silence
-    """
-    mocker.patch.object(RehuDocumentModel, "revert_conversion")
-    inventory.return_value = make_backups(edited_since=True)
-
-    actions.revert()
-
-    assert "saved since it was converted" in question_of(answer_yes)
-
-
-def test_the_revert_confirmation_warns_about_unsaved_edits_too(
-    actions: ConversionBackupActions, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any
-) -> None:
-    """In-memory edits go with the file the revert deletes, and a resource can carry both kinds at once.
-
-    **Test steps:**
-
-    * revert a dirty document
-    * verify the question says the unsaved changes are discarded too
-    """
-    mocker.patch.object(RehuDocumentModel, "revert_conversion")
-    model.dirty = True
-
-    actions.revert()
-
-    assert "unsaved changes" in question_of(answer_yes)
-
-
-@mark.parametrize(
-    ("backups", "expected"),
-    [(make_backups(legacy=False), NO_LEGACY_REFUSAL), (make_backups(obstructed=True), "sample-00.jpg")],
-    ids=["no backed-up .tc", "occupied restore target"],
-)
-# four fixtures plus the two parametrized cases; a fixture is not a caller's argument to simplify away
-def test_a_refused_revert_surfaces_the_reason_and_changes_nothing(  # pylint: disable=too-many-arguments,too-many-positional-arguments
-    qtbot: QtBot,
-    model: RehuDocumentModel,
-    mocker: MockerFixture,
-    answer_yes: Any,
-    backups: ConversionBackups,
-    expected: str,
-) -> None:
-    """The inventory already knows both refusals, so they are reported here rather than raised out of a
-    confirmed action -- and nothing is asked, because there is nothing to agree to.
-
-    **Test steps:**
-
-    * revert a resource the inventory reports as unrevertible
-    * verify the reason was reported, no confirmation was put, and the operation never ran
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=backups)
-    revert = mocker.patch.object(RehuDocumentModel, "revert_conversion")
-
-    ConversionBackupActions(model).revert()
-
-    revert.assert_not_called()
-    assert expected in str(answer_yes.call_args.args[2])
-
-
-def test_a_revert_that_fails_part_way_reports_the_reason(
-    actions: ConversionBackupActions, mocker: MockerFixture, answer_yes: Any
-) -> None:
-    """The directory can change between the inventory and the rename, which the operation refuses over
-    rather than half-reverting through -- and that refusal has to reach the user.
-
-    **Test steps:**
-
-    * make the operation raise
-    * verify the failure was reported rather than escaping
-    """
-    mocker.patch.object(RehuDocumentModel, "revert_conversion", side_effect=FileExistsError("info.tc"))
-
-    actions.revert()
-
-    assert "info.tc" in str(answer_yes.call_args.args[2])
-
-
-def test_reverting_a_resource_with_no_backups_does_nothing(
-    qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any
-) -> None:
-    """The action is hidden in this state, but a keyboard or a stale click must not reach past that.
-
-    **Test steps:**
-
-    * revert a resource with no retained backups
-    * verify nothing was asked and nothing ran
-    """
-    del qtbot
-    mocker.patch(f"{ACTIONS_MODULE}.conversion_backups", return_value=make_backups(files=0))
-    revert = mocker.patch.object(RehuDocumentModel, "revert_conversion")
-
-    ConversionBackupActions(model).revert()
-
-    revert.assert_not_called()
-    answer_yes.assert_not_called()
 
 
 # endregion
@@ -583,7 +301,7 @@ def test_a_discard_re_reads_the_inventory_so_the_strip_stops_saying_it(
     **Test steps:**
 
     * discard, then make the inventory report an emptied directory
-    * verify the actions no longer offer anything
+    * verify the action no longer offers anything
     """
     del answer_yes
     mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
@@ -615,7 +333,7 @@ def test_a_discard_that_fails_reports_the_reason(
 def test_discarding_a_resource_with_no_backups_does_nothing(
     qtbot: QtBot, model: RehuDocumentModel, mocker: MockerFixture, answer_yes: Any
 ) -> None:
-    """As with the revert, the hidden action must not be reachable past its condition.
+    """The hidden action must not be reachable past its condition.
 
     **Test steps:**
 

@@ -97,8 +97,8 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         every later tab reveal (see the curated stub's entry) -- and, for the programmatic focus routes
         that bypass real visibility (a re-open by path, the ``View`` menu, the session's remembered
         focus), :meth:`__activate` and :meth:`__on_current_dock_changed`. Entries are settled
-        (:meth:`__settle_pending`) by whichever fires first, by a bulk revert adopting the dock's file
-        (:meth:`adopt_reverted_conversion`), or by the dock closing unviewed (:meth:`__remove_dock`)."""
+        (:meth:`__settle_pending`) by whichever fires first, or by the dock closing unviewed
+        (:meth:`__remove_dock`)."""
         self.__restoring_session = False
         """True only while :meth:`restore_session`'s own loop is (re)creating docks -- suppresses
         :meth:`__on_current_dock_changed`'s load-on-focus reaction to QtAds making each newly added dock
@@ -259,50 +259,6 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         Used by the whole-app close guard (``MainWindow.closeEvent``) to find dirty documents.
         """
         return [widget.model for widget in self.open_document_widgets()]
-
-    def open_paths(self) -> frozenset[Path]:
-        """Absolute paths of every currently open document that has one.
-
-        Used by the bulk conversion-backups manager (#246) to warn before reverting a resource that is
-        open in a tab. A never-saved document has no path yet, and is left out -- there is nothing on
-        disk for a revert to have moved. The paths are as the models hold them, which is **resolved**:
-        every open funnels through ``MainWindow.open_file``/``open_folder``/``open_archive``, and each
-        resolves before handing the path on -- so a caller matching against these compares its own
-        spelling against the real location, not against however a file dialog happened to spell it.
-        """
-        return frozenset(model.path for model in self.open_document_models() if model.path is not None)
-
-    def adopt_reverted_conversion(self, path: Path) -> None:
-        """Catch up an open document with a revert that ran outside it (#246): the bulk
-        conversion-backups manager's ``RevertConversionJob`` does its file-system work with no
-        :class:`RehuDocumentModel` in the loop, so nothing else tells an open tab its file moved.
-
-        A no-op if ``path`` is not open -- most reverts run over resources nobody has open, and the
-        caller has no cheaper way to know that in advance than asking here. Looked up as spelled first,
-        then resolved: the caller's spelling comes from a browsed scan root, while an open document's
-        path is resolved (:meth:`open_paths`), so a root reached through a junction or mapped drive
-        would otherwise miss the very tab this exists to refresh.
-
-        A revert that ran but whose restored ``.tc`` cannot be read back (gone again already, or
-        unparsable) is logged rather than raised: this is called from a queue-completion callback with
-        nobody above it to catch, and the model refuses before touching itself, so the tab is left
-        exactly as it was.
-
-        :param path: the ``.rehu`` a finished ``RevertConversionJob`` has just reverted.
-        """
-        dock = self.__find_dock_by_path(path) or self.__find_dock_by_path(path.resolve())
-        if dock is None:
-            return
-        # a bulk revert can reach a session-restored tab nobody has viewed yet (#66): adopting the
-        # restored `.tc` *is* that dock's first real read, so its deferred-load trigger is retired
-        # here rather than left armed to revert the adopted document all over again on first view
-        self.__settle_pending(dock)
-        model = self.__document_docks[dock].model
-        with LogScope.open(path):
-            try:
-                model.adopt_reverted_conversion()
-            except (OSError, RehuFormatError) as error:
-                LOG.error("Could not adopt the reverted %s: %s", path, error)
 
     def close_all(self) -> None:
         """Close every open document at once, via the same batch confirmation as the whole-app
@@ -578,8 +534,7 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         disconnect its ``visibilityChanged`` trigger, which has served its purpose.
 
         The one funnel every way out of the pending state passes through, so a dock can never be
-        settled twice: the load itself (:meth:`__load_pending`), a bulk revert adopting the file
-        without a load (:meth:`adopt_reverted_conversion`), and a dock closing unviewed
+        settled twice: the load itself (:meth:`__load_pending`) and a dock closing unviewed
         (:meth:`__remove_dock`).
 
         :param dock: the dock to settle.
