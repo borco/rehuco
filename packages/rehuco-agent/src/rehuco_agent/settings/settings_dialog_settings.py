@@ -34,7 +34,13 @@ class SettingsDialogSettings:
     when its stacked column was what was showing, not one of its pages' (#230). Stored by title
     rather than tree position: the tree's rows differ per platform and shift whenever a page or
     group is added, so a stored index would silently select a different row than the one that was
-    showing (#228)."""
+    showing (#228).
+
+    A grouped page's title is stored as ``"<group>/<title>"`` (#294), since two pages under different
+    groups may otherwise share a title. `SettingsDialog.__item_for_title` resolves that path first, and
+    falls back to matching the whole stored string as a bare title -- which is what lets an ini from
+    before #294 still land somewhere: a bare grouped-page title finds it by the old scan, and the old
+    flat ``"Images"`` value finds the group row it was folded into."""
 
     auto_apply: bool = field(default=False)
     """Whether a page's changes are applied as they're made rather than waiting for an explicit

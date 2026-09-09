@@ -65,7 +65,8 @@ from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
-from .settings.ui.images_page import ImagesPage
+from .settings.ui.images_display_page import ImagesDisplayPage
+from .settings.ui.images_files_page import ImagesFilesPage
 from .settings.ui.logs_page import LogsPage
 from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
@@ -572,10 +573,16 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         There is no **Plugins** group any more (#277): the four pages a resource type owns --
         Descriptions, Excluded Files, Images, Videos -- are top-level rows like the rest, because
         "Videos" is findable by its own name while "Plugins" only hides it behind a word the reader has
-        to know first. The grouping overload stays for the next tree that wants a tier. The
-        reference-images extension list is a block on Images rather than a page of its own (#222): a
-        page holding one list, whose subject was images, is what a reader looking for images had to
-        know a plugin name to find.
+        to know first. The reference-images extension list is a block on Images/Files rather than a
+        page of its own (#222): a page holding one list, whose subject was images, is what a reader
+        looking for images had to know a plugin name to find.
+
+        **Images is the one group** (#294): the grouping overload `add_page` has kept since #277 for
+        "the next tree that wants a tier" finally has one. A reader looking for "images" used to find
+        one flat page mixing how an image is *shown* with what counts as one and what happens to its
+        file on disk, and had to already know "Screenshot Patterns" was the word for a third, unrelated
+        row. "Images" now groups three children -- Display, Files, Screenshot Patterns -- each named
+        for exactly what it holds.
 
         The "System Integration" page is per-platform, and **every** platform has one:
         Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
@@ -596,9 +603,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Descriptions", DescriptionsPage())
         self.__settings_dialog.add_page("Excluded Files", ExcludedFilesPage())
         self.__settings_dialog.add_page("Identity", IdentityPage())
-        self.__settings_dialog.add_page("Images", ImagesPage())
+        self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
+        self.__settings_dialog.add_page("Images", "Files", ImagesFilesPage())
+        self.__settings_dialog.add_page("Images", "Screenshot Patterns", ScreenshotPatternsPage())
         self.__settings_dialog.add_page("Logs", LogsPage())
-        self.__settings_dialog.add_page("Screenshot Patterns", ScreenshotPatternsPage())
         self.__settings_dialog.add_page("Session", SessionPage())
 
         # the three system-integration pages, one per platform: registered here, between Session and

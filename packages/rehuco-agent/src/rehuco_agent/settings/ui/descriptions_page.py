@@ -17,7 +17,7 @@ class DescriptionsPage(QWidget):
     *renders* -- the Markdown engine and its per-engine CSS -- and how its *editor* looks -- line
     numbers, line endings, wrap long lines (#69).
 
-    The width cap on an embedded image is `ImagesPage`'s, not this page's -- it shares
+    The width cap on an embedded image is `ImagesDisplayPage`'s, not this page's -- it shares
     `MarkdownRenderingSettings` with the two fields here but answers a different question, and a
     reader looking for it went to Images first. This page keeps what is description-specific.
 

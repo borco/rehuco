@@ -478,8 +478,28 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         self.__ui.page_stack.setCurrentWidget(self.__scroll_areas[widget])
 
     def __item_for_title(self, title: str) -> QStandardItem | None:
-        """The tree item for the page or group titled ``title``, or ``None`` if nothing matches
-        (#228, #230).
+        """The tree item for ``title``, resolving a ``"<group>/<title>"`` path first and falling back
+        to a bare-title scan (#228, #230, #294).
+
+        The path form is tried first so two same-titled children under different groups resolve
+        unambiguously; the bare-title scan beneath it is what lets an ini saved before #294 still land
+        somewhere -- a pre-path grouped-page title, or a pre-#294 flat title now folded into a group
+        (e.g. ``"Images"`` finding the group row it became), is exactly what that scan already matches.
+
+        :param title: the stored title -- a plain title, or a ``"<group>/<title>"`` path.
+        :returns: that row, or ``None``.
+        """
+        group_title, separator, child_title = title.partition("/")
+        if separator and (group_item := self.__groups.get(group_title)) is not None:
+            for child_row in range(group_item.rowCount()):
+                child = group_item.child(child_row)
+                if child.data(TITLE_ROLE) == child_title:
+                    return child
+        return self.__item_for_bare_title(title)
+
+    def __item_for_bare_title(self, title: str) -> QStandardItem | None:
+        """The tree item for the page or group titled exactly ``title``, or ``None`` if nothing
+        matches (#228, #230).
 
         A group's own title matches too, since #230 made a group row something `restore_selected_page`
         can show on its own (its stacked column), not just a stand-in for one of its pages. Matched on
@@ -545,8 +565,17 @@ class SettingsDialog(QWidget):  # pylint: disable=too-many-instance-attributes
         next launch should restore (#230). Distinct from :meth:`__current_pages` (the tree's *selected*
         row): the two diverge whenever the live filter hides the shown row (#228). Read off
         :data:`TITLE_ROLE`, so a dirty row's persisted title stays its plain one (#77).
+
+        A grouped page's title comes back as ``"<group>/<title>"`` (#294) -- a group's own title, and
+        an ungrouped page's, never gain a parent to prefix with.
         """
-        return None if self.__shown_row is None else cast(str, self.__shown_row.data(TITLE_ROLE))
+        if self.__shown_row is None:
+            return None
+        title = cast(str, self.__shown_row.data(TITLE_ROLE))
+        parent = self.__shown_row.parent()
+        if parent is None:
+            return title
+        return f"{cast(str, parent.data(TITLE_ROLE))}/{title}"
 
     def __on_current_changed(self, current: QModelIndex, previous: QModelIndex) -> None:
         """Show the newly-selected row's page (or, for a group row, every page under it) in the stack.
