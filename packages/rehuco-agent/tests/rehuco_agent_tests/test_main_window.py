@@ -15,7 +15,7 @@ from typing import Any, Final
 from borco_pyside.dialogs import DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.logging.log_model import MESSAGE_COLUMN
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, QModelIndex, Qt
 from PySide6.QtGui import QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -50,6 +50,8 @@ from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
+from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
+from rehuco_agent.settings.ui.images_files_page import ImagesFilesPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
 from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
@@ -412,19 +414,21 @@ def test_registers_the_videos_page(qtbot: QtBot) -> None:
 
 
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
-    """Every page is a top-level row, and the rows are in alphabetical order (#277).
+    """Every page is a top-level row, except the three grouped under "Images" (#277, #294), and the
+    rows are in alphabetical order.
 
-    The pages that used to nest under "Plugins" are among them, so a reader looking for "Videos" no
-    longer has to know it is a plugin's setting to find it. Order is registration order (nothing sorts
-    the tree), which is what the sorted assertion actually guards. This platform's own page is left out
-    of the expected set -- that it lands in the right place is covered by that same assertion, on
-    whichever platform is running.
+    The pages that used to nest under "Plugins" are among the top-level ones, so a reader looking for
+    "Videos" no longer has to know it is a plugin's setting to find it. Order is registration order
+    (nothing sorts the tree), which is what the sorted assertion actually guards. This platform's own
+    page is left out of the expected set -- that it lands in the right place is covered by that same
+    assertion, on whichever platform is running.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify no row has children, the cross-platform pages are all top-level rows, and the whole
-      list is sorted case-insensitively
+    * verify only the "Images" row has children, the cross-platform pages are all top-level rows,
+      and the whole top-level list is sorted case-insensitively
+    * verify "Images" nests exactly Display, Files and Screenshot Patterns, in that order
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -433,7 +437,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     items = [model.item(row) for row in range(model.rowCount())]
     titles = [item.text() for item in items]
-    assert [item.rowCount() for item in items] == [0] * len(items)
+    assert [item.rowCount() for item in items] == [3 if title == "Images" else 0 for title in titles]
     assert set(titles) >= {
         "Checksums",
         "Descriptions",
@@ -441,12 +445,16 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Identity",
         "Images",
         "Logs",
-        "Screenshot Patterns",
         "Session",
         "Tasks",
         "Videos",
     }
+    assert "Screenshot Patterns" not in titles
     assert titles == sorted(titles, key=str.casefold)
+
+    images_item = items[titles.index("Images")]
+    child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
+    assert child_titles == ["Display", "Files", "Screenshot Patterns"]
 
 
 def test_registers_the_checksums_page(qtbot: QtBot) -> None:
@@ -471,12 +479,13 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
 
 
 def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
-    """The Screenshot Patterns page (#53, #287) is registered into the settings dialog, once.
+    """The Screenshot Patterns page (#53, #287) is registered into the settings dialog once, nested
+    under the "Images" group (#294).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the page stack holds a `ScreenshotPatternsPage` and the category tree lists it once
+    * verify the page stack holds a `ScreenshotPatternsPage` and the "Images" group lists it once
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -488,7 +497,69 @@ def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, ScreenshotPatternsPage) for page in pages)
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert [model.item(row).text() for row in range(model.rowCount())].count("Screenshot Patterns") == 1
+    images_item = next(model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Images")
+    child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
+    assert child_titles.count("Screenshot Patterns") == 1
+
+
+def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot: QtBot) -> None:
+    """The "Images" group row shows Display, Files and Screenshot Patterns together in one column
+    (#230, #294) -- so the group behaves exactly as the one flat Images page did before the split.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and select the "Images" group row in the settings tree
+    * verify the shown column holds every block each of the three pages declared
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    images_item = next(model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Images")
+    dialog_ui.category_tree.setCurrentIndex(dialog_ui.category_tree.model().mapFromSource(images_item.index()))
+
+    column_layout = dialog_ui.page_stack.currentWidget().widget().layout()
+    stacked = {column_layout.itemAt(index).widget() for index in range(column_layout.count())}
+    page_blocks = settings_dialog._SettingsDialog__page_blocks  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    for page_type in (ImagesDisplayPage, ImagesFilesPage, ScreenshotPatternsPage):
+        page = next(page for page in page_blocks if isinstance(page, page_type))
+        declared = {block for block, _, _ in page_blocks[page]}
+        assert declared, page_type.__name__
+        assert declared <= stacked, page_type.__name__
+
+
+def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None:
+    """A term carried only by a grouped page's block finds that page, shown under the "Images" row
+    and beside no sibling (#76, #294).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * filter by a Screenshot Patterns term, then by a Files (extension list) term
+    * verify each time the visible tree is the "Images" row with exactly that one child
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    settings_dialog = window._MainWindow__settings_dialog  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    proxy = dialog_ui.category_tree.model()
+
+    def visible_titles(parent: QModelIndex) -> list[str]:
+        titles: list[str] = []
+        for row in range(proxy.rowCount(parent)):
+            index = proxy.index(row, 0, parent)
+            titles.append(proxy.data(index))
+            titles.extend(visible_titles(index))
+        return titles
+
+    dialog_ui.filter_edit.setText("screenshot name patterns")
+    assert visible_titles(QModelIndex()) == ["Images", "Screenshot Patterns"]
+
+    dialog_ui.filter_edit.setText("reference image extensions")
+    assert visible_titles(QModelIndex()) == ["Images", "Files"]
 
 
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
@@ -512,7 +583,7 @@ def test_registers_the_descriptions_page(qtbot: QtBot) -> None:
 
 
 def test_registers_no_reference_images_page_of_its_own(qtbot: QtBot) -> None:
-    """The reference-images extension list is a block on Images, not a page (#222).
+    """The reference-images extension list is a block on Images/Files, not a page (#222, #294).
 
     **Test steps:**
 

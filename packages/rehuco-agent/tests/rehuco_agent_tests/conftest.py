@@ -229,8 +229,8 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
     """Isolate every test from the process-wide `ImageViewerSettings` singleton (#160).
 
     Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first
-    clicks a thumbnail (or builds an `ImagesPage`) would otherwise pin an instance loaded from the
-    developer's real on-disk settings for the rest of the session -- and decide, from that file,
+    clicks a thumbnail (or builds an `ImagesDisplayPage`) would otherwise pin an instance loaded from
+    the developer's real on-disk settings for the rest of the session -- and decide, from that file,
     which surface every later test's viewer opens on.
 
     Tests that specifically exercise the image-viewer settings patch ``persistent_settings``
@@ -246,8 +246,8 @@ def isolate_shared_image_viewer_settings(mocker: MockerFixture) -> Iterator[None
 def isolate_shared_reference_images_settings(mocker: MockerFixture) -> Iterator[None]:
     """Isolate every test from the process-wide `ReferenceImagesSettings` singleton (#222).
 
-    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds a
-    `ImagesPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from
+    Same rationale as :func:`isolate_shared_markdown_rendering_settings`: whichever test first builds an
+    `ImagesFilesPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded from
     the developer's real on-disk settings for the rest of the session -- and decide, from that file, which
     archive entries every later test's enumeration counts.
 

@@ -78,11 +78,12 @@ and a tree that can be scrolled out of its own viewport.
 
 [[[appendices.settings-pages#category-groups]]]
 
-**Today the tree is one flat list, in alphabetical order** (#277): "Checksums" (`ChecksumsPage`, #242),
-"Descriptions" (`DescriptionsPage`), "Excluded Files" (`ExcludedFilesPage`, #226), "Identity"
-(`IdentityPage`, #99), "Images" (`ImagesPage`), "Logs" (`LogsPage`, #200), "Screenshot Patterns"
-(`ScreenshotPatternsPage`, #53, #287), "Session" (`SessionPage`, #65), "System Integration", "Tasks"
-(`TasksPage`, #202) and "Videos" (`VideosPage`, #225).
+**Today the tree is a flat list, in alphabetical order, with one group** (#277, #294): "Checksums"
+(`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Excluded Files" (`ExcludedFilesPage`,
+#226), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200), "Session"
+(`SessionPage`, #65), "System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`,
+#225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Files" (`ImagesFilesPage`) and
+"Screenshot Patterns" (`ScreenshotPatternsPage`, #53, #287).
 
 "System Integration" is one page on every platform with a different class behind each (`RegistryPage`
 on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS, which registers
@@ -98,12 +99,13 @@ that a caller can see and change beats a `QSortFilterProxyModel` layer over the 
 which would also complicate the current-row and restore-on-show paths (#228, #230) to take the decision
 away from the one place that has the context to make it.
 
-**There is no group in use, and the machinery for one is kept** (#277). Until #277 the four pages a
-resource type owns — Descriptions, Excluded Files, Images, Videos — nested under a **Plugins** group
-row. What that bought was a word the reader has to know before they can look under it: "Videos" is
-findable by its own name, and "Plugins" only hides it behind an implementation term. So they were
-promoted to top-level rows. The `group=` parameter and everything behind it (below) stay: a settings
-tree may want a tier again, and a working, tested one is worth more dormant than rebuilt.
+**"Images" is the one group in use** (#294) — the `group=` machinery kept dormant since #277 for "the
+next tree that wants a tier" finally has one. Until #277 the four pages a resource type owns —
+Descriptions, Excluded Files, Images, Videos — nested under a **Plugins** group row. What that bought
+was a word the reader has to know before they can look under it: "Videos" is findable by its own name,
+and "Plugins" only hides it behind an implementation term. So they were promoted to top-level rows —
+all but Images, which #294 puts back under a group of its own, because unlike "Plugins", "Images" is
+already the word the reader has.
 
 The test a top-level row passes is that a reader looking for it has no plugin name to guess. Checksums
 govern every resource type and the sweep that reads them is reached from `File` rather than from a
@@ -111,14 +113,17 @@ document, so filing them under a plugin would hide them behind a word the reader
 Legacy screenshot rules pass it the same way (#53): converting a `.tc` happens to a resource of any
 type, and the import wizard that reads them is reached from `File` as well.
 
-**One page per subject, not per owner.** "Images" gathers every image-shaped setting whichever object
-owns it: the viewer surface and thumbnail strips (`ImageViewerSettings`), the width cap on an image
-embedded in a description (`MarkdownRenderingSettings`), and which archive entries a reference-images
-resource counts as its images (`ReferenceImagesSettings`, #222). The last two arrived from elsewhere —
-the cap was a block on Descriptions, the extension list a "Reference Images" page holding nothing but
-that list. Both were filed where the *code* owned them, so finding either meant knowing which plugin
-or settings object to look under, when what the reader had was the word "images". A page whose one
-block is a list is also a tree row that costs a click to learn it holds one thing.
+**One page per subject, not per owner** — split along how that subject is asked about, once "Images"
+had two questions worth asking separately (#294). "Images/Display" answers how an image is *shown*:
+the viewer surface and thumbnail strips (`ImageViewerSettings`), and the width cap on an image embedded
+in a description (`MarkdownRenderingSettings`). "Images/Files" answers what an image *is*, on disk:
+which archive entries a reference-images resource counts as its images (`ReferenceImagesSettings`,
+#222), and whether deleting a screenshot goes through the Recycle Bin (`ScreenshotDeletionSettings`,
+#291). Both the width cap and the extension list arrived from elsewhere — the cap was a block on
+Descriptions, the extension list a "Reference Images" page holding nothing but that list — filed where
+the *code* owned them, so finding either meant knowing which plugin or settings object to look under,
+when what the reader had was the word "images". A page whose one block is a list is also a tree row
+that costs a click to learn it holds one thing.
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in
@@ -138,13 +143,12 @@ typed into the filter box, for no gain.
 dialog's `persistent_settings()` — otherwise any test building one (directly, or via `MainWindow`)
 would read and overwrite the developer's real settings file, and leak toggle state into later tests.
 
-### The group tier, retained but unused (#277)
+### The group tier (#277, #294)
 
-Nothing calls for a group today; all of this stays working and tested, for the next tree that wants a
-tier. The tree is **two levels deep at most**: `add_page("Plugins", "Videos", page)` nests the page's
-row under that group's row, creating the group's row on first use; the two-argument
-`add_page("Videos", page)` — what every caller uses now — leaves it a top-level row of its own. Group
-names are plural: a group holds pages.
+Kept dormant since #277 until "Images" needed a tier of its own (#294). The tree is **two levels deep
+at most**: `add_page("Images", "Files", page)` nests the page's row under that group's row, creating
+the group's row on first use; the two-argument `add_page("Videos", page)` — what every other caller
+uses — leaves it a top-level row of its own. Group names are plural: a group holds pages.
 
 A group row **carries no page of its own** — it is a header. Selecting it shows everything under it at
 once, in one scrolling column, each page's contribution under its own title as a heading — since the
@@ -204,15 +208,16 @@ The dialog shell dispatches, it never interprets:
 
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
-- **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesPage`, "Images";
-  `ExcludedFilesPage`, "Excluded Files"; `VideosPage`, "Videos") — edits live in
-  local widget/draft state until `save_changes()` pushes them somewhere permanent; `drop_changes()`
-  discards the draft and reloads the fields from whatever is currently saved (a revert, not a no-op).
-  `ImagesPage` is the one page writing **three** settings objects, one per block, each saved whole
-  because that is the unit its own `save()` takes. Writing `MarkdownRenderingSettings` there
+- **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesDisplayPage`, "Images/Display";
+  `ImagesFilesPage`, "Images/Files"; `ExcludedFilesPage`, "Excluded Files"; `VideosPage`, "Videos") —
+  edits live in local widget/draft state until `save_changes()` pushes them somewhere permanent;
+  `drop_changes()` discards the draft and reloads the fields from whatever is currently saved (a
+  revert, not a no-op). `ImagesDisplayPage` and `ImagesFilesPage` between them write the **four**
+  settings objects the single "Images" page used to (#294), two apiece, each saved whole because that
+  is the unit its own `save()` takes. Writing `MarkdownRenderingSettings` on `ImagesDisplayPage`
   re-persists the engine and CSS unchanged: what the shared object holds is already the last-saved
   pair, so a `DescriptionsPage` edit still staged is neither picked up nor clobbered.
-  `ImagesPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
+  `ImagesDisplayPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
   it has to show its own effect on what is already on screen: every open document's image strip
   resizes and takes up the chosen layout — one row or wrapped ([[plugins#tutorial-plugin]]) — and
   every open maximized viewer resizes and shows or hides its own thumbnail row. Only
@@ -259,7 +264,7 @@ showing what was typed would disagree with what every scan actually reads, which
 one-predicate discipline the field locks follow. A page whose `save_changes()` normalizes owes the user
 the normalized result on screen.
 
-`ImagesPage`'s extension block does the same, over the same `StringListEditor`, and the two are worth
+`ImagesFilesPage`'s extension block does the same, over the same `StringListEditor`, and the two are worth
 reading side by side because **what each of them normalizes is different**: a *pattern* is matched
 verbatim, so only blanks and duplicates go; a *format* also loses its leading dot and its casing, so
 `BMP` comes back `.bmp`. Both rules live on the settings object, never in the widget — the widget holds
@@ -356,7 +361,12 @@ state never waits a whole tick to catch up with an explicit action.
 **Dirty-marker identity note:** a tree row's *displayed* text carries the badge, but its identity
 (what `restore_selected_page`/`save_filter_state` compare and persist) is the title `add_page` was
 given, kept on the row under `TITLE_ROLE` ([[appendices.settings-pages#overview]]) — so nothing has to
-strip a marker back off the text to recognize a row (#277).
+strip a marker back off the text to recognize a row (#277). For a grouped page, what is persisted is a
+``"<group>/<title>"`` path rather than the bare title (#294) — two children under different groups may
+share a title, and only the path tells them apart. `__item_for_title` tries that path first and falls
+back to matching the whole stored string as a bare title, which is what lets an ini saved before #294
+still land somewhere: a pre-path grouped title finds its page by the old scan, and a pre-#294 flat title
+now folded into a group (`"Images"`) finds the group row it became.
 
 ## 5. Adding a new settings page
 
@@ -369,9 +379,10 @@ strip a marker back off the text to recognize a row (#277).
 - Register it in `MainWindow.__register_settings_pages` via
   `self.__settings_dialog.add_page("Its Title", ItsPage())` — **at its alphabetical position among the
   existing calls**, since registration order is tree order
-  ([[appendices.settings-pages#category-groups]]). The page itself declares no title, and nothing uses
-  the grouping overload today. The
-  *first* page registered is the initially-selected one.
+  ([[appendices.settings-pages#category-groups]]). The page itself declares no title. Nesting it under a
+  group uses the three-argument overload instead,
+  `self.__settings_dialog.add_page("Its Group", "Its Title", ItsPage())` — "Images" is the one group in
+  use today (#294). The *first* page registered is the initially-selected one.
 - A platform-gated page (like `RegistryPage` — "System Integration", Windows-only) is imported
   lazily inside the `if sys.platform == "win32":` branch, and takes whatever app-level data it needs
   (e.g. `ARCHIVE_EXTENSIONS`) as a constructor parameter rather than importing it back from
@@ -457,7 +468,7 @@ live-update wiring instead lives on the settings *data* side:
 settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fields and matching
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
-value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
+value on every use. Not every block needs this at all — `ImagesFilesPage`'s extension list is read
 only when an enumeration runs, `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
 run does, and `ScreenshotPatternsPage`'s patterns only when a `.tc` is scanned or converted, so a plain
 dataclass carries each and there is nothing to watch any of them change — though the screenshot one

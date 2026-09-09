@@ -29,7 +29,7 @@ class VideosPage(QWidget):
       which is only meaningful while that backend is selected. Both are kept, so switching to MediaInfo
       and back does not lose a path that was typed ([[appendices.settings-pages#persisting-changes]]).
     - **Video extensions** -- which files a scan measures, a `StringListEditor` (#231) wearing this app's
-      icons, exactly as the reference-images list on `ImagesPage` is.
+      icons, exactly as the reference-images list on `ImagesFilesPage` is.
 
     **The selected backend reports whether it can actually run**, before anyone presses Compute: an
     ``ffprobe`` path pointing at nothing is the realistic misconfiguration, and a scan under one raises

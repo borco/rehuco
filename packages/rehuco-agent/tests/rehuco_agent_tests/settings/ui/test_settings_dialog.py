@@ -1563,6 +1563,76 @@ def test_restore_selected_page_finds_a_grouped_pages_title_too(
     assert current_page(dialog) is grouped
 
 
+def test_save_filter_state_with_a_grouped_page_selected_stores_its_group_path(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A grouped page's stored title carries its group, as ``"<group>/<title>"`` (#294) -- not just its
+    own title, which two groups could otherwise share.
+
+    **Test steps:**
+
+    * build a dialog with a page nested under a group
+    * call ``save_filter_state``
+    * verify the stored title is the group/title path
+    """
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    register_page(dialog, "Files", group="Images")
+
+    dialog.save_filter_state()
+
+    saved = SettingsDialogSettings()
+    saved.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert saved.selected_page_title == "Images/Files"
+
+
+def test_restore_selected_page_resolves_a_group_path_to_its_own_group(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored ``"<group>/<title>"`` path finds the page under the *named* group, not a same-titled
+    page under a different one (#294).
+
+    **Test steps:**
+
+    * save a group-path title, then build a dialog with two groups each holding a same-titled page
+    * call ``restore_selected_page``
+    * verify the page under the named group is the one shown
+    """
+    SettingsDialogSettings(selected_page_title="Images/Files").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    register_page(dialog, "Files", group="Editors")
+    wanted = register_page(dialog, "Files", group="Images")
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is wanted
+
+
+def test_restore_selected_page_leaves_the_first_page_when_a_group_path_names_no_child(
+    qtbot: QtBot, fake_persistent_settings: FakeSettings
+) -> None:
+    """A stored path whose group exists but names none of its children matches nothing (#294): every
+    child is passed over, the bare-title fallback finds no such row either, and the first-added page
+    stays -- the same outcome as a title saved under a page this platform never registers (#228).
+
+    **Test steps:**
+
+    * save a group path naming a page the group does not hold, then build that group with two pages
+    * call ``restore_selected_page``
+    * verify the first-added page is still shown
+    """
+    SettingsDialogSettings(selected_page_title="Images/Gone").save(fake_persistent_settings)  # type: ignore[arg-type]
+    dialog = SettingsDialog()
+    qtbot.addWidget(dialog)
+    first = register_page(dialog, "Display", group="Images")
+    register_page(dialog, "Files", group="Images")
+
+    dialog.restore_selected_page()
+
+    assert current_page(dialog) is first
+
+
 def test_restore_selected_page_walks_past_a_group_whose_pages_all_miss(
     qtbot: QtBot, fake_persistent_settings: FakeSettings
 ) -> None:

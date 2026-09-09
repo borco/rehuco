@@ -326,7 +326,7 @@ def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
     assert page.is_dirty() is False
 
 
-# Mirrors test_images_page.py's icon-wearing test exactly -- kept as a separate copy rather than a
+# Mirrors test_images_files_page.py's icon-wearing test exactly -- kept as a separate copy rather than a
 # shared import, matching this codebase's settings-test convention.
 # pylint: disable=duplicate-code
 def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
