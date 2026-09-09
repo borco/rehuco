@@ -172,21 +172,44 @@ scraper returns, with no per-site code at all.
 
 [[[acquisition-tooling#tc-to-rehu]]]
 
-Opening an old `.tc` file offers migration actions: convert `.tc` (YAML) → `.rehu` (JSON), and normalize the non-uniform
-screenshot names into the uniform basename-derived `infoXX` scheme ([[data-model#resource-scoping]]). This is the
-**first concrete use of the read/import upgrade path ([[data-model#schema-version]])** rather than a one-off script —
-though a `.tc` is *not* itself "format v0": it is a different file format that never carried a `.rehu` version to
-upgrade from, so the adapter reads one and emits the **current** `.rehu` layout, stamp included (v0 means an
-*unstamped* `.rehu`, [[data-model#schema-version]]). Checksum generate/verify ([[data-model#checksums]]) belongs
-alongside the migration actions in the same tooling.
+Opening an old `.tc` file offers a **Convert** action: it writes the `.rehu` (JSON) beside a renamed `info.tc.orig`,
+then renames every image the screenshot name patterns ([[acquisition-tooling#screenshot-schemes]]) match to the
+number it already carries — `cover` and any unnumbered stem become `00`, `image-01` stays `01`, `file-1` becomes
+`01`, `file(3)` becomes `03` — zero-padded to two digits, per the pattern's slot. A **collision** — two matched
+names resolving to the same slot, or a `<stem>NN` the slot would take already present — leaves the later file
+untouched under its own name rather than picking a winner: there is no tie-break and nothing is inferred, so the
+one case a rule ordering cannot settle ([[acquisition-tooling#screenshot-schemes]]) is left for the images dock to
+correct by hand ([[plugins#tutorial-plugin]]). Several extensions matching the same stem resolve by **pixel area**
+first, then by first appearance in the app's `IMAGE_EXTENSIONS` order — the winner is renamed, the rest are left
+under their own names as further collisions. Description references to a renamed image are rewritten by a string
+map from old name to new, and stay **extension-less** as they always were. A legacy number **≥ 100** is left
+unconverted — no resource genuinely carries that many screenshots, so a triple-digit name is someone else's
+convention, not this one's. Conversion is **deterministic and idempotent**: running it again against an
+already-converted resource renames nothing, since every pattern-matched name it would act on is already a
+`<stem>NN`.
 
-### §15.3.1 Convert actions and the backup/rollback contract
+**Why nothing is inferred** — measured over the whole catalog, 657 `.tc` resources (2026-09-07): 148 `cover`-vs-series
+pairs are **distinct pictures** and 12 are thumbnail/full-size **duplicates** of each other, and no rule order serves
+both — the same filenames describe two real-world situations, and only the pictures tell them apart (#282, #283, the
+slot-inference defects this design replaces). Nor can the description drive it: only 44% of descriptions reference
+any image at all, 317 resources reference none, and every referenced `cover` is referenced first — so the order
+cannot be read off the text either. Hence a dumb rename to the number each file already carries, and a hand
+correction where that was wrong.
+
+No screenshot is ever backed up to an `.orig` of its own — a rename is not a write, so nothing is lost by it, and
+the only backup a conversion produces is `info.tc.orig`, kept for reference. This is the **first concrete use of
+the read/import upgrade path ([[data-model#schema-version]])** rather than a one-off script — though a `.tc` is
+*not* itself "format v0": it is a different file format that never carried a `.rehu` version to upgrade from, so
+the adapter reads one and emits the **current** `.rehu` layout, stamp included (v0 means an *unstamped* `.rehu`,
+[[data-model#schema-version]]). Checksum generate/verify ([[data-model#checksums]]) belongs alongside the migration
+action in the same tooling.
+
+### §15.3.1 Convert, Discard and the rollback contract
 
 [[[acquisition-tooling#convert-mechanics]]]
 
-Conversion is offered on an open legacy `.tc` as two toolbar actions — **Convert, Keep Backups** and **Convert, Discard
-Originals** — differing only in whether the `.orig` backups survive a successful run. They are visible **only while the
-document is a legacy `.tc`** (Save and Revert hide in their place); if the `.rehu` target already exists, an overwrite
+Conversion is offered on an open legacy `.tc` as a single toolbar action, **Convert**, visible **only while the
+document is a legacy `.tc`** (Save hides in its place); if the `.rehu` target already exists, an overwrite
 confirmation precedes the write. On success the **same dock adopts the converted document in place** — no reopen
 round-trip: it becomes the `.rehu`, now unlocked (the result is never `legacy_tc`, [[data-model#lock-vocabulary]]), its
 dirty flag cleared and the dock's persisted identity resynced to the new path.
@@ -194,30 +217,31 @@ dirty flag cleared and the dock's persisted identity resynced to the new path.
 The conversion is the concrete importer of the migration-vs-importer split ([[data-model#schema-version]]): it **mints**
 a fresh UUID `id` and seeds `created`/`updated` from the `.tc` file's mtime — identity an import owns, once
 ([[data-model#stable-identity]]) — and it is a **deliberate, confirmed** act, never automatic on open. Its file-system
-discipline is a strict **never-overwrite, never-delete-then-write** contract:
+discipline is a strict **never-overwrite, never-delete-then-write** contract, narrower now than a copy-and-back-up
+scheme needed to be, because a screenshot rename is not a write and loses nothing:
 
-- **Every original the conversion touches is renamed to a `.orig` sibling before any new file is written** — the `.tc`
-  itself, every recognized legacy screenshot (winners *and* losers, [[acquisition-tooling#screenshot-schemes]]), and a
-  pre-existing `.rehu` target when overwriting.
-- **Order:** back up all originals → write the `.rehu` → copy each winning screenshot to its new `<stem>NN` name.
-- **Rollback on any failure:** delete every new file created so far, then rename every `.orig` back to its original name,
-  then re-raise — so a failed conversion leaves the directory exactly as it was found.
-- **A stale-backup guard refuses to start** if any `.orig` sibling already exists (a leftover from a prior interrupted
-  run), so a rollback target is never silently clobbered.
-- **Backups are deleted only after full success**, and only for the discard-originals variant; keep-backups leaves them
-  in place.
+- **The `.tc` is renamed to `info.tc.orig` before any new file is written** — a pre-existing `.rehu` target is
+  likewise renamed aside first when overwriting.
+- **Order:** back up the `.tc` → write the `.rehu` → rename each pattern-matched image to its own slot
+  ([[acquisition-tooling#tc-to-rehu]]).
+- **Rollback on any failure:** undo every image rename already applied, delete the `.rehu` if it was written, then
+  rename `info.tc.orig` back to `.tc`, then re-raise — so a failed conversion leaves the directory exactly as it was
+  found.
+- **A stale-backup guard refuses to start** if a `.orig` it would write already exists — `info.tc.orig`, or the
+  `.rehu.orig` an overwrite would make (a leftover from a prior interrupted run) — so a rollback target is never
+  silently clobbered.
 
 The I/O failure of a convert surfaces through the same Retry/Cancel discipline as a save ([[data-model#write-integrity]]),
 as a "Conversion Failed" dialog.
 
 Before a bulk import over a folder tree runs, a **dry-run plan** reports what it would do without writing
-anything: the mapped `.rehu` payload and screenshot rename plan for every `.tc` found, and per-resource flags
-naming why a human might want to look — a screenshot tie-break, a target `.rehu` or stale backup that would
-block the resource, a size/duration string that failed to parse or stayed merely advisory, a `.tc` key the
-mapper does not consume, or an mtime sitting in a run's worth of near-identical ones (the signature of a NAS
-restore, bulk copy, or archive extraction clobbering it, [[data-model#stable-identity]]) that would otherwise
+anything: the mapped `.rehu` payload and image rename plan for every `.tc` found, and per-resource flags
+naming why a human might want to look — a rename **collision** ([[acquisition-tooling#tc-to-rehu]]), a target `.rehu`
+or stale backup that would block the resource, a size/duration string that failed to parse or stayed merely advisory,
+a `.tc` key the mapper does not consume, or an mtime sitting in a run's worth of near-identical ones (the signature of
+a NAS restore, bulk copy, or archive extraction clobbering it, [[data-model#stable-identity]]) that would otherwise
 seed `created`/`updated` from a lie. A directory holding a `.tc` is a resource and is not descended past, the
-same one-resource-one-directory assumption the backups above are built on. A directory that will not list or a
+same one-resource-one-directory assumption the backup above is built on. A directory that will not list or a
 `.tc` that will not read or parse costs its own entry and is named, never the whole plan — the walk says what
 it could not see, the discipline the checksum sweep already follows ([[mounts-and-storage#offline-mounts]]).
 
@@ -230,11 +254,11 @@ clobbered timestamps is a reason to stop and look rather than one flag among six
 `TcImportJob` per checked resource onto the app-wide task queue and watch them finish; then a result table
 with an outcome per row and **Retry Failed**. **No per-item review gate** — the conversion offers no
 choices to confirm, so a per-resource pass over thousands of items would be ceremony nobody would ever
-finish. Safety is the backups and the revert above, plus every resource keeping its backups
-unconditionally on this path (the discard variant is never offered here — that is the backups manager,
-afterwards, deliberately). A blocked row starts unchecked; checking one **is** the explicit per-row
-opt-in `rehu_exists` needs to proceed with `overwrite`, and the only such opt-in offered — a
-`stale_backup` row cannot be unblocked this way, so checking one simply enqueues a job that fails with a
+finish. Safety is that nothing is lost by a rename and the backup above, plus a collision leaving the later
+file untouched rather than guessing — a review pass, where one is wanted, is the images dock afterwards
+([[plugins#tutorial-plugin]]), deliberately, one resource at a time. A blocked row starts unchecked; checking one
+**is** the explicit per-row opt-in `rehu_exists` needs to proceed with `overwrite`, and the only such opt-in offered
+— a `stale_backup` row cannot be unblocked this way, so checking one simply enqueues a job that fails with a
 message. Cancelling mid-import cancels every job still queued outright and lets the one already running
 finish on its own, so a resource is never left half-converted.
 
@@ -243,8 +267,8 @@ claim made when the files were known good — is seeded into an `info.checksum` 
 no content ([[data-model#checksums]]). It is not an option: leaving it as a file nothing reads is what the seeding
 step exists to end, and it costs nothing, so there is nothing to choose. No manifest means no record, and inventing
 a baseline from disk instead is what the one option is for. The manifest is **retired** once its claim is in the
-record ([[data-model#checksums]], #259) — renamed to an `info.sfv.orig` that joins the resource's retained backups —
-so a converted resource never keeps a file that is superseded and does not say so.
+record ([[data-model#checksums]], #259) — renamed to an `info.sfv.orig`, which joins `info.tc.orig` as the resource's
+one retained backup — so a converted resource never keeps a file that is superseded and does not say so.
 
 **The scan reports a second kind of row** (#259): an already-converted resource still carrying that manifest beside
 its `.checksum`, which is what hand-converting produced before retirement existed. Free to find — the walk reads every
@@ -268,131 +292,70 @@ the wizard's to report**: their outcome is not a conversion's and belongs on no 
 dialog, and the task queue is where a run measured in hours is watched. The result step says how many were queued, so
 *the import is finished* is not read off a page with hours of hashing still to run.
 
-Retained backups stay usable **after** a run, not only during one: a completed conversion can be **reverted** — the
-written `.rehu` and the `<stem>NN` screenshots it installed are deleted and every `.orig` renamed back — or its backups
-**discarded**, making it permanent. This is what makes an unattended bulk import safe: nothing was deleted, and every
-item can be undone one at a time. The same discipline applies as to the forward direction:
+A completed conversion keeps exactly one retained pair to act on afterwards — `info.tc.orig` and, where #259 applied,
+`info.sfv.orig` — and the only remedy over them is **Discard**, permanent by design: nothing about the conversion
+itself can be undone, because nothing about it was destructive in the first place. A wrong image rename is corrected
+in the images dock ([[plugins#tutorial-plugin]]), by hand, one file at a time — not by reverting the whole resource
+back to a `.tc`. `File ▸ Conversion Backups…` is the catalog-wide manager over these retained pairs, **one row per
+resource**: the date its conversion minted, the reclaimable size, and Discard, confirmed and irreversible, run as a
+task-queue job whatever the selection size. There is nothing here to filter by outcome quality, since a conversion
+has none to report — the only question a row answers is *keep this small backup, or reclaim its bytes*.
 
-- **It refuses rather than half-reverts.** No backed-up `.tc` beside the resource means this is not a conversion to
-  undo; a restore target occupied by a file the revert would not itself delete — a legacy name the user has since put
-  back by hand — refuses the whole operation rather than overwriting it.
-- **Nothing is deleted while a rename can still fail.** The written files are moved aside first, every backup is renamed
-  back, and only then are the moved-aside files deleted — so a failure part-way leaves the resource **converted**, the
-  mirror of the forward rollback leaving it unconverted.
-- **A revert discards edits made since the conversion**, since it deletes the `.rehu` outright. That drift is
-  detectable — a conversion seeds `created` and `updated` with the same stamp and only a changed save moves `updated`
-  ([[field-schema#record-timestamps]]) — so the caller can warn before losing them.
-- **Backups are the directory's `.orig` siblings**, not a stem-scoped set: a legacy screenshot is named `cover.jpg` or
-  `sample-01.jpg`, carrying nothing that ties it to the resource it belongs to. Exact for the directory-scoped
-  resources tc4 catalogs are made of, and why a revert names a directory rather than a file.
-- **A revert restores a retired manifest** (#259). The backups are restored wholesale — that is what *put the
-  directory back* means — so `info.sfv.orig` becomes a live `info.sfv` again, beside the `.checksum` the conversion
-  seeded from it, which a revert deliberately does not delete (it deletes only what the conversion wrote, and the
-  record may since hold verify work worth keeping). This is the one door through which the manifest-beside-record
-  state recurs, on a resource that is now a `.tc` again — and it heals on reconversion, which merges and retires the
-  manifest whether or not a record is present. Deliberately not a scan target: the stranded rows the import wizard
-  offers are `.rehu` resources only, since a `.tc`'s conversion carries its manifest forward itself.
-- **And a backup is never the resource's content** (#253): the same definition is what the content walk asks
-  ([[data-model#checksums]]), so the files a revert is holding are exactly the files a size scan and a checksum skip.
-  Otherwise a bulk import would bake each resource's own `info.tc.orig` into its first baseline, and the discard this
-  manager exists to offer would report a missing file for every resource in the catalog.
+The same action sits on an open converted document, as a toolbar action offered exactly while it has something to
+do — the mirror of Convert's own visible-while-`legacy_tc` rule: **Discard is offered while `info.tc.orig` is
+present.** A save never discards it on its own — discarding is deliberate and confirmed or it is not discarding at
+all, and the `.orig` pair is the only copy of the original `.tc` (and, once retired, of the legacy manifest).
 
-Reading what a revert *would* do — how many files, how many bytes, under what names, and whether it is possible at all
-— is a separate query that writes nothing, so a surface can list retained backups without performing anything. Run
-over a folder tree it becomes a **scan**, composed of that same per-resource query and the catalog walk the checksum
-sweep already uses: only resources that still hold backups are reported, how many were examined survives alongside
-them, and an unreadable branch is named rather than reducing the answer.
-
-`File ▸ Conversion Backups…` is the manager over both, **grouped per resource, not per file** — six `.orig` files are
-one decision, and six rows would put five of them in front of a reader who cannot act on any one alone. A row names
-the resource, the date its conversion minted, what its backups amount to (*"6 files, 14 MB"*), and the flags worth a
-look: a screenshot **tie-break**, a `.rehu` **edited since** the conversion, or a resource **not revertible** at all.
-The header leads with the reclaimable total across the current selection, since that is the number the decision turns
-on. Filtering by a flag's own word is how the review pass the bulk import deliberately skipped is actually done —
-narrow to the tie-breaks, revert the few that went wrong, then select-all-discard the rest. *Select all* acts on the
-filtered view, because having filtered, selecting all of *those* and selecting the whole scan are different asks.
-Every action from here goes on the task queue, one job per resource whatever the selection size, so cancelling stops
-after the current resource. A revert the inventory already knows cannot run is **refused on its row with the reason**
-rather than enqueued to fail later, and a revert that can run is confirmed **per resource** about the edits it would
-discard — never as a blanket disclaimer, which a reader can only agree to blindly. Discard, the one irreversible step
-in the whole import flow, names the resource count and the byte total.
-
-The same two remedies sit on an open converted document, as toolbar actions offered exactly while each has something
-to do — the mirror of the convert actions' own visible-while-`legacy_tc` rule. **Discard is offered while backups are
-retained; Revert only while one of them restores a `.tc`.** The two conditions differ precisely because backups are
-any `.orig` sibling: a resource converted with its originals discarded, whose manifest had already been retired beside
-it (#259), holds an `info.sfv.orig` and nothing to revert *to*, and a Revert offered there could only ever refuse. An
-occupied restore target is the other refusal and keeps its button — that is a conversion which can be undone once the
-file in the way is moved, and hiding it would leave a reader nothing to act on and no reason given. The inline notice
-strip says what is true and nothing more ([[plugins#viewer-editor-both]]'s message-only banner discipline), so where
-no revert is on offer it drops the warning about the edits one would cost. Both run inline
-there: one resource is a handful of renames, and the forward conversion is already inline. **A revert adopts the
-restored `.tc` in place**, the exact mirror of a convert: the same dock keeps showing the same resource, now a locked
-legacy document again, re-convertible without a reopen round-trip. **A save never discards the backups** — the
-divergence it creates is detectable ([[field-schema#record-timestamps]]) and is *warned about*, since discarding is
-deliberate and confirmed or it is not discarding at all, and the `.orig` set is also the only copy of the original
-`.tc` and of the tie-break's losers.
-
-### §15.3.2 Adopting a backup screenshot
+### §15.3.2 Legacy screenshot backups, retired
 
 [[[acquisition-tooling#adopted-backups]]]
 
-A backup can also leave the set one screenshot at a time. The images sub-dock lists a resource's `.orig` screenshots
-after its numbered set ([[plugins#tutorial-plugin]]) and
-offers each one an **Adopt** — renamed to the next free `<stem>NN`, so it becomes an ordinary screenshot the curation
-editor can reorder and the strip shows — or a **Delete**. Either takes the file out of the backup set, so a later revert
-restores less than the conversion backed up; whether a revert should then refuse, warn, or restore what is left is
-deliberately undecided until the revert is next touched ([[appendices.open-questions#still-open]]).
+The predecessor design kept every recognized legacy screenshot as a backup and let it rejoin the numbered set one
+file at a time (**Adopt**) or leave the set for good (**Delete**). The number-preserving migration ([[acquisition-tooling#tc-to-rehu]])
+makes that unnecessary: nothing is renamed away from what it is, so there is no separate backup set for a screenshot
+to leave. Its place is taken by the images dock listing **un-converted** pattern-matched images beside the numbered
+set and offering **Convert** or **Delete** on each (#270) — the correction surface moved from "restore what
+conversion set aside" to "finish what conversion left alone."
 
-### §15.3.3 Legacy screenshot naming rules
+### §15.3.3 Screenshot name patterns
 
 [[[acquisition-tooling#screenshot-schemes]]]
 
 tc4 catalogs accumulated screenshots under several naming conventions, and which ones a given catalog holds is a
-property of that catalog rather than of the format. Conversion therefore takes an **ordered list of rules**, shipped
-with a default set and editable in the agent's Legacy Screenshots settings page (#53), and renumbers the winners into
-the uniform basename-derived `<stem>NN` scheme ([[data-model#resource-scoping]]).
+property of that catalog rather than of the format. Recognizing them is **not only a migration-time concern** — a
+pattern-matched image is a screenshot beside any record, converted or not ([[data-model#image-meanings]]) — so the
+patterns are a **permanent classifier** the app carries beside every `.rehu`, consulted by the content walk and the
+images dock as much as by a conversion, and not put away once a catalog is fully migrated.
 
-**A rule is a series, not a filename pattern.** It has two fields: a **cover**, the literal filename stem that becomes
-the series' first screenshot, and a **rest** template that the files after it match. A run of `#` in the template marks
-where the number sits, and its length is that number's minimum zero-padded width — `#` counts `0, 1, … 10`, `##` counts
-`00, 01 … 99, 100`, `###` counts `000 … 999, 1000`. A digit run is accepted only when re-rendering its value at that
-width reproduces it exactly, so `##` takes `09` and `100` but refuses `0100`. Everything outside the `#` run is literal,
-so `file(#)`'s parentheses are parentheses: a rule is never a regular expression, which is what keeps a settings string
-free of both a capture-group contract and a backtracking cost.
+A pattern is an **ordinary regular expression** with a **slot convention**: one capture group names the slot the
+match belongs to, read as an integer and zero-padded to two digits; no capture group means slot `00`. Matching is
+**case-insensitive**, and a malformed pattern — one that fails to compile, or that carries more than one capture
+group — is **skipped and flagged**, never allowed to crash a scan or a conversion over one bad entry. Patterns are an
+**ordered list**, shipped with a default set and editable on the Legacy Screenshots settings page
+([[appendices.settings-pages#category-groups]], #53) as a **try-it table**: a sample-filename column beside the slot
+each pattern would assign it, so an edit shows its effect on the catalog's actual names rather than only on the
+regex itself (#287).
 
-The shipped defaults:
+The shipped defaults, in order:
 
-| cover | rest | the series it reads |
+| pattern | matches | slot |
 | --- | --- | --- |
-| `00` | `##` | `00`, `01`, `02`, … |
-| `sample-00` | `sample-##` | `sample-00`, `sample-01`, … |
-| `image-00` | `image-##` | `image-00`, `image-01`, … |
-| `image-01` | `image-##` | `image-01`, `image-02`, … |
-| `file` | `file(#)` | `file`, `file(2)`, `file(3)`, … — Windows duplicate numbering |
-| `cover` | `file-##` | `cover`, `file-01`, `file-02`, … |
+| `^cover$` | `cover` | `00` |
+| `^file$` | `file` | `00` |
+| `^(\d+)$` | a bare number, e.g. `03` | the number |
+| `^sample-(\d+)$` | `sample-01`, `sample-02`, … | the number |
+| `^image-(\d+)$` | `image-00`, `image-01`, … | the number |
+| `^file-(\d+)$` | `file-1`, `file-2`, … | the number |
+| `^file\((\d+)\)$` | `file(2)`, `file(3)`, … — Windows duplicate numbering | the number |
 
-**Slots are ordinal, not the numbers themselves.** The cover is slot 0; the files matching the rest template follow it
-in ascending numeric order as slots 1, 2, 3, … So an `image-01`-covered series numbers `image-02` as slot 1, and `file`
-is followed by `file(2)` at slot 1 — the numbering is an ordering, and a rule carries no start value to read one from.
-A gap therefore closes: `00`, `01`, `05` converts to `<stem>00`, `<stem>01`, `<stem>02`.
+The extension is matched separately from the stem, so a pattern names only the part before it. **Order matters only
+for which pattern matches first when more than one could** — an ordinary list, evaluated top to bottom, first match
+wins — and reordering the list is a real edit for exactly that reason.
 
-**Which rule applies is a question about a directory, not a filename.** The two `image-##` rules above differ *only* in
-their cover, and no single name distinguishes them: given `image-01.jpg` and `image-02.jpg`, the right reading is the
-second rule, and the only evidence is that `image-00` is absent. So the winning rule is the **first in list order whose
-cover file is present**, which is what makes the list's order significant and its reordering a real edit. A file the
-winner does not recognize falls to the first other rule that does, folding into that rule's slot as a losing variant —
-which is what keeps a thumbnail `cover.jpg` paired with the full-size `sample-00.jpg` it duplicates. When no rule's
-cover is present at all, every rule simply participates in list order.
-
-When several files resolve to the **same slot**, the winner is chosen by a fixed tie-break: **largest pixel area** first,
-then `.jpg`/`.jpeg` preferred over other extensions, then the alphabetically-first filename. The losers are still backed
-up (they are recognized files the conversion touches) but are not installed under a new name. The tie-break is **not**
-part of the editable rules: it applies whatever they say.
-
-**The same rule set reaches the content walk.** [[data-model#resource-scoping]]'s coverage rule skips a legacy record's
-screenshots, and it is handed the rules the conversion is handed — otherwise a file a user's added rule renames aside
-would count as content before conversion and as bookkeeping after it, moving `current_size` for no reason but a rename.
+**The same pattern list reaches the content walk** (#289). [[data-model#resource-scoping]]'s coverage rule counts a
+pattern-matched image as a screenshot rather than content, and it is handed the same list conversion is handed —
+otherwise a file a user's added pattern matches would count as content before it is recognized and as bookkeeping
+after, moving `current_size` for no reason but a settings edit.
 
 ### §15.3.4 Legacy size and duration string parsing
 

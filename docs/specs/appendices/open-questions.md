@@ -174,9 +174,6 @@ Flagging gaps so they're a deliberate choice rather than an oversight.
 - **Online-only and mixed local/online resources** — needs schema representation; not detailed.
 - **Udemy integration** — registered courses are hard to track. A Udemy page scraper is a built-in of
   [[acquisition-tooling#scraper-registry]]; an account-side import of *what the user owns* is not discussed.
-- **Revert after an adopted or deleted backup** — a conversion's `.orig` screenshot can now leave the backup set one
-  at a time ([[acquisition-tooling#adopted-backups]]), so a later revert has less to restore than the conversion backed
-  up. Whether the revert refuses, warns, or restores what is left is undecided until the revert is next touched.
 - **3D objects as a resource category** — mentioned alongside Daz3D but not mapped to a plugin design.
 - **Shared timed-presentation capability** — identified as worth extracting ([[plugins#shared-capability]]) but not
   designed.
