@@ -96,7 +96,7 @@ class ConversionBackupActions(QObject):
 
     **A save never discards the backups**, and nothing here does it as a side effect: discarding is the
     one irreversible step in the whole import flow ([[acquisition-tooling#convert-mechanics]]), the
-    ``.orig`` set is also the only copy of the original ``.tc`` and of the tie-break losers, and someone
+    ``.orig`` set is also the only copy of the original ``.tc``, and someone
     may edit a resource and only then conclude the conversion was wrong.
 
     :param model: the document these actions are about.

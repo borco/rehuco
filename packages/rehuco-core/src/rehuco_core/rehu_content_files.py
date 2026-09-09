@@ -213,8 +213,9 @@ class ContentFileScanner:
     **And a pattern-matched image is a screenshot beside any record, or none** (#289). tc4 named them
     ``01.jpg``, ``cover.jpg``, ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the
     record -- so the ``<record>NN`` rule cannot reach them; the caller's screenshot name patterns (#287)
-    are asked instead, the same recognition a conversion renames by and the images dock offers to convert
-    by, so what this walk skips is exactly what :func:`~rehuco_core.originals_to_back_up` moves aside. No
+    are asked instead, the same recognition a conversion renumbers by and the images dock offers to
+    convert by, so what this walk skips is exactly what a conversion claims -- including the images it
+    leaves under their own names, which are screenshots before and after it runs (#288). No
     ``.tc`` needs to sit beside it: a live tutorial's own ``01.jpg`` now reads as a screenshot too, and
     the images dock is where that gets corrected by hand rather than the walk guessing from what else is
     in the directory.
@@ -494,8 +495,7 @@ class ContentFileScanner:
         Asked through the set compiled in :meth:`__init__` rather than through
         :func:`~rehuco_core.is_legacy_screenshot`, so a walk of thousands of files compiles the rules
         once. The rules are the caller's -- the same set the conversion is handed -- which is what keeps
-        the names skipped here identical to the ones :func:`~rehuco_core.originals_to_back_up` renames
-        aside.
+        the names skipped here identical to the ones a conversion recognizes as screenshots.
 
         :param file_stem: the candidate's stem, already lower-cased and known to carry an image suffix.
         :returns: whether some rule recognizes it.

@@ -1,7 +1,6 @@
 """Tests for the `.tc` -> `.rehu` conversion sequence (safe replace, [[acquisition-tooling#tc-to-rehu]])."""
 
 import json
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
@@ -14,6 +13,9 @@ from rehuco_core import (
     ContentUnreachableError,
     RehuDocument,
     ScreenshotRename,
+    ScreenshotSkipReason,
+    TcScreenshotPlan,
+    UnconvertedScreenshot,
     convert_tc,
     current_block_version,
 )
@@ -41,10 +43,18 @@ TC_YAML_WITH_SIZE: Final = "type: Tutorial\ntitle: Some Title\ncurrent_size: 500
 MTIME: Final = 1700000000.0
 SEEDED_TIMESTAMP: Final = "2023-11-14T22:13:20Z"
 
-RENAMES: Final = (
-    ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png")),
-    ScreenshotRename("info01.jpg", "sample-01.jpg", ("sample-01.jpg",)),
+PLAN: Final = TcScreenshotPlan(
+    (
+        ScreenshotRename("info00.jpg", "cover.jpg"),
+        ScreenshotRename("info01.jpg", "sample-01.jpg"),
+    )
 )
+
+RENUMBERINGS: Final = [
+    (DIRECTORY / "cover.jpg", DIRECTORY / "info00.jpg"),
+    (DIRECTORY / "sample-01.jpg", DIRECTORY / "info01.jpg"),
+]
+"""What :data:`PLAN` renames, as ``(source, destination)`` pairs."""
 
 
 def backup_path(original: Path) -> Path:
@@ -52,12 +62,11 @@ def backup_path(original: Path) -> Path:
     return original.with_name(original.name + ".orig")
 
 
-def mock_environment(  # pylint: disable=too-many-arguments
+def mock_environment(
     mocker: MockerFixture,
     *,
     existing: frozenset[Path] = frozenset(),
-    renames: Sequence[ScreenshotRename] = RENAMES,
-    copy_side_effect: Any = None,
+    plan: TcScreenshotPlan = PLAN,
     tc_yaml: str = TC_YAML,
     measured_size: int | Exception = 0,
 ) -> dict[str, Any]:
@@ -65,8 +74,7 @@ def mock_environment(  # pylint: disable=too-many-arguments
 
     :param mocker: pytest-mock fixture.
     :param existing: paths that should report as already existing on disk.
-    :param renames: the screenshot scan result to hand back.
-    :param copy_side_effect: optional ``side_effect`` for the image-copy mock (e.g. to fail partway).
+    :param plan: the screenshot scan result to hand back.
     :param tc_yaml: the ``.tc`` file's raw YAML text; defaults to :data:`TC_YAML`.
     :param measured_size: what :func:`~rehuco_core.content_size_on_disk` answers, or an exception
         instance (e.g. :class:`~rehuco_core.ContentUnreachableError`) for it to raise instead.
@@ -78,10 +86,9 @@ def mock_environment(  # pylint: disable=too-many-arguments
         Path, "stat", return_value=mocker.MagicMock(st_mtime=MTIME, st_size=len(tc_yaml.encode("utf-8")))
     )
     mock_write = mocker.patch("rehuco_core.rehu_document.atomic_write_text")
-    mocker.patch("rehuco_core.tc_conversion.scan_tc_screenshots", return_value=renames)
+    mocker.patch("rehuco_core.tc_conversion.scan_tc_screenshots", return_value=plan)
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
     mock_unlink = mocker.patch.object(Path, "unlink", autospec=True)
-    mock_copy = mocker.patch("rehuco_core.tc_conversion.shutil.copy2", side_effect=copy_side_effect)
     if isinstance(measured_size, Exception):
         mock_size = mocker.patch("rehuco_core.tc_conversion.content_size_on_disk", side_effect=measured_size)
     else:
@@ -90,21 +97,20 @@ def mock_environment(  # pylint: disable=too-many-arguments
         "write": mock_write,
         "rename": mock_rename,
         "unlink": mock_unlink,
-        "copy": mock_copy,
         "content_size_on_disk": mock_size,
     }
 
 
 def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None:
-    """A full conversion writes the new `.rehu`, installs both winning screenshots, and deletes every
-    backup once everything new is confirmed written.
+    """A full conversion writes the new `.rehu`, renames both screenshots to the numbers they carry,
+    and deletes the one backup once everything new is confirmed written.
 
     **Test steps:**
 
-    * mock a `.tc` with two recognized screenshot slots
+    * mock a `.tc` with two numbered screenshots
     * convert with ``keep_backups=False``
-    * verify the saved JSON's minted/rewritten fields, every original was backed up then unlinked, and
-      each winner was copied from its backup to its final name
+    * verify the saved JSON's minted/rewritten fields, that the `.tc` was the only file backed up, and
+      that each screenshot moved to its own slot
     """
     mocks = mock_environment(mocker)
 
@@ -114,7 +120,7 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
     assert document.legacy_tc is False
     saved = json.loads(mocks["write"].call_args[0][1])
     assert saved["core"]["sources"][0]["title"] == "Some Title"
-    assert saved["core"]["description"] == "![](info00.jpg)"
+    assert saved["core"]["description"] == "![](info00)"
     # two checks in one: ``UUID()`` raises on a string that is no UUID at all, and -- since it also
     # *accepts* non-canonical spellings (uppercase, braces, hyphenless) while ``str()`` always emits
     # the canonical lowercase-hyphenated form -- the equality only holds when the minted string was
@@ -123,13 +129,34 @@ def test_happy_path_discards_originals_by_default(mocker: MockerFixture) -> None
     assert saved["core"]["created"] == SEEDED_TIMESTAMP
     assert saved["core"]["updated"] == SEEDED_TIMESTAMP
 
-    originals = [TC_PATH, DIRECTORY / "cover.jpg", DIRECTORY / "sample-00.png", DIRECTORY / "sample-01.jpg"]
-    assert mocks["rename"].call_args_list == [mocker.call(o, backup_path(o)) for o in originals]
-    assert mocks["copy"].call_args_list == [
-        mocker.call(backup_path(DIRECTORY / "cover.jpg"), DIRECTORY / "info00.jpg"),
-        mocker.call(backup_path(DIRECTORY / "sample-01.jpg"), DIRECTORY / "info01.jpg"),
+    assert mocks["rename"].call_args_list == [
+        mocker.call(TC_PATH, backup_path(TC_PATH)),
+        *[mocker.call(source, destination) for source, destination in RENUMBERINGS],
     ]
-    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {backup_path(o) for o in originals}
+    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {backup_path(TC_PATH)}
+
+
+def test_no_screenshot_is_ever_backed_up(mocker: MockerFixture) -> None:
+    """The `.tc` is the only file a conversion backs up (#288): a screenshot is renamed, and an image
+    the scan left alone is not touched at all.
+
+    **Test steps:**
+
+    * convert a `.tc` whose scan renames one image and leaves another under its own name
+    * verify no ``.orig`` sibling was made for either image, and the untouched one never moved
+    """
+    plan = TcScreenshotPlan(
+        (ScreenshotRename("info00.jpg", "cover.jpg"),),
+        (UnconvertedScreenshot("sample-00.png", ScreenshotSkipReason.COLLISION),),
+    )
+    mocks = mock_environment(mocker, plan=plan)
+
+    convert_tc(TC_PATH, keep_backups=True)
+
+    assert mocks["rename"].call_args_list == [
+        mocker.call(TC_PATH, backup_path(TC_PATH)),
+        mocker.call(DIRECTORY / "cover.jpg", DIRECTORY / "info00.jpg"),
+    ]
 
 
 def test_convert_files_per_user_flags_under_the_given_username(mocker: MockerFixture) -> None:
@@ -214,8 +241,8 @@ def test_convert_round_trips_collection_and_owned_learning_paths(mocker: MockerF
     assert reloaded.data["tutorial"] == block
 
 
-def test_keep_backups_leaves_the_orig_siblings(mocker: MockerFixture) -> None:
-    """``keep_backups=True`` performs the same conversion but never deletes the backups.
+def test_keep_backups_leaves_the_orig_sibling(mocker: MockerFixture) -> None:
+    """``keep_backups=True`` performs the same conversion but never deletes the backup.
 
     **Test steps:**
 
@@ -236,7 +263,7 @@ def test_existing_target_without_overwrite_raises_and_touches_nothing(mocker: Mo
 
     * mock the target `.rehu` as already existing
     * convert without ``overwrite``
-    * verify ``FileExistsError`` and that no rename/copy/unlink calls happened
+    * verify ``FileExistsError`` and that no rename/unlink calls happened
     """
     mocks = mock_environment(mocker, existing=frozenset({TARGET_PATH}))
 
@@ -244,11 +271,11 @@ def test_existing_target_without_overwrite_raises_and_touches_nothing(mocker: Mo
         convert_tc(TC_PATH, keep_backups=True)
 
     mocks["rename"].assert_not_called()
-    mocks["copy"].assert_not_called()
+    mocks["unlink"].assert_not_called()
 
 
 def test_overwrite_backs_up_the_existing_target(mocker: MockerFixture) -> None:
-    """``overwrite=True`` backs up the existing `.rehu` like every other original.
+    """``overwrite=True`` backs up the existing `.rehu` before writing the new one.
 
     **Test steps:**
 
@@ -281,29 +308,69 @@ def test_stale_backup_raises_and_touches_nothing(mocker: MockerFixture) -> None:
     mocks["rename"].assert_not_called()
 
 
-def test_failure_mid_sequence_restores_every_backup_and_removes_new_files(mocker: MockerFixture) -> None:
-    """A failure partway through installing images undoes everything: the already-written `.rehu` and
-    the one already-copied image are removed, and every backup is restored to its original name.
+def test_failure_mid_sequence_undoes_every_rename_and_removes_new_files(mocker: MockerFixture) -> None:
+    """A failure partway through renumbering undoes everything: the image already moved goes back to
+    its own name, the already-written `.rehu` is removed, and the `.tc` is restored.
 
     **Test steps:**
 
-    * mock the second image copy to raise
+    * mock the second image rename to raise
     * convert
-    * verify the exception propagates, the new `.rehu` and the one installed image were unlinked, and
-      every original was restored via a reverse rename
+    * verify the exception propagates, the new `.rehu` was unlinked, and both the moved image and the
+      `.tc` were renamed back
     """
-    mocks = mock_environment(mocker, copy_side_effect=[None, OSError("disk full")])
+    mocks = mock_environment(mocker)
+    attempts: list[object] = []
+
+    def rename_side_effect(_self: Path, _target: Path) -> None:
+        attempts.append(None)
+        if len(attempts) == 3:
+            raise OSError("disk full")
+
+    mocks["rename"].side_effect = rename_side_effect
 
     with pytest.raises(OSError, match="disk full"):
         convert_tc(TC_PATH, keep_backups=False)
 
-    unlinked = {call.args[0] for call in mocks["unlink"].call_args_list}
-    assert unlinked == {TARGET_PATH, DIRECTORY / "info00.jpg"}
+    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {TARGET_PATH}
+    assert mocks["rename"].call_args_list == [
+        mocker.call(TC_PATH, backup_path(TC_PATH)),
+        *[mocker.call(source, destination) for source, destination in RENUMBERINGS],
+        mocker.call(DIRECTORY / "info00.jpg", DIRECTORY / "cover.jpg"),
+        mocker.call(backup_path(TC_PATH), TC_PATH),
+    ]
 
-    originals = [TC_PATH, DIRECTORY / "cover.jpg", DIRECTORY / "sample-00.png", DIRECTORY / "sample-01.jpg"]
-    forward = [mocker.call(o, backup_path(o)) for o in originals]
-    backward = [mocker.call(backup_path(o), o) for o in originals]
-    assert mocks["rename"].call_args_list == forward + backward
+
+def test_a_rename_back_that_fails_does_not_stop_the_rest_of_the_rollback(mocker: MockerFixture) -> None:
+    """Undoing runs on a disk that has already failed once, so a rename back that fails itself is
+    skipped: restoring what can be restored beats abandoning the rest, and the error the caller sees
+    stays the one that explains what happened.
+
+    **Test steps:**
+
+    * fail the second image rename, and then fail undoing the first one too
+    * convert
+    * verify the original failure is what propagates, and the `.tc` was still restored
+    """
+    mocks = mock_environment(mocker)
+    attempts: list[object] = []
+
+    def rename_side_effect(_self: Path, _target: Path) -> None:
+        attempts.append(None)
+        if len(attempts) == 3:
+            raise OSError("disk full")
+        if len(attempts) == 4:
+            raise OSError("still full")
+
+    mocks["rename"].side_effect = rename_side_effect
+
+    with pytest.raises(OSError, match="disk full"):
+        convert_tc(TC_PATH, keep_backups=False)
+
+    assert mocks["rename"].call_args_list[-2:] == [
+        mocker.call(DIRECTORY / "info00.jpg", DIRECTORY / "cover.jpg"),
+        mocker.call(backup_path(TC_PATH), TC_PATH),
+    ]
 
 
 def test_failure_during_backup_restores_what_already_moved(mocker: MockerFixture) -> None:
@@ -312,102 +379,53 @@ def test_failure_during_backup_restores_what_already_moved(mocker: MockerFixture
 
     **Test steps:**
 
-    * mock the rename call to fail on its third invocation (after two originals already moved)
+    * overwrite an existing `.rehu` (so two files are backed up) and fail the second rename
     * convert
-    * verify the exception propagates, only the two already-moved originals were restored, and
-      nothing was ever written or copied
+    * verify the exception propagates, the one already-moved original was restored, and nothing was
+      ever written
     """
-    mocks = mock_environment(mocker)
-    calls: list[object] = []
+    mocks = mock_environment(mocker, existing=frozenset({TARGET_PATH}))
+    attempts: list[object] = []
 
     def rename_side_effect(_self: Path, _target: Path) -> None:
-        calls.append(None)
-        if len(calls) == 3:
+        attempts.append(None)
+        if len(attempts) == 2:
             raise OSError("permission denied")
 
     mocks["rename"].side_effect = rename_side_effect
 
     with pytest.raises(OSError, match="permission denied"):
-        convert_tc(TC_PATH, keep_backups=False)
+        convert_tc(TC_PATH, keep_backups=False, overwrite=True)
 
-    attempted = [TC_PATH, DIRECTORY / "cover.jpg", DIRECTORY / "sample-00.png"]
-    restored = [TC_PATH, DIRECTORY / "cover.jpg"]
-    forward = [mocker.call(o, backup_path(o)) for o in attempted]
-    backward = [mocker.call(backup_path(o), o) for o in restored]
-    assert mocks["rename"].call_args_list == forward + backward
-    mocks["copy"].assert_not_called()
+    assert mocks["rename"].call_args_list == [
+        mocker.call(TC_PATH, backup_path(TC_PATH)),
+        mocker.call(TARGET_PATH, backup_path(TARGET_PATH)),
+        mocker.call(backup_path(TC_PATH), TC_PATH),
+    ]
     mocks["write"].assert_not_called()
 
 
-def test_preexisting_install_destination_is_backed_up_before_it_is_overwritten(mocker: MockerFixture) -> None:
-    """A file already sitting at a ``<stem>NN`` install destination -- invisible to the legacy scan, so
-    absent from the recognized set -- is backed up to its own ``.orig`` sibling before the winning
-    screenshot's bytes overwrite it, honouring the module's never-overwrite contract.
+def test_an_occupied_destination_refuses_rather_than_overwriting(mocker: MockerFixture) -> None:
+    """A destination that exists when the rename is about to run aborts the conversion: the scan hands
+    out no taken slot, so this can only be a race -- and *never overwrite* is the contract, which
+    ``Path.rename`` does not honour on its own outside Windows.
 
     **Test steps:**
 
-    * mock a pre-existing ``info00.jpg`` sitting exactly where slot 0's winner installs
+    * mock slot 0's destination as already existing
     * convert
-    * verify that file was renamed to its ``.orig`` sibling, yet the winners are still copied forward
+    * verify ``FileExistsError``, that nothing was renamed onto it, and that the `.tc` came back
     """
     mocks = mock_environment(mocker, existing=frozenset({DIRECTORY / "info00.jpg"}))
 
-    convert_tc(TC_PATH, keep_backups=True)
+    with pytest.raises(FileExistsError):
+        convert_tc(TC_PATH, keep_backups=True)
 
-    renamed = {call.args[0] for call in mocks["rename"].call_args_list}
-    assert DIRECTORY / "info00.jpg" in renamed
-    assert mocks["copy"].call_args_list == [
-        mocker.call(backup_path(DIRECTORY / "cover.jpg"), DIRECTORY / "info00.jpg"),
-        mocker.call(backup_path(DIRECTORY / "sample-01.jpg"), DIRECTORY / "info01.jpg"),
+    assert mocks["rename"].call_args_list == [
+        mocker.call(TC_PATH, backup_path(TC_PATH)),
+        mocker.call(backup_path(TC_PATH), TC_PATH),
     ]
-
-
-def test_failure_after_overwriting_a_preexisting_destination_restores_it(mocker: MockerFixture) -> None:
-    """When installing fails after a pre-existing destination has already been overwritten, rollback
-    removes the freshly written file *and* renames that file's ``.orig`` backup back -- so the user's
-    original bytes survive rather than being unlinked outright (the data-loss finding, #173).
-
-    **Test steps:**
-
-    * mock a pre-existing ``info00.jpg`` at slot 0's destination, and fail the second image copy
-    * convert
-    * verify the exception propagates, the freshly written ``info00.jpg`` was unlinked, and the
-      pre-existing file was restored via a reverse rename of its backup
-    """
-    mocks = mock_environment(
-        mocker, existing=frozenset({DIRECTORY / "info00.jpg"}), copy_side_effect=[None, OSError("disk full")]
-    )
-
-    with pytest.raises(OSError, match="disk full"):
-        convert_tc(TC_PATH, keep_backups=False)
-
-    unlinked = {call.args[0] for call in mocks["unlink"].call_args_list}
-    assert unlinked == {TARGET_PATH, DIRECTORY / "info00.jpg"}
-    assert (
-        mocker.call(backup_path(DIRECTORY / "info00.jpg"), DIRECTORY / "info00.jpg") in mocks["rename"].call_args_list
-    )
-
-
-def test_losing_variants_are_backed_up_but_never_copied_forward(mocker: MockerFixture) -> None:
-    """A slot's losing filename (a smaller/duplicate variant of the winner) is backed up like the
-    winner, but never appears as a copy source or destination -- only the winner's bytes survive.
-
-    **Test steps:**
-
-    * convert a `.tc` whose only slot has a winner and a loser
-    * verify both were renamed to backups, but only the winner was copied forward
-    """
-    mocks = mock_environment(
-        mocker, renames=[ScreenshotRename("info00.jpg", "sample-00.png", ("cover.jpg", "sample-00.png"))]
-    )
-
-    convert_tc(TC_PATH, keep_backups=True)
-
-    renamed = {call.args[0] for call in mocks["rename"].call_args_list}
-    assert DIRECTORY / "cover.jpg" in renamed
-    assert mocks["copy"].call_args_list == [
-        mocker.call(backup_path(DIRECTORY / "sample-00.png"), DIRECTORY / "info00.jpg")
-    ]
+    assert {call.args[0] for call in mocks["unlink"].call_args_list} == {TARGET_PATH}
 
 
 def test_current_size_is_measured_rather_than_trusted(mocker: MockerFixture) -> None:

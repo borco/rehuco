@@ -1,10 +1,10 @@
 """Rewrites a description's embedded image references for `.tc` conversion ([[acquisition-tooling#tc-to-rehu]]).
 
 Given a `rehuco_core.tc_screenshots.scan_tc_screenshots` result, rewrites every Markdown
-``![alt](url "title")`` reference in a description that names one of the scan's recognized old
-filenames to that slot's new ``slugNN`` name -- so a description written against the legacy `.tc`
-still points at the right screenshot once the conversion actually renames the files on disk. A pure
-text transform: no filesystem access, no Qt dependency, matching every other core-side module here.
+``![alt](url "title")`` reference in a description that names a file the conversion renames to that
+file's new ``slugNN`` name -- so a description written against the legacy `.tc` still points at the
+right screenshot once the conversion actually renames the files on disk. A pure text transform: no
+filesystem access, no Qt dependency, matching every other core-side module here.
 """
 
 import re
@@ -18,9 +18,10 @@ def rewrite_description_images(description: str, renames: Sequence[ScreenshotRen
     """Rewrite ``description``'s embedded image references per ``renames``.
 
     :param description: the document's current Markdown description.
-    :param renames: a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` result.
-    :returns: the description with every recognized reference rewritten; anything unrecognized (an
-        already-current name, an external URL, a typo) is left untouched.
+    :param renames: the renames a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` plan carries.
+    :returns: the description with every reference to a renamed file rewritten; anything else (an
+        already-current name, an image the conversion left alone, an external URL, a typo) is left
+        untouched.
     """
     return TcDescriptionRewriter(renames).rewrite(description)
 
@@ -28,16 +29,18 @@ def rewrite_description_images(description: str, renames: Sequence[ScreenshotRen
 class TcDescriptionRewriter:  # pylint: disable=too-few-public-methods
     """Rewrites a description's embedded image references per one screenshot scan ([[acquisition-tooling#tc-to-rehu]]).
 
-    Both a slot's winning and losing old filenames rewrite to the same new name -- the description
-    may have been written against either variant, and both represent the same photo
-    ([[field-schema#sources]]). A reference naming just the filename's stem, with no extension (a
-    real pattern confirmed against an actual `.tc` description this session, e.g. ``![](cover)``),
-    matches the same way a full filename would. Matching is case-insensitive (legacy filenames were
-    never guaranteed consistent casing) and ignores any leading path a reference might carry (e.g.
-    ``images/cover.jpg``) -- the rewritten name is always bare, since converted screenshots live
-    directly alongside the ``.rehu``, not in a subdirectory.
+    **Only a file the conversion renames is rewritten**, and a reference keeps the form it was written
+    in (#288): ``![](image-01)`` becomes ``![](info01)`` and ``![](image-01.jpg)`` becomes
+    ``![](info01.jpg)``. A reference naming just the filename's stem, with no extension (a real pattern
+    confirmed against an actual `.tc` description, e.g. ``![](cover)``), was always the common form and
+    stays extension-less. A reference to a name that is still on disk under that name -- an image whose
+    slot was taken, so the conversion left it alone -- is left as it was, since it still resolves.
 
-    :param renames: a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` result.
+    Matching is case-insensitive (legacy filenames were never guaranteed consistent casing) and ignores
+    any leading path a reference might carry (e.g. ``images/cover.jpg``) -- the rewritten name is always
+    bare, since converted screenshots live directly alongside the ``.rehu``, not in a subdirectory.
+
+    :param renames: the renames a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` plan carries.
     """
 
     __IMAGE_REFERENCE_RE: Final = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)((?:\s+"[^"]*")?)\)')
@@ -73,17 +76,28 @@ class TcDescriptionRewriter:  # pylint: disable=too-few-public-methods
         """
         return reference.rsplit("/", 1)[-1]
 
-    @staticmethod
-    def __build_lookup(renames: Sequence[ScreenshotRename]) -> dict[str, str]:
-        """Map every recognized old filename -- and its extension-less stem -- to its new name.
+    def __build_lookup(self, renames: Sequence[ScreenshotRename]) -> dict[str, str]:
+        """Map each renamed file -- as a full filename and as a bare stem -- to its new spelling.
 
-        :param renames: a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` result.
-        :returns: ``{lowercased old name or stem: new name}``.
+        Two entries per rename rather than one, so a reference is answered in its own form: the
+        extension-full key maps to the extension-full new name, the bare stem to the bare new stem.
+
+        :param renames: the renames a :func:`rehuco_core.tc_screenshots.scan_tc_screenshots` plan
+            carries.
+        :returns: ``{lowercased old name or stem: the new name in the same form}``.
         """
         table: dict[str, str] = {}
         for rename in renames:
-            for old_name in rename.recognized_filenames:
-                table[old_name.lower()] = rename.new_name
-                stem = old_name.rsplit(".", 1)[0] if "." in old_name else old_name
-                table[stem.lower()] = rename.new_name
+            old_name, new_name = rename.source_filename, rename.new_name
+            table[old_name.lower()] = new_name
+            table[self.__stem_of(old_name).lower()] = self.__stem_of(new_name)
         return table
+
+    @staticmethod
+    def __stem_of(filename: str) -> str:
+        """``filename`` without its extension.
+
+        :param filename: a bare filename.
+        :returns: everything before the last dot, or the whole name when it carries none.
+        """
+        return filename.rsplit(".", 1)[0] if "." in filename else filename

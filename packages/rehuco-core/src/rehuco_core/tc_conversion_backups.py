@@ -216,7 +216,7 @@ class ConversionReverter:
         :returns: the inventory; see :class:`ConversionBackups`.
         """
         backups = self.__backups()
-        written = self.__written()
+        written = self.__written(backups)
         legacy = self.__rehu_path.with_suffix(LEGACY_SUFFIX)
         restores = [original_path(backup) for backup in backups]
         created, updated = self.__timestamps()
@@ -278,14 +278,24 @@ class ConversionReverter:
             return ()
         return tuple(sorted((s for s in siblings if is_conversion_backup(s.name)), key=lambda s: s.name))
 
-    def __written(self) -> tuple[Path, ...]:
-        """What the conversion wrote: the ``.rehu`` and the ``<stem>NN`` screenshots it installed.
+    def __written(self, backups: tuple[Path, ...]) -> tuple[Path, ...]:
+        """What the conversion wrote, and only what it wrote -- the ``.rehu``, plus the ``<stem>NN``
+        screenshots where they were *copied* into place rather than renamed.
 
+        A conversion that backed up images copied each winner to its slot (the retired scheme), so the
+        installed copy is the conversion's own file and reverting deletes it. A conversion that backed
+        up none renamed them instead (#288): the file in the slot **is** the user's original, its only
+        copy, so it is not the revert's to delete -- a reverted resource keeps its numbered images
+        beside the restored ``.tc``, which loses nothing and is what the images dock reads either way.
+        Told apart by the backup set itself, since nothing else records which scheme ran.
+
+        :param backups: the resource's ``.orig`` siblings; see :meth:`__backups`.
         :returns: the existing ones, ``.rehu`` first.
         """
-        screenshots = scan_rehu_screenshot_files(self.__rehu_path.parent, self.__rehu_path.stem)
         rehu = [self.__rehu_path] if self.__rehu_path.exists() else []
-        return tuple(rehu + screenshots)
+        if not any(original_path(backup).suffix.lower() in IMAGE_EXTENSIONS for backup in backups):
+            return tuple(rehu)
+        return tuple(rehu + scan_rehu_screenshot_files(self.__rehu_path.parent, self.__rehu_path.stem))
 
     def __size(self, backup: Path) -> int:
         """One backup's size on disk.

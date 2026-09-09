@@ -1,12 +1,12 @@
-"""Converts a legacy `.tc` into a real `.rehu`, safely replacing it and its recognized legacy
-screenshots on disk ([[acquisition-tooling#tc-to-rehu]]).
+"""Converts a legacy `.tc` into a real `.rehu`, safely replacing it and renumbering its recognized
+legacy screenshots on disk ([[acquisition-tooling#tc-to-rehu]]).
 
-Never overwrites, never deletes-then-writes: every original file the conversion touches is renamed to
-a `.orig` sibling *before* any new file is written, and an original is only ever deleted -- once every
-new file is confirmed written -- when the caller opts to discard backups.
+Never overwrites, never deletes-then-writes: the `.tc` is renamed to a `.orig` sibling *before* any new
+file is written, and it is only ever deleted -- once every new file is confirmed written -- when the
+caller opts to discard backups. **No screenshot is ever backed up**: a rename is not a write, so nothing
+is lost by one, and a file whose slot is taken keeps its own name rather than being set aside (#288).
 """
 
-import shutil
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,8 +29,13 @@ from .tc_screenshots import (
 )
 
 
-def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[ScreenshotRename]) -> list[Path]:
+def originals_to_back_up(tc_path: Path, target: Path) -> list[Path]:
     """Every original file a conversion of ``tc_path`` must back up before writing anything new.
+
+    Two files at most, and usually one (#288): the `.tc` itself, and the target `.rehu` when an
+    overwrite is about to replace one that is already there. **No screenshot is here** -- every image a
+    conversion touches, it renames, and a rename loses nothing to back up against; an image whose slot
+    is taken is left exactly where it was ([[acquisition-tooling#tc-to-rehu]]).
 
     Shared between :class:`TcConverter`, which runs it, and
     :mod:`~rehuco_core.tc_conversion_plan` (#191), which only needs to read it to decide whether a
@@ -38,22 +43,12 @@ def originals_to_back_up(tc_path: Path, target: Path, renames: Sequence[Screensh
 
     :param tc_path: the ``.tc`` file the conversion reads.
     :param target: the destination ``.rehu`` path.
-    :param renames: the conversion's screenshot scan.
-    :returns: ``tc_path``, every recognized legacy image (winners and losers alike), ``target`` itself
-        when it already exists, and any pre-existing file already sitting at a ``<stem>NN`` install
-        destination -- invisible to the legacy scan, yet about to be overwritten, so it too must be
-        backed up first.
+    :returns: ``tc_path``, and ``target`` itself when it already exists.
     """
-    directory = tc_path.parent
     originals = [tc_path]
     if target.exists():
         originals.append(target)
-    for rename in renames:
-        originals.extend(directory / name for name in rename.recognized_filenames)
-        destination = directory / rename.new_name
-        if destination.exists():
-            originals.append(destination)
-    return list(dict.fromkeys(originals))
+    return originals
 
 
 # the parameters *are* the conversion's inputs, and the two resolved sets (#226, #53) are handed in
@@ -69,12 +64,12 @@ def convert_tc(
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
     screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> RehuDocument:
-    """Convert ``tc_path`` (and its recognized legacy screenshots) into a real, unlocked ``.rehu``.
+    """Convert ``tc_path`` into a real, unlocked ``.rehu``, renumbering its legacy screenshots.
 
     :param tc_path: the ``.tc`` file to convert.
-    :param keep_backups: if ``True``, ``.orig`` backups of the ``.tc`` and every recognized legacy
-        image (and the previous ``.rehu``, if overwriting) are kept; if ``False``, they are deleted
-        once every new file is confirmed written.
+    :param keep_backups: if ``True``, the ``.orig`` backup of the ``.tc`` (and of the previous
+        ``.rehu``, if overwriting) is kept; if ``False``, it is deleted once every new file is
+        confirmed written. No screenshot is ever backed up (#288).
     :param overwrite: must be ``True`` if the target ``.rehu`` already exists, or ``FileExistsError``
         is raised before anything on disk is touched.
     :param username: the identity the imported per-user flags are filed under
@@ -101,18 +96,19 @@ def convert_tc(
 
 
 class TcConverter:  # pylint: disable=too-few-public-methods
-    """Converts one legacy ``.tc`` into a real ``.rehu``, safely replacing it and its recognized
-    legacy screenshots on disk ([[acquisition-tooling#tc-to-rehu]]).
+    """Converts one legacy ``.tc`` into a real ``.rehu``, safely replacing it and renumbering its
+    recognized legacy screenshots on disk ([[acquisition-tooling#tc-to-rehu]]).
 
     Two phases: **plan** (pure reads -- parse the ``.tc``, scan screenshots, build the new JSON
-    payload in memory; nothing on disk changes) then **replace** (back up every original file the
-    conversion touches to a ``.orig`` sibling, write the new files, and -- only once everything new is
-    confirmed written -- optionally delete the backups). Any failure during the write phase rolls the
-    backups back to their original names and removes whatever new files were already created, so a
-    crash or permission error never leaves the resource half-converted.
+    payload in memory; nothing on disk changes) then **replace** (back up the ``.tc`` to a ``.orig``
+    sibling, write the ``.rehu``, rename each pattern-matched image to its own slot, and -- only once
+    everything new is confirmed written -- optionally delete the backup). Any failure during the write
+    phase undoes every image rename already applied, removes whatever new files were created and
+    restores the backups to their original names, so a crash or permission error never leaves the
+    resource half-converted.
 
     :param tc_path: the ``.tc`` file to convert.
-    :param keep_backups: whether to keep the ``.orig`` backups after a successful conversion.
+    :param keep_backups: whether to keep the ``.orig`` backup after a successful conversion.
     :param overwrite: whether an existing target ``.rehu`` may be replaced.
     :param username: the identity the imported per-user flags are filed under; see :func:`convert_tc`.
     :param screenshot_name_patterns: the naming rules the legacy screenshots are recognized by; see
@@ -149,19 +145,20 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         target = self.__tc_path.with_suffix(".rehu")
         if target.exists() and not self.__overwrite:
             raise FileExistsError(target)
-        renames = scan_tc_screenshots(self.__tc_path.parent, self.__tc_path.stem, self.__screenshot_name_patterns)
-        data = self.__built_rehu_data(renames)
-        originals = originals_to_back_up(self.__tc_path, target, renames)
+        plan = scan_tc_screenshots(self.__tc_path.parent, self.__tc_path.stem, self.__screenshot_name_patterns)
+        data = self.__built_rehu_data(plan.renames)
+        originals = originals_to_back_up(self.__tc_path, target)
         self.__check_no_stale_backups(originals)
         backups = self.__backed_up(originals)
         installed: list[Path] = []
+        renamed: list[tuple[Path, Path]] = []
         try:
             document = RehuDocument(data, username=self.__username)
             document.save(target)
             installed.append(target)
-            self.__install_images(renames, backups, installed)
+            self.__renumber_images(plan.renames, renamed)
         except Exception:
-            self.__undo(installed, backups)
+            self.__undo(installed, renamed, backups)
             raise
         if not self.__keep_backups:
             self.__delete_backups(backups)
@@ -170,8 +167,8 @@ class TcConverter:  # pylint: disable=too-few-public-methods
     def __built_rehu_data(self, renames: Sequence[ScreenshotRename]) -> dict[str, Any]:
         """Build the fresh ``.rehu`` JSON payload in memory, writing nothing.
 
-        :param renames: this conversion's screenshot scan, consulted to rewrite embedded description
-            image references and to mint each new ``id``.
+        :param renames: this conversion's screenshot renames, consulted to rewrite the description's
+            embedded image references.
         :returns: the JSON object ready to back a fresh, unlocked :class:`RehuDocument`.
         """
         data = TcDocument.load(self.__tc_path).to_rehu_data(username=self.__username)
@@ -243,28 +240,47 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             raise
         return backups
 
-    def __install_images(
-        self, renames: Sequence[ScreenshotRename], backups: dict[Path, Path], installed: list[Path]
-    ) -> None:
-        """Copy each slot's winning screenshot from its backup to its final ``slugNN`` name.
+    def __renumber_images(self, renames: Sequence[ScreenshotRename], renamed: list[tuple[Path, Path]]) -> None:
+        """Rename each pattern-matched screenshot to the ``<stem>NN`` slot its own name carries.
+
+        The scan hands out no slot that is already spoken for, so a destination here is free; it is
+        checked anyway, because *never overwrite* is the contract this module is built on and
+        :meth:`~pathlib.Path.rename` silently replaces the target on POSIX.
 
         :param renames: this conversion's screenshot scan.
-        :param backups: this conversion's ``{original: backup}`` map.
-        :param installed: appended with each new image path actually created, for rollback.
+        :param renamed: appended with each ``(source, destination)`` actually renamed, for rollback.
+        :raises FileExistsError: a destination appeared between the scan and the rename.
         """
         directory = self.__tc_path.parent
         for rename in renames:
-            source_backup = backups[directory / rename.source_filename]
+            source = directory / rename.source_filename
             destination = directory / rename.new_name
-            shutil.copy2(source_backup, destination)
-            installed.append(destination)
+            if destination.exists():
+                raise FileExistsError(destination)
+            source.rename(destination)
+            renamed.append((source, destination))
 
-    def __undo(self, installed: Sequence[Path], backups: dict[Path, Path]) -> None:
-        """Remove every new file already created and restore every backup to its original name.
+    def __undo(
+        self, installed: Sequence[Path], renamed: Sequence[tuple[Path, Path]], backups: dict[Path, Path]
+    ) -> None:
+        """Put the directory back exactly as it was found.
+
+        In the reverse order of the write phase: the image renames first, since a restored ``.tc``
+        beside half-renumbered screenshots is not the state the conversion was asked about. A rename
+        back that fails itself is skipped rather than raised, the discipline
+        :class:`~rehuco_core.ScreenshotRenumberer` rolls back under -- this already runs because
+        something on disk failed, and restoring what can be restored beats abandoning the rest to let
+        a second error hide the first.
 
         :param installed: new files actually created before the failure.
+        :param renamed: the ``(source, destination)`` pairs already renamed before the failure.
         :param backups: this conversion's ``{original: backup}`` map.
         """
+        for source, destination in reversed(renamed):
+            try:
+                destination.rename(source)
+            except OSError:
+                continue
         for path in installed:
             path.unlink(missing_ok=True)
         self.__restore(backups)

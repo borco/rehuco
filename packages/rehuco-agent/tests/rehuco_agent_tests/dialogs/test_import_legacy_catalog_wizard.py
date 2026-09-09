@@ -36,6 +36,7 @@ from rehuco_core import (
     TaskQueue,
     TcConversionPlan,
     TcConversionTreePlan,
+    TcScreenshotPlan,
     VerifyChecksumsJob,
 )
 
@@ -56,7 +57,7 @@ predicate holds, so only a run that was going to fail waits any longer (#262).""
 # separate copy rather than shared, this codebase's settings/fixture-test convention
 # pylint: disable=duplicate-code
 FLAG_DEFAULTS: Final = {
-    "tie_break": False,
+    "unconverted": (),
     "rehu_exists": False,
     "stale_backup": False,
     "size_unparsed": False,
@@ -409,7 +410,7 @@ def test_the_scan_step_produces_the_plan_without_touching_any_file(
     mocker.patch.object(Path, "read_text", autospec=True, return_value="type: Tutorial\ntitle: X\n")
     mocker.patch.object(Path, "exists", autospec=True, return_value=False)
     mocker.patch.object(Path, "stat", autospec=True, return_value=mocker.MagicMock(st_mtime=1700000000.0, st_size=32))
-    mocker.patch("rehuco_core.tc_conversion_plan.scan_tc_screenshots", return_value=[])
+    mocker.patch("rehuco_core.tc_conversion_plan.scan_tc_screenshots", return_value=TcScreenshotPlan())
     mock_rename = mocker.patch.object(Path, "rename", autospec=True)
     mock_unlink = mocker.patch.object(Path, "unlink", autospec=True)
     widgets = pages(wizard)

@@ -15,12 +15,18 @@ from rehuco_agent.dialogs.tc_conversion_plan_table_model import (
     TcConversionPlanFilterProxyModel,
     TcConversionPlanTableModel,
 )
-from rehuco_core import ScreenshotRename, StrandedManifestPlan, TcConversionPlan
+from rehuco_core import (
+    ScreenshotRename,
+    ScreenshotSkipReason,
+    StrandedManifestPlan,
+    TcConversionPlan,
+    UnconvertedScreenshot,
+)
 
 ROOT: Final = Path("/fake/library")
 
 FLAG_DEFAULTS: Final = {
-    "tie_break": False,
+    "unconverted": (),
     "rehu_exists": False,
     "stale_backup": False,
     "size_unparsed": False,
@@ -49,8 +55,10 @@ def plan(name: str, *, renames: tuple[ScreenshotRename, ...] = (), **flags: Any)
 
 
 CLEAN: Final = plan("a")
-TIED: Final = plan(
-    "b", tie_break=True, renames=(ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png")),)
+COLLIDED: Final = plan(
+    "b",
+    renames=(ScreenshotRename("info00.jpg", "cover.jpg"),),
+    unconverted=(UnconvertedScreenshot("sample-00.png", ScreenshotSkipReason.COLLISION),),
 )
 BLOCKED: Final = plan("c", rehu_exists=True)
 STRANDED: Final = StrandedManifestPlan(rehu_path=ROOT / "d/info.rehu", manifest=ROOT / "d/info.sfv")
@@ -147,18 +155,18 @@ def test_path_and_target_columns_show_relative_paths() -> None:
     assert cell(model, 0, TARGET_COLUMN, Qt.ItemDataRole.DisplayRole) == "a/info.rehu"
 
 
-def test_screenshots_column_names_a_tie_break_dropped_count() -> None:
-    """A tie-break shows the winners installed and how many recognized files were dropped.
+def test_screenshots_column_names_the_unchanged_count() -> None:
+    """A collision shows the files renamed into slots and how many keep their own names (#288).
 
     **Test steps:**
 
-    * build a model over a plan with one tied slot (two recognized files, one winner)
+    * build a model over a plan that renames one image and leaves one alone
     * verify the summary text
     """
     model = TcConversionPlanTableModel()
-    model.set_plans(ROOT, [TIED])
+    model.set_plans(ROOT, [COLLIDED])
 
-    assert cell(model, 0, SCREENSHOTS_COLUMN, Qt.ItemDataRole.DisplayRole) == "1 → info00, 1 dropped"
+    assert cell(model, 0, SCREENSHOTS_COLUMN, Qt.ItemDataRole.DisplayRole) == "1 → info00, 1 unchanged"
 
 
 def test_screenshots_column_shows_none_for_no_recognized_screenshots() -> None:
@@ -180,14 +188,14 @@ def test_flags_column_lists_every_active_flag() -> None:
 
     **Test steps:**
 
-    * build a model over a tied plan and a clean one
+    * build a model over a collided plan and a clean one
     * verify each flags cell
     """
     model = TcConversionPlanTableModel()
-    model.set_plans(ROOT, [CLEAN, TIED])
+    model.set_plans(ROOT, [CLEAN, COLLIDED])
 
     assert cell(model, 0, FLAGS_COLUMN, Qt.ItemDataRole.DisplayRole) == "—"
-    assert cell(model, 1, FLAGS_COLUMN, Qt.ItemDataRole.DisplayRole) == "tie-break"
+    assert cell(model, 1, FLAGS_COLUMN, Qt.ItemDataRole.DisplayRole) == "collision"
 
 
 def test_outcome_column_is_blank_before_import_and_names_a_failure_after() -> None:
@@ -237,15 +245,15 @@ def test_the_filter_proxy_matches_flags_case_insensitively() -> None:
 
     **Test steps:**
 
-    * build a proxy over a clean and a tied plan, filtered on "tie-break" in an odd case
-    * verify only the tied row survives
+    * build a proxy over a clean and a collided plan, filtered on "collision" in an odd case
+    * verify only the collided row survives
     """
     model = TcConversionPlanTableModel()
-    model.set_plans(ROOT, [CLEAN, TIED])
+    model.set_plans(ROOT, [CLEAN, COLLIDED])
     proxy = TcConversionPlanFilterProxyModel()
     proxy.setSourceModel(model)
 
-    proxy.set_filter_text("TIE-Break")
+    proxy.set_filter_text("COLLision")
 
     assert proxy.rowCount() == 1
     assert proxy.data(proxy.index(0, PATH_COLUMN)) == "b/info.tc"
@@ -260,10 +268,10 @@ def test_an_empty_filter_shows_every_row() -> None:
     * verify every row is back
     """
     model = TcConversionPlanTableModel()
-    model.set_plans(ROOT, [CLEAN, TIED])
+    model.set_plans(ROOT, [CLEAN, COLLIDED])
     proxy = TcConversionPlanFilterProxyModel()
     proxy.setSourceModel(model)
-    proxy.set_filter_text("tie-break")
+    proxy.set_filter_text("collision")
 
     proxy.set_filter_text("")
 
@@ -279,7 +287,7 @@ def test_the_filter_matches_the_path_column_too() -> None:
     * verify only that row survives
     """
     model = TcConversionPlanTableModel()
-    model.set_plans(ROOT, [CLEAN, TIED])
+    model.set_plans(ROOT, [CLEAN, COLLIDED])
     proxy = TcConversionPlanFilterProxyModel()
     proxy.setSourceModel(model)
 
@@ -302,9 +310,9 @@ def test_rows_come_back_in_scan_order() -> None:
     """
     model = TcConversionPlanTableModel()
     third = plan("e")
-    model.set_plans(ROOT, [CLEAN, TIED, third])
+    model.set_plans(ROOT, [CLEAN, COLLIDED, third])
 
-    assert [row.plan for row in model.rows()] == [CLEAN, TIED, third]
+    assert [row.plan for row in model.rows()] == [CLEAN, COLLIDED, third]
 
 
 def test_the_header_names_every_column_and_nothing_else() -> None:

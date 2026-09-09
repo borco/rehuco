@@ -23,9 +23,10 @@ class ScreenshotPatternsPage(QWidget):
     Three frames. **Screenshot name patterns** is the editable list, a
     :class:`~rehuco_agent.settings.ui.screenshot_name_patterns_editor.ScreenshotNamePatternsEditor` of
     one column each: an ordinary regular expression, matched case-insensitively against a filename's
-    stem. **Always applied** is a read-only statement of the tie-break -- largest pixel size, then
-    `.jpg`/`.jpeg`, then first by name -- shown so the page tells the whole truth about how a screenshot
-    is chosen, and not offered as a setting because it applies whatever the patterns say. **Try it** is a
+    stem. **Always applied** is a read-only statement of what a conversion does with the slots the
+    patterns name -- the earlier pattern takes a contested one, several extensions of one name resolve
+    by pixel size, and every other image keeps its own name (#288) -- shown so the page tells the whole
+    truth, and not offered as a setting because it applies whatever the patterns say. **Try it** is a
     :class:`~rehuco_agent.settings.ui.screenshot_try_it_editor.ScreenshotTryItEditor`: a sample filename
     beside the slot the patterns above would assign it, refreshed on every edit to the pattern list
     (#287) -- so a pattern edit shows its effect on the catalog's actual names rather than only on the
@@ -34,7 +35,7 @@ class ScreenshotPatternsPage(QWidget):
 
     **The ordering column stays visible**, unlike a list whose order is presentation: patterns are tried
     top to bottom and the first match wins, so moving a pattern can change which one claims a name that
-    more than one would otherwise match.
+    more than one would otherwise match -- and which of two images takes a number they both want.
 
     Edits are staged in the editor until :meth:`save_changes` pushes them into the shared
     `ScreenshotPatternsSettings` and persists them; from then on that set is what the next conversion,

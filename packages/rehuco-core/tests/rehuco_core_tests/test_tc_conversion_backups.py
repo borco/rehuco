@@ -404,6 +404,28 @@ def test_revert_stages_what_was_written_restores_every_backup_then_deletes(mocke
     assert inventory.restores == RESTORES
 
 
+def test_revert_keeps_screenshots_a_conversion_renamed_rather_than_copied(mocker: MockerFixture) -> None:
+    """A conversion that backed up no image renamed its screenshots into their slots (#288), so the
+    numbered files **are** the user's originals: a revert restores the ``.tc`` and deletes the
+    ``.rehu``, and leaves every image exactly where it is rather than deleting the only copy.
+
+    **Test steps:**
+
+    * revert a resource whose only backup is ``info.tc.orig``, beside two numbered screenshots
+    * verify only the ``.rehu`` was staged and unlinked, and neither image was touched
+    """
+    mocks = mock_environment(mocker, listing=("info.rehu", "info00.jpg", "info01.jpg", "info.tc.orig"))
+
+    inventory = revert_conversion(REHU_PATH)
+
+    assert inventory.written == (REHU_PATH,)
+    assert mocks["rename"].call_args_list == [
+        mocker.call(REHU_PATH, staged_path(REHU_PATH)),
+        mocker.call(DIRECTORY / "info.tc.orig", DIRECTORY / "info.tc"),
+    ]
+    assert [call.args[0] for call in mocks["unlink"].call_args_list] == [staged_path(REHU_PATH)]
+
+
 def test_revert_without_a_backed_up_tc_refuses_and_touches_nothing(mocker: MockerFixture) -> None:
     """Nothing to restore the legacy source from is a refusal, not a partial revert that deletes the
     ``.rehu`` and leaves the directory holding neither format.
