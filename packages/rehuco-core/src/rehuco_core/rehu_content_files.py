@@ -210,12 +210,14 @@ class ContentFileScanner:
     that has nothing to do with its content. What makes one is
     :data:`~rehuco_core.resource_scoping.RECORD_SUFFIXES`, the same answer the scope question comes from.
 
-    **And it claims its screenshots by scheme.** tc4 named them ``01.jpg``, ``cover.jpg``,
-    ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the record -- so the
-    ``<record>NN`` rule cannot reach them and only a directory holding a ``.tc`` can say whose they are.
-    :func:`~rehuco_core.tc_screenshots.is_legacy_screenshot` is asked, the same recognition a conversion
-    renames by, so what this walk skips is exactly what
-    :func:`~rehuco_core.originals_to_back_up` moves aside.
+    **And a pattern-matched image is a screenshot beside any record, or none** (#289). tc4 named them
+    ``01.jpg``, ``cover.jpg``, ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- never after the
+    record -- so the ``<record>NN`` rule cannot reach them; the caller's screenshot name patterns (#287)
+    are asked instead, the same recognition a conversion renames by and the images dock offers to convert
+    by, so what this walk skips is exactly what :func:`~rehuco_core.originals_to_back_up` moves aside. No
+    ``.tc`` needs to sit beside it: a live tutorial's own ``01.jpg`` now reads as a screenshot too, and
+    the images dock is where that gets corrected by hand rather than the walk guessing from what else is
+    in the directory.
 
     **A record claims only its own directory.** Screenshots and manifests are a record's siblings by
     definition ([[data-model#resource-scoping]]), so ``baz00.jpg`` is bookkeeping where ``baz.rehu`` sits
@@ -296,12 +298,10 @@ class ContentFileScanner:
         """
         filenames, _ = self.__read_directory(directory, unreadable)
         records = self.__record_names(filenames) | {self.__slug}
-        legacy = self.__holds_legacy_record(filenames)
         matches = sorted(
             filename
             for filename in filenames
-            if os.path.splitext(filename)[0].lower() == self.__slug
-            and not self.__is_bookkeeping(filename, records, legacy)
+            if os.path.splitext(filename)[0].lower() == self.__slug and not self.__is_bookkeeping(filename, records)
         )
         return [directory / filename for filename in matches]
 
@@ -343,11 +343,10 @@ class ContentFileScanner:
             records = self.__record_names(filenames)
             if current == self.__rehu_path.parent:
                 records.add(self.__slug)
-            legacy = self.__holds_legacy_record(filenames)
             matches.extend(
                 current / filename
                 for filename in filenames
-                if not self.__is_bookkeeping(filename, records, legacy)
+                if not self.__is_bookkeeping(filename, records)
                 and os.path.splitext(filename)[0].lower() not in claimed
                 and not self.__is_excluded(filename)
             )
@@ -411,20 +410,6 @@ class ContentFileScanner:
         return {stem.lower() for stem in stems}
 
     @staticmethod
-    def __holds_legacy_record(filenames: list[str]) -> bool:
-        """Whether one directory's listing includes a ``.tc`` -- whose tc4-schemed screenshots these are.
-
-        A directory rather than a stem, for the reason :mod:`rehuco_core.tc_conversion_backups` gives
-        about the backups it leaves: a legacy screenshot is named ``cover.jpg`` or ``01.jpg`` and carries
-        nothing tying it back to the record it belongs to, so the record it belongs to is *whichever one
-        this directory holds* (#250).
-
-        :param filenames: one directory's filenames.
-        :returns: whether a legacy record sits among them.
-        """
-        return any(is_legacy_record_name(filename) for filename in filenames)
-
-    @staticmethod
     def __holds_directory_scoped_record(filenames: list[str]) -> bool:
         """Whether one directory's listing includes an ``info.rehu``/``info.tc`` -- whose directory this
         is (#254).
@@ -463,7 +448,7 @@ class ContentFileScanner:
         )
         return {stem.lower() for stem in stems}
 
-    def __is_bookkeeping(self, filename: str, records: set[str], legacy: bool) -> bool:
+    def __is_bookkeeping(self, filename: str, records: set[str]) -> bool:
         """Whether ``filename`` is a resource record, one of the files that belong to one, or a
         conversion backup held on one's behalf.
 
@@ -475,22 +460,19 @@ class ContentFileScanner:
         all (#253): what it is a backup *of* is whatever the directory holding it is, which is the rule
         :mod:`rehuco_core.tc_conversion_backups` restores by and the one asked here.
 
-        :param filename: the candidate's file name.
-        **A legacy record's screenshots are named by scheme, not by stem** (#250): tc4 wrote ``01.jpg``,
-        ``cover.jpg``, ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg``, none of which carries the
-        record's name, so the ``<record>NN`` rule below cannot see them and they would otherwise be the
-        only bookkeeping a conversion renames that this walk still counted. Recognized through
-        :func:`~rehuco_core.tc_screenshots.is_legacy_screenshot` and only where a ``.tc`` sits in the same
-        directory, which keeps the set skipped here identical to the set
-        :func:`~rehuco_core.originals_to_back_up` moves aside -- so converting a resource does not change
-        what it is measured to hold. Without the directory condition a live tutorial's own ``01.jpg``
-        would vanish from the measurement meant to cover it.
+        **A pattern-matched image is a screenshot beside any record, or none** (#289): the images dock
+        offers to convert one wherever it sits, so the walk agrees with it rather than with what a
+        conversion has or has not reached yet. tc4 wrote them by scheme -- ``01.jpg``, ``cover.jpg``,
+        ``sample-01.jpg``, ``file(2).jpg``, ``file-01.jpg`` -- none of which carries a record's name, so
+        the ``<record>NN`` rule below cannot see them; :meth:`__recognized_legacy_screenshot` is asked
+        instead, against the caller's own pattern set (#287). The trade this accepts: a genuine content
+        file named ``01.jpg`` beside a ``.rehu`` now reads as a screenshot too, and the images dock is
+        where that gets corrected by hand.
 
         :param filename: the candidate's file name.
         :param records: the record names found in that file's own directory, from :meth:`__record_names`.
-        :param legacy: whether that directory holds a ``.tc``, from :meth:`__holds_legacy_record`.
-        :returns: whether it is a record, one of a record's screenshots -- ``<record>NN`` or a legacy
-            scheme -- a record's checksum manifest, or a retained conversion backup.
+        :returns: whether it is a record, one of a record's screenshots -- ``<record>NN`` or a
+            pattern-matched name -- a record's checksum manifest, or a retained conversion backup.
         """
         if is_conversion_backup(filename) or is_record_name(filename):
             return True
@@ -500,7 +482,7 @@ class ContentFileScanner:
         if suffix in CHECKSUM_MANIFEST_EXTENSIONS:
             return stem in records
         if suffix in IMAGE_EXTENSIONS:
-            if legacy and self.__recognized_legacy_screenshot(stem):
+            if self.__recognized_legacy_screenshot(stem):
                 return True
             screenshot = self.__SCREENSHOT_NAME_PATTERN.match(stem)
             return screenshot is not None and screenshot["record"] in records
@@ -557,15 +539,15 @@ class ContentFileScanner:
         :returns: the excluded ones only, each with the tier that excluded it, in the order given.
         """
         directory_scoped = is_directory_scoped(self.__rehu_path)
-        listings: dict[Path, tuple[set[str], bool]] = {}
+        listings: dict[Path, set[str]] = {}
         excluded: dict[str, ContentExclusionTier] = {}
         for name in names:
             parts = name.split("/")
             directory = self.__rehu_path.parent.joinpath(*parts[:-1])
             if directory not in listings:
                 listings[directory] = self.__claims_in(directory)
-            records, legacy = listings[directory]
-            if self.__is_bookkeeping(parts[-1], records, legacy):
+            records = listings[directory]
+            if self.__is_bookkeeping(parts[-1], records):
                 excluded[name] = "structural"
             elif directory_scoped and self.__is_excluded(parts[-1]):
                 # a file-scoped resource's content is a whitelist no pattern can reach, so a junk glob
@@ -573,19 +555,18 @@ class ContentFileScanner:
                 excluded[name] = "junk"
         return excluded
 
-    def __claims_in(self, directory: Path) -> tuple[set[str], bool]:
+    def __claims_in(self, directory: Path) -> set[str]:
         """What the records in one directory claim, for a name-driven read rather than a walk.
 
         :param directory: the directory to read; need not be under the resource's own, and need not
             exist.
-        :returns: the record names it holds and whether one of them is a ``.tc``, the same pair
-            :meth:`__scan_directory` computes per listing.
+        :returns: the record names it holds, the same set :meth:`__scan_directory` computes per listing.
         """
         filenames, _ = self.__read_directory(directory, [])
         records = self.__record_names(filenames)
         if directory == self.__rehu_path.parent:
             records.add(self.__slug)
-        return records, self.__holds_legacy_record(filenames)
+        return records
 
     def covering_records(self, names: Collection[str]) -> dict[str, CoveringRecord]:
         """Say which of ``names`` another record covers now, and which one (#257).
@@ -642,7 +623,7 @@ class ContentFileScanner:
         if directories[-1] == self.__rehu_path.parent:
             records.add(self.__slug)
         filename = parts[-1]
-        if self.__is_bookkeeping(filename, records, self.__holds_legacy_record(filenames)):
+        if self.__is_bookkeeping(filename, records):
             return None
         claimant = self.__record_named(os.path.splitext(filename)[0].lower(), filenames)
         if claimant is not None:

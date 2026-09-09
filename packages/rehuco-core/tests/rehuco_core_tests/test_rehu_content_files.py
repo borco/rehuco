@@ -698,21 +698,22 @@ def test_a_legacy_record_claims_its_screenshots_by_scheme(mocker: MockerFixture)
     assert names(content_files(LEGACY_DIRECTORY_SCOPED_PATH)) == ["video.mp4"]
 
 
-def test_a_legacy_screenshot_name_is_content_where_no_legacy_record_sits(mocker: MockerFixture) -> None:
-    """The scheme alone proves nothing -- a live tutorial's own ``01.jpg`` is content, and stays counted.
+def test_a_pattern_matched_image_is_a_screenshot_beside_any_record_or_none(mocker: MockerFixture) -> None:
+    """The scheme alone is enough (#289) -- a live tutorial's own ``01.jpg`` is bookkeeping too, no ``.tc``
+    required beside it.
 
-    The same condition every other structural exclusion is under: a name is bookkeeping *because a
-    record claims it*. Legacy screenshots are claimed by the directory rather than by a stem, for the
-    reason :mod:`rehuco_core.tc_conversion_backups` gives about the backups, so the claim needs a ``.tc``
-    in that directory -- and a converted resource, whose ``.tc`` is now an ``.orig``, makes no claim at
-    all.
+    The images dock offers to convert a pattern-matched image wherever it sits, so the walk has to agree
+    with it: a `.tc` sitting in the directory can no longer be the difference between the same name being
+    content and being bookkeeping, since that difference would disappear the moment conversion finishes.
+    The trade this accepts is stated in #286: a genuine content file named ``01.jpg`` now reads as a
+    screenshot, and the images dock is where a wrong read is corrected by hand.
 
     **Test steps:**
 
     * mock a tree whose root holds ``info.rehu`` over legacy-shaped image names, and a record-less
       subdirectory holding the same names
     * enumerate ``info.rehu``'s content files
-    * verify every one of them counted
+    * verify none of the pattern-matched names came back, in either directory
     """
     mock_tree(
         mocker,
@@ -720,13 +721,7 @@ def test_a_legacy_screenshot_name_is_content_where_no_legacy_record_sits(mocker:
         directories=["bar"],
     )
 
-    assert names(content_files(DIRECTORY_SCOPED_PATH)) == [
-        "01.jpg",
-        "bar/01.jpg",
-        "bar/cover.jpg",
-        "bar/video.mp4",
-        "cover.jpg",
-    ]
+    assert names(content_files(DIRECTORY_SCOPED_PATH)) == ["bar/video.mp4"]
 
 
 def test_a_named_legacy_record_stays_file_scoped(mocker: MockerFixture) -> None:
