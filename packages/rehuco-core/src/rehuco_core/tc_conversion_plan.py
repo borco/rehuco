@@ -41,6 +41,8 @@ from .tc_screenshots import (
     SCREENSHOT_NAME_PATTERNS,
     ScreenshotNamePattern,
     ScreenshotRename,
+    ScreenshotSkipReason,
+    UnconvertedScreenshot,
     scan_tc_screenshots,
 )
 
@@ -99,8 +101,9 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
         produced, in memory -- carries no `id`/`created`/`updated`, since those are an actual
         conversion's to mint, not a plan's to guess.
     :param renames: the screenshot rename plan (:func:`~rehuco_core.tc_screenshots.scan_tc_screenshots`).
-    :param tie_break: two or more files resolved to the same slot in :attr:`renames`; the losers will
-        not be installed.
+    :param unconverted: the pattern-matched images the conversion would leave under their own names,
+        each with the reason it did (#288) -- nothing is dropped, so this is the other half of what the
+        scan found.
     :param rehu_exists: the target `.rehu` already exists -- blocked; conversion would need overwrite.
     :param stale_backup: a `.orig` sibling already exists for something the conversion would back up --
         blocked by the forward converter's stale-backup guard.
@@ -123,7 +126,7 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
     rehu_path: Path
     data: dict[str, Any]
     renames: tuple[ScreenshotRename, ...]
-    tie_break: bool
+    unconverted: tuple[UnconvertedScreenshot, ...]
     rehu_exists: bool
     stale_backup: bool
     size_unparsed: bool
@@ -139,10 +142,23 @@ class TcConversionPlan:  # pylint: disable=too-many-instance-attributes
         return self.rehu_exists or self.stale_backup
 
     @property
+    def collision(self) -> bool:
+        """Whether some image would keep its own name because its slot was already taken (#288).
+
+        The one outcome of a conversion a human might want to look at afterwards
+        ([[acquisition-tooling#convert-mechanics]]): two pictures claim one number and nothing here
+        decides between them, so the images dock is where that is settled
+        ([[plugins#tutorial-plugin]]). An image left alone for carrying a number of its own beyond the
+        range ([[acquisition-tooling#tc-to-rehu]]) is not flagged: it is someone else's convention
+        being respected, not a judgement this conversion ducked.
+        """
+        return any(image.reason is ScreenshotSkipReason.COLLISION for image in self.unconverted)
+
+    @property
     def flagged(self) -> bool:
         """Whether anything here is worth a human's attention, short of being outright blocked."""
         return bool(
-            self.tie_break or self.size_unparsed or self.duration_present or self.unmapped_keys or self.suspect_mtime
+            self.collision or self.size_unparsed or self.duration_present or self.unmapped_keys or self.suspect_mtime
         )
 
 
@@ -392,18 +408,18 @@ class TcConversionPlanner:  # pylint: disable=too-few-public-methods
             every resource's mtime, filled in by :meth:`__with_suspect_mtimes`) and its mtime.
         """
         document = TcDocument.load(tc_path)
-        renames = tuple(scan_tc_screenshots(tc_path.parent, tc_path.stem, self.__screenshot_name_patterns))
+        screenshots = scan_tc_screenshots(tc_path.parent, tc_path.stem, self.__screenshot_name_patterns)
         data = document.to_rehu_data(username=self.__username)
         core = data[CORE_BLOCK_KEY]
         type_block = data.get(core["type"], {})
         target = tc_path.with_suffix(REHU_SUFFIX)
-        originals = originals_to_back_up(tc_path, target, renames)
+        originals = originals_to_back_up(tc_path, target)
         plan = TcConversionPlan(
             tc_path=tc_path,
             rehu_path=target,
             data=data,
-            renames=renames,
-            tie_break=any(len(rename.recognized_filenames) > 1 for rename in renames),
+            renames=screenshots.renames,
+            unconverted=screenshots.unconverted,
             rehu_exists=target.exists(),
             stale_backup=any(backup_path(original).exists() for original in originals),
             size_unparsed=any(key in document.data and key not in core for key in ("original_size", "current_size")),

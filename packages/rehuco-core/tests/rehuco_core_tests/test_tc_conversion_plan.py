@@ -5,7 +5,14 @@ from pathlib import Path
 from typing import Any, Final
 
 from pytest_mock import MockerFixture
-from rehuco_core import ScreenshotRename, TcConversionTreePlan, plan_tc_conversion
+from rehuco_core import (
+    ScreenshotRename,
+    ScreenshotSkipReason,
+    TcConversionTreePlan,
+    TcScreenshotPlan,
+    UnconvertedScreenshot,
+    plan_tc_conversion,
+)
 
 from rehuco_core_tests.fake_directories import FakeDirEntry, FakeScandir
 
@@ -26,7 +33,7 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
     yaml_by_path: dict[Path, str] | None = None,
     existing: frozenset[Path] = frozenset(),
     mtimes: dict[Path, float] | None = None,
-    renames_by_directory: dict[Path, list[ScreenshotRename]] | None = None,
+    screenshots_by_directory: dict[Path, TcScreenshotPlan] | None = None,
 ) -> dict[str, Any]:
     """Mock a tree of `.tc` resources under :data:`ROOT` and every filesystem/scan call the planner makes.
 
@@ -43,7 +50,8 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
     :param existing: paths that should report as already existing on disk (a target `.rehu`, a stale
         `.orig` backup, ...).
     :param mtimes: each `.tc` path's mtime; defaults to :data:`DEFAULT_MTIME`.
-    :param renames_by_directory: each resource directory's screenshot scan result; defaults to none.
+    :param screenshots_by_directory: each resource directory's screenshot scan result; defaults to an
+        empty plan.
     :returns: the created mocks, keyed by what they stand in for.
     """
     offline = {ROOT / name for name in unreadable or []}
@@ -86,7 +94,9 @@ def mock_environment(  # pylint: disable=too-many-arguments,too-many-locals
         "scandir": mocker.patch("rehuco_core.tc_conversion_plan.os.scandir", side_effect=scandir),
         "scan": mocker.patch(
             "rehuco_core.tc_conversion_plan.scan_tc_screenshots",
-            side_effect=lambda directory, stem, rules=None: (renames_by_directory or {}).get(directory, []),
+            side_effect=lambda directory, stem, rules=None: (screenshots_by_directory or {}).get(
+                directory, TcScreenshotPlan()
+            ),
         ),
         "rename": mocker.patch.object(Path, "rename", autospec=True),
         "unlink": mocker.patch.object(Path, "unlink", autospec=True),
@@ -221,12 +231,14 @@ def test_the_rename_plan_matches_the_screenshot_scan_for_the_same_directory(mock
     * plan the tree
     * verify the record's `renames` is exactly that result
     """
-    renames = [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg",))]
-    mock_environment(mocker, tc_files=["a/info.tc"], directories=["a"], renames_by_directory={ROOT / "a": renames})
+    screenshots = TcScreenshotPlan((ScreenshotRename("info00.jpg", "cover.jpg"),))
+    mock_environment(
+        mocker, tc_files=["a/info.tc"], directories=["a"], screenshots_by_directory={ROOT / "a": screenshots}
+    )
 
     plan = plan_tc_conversion(ROOT)
 
-    assert plan.resources[0].renames == tuple(renames)
+    assert plan.resources[0].renames == screenshots.renames
 
 
 def test_an_offline_branch_costs_its_own_subtree_and_is_named(mocker: MockerFixture) -> None:
@@ -317,30 +329,44 @@ def test_progress_reports_a_running_count(mocker: MockerFixture) -> None:
 # region Flags
 
 
-def test_tie_break_fires_when_a_slot_has_more_than_one_recognized_file(mocker: MockerFixture) -> None:
-    """`tie_break` fires when two or more files resolved to the same slot, and not otherwise.
+def test_collision_fires_when_an_image_is_left_under_its_own_name(mocker: MockerFixture) -> None:
+    """`collision` fires when the scan left an image alone because its slot was taken, and not
+    otherwise -- an image left alone for carrying a number out of range is nobody's judgement call
+    and is not flagged (#288).
 
     **Test steps:**
 
-    * mock one directory whose screenshot scan ties two files onto one slot, and one directory with no
-      tie
+    * mock three directories: one whose scan leaves an image on a taken slot, one whose scan leaves an
+      image with a three-digit number, and one that converts cleanly
     * plan the tree
-    * verify only the tied resource is flagged
+    * verify only the first is flagged
     """
-    tied = [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png"))]
-    clean = [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg",))]
+    renames = (ScreenshotRename("info00.jpg", "cover.jpg"),)
+    collided = TcScreenshotPlan(renames, (UnconvertedScreenshot("sample-00.png", ScreenshotSkipReason.COLLISION),))
+    out_of_range = TcScreenshotPlan(
+        renames, (UnconvertedScreenshot("sample-100.jpg", ScreenshotSkipReason.OUT_OF_RANGE),)
+    )
     mock_environment(
         mocker,
-        tc_files=["a/info.tc", "b/info.tc"],
-        directories=["a", "b"],
-        renames_by_directory={ROOT / "a": tied, ROOT / "b": clean},
+        tc_files=["a/info.tc", "b/info.tc", "c/info.tc"],
+        directories=["a", "b", "c"],
+        # far enough apart not to read as one restore event, so `flagged` is only about the images here
+        mtimes={ROOT / f"{name}/info.tc": DEFAULT_MTIME + offset for name, offset in (("b", 500), ("c", 1000))},
+        screenshots_by_directory={
+            ROOT / "a": collided,
+            ROOT / "b": out_of_range,
+            ROOT / "c": TcScreenshotPlan(renames),
+        },
     )
 
     plan = plan_tc_conversion(ROOT)
 
     by_path = {r.tc_path: r for r in plan.resources}
-    assert by_path[ROOT / "a/info.tc"].tie_break is True
-    assert by_path[ROOT / "b/info.tc"].tie_break is False
+    assert by_path[ROOT / "a/info.tc"].collision is True
+    assert by_path[ROOT / "b/info.tc"].collision is False
+    assert by_path[ROOT / "c/info.tc"].collision is False
+    assert by_path[ROOT / "a/info.tc"].flagged is True
+    assert by_path[ROOT / "b/info.tc"].flagged is False
 
 
 def test_rehu_exists_blocks_the_resource(mocker: MockerFixture) -> None:

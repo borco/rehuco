@@ -35,7 +35,7 @@ COLUMN_TITLES: Final = ("", "Path", "Target", "Screenshots", "Flags", "Outcome")
 FLAG_LABELS: Final = (
     ("rehu_exists", "target exists"),
     ("stale_backup", "stale backup"),
-    ("tie_break", "tie-break"),
+    ("collision", "collision"),
     ("size_unparsed", "size unparsed"),
     ("duration_present", "duration advisory"),
     ("unmapped_keys", "unmapped keys"),
@@ -48,7 +48,7 @@ STRANDED_FLAG: Final = "stranded manifest"
 """What the Flags column says of a :class:`~rehuco_core.StrandedManifestPlan` row (#259).
 
 The one word that column has to carry for such a row -- there is nothing else to flag, since a
-remediation makes no judgement calls and can be neither blocked nor tie-broken. Written as a flag rather
+remediation makes no judgement calls and can be neither blocked nor collided with. Written as a flag rather
 than as a row *type* column so the filter that already searches flags finds these by name."""
 
 
@@ -86,7 +86,7 @@ class TcConversionPlanTableModel(QAbstractTableModel):
     """One row per `.tc` resource the scan found, its checkbox, and its outcome once import has run.
 
     **A blocked row starts unchecked, and checking it is the opt-in.** #192 offers no other way to
-    override the tie-break or the overwrite refusal, so the checkbox is the only control the plan step
+    override the overwrite refusal, so the checkbox is the only control the plan step
     has, and it does two jobs: which rows import selects, and -- for a row
     :attr:`~rehuco_core.TcConversionPlan.rehu_exists` flagged -- whether the enqueued job is told
     ``overwrite=True``. A :attr:`~rehuco_core.TcConversionPlan.stale_backup` row cannot be unblocked
@@ -233,23 +233,26 @@ class TcConversionPlanTableModel(QAbstractTableModel):
 
     @staticmethod
     def __screenshots_text(plan: TcConversionPlan) -> str:
-        """What the screenshot rename plan says, e.g. ``"5 → info00–04, 2 dropped"``.
+        """What the screenshot plan says, e.g. ``"5 → info00–04, 2 unchanged"``.
+
+        The second count is the images the conversion leaves under their own names (#288) -- named as
+        a count rather than an omission, since they are still there and still screenshots, waiting for
+        the images dock rather than lost.
 
         :param plan: the resource's plan.
         :returns: the summary text.
         """
+        unchanged = len(plan.unconverted)
         if not plan.renames:
-            return "none"
-        installed = len(plan.renames)
+            return f"{unchanged} unchanged" if unchanged else "none"
+        renamed = len(plan.renames)
         # pylint's astroid mis-infers a tuple element of `renames` (a `ScreenshotRename`) as a PySide6
         # signal descriptor in this module -- the two lines below are ordinary attribute reads
         first = Path(plan.renames[0].new_name).stem  # pylint: disable=no-member
         last = Path(plan.renames[-1].new_name).stem  # pylint: disable=no-member
-        span = first if installed == 1 else f"{first}–{last[-2:]}"
-        recognized = sum(len(rename.recognized_filenames) for rename in plan.renames)
-        dropped = recognized - installed
-        text = f"{installed} → {span}"
-        return f"{text}, {dropped} dropped" if dropped else text
+        span = first if renamed == 1 else f"{first}–{last[-2:]}"
+        text = f"{renamed} → {span}"
+        return f"{text}, {unchanged} unchanged" if unchanged else text
 
     @staticmethod
     def __flags_text(plan: TcConversionPlan | StrandedManifestPlan) -> str:

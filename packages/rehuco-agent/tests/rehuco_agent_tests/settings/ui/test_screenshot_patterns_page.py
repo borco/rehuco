@@ -225,22 +225,22 @@ def test_the_page_filters_by_its_three_frames(page: ScreenshotPatternsPage) -> N
 
     frame_filter.apply("screenshot name patterns", show_full_on_title_match=False)
     assert ui.patterns_frame.isVisibleTo(page) is True
-    assert ui.tie_break_frame.isVisibleTo(page) is False
+    assert ui.collisions_frame.isVisibleTo(page) is False
     assert ui.try_it_frame.isVisibleTo(page) is False
 
     frame_filter.apply("always applied", show_full_on_title_match=False)
-    assert ui.tie_break_frame.isVisibleTo(page) is True
+    assert ui.collisions_frame.isVisibleTo(page) is True
     assert ui.patterns_frame.isVisibleTo(page) is False
     assert ui.try_it_frame.isVisibleTo(page) is False
 
     frame_filter.apply("try it", show_full_on_title_match=False)
     assert ui.try_it_frame.isVisibleTo(page) is True
     assert ui.patterns_frame.isVisibleTo(page) is False
-    assert ui.tie_break_frame.isVisibleTo(page) is False
+    assert ui.collisions_frame.isVisibleTo(page) is False
 
     frame_filter.apply("nothing on this page", show_full_on_title_match=False)
     assert ui.patterns_frame.isVisibleTo(page) is False
-    assert ui.tie_break_frame.isVisibleTo(page) is False
+    assert ui.collisions_frame.isVisibleTo(page) is False
     assert ui.try_it_frame.isVisibleTo(page) is False
 
 

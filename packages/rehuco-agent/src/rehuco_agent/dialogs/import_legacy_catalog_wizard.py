@@ -1,11 +1,11 @@
 """`File ▸ Import Legacy Catalog…`: the one-time bulk `.tc` → `.rehu` migration wizard (#192).
 
 Five steps, and **no per-item review gate** -- the design decision #192 encodes. The conversion offers
-no choices (the screenshot tie-break is fixed, [[acquisition-tooling#screenshot-schemes]]), so a
-per-resource confirmation pass over thousands of items would be ceremony nobody would ever finish.
-Safety instead comes from retaining every backup and being able to revert one (#190), and from
-flagging the minority of resources where a judgement was made (#191), reviewed afterwards at leisure
-(#193). Auto-import is the right default precisely because nothing is ever deleted.
+no choices: every screenshot keeps the number it already carries, and one whose slot is taken keeps its
+whole name ([[acquisition-tooling#tc-to-rehu]]), so a per-resource confirmation pass over thousands of
+items would be ceremony nobody would ever finish. Safety instead comes from renaming rather than
+writing, from retaining the `.tc` backup, and from flagging the minority of resources where two images
+wanted one number (#191), corrected afterwards at leisure in the images dock.
 
 The scan (#191) runs on a worker thread so the dialog stays responsive and cancellable; the import
 step enqueues one :class:`~rehuco_core.TcImportJob` per selected resource onto the app-wide queue and

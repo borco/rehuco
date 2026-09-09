@@ -177,7 +177,9 @@ then renames every image the screenshot name patterns ([[acquisition-tooling#scr
 number it already carries — `cover` and any unnumbered stem become `00`, `image-01` stays `01`, `file-1` becomes
 `01`, `file(3)` becomes `03` — zero-padded to two digits, per the pattern's slot. A **collision** — two matched
 names resolving to the same slot, or a `<stem>NN` the slot would take already present — leaves the later file
-untouched under its own name rather than picking a winner: there is no tie-break and nothing is inferred, so the
+untouched under its own name rather than picking a winner — *later* meaning by the pattern list's own order
+([[acquisition-tooling#screenshot-schemes]]), then by natural sort, which for the shipped set is `cover` first. There
+is no tie-break between pictures and nothing is inferred, so the
 one case a rule ordering cannot settle ([[acquisition-tooling#screenshot-schemes]]) is left for the images dock to
 correct by hand ([[plugins#tutorial-plugin]]). Several extensions matching the same stem resolve by **pixel area**
 first, then by first appearance in the app's `IMAGE_EXTENSIONS` order — the winner is renamed, the rest are left
@@ -348,9 +350,11 @@ The shipped defaults, in order:
 | `^file-(\d+)$` | `file-1`, `file-2`, … | the number |
 | `^file\((\d+)\)$` | `file(2)`, `file(3)`, … — Windows duplicate numbering | the number |
 
-The extension is matched separately from the stem, so a pattern names only the part before it. **Order matters only
-for which pattern matches first when more than one could** — an ordinary list, evaluated top to bottom, first match
-wins — and reordering the list is a real edit for exactly that reason.
+The extension is matched separately from the stem, so a pattern names only the part before it. **Order decides two
+things** — which pattern matches first when more than one could (an ordinary list, evaluated top to bottom, first
+match wins) and, when two names want one slot, which of them takes it ([[acquisition-tooling#tc-to-rehu]]) — and
+reordering the list is a real edit for both reasons. With the shipped set that second rule reads as *`cover` first*,
+since `^cover$` leads the list.
 
 **The same pattern list reaches the content walk** (#289). [[data-model#resource-scoping]]'s coverage rule counts a
 pattern-matched image as a screenshot rather than content, and it is handed the same list conversion is handed —

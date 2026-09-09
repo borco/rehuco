@@ -54,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="patterns_order_label">
         <property name="text">
-         <string>Order matters only for which pattern matches first when more than one could: an ordinary list, evaluated top to bottom, first match wins. A pattern that fails to compile, or carries more than one capture group, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
+         <string>Order decides which pattern matches first when more than one could — an ordinary list, evaluated top to bottom — and which file takes a slot two names want. A pattern that fails to compile, or carries more than one capture group, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -65,16 +65,16 @@
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="tie_break_frame">
+    <widget class="QFrame" name="collisions_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>
      </property>
      <property name="frameShadow">
       <enum>QFrame::Shadow::Raised</enum>
      </property>
-     <layout class="QVBoxLayout" name="tie_break_frame_layout">
+     <layout class="QVBoxLayout" name="collisions_frame_layout">
       <item>
-       <widget class="QLabel" name="tie_break_frame_label">
+       <widget class="QLabel" name="collisions_frame_label">
         <property name="font">
          <font>
           <bold>true</bold>
@@ -86,12 +86,12 @@
        </widget>
       </item>
       <item>
-       <widget class="WrappingLabel" name="tie_break_label">
+       <widget class="WrappingLabel" name="collisions_label">
         <property name="text">
-         <string>When several files land on the same slot, the one kept is the largest by pixel size, then a .jpg or .jpeg over any other format, then the first by name. The others are still backed up when a resource is converted.</string>
+         <string>Converting renames each image to the number its name already carries. When two names want the same number, the first pattern above wins it and the other image keeps its own name — nothing is renamed away and nothing is deleted. One name under several extensions is one picture: the largest by pixel size takes the number.</string>
         </property>
         <property name="toolTip">
-         <string>This ranking is not configurable — it applies whatever the patterns above say.</string>
+         <string>These rules are not configurable — they apply whatever the patterns above say. An image left under its own name is corrected in the images dock, one file at a time.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

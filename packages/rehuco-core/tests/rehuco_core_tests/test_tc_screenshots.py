@@ -11,6 +11,8 @@ from rehuco_core import (
     ScreenshotNamePattern,
     ScreenshotNamePatterns,
     ScreenshotRename,
+    ScreenshotSkipReason,
+    UnconvertedScreenshot,
     is_legacy_screenshot,
     scan_tc_screenshot_files,
     scan_tc_screenshots,
@@ -35,7 +37,7 @@ def mock_image_sizes(mocker: MockerFixture, sizes: dict[str, tuple[int, int]]) -
     """Mock ``Image.open`` so opening a path named in ``sizes`` yields that ``(width, height)``.
 
     :param mocker: pytest-mock fixture.
-    :param sizes: ``{filename: (width, height)}`` for every file a tie-break will need to open.
+    :param sizes: ``{filename: (width, height)}`` for every same-stem variant the scan will open.
     """
 
     def open_side_effect(path: Path) -> object:
@@ -49,120 +51,230 @@ def mock_image_sizes(mocker: MockerFixture, sizes: dict[str, tuple[int, int]]) -
 # region scan_tc_screenshots (the rename plan)
 
 
-def test_each_recognized_file_takes_the_slot_its_name_carries(mocker: MockerFixture) -> None:
-    """With no two files on one slot, a scan is the slot each name carries and nothing more -- whichever
-    shipped pattern named it -- keeping the file's own extension.
+def test_each_recognized_file_takes_the_number_its_name_carries(mocker: MockerFixture) -> None:
+    """With no two files on one slot, a scan is the number each name carries and nothing more --
+    whichever shipped pattern named it -- keeping the file's own extension.
 
     **Test steps:**
 
     * mock the directory to hold one file under each of three shipped patterns
     * scan
-    * verify each maps to its own new name, in slot order
+    * verify each maps to its own new name, in slot order, and nothing is left unconverted
     """
     mock_directory(mocker, ["file(2).jpg", "cover.jpg", "sample-01.png"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [
-        ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg",)),
-        ScreenshotRename("info01.png", "sample-01.png", ("sample-01.png",)),
-        ScreenshotRename("info02.jpg", "file(2).jpg", ("file(2).jpg",)),
-    ]
-
-
-def test_small_variant_ties_with_full_size_and_loses(mocker: MockerFixture) -> None:
-    """A thumbnail (``cover``) and a full-size photo (``sample-00``) at the same slot: the larger one
-    by pixel dimensions wins, and both stay recorded as recognized.
-
-    **Test steps:**
-
-    * mock the directory to hold ``cover.jpg`` (small) and ``sample-00.png`` (large)
-    * mock their pixel sizes accordingly
-    * scan
-    * verify the winner is ``sample-00.png``, and ``recognized_filenames`` holds both
-    """
-    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
-    mock_image_sizes(mocker, {"cover.jpg": (100, 100), "sample-00.png": (1920, 1080)})
-
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
-
-    assert renames == [ScreenshotRename("info00.png", "sample-00.png", ("cover.jpg", "sample-00.png"))]
+    assert plan.renames == (
+        ScreenshotRename("info00.jpg", "cover.jpg"),
+        ScreenshotRename("info01.png", "sample-01.png"),
+        ScreenshotRename("info02.jpg", "file(2).jpg"),
+    )
+    assert not plan.unconverted
 
 
-def test_generalized_tie_break_across_unanticipated_patterns(mocker: MockerFixture) -> None:
-    """The size tie-break isn't hardcoded to the small-vs-full-size pairing -- any two recognized
-    candidates landing on the same slot resolve the same way.
+def test_renames_come_out_in_slot_order_whatever_the_pattern_order(mocker: MockerFixture) -> None:
+    """The plan is in slot order even where the pattern that claims a name sits later in the list than
+    the one claiming a higher number -- the lightbox reads this order for an unconverted ``.tc``.
 
     **Test steps:**
 
-    * mock the directory to hold ``00.jpg`` (bare numeric) and ``sample-00.png`` (sample series),
-      an unanticipated pairing
-    * mock the bare-numeric file as the larger one
+    * mock a bare ``05`` (an earlier shipped pattern) beside a ``sample-01`` (a later one)
     * scan
-    * verify the larger file wins even though its pattern was never described as tying with the other
+    * verify slot 1 comes before slot 5
     """
-    mock_directory(mocker, ["00.jpg", "sample-00.png"])
-    mock_image_sizes(mocker, {"00.jpg": (1920, 1080), "sample-00.png": (100, 100)})
+    mock_directory(mocker, ["05.jpg", "sample-01.png"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [ScreenshotRename("info00.jpg", "00.jpg", ("00.jpg", "sample-00.png"))]
+    assert plan.renames == (
+        ScreenshotRename("info01.png", "sample-01.png"),
+        ScreenshotRename("info05.jpg", "05.jpg"),
+    )
+    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-01.png", DIRECTORY / "05.jpg"]
 
 
-def test_exact_dimension_tie_prefers_jpg_over_png(mocker: MockerFixture) -> None:
-    """On an exact pixel-dimension tie, a ``.jpg`` candidate wins over a ``.png`` one.
+def test_a_taken_slot_leaves_the_later_file_exactly_as_it_was(mocker: MockerFixture) -> None:
+    """Two names wanting one number is the case nothing here decides: the earlier pattern's file takes
+    the slot and the other keeps its own name, reported as a collision for the images dock (#270).
 
     **Test steps:**
 
-    * mock the directory to hold ``cover.jpg`` and ``sample-00.png`` at identical dimensions
+    * mock the directory to hold ``cover.jpg`` and ``sample-00.png``, both slot 0
     * scan
-    * verify the ``.jpg`` file wins despite tying on size
+    * verify ``cover`` (the earlier pattern) is renamed and ``sample-00.png`` is untouched
     """
-    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
-    mock_image_sizes(mocker, {"cover.jpg": (800, 600), "sample-00.png": (800, 600)})
+    mock_directory(mocker, ["sample-00.png", "cover.jpg"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png"))]
+    assert plan.renames == (ScreenshotRename("info00.jpg", "cover.jpg"),)
+    assert plan.unconverted == (UnconvertedScreenshot("sample-00.png", ScreenshotSkipReason.COLLISION),)
+    assert plan.collision is True
 
 
-def test_full_tie_falls_back_to_filename_sort(mocker: MockerFixture) -> None:
-    """When both size and extension tie, the alphabetically first filename wins, deterministically.
+def test_the_pattern_order_decides_which_file_takes_a_contested_slot(mocker: MockerFixture) -> None:
+    """The list's order is what settles a collision, so moving a pattern moves the winner with it --
+    the same order that decides which pattern claims a name two of them match (#287).
 
     **Test steps:**
 
-    * mock the directory to hold two same-size ``.jpg`` candidates at the same slot
-    * scan
-    * verify the alphabetically earlier filename is the winner regardless of directory-listing order
+    * scan one directory twice, with the two patterns in either order
+    * verify the earlier pattern's file takes the slot both times
     """
-    mock_directory(mocker, ["sample-00.jpg", "00.jpg"])
-    mock_image_sizes(mocker, {"sample-00.jpg": (800, 600), "00.jpg": (800, 600)})
+    mock_directory(mocker, ["sample-00.png", "cover.jpg"])
+    cover_first = (ScreenshotNamePattern(r"^cover$"), ScreenshotNamePattern(r"^sample-(\d+)$"))
+    sample_first = (ScreenshotNamePattern(r"^sample-(\d+)$"), ScreenshotNamePattern(r"^cover$"))
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    assert scan_tc_screenshots(DIRECTORY, STEM, cover_first).renames == (ScreenshotRename("info00.jpg", "cover.jpg"),)
+    assert scan_tc_screenshots(DIRECTORY, STEM, sample_first).renames == (
+        ScreenshotRename("info00.png", "sample-00.png"),
+    )
 
-    assert renames == [ScreenshotRename("info00.jpg", "00.jpg", ("sample-00.jpg", "00.jpg"))]
 
-
-def test_pixel_size_ranking_can_pick_the_non_preferred_extension(mocker: MockerFixture) -> None:
-    """A bigger ``.png`` still beats a smaller ``.jpg`` -- the extension preference only breaks an
-    exact dimension tie, it never overrides a real size difference.
+def test_names_under_one_pattern_are_ordered_naturally(mocker: MockerFixture) -> None:
+    """Within a single pattern, two spellings of one number are ordered naturally rather than as text,
+    so which of them takes the slot does not depend on zero-padding sorting before digits.
 
     **Test steps:**
 
-    * mock the directory to hold a large ``cover.png`` and a small ``sample-00.jpg``
+    * mock the directory to hold ``file-2``, ``file-10`` and a padded ``file-02``
     * scan
-    * verify the ``.png`` wins and the new name keeps its extension
+    * verify the distinct numbers convert, and the padded duplicate of slot 2 is left alone
     """
-    mock_directory(mocker, ["cover.png", "sample-00.jpg"])
-    mock_image_sizes(mocker, {"cover.png": (1920, 1080), "sample-00.jpg": (100, 100)})
+    mock_directory(mocker, ["file-10.jpg", "file-02.jpg", "file-2.jpg"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [ScreenshotRename("info00.png", "cover.png", ("cover.png", "sample-00.jpg"))]
+    assert plan.renames == (
+        ScreenshotRename("info02.jpg", "file-02.jpg"),
+        ScreenshotRename("info10.jpg", "file-10.jpg"),
+    )
+    assert plan.unconverted == (UnconvertedScreenshot("file-2.jpg", ScreenshotSkipReason.COLLISION),)
+
+
+def test_a_preexisting_numbered_file_owns_its_slot(mocker: MockerFixture) -> None:
+    """A ``<stem>NN`` file already on disk is where the reader looks, so it keeps its number and a
+    legacy name wanting it is left alone -- the conversion overwrites nothing.
+
+    **Test steps:**
+
+    * mock the directory to hold ``info00.jpg`` beside ``cover.jpg``
+    * scan
+    * verify nothing is renamed onto ``info00.jpg`` and ``cover.jpg`` keeps its name
+    """
+    mock_directory(mocker, ["info00.jpg", "cover.jpg"])
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert not plan.renames
+    assert plan.unconverted == (UnconvertedScreenshot("cover.jpg", ScreenshotSkipReason.COLLISION),)
+
+
+def test_a_second_run_over_a_converted_directory_renames_nothing(mocker: MockerFixture) -> None:
+    """Conversion is idempotent: every name it produced is a ``<stem>NN``, which is not a candidate, so
+    running it again against an already-converted resource is a no-op.
+
+    **Test steps:**
+
+    * mock the directory as it looks after a conversion of the three-pattern case above
+    * scan
+    * verify the plan is empty on both sides
+    """
+    mock_directory(mocker, ["info00.jpg", "info01.png", "info02.jpg"])
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert not plan.renames
+    assert not plan.unconverted
+
+
+def test_one_stem_under_several_extensions_keeps_the_larger_picture(mocker: MockerFixture) -> None:
+    """One name stored twice is one picture: the larger by pixel area takes the number and the other
+    keeps its own name, which is the only place a conversion opens an image at all.
+
+    **Test steps:**
+
+    * mock ``cover.jpg`` (small) beside ``cover.png`` (large)
+    * scan
+    * verify the ``.png`` takes slot 0 and the ``.jpg`` is left alone
+    """
+    mock_directory(mocker, ["cover.jpg", "cover.png"])
+    mock_image_sizes(mocker, {"cover.jpg": (100, 100), "cover.png": (1920, 1080)})
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert plan.renames == (ScreenshotRename("info00.png", "cover.png"),)
+    assert plan.unconverted == (UnconvertedScreenshot("cover.jpg", ScreenshotSkipReason.COLLISION),)
+
+
+def test_an_exact_area_tie_between_extensions_follows_the_image_extension_order(mocker: MockerFixture) -> None:
+    """Two copies of one name at identical dimensions resolve by the app's own extension order, so the
+    outcome never depends on which the directory listed first.
+
+    **Test steps:**
+
+    * mock ``cover.png`` and ``cover.jpg`` at the same dimensions, the ``.png`` listed first
+    * scan
+    * verify the ``.jpg`` wins, being earlier in ``IMAGE_EXTENSIONS``
+    """
+    mock_directory(mocker, ["cover.png", "cover.jpg"])
+    mock_image_sizes(mocker, {"cover.png": (800, 600), "cover.jpg": (800, 600)})
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert plan.renames == (ScreenshotRename("info00.jpg", "cover.jpg"),)
+
+
+def test_a_corrupt_variant_loses_the_area_comparison(mocker: MockerFixture) -> None:
+    """A variant whose bytes ``PIL`` can't decode ranks last rather than aborting the conversion -- this
+    runs before any disk mutation, so an unreadable image is strictly safer treated as area ``0``.
+
+    **Test steps:**
+
+    * mock ``cover.jpg`` as readable and same-stem ``cover.png`` as raising ``UnidentifiedImageError``
+    * scan
+    * verify the readable file wins despite its modest pixel size
+    """
+    mock_directory(mocker, ["cover.jpg", "cover.png"])
+
+    def open_side_effect(path: Path) -> object:
+        if Path(path).name == "cover.png":
+            raise UnidentifiedImageError
+        image = mocker.MagicMock()
+        image.__enter__.return_value.size = (100, 100)
+        return image
+
+    mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=open_side_effect)
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert plan.renames == (ScreenshotRename("info00.jpg", "cover.jpg"),)
+
+
+def test_a_three_digit_number_is_left_unconverted(mocker: MockerFixture) -> None:
+    """A legacy number at or above :data:`~rehuco_core.MAX_SCREENSHOT_SLOT` is someone else's
+    convention: the file keeps its name rather than being given a ``<stem>NNN`` no reader recognizes.
+
+    **Test steps:**
+
+    * mock ``sample-100.jpg`` beside an ordinary ``sample-01.jpg``
+    * scan
+    * verify only the two-digit one converts, and the other is reported as out of range rather than as
+      a collision -- nothing was contested
+    """
+    mock_directory(mocker, ["sample-100.jpg", "sample-01.jpg"])
+
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert plan.renames == (ScreenshotRename("info01.jpg", "sample-01.jpg"),)
+    assert plan.unconverted == (UnconvertedScreenshot("sample-100.jpg", ScreenshotSkipReason.OUT_OF_RANGE),)
+    assert plan.collision is False
 
 
 def test_unrecognized_filenames_are_ignored(mocker: MockerFixture) -> None:
-    """A filename matching none of the shipped patterns is left out of the scan entirely.
+    """A filename matching none of the shipped patterns is left out of the scan entirely -- it is not a
+    screenshot at all, so it is neither renamed nor reported as one left alone.
 
     **Test steps:**
 
@@ -172,9 +284,10 @@ def test_unrecognized_filenames_are_ignored(mocker: MockerFixture) -> None:
     """
     mock_directory(mocker, ["sample-00.jpg", "random_screenshot.jpg"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [ScreenshotRename("info00.jpg", "sample-00.jpg", ("sample-00.jpg",))]
+    assert plan.renames == (ScreenshotRename("info00.jpg", "sample-00.jpg"),)
+    assert not plan.unconverted
 
 
 def test_non_image_extensions_are_ignored(mocker: MockerFixture) -> None:
@@ -188,51 +301,26 @@ def test_non_image_extensions_are_ignored(mocker: MockerFixture) -> None:
     """
     mock_directory(mocker, ["sample-00.jpg", "sample-00.txt"])
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
 
-    assert renames == [ScreenshotRename("info00.jpg", "sample-00.jpg", ("sample-00.jpg",))]
-
-
-def test_corrupt_candidate_loses_the_pixel_ranking(mocker: MockerFixture) -> None:
-    """A candidate whose bytes ``PIL`` can't decode ranks last, rather than aborting the conversion --
-    this runs during `.tc` conversion's plan phase, before any disk mutation, so an unreadable image is
-    strictly safer treated as area ``0`` than left to raise.
-
-    **Test steps:**
-
-    * mock the directory to hold a readable ``cover.jpg`` and a same-slot ``sample-00.png`` whose
-      ``Image.open`` raises ``UnidentifiedImageError``
-    * scan
-    * verify the readable file wins despite its modest pixel size
-    """
-    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
-
-    def open_side_effect(path: Path) -> object:
-        if Path(path).name == "sample-00.png":
-            raise UnidentifiedImageError
-        image = mocker.MagicMock()
-        image.__enter__.return_value.size = (100, 100)
-        return image
-
-    mocker.patch("rehuco_core.tc_screenshots.Image.open", side_effect=open_side_effect)
-
-    renames = scan_tc_screenshots(DIRECTORY, STEM)
-
-    assert renames == [ScreenshotRename("info00.jpg", "cover.jpg", ("cover.jpg", "sample-00.png"))]
+    assert plan.renames == (ScreenshotRename("info00.jpg", "sample-00.jpg"),)
 
 
-def test_missing_directory_returns_an_empty_list(mocker: MockerFixture) -> None:
-    """A missing/unreadable directory (e.g. an offline mount) scans to an empty list, not a crash.
+def test_missing_directory_returns_an_empty_plan(mocker: MockerFixture) -> None:
+    """A missing/unreadable directory (e.g. an offline mount) scans to an empty plan, not a crash.
 
     **Test steps:**
 
     * mock ``Path.iterdir`` to raise ``OSError``
     * scan
-    * verify the result is an empty list
+    * verify both halves of the plan are empty
     """
     mocker.patch.object(Path, "iterdir", side_effect=OSError)
 
-    assert not scan_tc_screenshots(DIRECTORY, STEM)
+    plan = scan_tc_screenshots(DIRECTORY, STEM)
+
+    assert not plan.renames
+    assert not plan.unconverted
 
 
 def test_a_directory_is_scanned_with_the_patterns_it_was_given(mocker: MockerFixture) -> None:
@@ -247,46 +335,46 @@ def test_a_directory_is_scanned_with_the_patterns_it_was_given(mocker: MockerFix
     mock_directory(mocker, ["shot-1.jpg", "shot-2.jpg"])
     patterns = (ScreenshotNamePattern(r"^shot-(\d+)$"),)
 
-    renames = scan_tc_screenshots(DIRECTORY, STEM, patterns)
+    plan = scan_tc_screenshots(DIRECTORY, STEM, patterns)
 
-    assert renames == [
-        ScreenshotRename("info01.jpg", "shot-1.jpg", ("shot-1.jpg",)),
-        ScreenshotRename("info02.jpg", "shot-2.jpg", ("shot-2.jpg",)),
-    ]
+    assert plan.renames == (
+        ScreenshotRename("info01.jpg", "shot-1.jpg"),
+        ScreenshotRename("info02.jpg", "shot-2.jpg"),
+    )
 
 
 # endregion
 
-# region scan_tc_screenshot_files (the reader view: current winner paths)
+# region scan_tc_screenshot_files (the reader view: the numbered files' current paths)
 
 
-def test_screenshot_files_returns_each_slot_winners_path(mocker: MockerFixture) -> None:
-    """The reader lists each recognized slot's current (pre-conversion) winner as an absolute path.
+def test_screenshot_files_returns_each_numbered_files_current_path(mocker: MockerFixture) -> None:
+    """The reader lists the current (pre-conversion) path of every file the conversion would number.
 
     **Test steps:**
 
-    * mock the directory to hold a ``sample-00``/``sample-01`` series (no ties)
+    * mock the directory to hold a ``sample-00``/``sample-01`` series (no collisions)
     * list the screenshot files
-    * verify each winner resolves against :data:`DIRECTORY`, in slot order
+    * verify each resolves against :data:`DIRECTORY`, in slot order
     """
     mock_directory(mocker, ["sample-00.jpg", "sample-01.jpg"])
 
     assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-00.jpg", DIRECTORY / "sample-01.jpg"]
 
 
-def test_screenshot_files_returns_the_winner_on_a_tie(mocker: MockerFixture) -> None:
-    """On a slot tie only the winner's path is listed, not the losing variant.
+def test_screenshot_files_leaves_out_a_file_no_slot_is_free_for(mocker: MockerFixture) -> None:
+    """Only the files that would end up in a slot are listed: one left under its own name has no
+    position in the numbered set to be shown at.
 
     **Test steps:**
 
-    * mock a small ``cover.jpg`` and a large ``sample-00.png`` on the same slot
+    * mock ``cover.jpg`` and ``sample-00.png`` on the same slot
     * list the screenshot files
-    * verify only the larger winner's path comes back
+    * verify only the slot winner's path comes back
     """
     mock_directory(mocker, ["cover.jpg", "sample-00.png"])
-    mock_image_sizes(mocker, {"cover.jpg": (100, 100), "sample-00.png": (1920, 1080)})
 
-    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-00.png"]
+    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "cover.jpg"]
 
 
 def test_screenshot_files_is_empty_for_a_missing_directory(mocker: MockerFixture) -> None:

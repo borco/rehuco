@@ -3,18 +3,19 @@
 
 `rehuco_core.tc_screenshots.scan_tc_screenshots` takes the patterns as a parameter rather than reading a
 constant, so this is where that set comes from -- and the conversion, the wizard's dry run and the
-content walk all take it from here, because a file the conversion renames aside but the walk counts as
-content is the bug the single set exists to prevent: `current_size` would move purely because a
-resource was converted.
+content walk all take it from here, because a file the conversion treats as a screenshot but the walk
+counts as content is the bug the single set exists to prevent: `current_size` would move purely because
+a resource was converted.
 
 **A pattern is an ordinary regular expression** with a slot convention (`rehuco_core.ScreenshotNamePattern`):
 one capture group names the slot the match belongs to, read as an integer; no capture group means slot
-``0``. Patterns are an ordered list -- first match wins -- so reordering the list is a real edit rather
-than a cosmetic one.
+``0``. Patterns are an ordered list -- first match wins, and the earlier pattern's file also takes a slot
+two names want (#288) -- so reordering the list is a real edit rather than a cosmetic one.
 
-The **tie-break** between files landing on one slot (largest pixel area, then ``.jpg``/``.jpeg``, then
-the alphabetically first name) is not stored here and is not the user's, for the reason
-`ExcludedFilesSettings` gives about its own structural tier: it applies whatever this list says.
+What happens **when two names want one slot** -- the earlier pattern wins, one stem under several
+extensions resolves by pixel area, and everything else keeps its own name -- is not stored here and is
+not the user's, for the reason `ExcludedFilesSettings` gives about its own structural tier: it applies
+whatever this list says.
 
 A plain ``@dataclass``, like `ExcludedFilesSettings` and for the same reason: the patterns are read only
 when a scan runs, so nothing on screen changes when they do and there is nothing to watch them change.
