@@ -1,4 +1,4 @@
-"""Tests for the `Conversion Backups…` dialog's table model and its filter proxy (#193).
+"""Tests for the `Conversion Backups…` dialog's table model and its filter proxy (#193, #290).
 
 The inventory builder reads the same here as in `test_conversion_backups_dialog` -- one describes the
 rows the model renders, the other the rows the dialog acts on -- and is kept as a separate copy per
@@ -17,13 +17,10 @@ from rehuco_agent.dialogs.conversion_backups_table_model import (
     CHECKED_COLUMN,
     COLUMN_TITLES,
     CONVERTED_COLUMN,
-    EDITED_SINCE_FLAG,
     FLAGS_COLUMN,
     NO_FLAGS,
     NO_OUTCOME,
-    NOT_REVERTIBLE_FLAG,
     OUTCOME_COLUMN,
-    REFUSED_OUTCOME,
     RESOURCE_COLUMN,
     TIE_BREAK_FLAG,
     ConversionBackupsFilterProxyModel,
@@ -44,17 +41,12 @@ CONVERTED_STAMP: Final = "2023-11-14T22:13:20Z"
 # region Sample inventories
 
 
-# a builder's parameters *are* the shapes worth testing; collapsing them into a config object would put
-# a second vocabulary between each test and the inventory it is about
-def make_backups(  # pylint: disable=too-many-arguments
+def make_backups(
     rehu_path: Path,
     *,
     files: int = 2,
     total_bytes: int = 14_000_000,
-    installed: int = 2,
-    edited_since: bool = False,
-    legacy: bool = True,
-    obstructed: bool = False,
+    dropped_screenshots: int = 0,
     converted: str = CONVERTED_STAMP,
 ) -> ConversionBackups:
     """One resource's inventory, built the way :func:`~rehuco_core.conversion_backups` would report it.
@@ -62,41 +54,31 @@ def make_backups(  # pylint: disable=too-many-arguments
     :param rehu_path: the converted resource.
     :param files: how many image backups it retains.
     :param total_bytes: what they occupy.
-    :param installed: how many ``<stem>NN`` screenshots the conversion installed -- fewer than ``files``
-        is a tie-break.
-    :param edited_since: whether the ``.rehu`` has been saved again since the conversion.
-    :param legacy: whether a backed-up ``.tc`` is here at all.
-    :param obstructed: whether a restore target is occupied.
+    :param dropped_screenshots: how many recognized legacy screenshots a tie-break dropped.
     :param converted: the ``.rehu``'s ``created`` stamp.
     :returns: the inventory.
     """
     directory = rehu_path.parent
-    backups = tuple(directory / f"sample-{index:02}.jpg.orig" for index in range(files))
-    if legacy:
-        backups = (*backups, directory / "info.tc.orig")
-    written = (rehu_path, *(directory / f"info{index:02}.jpg" for index in range(installed)))
+    backups = (*(directory / f"sample-{index:02}.jpg.orig" for index in range(files)), directory / "info.tc.orig")
     return ConversionBackups(
         rehu_path=rehu_path,
         backups=backups,
         total_bytes=total_bytes,
-        written=written,
-        obstructions=(directory / "sample-00.jpg",) if obstructed else (),
-        legacy_restored=(directory / "info.tc") if legacy else None,
-        edited_since=edited_since,
+        dropped_screenshots=dropped_screenshots,
         converted=converted,
     )
 
 
 @fixture(name="model")
 def fixture_model() -> ConversionBackupsTableModel:
-    """A model over three resources: a tie-break, an edited-since, and an unrevertible one."""
+    """A model over three resources: a tie-break and two clean ones."""
     model = ConversionBackupsTableModel()
     model.set_backups(
         ROOT,
         [
-            make_backups(SCULPTING, files=3, installed=2),
-            make_backups(ZBRUSH, edited_since=True, total_bytes=1000),
-            make_backups(PAINTING, legacy=False, total_bytes=2000),
+            make_backups(SCULPTING, files=3, dropped_screenshots=1),
+            make_backups(ZBRUSH, total_bytes=1000),
+            make_backups(PAINTING, total_bytes=2000),
         ],
     )
     return model
@@ -114,8 +96,8 @@ def cell(model: ConversionBackupsTableModel, row: int, column: int) -> str:
 
 
 def test_every_row_starts_checked(model: ConversionBackupsTableModel) -> None:
-    """Nothing here is dangerous to *select* -- the danger is in which action is then run, and both of
-    those confirm -- so the common ending of the import flow is one filter and one click.
+    """Nothing here is dangerous to *select* -- the danger is in which action is then run, and it
+    confirms -- so the common ending of the import flow is one filter and one click.
 
     **Test steps:**
 
@@ -206,71 +188,15 @@ def test_a_tie_break_is_flagged(model: ConversionBackupsTableModel) -> None:
     assert cell(model, 0, FLAGS_COLUMN) == TIE_BREAK_FLAG
 
 
-def test_an_edited_resource_is_flagged(model: ConversionBackupsTableModel) -> None:
-    """Reverting this one costs real work, which is a reason to look before selecting it.
-
-    **Test steps:**
-
-    * read the flags of the edited row
-    * verify it says so
-    """
-    assert cell(model, 1, FLAGS_COLUMN) == EDITED_SINCE_FLAG
-
-
-def test_a_resource_with_no_backed_up_tc_is_flagged_unrevertible(model: ConversionBackupsTableModel) -> None:
-    """Without a backed-up `.tc` this is not a conversion to undo, so only discarding is left -- and the
-    row has to say that before anyone selects it for a revert.
-
-    **Test steps:**
-
-    * read the flags of the row whose backups hold no `.tc`
-    * verify it says so
-    """
-    assert cell(model, 2, FLAGS_COLUMN) == NOT_REVERTIBLE_FLAG
-
-
-def test_a_resource_with_nothing_to_report_shows_a_placeholder() -> None:
+def test_a_resource_with_nothing_to_report_shows_a_placeholder(model: ConversionBackupsTableModel) -> None:
     """An empty flags cell would read as a rendering gap rather than as *nothing to say*.
 
     **Test steps:**
 
-    * build a model over a clean, revertible, unedited resource
+    * read the flags of a clean row
     * verify the flags cell shows the em dash
     """
-    model = ConversionBackupsTableModel()
-    model.set_backups(ROOT, [make_backups(SCULPTING)])
-
-    assert cell(model, 0, FLAGS_COLUMN) == NO_FLAGS
-
-
-def test_every_reason_to_look_is_listed_at_once() -> None:
-    """A resource can be several kinds of interesting, and dropping all but the first would hide the
-    one that mattered.
-
-    **Test steps:**
-
-    * build a model over a resource that is a tie-break, edited, and unrevertible
-    * verify all three flags appear
-    """
-    model = ConversionBackupsTableModel()
-    model.set_backups(ROOT, [make_backups(SCULPTING, files=3, installed=1, edited_since=True, legacy=False)])
-
-    assert cell(model, 0, FLAGS_COLUMN) == f"{TIE_BREAK_FLAG}, {EDITED_SINCE_FLAG}, {NOT_REVERTIBLE_FLAG}"
-
-
-def test_an_occupied_restore_target_is_unrevertible() -> None:
-    """A legacy name the user has since put back by hand refuses the whole revert, exactly as a missing
-    backup does -- so it earns the same flag rather than passing for revertible.
-
-    **Test steps:**
-
-    * build a model over a resource whose restore target is occupied
-    * verify it is flagged unrevertible
-    """
-    model = ConversionBackupsTableModel()
-    model.set_backups(ROOT, [make_backups(SCULPTING, obstructed=True)])
-
-    assert cell(model, 0, FLAGS_COLUMN) == NOT_REVERTIBLE_FLAG
+    assert cell(model, 1, FLAGS_COLUMN) == NO_FLAGS
 
 
 # endregion
@@ -349,18 +275,17 @@ def test_a_finished_action_is_recorded_on_its_row(model: ConversionBackupsTableM
     assert cell(model, 0, OUTCOME_COLUMN) == "discarded"
 
 
-def test_a_refusal_carries_its_reason(model: ConversionBackupsTableModel) -> None:
-    """*A refused revert surfaces the reason and changes nothing* -- and the reason belongs on the row
-    it is about, not in a dialog the reader has already dismissed.
+def test_a_failure_carries_its_reason(model: ConversionBackupsTableModel) -> None:
+    """A read-only mount refuses the unlink, and the reason belongs on the row it is about.
 
     **Test steps:**
 
-    * record a refusal with a reason
+    * record a failure with a reason
     * verify the cell reads both
     """
-    model.set_row_outcome(PAINTING, REFUSED_OUTCOME, "no backed-up .tc file")
+    model.set_row_outcome(PAINTING, "failed", "read-only")
 
-    assert cell(model, 2, OUTCOME_COLUMN) == f"{REFUSED_OUTCOME}: no backed-up .tc file"
+    assert cell(model, 2, OUTCOME_COLUMN) == "failed: read-only"
 
 
 def test_an_outcome_for_a_path_this_model_has_no_row_for_is_dropped(model: ConversionBackupsTableModel) -> None:

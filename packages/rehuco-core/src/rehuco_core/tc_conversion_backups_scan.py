@@ -3,7 +3,7 @@
 
 `rehuco_core.tc_conversion_backups` answers that for **one** resource; this answers it for a catalog. A
 bulk import (#192) leaves thousands of directories holding `.orig` files, and a surface offering to
-revert or discard them has to find them first.
+discard them has to find them first.
 
 **Composed, not re-walked.** The tree walk is
 :func:`~rehuco_core.rehu_catalog.enumerate_catalog_resources` and the per-resource read is
@@ -60,17 +60,6 @@ class ConversionBackupsTreeScan:
     def total_files(self) -> int:
         """How many `.orig` files are retained across every resource here."""
         return sum(len(backups.backups) for backups in self.resources)
-
-    @property
-    def revertible(self) -> int:
-        """How many of these could actually be reverted right now
-        (:attr:`~rehuco_core.ConversionBackups.revertible`)."""
-        return sum(1 for backups in self.resources if backups.revertible)
-
-    @property
-    def edited_since(self) -> int:
-        """How many have been saved again since the conversion, so reverting would discard real edits."""
-        return sum(1 for backups in self.resources if backups.edited_since)
 
     @property
     def tie_break(self) -> int:

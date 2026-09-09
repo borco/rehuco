@@ -233,11 +233,11 @@ class ContentFileScanner:
     **A retained ``.orig`` backup is structural too** (#253) -- and the one thing here excluded on its
     name alone, because a backup belongs to the directory it sits in rather than to a stem, so there is
     no record to look it up against. :func:`~rehuco_core.tc_conversion_backups.is_conversion_backup` is
-    asked rather than the suffix matched here, which keeps the set this walk skips identical to the set a
-    revert would restore ([[acquisition-tooling#convert-mechanics]]). A bulk import retains every backup,
-    so counting them would bake each converted resource's own ``info.tc.orig`` into its first checksum
-    baseline -- and discarding the backups, which is what the manager exists to offer, would then read as
-    a missing file in every resource in the catalog.
+    asked rather than the suffix matched here, so this walk and the backups manager
+    ([[acquisition-tooling#convert-mechanics]]) always agree on what a backup is. A bulk import retains
+    every backup, so counting them would bake each converted resource's own ``info.tc.orig`` into its
+    first checksum baseline -- and discarding the backups, which is what the manager exists to offer,
+    would then read as a missing file in every resource in the catalog.
 
     A screenshot is further ``<record>NN`` plus an
     :data:`~rehuco_core.constants.IMAGE_EXTENSIONS` suffix -- the same predicate
