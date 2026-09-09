@@ -106,7 +106,7 @@ def test_an_edit_outside_the_model_is_refused(model: StringItemListModel) -> Non
     assert model.setData(model.index(0, 0), "x", Qt.ItemDataRole.DisplayRole) is False
 
 
-# Mirrors test_legacy_screenshot_rules_model.py's row-refusal trio exactly -- kept as a separate
+# Mirrors test_screenshot_name_patterns_model.py's row-refusal trio exactly -- kept as a separate
 # copy rather than a shared import, matching this codebase's model-test convention.
 # pylint: disable=duplicate-code
 def test_a_row_operation_under_a_parent_is_refused(model: StringItemListModel) -> None:

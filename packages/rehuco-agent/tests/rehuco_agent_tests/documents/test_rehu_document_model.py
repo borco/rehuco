@@ -30,7 +30,7 @@ from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     EXCLUDED_FILE_PATTERNS,
     FORMAT_VERSION_KEY,
-    LEGACY_SCREENSHOT_RULES,
+    SCREENSHOT_NAME_PATTERNS,
     ConversionBackups,
     LearningPathEntry,
     LockReasonKind,
@@ -1414,7 +1414,7 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
         overwrite=True,
         username="alice",
         excluded_patterns=EXCLUDED_FILE_PATTERNS,
-        legacy_screenshot_rules=LEGACY_SCREENSHOT_RULES,
+        screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS,
     )
 
 

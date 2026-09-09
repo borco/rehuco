@@ -52,11 +52,11 @@ from .settings.document_session_settings import DocumentSessionSettings
 from .settings.excluded_files_settings import shared_excluded_files_settings
 from .settings.identity_settings import shared_identity_settings
 from .settings.image_viewer_settings import shared_image_viewer_settings
-from .settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from .settings.logs_settings import shared_logs_settings
 from .settings.main_window_settings import TOOLBARS_STATE_VERSION, MainWindowSettings
 from .settings.persistent_settings import persistent_settings
 from .settings.recent_files_settings import RecentFilesSettings
+from .settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .settings.session_restore_settings import SessionRestoreSettings
 from .settings.tasks_settings import TasksSettings
 from .settings.theme_settings import ThemeSettings
@@ -66,8 +66,8 @@ from .settings.ui.descriptions_page import DescriptionsPage
 from .settings.ui.excluded_files_page import ExcludedFilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_page import ImagesPage
-from .settings.ui.legacy_screenshots_page import LegacyScreenshotsPage
 from .settings.ui.logs_page import LogsPage
+from .settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from .settings.ui.session_page import SessionPage
 from .settings.ui.settings_dialog import SettingsDialog
 from .settings.ui.tasks_page import TasksPage
@@ -497,7 +497,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
             create_if_missing=settings.create_missing_on_verify,
             migrate_to=settings.migrate_target,
             excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
-            legacy_screenshot_rules=shared_legacy_screenshots_settings().legacy_screenshot_rules,
+            screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
         )
         if job_already_queued(self.__task_queue, label=job.label, source=job.source):
             LOG.info("%s is already in the task queue; it was not queued again.", job.label)
@@ -605,8 +605,8 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Excluded Files", ExcludedFilesPage())
         self.__settings_dialog.add_page("Identity", IdentityPage())
         self.__settings_dialog.add_page("Images", ImagesPage())
-        self.__settings_dialog.add_page("Legacy Screenshots", LegacyScreenshotsPage())
         self.__settings_dialog.add_page("Logs", LogsPage())
+        self.__settings_dialog.add_page("Screenshot Patterns", ScreenshotPatternsPage())
         self.__settings_dialog.add_page("Session", SessionPage())
 
         # the three system-integration pages, one per platform: registered here, between Session and

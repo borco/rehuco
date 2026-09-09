@@ -32,10 +32,10 @@ from rehuco_agent.settings import (
     excluded_files_settings,
     identity_settings,
     image_viewer_settings,
-    legacy_screenshots_settings,
     logs_settings,
     markdown_rendering_settings,
     reference_images_settings,
+    screenshot_patterns_settings,
     tray_settings,
     videos_settings,
 )
@@ -45,10 +45,10 @@ from rehuco_agent.settings.description_editor_settings import shared_description
 from rehuco_agent.settings.excluded_files_settings import shared_excluded_files_settings
 from rehuco_agent.settings.identity_settings import shared_identity_settings
 from rehuco_agent.settings.image_viewer_settings import shared_image_viewer_settings
-from rehuco_agent.settings.legacy_screenshots_settings import shared_legacy_screenshots_settings
 from rehuco_agent.settings.logs_settings import shared_logs_settings
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_agent.settings.reference_images_settings import shared_reference_images_settings
+from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
 from rehuco_agent.settings.videos_settings import shared_videos_settings
@@ -277,21 +277,21 @@ def isolate_shared_excluded_files_settings(mocker: MockerFixture) -> Iterator[No
 
 
 @fixture(autouse=True)
-def isolate_shared_legacy_screenshots_settings(mocker: MockerFixture) -> Iterator[None]:
-    """Isolate every test from the process-wide `LegacyScreenshotsSettings` singleton (#53).
+def isolate_shared_screenshot_patterns_settings(mocker: MockerFixture) -> Iterator[None]:
+    """Isolate every test from the process-wide `ScreenshotPatternsSettings` singleton (#53, #287).
 
     Same rationale as :func:`isolate_shared_excluded_files_settings`: whichever test first builds a
-    `LegacyScreenshotsPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded
+    `ScreenshotPatternsPage` (directly, or via ``MainWindow``) would otherwise pin an instance loaded
     from the developer's real on-disk settings for the rest of the session -- and decide, from that
     file, which images every later test's conversion and content walk treat as legacy screenshots.
 
-    Tests that specifically exercise the legacy-screenshot settings patch ``persistent_settings``
+    Tests that specifically exercise the screenshot-pattern settings patch ``persistent_settings``
     themselves.
     """
-    shared_legacy_screenshots_settings.cache_clear()
-    mocker.patch.object(legacy_screenshots_settings, "persistent_settings", return_value=FakeSettings())
+    shared_screenshot_patterns_settings.cache_clear()
+    mocker.patch.object(screenshot_patterns_settings, "persistent_settings", return_value=FakeSettings())
     yield
-    shared_legacy_screenshots_settings.cache_clear()
+    shared_screenshot_patterns_settings.cache_clear()
 
 
 @fixture(autouse=True)

@@ -75,7 +75,7 @@ from .checksum_record import (
 from .constants import EXCLUDED_FILE_PATTERNS
 from .rehu_content_files import ContentUnreachableError, enumerate_content_files
 from .tc_conversion_backups import backup_path
-from .tc_screenshots import LEGACY_SCREENSHOT_RULES, LegacyScreenshotRule
+from .tc_screenshots import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -481,7 +481,7 @@ def seed_checksum_record(
     rehu_path: Path,
     *,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> LegacySeed | None:
     """Write ``rehu_path``'s ``.checksum`` from the legacy manifest beside it, hashing nothing (#256).
 
@@ -502,7 +502,7 @@ def seed_checksum_record(
     in that order: the file is renamed aside only after the claim it carried is safely somewhere else.
 
     :param rehu_path: the resource's ``.rehu`` file.
-    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, resolved
+    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, resolved
         by the caller alongside ``excluded_patterns``.
     :param excluded_patterns: filename globs the content walk leaves out (#226), resolved by the caller
         -- only content is seeded, so this decides which of the manifest's lines are dropped as naming
@@ -518,7 +518,7 @@ def seed_checksum_record(
     record_path = checksum_record_path(rehu_path)
     if record_path.exists():
         return None
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns, legacy_screenshot_rules)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
     enumeration.require_reachable()
     directory = enumeration.directory
     content_names = [path.relative_to(directory).as_posix() for path in enumeration.files]
@@ -582,7 +582,7 @@ def remediate_legacy_manifest(
     rehu_path: Path,
     *,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
-    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...] = LEGACY_SCREENSHOT_RULES,
+    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
 ) -> LegacySeed | None:
     """Fold a stranded manifest's claim into the record beside it, and retire it (#259).
 
@@ -601,7 +601,7 @@ def remediate_legacy_manifest(
 
     :param rehu_path: the resource's ``.rehu`` file, expected to have a ``.checksum`` already.
     :param excluded_patterns: filename globs the content walk leaves out (#226), resolved by the caller.
-    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by, resolved
+    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by, resolved
         by the caller alongside ``excluded_patterns``.
     :returns: what the manifest contributed, or ``None`` when there was nothing to do -- no record to
         merge into, or no manifest this build can read yielded an entry. Nothing is written or renamed in
@@ -629,7 +629,7 @@ def remediate_legacy_manifest(
         except OSError as error:
             raise ContentUnreachableError(f"The resource's directory could not be read: {rehu_path.parent}") from error
         return None
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns, legacy_screenshot_rules)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
     enumeration.require_reachable()
     directory = enumeration.directory
     content_names = [path.relative_to(directory).as_posix() for path in enumeration.files]

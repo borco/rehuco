@@ -1,5 +1,5 @@
-"""The legacy screenshot rules as a two-column model: a series' cover, and a template for the rest
-([[acquisition-tooling#screenshot-schemes]], #53).
+"""The screenshot name patterns as a one-column model: a plain regex per row
+([[acquisition-tooling#screenshot-schemes]], #53, #287).
 """
 
 # The Qt half and the two protocols' row operations are `AuthorsTableModel`'s almost line for line --
@@ -15,26 +15,21 @@ from typing import Any, Final, override
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, QPersistentModelIndex, Qt, Signal
 from PySide6.QtGui import QBrush, QColor
-from rehuco_core import LEGACY_SCREENSHOT_RULES, LegacyScreenshotRule, LegacyScreenshotRuleMatcher
+from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern
 
 from ...fields.colors import WARNING_COLOR
+from ..screenshot_patterns_settings import pattern_is_valid
 
-COVER_COLUMN: Final = 0
-"""The series' slot-0 filename -- the cell an insert opens, and the one that decides whether the rule
-applies to a directory at all."""
+PATTERN_COLUMN: Final = 0
+"""The row's only column: the raw regex pattern."""
 
-REST_COLUMN: Final = 1
-"""The template every file after the cover matches, carrying the ``#`` run that marks their number."""
+COLUMN_COUNT: Final = 1
 
-COLUMN_COUNT: Final = 2
+COLUMN_TITLES: Final = ("Pattern",)
 
-COLUMN_TITLES: Final = ("Cover", "Rest")
+MISSING_PATTERN_REASON: Final = "A pattern is a regular expression matched against a filename's stem."
 
-MISSING_COVER_REASON: Final = "A rule needs a cover: the file that becomes the first screenshot."
-
-PLACEHOLDER_IN_COVER_REASON: Final = "A cover is one literal filename, so it carries no # placeholder."
-
-MISSING_PLACEHOLDER_REASON: Final = "The rest needs exactly one run of #, marking where the number sits."
+INVALID_PATTERN_REASON: Final = "This does not compile as a regular expression, or carries more than one capture group."
 
 type ModelIndex = QModelIndex | QPersistentModelIndex
 """What Qt hands a model method; the persistent form arrives from a view holding onto an index."""
@@ -44,30 +39,27 @@ type ModelIndex = QModelIndex | QPersistentModelIndex
 # through -- four ordering methods, three editing ones -- none of which this class chose; splitting it
 # would separate the rows from the operations performed on them
 # pylint: disable-next=too-many-public-methods
-class LegacyScreenshotRulesModel(QAbstractTableModel):
-    """The legacy screenshot rules as editable rows of *cover* and *rest* (#53).
+class ScreenshotNamePatternsModel(QAbstractTableModel):
+    """The screenshot name patterns as editable rows of one plain regex each (#53, #287).
 
-    **Order is meaning, not presentation.** The first rule whose cover is present in a directory claims
-    that directory, which is the only thing separating an ``image-00``-first series from an
-    ``image-01``-first one -- so the move actions here change what a conversion does, unlike a list
-    whose order is merely how it reads.
+    **Order matters only for which pattern matches first when more than one could** -- an ordinary
+    list, evaluated top to bottom, so reordering the list is a real edit for exactly that reason.
 
     **Validation is flagged, never enforced**, the same call
-    :class:`~rehuco_agent.fields.widgets.authors_table_model.AuthorsTableModel` makes: a cover that is
-    empty or carries a ``#``, or a rest template without exactly one ``#`` run, colors its cell and
-    explains itself in a tooltip. Nothing refuses the keystroke -- a rule is half-typed for as long as
-    it takes to type it -- and the settings object drops what will not compile on save.
+    :class:`~rehuco_agent.fields.widgets.authors_table_model.AuthorsTableModel` makes: a pattern that is
+    blank, fails to compile, or carries more than one capture group colors its cell and explains itself
+    in a tooltip. Nothing refuses the keystroke -- a pattern is half-typed for as long as it takes to
+    type it -- and the settings object drops what will not compile on save.
 
     **The check is core's own**, asked through
-    :class:`~rehuco_core.LegacyScreenshotRuleMatcher` rather than restated here: a cell is tested by
-    compiling a rule that varies only in the field being judged, so what this page marks invalid is
-    exactly what a scan would refuse.
+    :func:`~rehuco_agent.settings.screenshot_patterns_settings.pattern_is_valid` rather than restated
+    here, which is what keeps what this page marks invalid exactly what a scan would refuse.
 
     **Also an `ItemEditor`/`ItemOrderingEditor`** (structurally -- no explicit `Protocol` inheritance,
     since mixing `Protocol`'s metaclass with Shiboken's raises a metaclass conflict), the same shape
     `AuthorsTableModel` implements, so `ItemListEditor` drives this one identically.
 
-    :param defaults: what :meth:`reset` restores; the shipped rules unless a caller says otherwise.
+    :param defaults: what :meth:`reset` restores; the shipped patterns unless a caller says otherwise.
     :param parent: optional Qt parent.
     """
 
@@ -76,31 +68,31 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
 
     def __init__(
         self,
-        defaults: Sequence[LegacyScreenshotRule] = LEGACY_SCREENSHOT_RULES,
+        defaults: Sequence[ScreenshotNamePattern] = SCREENSHOT_NAME_PATTERNS,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
-        self.__entries: list[LegacyScreenshotRule] = []
-        self.__defaults: tuple[LegacyScreenshotRule, ...] = tuple(defaults)
+        self.__entries: list[ScreenshotNamePattern] = []
+        self.__defaults: tuple[ScreenshotNamePattern, ...] = tuple(defaults)
         self.rowsInserted.connect(self.count_changed)
         self.rowsRemoved.connect(self.count_changed)
         self.modelReset.connect(self.count_changed)
 
     @property
     def count(self) -> int:
-        """How many rules there are -- the `ItemOrderingEditor` contract."""
+        """How many patterns there are -- the `ItemOrderingEditor` contract."""
         return len(self.__entries)
 
     @property
-    def entries(self) -> tuple[LegacyScreenshotRule, ...]:
-        """Every rule, in row order, exactly as typed -- unnormalized, since normalizing is the settings
-        object's (:mod:`~rehuco_agent.settings.legacy_screenshots_settings`)."""
+    def entries(self) -> tuple[ScreenshotNamePattern, ...]:
+        """Every pattern, in row order, exactly as typed -- unnormalized, since normalizing is the
+        settings object's (:mod:`~rehuco_agent.settings.screenshot_patterns_settings`)."""
         return tuple(self.__entries)
 
-    def set_entries(self, entries: Sequence[LegacyScreenshotRule]) -> None:
-        """Replace every row, as one model reset, if the rules actually differ.
+    def set_entries(self, entries: Sequence[ScreenshotNamePattern]) -> None:
+        """Replace every row, as one model reset, if the patterns actually differ.
 
-        :param entries: the rules to show, in order.
+        :param entries: the patterns to show, in order.
         """
         replacement = list(entries)
         if replacement == self.__entries:
@@ -110,30 +102,30 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         self.endResetModel()
 
     @property
-    def defaults(self) -> tuple[LegacyScreenshotRule, ...]:
+    def defaults(self) -> tuple[ScreenshotNamePattern, ...]:
         """What :meth:`reset` restores; an empty one means there is nothing to restore."""
         return self.__defaults
 
     @defaults.setter
-    def defaults(self, defaults: Sequence[LegacyScreenshotRule]) -> None:
+    def defaults(self, defaults: Sequence[ScreenshotNamePattern]) -> None:
         """Set what :meth:`reset` restores.
 
-        :param defaults: the rules Reset should put back.
+        :param defaults: the patterns Reset should put back.
         """
         self.__defaults = tuple(defaults)
 
     def insert(self, at: int) -> int:
-        """Insert a blank rule after ``at``, or at the end -- the `ItemEditor` contract.
+        """Insert a blank pattern after ``at``, or at the end -- the `ItemEditor` contract.
 
         :param at: the row to insert after, or a negative row to append.
-        :returns: the new rule's row.
+        :returns: the new pattern's row.
         """
         target = at + 1 if at >= 0 else len(self.__entries)
         self.insertRow(target)
         return target
 
     def delete(self, at: int) -> None:
-        """Drop one rule -- the `ItemEditor` contract.
+        """Drop one pattern -- the `ItemEditor` contract.
 
         :param at: the row to drop; a negative row is a no-op.
         """
@@ -145,7 +137,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         self.set_entries(self.__defaults)
 
     def move_to_top(self, at: int) -> int:
-        """Move one rule to the first row -- the `ItemOrderingEditor` contract.
+        """Move one pattern to the first row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -153,7 +145,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         return self.__move(at, 0)
 
     def move_up(self, at: int) -> int:
-        """Move one rule up a row -- the `ItemOrderingEditor` contract.
+        """Move one pattern up a row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -161,7 +153,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         return self.__move(at, at - 1)
 
     def move_down(self, at: int) -> int:
-        """Move one rule down a row -- the `ItemOrderingEditor` contract.
+        """Move one pattern down a row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -169,7 +161,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         return self.__move(at, at + 1)
 
     def move_to_bottom(self, at: int) -> int:
-        """Move one rule to the last row -- the `ItemOrderingEditor` contract.
+        """Move one pattern to the last row -- the `ItemOrderingEditor` contract.
 
         :param at: the row to move.
         :returns: the row it ended up at.
@@ -181,7 +173,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
 
         The same single-``moveRow`` discipline
         :meth:`~rehuco_agent.fields.widgets.authors_table_model.AuthorsTableModel.move_up` uses: every
-        other row keeps its index and the selection follows the rule rather than the position.
+        other row keeps its index and the selection follows the pattern rather than the position.
 
         :param row: the row to move.
         :param destination: where to move it to; out-of-range or unchanged is a no-op.
@@ -196,49 +188,16 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         self.moveRow(QModelIndex(), row, QModelIndex(), before)
         return destination
 
-    def row_is_blank(self, row: int) -> bool:
-        """Whether ``row`` holds nothing in either cell -- what makes an insert abandonable.
-
-        Both columns, unlike the base's first-column default: a rule half-typed into its rest column is
-        a rule somebody is writing, and discarding it because the cover is still empty would delete
-        what they had just typed.
+    def invalid_reason(self, row: int) -> str:
+        """Why the pattern at ``row`` is not something a scan could use, if it isn't.
 
         :param row: the row to test.
-        :returns: whether both cells are empty.
+        :returns: the explanation, or an empty string when the pattern is fine.
         """
-        if not 0 <= row < len(self.__entries):
-            return False
-        rule = self.__entries[row]
-        return not rule.cover.strip() and not rule.rest.strip()
-
-    def invalid_reason(self, row: int, column: int) -> str:
-        """Why the cell at ``row``/``column`` is not something a scan could use, if it isn't.
-
-        :param row: the row to test.
-        :param column: :data:`COVER_COLUMN` or :data:`REST_COLUMN`.
-        :returns: the explanation, or an empty string when the cell is fine.
-        """
-        rule = self.__entries[row]
-        if column == COVER_COLUMN:
-            if not rule.cover.strip():
-                return MISSING_COVER_REASON
-            # a rest known to compile, so only the cover can be what a refusal is about
-            return "" if self.__compiles(LegacyScreenshotRule(rule.cover, "#")) else PLACEHOLDER_IN_COVER_REASON
-        # and a cover known to compile, so only the rest can be
-        return "" if self.__compiles(LegacyScreenshotRule("cover", rule.rest)) else MISSING_PLACEHOLDER_REASON
-
-    @staticmethod
-    def __compiles(rule: LegacyScreenshotRule) -> bool:
-        """Whether core would accept ``rule`` -- the scan's own check, not a second spelling of it.
-
-        :param rule: the rule to compile.
-        :returns: whether it compiled.
-        """
-        try:
-            LegacyScreenshotRuleMatcher(rule)
-        except ValueError:
-            return False
-        return True
+        pattern = self.__entries[row].pattern
+        if not pattern.strip():
+            return MISSING_PATTERN_REASON
+        return "" if pattern_is_valid(pattern) else INVALID_PATTERN_REASON
 
     # region Qt model interface
 
@@ -271,10 +230,10 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
     def data(self, index: ModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
-        rule = self.__entries[index.row()]
+        entry = self.__entries[index.row()]
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            return rule.cover if index.column() == COVER_COLUMN else rule.rest
-        reason = self.invalid_reason(index.row(), index.column())
+            return entry.pattern
+        reason = self.invalid_reason(index.row())
         if role == Qt.ItemDataRole.ToolTipRole:
             return reason or None
         if role == Qt.ItemDataRole.ForegroundRole and reason:
@@ -291,18 +250,11 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
         if not index.isValid() or role != Qt.ItemDataRole.EditRole:
             return False
         row = index.row()
-        text = str(value).strip()
-        rule = self.__entries[row]
-        if index.column() == COVER_COLUMN:
-            replacement = LegacyScreenshotRule(text, rule.rest)
-        else:
-            replacement = LegacyScreenshotRule(rule.cover, text)
-        if replacement == rule:
+        replacement = ScreenshotNamePattern(str(value).strip())
+        if replacement == self.__entries[row]:
             return False
         self.__entries[row] = replacement  # pylint: disable=unsupported-assignment-operation
-        # both cells: the two are judged against each other, so a fixed cover can clear the rest's
-        # complaint and vice versa
-        self.dataChanged.emit(index.sibling(row, COVER_COLUMN), index.sibling(row, REST_COLUMN))
+        self.dataChanged.emit(index, index)
         return True
 
     @override
@@ -311,7 +263,7 @@ class LegacyScreenshotRulesModel(QAbstractTableModel):
             return False
         self.beginInsertRows(QModelIndex(), row, row + count - 1)
         self.__entries[row:row] = [  # pylint: disable=unsupported-assignment-operation
-            LegacyScreenshotRule("", "") for _ in range(count)
+            ScreenshotNamePattern("") for _ in range(count)
         ]
         self.endInsertRows()
         return True

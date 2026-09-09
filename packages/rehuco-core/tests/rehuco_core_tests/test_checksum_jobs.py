@@ -21,9 +21,9 @@ from rehuco_core import (
     DEFAULT_CHECKSUM_ALGORITHM,
     DEFAULT_TASK_JOB_REGISTRY,
     FINISHED_JOB_STATES,
-    LEGACY_SCREENSHOT_RULES,
     PROGRESS_UNIT_BYTES,
     PRUNE_REASONS,
+    SCREENSHOT_NAME_PATTERNS,
     ChecksumJob,
     ChecksumReport,
     CoveringRecord,
@@ -37,7 +37,7 @@ from rehuco_core import (
     TaskQueue,
     VerifyChecksumsJob,
     checksum_report_summary,
-    legacy_screenshot_rules_state,
+    screenshot_name_patterns_state,
 )
 
 DIRECTORY: Final = Path("/fake/library/sculpting")
@@ -533,7 +533,7 @@ def test_a_job_writes_down_what_it_needs_to_be_itself_again() -> None:
         "algorithm": DEFAULT_CHECKSUM_ALGORITHM,
         "only": [VIDEO, ARCHIVE],
         "excluded_patterns": ["Thumbs.db"],
-        "legacy_screenshot_rules": legacy_screenshot_rules_state(LEGACY_SCREENSHOT_RULES),
+        "screenshot_name_patterns": screenshot_name_patterns_state(SCREENSHOT_NAME_PATTERNS),
         "create_if_missing": True,
         "stale_days": None,
         "migrate_to": None,

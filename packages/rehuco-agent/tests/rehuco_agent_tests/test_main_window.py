@@ -50,8 +50,8 @@ from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
 from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
-from rehuco_agent.settings.ui.legacy_screenshots_page import LegacyScreenshotsPage
 from rehuco_agent.settings.ui.logs_page import LogsPage
+from rehuco_agent.settings.ui.screenshot_patterns_page import ScreenshotPatternsPage
 from rehuco_agent.settings.ui.settings_dialog import PAGE_ROLE, TITLE_ROLE, SettingsDialog
 from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
@@ -440,8 +440,8 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Excluded Files",
         "Identity",
         "Images",
-        "Legacy Screenshots",
         "Logs",
+        "Screenshot Patterns",
         "Session",
         "Tasks",
         "Videos",
@@ -470,13 +470,13 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
     assert [model.item(row).text() for row in range(model.rowCount())].count("Checksums") == 1
 
 
-def test_registers_the_legacy_screenshots_page(qtbot: QtBot) -> None:
-    """The Legacy Screenshots page (#53) is registered into the settings dialog, once.
+def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
+    """The Screenshot Patterns page (#53, #287) is registered into the settings dialog, once.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the page stack holds a `LegacyScreenshotsPage` and the category tree lists it once
+    * verify the page stack holds a `ScreenshotPatternsPage` and the category tree lists it once
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -485,10 +485,10 @@ def test_registers_the_legacy_screenshots_page(qtbot: QtBot) -> None:
     dialog_ui = settings_dialog._SettingsDialog__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, LegacyScreenshotsPage) for page in pages)
+    assert any(isinstance(page, ScreenshotPatternsPage) for page in pages)
 
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    assert [model.item(row).text() for row in range(model.rowCount())].count("Legacy Screenshots") == 1
+    assert [model.item(row).text() for row in range(model.rowCount())].count("Screenshot Patterns") == 1
 
 
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:

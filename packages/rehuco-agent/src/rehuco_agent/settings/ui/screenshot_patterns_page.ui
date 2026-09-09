@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ScreenshotPatternsPage</class>
+ <widget class="QWidget" name="ScreenshotPatternsPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>620</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="main_layout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="QFrame" name="patterns_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="patterns_frame_layout">
+      <item>
+       <widget class="QLabel" name="patterns_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Screenshot name patterns</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ScreenshotNamePatternsEditor" name="patterns_editor">
+        <property name="toolTip">
+         <string>Each pattern is a regular expression matched against a filename's stem, case-insensitively. One capture group names the slot as a number; no capture group means slot 0. Double-click a cell to edit it.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="patterns_order_label">
+        <property name="text">
+         <string>Order matters only for which pattern matches first when more than one could: an ordinary list, evaluated top to bottom, first match wins. A pattern that fails to compile, or carries more than one capture group, is skipped and shown in red. An empty list falls back to the shipped patterns.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="tie_break_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="tie_break_frame_layout">
+      <item>
+       <widget class="QLabel" name="tie_break_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Always applied</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="tie_break_label">
+        <property name="text">
+         <string>When several files land on the same slot, the one kept is the largest by pixel size, then a .jpg or .jpeg over any other format, then the first by name. The others are still backed up when a resource is converted.</string>
+        </property>
+        <property name="toolTip">
+         <string>This ranking is not configurable — it applies whatever the patterns above say.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="try_it_frame">
+     <property name="frameShape">
+      <enum>QFrame::Shape::StyledPanel</enum>
+     </property>
+     <property name="frameShadow">
+      <enum>QFrame::Shadow::Raised</enum>
+     </property>
+     <layout class="QVBoxLayout" name="try_it_frame_layout">
+      <item>
+       <widget class="QLabel" name="try_it_frame_label">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Try it</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="WrappingLabel" name="try_it_note_label">
+        <property name="text">
+         <string>Type a sample filename to see which slot the patterns above would assign it, updated as you edit them. The sample names are saved with the patterns.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ScreenshotTryItEditor" name="try_it_editor"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottom_spacer">
+     <property name="orientation">
+      <enum>Qt::Orientation::Vertical</enum>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ScreenshotNamePatternsEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.screenshot_name_patterns_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>ScreenshotTryItEditor</class>
+   <extends>QWidget</extends>
+   <header>rehuco_agent.settings.ui.screenshot_try_it_editor</header>
+  </customwidget>
+  <customwidget>
+   <class>WrappingLabel</class>
+   <extends>QLabel</extends>
+   <header>borco_pyside.widgets</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

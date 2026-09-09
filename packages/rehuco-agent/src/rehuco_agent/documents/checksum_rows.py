@@ -36,7 +36,7 @@ from PySide6.QtCore import (
 from rehuco_core import (
     CHECKSUM_FILES_KEY,
     ChecksumRecordError,
-    LegacyScreenshotRule,
+    ScreenshotNamePattern,
     checksum_record_path,
     enumerate_content_files,
     load_checksum_record,
@@ -111,7 +111,7 @@ class ChecksumRows:
 def read_checksum_rows(
     rehu_path: Path,
     excluded_patterns: tuple[str, ...],
-    legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...],
+    screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
 ) -> ChecksumRows:
     """Read one resource's record and enumerate its content, merged into rows (#244).
 
@@ -122,11 +122,11 @@ def read_checksum_rows(
     :param rehu_path: the resource's ``.rehu`` file.
     :param excluded_patterns: the filename globs the content walk leaves out (#226), resolved by the
         caller the way every other core call takes them.
-    :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by (#53),
+    :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53),
         resolved by the caller the same way.
     :returns: the rows, and whether the resource was reachable at all.
     """
-    enumeration = enumerate_content_files(rehu_path, excluded_patterns, legacy_screenshot_rules)
+    enumeration = enumerate_content_files(rehu_path, excluded_patterns, screenshot_name_patterns)
     if not enumeration.reachable:
         return ChecksumRows(reachable=False)
     content = [path.relative_to(rehu_path.parent).as_posix() for path in enumeration.files]
@@ -180,25 +180,25 @@ class ChecksumRowsLoader(QObject):
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
-        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...],
+        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
     ) -> None:
         """Read ``rehu_path``'s rows on a pool thread and emit :attr:`loaded` with them.
 
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out (#226).
-        :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by (#53).
+        :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by (#53).
         """
         self.__generation += 1
         generation = self.__generation
         QThreadPool.globalInstance().start(
-            lambda: self.__run(rehu_path, excluded_patterns, legacy_screenshot_rules, generation)
+            lambda: self.__run(rehu_path, excluded_patterns, screenshot_name_patterns, generation)
         )
 
     def __run(
         self,
         rehu_path: Path,
         excluded_patterns: tuple[str, ...],
-        legacy_screenshot_rules: tuple[LegacyScreenshotRule, ...],
+        screenshot_name_patterns: tuple[ScreenshotNamePattern, ...],
         generation: int,
     ) -> None:
         """Do the read on the worker thread and report it, raise or no raise.
@@ -214,11 +214,11 @@ class ChecksumRowsLoader(QObject):
 
         :param rehu_path: the resource's ``.rehu`` file.
         :param excluded_patterns: the filename globs the content walk leaves out.
-        :param legacy_screenshot_rules: the naming rules a ``.tc``'s screenshots are recognized by.
+        :param screenshot_name_patterns: the naming rules a ``.tc``'s screenshots are recognized by.
         :param generation: which request this is, so a superseded answer can be dropped.
         """
         try:
-            rows = read_checksum_rows(rehu_path, excluded_patterns, legacy_screenshot_rules)
+            rows = read_checksum_rows(rehu_path, excluded_patterns, screenshot_name_patterns)
         except Exception as error:  # pylint: disable=broad-exception-caught
             rows = ChecksumRows(error=str(error))
         if generation != self.__generation:

@@ -80,8 +80,8 @@ and a tree that can be scrolled out of its own viewport.
 
 **Today the tree is one flat list, in alphabetical order** (#277): "Checksums" (`ChecksumsPage`, #242),
 "Descriptions" (`DescriptionsPage`), "Excluded Files" (`ExcludedFilesPage`, #226), "Identity"
-(`IdentityPage`, #99), "Images" (`ImagesPage`), "Legacy Screenshots" (`LegacyScreenshotsPage`, #53),
-"Logs" (`LogsPage`, #200), "Session" (`SessionPage`, #65), "System Integration", "Tasks"
+(`IdentityPage`, #99), "Images" (`ImagesPage`), "Logs" (`LogsPage`, #200), "Screenshot Patterns"
+(`ScreenshotPatternsPage`, #53, #287), "Session" (`SessionPage`, #65), "System Integration", "Tasks"
 (`TasksPage`, #202) and "Videos" (`VideosPage`, #225).
 
 "System Integration" is one page on every platform with a different class behind each (`RegistryPage`
@@ -313,7 +313,9 @@ where three copies would drift into a real defect rather than a cosmetic one.
   selected row's page(s), the "all" actions track whether *any* registered page is dirty.
 - **Frame level** — no page reports this; `SettingsPage.is_dirty()` only ever answers for the whole
   page. `SettingsFrameFilter` derives it generically instead: it snapshots every frame's recognized
-  control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, `StringListEditor`) at
+  control values (`QLineEdit`, `QPlainTextEdit`, `QAbstractButton`, `QSpinBox`, and any `ItemListEditor`,
+  read as every cell's `EditRole` value — so a derived, read-only column such as the try-it table's slot
+  never paints its frame when a pattern above it changes, #287) at
   construction, and `dirty_frames()` compares the live values against that snapshot.
   `resync_baseline()` adopts the current values as the new clean state — the dialog calls it right
   after every `save_changes()`/`drop_changes()`, or `dirty_frames()` would keep comparing against the
@@ -409,9 +411,9 @@ strip a marker back off the text to recognize a row (#277).
   under `ItemListEditor`, the shared machinery the `authors` record rows are built on too (#97), which is
   why a list edited on a settings page and one edited in a document behave identically.
 - Use `ContentSizedTableView` under `ItemListEditor` for a list whose entries are **more than one
-  field**, rather than packing them into one string with a separator. `LegacyScreenshotsPage`'s screenshot
-  name patterns — a regex and the slot it assigns, plus a try-it column showing a sample filename's match
-  (#287) — are the worked example: a small `QAbstractTableModel` over the
+  field**, rather than packing them into one string with a separator. `ScreenshotPatternsPage`'s **Try it**
+  table — a sample filename beside the read-only slot the pattern list assigns it, re-evaluated as either
+  table changes (#287) — is the worked example: a small `QAbstractTableModel` over the
   domain objects supplies the columns, and everything about *how* the list is edited still comes from
   `ItemListEditor`, so it behaves exactly as a `StringListEditor` does. Override the editor's
   `row_is_blank` when a row is only abandonable with *every* cell empty; the base reads the first column
@@ -457,8 +459,14 @@ settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fiel
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
 value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
 only when an enumeration runs, `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
-run does, and `LegacyScreenshotsPage`'s rules only when a `.tc` is scanned or converted, so a plain
-dataclass carries each and there is nothing to watch any of them change;
+run does, and `ScreenshotPatternsPage`'s patterns only when a `.tc` is scanned or converted, so a plain
+dataclass carries each and there is nothing to watch any of them change — though the screenshot one
+holds only **until #281**, which makes an open document's image strip, lightbox and Markdown view
+resolve screenshots with the *configured* patterns rather than the shipped defaults. From then on a
+saved pattern change moves files into and out of an open document's screenshot set, so that page needs
+this recipe applied and #281 is where it lands: the subscriber is `RehuDocumentModel`, which rebuilds
+its scanner in `__make_image_scanner` and announces it through `image_scanner_changed`, the seam the
+strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu` conversion;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
 told a save happened.
 
