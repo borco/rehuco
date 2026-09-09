@@ -460,7 +460,13 @@ accessor, and have consumers subscribe to the signals they care about instead of
 value on every use. Not every block needs this at all — `ImagesPage`'s extension list is read
 only when an enumeration runs, `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
 run does, and `ScreenshotPatternsPage`'s patterns only when a `.tc` is scanned or converted, so a plain
-dataclass carries each and there is nothing to watch any of them change;
+dataclass carries each and there is nothing to watch any of them change — though the screenshot one
+holds only **until #281**, which makes an open document's image strip, lightbox and Markdown view
+resolve screenshots with the *configured* patterns rather than the shipped defaults. From then on a
+saved pattern change moves files into and out of an open document's screenshot set, so that page needs
+this recipe applied and #281 is where it lands: the subscriber is `RehuDocumentModel`, which rebuilds
+its scanner in `__make_image_scanner` and announces it through `image_scanner_changed`, the seam the
+strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu` conversion;
 `RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
 told a save happened.
 
