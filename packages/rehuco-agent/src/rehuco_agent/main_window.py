@@ -140,7 +140,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
     settings dock is the first thing to actually use that room.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # pylint: disable=too-many-statements
         super().__init__()
 
         self.__ui: Final = Ui_MainWindow()
@@ -208,6 +208,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         )
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
+        self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()
@@ -1088,6 +1089,20 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widget = self.__documents_dock.open_archive(resolved)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
+
+    def __on_document_path_changed(self, old_path: Path | None, new_path: Path | None) -> None:
+        """Keep ``Open recents`` (#64) pointed at a document's current path when it moves -- a
+        :meth:`~RehuDocumentModel.convert` in place, or a completed rename (#241).
+
+        The moved document is the same resource, not a fresh open, so its recents entry is swapped in
+        place (:meth:`RecentFilesSettings.replace`) rather than jumping to the newest end; a no-op when
+        ``old_path`` was never actually recorded (e.g. a load-failure stub, #295).
+
+        :param old_path: the path the document moved from.
+        :param new_path: the path it moved to.
+        """
+        if old_path is not None and new_path is not None:
+            self.__recent_files.replace(old_path, new_path)
 
     def raise_and_activate(self) -> None:
         """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).

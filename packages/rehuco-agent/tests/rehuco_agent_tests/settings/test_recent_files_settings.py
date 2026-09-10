@@ -146,6 +146,48 @@ def test_record_drops_the_oldest_entry_past_the_cap() -> None:
 # endregion
 
 
+# region replace tests
+def test_replace_swaps_a_remembered_path_in_place() -> None:
+    """Replacing a remembered path keeps its position rather than moving it to newest (#295).
+
+    **Test steps:**
+
+    * record three paths, oldest to newest
+    * replace the middle one's path
+    * verify the replacement sits where the original did, not at the newest end
+    """
+    recent = RecentFilesSettings()
+    recent.record(FIRST)
+    recent.record(SECOND)
+    recent.record(THIRD)
+
+    replacement = Path.cwd() / "fake" / "second.rehu.converted"
+    recent.replace(SECOND, replacement)
+
+    assert recent.newest_first() == [THIRD, replacement, FIRST]
+
+
+def test_replace_is_a_no_op_for_a_path_never_recorded() -> None:
+    """Replacing a path that was never remembered changes nothing (#295) -- e.g. a document that
+    opened as a load-failure stub and so never entered recents in the first place.
+
+    **Test steps:**
+
+    * record one path
+    * replace an unrelated, never-recorded path
+    * verify the list is unchanged
+    """
+    recent = RecentFilesSettings()
+    recent.record(FIRST)
+
+    recent.replace(SECOND, THIRD)
+
+    assert recent.newest_first() == [FIRST]
+
+
+# endregion
+
+
 # region load/save tests
 def test_save_then_load_round_trips_paths_in_order(settings: FakeSettings) -> None:
     """Saving and reloading reproduces the same paths, in the same MRU order.

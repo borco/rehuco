@@ -21,6 +21,7 @@ from typing import Any, Final
 import PySide6QtAds as QtAds
 from borco_pyside.logging import LogEntry
 from borco_pyside.qtads import tab_label
+from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QDialog, QMessageBox, QWidget
 from pytest import fixture
 from pytest_mock import MockerFixture
@@ -1305,6 +1306,33 @@ def test_dock_object_name_resyncs_across_a_tc_to_rehu_conversion(mocker: MockerF
     widget.model.convert(keep_backups=False)
 
     assert dock_for(dock, widget).objectName() == str(FAKE_PATH)
+
+
+def test_a_tc_to_rehu_conversion_raises_document_path_changed(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A live ``.tc`` -> ``.rehu`` conversion raises :attr:`DocumentsDock.document_path_changed` with
+    the path moved from and to (#295), the seam ``MainWindow`` uses to keep ``Open recents`` current.
+
+    **Test steps:**
+
+    * open a ``.tc`` document and connect a spy to ``document_path_changed``
+    * convert it in place
+    * verify the spy fired once with the ``.tc`` path as old and the ``.rehu`` path as new
+    """
+    mocker.patch.object(Path, "read_text", return_value=TC_TUTORIAL)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    tc_path = FAKE_PATH.with_suffix(".tc")
+    widget = dock.open_document(tc_path)
+    assert widget is not None
+    spy = QSignalSpy(dock.document_path_changed)
+
+    load_document(mocker)
+    rehu_document = RehuDocument.load(FAKE_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=rehu_document)
+    widget.model.convert(keep_backups=False)
+
+    assert spy.count() == 1
+    assert spy.at(0) == [tc_path, FAKE_PATH]
 
 
 def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
