@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QImage
 from rehuco_core import IMAGE_EXTENSIONS, other_record_stems
 
-from ..fields.image_scanner import ScreenshotSet
+from ..fields.image_scanner import AfterConversion, ScreenshotSet
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 if TYPE_CHECKING:
@@ -30,6 +30,11 @@ type ScreenshotLister = Callable[[Path, str], list[Path]]
 """Lists a resource's screenshot files from its ``(directory, stem)`` -- either
 `rehuco_core.scan_rehu_screenshot_files` or `rehuco_core.scan_unconverted_screenshots`, which share
 that signature."""
+
+type AfterConversionLister = Callable[[Path, str], dict[str, AfterConversion]]
+"""Says what each pattern-matched image in one ``(directory, stem)`` is once its `.tc` is converted --
+`~rehuco_agent.documents.tc_conversion_outcomes.scan_after_conversion`, with the configured patterns
+already bound (#293)."""
 
 
 class RehuDocumentImageScanner:
@@ -47,17 +52,27 @@ class RehuDocumentImageScanner:
     :param lister: lists the ``<stem>NN`` files on disk, given the resource's ``(directory, stem)``.
     :param unconverted_lister: lists the pattern-matched images that have no slot yet, given the same
         ``(directory, stem)``.
+    :param after_conversion: says what each pattern-matched image is once the resource is converted,
+        given the same ``(directory, stem)`` (#293) -- what :meth:`after_conversion` reads on a
+        ``.tc``; never called on a ``.rehu``, where there is nothing left to convert. ``None`` -- the
+        default -- leaves :meth:`after_conversion` answering ``None`` outright, for a scanner built
+        (as most tests do) with nothing to say about it.
 
-    Both are taken as arguments rather than called directly so the choice, and the binding of the
-    configured patterns (#281), is made in one place: `RehuDocumentModel.__make_image_scanner`.
+    All three listers are taken as arguments rather than called directly so the choice, and the binding
+    of the configured patterns (#281), is made in one place: `RehuDocumentModel.__make_image_scanner`.
     """
 
     def __init__(
-        self, model: RehuDocumentModel, lister: ScreenshotLister, unconverted_lister: ScreenshotLister
+        self,
+        model: RehuDocumentModel,
+        lister: ScreenshotLister,
+        unconverted_lister: ScreenshotLister,
+        after_conversion: AfterConversionLister | None = None,
     ) -> None:
         self.__model: Final = model
         self.__lister: Final = lister
         self.__unconverted_lister: Final = unconverted_lister
+        self.__after_conversion: Final = after_conversion
 
     def files(self) -> list[Path]:
         """Every recognized screenshot for this resource, as absolute paths.
@@ -97,6 +112,26 @@ class RehuDocumentImageScanner:
             ),
             shared_directory=bool(other_record_stems(directory, stem)),
         )
+
+    def after_conversion(self) -> dict[str, AfterConversion] | None:
+        """What each pattern-matched image is once this resource is converted (#293).
+
+        ``None`` off anything that is not a legacy ``.tc`` with a real path to scan and an
+        ``after_conversion`` lister to ask -- a ``.rehu`` has nothing left to convert, a path-less or
+        :attr:`~RehuDocumentModel.pending` document has no directory to read -- which is what the
+        images dock's *After conversion* column reads as "hide me". Read fresh from the lister on every
+        call rather than cached here, the same as :meth:`screenshots` -- the caller (`ImageSelector`)
+        asks once per rebuild, not once per row.
+
+        :returns: ``{filename: outcome}``, or ``None``; see
+            `~rehuco_agent.documents.tc_conversion_outcomes.after_conversion`.
+        """
+        if self.__after_conversion is None:
+            return None
+        path = self.__model.path
+        if path is None or self.__model.pending or not self.__model.document.legacy_tc:
+            return None
+        return self.__after_conversion(path.parent, path.stem)
 
     def get_markdown_viewer_image(self, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
         """Resolve ``name`` against this resource's own directory, decode it, and scale/tag it for

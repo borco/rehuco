@@ -38,6 +38,7 @@ from ..fields.unknown_field import UnknownField
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .rehu_document_image_scanner import RehuDocumentImageScanner
+from .tc_conversion_outcomes import scan_after_conversion
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -1180,32 +1181,35 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return reason if reason.endswith(".") else f"{reason}."
 
     def __make_image_scanner(self) -> RehuDocumentImageScanner:
-        """Build the screenshot scanner: the ``<stem>NN`` set, plus the images holding no slot yet.
+        """Build the screenshot scanner: the ``<stem>NN`` set, the images holding no slot yet, and what
+        converting would do to each of the latter.
 
-        **The same pair for a `.tc` and a `.rehu`**, deliberately, and not the naming-convention
-        switch this used to be. The numbered half is `scan_rehu_screenshot_files` either way, because
-        it answers what is *on disk* -- a ``.tc``'s directory simply has none yet, which is what being
-        un-converted means; the un-converted half is `scan_unconverted_screenshots` either way, since
-        a pattern-matched image with no slot is the same thing beside either kind of record
-        ([[data-model#image-meanings]], #270).
+        **The same row-listing pair for a `.tc` and a `.rehu`**, deliberately, and not the
+        naming-convention switch this used to be. The numbered half is `scan_rehu_screenshot_files`
+        either way, because it answers what is *on disk* -- a ``.tc``'s directory simply has none yet,
+        which is what being un-converted means; the un-converted half is `scan_unconverted_screenshots`
+        either way, since a pattern-matched image with no slot is the same thing beside either kind of
+        record ([[data-model#image-meanings]], #270).
 
-        The tc rename plan (`scan_tc_screenshots`) is **not** what a ``.tc`` lists from: it reports each
-        slot's winner out of renames that have not run, so a collision the plan would leave alone
+        The tc rename plan (`scan_tc_screenshots`) is **not** what a ``.tc`` lists *from*: it reports
+        each slot's winner out of renames that have not run, so a collision the plan would leave alone
         ([[acquisition-tooling#tc-to-rehu]]) came back looking like the one un-converted file among
-        three that are all un-converted. Every pattern-matched image is a row (#292), and what
-        conversion will do to each is the *After conversion* column's to say (#293) -- a plan, in the
-        one column that admits it is one, rather than a row kind pretending it already happened.
+        three that are all un-converted. Every pattern-matched image is a row (#292); what the plan is
+        good for is the *After conversion* column (#293, `scan_after_conversion`) -- read by
+        :meth:`~rehuco_agent.documents.rehu_document_image_scanner.RehuDocumentImageScanner.after_conversion`,
+        which answers ``None`` off a ``.rehu`` before this third lister is even called.
 
-        The one place both listers are chosen -- and the one place the configured screenshot patterns
-        are bound to the lister that takes them (#281), which otherwise falls back to its shipped
-        default set -- so construction, a conversion, a rename, and a saved patterns change all
+        The one place all three listers are chosen -- and the one place the configured screenshot
+        patterns are bound to the two that take them (#281), which otherwise fall back to their
+        shipped default set -- so construction, a conversion, a rename, and a saved patterns change all
         install a scanner picked the same way.
 
         :returns: the scanner to assign to :attr:`image_scanner`.
         """
         patterns = shared_screenshot_patterns_settings().screenshot_name_patterns
         unconverted_lister = partial(scan_unconverted_screenshots, patterns=patterns)
-        return RehuDocumentImageScanner(self, scan_rehu_screenshot_files, unconverted_lister)
+        after_conversion = partial(scan_after_conversion, patterns=patterns)
+        return RehuDocumentImageScanner(self, scan_rehu_screenshot_files, unconverted_lister, after_conversion)
 
     def __on_screenshot_patterns_changed(self) -> None:
         """Reinstall :attr:`image_scanner` when the shared screenshot patterns are saved.

@@ -12,6 +12,7 @@ from unittest.mock import Mock
 from pytest_mock import MockerFixture
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields.image_scanner import AfterConversion
 from rehuco_agent.settings.markdown_rendering_settings import shared_markdown_rendering_settings
 from rehuco_core import RehuDocument
 
@@ -166,6 +167,82 @@ def test_screenshots_is_empty_without_a_path(mocker: MockerFixture) -> None:
     assert not screenshots.unconverted
     lister.assert_not_called()
     unconverted_lister.assert_not_called()
+
+
+# endregion
+
+
+# region after_conversion (#293)
+def test_after_conversion_delegates_to_the_lister_on_a_legacy_tc(mocker: MockerFixture) -> None:
+    """A legacy ``.tc`` with an `after_conversion` lister asks it for ``(directory, stem)`` and returns
+    its answer.
+
+    **Test steps:**
+
+    * build a scanner over a ``legacy_tc=True`` document at ``/fake/info.tc``, with a stub
+      ``after_conversion`` lister
+    * call ``after_conversion()``
+    * verify the lister was called with ``(/fake, "info")`` and its mapping came straight back
+    """
+    outcomes = {"cover.jpg": AfterConversion("info00.jpg")}
+    after_conversion_lister = mocker.Mock(return_value=outcomes)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots, after_conversion_lister).after_conversion()
+
+    assert result == outcomes
+    after_conversion_lister.assert_called_once_with(Path("/fake"), "info")
+
+
+def test_after_conversion_is_none_on_a_rehu(mocker: MockerFixture) -> None:
+    """A resource that is not a legacy ``.tc`` has nothing left to convert -- the lister is never asked.
+
+    **Test steps:**
+
+    * build a scanner over an ordinary (non-``legacy_tc``) document
+    * call ``after_conversion()``
+    * verify it is ``None`` and the lister was never called
+    """
+    after_conversion_lister = mocker.Mock()
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots, after_conversion_lister).after_conversion()
+
+    assert result is None
+    after_conversion_lister.assert_not_called()
+
+
+def test_after_conversion_is_none_without_an_after_conversion_lister() -> None:
+    """A scanner built without one (the default -- most callers never need it) answers ``None``
+    outright, even on a legacy ``.tc``.
+
+    **Test steps:**
+
+    * build a scanner over a ``legacy_tc=True`` document, omitting ``after_conversion``
+    * call ``after_conversion()``
+    * verify it is ``None``
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+
+    assert RehuDocumentImageScanner(model, no_screenshots, no_screenshots).after_conversion() is None
+
+
+def test_after_conversion_is_none_without_a_path(mocker: MockerFixture) -> None:
+    """A path-less document has no directory to scan -- the lister is never asked.
+
+    **Test steps:**
+
+    * build a scanner over a document that was never given a path
+    * call ``after_conversion()``
+    * verify it is ``None`` and the lister was never called
+    """
+    after_conversion_lister = mocker.Mock()
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots, after_conversion_lister).after_conversion()
+
+    assert result is None
+    after_conversion_lister.assert_not_called()
 
 
 # endregion

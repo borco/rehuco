@@ -44,14 +44,38 @@ class ScreenshotSet:
         return [*self.numbered, *self.unconverted]
 
 
+@dataclass(frozen=True, slots=True)
+class AfterConversion:
+    """What one pattern-matched image is once a `.tc` -> `.rehu` conversion has run (#293).
+
+    Declared here, beside :class:`ScreenshotSet`, because it is part of the :class:`ImageScanner`
+    contract the toolkit's curation editor reads -- the ``documents`` layer fills it in from the
+    conversion's own dry-run plan, and the widget never learns where it came from.
+
+    :ivar name: the filename the image has afterwards -- the ``<stem>NN`` it is renamed to, or its own
+        name when the conversion leaves it alone. What the *After conversion* cell shows.
+    :ivar reason: why it keeps its own name, in the conversion's vocabulary; empty for a renamed image.
+        What the cell's tooltip says.
+    """
+
+    name: str
+    reason: str = ""
+
+    @property
+    def kept(self) -> bool:
+        """Whether the conversion leaves this image under its own name."""
+        return bool(self.reason)
+
+
 class ImageScanner(Protocol):
     """What a field widget needs to resolve a resource's screenshots and embedded images
     ([[data-model#image-meanings]]).
 
     The strip (`ImageStrip`) and the Markdown editor call :meth:`files`, which is every screenshot as
     one sequence; the curation editor calls :meth:`screenshots`, because it is the one surface that
-    treats the two kinds differently; the Markdown viewer calls :meth:`get_markdown_viewer_image`. The
-    concrete scanner provides all three.
+    treats the two kinds differently, and :meth:`after_conversion`, because it is the one surface with
+    a column for it (#293); the Markdown viewer calls :meth:`get_markdown_viewer_image`. The concrete
+    scanner provides all four.
     """
 
     def files(self) -> list[Path]:  # pyright: ignore[reportReturnType]
@@ -65,6 +89,15 @@ class ImageScanner(Protocol):
         """Every recognized screenshot for this resource, the two kinds kept apart (#270).
 
         :returns: the set; see :class:`ScreenshotSet`.
+        """
+
+    def after_conversion(self) -> dict[str, AfterConversion] | None:  # pyright: ignore[reportReturnType]
+        """What each pattern-matched image is once this resource is converted (#293) -- the curation
+        editor's *After conversion* column reads this, and only ever while the document is a legacy
+        ``.tc``.
+
+        :returns: ``{filename: outcome}``, or ``None`` when there is nothing to convert (a ``.rehu``,
+            or a document with no directory to scan yet) -- which is what hides the column.
         """
 
     def get_markdown_viewer_image(self, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
