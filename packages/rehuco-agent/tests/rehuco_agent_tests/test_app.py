@@ -1,5 +1,6 @@
 """Tests for QApplication wiring: single-instance guard and open-path routing."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Final
 
@@ -85,15 +86,16 @@ def test_file_open_event_opens_a_path(mocker: MockerFixture) -> None:
 
 def test_run_forwards_when_not_primary(mocker: MockerFixture) -> None:
     """When another instance already owns the single-instance role, ``run`` returns immediately --
-    and what it forwarded is its own ``argv`` parameter's paths, not the process's real command
-    line, which ``setup``'s ``sys.argv[1:]`` default would silently substitute.
+    and what it forwarded is its own ``argv`` parameter's paths, resolved against *this* process's
+    cwd (#297), not the process's real command line, which ``setup``'s ``sys.argv[1:]`` default
+    would silently substitute.
 
     **Test steps:**
 
     * mock ``Application`` and ``ApplicationSingleton`` so no real Qt objects are involved
     * make ``setup`` report this process is not primary
     * call ``run`` with one path and verify it returns ``0`` without ever calling ``exec``
-    * verify ``setup`` was handed that path explicitly
+    * verify ``setup`` was handed that path's resolved (absolute) form
     """
     app_cls = mocker.patch("rehuco_agent.app.Application")
     singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
@@ -104,7 +106,33 @@ def test_run_forwards_when_not_primary(mocker: MockerFixture) -> None:
 
     assert result == 0
     app_cls.return_value.exec.assert_not_called()
-    singleton.setup.assert_called_once_with(APP_ID, ["a.rehu"])
+    singleton.setup.assert_called_once_with(APP_ID, [str(Path("a.rehu").resolve())])
+
+
+def test_run_resolves_a_relative_path_against_this_processs_cwd(mocker: MockerFixture) -> None:
+    """A relative argv path is resolved to absolute *before* it can cross the process boundary --
+    forwarded to a running primary, or opened by this process itself -- so a running primary's own
+    cwd never enters into it (#297).
+
+    **Test steps:**
+
+    * mock ``Application``/``ApplicationSingleton`` so no real Qt objects are involved
+    * make ``setup`` report this process is primary
+    * call ``run`` with one relative path
+    * verify both ``setup`` and the initial open were handed the path resolved against this
+      process's actual cwd, not the raw relative string
+    """
+    app_cls = mocker.patch("rehuco_agent.app.Application")
+    app_instance = app_cls.return_value
+    singleton_cls = mocker.patch("rehuco_agent.app.ApplicationSingleton")
+    singleton = singleton_cls.return_value
+    singleton.setup.return_value = True
+
+    run(["rehuco-agent", "sub/a.rehu"])
+
+    resolved = str(Path("sub/a.rehu").resolve())
+    singleton.setup.assert_called_once_with(APP_ID, [resolved])
+    app_instance.open_path.assert_any_call(resolved)
 
 
 def test_run_opens_initial_paths_and_execs(mocker: MockerFixture) -> None:
@@ -126,8 +154,8 @@ def test_run_opens_initial_paths_and_execs(mocker: MockerFixture) -> None:
     result = run(["rehuco-agent", "a.rehu", "b.rehu"])
 
     app_instance.show_main_window.assert_called_once_with()
-    app_instance.open_path.assert_any_call("a.rehu")
-    app_instance.open_path.assert_any_call("b.rehu")
+    app_instance.open_path.assert_any_call(str(Path("a.rehu").resolve()))
+    app_instance.open_path.assert_any_call(str(Path("b.rehu").resolve()))
     assert result == 42
 
 

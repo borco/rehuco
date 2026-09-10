@@ -3,6 +3,7 @@
 """
 
 import logging
+from pathlib import Path
 from typing import Final, override
 
 # force PySide6.Qt* imports to run before importing PySide6QtAds: see [[appendices.qt-ads#libxkbcommon-race]]
@@ -181,12 +182,16 @@ def run(argv: list[str]) -> int:
     LOG.info("Settings file: %s", persistent_settings().fileName())
     app = Application(argv)
     singleton = ApplicationSingleton(app)
-    # ``argv[1:]`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]`` default:
-    # the two are the same in production (``run(sys.argv)``), but this function's contract is that
-    # its *parameter* is the argv -- honored when primary (opened below), so also honored when
-    # forwarding, rather than silently substituting the process's real command line
-    if not singleton.setup(APP_ID, argv[1:]):
-        # not primary: setup() already forwarded argv[1:] to the existing primary
+    # resolved here, in the launching process, rather than left to whichever process ends up opening
+    # them: a relative path is only ever meaningful against *this* process's cwd, and once forwarded
+    # to a running primary it would resolve against that primary's cwd instead (#297)
+    resolved_paths = [str(Path(path).resolve()) for path in argv[1:]]
+    # ``resolved_paths`` is passed explicitly rather than left to setup()'s own ``sys.argv[1:]``
+    # default: the two are the same in production (``run(sys.argv)``), but this function's contract
+    # is that its *parameter* is the argv -- honored when primary (opened below), so also honored
+    # when forwarding, rather than silently substituting the process's real command line
+    if not singleton.setup(APP_ID, resolved_paths):
+        # not primary: setup() already forwarded the resolved paths to the existing primary
         return 0
 
     def open_forwarded(paths: list[str]) -> None:
@@ -211,6 +216,6 @@ def run(argv: list[str]) -> int:
 
     # connected before the first call below, so a forward arriving during startup is never missed
     singleton.other_instance_run.connect(open_forwarded)
-    open_forwarded(argv[1:])  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
+    open_forwarded(resolved_paths)  # this (primary) process's own paths, e.g. from Windows ProgID "%1"
 
     return app.exec()
