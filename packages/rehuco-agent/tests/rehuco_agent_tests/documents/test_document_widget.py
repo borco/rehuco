@@ -54,6 +54,7 @@ from rehuco_agent.documents.document_widget import (
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
+from rehuco_agent.fields.image_scanner import AfterConversion
 from rehuco_agent.fields.widgets import (
     AuthorsEditor,
     ImageLightbox,
@@ -64,7 +65,7 @@ from rehuco_agent.fields.widgets import (
     SingleChoiceComboBox,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
-from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, PREVIEW_PANE
+from rehuco_agent.fields.widgets.image_selector import AFTER_CONVERSION_COLUMN, CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
@@ -3452,6 +3453,85 @@ def test_a_rehu_documents_images_dock_is_an_editor_as_before(widget: DocumentWid
     * verify its curation editor is not read-only
     """
     assert image_selector(widget).read_only is False
+
+
+def after_conversion_column(selector: ImageSelector) -> tuple[bool, list[str]]:
+    """Whether the *After conversion* column is showing, and what each row says in it (#293).
+
+    :param selector: the images dock's selector.
+    :returns: ``(visible, cell texts in row order)``.
+    """
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    model = view.model()
+    assert model is not None
+    texts = [
+        model.index(row, AFTER_CONVERSION_COLUMN).data(Qt.ItemDataRole.DisplayRole) for row in range(model.rowCount())
+    ]
+    return not view.isColumnHidden(AFTER_CONVERSION_COLUMN), texts
+
+
+def test_a_legacy_tc_shows_what_conversion_would_do_to_each_image(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The *After conversion* column is present over a ``.tc`` and reads each cell off the plan (#293).
+
+    The text lister is mocked with a known collision, so what is asserted is that the dock shows the
+    plan's answer verbatim -- one source, so the column cannot disagree with what Convert then does.
+
+    **Test steps:**
+
+    * mock the conversion-text lister to rename ``cover.jpg`` and keep ``info-01.jpg`` for a collision
+    * build a widget over a legacy ``.tc`` listing those two images
+    * verify the column is visible and its two cells are the names the plan gives -- the new one, and
+      the kept file's own
+    """
+    plan = {
+        "cover.jpg": AfterConversion("info00.jpg"),
+        "info-01.jpg": AfterConversion("info-01.jpg", "slot 01 taken by sample-01.jpg"),
+    }
+    lister = mocker.patch("rehuco_agent.documents.rehu_document_model.scan_after_conversion", return_value=plan)
+    widget, _model = legacy_over_images(mocker, qtbot)
+
+    visible, texts = after_conversion_column(image_selector(widget))
+
+    assert visible
+    assert texts == ["info00.jpg", "info-01.jpg"]
+    lister.assert_called_with(TC_PATH.parent, TC_PATH.stem, patterns=mocker.ANY)
+
+
+def test_converting_in_place_removes_the_after_conversion_column(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Once the conversion has run there is nothing left to predict, so the column goes with the lock (#293).
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc`` with a mocked text lister, and verify the column is showing
+    * mock the core conversion to return an unlocked document and trigger a convert action for real
+    * verify the same selector no longer shows the column
+    """
+    mocker.patch(
+        "rehuco_agent.documents.rehu_document_model.scan_after_conversion",
+        return_value={"cover.jpg": AfterConversion("info00.jpg")},
+    )
+    widget, _model = legacy_over_images(mocker, qtbot)
+    selector = image_selector(widget)
+    assert after_conversion_column(selector)[0]
+    converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    assert after_conversion_column(selector) == (False, ["", ""])
+
+
+def test_a_rehu_documents_images_dock_has_no_after_conversion_column(widget: DocumentWidget) -> None:
+    """A ``.rehu`` has nothing left to convert, so the column is hidden (#293).
+
+    **Test steps:**
+
+    * build a widget over the sample ``.rehu`` model
+    * verify the column is hidden
+    """
+    assert after_conversion_column(image_selector(widget))[0] is False
 
 
 # endregion

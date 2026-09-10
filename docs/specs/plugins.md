@@ -501,6 +501,17 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   the *other* stems' `<stem>NN`**: its own numbered set, and every pattern-matched image in the directory, since a
   loose `cover.jpg` carries nothing naming whose it is and either record may claim it with Convert. A delete from
   either dock therefore deletes it for both, and the confirmation says so.
+
+  **On a legacy `.tc` only, a column right after the filename — *After conversion* — says what the whole-directory
+  conversion
+  ([[acquisition-tooling#tc-to-rehu]]) would do to each pattern-matched row**, read from the same dry-run scan the
+  conversion itself runs rather than re-decided here, so the column can never disagree with what Convert then
+  does. Every cell is a **filename — the one the file has afterwards**: the `<stem>NN` a row is renamed to, or
+  its own name again for a row the scan leaves alone, so the column reads the same way down its length. *Why* a
+  file keeps its name is the cell's tooltip, in the scan's own vocabulary and nothing else — its slot is taken by
+  an earlier name, by an earlier extension of its own name (the larger one wins), or its own number is at or past
+  the highest slot a conversion will write. No image is ever backed up to an `.orig`, so no fourth outcome exists
+  here. Hidden on a `.rehu`, where every row already has its name and there is nothing left to convert.
 - **Editor**: field editing including the Markdown description; rename from the predefined-candidates list
   ([[data-model#rehu-format]]), which renames on disk. Each scope moves what its own naming convention owns
   ([[data-model#resource-scoping]]): a directory-scoped `info.rehu` renames its **parent directory**, one atomic

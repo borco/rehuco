@@ -21,8 +21,9 @@ from PySide6.QtWidgets import (
 )
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.fields.image_scanner import ScreenshotSet
+from rehuco_agent.fields.image_scanner import AfterConversion, ScreenshotSet
 from rehuco_agent.fields.widgets.image_selector import (
+    AFTER_CONVERSION_COLUMN,
     CHECK_COLUMN,
     DESCRIPTION_HINT,
     DESCRIPTION_HINT_NAME,
@@ -76,10 +77,17 @@ class FakeResource:
         self.no_trash_bin: NoTrashBinError | None = None
         """Set to make an un-deleter'd :meth:`remove` refuse with this, standing in for a location
         with no Recycle Bin (#291) -- an explicit ``deleter`` (the caller's own fallback) bypasses it."""
+        self.outcomes: dict[str, AfterConversion] | None = None
+        """What :meth:`after_conversion` answers (`ImageScanner`, #293) -- ``None`` (a `.rehu`, the
+        default every test but its own gets) hides the *After conversion* column."""
 
     def files(self) -> list[Path]:
         """Every screenshot, numbered first then un-converted (`ImageScanner`)."""
         return self.screenshots().paths()
+
+    def after_conversion(self) -> dict[str, AfterConversion] | None:
+        """What each pattern-matched image is once converted (`ImageScanner`, #293)."""
+        return self.outcomes
 
     def screenshots(self) -> ScreenshotSet:
         """The two row kinds, kept apart (`ImageScanner`, #270)."""
@@ -2018,6 +2026,124 @@ def test_toggling_read_only_is_never_reported_as_a_curation_edit(qtbot: QtBot) -
     selector.read_only = False
 
     assert not emitted
+
+
+# endregion
+
+
+# region the After conversion column (#293)
+
+
+def test_the_column_is_hidden_by_default(qtbot: QtBot) -> None:
+    """A selector with nothing shown yet keeps the *After conversion* column hidden -- there is no
+    scanner to ask.
+
+    **Test steps:**
+
+    * build a bare, un-seeded selector
+    * verify its tree view's *After conversion* column is hidden
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert view.isColumnHidden(AFTER_CONVERSION_COLUMN)
+
+
+def test_the_column_is_hidden_on_a_resource_with_nothing_to_convert(qtbot: QtBot) -> None:
+    """A ``.rehu`` (or any scanner reporting no conversion texts) keeps the column hidden and blank.
+
+    **Test steps:**
+
+    * seed a selector from a resource whose ``after_conversion()`` answers ``None``
+    * verify the column stays hidden and every row's cell is empty
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg"]))
+
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert view.isColumnHidden(AFTER_CONVERSION_COLUMN)
+    assert cell(checkable_model(selector), 0, AFTER_CONVERSION_COLUMN) == ""
+
+
+def test_the_column_shows_the_name_each_image_gets(qtbot: QtBot) -> None:
+    """A legacy ``.tc`` shows the column, each cell the name the scanner says the file becomes -- its
+    own name again for a kept one, whose *why* is the cell's tooltip rather than its text.
+
+    **Test steps:**
+
+    * seed a selector from a resource with a renamed row and a kept one, with outcomes for both
+    * verify the column is visible, the renamed cell is the new name, the kept cell is the file's own
+      name, and only the kept cell carries a tooltip saying why
+    """
+    resource = FakeResource([], unconverted=["cover.jpg", "file.jpg"])
+    resource.outcomes = {
+        "cover.jpg": AfterConversion("info00.jpg"),
+        "file.jpg": AfterConversion("file.jpg", "slot 00 taken by cover.jpg"),
+    }
+
+    selector = seeded(qtbot, resource)
+
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert not view.isColumnHidden(AFTER_CONVERSION_COLUMN)
+    model = checkable_model(selector)
+    assert cell(model, 0, AFTER_CONVERSION_COLUMN) == "info00.jpg"
+    assert cell(model, 1, AFTER_CONVERSION_COLUMN) == "file.jpg"
+    tooltip = Qt.ItemDataRole.ToolTipRole
+    assert model.index(0, AFTER_CONVERSION_COLUMN).data(tooltip) is None
+    assert (
+        model.index(1, AFTER_CONVERSION_COLUMN).data(tooltip) == "Kept under its own name: slot 00 taken by cover.jpg"
+    )
+
+
+def test_the_column_hides_again_once_a_conversion_lands(qtbot: QtBot) -> None:
+    """A ``.tc`` -> ``.rehu`` conversion (#288) drops the column the moment the scanner swaps -- the
+    same seam that already rebuilds the rows on a scanner swap (#72) rebuilds this too.
+
+    **Test steps:**
+
+    * seed a selector from a legacy resource with conversion texts set
+    * swap in a fresh resource reporting ``None`` (what a converted, now-``.rehu`` scanner reports)
+    * verify the column is hidden again
+    """
+    legacy = FakeResource([], unconverted=["cover.jpg"])
+    legacy.outcomes = {"cover.jpg": AfterConversion("info00.jpg")}
+    selector = seeded(qtbot, legacy)
+
+    converted = FakeResource(["info00.jpg"])
+    selector.image_scanner = converted  # type: ignore[assignment]
+
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert view.isColumnHidden(AFTER_CONVERSION_COLUMN)
+
+
+def test_a_scanner_answering_something_other_than_a_mapping_hides_the_column(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A scanner that does not genuinely implement ``after_conversion`` -- an un-configured
+    ``mocker.Mock()``, above all -- is read the same as ``None``: hide the column, describe nothing.
+
+    **Test steps:**
+
+    * build a scanner Mock exposing only ``files``/``screenshots``, with ``after_conversion``
+      left unconfigured (so calling it returns a fresh, unrelated ``Mock``)
+    * assign it to a selector
+    * verify the column stays hidden
+    """
+    selector = ImageSelector()
+    qtbot.addWidget(selector)
+
+    selector.image_scanner = fake_scanner(mocker, [])  # type: ignore[assignment]
+
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    assert view.isColumnHidden(AFTER_CONVERSION_COLUMN)
+
+
+# endregion
 
 
 # endregion

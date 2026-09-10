@@ -6,7 +6,8 @@ preview of the selected item with its pixel dimensions in a bottom-right overlay
 that hold no slot yet (#270) -- each checked by default and showing its pixel dimensions and file size;
 unchecking one **hides** it from the lightbox. The UI is the inverse of storage -- checked = visible, and
 only the hidden exceptions are emitted -- because checked-by-default reads more naturally
-([[data-model#image-meanings]]).
+([[data-model#image-meanings]]). On a legacy ``.tc`` a column right after the name, *After conversion*,
+says what converting would do to each pattern-matched image -- the name it gets, or why it is kept (#293).
 """
 
 # one cohesive widget: its rows, its preview, its split and the renames behind its move/delete buttons
@@ -52,7 +53,7 @@ from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
 from ...item_action_icons import apply_action_column_icons
 from ..image_organizer import ImageOrganizer
-from ..image_scanner import ImageScanner, ScreenshotSet
+from ..image_scanner import AfterConversion, ImageScanner, ScreenshotSet
 
 LOG: Final = logging.getLogger(__name__)
 
@@ -67,8 +68,14 @@ asked of every screenshot -- shown in the lightbox or not -- rather than an orna
 and a column says that where a decorated name cell does not."""
 
 NAME_COLUMN: Final = 1
-DIMENSIONS_COLUMN: Final = 2
-SIZE_COLUMN: Final = 3
+AFTER_CONVERSION_COLUMN: Final = 2
+"""The name this row's file has once its `.tc` is converted (#293) -- the ``<stem>NN`` it becomes, or
+its own name again when the conversion leaves it alone, with *why* in the cell's tooltip. Hidden outright
+on a ``.rehu``, where every row already has its name; see :meth:`ScreenshotListModel.set_rows`. Sits
+right after the name it describes, ahead of the metrics columns that describe the file as it is today."""
+
+DIMENSIONS_COLUMN: Final = 3
+SIZE_COLUMN: Final = 4
 
 CONVERT_ICON: Final = ":/icons/screenshot_convert.svg"
 """The Convert button's glyph ([[plugins#tutorial-plugin]], #270) -- a verb on a button, like every
@@ -203,16 +210,17 @@ class ScreenshotListModel(QAbstractTableModel):
     bracket the reordering of the model's *own* storage, which is a thing a list can do and a bag of
     item widgets cannot.
 
-    Four columns: the curation check box on its own (checked means shown in the lightbox), the
-    filename, the pixel dimensions, and the file size. The rows come in **two kinds** (#270) --
-    the ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, which carry the
-    same check box and can be neither moved nor moved past. Which kind a row is shows in where it
-    sits and in which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
+    Four columns, plus one shown only on a legacy ``.tc`` (#293), right after the name: the curation
+    check box on its own (checked means shown in the lightbox), the filename, what converting would do
+    to the file, the pixel dimensions, and the file size. The rows come in **two kinds** (#270) -- the
+    ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, which carry the same
+    check box and can be neither moved nor moved past. Which kind a row is shows in where it sits and in
+    which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
 
     :param parent: optional Qt parent.
     """
 
-    HEADERS: Final = ("", "Name", "Dimensions", "Size")
+    HEADERS: Final = ("", "Name", "After conversion", "Dimensions", "Size")
     """The check box's column is titled with nothing: what it means is the row it is on, and every
     word tried for it ("Shown", "In lightbox") reads as a claim about the column beside it."""
 
@@ -221,6 +229,7 @@ class ScreenshotListModel(QAbstractTableModel):
         self.__rows: list[ScreenshotRow] = []
         self.__organizer: ImageOrganizer | None = None
         self.__read_only = False
+        self.__after_conversion: dict[str, AfterConversion] | None = None
 
     def set_read_only(self, read_only: bool) -> None:
         """Refuse every edit these rows can make, while still describing the files (#292).
@@ -258,6 +267,12 @@ class ScreenshotListModel(QAbstractTableModel):
         it with, and a document not read-only (:meth:`set_read_only`, #292)."""
         return self.__organizer is not None and not self.__read_only
 
+    @property
+    def after_conversion_column_visible(self) -> bool:
+        """Whether :data:`AFTER_CONVERSION_COLUMN` has anything to show -- the document is currently a
+        legacy ``.tc`` (:meth:`set_rows`, #293)."""
+        return self.__after_conversion is not None
+
     # region the model interface
 
     @override
@@ -289,8 +304,14 @@ class ScreenshotListModel(QAbstractTableModel):
         row = self.__row(index)
         if row is None:
             return None
+        outcome = (self.__after_conversion or {}).get(row.path.name)
         if role == Qt.ItemDataRole.DisplayRole:
-            return ("", row.path.name, row.dimensions, row.size)[index.column()]
+            after_conversion = outcome.name if outcome is not None else ""
+            return ("", row.path.name, after_conversion, row.dimensions, row.size)[index.column()]
+        if role == Qt.ItemDataRole.ToolTipRole and index.column() == AFTER_CONVERSION_COLUMN:
+            # the cell says what the file *becomes*; why it keeps its own name is the tooltip's to say,
+            # so a kept row reads as a name like every other and still answers the question (#293)
+            return f"Kept under its own name: {outcome.reason}" if outcome is not None and outcome.kept else None
         if role == PATH_ROLE and index.column() == NAME_COLUMN:
             return row.path
         if role == Qt.ItemDataRole.CheckStateRole and index.column() == CHECK_COLUMN:
@@ -389,7 +410,13 @@ class ScreenshotListModel(QAbstractTableModel):
         """
         return [row.path.name for row in self.__rows if row.hidden]
 
-    def set_rows(self, numbered: Sequence[Path], unconverted: Sequence[Path], hidden: list[str]) -> None:
+    def set_rows(
+        self,
+        numbered: Sequence[Path],
+        unconverted: Sequence[Path],
+        hidden: list[str],
+        after_conversion: dict[str, AfterConversion] | None = None,
+    ) -> None:
         """Replace every row, reading each screenshot's metrics off disk.
 
         A reset, because it genuinely is one: a different set of screenshots, not a rearrangement of
@@ -402,6 +429,10 @@ class ScreenshotListModel(QAbstractTableModel):
         :param numbered: the ``<stem>NN`` screenshots, in slot order.
         :param unconverted: the pattern-matched images holding no slot, in natural-sort order.
         :param hidden: the filenames to leave unchecked, of either kind.
+        :param after_conversion: what each pattern-matched image is once its ``.tc`` is converted,
+            keyed by filename (#293); ``None`` on anything that is not a legacy ``.tc`` -- what
+            :attr:`after_conversion_column_visible` reads as "hide the column". Adopted in the same
+            reset as the rows it describes, so the two can never show a stale pairing.
         """
         hidden_names = set(hidden)
 
@@ -410,6 +441,7 @@ class ScreenshotListModel(QAbstractTableModel):
 
         self.beginResetModel()
         try:
+            self.__after_conversion = after_conversion
             self.__rows = [row(path, True) for path in numbered] + [row(path, False) for path in unconverted]
         finally:
             self.endResetModel()
@@ -780,8 +812,9 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
 
     def __configure_list(self) -> None:
         """Set the screenshot view up: nothing typed into it, one row acted on at a time, and how the
-        four columns share the width -- the check box and the two metrics take what they need, and the
-        filename gets the rest.
+        columns share the width -- the check box and the metrics take what they need, and the filename
+        gets the rest. The *After conversion* column starts hidden (#293): :meth:`set_screenshots` shows
+        it only for a legacy ``.tc``.
         """
         self.__list.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
         self.__list.setRootIsDecorated(False)
@@ -793,8 +826,10 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         header = self.__list.header()
         header.setSectionResizeMode(CHECK_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(AFTER_CONVERSION_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(DIMENSIONS_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(SIZE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        self.__list.setColumnHidden(AFTER_CONVERSION_COLUMN, True)
 
     def __build_list_pane(self) -> QWidget:
         """The splitter's bottom pane: the screenshot list, its two action columns, and the hint.
@@ -1238,7 +1273,9 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             kind -- so an un-converted row nobody has curated arrives checked.
         """
         self.__shared_directory = screenshots.shared_directory
-        self.__list_model.set_rows(screenshots.numbered, screenshots.unconverted, hidden)
+        after_conversion = self.__after_conversion()
+        self.__list_model.set_rows(screenshots.numbered, screenshots.unconverted, hidden, after_conversion)
+        self.__list.setColumnHidden(AFTER_CONVERSION_COLUMN, after_conversion is None)
         if self.__list_model.rowCount():
             self.__list.setCurrentIndex(self.__list_model.index(0, NAME_COLUMN))
         else:
@@ -1247,6 +1284,22 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         # from a scanner swap, and both mean a viewer over the same directory is now showing stale
         # filenames. It is also what re-reads the count the move buttons gate on (#72).
         self.screenshots_changed.emit()
+
+    def __after_conversion(self) -> dict[str, AfterConversion] | None:
+        """What the current scanner reports for :data:`AFTER_CONVERSION_COLUMN`, defensively (#293).
+
+        ``isinstance``-checked rather than trusted outright: a scanner whose
+        `~rehuco_agent.fields.image_scanner.ImageScanner.after_conversion` answers with anything other
+        than a mapping -- a test double built before this method existed, above all -- is read the
+        same way ``None`` is: hide the column rather than paint whatever it returned.
+
+        :returns: the mapping, or ``None`` when there is no scanner or it has nothing to report.
+        """
+        scanner = self.image_scanner
+        if scanner is None:
+            return None
+        outcomes = scanner.after_conversion()
+        return outcomes if isinstance(outcomes, dict) else None
 
     def hidden_filenames(self) -> list[str]:
         """The filenames of every currently-unchecked (hidden-from-lightbox) row, in list order.
