@@ -69,6 +69,11 @@ class FakeResource:
         """Whether another record shares the directory, which the delete confirm says (#270)."""
         self.convert_failure: Exception | None = None
         """Set to make :meth:`convert` refuse, standing in for a rename the disk would not take."""
+        self.convert_desync = False
+        """Set to make :meth:`convert` report a rename it does not actually apply, standing in for a
+        rescan that has not caught up with a just-completed disk write (a lagging mount,
+        [[mounts-and-storage#offline-mounts]]) -- the row the caller asked to convert is still the row
+        the very next scan reports."""
         self.removed: list[str] = []
         self.failure: OSError | None = None
         """Set to make every rearrangement refuse, standing in for a disk that would not take it."""
@@ -115,8 +120,9 @@ class FakeResource:
         legacy = int(digits) if digits else 0
         slot = legacy if legacy not in taken else max(taken, default=-1) + 1
         converted = f"{STEM}{slot:02d}{path.suffix}"
-        self.unconverted.remove(path.name)
-        self.names = sorted([*self.names, converted])
+        if not self.convert_desync:
+            self.unconverted.remove(path.name)
+            self.names = sorted([*self.names, converted])
         return {path.name: converted}
 
     def reorder(self, ordered: Sequence[Path]) -> dict[str, str]:
@@ -1065,6 +1071,23 @@ def test_the_model_refuses_a_move_that_names_no_second_row() -> None:
     assert [path.name for path in model.paths()] == resource.names == ["info00.jpg", "info01.png"]
 
 
+def test_the_after_conversion_column_is_visible_only_when_the_scanner_reports_outcomes() -> None:
+    """The model's own answer for :data:`AFTER_CONVERSION_COLUMN` -- what
+    :meth:`~ImageSelector.set_rows` bases the column's hidden state on (#293).
+
+    **Test steps:**
+
+    * set rows with no ``after_conversion`` mapping, then with one
+    * verify the property follows: hidden absent, visible present
+    """
+    model = ScreenshotListModel()
+    model.set_rows([DIRECTORY / "info00.jpg"], [], [])
+    assert not model.after_conversion_column_visible
+
+    model.set_rows([], [DIRECTORY / "cover.jpg"], [], {"cover.jpg": AfterConversion("info00.jpg")})
+    assert model.after_conversion_column_visible
+
+
 def test_a_relabel_reports_a_data_change_on_the_renamed_row_alone() -> None:
     """A rename is a data change on the rows whose files moved, not on the whole list (#72).
 
@@ -1635,6 +1658,7 @@ def test_unconverted_images_are_listed_after_the_numbered_set_and_start_checked(
     assert [check_state(model, row) for row in range(4)] == [Qt.CheckState.Checked] * 4
     assert [model.is_numbered(row) for row in range(4)] == [True, True, False, False]
     assert selector.numbered_screenshot_count == 2
+    assert selector.screenshot_count == 4
 
 
 def test_an_unconverted_row_is_curated_like_any_other(qtbot: QtBot) -> None:
@@ -1700,6 +1724,79 @@ def test_converting_relists_the_row_among_the_numbered_set_keeping_its_hidden_st
     assert emitted == [["info01.png"]]
     # and the converted row is the one left current, so the correction is what the user is looking at
     assert selector.current_index == 1
+
+
+def test_converting_an_uncurated_row_reports_no_hidden_change(qtbot: QtBot) -> None:
+    """Converting a row nothing had curated out is still a rename, but not a curation edit: the
+    hidden set is empty before and after, so there is nothing new to tell the document.
+
+    **Test steps:**
+
+    * seed an un-converted image with nothing curated out
+    * convert it
+    * verify it is now numbered and that no ``hidden_changed`` was emitted
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+    emitted: list[list[str]] = []
+    selector.hidden_changed.connect(emitted.append)
+
+    selector.convert_screenshot(1)
+
+    assert row_names(selector) == ["info00.jpg", "info01.jpg"]
+    assert not emitted
+
+
+def test_converting_a_row_the_next_scan_has_not_caught_up_with_leaves_selection_alone(qtbot: QtBot) -> None:
+    """A rescan that has not yet caught up with the rename (a lagging mount,
+    [[mounts-and-storage#offline-mounts]]) leaves the converted name off the relisted rows -- the
+    selection then has nothing of the conversion to follow, and is left as the reseed set it.
+
+    **Test steps:**
+
+    * seed an un-converted image on a resource whose scan will not reflect a just-applied convert
+    * convert it
+    * verify the rows are unchanged and the selection is the reseed's own first row, not the
+      (absent) converted one
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    resource.convert_desync = True
+    selector = seeded(qtbot, resource)
+
+    selector.convert_screenshot(1)
+
+    assert row_names(selector) == ["info00.jpg", "cover.jpg"]
+    assert selector.current_index == 0
+
+
+def test_the_convert_action_converts_the_current_row(qtbot: QtBot) -> None:
+    """The Convert button -- what a user actually presses -- reaches the same conversion
+    :meth:`~ImageSelector.convert_screenshot` performs when called directly.
+
+    Clicked rather than routed through :func:`trigger`: unlike Delete and the ordering actions,
+    Convert is this editor's own (not the toolkit's) and is never registered on the tree view's own
+    action list, only built as a button (see :meth:`ImageSelector.__init__`) -- the same button
+    :func:`action_enabled` already reads.
+
+    **Test steps:**
+
+    * seed an un-converted image, select it, and click its Convert button
+    * verify it is now numbered
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+    selector.set_current_index(1)
+    buttons = [
+        button
+        for column in selector.findChildren(ActionButtonColumn)
+        for button in column.findChildren(QToolButton)
+        if button.defaultAction().text() == "Convert"
+    ]
+    assert len(buttons) == 1
+
+    qtbot.mouseClick(buttons[0], Qt.MouseButton.LeftButton)
+
+    assert row_names(selector) == ["info00.jpg", "info01.jpg"]
 
 
 def test_converting_a_numbered_row_or_one_out_of_range_does_nothing(qtbot: QtBot) -> None:
