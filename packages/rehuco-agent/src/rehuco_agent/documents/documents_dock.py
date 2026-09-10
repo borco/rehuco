@@ -76,6 +76,14 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
     ``MainWindow`` hop."""
 
+    document_path_changed: Signal = Signal(object, object)
+    """Emitted ``(old_path, new_path)`` whenever an open document's :attr:`~RehuDocumentModel.path`
+    moves -- a :meth:`~RehuDocumentModel.convert` swapping a ``.tc`` for its ``.rehu``, or a completed
+    rename (#241) -- so ``MainWindow`` can keep ``Open recents`` (#64) pointed at the file that
+    actually exists instead of the one that was opened (#295). ``old_path`` is the path this dock was
+    built with or last reported here, never ``None`` -- every dock this signal fires for is created
+    from a concrete path (:meth:`__make_new_dock`)."""
+
     def __init__(
         self,
         parent: QWidget | None = None,
@@ -89,6 +97,12 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         self.__task_queue: Final = task_queue
         self.__dock_manager: Final = QtAds.CDockManager(self)
         self.__document_docks: Final[dict[QtAds.CDockWidget, DocumentWidget]] = {}
+        self.__last_known_paths: Final[dict[QtAds.CDockWidget, Path]] = {}
+        """Each open dock's path as last reported through :attr:`document_path_changed` (or, before
+        the first move, the path it was created with) -- kept here rather than read off the model
+        directly because :attr:`~RehuDocumentModel.path_changed` carries only the *new* value, and
+        this signal needs the *old* one too (#295). Entries are seeded in :meth:`__make_new_dock` and
+        dropped in :meth:`__remove_dock`."""
         self.__pending_docks: Final[set[QtAds.CDockWidget]] = set()
         """Docks made by :meth:`restore_session` whose document has not been read yet (#66) -- each is
         loaded (:meth:`__load_pending`) the first time it actually reaches the screen. Two triggers
@@ -491,6 +505,10 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         dock.document_widget.status_message.connect(self.status_message)
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = dock.document_widget  # pylint: disable=unsupported-assignment-operation
+        self.__last_known_paths[dock] = path  # pylint: disable=unsupported-assignment-operation
+        model.path_changed.connect(  # type: ignore[attr-defined]
+            lambda new_path, dock=dock: self.__on_document_path_changed(dock, new_path)
+        )
         if lazy:
             self.__pending_docks.add(dock)
             # the "first time this tab actually reaches the screen" trigger (#66): silent while the
@@ -656,6 +674,19 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # are the dock's own bound methods, so Qt severs them here as well -- nothing to disconnect by hand.
         dock.deleteLater()
         self.__document_docks.pop(dock, None)
+        self.__last_known_paths.pop(dock, None)
+
+    def __on_document_path_changed(self, dock: QtAds.CDockWidget, new_path: Path | None) -> None:
+        """Relay ``dock``'s document moving to a new path as :attr:`document_path_changed`, with the
+        path it moved *from* alongside it (#295).
+
+        :param dock: the dock whose document's :attr:`~RehuDocumentModel.path` just changed.
+        :param new_path: the path it changed to.
+        """
+        old_path = self.__last_known_paths.get(dock)
+        if new_path is not None:
+            self.__last_known_paths[dock] = new_path  # pylint: disable=unsupported-assignment-operation
+        self.document_path_changed.emit(old_path, new_path)
 
     def __confirm_close(self, model: RehuDocumentModel) -> bool:
         """Prompt Save/Discard/Cancel for a dirty ``model``, saving it if the answer is Save.

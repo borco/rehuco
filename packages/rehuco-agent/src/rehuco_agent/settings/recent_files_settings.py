@@ -36,6 +36,22 @@ class RecentFilesSettings:
         while len(self.paths) > MAXIMUM_RECENT_FILES:
             self.paths.popitem(last=False)
 
+    def replace(self, old: Path, new: Path) -> None:
+        """Swap a remembered path for its new one, in place -- the same resource moved, not a fresh
+        open, so it keeps its position instead of jumping to the newest end (#295).
+
+        A no-op when ``old`` isn't currently remembered (the caller isn't sure it was ever recorded,
+        e.g. a load-failure stub that never entered recents in the first place).
+
+        :param old: the path currently remembered.
+        :param new: the path to remember instead.
+        """
+        if old not in self.paths:
+            return
+        rebuilt = OrderedDict((new if path == old else path, None) for path in self.paths)
+        self.paths.clear()
+        self.paths.update(rebuilt)
+
     def newest_first(self) -> list[Path]:
         """Every remembered path, most-recently-opened first."""
         return list(reversed(self.paths))

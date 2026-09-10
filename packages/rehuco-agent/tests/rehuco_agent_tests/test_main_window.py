@@ -1413,6 +1413,32 @@ def test_quit_action_is_the_last_entry_in_the_file_menu(qtbot: QtBot) -> None:
     assert ui.file_menu.actions()[-1] is ui.quit_action
 
 
+def test_a_document_path_change_replaces_its_recents_entry_in_place(qtbot: QtBot) -> None:
+    """When an open document's path moves (a ``.tc`` -> ``.rehu`` conversion, a completed rename),
+    ``Open recents`` (#64) is corrected to the new path in place, not bumped to newest (#295).
+
+    **Test steps:**
+
+    * record an older and a newer path
+    * raise ``document_path_changed`` for the older one moving to a third path
+    * verify the third path sits where the older one did, and the newer one is still newest
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    older = Path("older.tc").resolve()
+    newer = Path("newer.rehu").resolve()
+    moved_to = Path("older.rehu").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    recent_files.record(older)
+    recent_files.record(newer)
+
+    window._MainWindow__documents_dock.document_path_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        older, moved_to
+    )
+
+    assert recent_files.newest_first() == [newer, moved_to]
+
+
 def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
     """``Open recents`` lists every remembered path, most-recently-opened first (#64).
 
