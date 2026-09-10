@@ -59,7 +59,15 @@ from rehuco_agent.settings.ui.tasks_page import TasksPage
 from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
-from rehuco_core import JobControl, JobState, JobStatus, SweepChecksumsJob, TaskJobBase, TaskQueue
+from rehuco_core import (
+    INFO_REHU_FILENAME,
+    JobControl,
+    JobState,
+    JobStatus,
+    SweepChecksumsJob,
+    TaskJobBase,
+    TaskQueue,
+)
 
 SWEEP_ROOT: Final = Path("/fake/library")
 """The folder a sweep test points the chooser at -- never read, since no sweep here does real work."""
@@ -1437,6 +1445,104 @@ def test_a_document_path_change_replaces_its_recents_entry_in_place(qtbot: QtBot
     )
 
     assert recent_files.newest_first() == [newer, moved_to]
+
+
+def test_a_directory_scoped_rename_replaces_the_folder_recorded_in_recents(qtbot: QtBot) -> None:
+    """Renaming a directory-scoped resource that was opened by its folder (#64's ``open_folder``
+    route) corrects that folder's recents entry, not just the ``info.rehu`` path it never held (#296).
+
+    **Test steps:**
+
+    * record the resource's folder, as ``open_folder`` would have
+    * raise ``document_path_changed`` with the ``info.rehu`` paths a rename moves between
+    * verify the recorded folder became the renamed one, in place
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    old_folder = Path("foo").resolve()
+    new_folder = Path("bar").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    recent_files.record(old_folder)
+
+    window._MainWindow__documents_dock.document_path_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        old_folder / INFO_REHU_FILENAME, new_folder / INFO_REHU_FILENAME
+    )
+
+    assert recent_files.newest_first() == [new_folder]
+
+
+def test_a_file_scoped_rename_replaces_the_archive_recorded_in_recents(qtbot: QtBot) -> None:
+    """Renaming a file-scoped resource that was opened by its archive (#64's ``open_archive`` route)
+    corrects that archive's recents entry, which shares the ``.rehu``'s stem but never its extension
+    (#296).
+
+    **Test steps:**
+
+    * record the resource's archive, as ``open_archive`` would have
+    * raise ``document_path_changed`` with the ``.rehu`` paths a rename moves between
+    * verify the recorded archive became the renamed stem under its own extension, in place
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    old_archive = Path("foo.zip").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    recent_files.record(old_archive)
+
+    window._MainWindow__documents_dock.document_path_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        Path("foo.rehu").resolve(), Path("bar.rehu").resolve()
+    )
+
+    assert recent_files.newest_first() == [Path("bar.zip").resolve()]
+
+
+def test_a_rename_corrects_every_recents_entry_the_same_resource_holds(qtbot: QtBot) -> None:
+    """A resource opened once by its ``.rehu`` and once by its archive holds two recents entries --
+    each route records its own path even when it lands on the already-open dock -- and a rename
+    corrects both, each in its own place (#296).
+
+    **Test steps:**
+
+    * record the resource's ``.rehu``, an unrelated path, then the resource's archive
+    * raise ``document_path_changed`` with the ``.rehu`` paths a rename moves between
+    * verify both entries moved to the new stem and neither changed position
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    unrelated = Path("other.rehu").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    recent_files.record(Path("foo.rehu").resolve())
+    recent_files.record(unrelated)
+    recent_files.record(Path("foo.zip").resolve())
+
+    window._MainWindow__documents_dock.document_path_changed.emit(  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+        Path("foo.rehu").resolve(), Path("bar.rehu").resolve()
+    )
+
+    assert recent_files.newest_first() == [Path("bar.zip").resolve(), unrelated, Path("bar.rehu").resolve()]
+
+
+def test_a_document_gaining_its_first_path_leaves_recents_alone(qtbot: QtBot) -> None:
+    """A path change with no path on one side -- a path-less document gaining its first path, or a
+    document losing its path -- touches nothing in ``Open recents``: nothing was recorded under
+    ``None`` to swap, and a first path is not an open (#295).
+
+    **Test steps:**
+
+    * record one path
+    * raise ``document_path_changed`` from ``None`` to a path, then from a path to ``None``
+    * verify the recorded path is still the only entry
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    recorded = Path("recorded.rehu").resolve()
+    recent_files = window._MainWindow__recent_files  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    recent_files.record(recorded)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    documents_dock.document_path_changed.emit(None, Path("first.rehu").resolve())
+    documents_dock.document_path_changed.emit(recorded, None)
+
+    assert recent_files.newest_first() == [recorded]
 
 
 def test_recents_menu_lists_remembered_paths_newest_first(qtbot: QtBot) -> None:
