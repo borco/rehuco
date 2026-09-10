@@ -469,17 +469,16 @@ settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fiel
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
 value on every use. Not every block needs this at all — `ImagesFilesPage`'s extension list is read
-only when an enumeration runs, `ExcludedFilesPage`'s pattern list only when a size scan or a checksum
-run does, and `ScreenshotPatternsPage`'s patterns only when a `.tc` is scanned or converted, so a plain
-dataclass carries each and there is nothing to watch any of them change — though the screenshot one
-holds only **until #281**, which makes an open document's image strip, lightbox and Markdown view
-resolve screenshots with the *configured* patterns rather than the shipped defaults. From then on a
-saved pattern change moves files into and out of an open document's screenshot set, so that page needs
-this recipe applied and #281 is where it lands: the subscriber is `RehuDocumentModel`, which rebuilds
-its scanner in `__make_image_scanner` and announces it through `image_scanner_changed`, the seam the
-strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu` conversion;
-`RegistryPage`'s actions land directly on the OS, so there is no other part of the app that needs to be
-told a save happened.
+only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a
+checksum run does, so a plain dataclass carries each and there is nothing to watch either change.
+`ScreenshotPatternsSettings` used to be the same shape, until an open document's image strip,
+lightbox and Markdown view started resolving screenshots with the *configured* patterns rather than
+the shipped defaults (#281): a saved pattern change now has to move files into and out of an open
+document's screenshot set, so it applies this recipe too — the subscriber is `RehuDocumentModel`,
+which rebuilds its scanner in `__make_image_scanner` and announces it through `image_scanner_changed`,
+the seam the strip, the selector and the Markdown view already rebind on for a `.tc` → `.rehu`
+conversion. `RegistryPage`'s actions land directly on the OS, so there is no other part of the app
+that needs to be told a save happened.
 
 **Testing note:** the `lru_cache`d singleton persists across test functions within one process, and
 would otherwise leak state between tests (or read the developer's real on-disk settings) — see the

@@ -259,10 +259,37 @@ def test_stored_values_replace_the_defaults_entirely() -> None:
     * build a settings object holding one pattern and one sample
     * verify each effective set is exactly that
     """
-    stored = ScreenshotPatternsSettings(patterns=("^cover$",), samples=("shot-3.jpg",))
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("^cover$",)
+    stored.samples = ("shot-3.jpg",)
 
     assert [pattern.pattern for pattern in stored.screenshot_name_patterns] == ["^cover$"]
     assert stored.screenshot_samples == ("shot-3.jpg",)
+
+
+# endregion
+
+# region reactivity
+
+
+def test_patterns_changed_fires_on_assignment(mocker: MockerFixture) -> None:
+    """A reactive ``QObject``, not the plain dataclass this used to be (#281): assigning
+    :attr:`ScreenshotPatternsSettings.patterns` fires ``patterns_changed``, the seam
+    `RehuDocumentModel` follows to reinstall an open document's image scanner.
+
+    **Test steps:**
+
+    * connect a spy to ``patterns_changed`` on a fresh instance
+    * assign a new value to ``patterns``
+    * verify the spy fired with the new value
+    """
+    settings = ScreenshotPatternsSettings()
+    spy = mocker.Mock()
+    settings.patterns_changed.connect(spy)  # type: ignore[attr-defined]
+
+    settings.patterns = ("^cover$",)
+
+    spy.assert_called_once_with(("^cover$",))
 
 
 # endregion
@@ -294,7 +321,9 @@ def test_both_fields_round_trip_through_storage(settings: FakeSettings) -> None:
     * load a second object from the same storage
     * verify it holds the same, in the same order
     """
-    saved = ScreenshotPatternsSettings(patterns=(r"^shot-(\d+)$", "^cover$"), samples=("shot-3.jpg", "cover.png"))
+    saved = ScreenshotPatternsSettings()
+    saved.patterns = (r"^shot-(\d+)$", "^cover$")
+    saved.samples = ("shot-3.jpg", "cover.png")
     saved.save(settings)  # type: ignore[arg-type]
 
     loaded = ScreenshotPatternsSettings()
@@ -312,7 +341,9 @@ def test_both_fields_are_saved_as_lists(settings: FakeSettings) -> None:
     * save a settings object holding two patterns and one sample
     * verify each raw stored value is a ``list``, not a tuple
     """
-    stored = ScreenshotPatternsSettings(patterns=("^cover$", "^file$"), samples=("cover.jpg",))
+    stored = ScreenshotPatternsSettings()
+    stored.patterns = ("^cover$", "^file$")
+    stored.samples = ("cover.jpg",)
     stored.save(settings)  # type: ignore[arg-type]
 
     assert settings.value("screenshot_patterns/patterns") == ["^cover$", "^file$"]

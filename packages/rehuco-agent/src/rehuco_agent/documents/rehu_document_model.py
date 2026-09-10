@@ -9,11 +9,12 @@
 import logging
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any, Final
 
 from borco_core.logging import LogScope
-from borco_pyside.core import SimpleProperty
+from borco_pyside.core import ConnectionList, SimpleProperty
 from PySide6.QtCore import QObject, Signal
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
@@ -417,6 +418,18 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         # immediately, not just at the next explicit recompute seam below
         self.dirty_changed.connect(lambda _dirty: self.__recompute_upgradable())  # type: ignore[attr-defined]
         self.lock_reasons_changed.connect(lambda _reasons: self.__recompute_upgradable())  # type: ignore[attr-defined]
+
+        # a saved patterns edit must reach an already-open document ([[appendices.settings-pages#reacting-to-changes]],
+        # #281): rebuilding here re-emits image_scanner_changed, the seam the strip, the selector and the
+        # Markdown view already rebind on for a .tc -> .rehu conversion. The settings are a process-wide
+        # singleton that outlives every document, and Qt does not sever this lambda when the model dies
+        # with its dock -- so the connection is scoped to the model's lifetime explicitly
+        self.__external_connections: Final = ConnectionList()
+        self.__external_connections.connect(
+            shared_screenshot_patterns_settings().patterns_changed,  # type: ignore[attr-defined]
+            lambda _patterns: self.__on_screenshot_patterns_changed(),
+        )
+        self.__external_connections.clear_on_destroyed(self)
 
         self.resource_type_changed.connect(self.__on_resource_type_changed)  # type: ignore[attr-defined]
         for name in COMMON_FIELD_NAMES:
@@ -1169,13 +1182,30 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
 
         Over `scan_tc_screenshot_files` while the document is :attr:`~RehuDocument.legacy_tc`, over
         `scan_rehu_screenshot_files` once converted or genuinely ``.rehu``-native
-        ([[acquisition-tooling#tc-to-rehu]]). The one place that choice is made, so construction, a
-        conversion, and a rename all install a scanner picked the same way.
+        ([[acquisition-tooling#tc-to-rehu]]). The one place that choice is made -- and the one place the
+        configured screenshot patterns are bound to the ``.tc`` lister (#281), which otherwise falls
+        back to its shipped default set -- so construction, a conversion, a rename, and a saved
+        patterns change all install a scanner picked the same way.
 
         :returns: the scanner to assign to :attr:`image_scanner`.
         """
-        lister = scan_tc_screenshot_files if self.__document.legacy_tc else scan_rehu_screenshot_files
+        if self.__document.legacy_tc:
+            lister = partial(
+                scan_tc_screenshot_files, patterns=shared_screenshot_patterns_settings().screenshot_name_patterns
+            )
+        else:
+            lister = scan_rehu_screenshot_files
         return RehuDocumentImageScanner(self, lister)
+
+    def __on_screenshot_patterns_changed(self) -> None:
+        """Reinstall :attr:`image_scanner` when the shared screenshot patterns are saved.
+
+        A no-op for a `.rehu`-native or already-converted document -- :meth:`__make_image_scanner`
+        only consults the patterns while :attr:`~RehuDocument.legacy_tc`, so rebuilding it is harmless
+        but the extra `image_scanner_changed` emission is worth skipping.
+        """
+        if self.__document.legacy_tc:
+            self.image_scanner = self.__make_image_scanner()
 
     def __on_resource_type_changed(self, value: str) -> None:
         """Switch the document's active type ([[plugins#plugin-blocks]], #83): claim the newly-active

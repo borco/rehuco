@@ -14,10 +14,12 @@
 import json
 import logging
 from collections.abc import Callable, Hashable, Iterator, Sequence
+from functools import partial
 from pathlib import Path
 from typing import Final
 
 import pytest
+import shiboken6
 from borco_pyside.logging import LogEntry
 from pytest import fixture, mark, param, raises
 from pytest_mock import MockerFixture
@@ -26,6 +28,7 @@ from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.rehu_document_image_scanner import RehuDocumentImageScanner
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel, path_label
 from rehuco_agent.fields import FieldsTab, UnknownField
+from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from rehuco_core import (
     CURRENT_FORMAT_VERSION,
     EXCLUDED_FILE_PATTERNS,
@@ -1457,16 +1460,84 @@ def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFix
 
 
 def test_image_scanner_lists_tc_screenshots_for_a_legacy_document() -> None:
-    """A model over a legacy ``.tc``-backed document scans with the tc screenshot lister.
+    """A model over a legacy ``.tc``-backed document scans with the tc screenshot lister, bound to the
+    currently configured patterns (#281) rather than the bare function falling back to its own default.
 
     **Test steps:**
 
     * construct a model over a document with ``legacy_tc=True``
-    * verify ``image_scanner`` is a ``RehuDocumentImageScanner`` over ``scan_tc_screenshot_files``
+    * verify ``image_scanner`` is a ``RehuDocumentImageScanner`` over ``scan_tc_screenshot_files``, bound
+      to the shared settings' effective patterns
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
     assert isinstance(model.image_scanner, RehuDocumentImageScanner)
-    assert lister_of(model.image_scanner) is scan_tc_screenshot_files
+    lister = lister_of(model.image_scanner)
+    assert isinstance(lister, partial)
+    assert lister.func is scan_tc_screenshot_files
+    assert lister.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
+
+
+def test_a_saved_pattern_change_reinstalls_the_scanner_for_a_legacy_document() -> None:
+    """Saving a changed pattern set reaches an already-open legacy document (#281): it reinstalls
+    ``image_scanner``, bound to the new effective patterns, and announces it through
+    ``image_scanner_changed`` -- the seam the strip, the selector and the Markdown view already rebind
+    on for a ``.tc`` -> ``.rehu`` conversion.
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document and record its original scanner
+    * connect to ``image_scanner_changed`` and assign a new pattern to the shared settings
+    * verify a fresh scanner was installed, bound to the new patterns, and the signal fired with it
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
+    original_scanner = model.image_scanner
+    received: list[RehuDocumentImageScanner | None] = []
+    model.image_scanner_changed.connect(received.append)  # type: ignore[attr-defined]
+
+    shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
+
+    assert model.image_scanner is not original_scanner
+    assert received == [model.image_scanner]
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+    lister = lister_of(model.image_scanner)
+    assert isinstance(lister, partial)
+    assert lister.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
+
+
+def test_a_closed_documents_model_stops_following_the_patterns() -> None:
+    """The shared settings outlive every document, so the model's subscription to them is severed when
+    the model is destroyed with its dock -- a saved pattern change afterwards must not fire into the
+    deleted object (the ``ConnectionList`` rationale `Field.bind_external` gives, applied here).
+
+    **Test steps:**
+
+    * build a model over a legacy ``.tc``-backed document
+    * delete the model's C++ object, as closing its dock does
+    * assign a new pattern to the shared settings
+    * verify nothing raised -- a slot firing into the deleted model raises ``RuntimeError``, which
+      pytest-qt reports as an uncaught exception in a slot
+    """
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    shiboken6.delete(model)
+    assert not shiboken6.isValid(model)
+
+    shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
+
+
+def test_a_saved_pattern_change_leaves_a_normal_documents_scanner_untouched(model: RehuDocumentModel) -> None:
+    """A non-legacy document's scanner never consults the patterns, so a saved change leaves it alone.
+
+    **Test steps:**
+
+    * read the shared (non-legacy) fixture's original scanner
+    * assign a new pattern to the shared settings
+    * verify ``image_scanner`` is the exact same instance
+    """
+    original_scanner = model.image_scanner
+
+    shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
+
+    assert model.image_scanner is original_scanner
 
 
 def test_image_scanner_lists_rehu_screenshots_for_a_normal_document(model: RehuDocumentModel) -> None:
