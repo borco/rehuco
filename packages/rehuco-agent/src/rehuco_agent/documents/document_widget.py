@@ -754,16 +754,25 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         return rows
 
     def __set_editors_locked(self, locked: bool) -> None:
-        """Disable every editor dock's content while ``locked`` -- the document's ``format_version`` is
-        newer than this build understands ([[data-model#schema-version]]), so editing it isn't safe.
+        """Apply the document's lock to the editor docks -- a lock reason stands
+        ([[data-model#write-integrity]]), so editing isn't safe: a newer ``format_version``
+        ([[data-model#schema-version]]), or a legacy ``.tc`` awaiting conversion.
 
         Only the content widget is disabled, not the dock itself: the tab/toggle stay usable, so the
         editor is still viewable, just not editable.
 
-        :param locked: whether to disable (``True``) or re-enable (``False``) the editor docks.
+        A **lock-aware** surface is the exception (`LockAware`, #292): it is left enabled and told the
+        lock instead, so the field on it can keep showing what it shows and grey only what edits --
+        the curation editor's rows and preview are exactly what a `.tc` about to be converted is
+        worth looking at. Every field is told either way, since a tab that lost its exemption (a
+        rebuild composing an ordinary field onto it) must still see the lock it is now under.
+
+        :param locked: whether the document is locked.
         """
-        for dock in self.__editor_docks.values():
-            dock.widget().setEnabled(not locked)
+        exempt = self.__form.lock_aware_editor_tabs
+        for tab, dock in self.__editor_docks.items():
+            dock.widget().setEnabled(not locked or tab in exempt)
+        self.__form.set_locked(locked)
 
     def __update_write_action_visibility(self) -> None:
         """Swap the toolbar's write action for whichever one is actually meaningful right now,

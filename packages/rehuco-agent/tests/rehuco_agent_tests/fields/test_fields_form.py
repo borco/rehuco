@@ -23,10 +23,15 @@ from rehuco_agent.fields.field import (
     FieldsTab,
     FieldViewerWidgets,
     ImageActivator,
+    LockAware,
     StatusReporter,
 )
 from rehuco_agent.fields.fields_form import CONTENT_COLUMN, LABEL_COLUMN, MISC_COLUMN, FieldsForm
+from rehuco_agent.fields.image_scanner import ScreenshotSet
+from rehuco_agent.fields.images_field import ImagesField as RealImagesField
+from rehuco_agent.fields.widgets import ImageSelector
 
+from rehuco_agent_tests.fields.field_testers import TEST_EDITOR_TAB, TEST_VIEWER_TAB
 from rehuco_agent_tests.fields.field_testers import AuthorsFieldTester as AuthorsField
 from rehuco_agent_tests.fields.field_testers import ImagesFieldTester as ImagesField
 from rehuco_agent_tests.fields.field_testers import TextFieldTester as TextField
@@ -732,3 +737,72 @@ def test_connect_status_messages_routes_reporting_fields_to_the_sink(qtbot: QtBo
     assert relayed == ["https://example.com/alice"]
     assert isinstance(authors, StatusReporter)
     assert not isinstance(plain, StatusReporter)
+
+
+def empty_scanner(mocker: MockerFixture) -> object:
+    """An ``ImageScanner`` stand-in for a resource with no screenshots at all.
+
+    :param mocker: pytest-mock fixture.
+    :returns: the stand-in scanner.
+    """
+    return mocker.Mock(files=mocker.Mock(return_value=[]), screenshots=mocker.Mock(return_value=ScreenshotSet()))
+
+
+def test_set_locked_routes_lock_aware_fields_and_leaves_the_rest(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """``set_locked`` hands the document's lock to each ``LockAware`` field and to nobody else (#292).
+
+    The same owner-routes-it shape ``connect_status_messages`` has: the form knows who implements the
+    contract, and what the lock *means* is each field's own answer.
+
+    **Test steps:**
+
+    * build a form of a plain field and an ``images`` field (a ``LockAware``), with its editor built
+    * lock the form, then unlock it
+    * verify the images editor followed both ways, and that only the ``images`` field is ``LockAware``
+    """
+    plain = TextField("title")
+    images = ImagesField("hidden_images", image_scanner=empty_scanner(mocker))
+    form = FieldsForm([plain, images])
+    editor = images.make_editor(model.bind(images)).editor
+    assert isinstance(editor, ImageSelector)
+    qtbot.addWidget(editor)
+
+    form.set_locked(True)
+    assert editor.read_only is True
+
+    form.set_locked(False)
+    assert editor.read_only is False
+    assert isinstance(images, LockAware)
+    assert not isinstance(plain, LockAware)
+
+
+def test_a_tab_is_exempt_from_the_lock_only_when_every_field_on_it_is_lock_aware(
+    mocker: MockerFixture,
+) -> None:
+    """The owner may leave a tab enabled only when nothing on it would stay editable by mistake (#292).
+
+    **Test steps:**
+
+    * build a form whose ``images`` field has a tab to itself and verify that tab is exempt
+    * build another where a plain field shares it and verify it is not
+    """
+    scanner = empty_scanner(mocker)
+    images_tab = FieldsTab("Test Images", ":/test/images.svg")
+    alone = RealImagesField(
+        "hidden_images",
+        image_scanner=scanner,  # type: ignore[arg-type]
+        viewer_tab=TEST_VIEWER_TAB,
+        editor_tab=images_tab,
+    )
+
+    assert FieldsForm([TextField("title"), alone]).lock_aware_editor_tabs == frozenset({images_tab})
+
+    shared = RealImagesField(
+        "hidden_images",
+        image_scanner=scanner,  # type: ignore[arg-type]
+        viewer_tab=TEST_VIEWER_TAB,
+        editor_tab=TEST_EDITOR_TAB,
+    )
+    assert FieldsForm([TextField("title"), shared]).lock_aware_editor_tabs == frozenset()
