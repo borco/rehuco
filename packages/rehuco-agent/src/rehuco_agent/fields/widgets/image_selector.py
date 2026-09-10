@@ -2,10 +2,11 @@
 
 A two-pane **vertical** :class:`QSplitter` whose split position is persisted per ``.rehu`` (#72): on top a
 preview of the selected item with its pixel dimensions in a bottom-right overlay; below it a
-:class:`QTreeView` of *all* ``<stem>NN`` screenshot siblings, each checked by default and showing its
-pixel dimensions and file size; unchecking one **hides** it from the lightbox. The UI is the inverse of
-storage -- checked = visible, and only the hidden exceptions are emitted -- because checked-by-default
-reads more naturally ([[data-model#image-meanings]]).
+:class:`QTreeView` of every screenshot sibling -- the ``<stem>NN`` set, then the pattern-matched images
+that hold no slot yet (#270) -- each checked by default and showing its pixel dimensions and file size;
+unchecking one **hides** it from the lightbox. The UI is the inverse of storage -- checked = visible, and
+only the hidden exceptions are emitted -- because checked-by-default reads more naturally
+([[data-model#image-meanings]]).
 """
 
 # one cohesive widget: its rows, its preview, its split and the renames behind its move/delete buttons
@@ -14,13 +15,14 @@ reads more naturally ([[data-model#image-meanings]]).
 # pylint: disable=too-many-lines
 
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, override
 
 import humanize
 from borco_pyside.core import SimpleProperty
+from borco_pyside.theming import ActionIconThemeHandler
 from borco_pyside.widgets import ItemEditActionsColumn, ItemOrderingActionsColumn
 from PIL import Image
 from PySide6.QtCore import (
@@ -43,22 +45,50 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QTreeView,
+    QVBoxLayout,
     QWidget,
 )
 from rehuco_core import DEFAULT_DELETER, Deleter, NoTrashBinError
 
 from ...item_action_icons import apply_action_column_icons
 from ..image_organizer import ImageOrganizer
-from ..image_scanner import ImageScanner
+from ..image_scanner import ImageScanner, ScreenshotSet
 
 LOG: Final = logging.getLogger(__name__)
 
 PATH_ROLE: Final = Qt.ItemDataRole.UserRole
 """The item-data role storing each list entry's screenshot :class:`~pathlib.Path`."""
 
-NAME_COLUMN: Final = 0
-DIMENSIONS_COLUMN: Final = 1
-SIZE_COLUMN: Final = 2
+CHECK_COLUMN: Final = 0
+"""The curation check box's own column ([[plugins#tutorial-plugin]], #270).
+
+Its own rather than the name column's, so both row kinds present it identically: it is one question
+asked of every screenshot -- shown in the lightbox or not -- rather than an ornament on a filename,
+and a column says that where a decorated name cell does not."""
+
+NAME_COLUMN: Final = 1
+DIMENSIONS_COLUMN: Final = 2
+SIZE_COLUMN: Final = 3
+
+CONVERT_ICON: Final = ":/icons/screenshot_convert.svg"
+"""The Convert button's glyph ([[plugins#tutorial-plugin]], #270) -- a verb on a button, like every
+other icon in the two action columns beside it.
+
+No row *decoration* is drawn from it, or from anything else. A marker on the un-converted rows would
+exist to tell them from the numbered ones, and the two things that already do that -- the position
+(after the numbered set) and which buttons light up -- say it without a glyph that means nothing on a
+legacy `.tc`, where every row is un-converted and there is no other kind to contrast with."""
+
+DESCRIPTION_HINT: Final = (
+    "Converting, moving or deleting an image renames files on disk. The description is never rewritten."
+)
+"""The dock's one-line standing note ([[plugins#tutorial-plugin]], #270).
+
+Every action here is a rename, and an embed pointing at a name that moved or vanished is left exactly
+as the user wrote it -- so the surface that does the renaming is where that is said."""
+
+DESCRIPTION_HINT_NAME: Final = "description_hint"
+"""The hint label's object name -- what finds it among the pane's other labels."""
 
 PREVIEW_PANE: Final = 0
 LIST_PANE: Final = 1
@@ -147,12 +177,16 @@ class ScreenshotRow:
         inverse of the check box, since storage records only the hidden exceptions.
     :ivar dimensions: its ``W x H`` pixel size, blank when unreadable.
     :ivar size: its humanized file size, blank when unreadable.
+    :ivar numbered: whether it holds a ``<stem>NN`` slot (#270). The un-converted rows are the ones
+        that do not: they are screenshots by the name patterns and are curated like any other, but
+        there is no position for the move buttons to change, and Convert is offered instead.
     """
 
     path: Path
     hidden: bool
     dimensions: str
     size: str
+    numbered: bool = True
 
 
 class ScreenshotListModel(QAbstractTableModel):
@@ -169,13 +203,18 @@ class ScreenshotListModel(QAbstractTableModel):
     bracket the reordering of the model's *own* storage, which is a thing a list can do and a bag of
     item widgets cannot.
 
-    Three columns: the filename (checkable -- checked means shown in the lightbox), the pixel
-    dimensions, and the file size.
+    Four columns: the curation check box on its own (checked means shown in the lightbox), the
+    filename, the pixel dimensions, and the file size. The rows come in **two kinds** (#270) --
+    the ``<stem>NN`` set first, then the pattern-matched images that hold no slot yet, which carry the
+    same check box and can be neither moved nor moved past. Which kind a row is shows in where it
+    sits and in which buttons light up on it; nothing decorates it (see :data:`CONVERT_ICON`).
 
     :param parent: optional Qt parent.
     """
 
-    HEADERS: Final = ("Name", "Dimensions", "Size")
+    HEADERS: Final = ("", "Name", "Dimensions", "Size")
+    """The check box's column is titled with nothing: what it means is the row it is on, and every
+    word tried for it ("Shown", "In lightbox") reads as a claim about the column beside it."""
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -230,10 +269,10 @@ class ScreenshotListModel(QAbstractTableModel):
         if row is None:
             return None
         if role == Qt.ItemDataRole.DisplayRole:
-            return (row.path.name, row.dimensions, row.size)[index.column()]
+            return ("", row.path.name, row.dimensions, row.size)[index.column()]
         if role == PATH_ROLE and index.column() == NAME_COLUMN:
             return row.path
-        if role == Qt.ItemDataRole.CheckStateRole and index.column() == NAME_COLUMN:
+        if role == Qt.ItemDataRole.CheckStateRole and index.column() == CHECK_COLUMN:
             # the UI is the inverse of storage: checked = visible ([[data-model#image-meanings]])
             return Qt.CheckState.Unchecked if row.hidden else Qt.CheckState.Checked
         return None
@@ -253,7 +292,7 @@ class ScreenshotListModel(QAbstractTableModel):
         :returns: whether anything changed.
         """
         row = self.__row(index)
-        if row is None or role != Qt.ItemDataRole.CheckStateRole or index.column() != NAME_COLUMN:
+        if row is None or role != Qt.ItemDataRole.CheckStateRole or index.column() != CHECK_COLUMN:
             return False
         hidden = Qt.CheckState(value) == Qt.CheckState.Unchecked
         if hidden == row.hidden:
@@ -266,8 +305,10 @@ class ScreenshotListModel(QAbstractTableModel):
     def flags(self, index: QModelIndex | QPersistentModelIndex) -> Qt.ItemFlag:
         """What can be done with one cell.
 
-        The name column is checkable; nothing is editable, since there is no text here a user writes
-        -- a screenshot's name is its position in the set, which the move buttons decide.
+        The check column is checkable, on **both** row kinds -- a picture the patterns recognize is a
+        screenshot whether or not it has a slot yet (#270), so it is curated like any other. Nothing
+        is editable, since there is no text here a user writes -- a screenshot's name is its position
+        in the set, which the move buttons decide.
 
         :param index: the cell asked about.
         :returns: its flags.
@@ -275,7 +316,7 @@ class ScreenshotListModel(QAbstractTableModel):
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
         flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if index.column() == NAME_COLUMN:
+        if index.column() == CHECK_COLUMN:
             flags |= Qt.ItemFlag.ItemIsUserCheckable
         return flags
 
@@ -302,6 +343,19 @@ class ScreenshotListModel(QAbstractTableModel):
         """
         return [row.path for row in self.__rows]
 
+    @property
+    def numbered_count(self) -> int:
+        """How many rows hold a ``<stem>NN`` slot -- the length of the orderable prefix (#270)."""
+        return sum(1 for row in self.__rows if row.numbered)
+
+    def is_numbered(self, row: int) -> bool:
+        """Whether one row holds a slot, and so can be moved and moved past.
+
+        :param row: the row asked about.
+        :returns: whether it is a numbered screenshot; a row out of range is not.
+        """
+        return 0 <= row < len(self.__rows) and self.__rows[row].numbered
+
     def hidden_filenames(self) -> list[str]:
         """The filenames of every screenshot curated out of the lightbox, in row order.
 
@@ -309,19 +363,28 @@ class ScreenshotListModel(QAbstractTableModel):
         """
         return [row.path.name for row in self.__rows if row.hidden]
 
-    def set_rows(self, paths: list[Path], hidden: list[str]) -> None:
+    def set_rows(self, numbered: Sequence[Path], unconverted: Sequence[Path], hidden: list[str]) -> None:
         """Replace every row, reading each screenshot's metrics off disk.
 
         A reset, because it genuinely is one: a different set of screenshots, not a rearrangement of
         this one. Every other edit here reports itself more precisely.
 
-        :param paths: every screenshot sibling, in display order.
-        :param hidden: the filenames to leave unchecked.
+        The un-converted rows follow the numbered ones and are checked unless ``hidden`` names them
+        (#270) -- the same rule the numbered set follows, which is what makes "checked by default"
+        true of a picture that has never been curated either way.
+
+        :param numbered: the ``<stem>NN`` screenshots, in slot order.
+        :param unconverted: the pattern-matched images holding no slot, in natural-sort order.
+        :param hidden: the filenames to leave unchecked, of either kind.
         """
         hidden_names = set(hidden)
+
+        def row(path: Path, is_numbered: bool) -> ScreenshotRow:
+            return ScreenshotRow(path, path.name in hidden_names, *self.metrics(path), numbered=is_numbered)
+
         self.beginResetModel()
         try:
-            self.__rows = [ScreenshotRow(path, path.name in hidden_names, *self.metrics(path)) for path in paths]
+            self.__rows = [row(path, True) for path in numbered] + [row(path, False) for path in unconverted]
         finally:
             self.endResetModel()
 
@@ -344,7 +407,9 @@ class ScreenshotListModel(QAbstractTableModel):
         """
         if self.__organizer is None or source == target:
             return False
-        if not 0 <= source < len(self.__rows) or not 0 <= target < len(self.__rows):
+        # both ends inside the numbered prefix: an un-converted row holds no slot, so there is
+        # neither a position for it to leave nor one for a numbered row to take from it (#270)
+        if not self.is_numbered(source) or not self.is_numbered(target):
             return False
         # beginMoveRows names the position the row lands *before*, counted with the row still in
         # place -- so moving down is one past the row wanted, while moving up is the row itself
@@ -357,7 +422,8 @@ class ScreenshotListModel(QAbstractTableModel):
         try:
             ordered = list(self.__rows)
             ordered.insert(target, ordered.pop(source))
-            renamed = self.__relabelled(ordered, self.__organizer.reorder([row.path for row in ordered]))
+            renames = self.__organizer.reorder([row.path for row in ordered if row.numbered])
+            renamed = self.__relabelled(ordered, renames)
             self.__rows = ordered
         finally:
             self.endMoveRows()
@@ -381,8 +447,12 @@ class ScreenshotListModel(QAbstractTableModel):
         self.beginRemoveRows(QModelIndex(), row, row)
         try:
             remaining = self.__rows[:row] + self.__rows[row + 1 :]
+            # only the numbered survivors close the gap: deleting an un-converted image leaves the
+            # slots exactly as they were, and handing them the whole list would number them (#270)
             renames = self.__organizer.remove(
-                self.__rows[row].path, [screenshot.path for screenshot in remaining], deleter
+                self.__rows[row].path,
+                [screenshot.path for screenshot in remaining if screenshot.numbered],
+                deleter,
             )
             renamed = self.__relabelled(remaining, renames)
             self.__rows = remaining
@@ -488,8 +558,15 @@ class ScreenshotOrdering(QObject):
 
     @property
     def count(self) -> int:
-        """How many screenshots the list is showing."""
-        return self.__selector.screenshot_count
+        """How many rows the ordering buttons may move between -- the **numbered** prefix, not every
+        row (#270).
+
+        What the column reads to grey Down and Bottom out on the last row, so the last *numbered*
+        screenshot is where the set ends: an un-converted row below it is not a place to move to.
+        The column being disabled outright while such a row is current is the other half of that, and
+        lives in :meth:`ImageSelector.__apply_row_actions`.
+        """
+        return self.__selector.numbered_screenshot_count
 
     def insert(self, at: int) -> int:
         """No-op: there is no blank screenshot to add (see the class docstring).
@@ -591,6 +668,10 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         # show gets there first, so a document's own remembered split is never overwritten by the default
         self.__pending_split = True
         self.__previews_visible = True
+        # whether another record shares this resource's directory ([[data-model#resource-scoping]]):
+        # read off the scanner with the rows and kept, because the delete confirmation is where it
+        # matters -- a loose image the two records both list is deleted for both of them (#270)
+        self.__shared_directory = False
         # the split as it stood when the preview was toggled away, held until it comes back (#71)
         self.__stashed_state: bytes | None = None
 
@@ -608,16 +689,7 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.__list_model: Final = ScreenshotListModel(self)
         self.__list: Final = QTreeView()
         self.__list.setModel(self.__list_model)
-        self.__list.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
-        self.__list.setRootIsDecorated(False)
-        self.__list.setUniformRowHeights(True)
-        self.__list.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
-        # a row is one file, and every action here acts on one: a multi-select would promise a bulk
-        # move or delete that neither the buttons nor the rename plan behind them can carry out
-        self.__list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.__list.header().setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
-        self.__list.header().setSectionResizeMode(DIMENSIONS_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
-        self.__list.header().setSectionResizeMode(SIZE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        self.__configure_list()
         self.__ordering: Final = ScreenshotOrdering(self)
         # the two ignores are the ones `ItemListEditor` needs for the same reason: PySide types a
         # class-level ``Signal`` as ``Signal``, not as the ``SignalInstance`` an *instance* exposes,
@@ -638,19 +710,17 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
             self.__list.addAction(action)
         # the same glyphs every other list editor in the app wears, from the one place naming them
         apply_action_column_icons(self.__ordering_actions, self.__item_actions)
+        # Convert is this editor's own action rather than one of the toolkit's, so it is built and
+        # dressed here: nothing else in the app takes a file into a numbered set (#270). It joins the
+        # item column because that is where a row's own actions live -- Delete is already there
+        self.__convert_action: Final = self.__item_actions.add_action(
+            "Convert",
+            "Take this image into the numbered set, under the number its own name already carries",
+        )
+        ActionIconThemeHandler(self.__convert_action, CONVERT_ICON)
+        self.__convert_action.triggered.connect(self.__on_convert)
 
-        list_pane = QWidget()
-        row = QHBoxLayout(list_pane)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.__list, 1)
-        # ordering first, so the column that moves the row the buttons point at sits against the list
-        row.addWidget(self.__ordering_actions)
-        row.addWidget(self.__item_actions)
-        for column in (self.__ordering_actions, self.__item_actions):
-            # the columns are button-sized and the list fills the pane, so a centred column would
-            # float its first button somewhere down the middle of the screenshots
-            row.setAlignment(column, Qt.AlignmentFlag.AlignTop)
-        self.addWidget(list_pane)
+        self.addWidget(self.__build_list_pane())
 
         # the list takes every pixel a resize hands out, so the preview keeps the height it was given:
         # a configured height that grew along with the dock would not be a configured height at all.
@@ -663,7 +733,56 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
+        self.current_index_changed.connect(self.__apply_row_actions)
+        self.screenshots_changed.connect(self.__apply_row_actions)
         self.__apply_organizer()
+
+    def __configure_list(self) -> None:
+        """Set the screenshot view up: nothing typed into it, one row acted on at a time, and how the
+        four columns share the width -- the check box and the two metrics take what they need, and the
+        filename gets the rest.
+        """
+        self.__list.setEditTriggers(QTreeView.EditTrigger.NoEditTriggers)
+        self.__list.setRootIsDecorated(False)
+        self.__list.setUniformRowHeights(True)
+        self.__list.setSelectionBehavior(QTreeView.SelectionBehavior.SelectRows)
+        # a row is one file, and every action here acts on one: a multi-select would promise a bulk
+        # move or delete that neither the buttons nor the rename plan behind them can carry out
+        self.__list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        header = self.__list.header()
+        header.setSectionResizeMode(CHECK_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(NAME_COLUMN, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(DIMENSIONS_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(SIZE_COLUMN, QHeaderView.ResizeMode.ResizeToContents)
+
+    def __build_list_pane(self) -> QWidget:
+        """The splitter's bottom pane: the screenshot list, its two action columns, and the hint.
+
+        :returns: the pane, ready to be added to the splitter.
+        """
+        list_pane = QWidget()
+        pane = QVBoxLayout(list_pane)
+        pane.setContentsMargins(0, 0, 0, 0)
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        pane.addLayout(row, 1)
+        # a muted standing note rather than a warning: it is true of every action here, always, so it
+        # belongs under the list it describes rather than in a dialog somebody has to dismiss (#270).
+        # Disabled, not stylesheet-greyed, so the muting is the current theme's own disabled text
+        hint = QLabel(DESCRIPTION_HINT)
+        hint.setObjectName(DESCRIPTION_HINT_NAME)
+        hint.setWordWrap(True)
+        hint.setEnabled(False)
+        pane.addWidget(hint)
+        row.addWidget(self.__list, 1)
+        # ordering first, so the column that moves the row the buttons point at sits against the list
+        row.addWidget(self.__ordering_actions)
+        row.addWidget(self.__item_actions)
+        for column in (self.__ordering_actions, self.__item_actions):
+            # the columns are button-sized and the list fills the pane, so a centred column would
+            # float its first button somewhere down the middle of the screenshots
+            row.setAlignment(column, Qt.AlignmentFlag.AlignTop)
+        return list_pane
 
     def set_hidden(self, hidden: list[str]) -> None:
         """Resync the checked/unchecked rows from ``hidden``, rebuilding from the current scanner.
@@ -681,8 +800,13 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
 
     @property
     def screenshot_count(self) -> int:
-        """How many screenshots the list is showing."""
+        """How many screenshots the list is showing, of both kinds."""
         return self.__list_model.rowCount()
+
+    @property
+    def numbered_screenshot_count(self) -> int:
+        """How many of them hold a ``<stem>NN`` slot -- the rows the move buttons act among (#270)."""
+        return self.__list_model.numbered_count
 
     def screenshot_paths(self) -> list[Path]:
         """Every screenshot shown, in the order the rows are in.
@@ -719,10 +843,56 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         paths = self.screenshot_paths()
         if not self.__list_model.can_rearrange or not 0 <= at < len(paths):
             return
-        if not self.__confirmed_delete(paths[at]):
+        if not self.__confirmed_delete(paths[at], numbered=self.__list_model.is_numbered(at)):
             return
         if self.__rearranged(lambda: self.__remove_with_fallback(at)):
             self.set_current_index(min(at, len(paths) - 2))
+
+    def convert_screenshot(self, at: int) -> None:
+        """Take one un-converted row into the numbered set (#265, #270).
+
+        Not confirmed, unlike a delete: the file keeps its bytes, its extension and its place in the
+        resource, and the only thing that changes -- its slot -- is what the move buttons change
+        freely. The row is re-listed among the numbered set and left current, so the correction the
+        user just made is what they are looking at.
+
+        The curated-out set follows the rename ([[data-model#image-meanings]]): a picture unchecked
+        while it was ``cover.jpg`` is still unchecked as ``info03.jpg``.
+
+        :param at: the row to convert; out of range, already numbered, or with no organizer, is a
+            no-op.
+        """
+        organizer = self.image_organizer
+        paths = self.screenshot_paths()
+        if organizer is None or not 0 <= at < len(paths) or self.__list_model.is_numbered(at):
+            return
+        hidden = self.hidden_filenames()
+        try:
+            renames = organizer.convert(paths[at])
+        except OSError:
+            LOG.exception("could not convert this resource's screenshot")
+            # reseeded for the same reason a failed rearrangement is: the directory is the only
+            # trustworthy account of what is where now
+            self.__rebuild(hidden)
+            return
+        except (LookupError, ValueError) as error:
+            # nothing was renamed, so the rows still describe the disk -- only the user needs telling
+            QMessageBox.warning(self, "Cannot convert screenshot", f"{paths[at].name} cannot be numbered: {error}")
+            return
+        remapped = [renames.get(name, name) for name in hidden]
+        # a full reseed rather than a row move: the file has a new name *and* a new place among the
+        # rows, and where it lands is the scan's answer rather than something computed here
+        self.__rebuild(remapped)
+        converted = paths[at].with_name(renames[paths[at].name])
+        relisted = self.screenshot_paths()
+        if converted in relisted:
+            self.set_current_index(relisted.index(converted))
+        if set(remapped) != set(hidden):
+            self.hidden_changed.emit(remapped)
+
+    def __on_convert(self) -> None:
+        """Convert the current row -- what the Convert button and its action trigger."""
+        self.convert_screenshot(self.current_index)
 
     def __remove_with_fallback(self, at: int) -> bool:
         """Delete row ``at``, offering a permanent delete when `~rehuco_core.NoTrashBinError` refuses
@@ -746,18 +916,31 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
                 return False
             return self.__list_model.remove_row(at, deleter=DEFAULT_DELETER)
 
-    def __confirmed_delete(self, path: Path) -> bool:
+    def __confirmed_delete(self, path: Path, *, numbered: bool) -> bool:
         """Ask before deleting ``path``, saying which of the two outcomes it will have (#291).
 
+        Three sentences, each earned by the row: what happens to the file (the Recycle Bin setting),
+        what happens to the rest (only a numbered row leaves a gap to close, #270), and -- in a
+        multi-record directory -- that an un-converted image is listed by the other record's dock too,
+        so this deletes it there as well ([[data-model#resource-scoping]]).
+
         :param path: the screenshot about to be deleted.
+        :param numbered: whether it holds a slot, and so whether anything is renumbered after it.
         :returns: whether the user confirmed.
         """
         to_trash = self.image_organizer is not None and self.image_organizer.deletes_to_trash
         outcome = "moved to the Recycle Bin." if to_trash else "permanently removed from disk. This cannot be undone."
-        text = (
-            f"Delete <b>{path.name}</b> from this resource?<br><br>The file is {outcome} "
-            "The screenshots after it are renumbered to close the gap."
+        consequence = (
+            " The screenshots after it are renumbered to close the gap."
+            if numbered
+            else " It holds no slot, so nothing is renumbered."
         )
+        shared = (
+            " Another resource shares this folder and lists this image too -- deleting it here deletes it for both."
+            if not numbered and self.__shared_directory
+            else ""
+        )
+        text = f"Delete <b>{path.name}</b> from this resource?<br><br>The file is {outcome}{consequence}{shared}"
         return self.__confirmed("Delete screenshot", text)
 
     def __confirmed(self, title: str, text: str) -> bool:
@@ -814,6 +997,25 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         available = self.__list_model.can_rearrange
         self.__ordering_actions.setEnabled(available)
         self.__item_actions.setEnabled(available)
+        self.__apply_row_actions()
+
+    def __apply_row_actions(self) -> None:
+        """Grey out what the **current row kind** cannot do (#270).
+
+        Two rules, and the row is what decides both: an un-converted row holds no position, so no
+        move is offered on one; a numbered row has nothing left to convert, so Convert is not offered
+        on it. Whether the resource can be rearranged at all gates both -- that is the *column's*
+        enabled state, and :meth:`__apply_organizer`'s answer.
+
+        This narrows, never widens: the ordering column has just recomputed its own four rules
+        (first/last within the numbered set) off the same two signals, and is connected ahead of this
+        because it is built first, so switching them back on here would undo them.
+        """
+        numbered = self.__list_model.is_numbered(self.current_index)
+        if not numbered:
+            for action in self.__ordering_action_list():
+                action.setEnabled(False)
+        self.__convert_action.setEnabled(self.__list_model.can_rearrange and self.current_index >= 0 and not numbered)
 
     def __ordering_action_list(self) -> tuple[QAction, ...]:
         """The ordering column's four actions, in column order.
@@ -963,20 +1165,21 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         :param hidden: the filenames to leave unchecked.
         """
         scanner = self.image_scanner
-        files = list(scanner.files()) if scanner is not None else []
-        self.set_images(files, hidden)
+        self.set_screenshots(scanner.screenshots() if scanner is not None else ScreenshotSet(), hidden)
 
-    def set_images(self, paths: list[Path], hidden: list[str]) -> None:
-        """Show ``paths``, checking each one not named in ``hidden``.
+    def set_screenshots(self, screenshots: ScreenshotSet, hidden: list[str]) -> None:
+        """Show ``screenshots``, checking each one not named in ``hidden``.
 
         A model reset, because it genuinely is one -- a different set of screenshots, rather than a
         rearrangement of this one, which reports itself far more precisely. Selects the first row so
         the preview is not blank when there are images.
 
-        :param paths: every screenshot sibling, in display order.
-        :param hidden: the filenames to leave *unchecked* (curated out of the lightbox).
+        :param screenshots: the resource's screenshots, both kinds, in display order (#270).
+        :param hidden: the filenames to leave *unchecked* (curated out of the lightbox), of either
+            kind -- so an un-converted row nobody has curated arrives checked.
         """
-        self.__list_model.set_rows(paths, hidden)
+        self.__shared_directory = screenshots.shared_directory
+        self.__list_model.set_rows(screenshots.numbered, screenshots.unconverted, hidden)
         if self.__list_model.rowCount():
             self.__list.setCurrentIndex(self.__list_model.index(0, NAME_COLUMN))
         else:

@@ -97,6 +97,27 @@ def is_legacy_record_name(filename: str) -> bool:
     return os.path.splitext(filename)[1].lower() == LEGACY_SUFFIX
 
 
+def other_record_stems(directory: Path, stem: str) -> tuple[str, ...]:
+    """The filename stems of every record in ``directory`` except ``stem``'s own.
+
+    What makes a directory a **multi-record** one ([[data-model#resource-scoping]]): more than one
+    ``.rehu``/``.tc`` sharing a folder, each owning the siblings named after it. Asked by the images
+    dock, which shows its own numbered screenshots plus every loose pattern-matched image but never
+    another record's ``<stem>NN`` ([[plugins#tutorial-plugin]], #270), and which says so in its delete
+    confirmation because a loose image the two records share is deleted for both.
+
+    :param directory: the directory to list.
+    :param stem: the asking record's own stem, which is never reported back.
+    :returns: the other stems, sorted, or empty when ``directory`` is missing/unreadable (e.g. an
+        offline mount, [[mounts-and-storage#offline-mounts]]) or holds no other record.
+    """
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return ()
+    return tuple(sorted({entry.stem for entry in entries if is_record_name(entry.name)} - {stem}))
+
+
 def resource_name(record_path: Path) -> str:
     """How a resource is named to a reader -- the directory for a directory-scoped record, else the
     filename.

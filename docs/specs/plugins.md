@@ -474,8 +474,8 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   rearrange — one not yet saved anywhere, or a legacy `.tc`, which refuses every screenshot edit as it refuses the
   drop ([[acquisition-tooling#drag-drop-aids]]) — keeps the list and greys the buttons, both row kinds alike.
 
-  **Un-converted pattern-matched images are the dock's second row kind**, listed after the numbered set with their
-  own icon: an image the screenshot name patterns match ([[acquisition-tooling#screenshot-schemes]]) but that a
+  **Un-converted pattern-matched images are the dock's second row kind**, listed after the numbered set: an
+  image the screenshot name patterns match ([[acquisition-tooling#screenshot-schemes]]) but that a
   conversion has not renamed into the numbered set — left there by a legacy `.tc` not yet converted, or by a rename
   collision a conversion left untouched under its own name ([[acquisition-tooling#tc-to-rehu]],
   [[data-model#image-meanings]]), in natural-sort order. Both row kinds carry the **same enabled checkbox**, moved

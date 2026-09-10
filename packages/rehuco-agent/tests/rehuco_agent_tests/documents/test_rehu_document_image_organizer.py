@@ -208,3 +208,43 @@ def test_a_legacy_tc_resource_is_not_deleted_from_either(mocker: MockerFixture, 
 
     unlink.assert_not_called()
     renumber.assert_not_called()  # type: ignore[attr-defined]
+
+
+def test_convert_numbers_one_image_against_this_resources_stem(mocker: MockerFixture) -> None:
+    """Convert hands the core the resource's own stem and reports the rename as a one-entry map (#270).
+
+    A map rather than the new path, so the curated-out list follows it exactly as it follows a
+    reorder's ([[data-model#image-meanings]]).
+
+    **Test steps:**
+
+    * convert ``cover.jpg`` on a document bound to ``/fake/tutorial/info.rehu``
+    * verify the core was asked with that stem and the configured patterns
+    * verify the report is ``{old: new}``
+    """
+    convert = mocker.patch(
+        "rehuco_agent.documents.rehu_document_image_organizer.convert_screenshot",
+        return_value=DIRECTORY / "info02.jpg",
+    )
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.rehu"))
+
+    assert organizer.convert(DIRECTORY / "cover.jpg") == {"cover.jpg": "info02.jpg"}
+
+    assert convert.call_args.args[:2] == (DIRECTORY / "cover.jpg", "info")
+
+
+def test_a_legacy_tc_resource_is_not_converted_one_image_at_a_time(mocker: MockerFixture) -> None:
+    """A ``.tc``'s images are numbered by the whole-directory conversion and nothing else (#270).
+
+    **Test steps:**
+
+    * convert one image on a legacy ``.tc`` document
+    * verify the refusal raised before the core was reached at all
+    """
+    convert = mocker.patch("rehuco_agent.documents.rehu_document_image_organizer.convert_screenshot")
+    organizer = RehuDocumentImageOrganizer(model_at(DIRECTORY / "info.tc", legacy_tc=True))
+
+    with pytest.raises(PermissionError):
+        organizer.convert(DIRECTORY / "cover.jpg")
+
+    convert.assert_not_called()

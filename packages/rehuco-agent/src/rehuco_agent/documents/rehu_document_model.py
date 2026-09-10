@@ -30,7 +30,7 @@ from rehuco_core import (
     rehu_rename_conflict,
     rename_rehu_resource,
     scan_rehu_screenshot_files,
-    scan_tc_screenshot_files,
+    scan_unconverted_screenshots,
 )
 
 from ..fields.field import Field, FieldBinding
@@ -380,11 +380,13 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
     (a toolbar remedy, plus a message-only banner row explaining it)."""
 
     image_scanner = SimpleProperty[RehuDocumentImageScanner | None](None)
-    """The current screenshot-resolution scanner -- a `RehuDocumentImageScanner` over `scan_tc_screenshot_files`
-    while :attr:`~RehuDocument.legacy_tc`, over `scan_rehu_screenshot_files` once converted or genuinely
-    `.rehu`-native. `ImageStrip`/`ImageSelector`/`MarkdownView` each hold their own copy and bind to
-    `image_scanner_changed` to pick up a `.tc` -> `.rehu` conversion's switch in naming convention
-    without rebuilding the field composition ([[acquisition-tooling#tc-to-rehu]])."""
+    """The current screenshot-resolution scanner -- a `RehuDocumentImageScanner` over the ``<stem>NN``
+    set and the pattern-matched images holding no slot yet (:meth:`__make_image_scanner`, #270), the
+    same pair whether or not the document is :attr:`~RehuDocument.legacy_tc`.
+    `ImageStrip`/`ImageSelector`/`MarkdownView` each hold their own copy and bind to
+    `image_scanner_changed` to pick up a `.tc` -> `.rehu` conversion -- which renames files rather than
+    switching conventions, so what changes is the answer, not the scanner's shape
+    ([[acquisition-tooling#tc-to-rehu]])."""
 
     def __init__(
         self,
@@ -1178,34 +1180,41 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         return reason if reason.endswith(".") else f"{reason}."
 
     def __make_image_scanner(self) -> RehuDocumentImageScanner:
-        """Build the screenshot scanner matching this document's current naming convention.
+        """Build the screenshot scanner: the ``<stem>NN`` set, plus the images holding no slot yet.
 
-        Over `scan_tc_screenshot_files` while the document is :attr:`~RehuDocument.legacy_tc`, over
-        `scan_rehu_screenshot_files` once converted or genuinely ``.rehu``-native
-        ([[acquisition-tooling#tc-to-rehu]]). The one place that choice is made -- and the one place the
-        configured screenshot patterns are bound to the ``.tc`` lister (#281), which otherwise falls
-        back to its shipped default set -- so construction, a conversion, a rename, and a saved
-        patterns change all install a scanner picked the same way.
+        **The same pair for a `.tc` and a `.rehu`**, deliberately, and not the naming-convention
+        switch this used to be. The numbered half is `scan_rehu_screenshot_files` either way, because
+        it answers what is *on disk* -- a ``.tc``'s directory simply has none yet, which is what being
+        un-converted means; the un-converted half is `scan_unconverted_screenshots` either way, since
+        a pattern-matched image with no slot is the same thing beside either kind of record
+        ([[data-model#image-meanings]], #270).
+
+        The tc rename plan (`scan_tc_screenshots`) is **not** what a ``.tc`` lists from: it reports each
+        slot's winner out of renames that have not run, so a collision the plan would leave alone
+        ([[acquisition-tooling#tc-to-rehu]]) came back looking like the one un-converted file among
+        three that are all un-converted. Every pattern-matched image is a row (#292), and what
+        conversion will do to each is the *After conversion* column's to say (#293) -- a plan, in the
+        one column that admits it is one, rather than a row kind pretending it already happened.
+
+        The one place both listers are chosen -- and the one place the configured screenshot patterns
+        are bound to the lister that takes them (#281), which otherwise falls back to its shipped
+        default set -- so construction, a conversion, a rename, and a saved patterns change all
+        install a scanner picked the same way.
 
         :returns: the scanner to assign to :attr:`image_scanner`.
         """
-        if self.__document.legacy_tc:
-            lister = partial(
-                scan_tc_screenshot_files, patterns=shared_screenshot_patterns_settings().screenshot_name_patterns
-            )
-        else:
-            lister = scan_rehu_screenshot_files
-        return RehuDocumentImageScanner(self, lister)
+        patterns = shared_screenshot_patterns_settings().screenshot_name_patterns
+        unconverted_lister = partial(scan_unconverted_screenshots, patterns=patterns)
+        return RehuDocumentImageScanner(self, scan_rehu_screenshot_files, unconverted_lister)
 
     def __on_screenshot_patterns_changed(self) -> None:
         """Reinstall :attr:`image_scanner` when the shared screenshot patterns are saved.
 
-        A no-op for a `.rehu`-native or already-converted document -- :meth:`__make_image_scanner`
-        only consults the patterns while :attr:`~RehuDocument.legacy_tc`, so rebuilding it is harmless
-        but the extra `image_scanner_changed` emission is worth skipping.
+        Unconditional, unlike the ``.tc``-only rebuild this started as (#281): every document's
+        un-converted lister reads the patterns now, so a `.rehu` whose dock lists a ``cover.jpg``
+        stops listing it the moment the pattern that recognized it is deleted.
         """
-        if self.__document.legacy_tc:
-            self.image_scanner = self.__make_image_scanner()
+        self.image_scanner = self.__make_image_scanner()
 
     def __on_resource_type_changed(self, value: str) -> None:
         """Switch the document's active type ([[plugins#plugin-blocks]], #83): claim the newly-active

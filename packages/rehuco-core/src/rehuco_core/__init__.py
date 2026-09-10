@@ -174,6 +174,7 @@ from .resource_scoping import (
     is_directory_scoped_name,
     is_legacy_record_name,
     is_record_name,
+    other_record_stems,
     resource_name,
 )
 from .storage_traits import readers_must_yield_for_directory_rename
@@ -250,7 +251,6 @@ from .tc_screenshots import (
     compiled_screenshot_name_patterns,
     convert_screenshot,
     is_legacy_screenshot,
-    scan_tc_screenshot_files,
     scan_tc_screenshots,
     scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
@@ -462,6 +462,7 @@ __all__ = [
     "new_checksum_record",
     "original_path",
     "originals_to_back_up",
+    "other_record_stems",
     "oversized_file_reason",
     "parse_checksum_entry",
     "plan_screenshot_renumbering",
@@ -479,7 +480,6 @@ __all__ = [
     "rewrite_description_images",
     "scan_conversion_backups",
     "scan_rehu_screenshot_files",
-    "scan_tc_screenshot_files",
     "scan_tc_screenshots",
     "scan_unconverted_screenshots",
     "save_checksum_record",

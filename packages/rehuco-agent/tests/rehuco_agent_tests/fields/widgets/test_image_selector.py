@@ -21,7 +21,11 @@ from PySide6.QtWidgets import (
 )
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
+from rehuco_agent.fields.image_scanner import ScreenshotSet
 from rehuco_agent.fields.widgets.image_selector import (
+    CHECK_COLUMN,
+    DESCRIPTION_HINT,
+    DESCRIPTION_HINT_NAME,
     DIMENSIONS_COLUMN,
     LIST_PANE,
     NAME_COLUMN,
@@ -44,6 +48,9 @@ PATHS = [DIRECTORY / "info00.jpg", DIRECTORY / "info01.png", DIRECTORY / "info02
 # region Sample classes
 
 
+# one object standing in for a whole resource on disk, so each attribute is a fact about it a test
+# sets -- splitting it would only spread the same eight facts over two objects the tests then wire
+# pylint: disable-next=too-many-instance-attributes
 class FakeResource:
     """A resource's screenshots, in memory: an `ImageScanner` and an `ImageOrganizer` in one object.
 
@@ -53,8 +60,14 @@ class FakeResource:
     naming rule the app actually ships rather than a second copy of it, without a directory.
     """
 
-    def __init__(self, names: list[str]) -> None:
+    def __init__(self, names: list[str], unconverted: list[str] | None = None) -> None:
         self.names = list(names)
+        self.unconverted = list(unconverted or [])
+        """The pattern-matched images holding no slot yet (#270) -- the dock's second row kind."""
+        self.shared_directory = False
+        """Whether another record shares the directory, which the delete confirm says (#270)."""
+        self.convert_failure: Exception | None = None
+        """Set to make :meth:`convert` refuse, standing in for a rename the disk would not take."""
         self.removed: list[str] = []
         self.failure: OSError | None = None
         """Set to make every rearrangement refuse, standing in for a disk that would not take it."""
@@ -65,8 +78,38 @@ class FakeResource:
         with no Recycle Bin (#291) -- an explicit ``deleter`` (the caller's own fallback) bypasses it."""
 
     def files(self) -> list[Path]:
-        """Every screenshot, in slot order (`ImageScanner`)."""
-        return [DIRECTORY / name for name in self.names]
+        """Every screenshot, numbered first then un-converted (`ImageScanner`)."""
+        return self.screenshots().paths()
+
+    def screenshots(self) -> ScreenshotSet:
+        """The two row kinds, kept apart (`ImageScanner`, #270)."""
+        return ScreenshotSet(
+            numbered=tuple(DIRECTORY / name for name in self.names),
+            unconverted=tuple(DIRECTORY / name for name in self.unconverted),
+            shared_directory=self.shared_directory,
+        )
+
+    def convert(self, path: Path) -> dict[str, str]:
+        """Take one un-converted image into the numbered set (`ImageOrganizer`, #270).
+
+        The legacy number its own name carries when that slot is free, appended past the end
+        otherwise -- the rule `rehuco_core.convert_screenshot` applies, restated in memory here
+        because the real one renames files on a disk these tests do not have.
+
+        :param path: the un-converted screenshot to number.
+        :returns: ``{old filename: new filename}``.
+        :raises Exception: whatever :attr:`convert_failure` names.
+        """
+        if self.convert_failure is not None:
+            raise self.convert_failure
+        digits = "".join(character for character in path.stem if character.isdigit())
+        taken = {int(name[len(STEM) : len(STEM) + 2]) for name in self.names}
+        legacy = int(digits) if digits else 0
+        slot = legacy if legacy not in taken else max(taken, default=-1) + 1
+        converted = f"{STEM}{slot:02d}{path.suffix}"
+        self.unconverted.remove(path.name)
+        self.names = sorted([*self.names, converted])
+        return {path.name: converted}
 
     def reorder(self, ordered: Sequence[Path]) -> dict[str, str]:
         """Renumber to ``ordered`` (`ImageOrganizer`).
@@ -119,7 +162,7 @@ def seeded(qtbot: QtBot, resource: FakeResource, hidden: list[str] | None = None
     qtbot.addWidget(selector)
     selector.image_scanner = resource  # type: ignore[assignment]
     selector.image_organizer = resource  # type: ignore[assignment]
-    selector.set_images(resource.files(), hidden or [])
+    selector.set_screenshots(resource.screenshots(), hidden or [])
     return selector
 
 
@@ -138,6 +181,26 @@ def trigger(selector: ImageSelector, text: str) -> None:
     matching = [action for action in view.actions() if action.text() == text]
     assert len(matching) == 1
     matching[0].trigger()
+
+
+def action_enabled(selector: ImageSelector, text: str) -> bool:
+    """Whether the button showing the named action is one a user could press.
+
+    Read off the button rather than the action, because that is what a user sees: a column disabled
+    for a resource nothing can rearrange greys its buttons whatever their actions say.
+
+    :param selector: the selector under test.
+    :param text: the action's text, e.g. ``"Convert"``.
+    :returns: whether its button is enabled.
+    """
+    matching = [
+        button
+        for column in selector.findChildren(ActionButtonColumn)
+        for button in column.findChildren(QToolButton)
+        if button.defaultAction().text() == text
+    ]
+    assert len(matching) == 1
+    return matching[0].isEnabled()
 
 
 def row_names(selector: ImageSelector) -> list[str]:
@@ -159,7 +222,10 @@ def fake_scanner(mocker: MockerFixture, files: list[Path]) -> object:
     :param files: the fixed file list ``.files()`` reports.
     :returns: the stand-in scanner.
     """
-    return mocker.Mock(files=mocker.Mock(return_value=files))
+    return mocker.Mock(
+        files=mocker.Mock(return_value=files),
+        screenshots=mocker.Mock(return_value=ScreenshotSet(numbered=tuple(files))),
+    )
 
 
 def checkable_model(selector: ImageSelector) -> ScreenshotListModel:
@@ -176,13 +242,13 @@ def checkable_model(selector: ImageSelector) -> ScreenshotListModel:
 
 
 def check_state(model: ScreenshotListModel, row: int) -> Qt.CheckState:
-    """The check state of one row's name cell.
+    """The check state of one row's own check cell (#270).
 
     :param model: the model to read.
     :param row: the row to read.
     :returns: whether that screenshot is shown in the lightbox.
     """
-    return model.index(row, NAME_COLUMN).data(Qt.ItemDataRole.CheckStateRole)
+    return model.index(row, CHECK_COLUMN).data(Qt.ItemDataRole.CheckStateRole)
 
 
 def cell(model: ScreenshotListModel, row: int, column: int) -> str:
@@ -206,7 +272,7 @@ def test_set_images_checks_every_row_not_hidden(qtbot: QtBot) -> None:
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, ["info01.png"])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), ["info01.png"])
 
     model = checkable_model(selector)
     assert model.rowCount() == 3
@@ -225,7 +291,7 @@ def test_hidden_filenames_reports_unchecked_rows(qtbot: QtBot) -> None:
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, ["info00.jpg", "info02.gif"])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), ["info00.jpg", "info02.gif"])
 
     assert selector.hidden_filenames() == ["info00.jpg", "info02.gif"]
 
@@ -244,7 +310,7 @@ def test_seeding_does_not_emit_hidden_changed(qtbot: QtBot) -> None:
     emitted: list[list[str]] = []
     selector.hidden_changed.connect(emitted.append)
 
-    selector.set_images(PATHS, ["info00.jpg"])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), ["info00.jpg"])
 
     assert not emitted
 
@@ -321,12 +387,12 @@ def test_unchecking_a_row_emits_the_new_hidden_list(qtbot: QtBot) -> None:
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
     emitted: list[list[str]] = []
     selector.hidden_changed.connect(emitted.append)
 
     model = checkable_model(selector)
-    model.setData(model.index(0, NAME_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+    model.setData(model.index(0, CHECK_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
     assert emitted == [["info00.jpg"]]
 
@@ -347,7 +413,7 @@ def test_set_hidden_skips_a_rebuild_when_unchanged(qtbot: QtBot) -> None:
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, ["info01.png"])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), ["info01.png"])
 
     selector.set_hidden(["info01.png"])
 
@@ -367,7 +433,7 @@ def test_set_hidden_rebuilds_from_the_current_scanner_when_it_actually_changes(
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
     selector.image_scanner = fake_scanner(mocker, PATHS[:1])  # type: ignore[assignment]
 
     selector.set_hidden(["info01.png"])
@@ -386,7 +452,7 @@ def test_assigning_a_new_scanner_rebuilds_unconditionally(mocker: MockerFixture,
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
     assert selector.hidden_filenames() == []
 
     selector.image_scanner = fake_scanner(mocker, PATHS[:1])  # type: ignore[assignment]
@@ -431,7 +497,7 @@ def test_selecting_a_loadable_screenshot_shows_its_dimensions(mocker: MockerFixt
     mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
 
     view = selector.findChild(QTreeView)
     assert isinstance(view, QTreeView)
@@ -456,7 +522,7 @@ def test_set_images_populates_dimensions_and_size_columns_from_disk(mocker: Mock
     selector = ImageSelector()
     qtbot.addWidget(selector)
 
-    selector.set_images(PATHS[:1], [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
 
     model = checkable_model(selector)
     assert cell(model, 0, DIMENSIONS_COLUMN) == "320 x 180"
@@ -857,7 +923,7 @@ def test_set_images_blanks_dimensions_and_size_for_unreadable_files(qtbot: QtBot
     selector = ImageSelector()
     qtbot.addWidget(selector)
 
-    selector.set_images(PATHS[:1], [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS[:1])), [])
 
     model = checkable_model(selector)
     assert cell(model, 0, DIMENSIONS_COLUMN) == ""
@@ -928,7 +994,7 @@ def test_the_model_answers_nothing_for_a_cell_that_is_not_there() -> None:
     * verify each answers with nothing
     """
     model = ScreenshotListModel()
-    model.set_rows([DIRECTORY / "info00.jpg"], [])
+    model.set_rows([DIRECTORY / "info00.jpg"], [], [])
 
     assert model.data(QModelIndex()) is None
     assert model.flags(QModelIndex()) == Qt.ItemFlag.NoItemFlags
@@ -948,16 +1014,16 @@ def test_the_model_takes_only_a_check_state_and_only_a_changed_one() -> None:
     * verify each is refused, then that a genuine change is taken
     """
     model = ScreenshotListModel()
-    model.set_rows([DIRECTORY / "info00.jpg"], [])
-    name = model.index(0, NAME_COLUMN)
+    model.set_rows([DIRECTORY / "info00.jpg"], [], [])
+    check = model.index(0, CHECK_COLUMN)
 
-    assert not model.setData(name, "renamed", Qt.ItemDataRole.EditRole)
-    assert not model.setData(model.index(0, SIZE_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+    assert not model.setData(check, "renamed", Qt.ItemDataRole.EditRole)
+    assert not model.setData(model.index(0, NAME_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
     assert not model.setData(QModelIndex(), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
-    assert not model.setData(name, Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
+    assert not model.setData(check, Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
     assert not model.hidden_filenames()
 
-    assert model.setData(name, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+    assert model.setData(check, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
     assert model.hidden_filenames() == ["info00.jpg"]
 
 
@@ -976,14 +1042,14 @@ def test_the_model_refuses_a_move_that_names_no_second_row() -> None:
     resource = FakeResource(["info00.jpg", "info01.png"])
     model = ScreenshotListModel()
     model.set_organizer(resource)  # type: ignore[arg-type]
-    model.set_rows(resource.files(), [])
+    model.set_rows(resource.files(), [], [])
 
     assert not model.move_row(0, 0)
     assert not model.move_row(0, 2)
     assert not model.move_row(-1, 1)
 
     read_only = ScreenshotListModel()
-    read_only.set_rows(resource.files(), [])
+    read_only.set_rows(resource.files(), [], [])
     assert not read_only.can_rearrange
     assert not read_only.move_row(0, 1)
     assert not read_only.remove_row(0)
@@ -1005,7 +1071,7 @@ def test_a_relabel_reports_a_data_change_on_the_renamed_row_alone() -> None:
     resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"])
     model = ScreenshotListModel()
     model.set_organizer(resource)  # type: ignore[arg-type]
-    model.set_rows(resource.files(), [])
+    model.set_rows(resource.files(), [], [])
     reported: list[tuple[int, int, list[int]]] = []
     model.dataChanged.connect(
         lambda top_left, bottom_right, roles: reported.append((top_left.row(), bottom_right.row(), list(roles)))
@@ -1050,7 +1116,7 @@ def test_a_rebuild_is_not_reported_as_a_curation_edit(qtbot: QtBot) -> None:
     emitted: list[list[str]] = []
     selector.hidden_changed.connect(emitted.append)
 
-    selector.set_images(resource.files(), ["info00.jpg"])
+    selector.set_screenshots(resource.screenshots(), ["info00.jpg"])
 
     assert not emitted
 
@@ -1368,7 +1434,7 @@ def test_without_an_organizer_the_list_is_read_only(qtbot: QtBot) -> None:
     """
     selector = ImageSelector()
     qtbot.addWidget(selector)
-    selector.set_images(PATHS, [])
+    selector.set_screenshots(ScreenshotSet(numbered=tuple(PATHS)), [])
 
     assert selector.move_screenshot(1, 0) == 1
     selector.delete_screenshot(0)
@@ -1395,13 +1461,16 @@ def test_the_action_columns_are_disabled_without_an_organizer(qtbot: QtBot) -> N
     assert all(column.isEnabled() for column in columns)
 
 
-def test_the_edit_column_offers_only_delete(qtbot: QtBot) -> None:
+def test_the_edit_column_offers_only_delete_and_convert(qtbot: QtBot) -> None:
     """Insert, Edit and Reset mean nothing for a file on disk, so their buttons are hidden (#72).
+
+    Convert is the one action added to that column rather than inherited, and it is a row action like
+    Delete, which is why it lives there (#270).
 
     **Test steps:**
 
     * seed a selector
-    * verify only the delete button is visible in the edit column
+    * verify the delete and convert buttons are the visible ones in the edit column
     """
     resource = FakeResource(["info00.jpg"])
     selector = seeded(qtbot, resource)
@@ -1411,7 +1480,7 @@ def test_the_edit_column_offers_only_delete(qtbot: QtBot) -> None:
     columns = selector.findChildren(ActionButtonColumn)
     edit_column = columns[-1]
     visible = [button for button in edit_column.findChildren(QToolButton) if button.isVisible()]
-    assert [button.defaultAction().text() for button in visible] == ["Delete"]
+    assert [button.defaultAction().text() for button in visible] == ["Delete", "Convert"]
 
 
 def test_the_move_buttons_renumber_the_set(qtbot: QtBot) -> None:
@@ -1531,6 +1600,250 @@ def test_a_delete_the_disk_refuses_leaves_the_selection_alone(mocker: MockerFixt
 
     assert not resource.removed
     assert row_names(selector) == ["info00.jpg", "info01.png", "info02.gif"]
+
+
+# endregion
+
+# region the un-converted row kind (#270)
+
+
+def test_unconverted_images_are_listed_after_the_numbered_set_and_start_checked(qtbot: QtBot) -> None:
+    """The dock's second row kind: pattern-matched images with no slot, after the ones that have them.
+
+    Checked by default, because a picture the patterns recognize is a screenshot whether or not it
+    has been numbered -- shown in the lightbox until the user says otherwise.
+
+    **Test steps:**
+
+    * seed two numbered screenshots and two un-converted images, with nothing curated out
+    * verify the rows are the numbered set followed by the un-converted ones
+    * verify every row is checked, and only the numbered ones report as numbered
+    """
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg", "sample-03.png"])
+    selector = seeded(qtbot, resource)
+    model = checkable_model(selector)
+
+    assert row_names(selector) == ["info00.jpg", "info01.png", "cover.jpg", "sample-03.png"]
+    assert [check_state(model, row) for row in range(4)] == [Qt.CheckState.Checked] * 4
+    assert [model.is_numbered(row) for row in range(4)] == [True, True, False, False]
+    assert selector.numbered_screenshot_count == 2
+
+
+def test_an_unconverted_row_is_curated_like_any_other(qtbot: QtBot) -> None:
+    """The check box is the same one on both kinds, and a hidden un-converted name is remembered.
+
+    **Test steps:**
+
+    * seed with the un-converted image already curated out
+    * verify its row is the unchecked one
+    * check it back and verify the hidden list empties
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource, ["cover.jpg"])
+    model = checkable_model(selector)
+
+    assert [check_state(model, row) for row in range(2)] == [Qt.CheckState.Checked, Qt.CheckState.Unchecked]
+
+    model.setData(model.index(1, CHECK_COLUMN), Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
+
+    assert not selector.hidden_filenames()
+
+
+def test_an_unconverted_row_offers_convert_and_no_move(qtbot: QtBot) -> None:
+    """Which buttons a row lights up is its kind's answer, not the list's.
+
+    **Test steps:**
+
+    * seed one numbered screenshot and one un-converted image
+    * select the numbered row and verify Convert is off while the ordering actions follow their own rules
+    * select the un-converted row and verify Convert is on and every ordering action is off
+    """
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.set_current_index(0)
+    assert not action_enabled(selector, "Convert")
+    assert action_enabled(selector, "Move Down")
+
+    selector.set_current_index(2)
+    assert action_enabled(selector, "Convert")
+    assert not any(action_enabled(selector, name) for name in ("Move to Top", "Move Up", "Move Down", "Move to Bottom"))
+
+
+def test_converting_relists_the_row_among_the_numbered_set_keeping_its_hidden_state(qtbot: QtBot) -> None:
+    """Convert renames the file into a slot; the row moves with it and its curation follows the name.
+
+    **Test steps:**
+
+    * seed a numbered screenshot plus an un-converted one that is curated out
+    * convert the un-converted row
+    * verify it is now a numbered row, still unchecked, and that the new name is what is reported hidden
+    """
+    resource = FakeResource(["info00.jpg"], ["sample-01.png"])
+    selector = seeded(qtbot, resource, ["sample-01.png"])
+    emitted: list[list[str]] = []
+    selector.hidden_changed.connect(emitted.append)
+
+    selector.convert_screenshot(1)
+
+    assert row_names(selector) == ["info00.jpg", "info01.png"]
+    assert selector.numbered_screenshot_count == 2
+    assert selector.hidden_filenames() == ["info01.png"]
+    assert emitted == [["info01.png"]]
+    # and the converted row is the one left current, so the correction is what the user is looking at
+    assert selector.current_index == 1
+
+
+def test_converting_a_numbered_row_or_one_out_of_range_does_nothing(qtbot: QtBot) -> None:
+    """Convert answers only for an un-converted row -- there is nothing else to take into the set.
+
+    **Test steps:**
+
+    * seed one numbered screenshot and one un-converted image
+    * ask to convert the numbered row, and a row that does not exist
+    * verify neither renamed anything
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.convert_screenshot(0)
+    selector.convert_screenshot(9)
+
+    assert row_names(selector) == ["info00.jpg", "cover.jpg"]
+
+
+def test_a_refused_conversion_reports_and_leaves_the_rows_alone(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A name the patterns no longer claim cannot be numbered, and the user is told rather than ignored.
+
+    **Test steps:**
+
+    * seed an un-converted image whose conversion raises ``LookupError``
+    * convert it
+    * verify a warning was shown and the rows are untouched
+    """
+    warning = mocker.patch.object(QMessageBox, "warning")
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+    resource.convert_failure = LookupError("matches no screenshot name pattern")
+
+    selector.convert_screenshot(1)
+
+    warning.assert_called_once()
+    assert row_names(selector) == ["info00.jpg", "cover.jpg"]
+
+
+def test_a_failed_conversion_reseeds_from_the_scanner(qtbot: QtBot) -> None:
+    """An ``OSError`` leaves the disk as the only trustworthy account, so the rows are re-read.
+
+    **Test steps:**
+
+    * seed an un-converted image whose conversion raises ``OSError``
+    * convert it
+    * verify the rows still describe the resource
+    """
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+    resource.convert_failure = OSError("refused")
+
+    selector.convert_screenshot(1)
+
+    assert row_names(selector) == ["info00.jpg", "cover.jpg"]
+
+
+def test_deleting_an_unconverted_image_renumbers_nothing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """It holds no slot, so there is no gap for the numbered set to close (#270).
+
+    **Test steps:**
+
+    * confirm the prompt and delete the un-converted row from a set numbered ``00..02``
+    * verify the file went and every numbered screenshot kept its own name
+    """
+    mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.png", "info02.gif"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(3)
+
+    assert resource.removed == ["cover.jpg"]
+    assert resource.names == ["info00.jpg", "info01.png", "info02.gif"]
+    assert row_names(selector) == resource.names
+
+
+def test_the_delete_confirmation_says_what_the_row_kind_costs(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Renumbering is a numbered row's consequence; a shared folder is an un-converted one's (#270).
+
+    **Test steps:**
+
+    * confirm a numbered row's delete and read the prompt
+    * confirm an un-converted row's delete in a multi-record directory and read that prompt
+    * verify each names its own consequence and neither names the other's
+    """
+    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
+    resource.shared_directory = True
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(0)
+    numbered_text = question.call_args.args[2]
+
+    selector.delete_screenshot(1)
+    unconverted_text = question.call_args.args[2]
+
+    assert "renumbered" in numbered_text
+    assert "shares this folder" not in numbered_text
+    assert "nothing is renumbered" in unconverted_text
+    assert "shares this folder" in unconverted_text
+
+
+def test_a_single_record_directory_says_nothing_about_sharing(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """With no other record beside it, there is nobody to share the image with.
+
+    **Test steps:**
+
+    * confirm an un-converted row's delete in a directory holding one record
+    * verify the prompt says nothing about another resource
+    """
+    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg"], ["cover.jpg"])
+    selector = seeded(qtbot, resource)
+
+    selector.delete_screenshot(1)
+
+    assert "shares this folder" not in question.call_args.args[2]
+
+
+def test_no_row_is_decorated(qtbot: QtBot) -> None:
+    """Neither row kind carries an icon: position and the enabled buttons are what tell them apart.
+
+    A marker would exist to contrast the un-converted rows with the numbered ones, and on a legacy
+    ``.tc`` -- where every row is un-converted -- it would sit on all of them, contrasting with
+    nothing (#270).
+
+    **Test steps:**
+
+    * seed one row of each kind
+    * verify neither name cell decorates
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
+    model = checkable_model(selector)
+
+    assert [model.index(row, NAME_COLUMN).data(Qt.ItemDataRole.DecorationRole) for row in range(2)] == [None, None]
+
+
+def test_the_dock_says_it_never_rewrites_the_description(qtbot: QtBot) -> None:
+    """Every action here renames files and none touches the description, and the dock says so (#270).
+
+    **Test steps:**
+
+    * build a selector
+    * verify the hint label is there, carrying that sentence
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg"]))
+
+    hint = selector.findChild(QLabel, DESCRIPTION_HINT_NAME)
+    assert isinstance(hint, QLabel)
+    assert hint.text() == DESCRIPTION_HINT
+    assert "never rewritten" in hint.text()
 
 
 # endregion
