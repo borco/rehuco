@@ -224,6 +224,25 @@ def test_get_markdown_viewer_image_returns_none_for_an_undecodable_file(mocker: 
     assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("missing.jpg") is None
 
 
+def test_get_markdown_viewer_image_returns_none_for_a_name_with_no_filename(mocker: MockerFixture) -> None:
+    """A reference naming no file at all -- an empty name, or a URL ending in a directory -- resolves
+    to ``None`` before anything is decoded.
+
+    **Test steps:**
+
+    * mock ``QImage`` construction so any decode attempt is visible
+    * resolve ``""`` and ``"file:///elsewhere/"`` on a document at ``/fake/info.rehu``
+    * verify both return ``None`` and ``QImage`` was never constructed
+    """
+    _, _, constructor = mock_decoded_image(mocker, width=100)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+    scanner = RehuDocumentImageScanner(model, no_screenshots)
+
+    assert scanner.get_markdown_viewer_image("") is None
+    assert scanner.get_markdown_viewer_image("file:///elsewhere/") is None
+    constructor.assert_not_called()
+
+
 def test_get_markdown_viewer_image_returns_none_without_a_path() -> None:
     """A document with no path yet can't resolve anything.
 
@@ -235,6 +254,69 @@ def test_get_markdown_viewer_image_returns_none_without_a_path() -> None:
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
 
     assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("cover.jpg") is None
+
+
+# endregion
+
+
+# region extension-less references (#281)
+def test_get_markdown_viewer_image_resolves_an_extension_less_reference(mocker: MockerFixture) -> None:
+    """``![](info00)`` -- the number-preserving conversion's own reference shape (#288) -- resolves by
+    trying each of ``IMAGE_EXTENSIONS`` in turn and taking the first that exists on disk.
+
+    **Test steps:**
+
+    * report only ``info00.png`` as existing on disk
+    * mock ``QImage`` construction to report an in-cap image
+    * resolve the extension-less name ``"info00"``
+    * verify ``QImage`` was constructed with the ``.png`` candidate, and that image is returned
+    """
+    image, _, constructor = mock_decoded_image(mocker, width=100)
+    png_path = Path("/fake/info00.png")
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == png_path)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00")
+
+    assert result is image
+    constructor.assert_called_once_with(str(png_path))
+
+
+def test_get_markdown_viewer_image_tries_extensions_in_order(mocker: MockerFixture) -> None:
+    """When more than one candidate extension exists, the first in ``IMAGE_EXTENSIONS`` order wins.
+
+    **Test steps:**
+
+    * report both ``info00.jpg`` and ``info00.png`` as existing on disk
+    * mock ``QImage`` construction to report an in-cap image
+    * resolve the extension-less name ``"info00"``
+    * verify ``QImage`` was constructed with the ``.jpg`` candidate -- earlier in ``IMAGE_EXTENSIONS``
+    """
+    image, _, constructor = mock_decoded_image(mocker, width=100)
+    jpg_path = Path("/fake/info00.jpg")
+    png_path = Path("/fake/info00.png")
+    mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in (jpg_path, png_path))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00")
+
+    assert result is image
+    constructor.assert_called_once_with(str(jpg_path))
+
+
+def test_get_markdown_viewer_image_returns_none_when_no_extension_candidate_exists(mocker: MockerFixture) -> None:
+    """An extension-less name with no matching file on disk resolves to ``None``, never a guess.
+
+    **Test steps:**
+
+    * report nothing as existing on disk
+    * resolve the extension-less name ``"info00"``
+    * verify ``get_markdown_viewer_image`` returns ``None``
+    """
+    mocker.patch.object(Path, "exists", autospec=True, return_value=False)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00") is None
 
 
 # endregion

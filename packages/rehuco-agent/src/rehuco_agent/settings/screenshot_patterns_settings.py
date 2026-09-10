@@ -17,15 +17,17 @@ extensions resolves by pixel area, and everything else keeps its own name -- is 
 not the user's, for the reason `ExcludedFilesSettings` gives about its own structural tier: it applies
 whatever this list says.
 
-A plain ``@dataclass``, like `ExcludedFilesSettings` and for the same reason: the patterns are read only
-when a scan runs, so nothing on screen changes when they do and there is nothing to watch them change.
+A reactive ``QObject`` (``SimpleProperty`` fields), not the plain dataclass this used to be
+([[appendices.settings-pages#reacting-to-changes]]): an open document's `RehuDocumentModel` follows
+:attr:`ScreenshotPatternsSettings.patterns_changed` and rebuilds its image scanner on it (#281), so a
+saved pattern change moves files into and out of an already-open document's screenshot set.
 """
 
-from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Final
 
-from PySide6.QtCore import QSettings
+from borco_pyside.core import SimpleProperty
+from PySide6.QtCore import QObject, QSettings
 from rehuco_core import SCREENSHOT_NAME_PATTERNS, ScreenshotNamePattern, ScreenshotNamePatterns
 
 from .persistent_settings import persistent_settings, read_stored_strings
@@ -104,21 +106,22 @@ def normalize_screenshot_samples(samples: object) -> tuple[str, ...]:
     return tuple(normalized) or DEFAULT_SAMPLES
 
 
-@dataclass
-class ScreenshotPatternsSettings:
+class ScreenshotPatternsSettings(QObject):
     """The naming patterns every legacy screenshot scan is handed (#53, #287).
 
     Two stored fields, raw as the page left them: the patterns, and the try-it table's sample
     filenames (#287) -- saved beside the patterns because a set of names worth checking a
     configuration against is worth keeping. What everything else consumes is
     :attr:`screenshot_name_patterns`, the effective set the patterns resolve to.
+
+    :param parent: optional Qt parent.
     """
 
-    patterns: tuple[str, ...] = field(default_factory=tuple)
+    patterns = SimpleProperty[tuple[str, ...]](())
     """The patterns as stored -- empty on a fresh install, where the effective set is the shipped default
     one rather than nothing."""
 
-    samples: tuple[str, ...] = field(default_factory=tuple)
+    samples = SimpleProperty[tuple[str, ...]](())
     """The try-it sample filenames as stored -- empty on a fresh install, where the effective set is
     :data:`DEFAULT_SAMPLES`."""
 

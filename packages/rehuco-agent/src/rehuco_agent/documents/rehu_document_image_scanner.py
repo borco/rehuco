@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Final
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QImage
+from rehuco_core import IMAGE_EXTENSIONS
 
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
@@ -96,11 +97,26 @@ class RehuDocumentImageScanner:
     def __resolved(self, name: str) -> Path | None:
         """Resolve ``name`` to an absolute path under this resource's own directory.
 
-        :param name: a bare filename or a ``file://`` URL naming it.
-        :returns: the resolved path, or ``None`` if the document has no path yet or ``name`` is empty.
+        An extension-less ``name`` (``![](info00)``, the number-preserving conversion's own reference
+        shape, #288) tries each of :data:`~rehuco_core.IMAGE_EXTENSIONS` in turn and returns the first
+        that exists on disk -- so a reorder that swaps a `.png` into a slot a `.jpg` used to hold still
+        resolves without the description needing an edit of its own.
+
+        :param name: a bare filename, an extension-less slot name, or a ``file://`` URL naming it.
+        :returns: the resolved path, or ``None`` if the document has no path yet, ``name`` is empty, or
+            no candidate extension exists on disk.
         """
         path = self.__model.path
         if path is None:
             return None
         filename = QUrl(name).fileName()
-        return path.parent / filename if filename else None
+        if not filename:
+            return None
+        candidate = path.parent / filename
+        if candidate.suffix:
+            return candidate
+        for extension in IMAGE_EXTENSIONS:
+            with_extension = path.parent / f"{filename}{extension}"
+            if with_extension.exists():
+                return with_extension
+        return None
