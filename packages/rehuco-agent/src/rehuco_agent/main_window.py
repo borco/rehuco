@@ -34,6 +34,7 @@ from rehuco_core import (
     JobState,
     SweepChecksumsJob,
     TaskQueue,
+    is_directory_scoped,
 )
 
 from .app_logging import LOG_VIEW_ICON_RESOURCE, build_log_widget, shared_log_bridge
@@ -1094,15 +1095,47 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """Keep ``Open recents`` (#64) pointed at a document's current path when it moves -- a
         :meth:`~RehuDocumentModel.convert` in place, or a completed rename (#241).
 
-        The moved document is the same resource, not a fresh open, so its recents entry is swapped in
-        place (:meth:`RecentFilesSettings.replace`) rather than jumping to the newest end; a no-op when
-        ``old_path`` was never actually recorded (e.g. a load-failure stub, #295).
+        The moved document is the same resource, not a fresh open, so each candidate swap is in place
+        (:meth:`RecentFilesSettings.replace`) rather than jumping to the newest end; each is a no-op
+        when the path it names was never actually recorded (e.g. a load-failure stub, #295).
+
+        The exact ``.rehu`` swap covers a document opened directly by that path. Two more candidates
+        cover the other open routes (:meth:`open_folder`, :meth:`open_archive`), which record a
+        different path than the one that moves -- a rename is the one move that changes those too,
+        unlike a :meth:`~RehuDocumentModel.convert` (#296): a directory-scoped resource
+        (:func:`~rehuco_core.is_directory_scoped`) may have been recorded by its folder, which the
+        rename moves in step with ``info.rehu``; a file-scoped one may have been recorded by an
+        archive sharing its stem, which the rename retargets in step with the ``.rehu``.
+
+        All candidates are tried, not just the first that matches: the routes each record their own
+        path even when they land on an already-open dock, so one resource can hold two recents entries
+        at once (its ``.rehu`` and its folder or archive), and a rename has to correct both.
+
+        The archive match compares stems **exactly**, where :mod:`rehuco_core.rehu_rename` compares
+        them under :func:`os.path.normcase`. The renamer reads sibling names off the disk, which a
+        case-insensitive filesystem may report in a casing other than the one the record was opened
+        with, so it has to fold case to recognize its own siblings. Here both sides are paths this
+        window resolved itself and handed on -- the recorded entry and the model's path -- so they
+        agree on casing by construction, and folding it would only risk matching a recorded entry
+        that is a different file on a case-sensitive filesystem.
 
         :param old_path: the path the document moved from.
         :param new_path: the path it moved to.
         """
-        if old_path is not None and new_path is not None:
-            self.__recent_files.replace(old_path, new_path)
+        if old_path is None or new_path is None:
+            return
+        self.__recent_files.replace(old_path, new_path)
+        if is_directory_scoped(old_path):
+            self.__recent_files.replace(old_path.parent, new_path.parent)
+        else:
+            for recorded in list(self.__recent_files.paths):
+                if (
+                    recorded != old_path
+                    and recorded.parent == old_path.parent
+                    and recorded.stem == old_path.stem
+                    and recorded.suffix.lower() in ARCHIVE_EXTENSIONS
+                ):
+                    self.__recent_files.replace(recorded, recorded.with_stem(new_path.stem))
 
     def raise_and_activate(self) -> None:
         """Bring this window to the foreground, restoring it first if minimized ([[nodes#single-instance]]).

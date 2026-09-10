@@ -1335,6 +1335,35 @@ def test_a_tc_to_rehu_conversion_raises_document_path_changed(mocker: MockerFixt
     assert spy.at(0) == [tc_path, FAKE_PATH]
 
 
+def test_a_document_losing_its_path_keeps_the_last_known_one_for_the_next_move(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """A path change to ``None`` is relayed as such, but does not become the remembered old path: the
+    next real path reports the last path the document actually had as what it moved from (#295).
+
+    **Test steps:**
+
+    * open a document and connect a spy to ``document_path_changed``
+    * set its model's path to ``None``, then to a new path
+    * verify the first emission moved from the open path to ``None``, and the second from that same
+      open path -- not from ``None`` -- to the new one
+    """
+    load_document(mocker)
+    dock = DocumentsDock()
+    qtbot.addWidget(dock)
+    widget = dock.open_document(FAKE_PATH)
+    assert widget is not None
+    spy = QSignalSpy(dock.document_path_changed)
+    moved_to = FAKE_PATH.with_name("moved.rehu")
+
+    widget.model.path = None
+    widget.model.path = moved_to
+
+    assert spy.count() == 2
+    assert spy.at(0) == [FAKE_PATH, None]
+    assert spy.at(1) == [FAKE_PATH, moved_to]
+
+
 def test_open_folder_with_existing_info_rehu_opens_it(mocker: MockerFixture, qtbot: QtBot) -> None:
     """Opening a folder whose ``info.rehu`` already exists behaves exactly like ``open_document``.
 
