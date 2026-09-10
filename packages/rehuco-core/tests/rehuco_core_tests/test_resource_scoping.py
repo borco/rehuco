@@ -9,7 +9,8 @@ from pathlib import Path
 from typing import Final
 
 from pytest import mark, param
-from rehuco_core import is_directory_scoped, is_record_name, resource_name
+from pytest_mock import MockerFixture
+from rehuco_core import is_directory_scoped, is_record_name, other_record_stems, resource_name
 
 DIRECTORY: Final = Path("/fake/sculpting")
 
@@ -105,6 +106,47 @@ def test_a_label_names_the_directory_for_a_directory_scoped_record(filename: str
     * verify it is the directory's name, or the record's own filename
     """
     assert resource_name(DIRECTORY / filename) == expected
+
+
+# endregion
+
+# region other_record_stems
+
+
+def test_a_multi_record_directory_reports_the_other_records_stems(mocker: MockerFixture) -> None:
+    """Every record in the directory but the asking one, both formats, sorted.
+
+    **Test steps:**
+
+    * mock the directory to hold three records of both formats plus files that are not records
+    * ask for the stems other than ``info``'s
+    * verify the two siblings come back and nothing else does
+    """
+    mocker.patch.object(
+        Path,
+        "iterdir",
+        return_value=[Path(name) for name in ("info.rehu", "zeta.tc", "alpha.rehu", "info.tc.orig", "cover.jpg")],
+    )
+
+    assert other_record_stems(DIRECTORY, "info") == ("alpha", "zeta")
+
+
+def test_a_single_record_directory_reports_none(mocker: MockerFixture) -> None:
+    """One record, of either format, leaves no other stem -- and neither does an unreadable directory.
+
+    **Test steps:**
+
+    * mock the directory to hold only ``info``'s own two files
+    * ask for the other stems, then ask again with the listing failing
+    * verify both answers are empty
+    """
+    listing = mocker.patch.object(Path, "iterdir", return_value=[Path("info.rehu"), Path("info00.jpg")])
+
+    assert not other_record_stems(DIRECTORY, "info")
+
+    listing.side_effect = OSError
+
+    assert not other_record_stems(DIRECTORY, "info")
 
 
 # endregion

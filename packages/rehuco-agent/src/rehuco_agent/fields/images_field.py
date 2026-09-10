@@ -15,7 +15,7 @@ from PySide6.QtCore import QObject, Signal, SignalInstance
 
 from .field import Field, FieldBinding, FieldEditorWidgets, FieldsTab, FieldViewerWidgets
 from .image_organizer import ImageOrganizer
-from .image_scanner import ImageScanner
+from .image_scanner import ImageScanner, ScreenshotSet
 from .widgets import ImageSelector, ImageStrip
 from .widgets.image_selector import PREVIEW_HEIGHT
 
@@ -171,7 +171,9 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         selector.image_scanner = self.__image_scanner
         # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip
         # populating a brand-new, empty selector whenever the initial hidden list happens to be empty too
-        selector.set_images(list(self.__image_scanner.files()) if self.__image_scanner else [], binding.value)
+        selector.set_screenshots(
+            self.__image_scanner.screenshots() if self.__image_scanner else ScreenshotSet(), binding.value
+        )
         selector.hidden_changed.connect(binding.set_value)
         # a rearrangement renames files, which no viewer over the same directory can see coming --
         # relayed through the field so the strip (and, through it, an open maximized viewer) re-reads

@@ -48,6 +48,7 @@
         <file alias="icons/measure_size_on_disk.svg">../../../../design/icons/measure_size_on_disk.svg</file>
         <file alias="icons/rehu_upgrade.svg">../../../../design/icons/rehu_upgrade.svg</file>
         <file alias="icons/rehuco-agent.svg">../../../../design/icons/rehuco-agent.svg</file>
+        <file alias="icons/screenshot_convert.svg">../../../../design/icons/screenshot_convert.svg</file>
         <file alias="icons/task_cancel.svg">../../../../design/icons/task_cancel.svg</file>
         <file alias="icons/task_canceled.svg">../../../../design/icons/task_canceled.svg</file>
         <file alias="icons/task_canceling.svg">../../../../design/icons/task_canceling.svg</file>

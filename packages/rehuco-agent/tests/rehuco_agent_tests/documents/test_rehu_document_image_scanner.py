@@ -1,8 +1,8 @@
 """Tests for RehuDocumentImageScanner: composes a screenshot lister with Markdown-image resolution.
 
-The naming-scheme listing lives in ``rehuco_core`` (`scan_rehu_screenshot_files` / `scan_tc_screenshot_files`,
-covered by their own tests); here `RehuDocumentImageScanner` is checked for delegating :meth:`files` to whatever
-lister it was built with, and for the convention-independent :meth:`get_markdown_viewer_image`.
+The listing rules live in ``rehuco_core`` (`scan_rehu_screenshot_files` / `scan_unconverted_screenshots`,
+covered by their own tests); here `RehuDocumentImageScanner` is checked for delegating to whichever listers
+it was built with, for keeping the two row kinds apart (#270), and for :meth:`get_markdown_viewer_image`.
 """
 
 from pathlib import Path
@@ -60,7 +60,7 @@ def test_files_delegates_to_the_lister_with_directory_and_stem(mocker: MockerFix
     lister = mocker.Mock(return_value=listed)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    assert RehuDocumentImageScanner(model, lister).files() == listed
+    assert RehuDocumentImageScanner(model, lister, no_screenshots).files() == listed
     lister.assert_called_once_with(Path("/fake"), "info")
 
 
@@ -76,8 +76,96 @@ def test_files_is_empty_without_a_path(mocker: MockerFixture) -> None:
     lister = mocker.Mock()
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
 
-    assert RehuDocumentImageScanner(model, lister).files() == []
+    assert RehuDocumentImageScanner(model, lister, no_screenshots).files() == []
     lister.assert_not_called()
+
+
+def test_screenshots_keeps_the_two_kinds_apart(mocker: MockerFixture) -> None:
+    """Both listers are asked for the same ``(directory, stem)``, and each fills its own half (#270).
+
+    **Test steps:**
+
+    * build a scanner over a numbered lister and an un-converted one
+    * read ``screenshots()``
+    * verify each half came from its own lister, and that ``files()`` is the two in that order
+    """
+    numbered = [Path("/fake/info00.jpg")]
+    unconverted = [Path("/fake/cover.jpg")]
+    lister = mocker.Mock(return_value=numbered)
+    unconverted_lister = mocker.Mock(return_value=unconverted)
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    scanner = RehuDocumentImageScanner(model, lister, unconverted_lister)
+    screenshots = scanner.screenshots()
+
+    assert screenshots.numbered == tuple(numbered)
+    assert screenshots.unconverted == tuple(unconverted)
+    assert scanner.files() == [*numbered, *unconverted]
+    unconverted_lister.assert_called_with(Path("/fake"), "info")
+
+
+def test_an_image_both_listers_report_is_numbered_once(mocker: MockerFixture) -> None:
+    """The two listers are supplied independently, so nothing about them makes their answers disjoint.
+
+    Listing one twice would put the same picture in the strip twice and offer Convert on a row the
+    numbered half already accounts for.
+
+    **Test steps:**
+
+    * have both listers report the same file, plus one only the un-converted lister claims
+    * read ``screenshots()``
+    * verify the shared file is numbered only, and the other is the whole un-converted half
+    """
+    shared = Path("/fake/cover.jpg")
+    lister = mocker.Mock(return_value=[shared])
+    unconverted_lister = mocker.Mock(return_value=[shared, Path("/fake/sample-01.png")])
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+
+    screenshots = RehuDocumentImageScanner(model, lister, unconverted_lister).screenshots()
+
+    assert screenshots.numbered == (shared,)
+    assert screenshots.unconverted == (Path("/fake/sample-01.png"),)
+
+
+def test_screenshots_reports_a_shared_directory(mocker: MockerFixture) -> None:
+    """Another record beside this one makes every un-converted image claimable -- and deletable -- there.
+
+    **Test steps:**
+
+    * mock ``other_record_stems`` to report a sibling, then to report none
+    * read ``screenshots()`` each time
+    * verify ``shared_directory`` follows it
+    """
+    stems = mocker.patch("rehuco_agent.documents.rehu_document_image_scanner.other_record_stems", return_value=("foo",))
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
+    scanner = RehuDocumentImageScanner(model, no_screenshots, no_screenshots)
+
+    assert scanner.screenshots().shared_directory
+
+    stems.return_value = ()
+
+    assert not scanner.screenshots().shared_directory
+
+
+def test_screenshots_is_empty_without_a_path(mocker: MockerFixture) -> None:
+    """A pathless document reports no screenshots of either kind, and neither lister is consulted.
+
+    **Test steps:**
+
+    * build a scanner over a document that was never given a path
+    * read ``screenshots()``
+    * verify both halves are empty and neither lister was called
+    """
+    lister = mocker.Mock()
+    unconverted_lister = mocker.Mock()
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
+
+    screenshots = RehuDocumentImageScanner(model, lister, unconverted_lister).screenshots()
+
+    assert not screenshots.numbered
+    assert not screenshots.unconverted
+    lister.assert_not_called()
+    unconverted_lister.assert_not_called()
 
 
 # endregion
@@ -96,7 +184,7 @@ def test_get_markdown_viewer_image_resolves_a_bare_filename(mocker: MockerFixtur
     image, _, constructor = mock_decoded_image(mocker, width=100)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("cover.jpg")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
     assert result is image
     constructor.assert_called_once_with(str(Path("/fake/cover.jpg")))
@@ -115,7 +203,9 @@ def test_get_markdown_viewer_image_resolves_a_file_url(mocker: MockerFixture) ->
     image, _, _ = mock_decoded_image(mocker, width=100)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("file:///elsewhere/cover.jpg")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image(
+        "file:///elsewhere/cover.jpg"
+    )
 
     assert result is image
 
@@ -133,7 +223,7 @@ def test_get_markdown_viewer_image_scales_an_over_cap_image(mocker: MockerFixtur
     shared_markdown_rendering_settings().max_image_width = 100
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("cover.jpg")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
     assert result is scaled
     image.scaledToWidth.assert_called_once()
@@ -151,7 +241,7 @@ def test_get_markdown_viewer_image_leaves_an_in_cap_image_untouched(mocker: Mock
     image, _, _ = mock_decoded_image(mocker, width=80)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("cover.jpg")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg")
 
     assert result is image
     image.scaledToWidth.assert_not_called()
@@ -176,7 +266,7 @@ def test_get_markdown_viewer_image_tags_the_result_with_the_callers_device_pixel
     image, _, _ = mock_decoded_image(mocker, width=300)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image(
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image(
         "cover.jpg", device_pixel_ratio=1.25
     )
 
@@ -201,7 +291,7 @@ def test_get_markdown_viewer_image_scales_using_the_device_pixel_ratio_adjusted_
     image, scaled, _ = mock_decoded_image(mocker, width=400)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image(
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image(
         "cover.jpg", device_pixel_ratio=1.25
     )
 
@@ -221,7 +311,9 @@ def test_get_markdown_viewer_image_returns_none_for_an_undecodable_file(mocker: 
     mock_decoded_image(mocker, width=0, is_null=True)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("missing.jpg") is None
+    assert (
+        RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("missing.jpg") is None
+    )
 
 
 def test_get_markdown_viewer_image_returns_none_for_a_name_with_no_filename(mocker: MockerFixture) -> None:
@@ -236,7 +328,7 @@ def test_get_markdown_viewer_image_returns_none_for_a_name_with_no_filename(mock
     """
     _, _, constructor = mock_decoded_image(mocker, width=100)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
-    scanner = RehuDocumentImageScanner(model, no_screenshots)
+    scanner = RehuDocumentImageScanner(model, no_screenshots, no_screenshots)
 
     assert scanner.get_markdown_viewer_image("") is None
     assert scanner.get_markdown_viewer_image("file:///elsewhere/") is None
@@ -253,7 +345,9 @@ def test_get_markdown_viewer_image_returns_none_without_a_path() -> None:
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}))
 
-    assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("cover.jpg") is None
+    assert (
+        RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("cover.jpg") is None
+    )
 
 
 # endregion
@@ -276,7 +370,7 @@ def test_get_markdown_viewer_image_resolves_an_extension_less_reference(mocker: 
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self == png_path)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("info00")
 
     assert result is image
     constructor.assert_called_once_with(str(png_path))
@@ -298,7 +392,7 @@ def test_get_markdown_viewer_image_tries_extensions_in_order(mocker: MockerFixtu
     mocker.patch.object(Path, "exists", autospec=True, side_effect=lambda self: self in (jpg_path, png_path))
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    result = RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00")
+    result = RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("info00")
 
     assert result is image
     constructor.assert_called_once_with(str(jpg_path))
@@ -316,7 +410,7 @@ def test_get_markdown_viewer_image_returns_none_when_no_extension_candidate_exis
     mocker.patch.object(Path, "exists", autospec=True, return_value=False)
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, FAKE_PATH))
 
-    assert RehuDocumentImageScanner(model, no_screenshots).get_markdown_viewer_image("info00") is None
+    assert RehuDocumentImageScanner(model, no_screenshots, no_screenshots).get_markdown_viewer_image("info00") is None
 
 
 # endregion

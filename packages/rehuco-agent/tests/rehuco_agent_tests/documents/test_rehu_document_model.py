@@ -41,7 +41,7 @@ from rehuco_core import (
     RenameYieldTimeout,
     current_block_version,
     scan_rehu_screenshot_files,
-    scan_tc_screenshot_files,
+    scan_unconverted_screenshots,
     visible_learning_paths,
 )
 
@@ -58,6 +58,19 @@ def lister_of(scanner: RehuDocumentImageScanner) -> object:
     :returns: the lister callable it was built with.
     """
     return scanner._RehuDocumentImageScanner__lister  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def unconverted_lister_of(scanner: RehuDocumentImageScanner) -> object:
+    """The lister a `RehuDocumentImageScanner` finds its un-converted images with (#270).
+
+    Read the same way, and for the same reason, as :func:`lister_of`: this is the half the configured
+    screenshot patterns are bound to, so it is where a saved patterns change has to show up.
+
+    :param scanner: the scanner to inspect.
+    :returns: the lister callable it was built with.
+    """
+    # pylint: disable-next=protected-access
+    return scanner._RehuDocumentImageScanner__unconverted_lister  # type: ignore[attr-defined]
 
 
 # region fixtures
@@ -1459,22 +1472,54 @@ def test_convert_failure_leaves_the_model_completely_untouched(mocker: MockerFix
     assert model.locked is True
 
 
-def test_image_scanner_lists_tc_screenshots_for_a_legacy_document() -> None:
-    """A model over a legacy ``.tc``-backed document scans with the tc screenshot lister, bound to the
-    currently configured patterns (#281) rather than the bare function falling back to its own default.
+def test_a_legacy_document_gets_the_same_listers_as_a_converted_one() -> None:
+    """A ``.tc`` scans for the same two kinds a ``.rehu`` does -- it simply has none of the first (#270).
+
+    Emphatically **not** the tc rename plan (`scan_tc_screenshots`): that reports each slot's
+    *winner* out of renames that have not happened, which made a collision it would leave alone look
+    like the one un-converted file among several that are all un-converted. What conversion will do to
+    each is the *After conversion* column's to say (#293), not a lister's.
 
     **Test steps:**
 
     * construct a model over a document with ``legacy_tc=True``
-    * verify ``image_scanner`` is a ``RehuDocumentImageScanner`` over ``scan_tc_screenshot_files``, bound
-      to the shared settings' effective patterns
+    * verify its numbered lister is the ``<stem>NN`` scan, the same one a ``.rehu`` gets
+    * verify its un-converted lister is bound to the shared settings' effective patterns (#281)
     """
     model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, legacy_tc=True))
     assert isinstance(model.image_scanner, RehuDocumentImageScanner)
-    lister = lister_of(model.image_scanner)
-    assert isinstance(lister, partial)
-    assert lister.func is scan_tc_screenshot_files
-    assert lister.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
+
+    assert lister_of(model.image_scanner) is scan_rehu_screenshot_files
+
+    unconverted = unconverted_lister_of(model.image_scanner)
+    assert isinstance(unconverted, partial)
+    assert unconverted.func is scan_unconverted_screenshots
+    assert unconverted.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
+
+
+def test_nothing_beside_an_unconverted_tc_is_singled_out(mocker: MockerFixture) -> None:
+    """Every pattern-matched image beside a ``.tc`` is un-converted, because none has been renamed.
+
+    The regression this pins: listing a ``.tc`` from the rename plan made ``sample-00.jpg`` -- the file
+    a conversion would leave alone, ``cover.jpg`` having won slot 00 -- the only row marked
+    un-converted, while ``cover.jpg`` and ``sample-01.jpg`` looked settled. All three are equally
+    un-renamed on disk, and a plan is not a state (#270, #292, #293).
+
+    **Test steps:**
+
+    * mock a ``.tc`` directory holding the three images, with no ``infoNN`` among them
+    * read the model's scanner
+    * verify the numbered half is empty and all three are un-converted, in natural-sort order
+    """
+    names = ["info.tc", "cover.jpg", "sample-01.jpg", "sample-00.jpg"]
+    mocker.patch.object(Path, "iterdir", return_value=[Path(name) for name in names])
+    model = RehuDocumentModel(RehuDocument({"type": "Tutorial"}, Path("/fake/info.tc"), legacy_tc=True))
+    assert isinstance(model.image_scanner, RehuDocumentImageScanner)
+
+    screenshots = model.image_scanner.screenshots()
+
+    assert not screenshots.numbered
+    assert [path.name for path in screenshots.unconverted] == ["cover.jpg", "sample-00.jpg", "sample-01.jpg"]
 
 
 def test_a_saved_pattern_change_reinstalls_the_scanner_for_a_legacy_document() -> None:
@@ -1499,9 +1544,9 @@ def test_a_saved_pattern_change_reinstalls_the_scanner_for_a_legacy_document() -
     assert model.image_scanner is not original_scanner
     assert received == [model.image_scanner]
     assert isinstance(model.image_scanner, RehuDocumentImageScanner)
-    lister = lister_of(model.image_scanner)
-    assert isinstance(lister, partial)
-    assert lister.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
+    unconverted = unconverted_lister_of(model.image_scanner)
+    assert isinstance(unconverted, partial)
+    assert unconverted.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
 
 
 def test_a_closed_documents_model_stops_following_the_patterns() -> None:
@@ -1524,20 +1569,29 @@ def test_a_closed_documents_model_stops_following_the_patterns() -> None:
     shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
 
 
-def test_a_saved_pattern_change_leaves_a_normal_documents_scanner_untouched(model: RehuDocumentModel) -> None:
-    """A non-legacy document's scanner never consults the patterns, so a saved change leaves it alone.
+def test_a_saved_pattern_change_reinstalls_a_normal_documents_scanner_too(model: RehuDocumentModel) -> None:
+    """A non-legacy document's scanner reads the patterns as well, so a saved change reinstalls it.
+
+    Its un-converted lister is what consults them (#270): the numbered set is ``<stem>NN`` whatever
+    the patterns say, but which loose siblings count as screenshots at all is exactly the setting.
 
     **Test steps:**
 
     * read the shared (non-legacy) fixture's original scanner
     * assign a new pattern to the shared settings
-    * verify ``image_scanner`` is the exact same instance
+    * verify ``image_scanner`` is a fresh instance, still over the ``.rehu`` lister
     """
     original_scanner = model.image_scanner
 
     shared_screenshot_patterns_settings().patterns = (r"^shot-(\d+)$",)
 
-    assert model.image_scanner is original_scanner
+    scanner = model.image_scanner
+    assert isinstance(scanner, RehuDocumentImageScanner)
+    assert scanner is not original_scanner
+    assert lister_of(scanner) is scan_rehu_screenshot_files
+    unconverted = unconverted_lister_of(scanner)
+    assert isinstance(unconverted, partial)
+    assert unconverted.keywords["patterns"] == shared_screenshot_patterns_settings().screenshot_name_patterns
 
 
 def test_image_scanner_lists_rehu_screenshots_for_a_normal_document(model: RehuDocumentModel) -> None:

@@ -8,8 +8,9 @@ from PySide6.QtWidgets import QTreeView, QVBoxLayout, QWidget
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
+from rehuco_agent.fields.image_scanner import ScreenshotSet
 from rehuco_agent.fields.widgets import ImageSelector, ImageStrip
-from rehuco_agent.fields.widgets.image_selector import NAME_COLUMN, ScreenshotListModel
+from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, ScreenshotListModel
 
 from rehuco_agent_tests.fields.field_testers import ImagesFieldTester as ImagesField
 
@@ -34,7 +35,10 @@ def fake_scanner(mocker: MockerFixture, files: list[Path]) -> object:
     :param files: the fixed file list ``.files()`` reports.
     :returns: the stand-in scanner.
     """
-    return mocker.Mock(files=mocker.Mock(return_value=files))
+    return mocker.Mock(
+        files=mocker.Mock(return_value=files),
+        screenshots=mocker.Mock(return_value=ScreenshotSet(numbered=tuple(files))),
+    )
 
 
 def make_field(mocker: MockerFixture, image_scanner_changed: SignalInstance | None = None) -> ImagesField:
@@ -113,7 +117,7 @@ def test_editor_seeds_the_selector_with_all_images_checked_except_hidden(
     list_model = view.model()
     assert isinstance(list_model, ScreenshotListModel)
     assert [
-        list_model.index(row, NAME_COLUMN).data(Qt.ItemDataRole.CheckStateRole) for row in range(list_model.rowCount())
+        list_model.index(row, CHECK_COLUMN).data(Qt.ItemDataRole.CheckStateRole) for row in range(list_model.rowCount())
     ] == [
         Qt.CheckState.Checked,
         Qt.CheckState.Unchecked,
@@ -141,7 +145,7 @@ def test_editor_toggle_writes_hidden_images_through_to_the_model(
     assert isinstance(view, QTreeView)
     list_model = view.model()
     assert isinstance(list_model, ScreenshotListModel)
-    list_model.setData(list_model.index(0, NAME_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
+    list_model.setData(list_model.index(0, CHECK_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
     assert model.hidden_images == ["info00.jpg"]
 

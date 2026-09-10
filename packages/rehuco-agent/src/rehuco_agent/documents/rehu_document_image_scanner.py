@@ -1,11 +1,11 @@
 """Resolves a resource's screenshots for the lightbox and the Markdown viewer ([[data-model#image-meanings]]).
 
 Composes two orthogonal concerns rather than subclassing per naming scheme: *which* files are the
-resource's screenshots -- the one convention-varying piece, supplied as a core, ``list[Path]``-returning
-``lister`` (`rehuco_core.scan_rehu_screenshot_files` for a ``.rehu``, `rehuco_core.scan_tc_screenshot_files`
-for a legacy ``.tc``) -- and how an embedded Markdown image name resolves to a decoded, width-capped
-`QImage`, which never varies and is implemented once here. Both lookups resolve against *this resource's
-own directory*, independent of the process's current working directory.
+resource's screenshots -- supplied as two core, ``list[Path]``-returning listers, one per row kind
+(`rehuco_core.scan_rehu_screenshot_files` and `rehuco_core.scan_unconverted_screenshots`, #270) -- and
+how an embedded Markdown image name resolves to a decoded, width-capped `QImage`, which is implemented
+once here. Both lookups resolve against *this resource's own directory*, independent of the process's
+current working directory.
 
 The concrete side of the field toolkit's `ImageScanner` protocol: it lives here in the ``documents``
 layer (constructed by `RehuDocumentModel`, reading the app's Markdown settings), while the toolkit's
@@ -18,53 +18,85 @@ from typing import TYPE_CHECKING, Final
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QImage
-from rehuco_core import IMAGE_EXTENSIONS
+from rehuco_core import IMAGE_EXTENSIONS, other_record_stems
 
+from ..fields.image_scanner import ScreenshotSet
 from ..settings.markdown_rendering_settings import shared_markdown_rendering_settings
 
 if TYPE_CHECKING:
     from .rehu_document_model import RehuDocumentModel
 
 type ScreenshotLister = Callable[[Path, str], list[Path]]
-"""Lists a resource's screenshot files from its ``(directory, stem)`` -- e.g.
-`rehuco_core.scan_rehu_screenshot_files` or `rehuco_core.scan_tc_screenshot_files`."""
+"""Lists a resource's screenshot files from its ``(directory, stem)`` -- either
+`rehuco_core.scan_rehu_screenshot_files` or `rehuco_core.scan_unconverted_screenshots`, which share
+that signature."""
 
 
 class RehuDocumentImageScanner:
     """Resolves one resource's screenshots against its own directory ([[data-model#image-meanings]]).
 
-    Built from the model plus a screenshot ``lister`` -- the one convention-varying piece -- so the
-    naming schemes live as pure functions in ``rehuco_core`` (`scan_rehu_screenshot_files` /
-    `scan_tc_screenshot_files`), not as scanner subclasses here. :meth:`files` feeds the lightbox
-    (which stays unaware of any naming scheme) through that lister; :meth:`get_markdown_viewer_image`
-    resolves a name embedded in the description's Markdown -- convention-independent, so implemented
-    once. Implements the field toolkit's `ImageScanner` protocol, so the toolkit's widgets depend on
-    that interface, not on this concrete class ([[plugins#field-toolkit]]).
+    Built from the model plus one lister per row kind, so the naming rules live as pure functions in
+    ``rehuco_core`` rather than as scanner subclasses here. :meth:`screenshots` keeps the two kinds
+    apart for the curation editor; :meth:`files` hands every other reader the pair as one sequence;
+    :meth:`get_markdown_viewer_image` resolves a name embedded in the description's Markdown, which
+    depends on neither kind and is implemented once. Implements the field toolkit's `ImageScanner`
+    protocol, so the toolkit's widgets depend on that interface, not on this concrete class
+    ([[plugins#field-toolkit]]).
 
     :param model: the document this scanner resolves screenshots for.
-    :param lister: lists this resource's screenshot files given its ``(directory, stem)``.
+    :param lister: lists the ``<stem>NN`` files on disk, given the resource's ``(directory, stem)``.
+    :param unconverted_lister: lists the pattern-matched images that have no slot yet, given the same
+        ``(directory, stem)``.
+
+    Both are taken as arguments rather than called directly so the choice, and the binding of the
+    configured patterns (#281), is made in one place: `RehuDocumentModel.__make_image_scanner`.
     """
 
-    def __init__(self, model: RehuDocumentModel, lister: ScreenshotLister) -> None:
+    def __init__(
+        self, model: RehuDocumentModel, lister: ScreenshotLister, unconverted_lister: ScreenshotLister
+    ) -> None:
         self.__model: Final = model
         self.__lister: Final = lister
+        self.__unconverted_lister: Final = unconverted_lister
 
     def files(self) -> list[Path]:
         """Every recognized screenshot for this resource, as absolute paths.
 
+        :returns: :meth:`ScreenshotSet.paths` of :meth:`screenshots` -- the numbered set first, then
+            the pattern-matched images that have no slot yet (#270).
+        """
+        return self.screenshots().paths()
+
+    def screenshots(self) -> ScreenshotSet:
+        """Every recognized screenshot for this resource, the two kinds kept apart (#270).
+
         Empty, without touching the directory, while the model is still a
-        :attr:`~RehuDocumentModel.pending` session-restore placeholder (#66): the lister is a
-        directory scan, which can block on an offline mount ([[mounts-and-storage#offline-mounts]]),
+        :attr:`~RehuDocumentModel.pending` session-restore placeholder (#66): both listers are
+        directory scans, which can block on an offline mount ([[mounts-and-storage#offline-mounts]]),
         and the strip/selector call this while merely being built. The deferred load rebuilds the
         whole form (``active_block_changed``), so the rebuilt widgets re-ask once the answer is real.
 
-        :returns: the matching paths via this resource's screenshot ``lister``, or empty when the
-            document has no path yet or is still pending.
+        An image the two listers both report is **numbered, once**. The two are supplied
+        independently, so nothing about their types makes their answers disjoint; a picture listed
+        twice would appear twice in the strip and be offered Convert on a row already accounted for,
+        which is a worse failure than the set difference costs.
+
+        :returns: the set; see :class:`~rehuco_agent.fields.image_scanner.ScreenshotSet`. Empty when
+            the document has no path yet or is still pending.
         """
         path = self.__model.path
         if path is None or self.__model.pending:
-            return []
-        return self.__lister(path.parent, path.stem)
+            return ScreenshotSet()
+        directory, stem = path.parent, path.stem
+        numbered = self.__lister(directory, stem)
+        listed = set(numbered)
+        return ScreenshotSet(
+            numbered=tuple(numbered),
+            unconverted=tuple(
+                candidate for candidate in self.__unconverted_lister(directory, stem) if candidate not in listed
+            ),
+            shared_directory=bool(other_record_stems(directory, stem)),
+        )
 
     def get_markdown_viewer_image(self, name: str, device_pixel_ratio: float = 1.0) -> QImage | None:
         """Resolve ``name`` against this resource's own directory, decode it, and scale/tag it for

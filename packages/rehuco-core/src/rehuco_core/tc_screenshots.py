@@ -21,6 +21,7 @@ from PIL import Image, UnidentifiedImageError
 
 from .constants import IMAGE_EXTENSIONS, LEGACY_SUFFIX
 from .rehu_screenshots import scan_rehu_screenshot_files
+from .resource_scoping import is_record_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,27 +257,6 @@ def scan_tc_screenshots(
     return TcScreenshotScanner(directory, stem, patterns).scan()
 
 
-def scan_tc_screenshot_files(
-    directory: Path, stem: str, patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS
-) -> list[Path]:
-    """List the current (pre-conversion) path of every screenshot a conversion would number.
-
-    The reader counterpart of :func:`scan_tc_screenshots`: where that returns the full plan (consumed by
-    conversion), this returns just the files that will end up in a slot -- what the lightbox shows for a
-    ``.tc`` resource before it is converted. Shares the ``(directory, stem)`` signature of
-    `rehuco_core.rehu_screenshots.scan_rehu_screenshot_files` so either can serve as a screenshot lister,
-    though ``stem`` only feeds the (here-discarded) rename plan and does not affect the returned paths.
-
-    :param directory: the resource's directory to scan.
-    :param stem: the new filename base, passed through to the underlying scan.
-    :param patterns: the naming patterns to recognize; see :func:`scan_tc_screenshots`. Defaulted so
-        this still matches the two-argument lister signature its counterpart is chosen against.
-    :returns: each numbered screenshot's current absolute path, in slot order.
-    """
-    plan = scan_tc_screenshots(directory, stem, patterns)
-    return [directory / rename.source_filename for rename in plan.renames]
-
-
 def is_legacy_screenshot(filename: str, patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS) -> bool:
     """Whether ``filename`` is one of tc4's screenshot names.
 
@@ -322,6 +302,11 @@ def scan_unconverted_screenshots(
     same-stem variants or picks a winner between them: every recognized image is listed, and it is the
     dock, not this scan, that a user settles one row at a time.
 
+    In a **multi-record directory** ([[data-model#resource-scoping]]) another record's ``<stem>NN`` is
+    left out as firmly as this record's own: it already holds a slot in *that* resource's numbered set,
+    so it is nobody's un-converted image. Every other pattern-matched image is listed for both records,
+    since a loose ``cover.jpg`` carries nothing naming whose it is and either may claim it (#270).
+
     :param directory: the resource's directory to scan.
     :param stem: the filename base already-numbered siblings carry (e.g. ``"info"``), so this can tell
         them apart from the still-unclaimed images being listed.
@@ -329,12 +314,15 @@ def scan_unconverted_screenshots(
     :returns: the matching paths, in natural-sort order, or empty when ``directory`` is
         missing/unreadable (e.g. an offline mount, [[mounts-and-storage#offline-mounts]]).
     """
-    numbered = re.compile(rf"^{re.escape(stem)}\d{{2}}$", re.IGNORECASE)
     recognized = compiled_screenshot_name_patterns(patterns)
     try:
         entries = list(directory.iterdir())
     except OSError:
         return []
+    # every record's set at once, off the one listing already in hand -- a second walk asking
+    # `other_record_stems` would read the same directory again to learn the same three names
+    stems = {entry.stem for entry in entries if is_record_name(entry.name)} | {stem}
+    numbered = re.compile(rf"^(?:{'|'.join(re.escape(owner) for owner in sorted(stems))})\d{{2}}$", re.IGNORECASE)
     candidates = [
         entry.name
         for entry in entries

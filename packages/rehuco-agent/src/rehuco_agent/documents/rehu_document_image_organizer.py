@@ -10,9 +10,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from rehuco_core import DEFAULT_DELETER, Deleter, delete_screenshot, renumber_screenshots
+from rehuco_core import DEFAULT_DELETER, Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
 
 from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
+from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
 from .recycle_bin_deleter import RecycleBinDeleter
 
 if TYPE_CHECKING:
@@ -45,6 +46,26 @@ class RehuDocumentImageOrganizer:
         """
         directory, stem = self.__location()
         return renumber_screenshots(directory, stem, ordered)
+
+    def convert(self, path: Path) -> dict[str, str]:
+        """Rename ``path`` into this resource's numbered set, free slot or appended (#265, #270).
+
+        The patterns are read live from the shared settings, for the same reason
+        :attr:`deletes_to_trash` is: a page Saved after this organizer was built is still the user's
+        current answer about which names are screenshots at all.
+
+        :param path: the un-converted screenshot to number.
+        :returns: ``{old filename: new filename}`` -- one entry, so the curated-out list follows the
+            rename the same way it follows a reorder's.
+        :raises OSError: the rename failed, or was refused -- including the refusal :meth:`__location`
+            raises for a path-less document or a legacy ``.tc``, which reaches this one first and says
+            the same thing `~rehuco_core.convert_screenshot` would.
+        :raises LookupError: ``path`` matches no configured pattern; see the protocol.
+        :raises ValueError: the numbered set is full.
+        """
+        _, stem = self.__location()
+        converted = convert_screenshot(path, stem, shared_screenshot_patterns_settings().screenshot_name_patterns)
+        return {path.name: converted.name}
 
     @property
     def deletes_to_trash(self) -> bool:

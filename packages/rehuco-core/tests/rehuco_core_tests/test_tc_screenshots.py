@@ -15,7 +15,6 @@ from rehuco_core import (
     UnconvertedScreenshot,
     convert_screenshot,
     is_legacy_screenshot,
-    scan_tc_screenshot_files,
     scan_tc_screenshots,
     scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
@@ -86,7 +85,8 @@ def test_each_recognized_file_takes_the_number_its_name_carries(mocker: MockerFi
 
 def test_renames_come_out_in_slot_order_whatever_the_pattern_order(mocker: MockerFixture) -> None:
     """The plan is in slot order even where the pattern that claims a name sits later in the list than
-    the one claiming a higher number -- the lightbox reads this order for an unconverted ``.tc``.
+    the one claiming a higher number -- the order the conversion, and #293's *After conversion* column,
+    report it in.
 
     **Test steps:**
 
@@ -102,7 +102,6 @@ def test_renames_come_out_in_slot_order_whatever_the_pattern_order(mocker: Mocke
         ScreenshotRename("info01.png", "sample-01.png"),
         ScreenshotRename("info05.jpg", "05.jpg"),
     )
-    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-01.png", DIRECTORY / "05.jpg"]
 
 
 def test_a_taken_slot_leaves_the_later_file_exactly_as_it_was(mocker: MockerFixture) -> None:
@@ -356,54 +355,6 @@ def test_a_directory_is_scanned_with_the_patterns_it_was_given(mocker: MockerFix
 
 # endregion
 
-# region scan_tc_screenshot_files (the reader view: the numbered files' current paths)
-
-
-def test_screenshot_files_returns_each_numbered_files_current_path(mocker: MockerFixture) -> None:
-    """The reader lists the current (pre-conversion) path of every file the conversion would number.
-
-    **Test steps:**
-
-    * mock the directory to hold a ``sample-00``/``sample-01`` series (no collisions)
-    * list the screenshot files
-    * verify each resolves against :data:`DIRECTORY`, in slot order
-    """
-    mock_directory(mocker, ["sample-00.jpg", "sample-01.jpg"])
-
-    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "sample-00.jpg", DIRECTORY / "sample-01.jpg"]
-
-
-def test_screenshot_files_leaves_out_a_file_no_slot_is_free_for(mocker: MockerFixture) -> None:
-    """Only the files that would end up in a slot are listed: one left under its own name has no
-    position in the numbered set to be shown at.
-
-    **Test steps:**
-
-    * mock ``cover.jpg`` and ``sample-00.png`` on the same slot
-    * list the screenshot files
-    * verify only the slot winner's path comes back
-    """
-    mock_directory(mocker, ["cover.jpg", "sample-00.png"])
-
-    assert scan_tc_screenshot_files(DIRECTORY, STEM) == [DIRECTORY / "cover.jpg"]
-
-
-def test_screenshot_files_is_empty_for_a_missing_directory(mocker: MockerFixture) -> None:
-    """A missing/unreadable directory lists no screenshot files, rather than crashing.
-
-    **Test steps:**
-
-    * mock ``Path.iterdir`` to raise ``OSError``
-    * list the screenshot files
-    * verify the result is empty
-    """
-    mocker.patch.object(Path, "iterdir", side_effect=OSError)
-
-    assert not scan_tc_screenshot_files(DIRECTORY, STEM)
-
-
-# endregion
-
 # region scan_unconverted_screenshots (the images dock's second row, #265)
 
 
@@ -461,6 +412,23 @@ def test_results_come_back_in_natural_sort_order(mocker: MockerFixture) -> None:
     mock_directory(mocker, ["file-10.jpg", "file-2.jpg"])
 
     assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "file-2.jpg", DIRECTORY / "file-10.jpg"]
+
+
+def test_another_records_numbered_screenshots_are_left_out(mocker: MockerFixture) -> None:
+    """In a multi-record directory, a sibling record's ``<stem>NN`` is nobody's un-converted image.
+
+    It already holds a slot in *that* resource's set (#270), so it is left out as firmly as this
+    record's own -- while the loose image both records could claim is listed.
+
+    **Test steps:**
+
+    * mock the directory to hold two records, each record's numbered screenshot, and a loose ``cover``
+    * scan for ``info``, under a pattern set that would otherwise recognize the sibling's names
+    * verify only ``cover.jpg`` is listed
+    """
+    mock_directory(mocker, ["info.rehu", "10.rehu", "info00.jpg", "1000.jpg", "cover.jpg"])
+
+    assert scan_unconverted_screenshots(DIRECTORY, STEM) == [DIRECTORY / "cover.jpg"]
 
 
 def test_missing_directory_lists_nothing(mocker: MockerFixture) -> None:
