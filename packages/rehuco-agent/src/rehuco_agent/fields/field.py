@@ -214,6 +214,30 @@ class ImageActivator(Protocol):  # pylint: disable=too-few-public-methods
     on (#161)."""
 
 
+@runtime_checkable
+class LockAware(Protocol):  # pylint: disable=too-few-public-methods
+    """A field whose editor **stays usable while the document is locked**, deciding for itself which
+    of its controls the lock reaches ([[plugins#field-toolkit]], #292).
+
+    A locked document ([[data-model#write-integrity]]) normally has its whole editor surface disabled
+    by the owner, which is the right answer for a form of value editors: every one of them writes.
+    The ``images`` editor is not that -- most of it is a *view* of files on disk (the rows, their
+    metrics, the preview), and only some of it edits (the check boxes, the ordering and delete
+    buttons). Disabling the surface wholesale costs a legacy ``.tc`` the very thing its conversion is
+    about to act on, so a field that says which half is which is offered this contract instead.
+
+    The owner (`DocumentWidget`) hands the lock to every field satisfying it and leaves *their* tabs
+    enabled -- a tab is left enabled only when every field on it is lock-aware, so a surface shared
+    with an ordinary editor still locks whole.
+    """
+
+    def set_locked(self, locked: bool) -> None:
+        """Adopt the document's lock state, applying it to whichever controls it reaches.
+
+        :param locked: whether the document is currently locked.
+        """
+
+
 class Field[T]:
     """Base for a field: binds one logical value to the widgets that view and edit it
     ([[plugins#field-toolkit]]).

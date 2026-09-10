@@ -11,6 +11,7 @@ from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields.image_scanner import ScreenshotSet
 from rehuco_agent.fields.widgets import ImageSelector, ImageStrip
 from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, ScreenshotListModel
+from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 
 from rehuco_agent_tests.fields.field_testers import ImagesFieldTester as ImagesField
 
@@ -327,3 +328,73 @@ def test_viewer_follows_the_previews_visible_toggle_live(
 
     emitter.changed.emit(True)
     assert not viewer.isHidden()
+
+
+def test_a_lock_reaches_the_curation_editor_already_on_screen(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The field is lock-aware, so a lock appearing or clearing re-states the editor (`LockAware`, #292).
+
+    A ``.tc`` converted in place drops its lock without a reload, and the editor it leaves behind is
+    the same widget -- so the state has to travel, not merely be read at build time.
+
+    **Test steps:**
+
+    * build the editor and lock the field
+    * verify the selector went read-only
+    * clear the lock and verify it came back
+    """
+    field = make_field(mocker)
+    editor = field.make_editor(model.bind(field)).editor
+    assert isinstance(editor, ImageSelector)
+    qtbot.addWidget(editor)
+
+    field.set_locked(True)
+    assert editor.read_only is True
+
+    field.set_locked(False)
+    assert editor.read_only is False
+
+
+def test_an_editor_built_under_a_lock_starts_read_only(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """A form rebuilt while the document is locked (a type switch) builds a read-only editor (#292).
+
+    **Test steps:**
+
+    * lock the field before building anything
+    * build the editor
+    * verify it is read-only from the start
+    """
+    field = make_field(mocker)
+    field.set_locked(True)
+
+    editor = field.make_editor(model.bind(field)).editor
+
+    assert isinstance(editor, ImageSelector)
+    qtbot.addWidget(editor)
+    assert editor.read_only is True
+
+
+def test_the_viewer_strip_is_unaffected_by_a_lock(
+    mocker: MockerFixture, qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """The strip edits nothing, so there is nothing for a lock to take from it (#292).
+
+    **Test steps:**
+
+    * build the viewer over a locked field
+    * verify it is enabled and painting thumbnails
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_strip.QPixmap", side_effect=lambda *_: QPixmap(10, 10))
+    field = make_field(mocker)
+    field.set_locked(True)
+
+    viewer = field.make_viewer(model.bind(field)).viewer
+
+    assert isinstance(viewer, ImageStrip)
+    qtbot.addWidget(viewer)
+    assert viewer.isEnabled() is True
+    # not an exact count: a strip rebuild leaves its previous thumbnails alive until they are collected
+    assert viewer.findChildren(ThumbnailLabel)

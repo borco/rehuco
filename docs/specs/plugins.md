@@ -473,6 +473,11 @@ The tutorial type's four surfaces, composed over the shared field toolkit ([[plu
   that cannot be undone. Deliberately single-select: every ordering action names one file. A resource nothing can
   rearrange — one not yet saved anywhere, or a legacy `.tc`, which refuses every screenshot edit as it refuses the
   drop ([[acquisition-tooling#drag-drop-aids]]) — keeps the list and greys the buttons, both row kinds alike.
+  A **locked** document ([[data-model#write-integrity]]) goes further and greys the check boxes with them, since
+  curating a screenshot writes to a record that may not be written; the rows, their metrics and the preview all
+  stay. That is the whole point: a `.tc` is locked, and its images are exactly what the conversion about to run
+  is going to act on, so the dock is where that is looked at first. It is the one editor surface a lock leaves
+  enabled — every other one is disabled whole, as before.
 
   **Un-converted pattern-matched images are the dock's second row kind**, listed after the numbered set: an
   image the screenshot name patterns match ([[acquisition-tooling#screenshot-schemes]]) but that a

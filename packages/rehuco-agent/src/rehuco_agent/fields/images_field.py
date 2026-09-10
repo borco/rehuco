@@ -44,6 +44,11 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     those edits land on disk immediately rather than waiting for a Save, and the strip is sent back
     to the directory afterwards.
 
+    **Lock-aware** (`LockAware`, #292): a locked document -- a legacy ``.tc`` above all -- leaves this
+    editor *shown* and only its editing controls greyed, so the resource whose conversion is being
+    considered can be looked at first. The owner leaves the images tab enabled and hands the lock here
+    instead of disabling the surface wholesale.
+
     :param name: the field's identifier on its model (the bound ``hidden_images`` list).
     :param image_scanner: resolves the resource's current screenshot siblings; seeds both widgets.
     :param image_scanner_changed: fires when ``image_scanner`` changes (e.g. a `.tc` -> `.rehu`
@@ -93,6 +98,12 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
     through its own scanner and has no way to notice that on its own, so this is what sends it back
     to disk instead of leaving it painting thumbnails under names that no longer exist."""
 
+    locked_changed: Signal = Signal(bool)
+    """Fires with the document's new lock state (`LockAware`, #292), forwarded into the curation
+    editor's own read-only state -- the same value-plus-its-signal shape every setting this field
+    passes through already uses, so a lock that appears or clears reaches the editor already on
+    screen (a `.tc` converted in place, [[acquisition-tooling#convert-mechanics]])."""
+
     curated_images_changed: Signal = Signal(list)
     """Fires with the resource's curated screenshot set ([[data-model#image-meanings]]) whenever it is
     rebuilt -- a curation edit here, or a scanner swap ([[acquisition-tooling#tc-to-rehu]]). The other
@@ -132,6 +143,25 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         self.__previews_visible_changed: Final = previews_visible_changed
         self.__selector_preview_height: Final = selector_preview_height
         self.__selector_preview_height_changed: Final = selector_preview_height_changed
+        self.__locked = False
+        """The document's lock state as the owner last reported it (`LockAware`, #292) -- kept so an
+        editor built *after* a lock was applied (a form rebuild on a type switch) starts read-only
+        rather than waiting for the next change."""
+
+    def set_locked(self, locked: bool) -> None:
+        """Adopt the document's lock state, applying it to the curation editor alone (`LockAware`, #292).
+
+        A locked resource is one whose files must not move: the check boxes, the ordering buttons and
+        Delete go read-only, while the rows, their metrics and the preview stay -- the whole point of
+        being lock-aware rather than letting the owner disable the tab. The **viewer** strip is
+        unaffected, since it edits nothing to begin with.
+
+        :param locked: whether the document is currently locked.
+        """
+        if locked == self.__locked:
+            return
+        self.__locked = locked
+        self.locked_changed.emit(locked)
 
     @override
     def make_viewer(self, binding: FieldBinding[list[str]]) -> FieldViewerWidgets:
@@ -167,6 +197,11 @@ class ImagesField(Field[list[str]], QObject):  # pylint: disable=too-many-instan
         selector = ImageSelector(preview_height=self.__selector_preview_height)
         selector.set_previews_visible(self.__previews_visible)
         selector.image_organizer = self.__image_organizer
+        # seeded before the rows are, so a locked document's list is never briefly offered as editable;
+        # a plain connect suffices for the live half, since the slot is a bound method of a QObject and
+        # Qt severs it when the selector dies (unlike the settings lambdas below)
+        selector.read_only = self.__locked
+        self.locked_changed.connect(selector.set_read_only)  # type: ignore[attr-defined]
         selector.setObjectName(self.name)
         selector.image_scanner = self.__image_scanner
         # the initial seed always builds, unlike set_hidden -- its echo-guard would otherwise skip

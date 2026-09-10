@@ -16,6 +16,7 @@ from .field import (
     FieldViewerWidgets,
     HeaderPinned,
     ImageActivator,
+    LockAware,
     StatusReporter,
 )
 
@@ -106,6 +107,36 @@ class FieldsForm:
             if isinstance(field, ImageActivator):
                 field.image_activated.connect(activated)
                 field.curated_images_changed.connect(curated_changed)
+
+    def set_locked(self, locked: bool) -> None:
+        """Hand the document's lock state to every lock-aware field (`LockAware`, #292).
+
+        The `StatusReporter`/`ImageActivator` shape once more: the owner routes, and each field
+        decides what the lock means for its own controls. A field that is not lock-aware hears
+        nothing -- the owner disables its whole tab instead (:attr:`lock_aware_editor_tabs`).
+
+        :param locked: whether the document is currently locked.
+        """
+        for field in self.__fields:
+            if isinstance(field, LockAware):
+                field.set_locked(locked)
+
+    @property
+    def lock_aware_editor_tabs(self) -> frozenset[FieldsTab]:
+        """The editor surfaces the owner may leave **enabled** while the document is locked (#292).
+
+        A tab qualifies only when *every* field on it is lock-aware: one ordinary editor sharing the
+        surface would otherwise stay editable on a locked document, since disabling a control under
+        an enabled parent is nobody's job here. So a mixed tab keeps the wholesale lock and the field
+        beside it loses its read-only view -- the safe half of the trade, and not a situation the
+        document's own composition has today (the curation editor has its tab to itself).
+
+        :returns: the qualifying tabs; empty when no field is lock-aware.
+        """
+        by_tab: dict[FieldsTab, list[bool]] = {}
+        for field in self.__fields:
+            by_tab.setdefault(field.editor_tab, []).append(isinstance(field, LockAware))
+        return frozenset(tab for tab, lock_aware in by_tab.items() if all(lock_aware))
 
     def make_viewer(self, model: FieldModel) -> dict[FieldsTab, QWidget]:
         """Build the read-only viewer grids, one per tab, bound to the model.

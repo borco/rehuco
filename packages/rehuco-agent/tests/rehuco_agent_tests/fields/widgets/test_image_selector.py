@@ -10,7 +10,7 @@ from pathlib import Path
 
 from borco_pyside.widgets import ActionButtonColumn
 from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QColor, QPixmap
+from PySide6.QtGui import QAction, QColor, QPixmap
 from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
@@ -1844,6 +1844,180 @@ def test_the_dock_says_it_never_rewrites_the_description(qtbot: QtBot) -> None:
     assert isinstance(hint, QLabel)
     assert hint.text() == DESCRIPTION_HINT
     assert "never rewritten" in hint.text()
+
+
+# endregion
+
+
+# region the read-only view (#292)
+
+
+def list_action(selector: ImageSelector, text: str) -> QAction:
+    """The named action itself, as armed on the list -- what a keyboard shortcut fires.
+
+    Read off the action rather than its button, because a disabled column greys the button while
+    leaving the shortcut on the list alive: the two are different questions, and a read-only list has
+    to answer both (#292).
+
+    :param selector: the selector under test.
+    :param text: the action's text, e.g. ``"Move Up"``.
+    :returns: the action.
+    """
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    matching = [action for action in view.actions() if action.text() == text]
+    assert len(matching) == 1
+    return matching[0]
+
+
+def read_only(qtbot: QtBot, resource: FakeResource, hidden: list[str] | None = None) -> ImageSelector:
+    """A seeded selector that is a view of its resource rather than an editor of it (#292).
+
+    :param qtbot: pytest-qt fixture, which takes ownership of the widget.
+    :param resource: the in-memory resource to show.
+    :param hidden: filenames to start curated out, if any.
+    :returns: the selector under test.
+    """
+    selector = seeded(qtbot, resource, hidden)
+    selector.read_only = True
+    return selector
+
+
+def test_a_read_only_list_still_lists_its_rows_and_previews_the_selection(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A locked document keeps the half of this editor that only *looks* (#292).
+
+    The rows and the preview are exactly what a legacy ``.tc`` about to be converted is worth
+    looking at, so read-only is a view rather than a disabled surface.
+
+    **Test steps:**
+
+    * seed a read-only selector with a numbered row and an un-converted one
+    * select the second row
+    * verify both rows are listed and the preview reports that screenshot's dimensions
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    selector = read_only(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
+
+    selector.set_current_index(1)
+
+    assert row_names(selector) == ["info00.jpg", "cover.jpg"]
+    assert size_overlay(selector).text() == "320 x 180"
+
+
+def test_a_read_only_list_gives_up_its_check_boxes_and_nothing_else(qtbot: QtBot) -> None:
+    """Curation is an edit to the record, so the check column greys while the rest stays readable (#292).
+
+    Disabled as well as un-checkable: a check box that takes clicks and does nothing would be a
+    worse answer than one that says it is not available.
+
+    **Test steps:**
+
+    * seed a read-only selector
+    * verify the check cell is neither checkable nor enabled, while the name cell is unchanged
+    * verify a check state written straight into the model is refused
+    """
+    selector = read_only(qtbot, FakeResource(["info00.jpg"]))
+    model = checkable_model(selector)
+
+    check = model.flags(model.index(0, CHECK_COLUMN))
+    assert not check & Qt.ItemFlag.ItemIsUserCheckable
+    assert not check & Qt.ItemFlag.ItemIsEnabled
+    assert check & Qt.ItemFlag.ItemIsSelectable
+    assert model.flags(model.index(0, NAME_COLUMN)) & Qt.ItemFlag.ItemIsEnabled
+
+    assert model.setData(model.index(0, CHECK_COLUMN), Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole) is False
+    assert check_state(model, 0) == Qt.CheckState.Checked
+
+
+def test_a_read_only_list_disables_the_buttons_and_the_keys_behind_them(qtbot: QtBot) -> None:
+    """Every action that would rename a file greys, and its shortcut goes with it (#292).
+
+    The list itself stays enabled on a locked document, so a greyed button alone would leave Del and
+    Ctrl+Up reaching the actions armed on it.
+
+    **Test steps:**
+
+    * seed a read-only selector with a row of each kind and select the un-converted one
+    * verify both action columns are disabled
+    * verify the delete and ordering actions themselves are disabled, Convert included
+    """
+    selector = read_only(qtbot, FakeResource(["info00.jpg"], ["cover.jpg"]))
+    selector.set_current_index(1)
+
+    assert not any(column.isEnabled() for column in selector.findChildren(ActionButtonColumn))
+    assert not list_action(selector, "Delete").isEnabled()
+    assert not any(list_action(selector, text).isEnabled() for text in ("Move to Top", "Move Up", "Move Down"))
+    assert action_enabled(selector, "Convert") is False
+
+
+def test_a_read_only_list_refuses_a_move_a_delete_and_a_convert(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The refusal is the model's, not the buttons' -- so it holds however the call arrives (#292).
+
+    **Test steps:**
+
+    * seed a read-only selector with a numbered pair and an un-converted image
+    * call the move, the delete and the convert directly
+    * verify nothing was renamed, deleted or even asked about
+    """
+    question = mocker.patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes)
+    resource = FakeResource(["info00.jpg", "info01.png"], ["cover.jpg"])
+    selector = read_only(qtbot, resource)
+
+    assert selector.move_screenshot(1, 0) == 1
+    selector.delete_screenshot(0)
+    selector.convert_screenshot(2)
+
+    assert row_names(selector) == ["info00.jpg", "info01.png", "cover.jpg"]
+    assert not resource.removed
+    question.assert_not_called()
+
+
+def test_clearing_read_only_hands_every_control_back(qtbot: QtBot) -> None:
+    """A conversion drops the lock in place, and the editor becomes one without a reload (#292).
+
+    The buttons have to *widen* again, which their own columns are what recompute -- so clearing the
+    state re-asks them rather than leaving the narrowing that was applied under the lock.
+
+    **Test steps:**
+
+    * seed a read-only selector with a numbered pair and select the first row
+    * clear the read-only state
+    * verify the columns, the check boxes and the move actions are all available again
+    """
+    selector = read_only(qtbot, FakeResource(["info00.jpg", "info01.png"]))
+    selector.set_current_index(0)
+
+    selector.read_only = False
+
+    assert all(column.isEnabled() for column in selector.findChildren(ActionButtonColumn))
+    model = checkable_model(selector)
+    assert model.flags(model.index(0, CHECK_COLUMN)) & Qt.ItemFlag.ItemIsUserCheckable
+    assert list_action(selector, "Delete").isEnabled()
+    assert list_action(selector, "Move Down").isEnabled()
+    assert list_action(selector, "Move Up").isEnabled() is False
+
+
+def test_toggling_read_only_is_never_reported_as_a_curation_edit(qtbot: QtBot) -> None:
+    """A lock appearing or clearing changes what the rows may do, not what they say (#292).
+
+    Regression: reporting the re-check as a check-state change would make the selector re-emit its
+    hidden set -- which, right after a revert or a conversion has seeded a name no longer on disk, is
+    a *pruned* one, and writing it back would dirty a document that was just made clean.
+
+    **Test steps:**
+
+    * seed a selector whose hidden list names a file that is not among its rows
+    * lock it and unlock it again
+    * verify no hidden set was emitted either way
+    """
+    selector = seeded(qtbot, FakeResource(["info00.jpg", "info01.png"]), hidden=["gone.jpg"])
+    emitted: list[list[str]] = []
+    selector.hidden_changed.connect(emitted.append)
+
+    selector.read_only = True
+    selector.read_only = False
+
+    assert not emitted
 
 
 # endregion

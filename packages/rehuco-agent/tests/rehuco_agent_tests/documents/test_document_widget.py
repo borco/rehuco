@@ -32,7 +32,7 @@ from borco_pyside.theming import ActionIconThemeHandler, read_resource_bytes
 from borco_pyside.widgets import FlowLayout, MessageBanner
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QPixmap
-from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QMenu, QMessageBox, QToolBar, QToolButton, QTreeView, QWidget
 from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -64,7 +64,7 @@ from rehuco_agent.fields.widgets import (
     SingleChoiceComboBox,
 )
 from rehuco_agent.fields.widgets.image_lightbox import STRIP_TOGGLE_BUTTON_NAME
-from rehuco_agent.fields.widgets.image_selector import PREVIEW_PANE
+from rehuco_agent.fields.widgets.image_selector import CHECK_COLUMN, PREVIEW_PANE
 from rehuco_agent.fields.widgets.image_strip import ThumbnailLabel
 from rehuco_agent.fields.widgets.path_editor import UNAVAILABLE_SUFFIX
 from rehuco_agent.settings.default_layout_settings import shared_default_layout_settings
@@ -3318,6 +3318,140 @@ def test_apply_default_layout_falls_back_when_the_saved_default_is_stale(widget:
     widget._DocumentWidget__apply_default_layout_action.trigger()  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
     assert on_disk_dock(widget).toggleViewAction().isChecked() is False
+
+
+# endregion
+
+
+# region the images dock over a legacy .tc (#292)
+
+TC_IMAGES: Final = [Path("/fake/cover.jpg"), Path("/fake/info-01.jpg")]
+"""What a mocked ``.tc`` directory holds: pattern-matched images, none of them numbered yet."""
+
+
+def legacy_over_images(mocker: MockerFixture, qtbot: QtBot) -> tuple[DocumentWidget, RehuDocumentModel]:
+    """A widget over a legacy ``.tc`` whose directory holds :data:`TC_IMAGES`.
+
+    Built here rather than off the ``legacy_widget`` fixture because both listers have to be mocked
+    *before* the model builds its scanner.
+
+    :param mocker: pytest-mock fixture.
+    :param qtbot: pytest-qt fixture, which takes ownership of the widget.
+    :returns: the widget and the model under it.
+    """
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_rehu_screenshot_files", return_value=[])
+    mocker.patch("rehuco_agent.documents.rehu_document_model.scan_unconverted_screenshots", return_value=TC_IMAGES)
+    model = RehuDocumentModel(
+        RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TC_PATH, legacy_tc=True)
+    )
+    widget = DocumentWidget(model)
+    qtbot.addWidget(widget)
+    return widget, model
+
+
+def check_column_flags(selector: ImageSelector, row: int) -> Qt.ItemFlag:
+    """The curation check box's flags on one row -- what says whether it may still be curated.
+
+    :param selector: the images dock's selector.
+    :param row: the row to read.
+    :returns: the check cell's flags.
+    """
+    view = selector.findChild(QTreeView)
+    assert isinstance(view, QTreeView)
+    model = view.model()
+    assert model is not None
+    return model.flags(model.index(row, CHECK_COLUMN))
+
+
+def test_a_legacy_tc_keeps_its_images_dock_while_the_other_editors_lock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A ``.tc``'s images are what its conversion is about to act on, so the dock stays (#292).
+
+    Every other editor surface locks whole, exactly as before -- being lock-aware is the images
+    tab's exemption, not a hole in the lock.
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc``
+    * verify the curation editor is enabled and every plain editor is not
+    """
+    widget, _model = legacy_over_images(mocker, qtbot)
+
+    assert image_selector(widget).isEnabled() is True
+    editors = widget.findChildren(QLineEdit)
+    assert editors
+    assert all(not editor.isEnabled() for editor in editors)
+
+
+def test_a_legacy_tc_lists_its_pattern_matched_images_and_previews_the_selection(
+    mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The dock is a *view* of the un-converted resource: every matched image is a row (#281, #292).
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc`` whose directory holds two pattern-matched images
+    * select the second row
+    * verify both are listed and the preview reports that image's dimensions
+    """
+    mocker.patch("rehuco_agent.fields.widgets.image_selector.QPixmap", side_effect=lambda *_: QPixmap(320, 180))
+    widget, _model = legacy_over_images(mocker, qtbot)
+    selector = image_selector(widget)
+
+    selector.set_current_index(1)
+
+    assert selector.screenshot_paths() == TC_IMAGES
+    overlay = selector._ImageSelector__size_overlay  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert overlay.text() == "320 x 180"
+
+
+def test_a_legacy_tc_refuses_every_edit_its_images_dock_would_make(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Nothing here may move, remove or hide a file the conversion has not named yet (#292).
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc``
+    * verify the selector is read-only and its check boxes are neither checkable nor enabled
+    """
+    widget, _model = legacy_over_images(mocker, qtbot)
+    selector = image_selector(widget)
+
+    assert selector.read_only is True
+    flags = check_column_flags(selector, 0)
+    assert not flags & Qt.ItemFlag.ItemIsUserCheckable
+    assert not flags & Qt.ItemFlag.ItemIsEnabled
+
+
+def test_converting_in_place_hands_the_images_dock_back(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """The lock drops on conversion without a reload, and so does the dock's read-only state (#292).
+
+    **Test steps:**
+
+    * build a widget over a legacy ``.tc`` and mock the core conversion to return an unlocked document
+    * trigger a convert action for real
+    * verify the same selector is editable again, check boxes included
+    """
+    widget, model = legacy_over_images(mocker, qtbot)
+    selector = image_selector(widget)
+    converted = RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}, TARGET_PATH)
+    mocker.patch("rehuco_agent.documents.rehu_document_model.convert_tc", return_value=converted)
+    keep_backups = widget._DocumentWidget__convert_keep_backups_action  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    keep_backups.trigger()
+
+    assert model.locked is False
+    assert selector.read_only is False
+    assert check_column_flags(selector, 0) & Qt.ItemFlag.ItemIsUserCheckable
+
+
+def test_a_rehu_documents_images_dock_is_an_editor_as_before(widget: DocumentWidget) -> None:
+    """An unlocked document is untouched by any of this (#292).
+
+    **Test steps:**
+
+    * build a widget over the sample ``.rehu`` model
+    * verify its curation editor is not read-only
+    """
+    assert image_selector(widget).read_only is False
 
 
 # endregion

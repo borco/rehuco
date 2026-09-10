@@ -220,6 +220,26 @@ class ScreenshotListModel(QAbstractTableModel):
         super().__init__(parent)
         self.__rows: list[ScreenshotRow] = []
         self.__organizer: ImageOrganizer | None = None
+        self.__read_only = False
+
+    def set_read_only(self, read_only: bool) -> None:
+        """Refuse every edit these rows can make, while still describing the files (#292).
+
+        What a locked document ([[data-model#write-integrity]]) leaves of this list: the check boxes
+        stop being checkable *and* stop being enabled -- so they read as the refusal they are rather
+        than as a click that does nothing -- and :attr:`can_rearrange` answers ``False``, which is the
+        same refusal a resource with no organizer already gets and so needs no second code path in
+        the moves and deletes.
+
+        Deliberately **not** reported as a data change: no cell's *value* moved, only what may be
+        done to it, and a ``dataChanged`` in the check-state role would read to the selector as a
+        curation edit -- re-emitting a hidden set that, right after a revert or a conversion has
+        seeded names no longer on disk, is a pruned one that would dirty the document. Repainting the
+        greyed boxes is the view's job, and the selector asks it to.
+
+        :param read_only: whether the rows refuse every edit.
+        """
+        self.__read_only = read_only
 
     def set_organizer(self, organizer: ImageOrganizer | None) -> None:
         """Adopt what renames this resource's screenshots on disk.
@@ -234,8 +254,9 @@ class ScreenshotListModel(QAbstractTableModel):
 
     @property
     def can_rearrange(self) -> bool:
-        """Whether this resource's screenshots can be moved and deleted at all."""
-        return self.__organizer is not None
+        """Whether this resource's screenshots can be moved and deleted at all -- an organizer to do
+        it with, and a document not read-only (:meth:`set_read_only`, #292)."""
+        return self.__organizer is not None and not self.__read_only
 
     # region the model interface
 
@@ -292,7 +313,7 @@ class ScreenshotListModel(QAbstractTableModel):
         :returns: whether anything changed.
         """
         row = self.__row(index)
-        if row is None or role != Qt.ItemDataRole.CheckStateRole or index.column() != CHECK_COLUMN:
+        if row is None or self.__read_only or role != Qt.ItemDataRole.CheckStateRole or index.column() != CHECK_COLUMN:
             return False
         hidden = Qt.CheckState(value) == Qt.CheckState.Unchecked
         if hidden == row.hidden:
@@ -310,15 +331,20 @@ class ScreenshotListModel(QAbstractTableModel):
         is editable, since there is no text here a user writes -- a screenshot's name is its position
         in the set, which the move buttons decide.
 
+        A **read-only** list (:meth:`set_read_only`, #292) keeps every row selectable and readable and
+        gives up only its check boxes: the cell loses both its checkability and its enabled state, so
+        it greys rather than sitting there taking clicks that go nowhere.
+
         :param index: the cell asked about.
         :returns: its flags.
         """
         if not index.isValid():
             return Qt.ItemFlag.NoItemFlags
-        flags = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if index.column() == CHECK_COLUMN:
-            flags |= Qt.ItemFlag.ItemIsUserCheckable
-        return flags
+        if index.column() != CHECK_COLUMN:
+            return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
+        if self.__read_only:
+            return Qt.ItemFlag.ItemIsSelectable
+        return Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
 
     @override
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
@@ -405,7 +431,9 @@ class ScreenshotListModel(QAbstractTableModel):
             expected to reseed from disk -- the move has been reported by then, so the model's own
             account of itself is only trustworthy again after a reset.
         """
-        if self.__organizer is None or source == target:
+        # the organizer is re-checked rather than asking can_rearrange, so the type checker keeps the
+        # narrowing the rename below needs; read-only is the other half of that same question (#292)
+        if self.__organizer is None or self.__read_only or source == target:
             return False
         # both ends inside the numbered prefix: an un-converted row holds no slot, so there is
         # neither a position for it to leave nor one for a numbered row to take from it (#270)
@@ -442,7 +470,8 @@ class ScreenshotListModel(QAbstractTableModel):
         :returns: whether it was deleted.
         :raises OSError: if the delete or the renumbering failed; see :meth:`move_row`.
         """
-        if self.__organizer is None or not 0 <= row < len(self.__rows):
+        # both conditions for the reason :meth:`move_row` states
+        if self.__organizer is None or self.__read_only or not 0 <= row < len(self.__rows):
             return False
         self.beginRemoveRows(QModelIndex(), row, row)
         try:
@@ -652,14 +681,23 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
 
     current_index_changed = Signal()
     """Fires whenever :attr:`current_index` changes -- the `ItemViewer` contract the two action
-    columns read to know which screenshot they act on."""
+    columns read to know which screenshot they act on -- and whenever what may be *done* to that row
+    changes without the row itself moving (a lock appearing or clearing, #292), since recomputing
+    against the current row is the same answer either way."""
 
     image_scanner = SimpleProperty[ImageScanner | None](None)
     """The strategy resolving this resource's screenshots; ``None`` shows nothing."""
 
     image_organizer = SimpleProperty[ImageOrganizer | None](None)
     """What rearranges the screenshots on disk; ``None`` leaves this a read-only curation list, with
-    the move and delete buttons disabled (a document with no path yet, or a legacy ``.tc``)."""
+    the move and delete buttons disabled (a document with no path yet)."""
+
+    read_only = SimpleProperty[bool](False)
+    """Whether this is a **view** of the resource's images rather than an editor of them (#292): the
+    rows, their metrics and the preview stay, while the check boxes, the ordering buttons, Delete and
+    Convert grey out. What a locked document's `~rehuco_agent.fields.images_field.ImagesField` sets
+    (`~rehuco_agent.fields.field.LockAware`) -- above all a legacy ``.tc``, whose images are exactly
+    what its conversion is about to act on."""
 
     def __init__(self, parent: QWidget | None = None, preview_height: int = PREVIEW_HEIGHT) -> None:
         super().__init__(Qt.Orientation.Vertical, parent)
@@ -733,6 +771,9 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         self.__list.selectionModel().currentChanged.connect(self.__on_current_changed)
         self.image_scanner_changed.connect(lambda _scanner: self.__refresh())  # type: ignore[attr-defined]
         self.image_organizer_changed.connect(lambda _organizer: self.__apply_organizer())  # type: ignore[attr-defined]
+        # the same handler as the organizer above: read-only and "nothing to rearrange with" are one
+        # question to the model (`ScreenshotListModel.can_rearrange`), which the buttons read (#292)
+        self.read_only_changed.connect(lambda _read_only: self.__apply_organizer())  # type: ignore[attr-defined]
         self.current_index_changed.connect(self.__apply_row_actions)
         self.screenshots_changed.connect(self.__apply_row_actions)
         self.__apply_organizer()
@@ -859,12 +900,12 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         The curated-out set follows the rename ([[data-model#image-meanings]]): a picture unchecked
         while it was ``cover.jpg`` is still unchecked as ``info03.jpg``.
 
-        :param at: the row to convert; out of range, already numbered, or with no organizer, is a
-            no-op.
+        :param at: the row to convert; out of range, already numbered, read-only (#292), or with no
+            organizer, is a no-op.
         """
         organizer = self.image_organizer
         paths = self.screenshot_paths()
-        if organizer is None or not 0 <= at < len(paths) or self.__list_model.is_numbered(at):
+        if organizer is None or self.read_only or not 0 <= at < len(paths) or self.__list_model.is_numbered(at):
             return
         hidden = self.hidden_filenames()
         try:
@@ -986,18 +1027,28 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         return True
 
     def __apply_organizer(self) -> None:
-        """Hand the organizer to the model, and grey the buttons out when there is none.
+        """Hand the organizer and the read-only state to the model, and grey the buttons out when
+        either of them refuses an edit.
 
-        The model is where it lives, because rearranging the rows *is* renaming the files -- this
-        widget only mirrors the answer into its buttons. They are disabled rather than hidden: a
-        document with no path yet gets one the moment it is saved, and a list whose buttons come and
-        go reads as a different editor each time.
+        The model is where both live, because rearranging the rows *is* renaming the files, and
+        because a read-only list is one whose check boxes stop being checkable too (#292) -- this
+        widget only mirrors the one answer they add up to into its buttons. They are disabled rather
+        than hidden: a document with no path yet gets one the moment it is saved, a locked one drops
+        its lock the moment it is converted, and a list whose buttons come and go reads as a
+        different editor each time.
         """
         self.__list_model.set_organizer(self.image_organizer)
+        self.__list_model.set_read_only(self.read_only)
+        # the flags changed, not the data, so the model reports nothing: the check boxes are repainted
+        # greyed (or not) from here, without a data change the selector would take for a curation edit
+        self.__list.viewport().update()
         available = self.__list_model.can_rearrange
         self.__ordering_actions.setEnabled(available)
         self.__item_actions.setEnabled(available)
-        self.__apply_row_actions()
+        # through the signal rather than straight into :meth:`__apply_row_actions`, so the two columns
+        # recompute their own rules first: this narrows what they offer, and a lock that has just
+        # *cleared* needs them to have widened again before it does (#292)
+        self.current_index_changed.emit()
 
     def __apply_row_actions(self) -> None:
         """Grey out what the **current row kind** cannot do (#270).
@@ -1007,15 +1058,23 @@ class ImageSelector(QSplitter):  # pylint: disable=too-many-instance-attributes
         on it. Whether the resource can be rearranged at all gates both -- that is the *column's*
         enabled state, and :meth:`__apply_organizer`'s answer.
 
+        A resource nothing may rearrange -- no organizer, or a **read-only** list (#292) -- disables
+        the *actions*, not only the columns their buttons live in: the delete and ordering actions are
+        armed as shortcuts on the list itself, which a read-only document leaves enabled, so a
+        greyed button alone would still leave Del and Ctrl+Up reaching them.
+
         This narrows, never widens: the ordering column has just recomputed its own four rules
         (first/last within the numbered set) off the same two signals, and is connected ahead of this
         because it is built first, so switching them back on here would undo them.
         """
+        rearrangeable = self.__list_model.can_rearrange
         numbered = self.__list_model.is_numbered(self.current_index)
-        if not numbered:
+        if not rearrangeable or not numbered:
             for action in self.__ordering_action_list():
                 action.setEnabled(False)
-        self.__convert_action.setEnabled(self.__list_model.can_rearrange and self.current_index >= 0 and not numbered)
+        if not rearrangeable:
+            self.__item_actions.delete_action.setEnabled(False)
+        self.__convert_action.setEnabled(rearrangeable and self.current_index >= 0 and not numbered)
 
     def __ordering_action_list(self) -> tuple[QAction, ...]:
         """The ordering column's four actions, in column order.
