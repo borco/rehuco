@@ -16,7 +16,7 @@ from borco_pyside.dialogs import DockableDialog, DockableDialogManager
 from borco_pyside.logging import LogWidget
 from borco_pyside.theming import ActionIconThemeHandler, ThemeManager, ThemeMenu, ThemeModel
 from PySide6.QtCore import QByteArray
-from PySide6.QtGui import QAction, QCloseEvent, QIcon
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -84,6 +84,26 @@ LOG: Final = logging.getLogger(__name__)
 SETTINGS_DIALOG_OBJECT_NAME: Final = "settings_dialog"
 SETTINGS_ICON_RESOURCE: Final = ":/icons/app_settings.svg"
 
+DOCUMENTS_DOCK_OBJECT_NAME: Final = "documents_dock"
+"""The documents area's own ``objectName`` on the outer `CDockManager` (#268).
+
+A fixed literal, like the log and task queue docks': this dock is the *area* open documents live in, not
+one of them, so nothing here derives from a path and nothing resyncs on a rename (#52's dock-identity
+resync belongs to the nested docks inside it)."""
+
+DOCUMENTS_DOCK_TITLE: Final = "Documents"
+
+DOCUMENTS_VIEW_ICON_RESOURCE: Final = ":/icons/documents_view.svg"
+
+BOTTOM_DOCK_HEIGHT_SHARE: Final = 0.2
+"""How much of a **fresh** layout's height each bottom dock (Log, Tasks) gets, the Documents dock
+keeping the rest -- see :meth:`MainWindow.__seed_bottom_dock_heights` for why a default has to be
+seeded at all now that there is no central widget to expand.
+
+A fifth each: enough rows to read a log or watch a queue without the thing they are about becoming
+the smaller half, and only a starting point -- the splitter is draggable and what the user drags it
+to is what the saved layout carries from then on."""
+
 LOG_DOCK_OBJECT_NAME: Final = "log_dock"
 """The app-wide log dock's ``objectName`` -- its identity in the outer `CDockManager`'s saved layout.
 
@@ -131,13 +151,13 @@ THEME_DARK_ICON: Final = ":/icons/theme_dark.svg"
 
 
 class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
-    """The single top-level window: a `CDockManager` whose central dock hosts :class:`DocumentsDock`,
-    with a settings dock (#47) registered on the same outer manager -- not merged into
-    `DocumentsDock`'s own nested one. Floating-first by default (see
+    """The single top-level window: a `CDockManager` holding a **Documents** dock around
+    :class:`DocumentsDock`, with a settings dock (#47) registered on the same outer manager -- not
+    merged into `DocumentsDock`'s own nested one. Floating-first by default (see
     `DockableDialog.place_floating`), so it starts as its own independent window rather than
     pre-split into the documents area; a saved layout freely re-docks or repositions it.
 
-    Dock-in-dock (a `CDockManager` inside the central dock's `DocumentsDock`, itself inside this
+    Dock-in-dock (a `CDockManager` inside the Documents dock's `DocumentsDock`, itself inside this
     window's own `CDockManager`) leaves room for a future resource browser to dock alongside the
     open documents ([[packaging-deployment#qml-regression]]) without restructuring this shell -- the
     settings dock is the first thing to actually use that room.
@@ -253,8 +273,15 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # visibility (#47, #55). Skipped when empty (no session saved yet): CDockManager.restoreState()
         # would return False anyway, but only after Qt's qUncompress() logs a spurious "Input data is
         # corrupted" warning to stderr for the invalid-as-qCompress empty buffer.
+        # not Final: showEvent sets it the first time it seeds. A layout that actually restored already
+        # carries the user's own splitter sizes, so seeding a default over it is exactly what must not
+        # happen -- the restore's own verdict is what decides, not merely whether a blob was present
+        # (a stale or corrupted one is refused, and then there *is* nothing but the as-built layout).
+        self.__bottom_dock_heights_seeded = False
         if self.__window_settings.outer_docks_state:
-            self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+            self.__bottom_dock_heights_seeded = bool(
+                self.__dock_manager.restoreState(QByteArray(self.__window_settings.outer_docks_state))
+            )
 
     def __on_document_focus_changed(self, widget: DocumentWidget | None) -> None:
         """Reflect the newly-focused document's label in the window title, or the base title if none,
@@ -336,23 +363,37 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
                     dirty=widget.model.dirty,
                 )
             )
-            action.triggered.connect(lambda _checked=False, widget=widget: self.__documents_dock.focus_document(widget))
+            action.triggered.connect(lambda _checked=False, widget=widget: self.__focus_document(widget))
             menu.addAction(action)
             self.__dynamic_view_menu_actions.append(action)
 
+    def __focus_document(self, widget: DocumentWidget) -> None:
+        """Jump to an already-open document from the ``View`` menu (#61), revealing the Documents dock
+        first (#268).
+
+        Not an open funnel, but the same failure without the reveal: a document picked from the menu
+        while the Documents dock is closed would be made current somewhere invisible, and the menu row
+        the user just clicked would look as though it did nothing.
+
+        :param widget: the picked document's widget.
+        """
+        self.__reveal_documents_dock()
+        self.__documents_dock.focus_document(widget)
+
     def __setup_view_menu(self) -> None:
         """Build the theme controls and fill ``View``'s static section -- the theme entries, then the
-        app-wide docks (#57, #200, #202).
+        app-wide docks (#57, #200, #202, #268).
 
         The toolbar's 3-state cycling action and the menu's three explicit entries are two views of the
         one :class:`~borco_pyside.theming.ThemeModel` built in ``__init__``; neither reads
         ``QApplication.styleHints().colorScheme()``, which reports the *resolved* appearance and cannot
         tell "explicitly Light" from "Default, currently resolving to Light".
 
-        ``log_action``/``tasks_action`` stand in for those docks' own ``toggleViewAction()``s here (see
+        ``documents_action``/``log_action``/``tasks_action`` stand in for those docks' own
+        ``toggleViewAction()``s here (see
         :meth:`__setup_docking_system`'s companion-wiring comment) -- a plain menu row, unlike the
         toolbar buttons those were built for. They sit between the theme entries and the open-resource
-        list because both are views of the *app* rather than of a resource, and
+        list because all three are views of the *app* rather than of a resource, and
         :meth:`__add_open_documents` only ever appends, so this static order survives however often the
         dynamic tail is rebuilt.
 
@@ -378,6 +419,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.view_menu.addAction(theme_menu.light_action)
         self.__ui.view_menu.addAction(theme_menu.dark_action)
         self.__ui.view_menu.addSeparator()  # between the static theme entries above and the app docks below
+        self.__ui.view_menu.addAction(self.__ui.documents_action)
         self.__ui.view_menu.addAction(self.__ui.log_action)
         self.__ui.view_menu.addAction(self.__ui.tasks_action)
         self.__ui.view_menu.addAction(self.__ui.image_previews_action)
@@ -654,32 +696,33 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__settings_dialog.add_page("Videos", VideosPage())
 
     def __setup_docking_system(self) -> None:
-        central_dock = QtAds.CDockWidget(self.__dock_manager, "Central Widget")
-        central_dock.setWidget(self.__documents_dock)
-        central_dock.setFeature(QtAds.CDockWidget.NoTab, True)
-
-        self.__dock_manager.setCentralWidget(central_dock)
-
         # not Final: this runs from __setup_docking_system rather than __init__, matching
         # __settings_action_icon_handler below
+        self.__documents_dock_widget = self.__add_documents_dock()
         self.__log_dock = self.__add_log_dock()
         self.__task_queue_dock = self.__add_task_queue_dock()
-        # log_action/tasks_action stand in for the docks' own toggleViewAction()s in the View menu,
-        # the same reason settings_action stands in for toggle_action in File below: the toolbar
-        # button sits on a highlighted checked-button background, where ActionIconThemeHandler's
+        # documents_action/log_action/tasks_action stand in for the docks' own toggleViewAction()s in
+        # the View menu, the same reason settings_action stands in for toggle_action in File below: the
+        # toolbar button sits on a highlighted checked-button background, where ActionIconThemeHandler's
         # checked-state color reads well, but a menu row has no such background behind its icon --
         # only the native checkmark -- so that same color would be unreadable there whenever a dock
         # is open. Kept (unlike every other ActionIconThemeHandler call site here) since view_menu's
-        # own aboutToShow needs them to resync log_action/tasks_action right before View shows --
+        # own aboutToShow needs them to resync the companions right before View shows --
         # connected here rather than where the actions are actually added to view_menu (__init__,
-        # once the theme entries ahead of them exist) because both handlers already exist by this
+        # once the theme entries ahead of them exist) because all three handlers already exist by this
         # point and view_menu itself does too, declared in the .ui.
+        self.__documents_view_icon_handler = ActionIconThemeHandler(
+            self.__documents_dock_widget.toggleViewAction(),
+            DOCUMENTS_VIEW_ICON_RESOURCE,
+            companion=self.__ui.documents_action,
+        )
         self.__log_view_icon_handler = ActionIconThemeHandler(
             self.__log_dock.toggleViewAction(), LOG_VIEW_ICON_RESOURCE, companion=self.__ui.log_action
         )
         self.__task_view_icon_handler = ActionIconThemeHandler(
             self.__task_queue_dock.toggleViewAction(), TASK_VIEW_ICON_RESOURCE, companion=self.__ui.tasks_action
         )
+        self.__ui.view_menu.aboutToShow.connect(self.__documents_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__log_view_icon_handler.resync_companion_checked_state)
         self.__ui.view_menu.aboutToShow.connect(self.__task_view_icon_handler.resync_companion_checked_state)
 
@@ -741,9 +784,137 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__ui.action_bar.addWidget(spacer)
         self.__ui.action_bar.addAction(self.__ui.theme_action)
         self.__ui.action_bar.addAction(self.__ui.image_previews_toggle_action)
+        self.__ui.action_bar.addAction(self.__documents_dock_widget.toggleViewAction())
         self.__ui.action_bar.addAction(self.__log_dock.toggleViewAction())
         self.__ui.action_bar.addAction(self.__task_queue_dock.toggleViewAction())
         self.__ui.action_bar.addAction(settings_dock.toggle_action)
+
+    def __add_documents_dock(self) -> QtAds.CDockWidget:
+        """Build the documents area's own dock on the outer manager, open and filling the window (#268).
+
+        **An ordinary dock, and the manager has no central widget at all.** The area used to be
+        ``CDockManager.setCentralWidget``'s permanent, tabless dock, which is precisely what made it the
+        one surface the user could not put away -- so a window whose documents were all closed still
+        gave the whole of itself to an empty area, and the Log or Tasks dock could only ever be a strip
+        under it. Dropping the central widget is what lets the three be peers
+        ([[plugins#dock-shell]]): this one is added first, and with nothing else placed yet it takes the
+        whole container, so a fresh layout still opens with documents filling the window and the two
+        bottom docks (hidden) splitting off below it.
+
+        Closable, movable, floatable and focusable -- the same feature set the Log and Tasks pair
+        carries, and the reason :meth:`__reveal_documents_dock` exists: a dock the user can put away is
+        a dock an open has to bring back.
+
+        **Open by default**, unlike those two: the documents area is what the window is *for*, and a
+        first run that showed nothing but chrome would leave nowhere for an opened file to land until the
+        user found a toggle. An older saved layout describes this area as a central widget instead, which
+        is what :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`'s bump
+        discards.
+
+        :returns: the dock, open.
+        """
+        dock = QtAds.CDockWidget(self.__dock_manager, DOCUMENTS_DOCK_TITLE)
+        dock.setObjectName(DOCUMENTS_DOCK_OBJECT_NAME)
+        features = QtAds.CDockWidget.DockWidgetFeature
+        dock.setFeatures(
+            features.DockWidgetClosable
+            | features.DockWidgetMovable
+            | features.DockWidgetFloatable
+            | features.DockWidgetFocusable
+        )
+        dock.setWidget(self.__documents_dock)
+        self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock)
+        return dock
+
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
+        """Seed the fresh layout's Documents/Log/Tasks split the first time this window is shown
+        (#268).
+
+        Here rather than in ``__init__`` because a splitter that has never been laid out refuses to be
+        sized: before the first show its panes read as three equal thirds and ``setSplitterSizes`` on
+        them does not take (measured offscreen). Once, and only for a layout that did not restore -- see
+        :meth:`__seed_bottom_dock_heights` and :attr:`__bottom_dock_heights_seeded`; the flag is also
+        what keeps every *later* ``show()`` (the tray's un-hide, :meth:`raise_and_activate`) from
+        re-seeding a layout the user has since dragged.
+
+        :param event: the show event, passed on to ``QMainWindow`` first so the layout this reads has
+            actually happened.
+        """
+        super().showEvent(event)
+        if not self.__bottom_dock_heights_seeded:
+            self.__bottom_dock_heights_seeded = True
+            self.__seed_bottom_dock_heights()
+
+    def __seed_bottom_dock_heights(self) -> None:
+        """Give the Documents dock the bulk of a fresh layout's height, and each bottom dock a strip
+        (#268).
+
+        **Only needed because there is no central widget any more.** A `CDockManager`'s central area
+        expands and the areas around it keep their own size hints, which is what used to leave the
+        documents area with the window whatever the Log and Tasks docks asked for. As a peer of theirs
+        it is just another splitter pane, sized from its content's hint -- and an *empty* documents area
+        hints small while a `LogWidget`'s table hints large, so revealing both bottom docks on a fresh
+        install squeezed the documents down to under a sixth of the window (measured offscreen). Which
+        is backwards: the strip under the thing it is about is exactly what :meth:`__add_log_dock` says
+        a log dock is.
+
+        The split is applied while the two docks are **briefly open** -- a hidden pane has no size to
+        set -- and survives them being hidden again, so it is what the *first* reveal of either one
+        lands on. The round trip is invisible despite running on a window already on screen: no event
+        loop spins between the two toggles, so nothing is ever repainted with a dock open, and the
+        companion actions `ActionIconThemeHandler` mirrors end up back where they started.
+
+        Sized off the splitter's own current total, and generic in the number of bottom docks (every
+        pane after the first, the Documents dock being the one added before them), so adding a third
+        one needs nothing here.
+        """
+        area = self.__documents_dock_widget.dockAreaWidget()
+        if area is None:  # pragma: no cover  (the dock is placed at construction and never removed)
+            return
+        self.__log_dock.toggleView(True)
+        self.__task_queue_dock.toggleView(True)
+        sizes = self.__dock_manager.splitterSizes(area)
+        total = sum(sizes)
+        bottom = round(total * BOTTOM_DOCK_HEIGHT_SHARE)
+        self.__dock_manager.setSplitterSizes(area, [total - bottom * (len(sizes) - 1), *[bottom] * (len(sizes) - 1)])
+        self.__log_dock.toggleView(False)
+        self.__task_queue_dock.toggleView(False)
+
+    def __reveal_documents_dock(self) -> None:
+        """Show the Documents dock if it is hidden, and bring its tab to the front (#268).
+
+        Every open funnel runs this first -- :meth:`open_file`, :meth:`open_folder`,
+        :meth:`open_archive` (so the ``File`` dialogs, ``Open recents``, argv, the shell verbs and the
+        single-instance forward are all covered, since each reaches the documents area through one of
+        the three) and :meth:`__restore_session`. A file opened into a dock the user has closed, or that
+        sits behind the Log dock's tab, would otherwise be added, made current and focused somewhere
+        invisible: the window would look exactly as it did before, and ``File`` > ``Close`` would
+        suddenly be enabled for a document nobody can see.
+
+        ``toggleView(True)`` on an already-open dock is a no-op, and so is ``setAsCurrentTab()`` on one
+        already at the front, so this costs nothing in the overwhelmingly common case. Focus is
+        deliberately *not* taken here: which document gets it is `DocumentsDock`'s own to decide, which
+        it does for the dock it is about to make current.
+
+        A **floating** Documents dock is its own top-level window, and "raised" means something more
+        for it: fronting its tab does nothing about the window sitting behind this one, so the container
+        itself is raised and activated. Done by hand because the binding exposes only ``QWidget``'s
+        ``raise_`` on a dock, not ADS's own ``CDockWidget::raise()`` that does exactly this (checked:
+        the bound one does not even reopen a closed dock). Ordered after the main window's own
+        ``raise_and_activate`` on a forwarded open (`Application.open_path`), so the floating window
+        ends up on top of the window that was just activated rather than under it.
+
+        Session restore runs this too, but does not get the last word on visibility: ``__init__``
+        restores the outer layout *after* the session, so a window closed with the Documents dock hidden
+        opens with it hidden again -- with the session's documents waiting inside it, unread (#66).
+        """
+        self.__documents_dock_widget.toggleView(True)
+        self.__documents_dock_widget.setAsCurrentTab()
+        container = self.__documents_dock_widget.floatingDockContainer()
+        if container is not None:
+            container.raise_()
+            container.activateWindow()
 
     def __add_log_dock(self) -> QtAds.CDockWidget:
         """Build the app-wide log dock on the outer manager, hidden by default (#200).
@@ -1004,7 +1175,13 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
     def __restore_session(self) -> None:
         """Reopen every document the last session left open, restoring its dock layout and focus --
-        without reading any of their files up front (#66); see ``DocumentsDock.restore_session``."""
+        without reading any of their files up front (#66); see ``DocumentsDock.restore_session``.
+
+        Reveals the Documents dock first, like every other open funnel (#268) -- see
+        :meth:`__reveal_documents_dock` for why the outer layout restored afterwards still has the last
+        word on whether it ends up visible.
+        """
+        self.__reveal_documents_dock()
         self.__documents_dock.restore_session(self.__session)
 
     def __save_window_state(self) -> None:
@@ -1071,8 +1248,12 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         (:attr:`~RehuDocument.load_failed`): a missing or unparseable file is not a file you opened, so it
         stays out of recents even though it still yields a (locked) dock ([[data-model#write-integrity]]).
 
+        The Documents dock is shown and raised first (:meth:`__reveal_documents_dock`, #268), so the
+        dock this adds is somewhere the user can actually see.
+
         :param path: filesystem path to a ``.rehu`` file.
         """
+        self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_document(resolved)
         if not widget.model.document.load_failed:
@@ -1086,8 +1267,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         -- unless the resource could not be read and opened as a load-failure stub
         (:attr:`~RehuDocument.load_failed`, [[data-model#write-integrity]]).
 
+        The Documents dock is shown and raised first, the same as :meth:`open_file` (#268).
+
         :param path: filesystem path to the directory.
         """
+        self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_folder(resolved)
         if not widget.model.document.load_failed:
@@ -1103,7 +1287,10 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
 
         :param path: filesystem path to the archive file (e.g. ``foo.zip``); its ``.rehu`` companion
             (e.g. ``foo.rehu``) is what actually gets opened or created.
+
+        The Documents dock is shown and raised first, the same as :meth:`open_file` (#268).
         """
+        self.__reveal_documents_dock()
         resolved = Path(path).resolve()
         widget = self.__documents_dock.open_archive(resolved)
         if not widget.model.document.load_failed:

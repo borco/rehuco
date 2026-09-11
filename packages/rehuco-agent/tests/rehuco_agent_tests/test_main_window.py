@@ -32,6 +32,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
 from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.main_window import (
+    DOCUMENTS_DOCK_OBJECT_NAME,
     LOG_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
     TASK_QUEUE_DOCK_OBJECT_NAME,
@@ -3141,6 +3142,479 @@ def test_close_missing_files_action_triggering_delegates_to_the_documents_dock(
 
     close_missing.assert_called_once_with()
 
+
+# region the documents dock (#268)
+
+
+def documents_dock_widget(window: MainWindow) -> Any:
+    """Find the documents area's own dock on the outer manager (#268).
+
+    :param window: the window to read.
+    :returns: the dock.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return dock_manager.findDockWidget(DOCUMENTS_DOCK_OBJECT_NAME)
+
+
+def test_installs_a_documents_dock_and_no_central_widget(qtbot: QtBot) -> None:
+    """The documents area is an ordinary dock on the outer manager, and the manager has no central
+    widget at all (#268).
+
+    The area used to be ``CDockManager.setCentralWidget``'s permanent, tabless dock -- the one surface
+    the user could not put away. Both halves are asserted here, because the point is not that a
+    Documents dock exists but that it is a *peer* of Log and Tasks rather than the fixture they split
+    off from.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * find the outer dock manager's registered dock named :data:`DOCUMENTS_DOCK_OBJECT_NAME`
+    * verify it exists, is placed, and hosts the window's ``DocumentsDock``
+    * verify no central-widget dock is registered alongside it
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    dock = documents_dock_widget(window)
+
+    assert dock is not None
+    assert dock.dockAreaWidget() is not None
+    assert dock.widget() is documents_dock
+    assert set(dock_manager.dockWidgetsMap()) == {
+        DOCUMENTS_DOCK_OBJECT_NAME,
+        LOG_DOCK_OBJECT_NAME,
+        TASK_QUEUE_DOCK_OBJECT_NAME,
+        SETTINGS_DIALOG_OBJECT_NAME,
+    }
+
+
+def test_the_documents_dock_starts_open_and_closable(qtbot: QtBot) -> None:
+    """Unlike the Log and Tasks pair, the Documents dock starts **open** -- the documents area is what
+    the window is for -- and it is closable, which is what made #268 worth doing (#268).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing persisted
+    * verify the dock is open and its toggle checked
+    * verify it carries the closable feature
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = documents_dock_widget(window)
+
+    assert not dock.isClosed()
+    assert dock.toggleViewAction().isChecked()
+    dock.toggleView(False)
+    assert dock.isClosed()
+
+
+def test_the_documents_dock_toggle_leads_the_app_dock_toggles_on_the_action_bar(qtbot: QtBot) -> None:
+    """The three app-dock toggles sit between the theme action and the settings dock's toggle, in the
+    order Documents, Log, Tasks (#268 added the first one ahead of #200's and #202's).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * read the action bar's actions in order
+    * verify all three sit between theme and settings, documents before log before tasks
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    settings_dock = dock_manager.findDockWidget(SETTINGS_DIALOG_OBJECT_NAME)
+
+    actions = ui.action_bar.actions()
+    documents_toggle = documents_dock_widget(window).toggleViewAction()
+    log_toggle = log_dock(window).toggleViewAction()
+
+    assert actions.index(ui.theme_action) < actions.index(documents_toggle)
+    assert actions.index(documents_toggle) < actions.index(log_toggle)
+    assert actions.index(log_toggle) < actions.index(settings_dock.toggleViewAction())
+
+
+def test_the_documents_dock_toggle_carries_a_themed_icon(qtbot: QtBot) -> None:
+    """The toggle is themed from the documents icon, so it follows a theme switch like the Log and
+    Tasks buttons beside it (#268).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow``
+    * verify the documents dock's toggle action carries an icon
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not documents_dock_widget(window).toggleViewAction().icon().isNull()
+
+
+def test_the_documents_dock_toggle_leads_the_app_docks_in_the_view_menu(qtbot: QtBot) -> None:
+    """``View`` lists ``documents_action`` after the theme entries and before ``log_action`` (#268).
+
+    A companion, not the dock's own ``toggleViewAction()``, for the same reason the other two are --
+    see ``__setup_docking_system``'s companion-wiring comment.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and rebuild the dynamic tail as ``aboutToShow`` would
+    * verify ``documents_action`` is in the menu, after the theme entries and before ``log_action``
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    window._MainWindow__add_open_documents(ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    actions = ui.view_menu.actions()
+    theme_titles = {"&Default", "&Light", "Dar&k"}
+
+    assert ui.documents_action in actions
+    last_theme = max(actions.index(action) for action in actions if action.text() in theme_titles)
+    assert last_theme < actions.index(ui.documents_action) < actions.index(ui.log_action)
+
+
+def test_the_view_menu_toggle_shows_and_hides_the_documents_dock(qtbot: QtBot) -> None:
+    """Triggering the View menu's documents entry closes the (open-by-default) dock; triggering it
+    again reopens it (#268).
+
+    The entry is ``documents_action``, the companion -- its ``triggered`` is wired straight to the
+    dock's real toggle action by ``ActionIconThemeHandler``, so this pins that the companion actually
+    drives visibility, not merely that it sits in the right place.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` and find ``documents_action`` in the View menu
+    * trigger it and verify the dock closed
+    * trigger it again and verify the dock reopened
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    ui = window._MainWindow__ui  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    toggle = ui.documents_action
+    assert toggle in ui.view_menu.actions()
+
+    toggle.trigger()
+    assert documents_dock_widget(window).isClosed()
+
+    toggle.trigger()
+    assert not documents_dock_widget(window).isClosed()
+
+
+@mark.parametrize(
+    ("method", "dock_method", "argument"),
+    [
+        ("open_file", "open_document", "a.rehu"),
+        ("open_folder", "open_folder", "a_folder"),
+        ("open_archive", "open_archive", "a.zip"),
+    ],
+)
+def test_every_open_funnel_reopens_a_closed_documents_dock(
+    method: str, dock_method: str, argument: str, mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """Opening anything shows the Documents dock the user had closed (#268).
+
+    The three funnels are covered together because every outside route -- the ``File`` dialogs,
+    ``Open recents``, argv, the shell verbs, a ``QFileOpenEvent`` and the single-instance forward --
+    reaches the documents area through one of them.
+
+    **Test steps:**
+
+    * mock the ``DocumentsDock`` method this funnel delegates to (the dock itself stays real)
+    * construct a ``MainWindow`` and close its Documents dock
+    * call the funnel
+    * verify the dock is open again
+    """
+    mocker.patch(f"rehuco_agent.main_window.DocumentsDock.{dock_method}")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock_widget(window).toggleView(False)
+
+    getattr(window, method)(argument)
+
+    assert not documents_dock_widget(window).isClosed()
+
+
+def test_picking_a_document_from_the_view_menu_reopens_a_closed_documents_dock(
+    dock_entries: Callable[[MainWindow], list[Any]], mocker: MockerFixture, qtbot: QtBot
+) -> None:
+    """The ``View`` menu's open-documents list reveals the Documents dock before focusing the picked
+    document (#268) -- otherwise the row the user just clicked would appear to do nothing.
+
+    **Test steps:**
+
+    * construct ``MainWindow``, stand in one open document, and close the Documents dock
+    * populate the docks menu and trigger its single entry
+    * verify the dock is open again and ``DocumentsDock.focus_document`` was called with the widget
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    widget = mocker.MagicMock(model=mocker.MagicMock(label="Solo", path=Path("/solo/info.rehu"), dirty=False))
+    widget.save_state.return_value = b"snapshot"  # keeps teardown's implicit close() from choking on a MagicMock
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    mocker.patch.object(documents_dock, "open_document_widgets", return_value=[widget])
+    focus_document = mocker.patch.object(documents_dock, "focus_document")
+    documents_dock_widget(window).toggleView(False)
+
+    window._MainWindow__add_open_documents(window._MainWindow__ui.view_menu)  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    dock_entries(window)[0].trigger()
+
+    assert not documents_dock_widget(window).isClosed()
+    focus_document.assert_called_once_with(widget)
+
+
+def test_opening_a_file_raises_a_floating_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A Documents dock torn out into its own window is raised and activated by an open, not merely
+    fronted as a tab (#268) -- a floating window behind this one is as invisible as a closed dock.
+
+    The binding exposes only ``QWidget.raise_`` on a dock, not ADS's ``CDockWidget::raise()``, so the
+    reveal raises the floating container itself; this pins that it does.
+
+    **Test steps:**
+
+    * construct ``MainWindow``, float its Documents dock, and spy on the container's raise/activate
+    * ``open_file`` with a mocked ``DocumentsDock.open_document``
+    * verify the container was raised and activated, and the dock is open
+    """
+    mocker.patch("rehuco_agent.main_window.DocumentsDock.open_document")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    container = dock_manager.addDockWidgetFloating(documents_dock_widget(window))
+    raise_ = mocker.patch.object(container, "raise_")
+    activate_window = mocker.patch.object(container, "activateWindow")
+
+    window.open_file("a.rehu")
+
+    raise_.assert_called_once_with()
+    activate_window.assert_called_once_with()
+    assert not documents_dock_widget(window).isClosed()
+
+
+def test_opening_a_file_makes_its_document_current_in_the_reopened_dock(qtbot: QtBot) -> None:
+    """The reveal is not the whole story: the document opened into the reopened dock is the current
+    one, so what was just opened is what is on screen (#268).
+
+    Opens a path that does not exist, which yields a real (locked) document dock
+    ([[data-model#write-integrity]]) -- the point here is which dock is current, not what was read.
+
+    **Test steps:**
+
+    * construct a ``MainWindow``, close its Documents dock, and open two missing paths
+    * verify the dock is open and the *second* path is the focused document
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    documents_dock = window._MainWindow__documents_dock  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    documents_dock_widget(window).toggleView(False)
+
+    window.open_file("first_missing.rehu")
+    window.open_file("second_missing.rehu")
+
+    assert not documents_dock_widget(window).isClosed()
+    assert documents_dock.focused_document_path() == Path("second_missing.rehu").resolve()
+
+
+def test_restoring_the_session_reveals_the_documents_dock(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """Session restore reveals the dock before handing the session to ``DocumentsDock`` (#268, #66).
+
+    Asserted by call order rather than by the end state: ``__init__`` restores the outer layout
+    *afterwards*, which is what actually decides the dock's visibility on a launch (see the test
+    below), so "is it open now" cannot tell the reveal from the restore.
+
+    **Test steps:**
+
+    * record the order in which the reveal and ``DocumentsDock.restore_session`` are called
+    * construct a ``MainWindow``
+    * verify the session was restored, and the reveal came first
+    """
+    calls: list[str] = []
+    mocker.patch.object(
+        MainWindow,
+        "_MainWindow__reveal_documents_dock",
+        side_effect=lambda: calls.append("reveal"),
+    )
+    mocker.patch(
+        "rehuco_agent.main_window.DocumentsDock.restore_session",
+        side_effect=lambda _session: calls.append("restore_session"),
+    )
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert calls == ["reveal", "restore_session"]
+
+
+def test_a_documents_dock_left_closed_stays_closed_after_a_restart(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A Documents dock closed when the window closed is closed again on the next launch -- it rides
+    the outer dock layout like every other dock, and the layout restore has the last word over the
+    session's own reveal (#268).
+
+    **Test steps:**
+
+    * construct a window, close its Documents dock, and capture the real window state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state
+    * verify the second window's Documents dock starts closed, unlike the open default
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    documents_dock_widget(first).toggleView(False)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved.outer_docks_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+
+    assert documents_dock_widget(second).isClosed()
+
+
+def test_an_unusable_saved_layout_leaves_the_documents_dock_open(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A saved layout that cannot be applied leaves the window's own default standing, Documents dock
+    open and placed (#268).
+
+    This is what the :data:`~rehuco_agent.settings.main_window_settings.OUTER_DOCKS_STATE_VERSION`
+    bump buys: a v3 blob describes this area as a *central widget*, a structure the manager no longer
+    has, so it is discarded at load rather than restored into a shell with no central area. Here the
+    blob is refused one step later, by ``CDockManager.restoreState`` itself, which pins the same
+    guarantee without having to forge a layout the current shell can no longer produce.
+
+    **Test steps:**
+
+    * seed ``MainWindowSettings.load`` with a blob that is not a dock layout at all
+    * construct a ``MainWindow``
+    * verify the Documents dock is open and placed in an area
+    """
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = b"not a dock layout"
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    dock = documents_dock_widget(window)
+    assert not dock.isClosed()
+    assert dock.dockAreaWidget() is not None
+
+
+def splitter_sizes(window: MainWindow) -> list[int]:
+    """The heights of the Documents dock's own splitter panes -- Documents first, then each bottom
+    dock (#268).
+
+    :param window: the window to read.
+    :returns: the pane sizes, in splitter order.
+    """
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    return list(dock_manager.splitterSizes(documents_dock_widget(window).dockAreaWidget()))
+
+
+def shown_with_every_app_dock_open(window: MainWindow) -> None:
+    """Show ``window`` and open its Log and Tasks docks, so the three-pane split is real and measurable.
+
+    These tests are the deliberate exception to this module's "never ``.show()`` a ``MainWindow``" rule
+    (which is about ``isVisible()`` lying under an unshown ancestor): the seeding under test *only*
+    happens on a real show, because a splitter that has never been laid out refuses to be sized. The
+    suite runs offscreen, so nothing appears.
+
+    :param window: the window to show.
+    """
+    window.show()
+    log_dock(window).toggleView(True)
+    task_queue_dock(window).toggleView(True)
+
+
+def test_the_first_show_gives_the_documents_dock_the_bulk_of_a_fresh_layout(qtbot: QtBot) -> None:
+    """With every app dock open on a fresh layout, the Documents dock keeps most of the height and the
+    Log and Tasks docks get a strip each (#268).
+
+    Without this, dropping the central widget made the documents area just another splitter pane sized
+    from its content's hint -- and an empty one hints small where a ``LogWidget``'s table hints large,
+    so the log ended up with the window and the thing it is a log *of* with a sliver.
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with nothing persisted, show it, and open both bottom docks
+    * verify the Documents pane is larger than both bottom panes put together
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    shown_with_every_app_dock_open(window)
+
+    documents, *bottom = splitter_sizes(window)
+    assert len(bottom) == 2
+    assert documents > sum(bottom)
+
+
+def test_a_restored_layout_is_not_reseeded_on_show(mocker: MockerFixture, qtbot: QtBot) -> None:
+    """A layout that actually restored keeps its own splitter sizes -- the seed is a default for a
+    fresh window, not a policy imposed on a remembered one (#268).
+
+    **Test steps:**
+
+    * show a window with every app dock open, drag the split log-heavy, and capture the state it saves
+    * construct a second window seeded (via a mocked ``load``) with that saved state, and show it
+    * verify the Documents pane is still the smaller one, not re-seeded to the fresh-layout default
+    """
+    first = MainWindow()
+    qtbot.addWidget(first)
+    shown_with_every_app_dock_open(first)
+    dock_manager = first._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    total = sum(splitter_sizes(first))
+    log_heavy = [total // 8, total // 2, total - total // 8 - total // 2]
+    dock_manager.setSplitterSizes(documents_dock_widget(first).dockAreaWidget(), log_heavy)
+    first._MainWindow__save_window_state()  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    saved = first._MainWindow__window_settings  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+
+    def fake_load(self: MainWindowSettings, settings: object) -> None:
+        del settings
+        self.outer_docks_state = saved.outer_docks_state
+
+    mocker.patch.object(MainWindowSettings, "load", fake_load)
+
+    second = MainWindow()
+    qtbot.addWidget(second)
+    second.show()
+
+    documents, *bottom = splitter_sizes(second)
+    assert documents < sum(bottom)
+
+
+def test_a_later_show_does_not_reseed_a_split_the_user_has_dragged(qtbot: QtBot) -> None:
+    """The seed runs once. A window hidden to tray and shown again (:meth:`MainWindow.show`, via
+    ``raise_and_activate`` or the tray's own un-hide) keeps the split the user dragged (#268).
+
+    **Test steps:**
+
+    * show a window with every app dock open, then drag the split log-heavy
+    * hide and show it again
+    * verify the dragged sizes are still in place
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown_with_every_app_dock_open(window)
+    dock_manager = window._MainWindow__dock_manager  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
+    total = sum(splitter_sizes(window))
+    log_heavy = [total // 8, total // 2, total - total // 8 - total // 2]
+    dock_manager.setSplitterSizes(documents_dock_widget(window).dockAreaWidget(), log_heavy)
+
+    window.hide()
+    window.show()
+
+    documents, *bottom = splitter_sizes(window)
+    assert documents < sum(bottom)
+
+
+# endregion
 
 # region the app-wide log dock (#200)
 
