@@ -339,4 +339,25 @@ def test_a_deleter_that_cannot_reach_a_bin_stops_the_discard(mocker: MockerFixtu
         discard_conversion_backups(REHU_PATH, deleter=RefusingDeleter())
 
 
+def test_a_backup_already_gone_is_tolerated(mocker: MockerFixture) -> None:
+    """A backup that vanished between the listing and the delete is not an error: the plain unlink
+    this replaced passed ``missing_ok=True``, and a `Deleter` has no such option to pass (#298).
+
+    **Test steps:**
+
+    * discard with a deleter that reports every file already gone
+    * verify the discard still reports the backups it set out to remove
+    """
+    mock_environment(mocker)
+
+    class VanishedDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` whose target is always already gone."""
+
+        def delete(self, path: Path) -> None:
+            """Report ``path`` as missing, the way an unlink of a vanished file does."""
+            raise FileNotFoundError(path)
+
+    assert discard_conversion_backups(REHU_PATH, deleter=VanishedDeleter()) == BACKUPS
+
+
 # endregion

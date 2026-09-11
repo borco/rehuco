@@ -312,6 +312,29 @@ def test_a_deleter_that_cannot_reach_a_bin_leaves_the_backup_and_still_returns(m
     assert isinstance(document, RehuDocument)
 
 
+def test_a_backup_already_gone_is_tolerated(mocker: MockerFixture) -> None:
+    """A backup that vanished under the conversion is not an error: the plain unlink this replaced
+    passed ``missing_ok=True``, and a `Deleter` has no such option to pass (#298).
+
+    **Test steps:**
+
+    * convert with ``keep_backups=False`` and a deleter that reports every file already gone
+    * verify the conversion still returns its document rather than raising
+    """
+    mock_environment(mocker)
+
+    class VanishedDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` whose target is always already gone."""
+
+        def delete(self, path: Path) -> None:
+            """Report ``path`` as missing, the way an unlink of a vanished file does."""
+            raise FileNotFoundError(path)
+
+    document = convert_tc(TC_PATH, keep_backups=False, deleter=VanishedDeleter())
+
+    assert isinstance(document, RehuDocument)
+
+
 # endregion
 
 
