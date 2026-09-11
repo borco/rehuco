@@ -54,6 +54,7 @@ from rehuco_agent.settings.screenshot_patterns_settings import shared_screenshot
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui import checksums_page, settings_dialog, tasks_page, tray_block
 from rehuco_agent.settings.videos_settings import shared_videos_settings
+from rehuco_core import DEFAULT_DELETER_PROVIDER
 
 
 # Mirrors every dedicated settings test's own FakeSettings exactly (see e.g.
@@ -276,6 +277,19 @@ def isolate_shared_screenshot_deletion_settings(mocker: MockerFixture) -> Iterat
     mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=FakeSettings())
     yield
     shared_screenshot_deletion_settings.cache_clear()
+
+
+@fixture(autouse=True)
+def reset_deleter_provider() -> Iterator[None]:
+    """Put the process-wide `DeleterProvider` back to core's plain unlink after every test (#298).
+
+    `MainWindow` installs the agent's Recycle Bin accessor on it when it wires up the queue, and the
+    singleton outlives the window -- so without this, every test built after a ``MainWindow`` test
+    (rehuco-core's own job tests included, when the packages run in one session) would find a
+    `RecycleBinDeleter` where it asserts the default.
+    """
+    yield
+    DEFAULT_DELETER_PROVIDER.reset()
 
 
 @fixture(autouse=True)

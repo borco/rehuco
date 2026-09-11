@@ -267,12 +267,14 @@ def test_discarding_asks_first_and_names_what_it_frees(
     * verify the question names the bytes and says it cannot be undone, and that the operation ran
     """
     discard = mocker.patch(f"{ACTIONS_MODULE}.discard_conversion_backups", return_value=())
+    deleter = mocker.Mock()
+    mocker.patch(f"{ACTIONS_MODULE}.configured_deleter", return_value=deleter)
 
     actions.discard()
 
     assert "14.0 MB" in question_of(answer_yes)
     assert "cannot be undone" in question_of(answer_yes)
-    discard.assert_called_once_with(INFO_PATH)
+    discard.assert_called_once_with(INFO_PATH, deleter=deleter)
 
 
 def test_a_declined_discard_changes_nothing(

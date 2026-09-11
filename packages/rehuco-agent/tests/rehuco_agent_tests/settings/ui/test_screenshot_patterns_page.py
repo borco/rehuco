@@ -183,7 +183,7 @@ def test_editing_a_pattern_marks_only_the_patterns_frame_dirty(page: ScreenshotP
     * verify the patterns frame alone is reported dirty
     """
     ui = page._ScreenshotPatternsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    frame_filter = SettingsFrameFilter(page, "Screenshot Patterns")
+    frame_filter = SettingsFrameFilter(page, "Sidecar Names")
     assert not frame_filter.dirty_frames()
 
     model = model_of(page)
@@ -203,7 +203,7 @@ def test_editing_a_sample_marks_only_the_try_it_frame_dirty(page: ScreenshotPatt
     * verify the try-it frame alone is reported dirty
     """
     ui = page._ScreenshotPatternsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    frame_filter = SettingsFrameFilter(page, "Screenshot Patterns")
+    frame_filter = SettingsFrameFilter(page, "Sidecar Names")
 
     model = try_it_editor_of(page).model
     model.setData(model.index(0, FILENAME_COLUMN), "shot-3.jpg")
@@ -221,9 +221,9 @@ def test_the_page_filters_by_its_three_frames(page: ScreenshotPatternsPage) -> N
     * filter by a non-matching term and verify all three hide
     """
     ui = page._ScreenshotPatternsPage__ui  # pyright: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
-    frame_filter = SettingsFrameFilter(page, "Screenshot Patterns")
+    frame_filter = SettingsFrameFilter(page, "Sidecar Names")
 
-    frame_filter.apply("screenshot name patterns", show_full_on_title_match=False)
+    frame_filter.apply("sidecar image name patterns", show_full_on_title_match=False)
     assert ui.patterns_frame.isVisibleTo(page) is True
     assert ui.collisions_frame.isVisibleTo(page) is False
     assert ui.try_it_frame.isVisibleTo(page) is False

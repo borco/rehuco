@@ -1402,6 +1402,8 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
         "rehuco_agent.documents.rehu_document_model.convert_tc",
         return_value=RehuDocument({"type": "Tutorial"}, tc_path.with_suffix(".rehu")),
     )
+    deleter = mocker.Mock()
+    mocker.patch("rehuco_agent.documents.rehu_document_model.configured_deleter", return_value=deleter)
 
     model.convert(keep_backups=False, overwrite=True)
 
@@ -1412,6 +1414,7 @@ def test_convert_passes_keep_backups_and_overwrite_through(mocker: MockerFixture
         username="alice",
         excluded_patterns=EXCLUDED_FILE_PATTERNS,
         screenshot_name_patterns=SCREENSHOT_NAME_PATTERNS,
+        deleter=deleter,
     )
 
 

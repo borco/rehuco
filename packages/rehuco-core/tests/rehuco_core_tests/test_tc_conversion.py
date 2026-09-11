@@ -11,6 +11,7 @@ from rehuco_core import (
     EXCLUDED_FILE_PATTERNS,
     SCREENSHOT_NAME_PATTERNS,
     ContentUnreachableError,
+    NoTrashBinError,
     RehuDocument,
     ScreenshotRename,
     ScreenshotSkipReason,
@@ -254,6 +255,64 @@ def test_keep_backups_leaves_the_orig_sibling(mocker: MockerFixture) -> None:
     convert_tc(TC_PATH, keep_backups=True)
 
     mocks["unlink"].assert_not_called()
+
+
+# region Deleter (#298)
+
+
+def test_a_discarded_backup_goes_through_the_given_deleter(mocker: MockerFixture) -> None:
+    """The one backup a no-keep-backups conversion discards is handed to ``deleter``, not unlinked
+    directly, so a caller's Recycle Bin choice reaches it (#298).
+
+    **Test steps:**
+
+    * convert with ``keep_backups=False`` and a recording deleter
+    * verify the deleter -- not ``Path.unlink`` -- was asked to delete the ``.tc``'s backup
+    """
+    mocks = mock_environment(mocker)
+
+    class RecordingDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` that records what it was asked to delete instead of touching disk."""
+
+        def __init__(self) -> None:
+            self.deleted: list[Path] = []
+
+        def delete(self, path: Path) -> None:
+            """Record ``path`` rather than removing it."""
+            self.deleted.append(path)
+
+    deleter = RecordingDeleter()
+
+    convert_tc(TC_PATH, keep_backups=False, deleter=deleter)
+
+    assert deleter.deleted == [backup_path(TC_PATH)]
+    mocks["unlink"].assert_not_called()
+
+
+def test_a_deleter_that_cannot_reach_a_bin_leaves_the_backup_and_still_returns(mocker: MockerFixture) -> None:
+    """A `NoTrashBinError` discarding the backup is cleanup, not the conversion -- so it is logged and
+    swallowed rather than undoing an otherwise-successful conversion (#298).
+
+    **Test steps:**
+
+    * convert with ``keep_backups=False`` and a deleter that always refuses
+    * verify the conversion still returns its document rather than raising
+    """
+    mock_environment(mocker)
+
+    class RefusingDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` with no bin to reach, whatever it is handed."""
+
+        def delete(self, path: Path) -> None:
+            """Refuse ``path`` the way a Recycle-Bin deleter refuses an unreachable location."""
+            raise NoTrashBinError(f"No Recycle Bin is available for {path.parent}")
+
+    document = convert_tc(TC_PATH, keep_backups=False, deleter=RefusingDeleter())
+
+    assert isinstance(document, RehuDocument)
+
+
+# endregion
 
 
 def test_existing_target_without_overwrite_raises_and_touches_nothing(mocker: MockerFixture) -> None:

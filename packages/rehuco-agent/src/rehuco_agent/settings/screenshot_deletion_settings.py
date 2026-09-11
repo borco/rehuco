@@ -23,12 +23,14 @@ the safer default -- a permanent delete is the deliberate exception (#291), not 
 
 @dataclass
 class ScreenshotDeletionSettings:
-    """Whether the images dock's delete moves a screenshot to the Recycle Bin / Trash, or unlinks it
-    outright (#291).
+    """Whether deleting a file this app removes on the user's behalf moves it to the Recycle Bin /
+    Trash, or unlinks it outright (#291, #298).
 
-    :attr:`use_recycle_bin` is what `RehuDocumentImageOrganizer` reads to choose between a
-    `RecycleBinDeleter` and `~rehuco_core.DEFAULT_DELETER` when a caller injects none of its own --
-    the one place this setting is actually consumed.
+    Named and first written for the images dock's delete alone, but
+    `~rehuco_agent.documents.recycle_bin_deleter.configured_deleter` -- the one place
+    :attr:`use_recycle_bin` is actually read -- is now also what a legacy-``.tc`` conversion's discarded
+    backup and both conversion-backups discard surfaces resolve into a `RecycleBinDeleter` or
+    `~rehuco_core.DEFAULT_DELETER`, absent a caller's own explicit choice.
     """
 
     use_recycle_bin: bool = DEFAULT_USE_RECYCLE_BIN

@@ -18,6 +18,7 @@ from typing import Final
 
 from .constants import IMAGE_EXTENSIONS
 from .rehu_document import RehuDocument, RehuFormatError
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter
 from .rehu_screenshots import scan_rehu_screenshot_files
 
 BACKUP_SUFFIX: Final = ".orig"
@@ -115,13 +116,16 @@ def conversion_backups(rehu_path: Path) -> ConversionBackups:
     return ConversionBackupsManager(rehu_path).inventory()
 
 
-def discard_conversion_backups(rehu_path: Path) -> tuple[Path, ...]:
+def discard_conversion_backups(rehu_path: Path, deleter: Deleter = DEFAULT_DELETER) -> tuple[Path, ...]:
     """Delete every retained backup beside ``rehu_path``, making the conversion permanent.
 
     :param rehu_path: the converted ``.rehu``.
+    :param deleter: how each backup is actually removed; defaults to a plain unlink (#298).
     :returns: the backups deleted, sorted by name.
+    :raises NoTrashBinError: ``deleter`` could not reach a bin for one of the backups; the ones
+        already deleted stay deleted, and every backup from that one on is left in place.
     """
-    return ConversionBackupsManager(rehu_path).discard()
+    return ConversionBackupsManager(rehu_path).discard(deleter)
 
 
 class ConversionBackupsManager:
@@ -148,14 +152,19 @@ class ConversionBackupsManager:
             converted=created,
         )
 
-    def discard(self) -> tuple[Path, ...]:
+    def discard(self, deleter: Deleter = DEFAULT_DELETER) -> tuple[Path, ...]:
         """Delete every retained backup.
 
+        :param deleter: how each backup is actually removed; see :func:`discard_conversion_backups`.
         :returns: the backups deleted, sorted by name.
+        :raises NoTrashBinError: see :func:`discard_conversion_backups`.
         """
         backups = self.__backups()
         for backup in backups:
-            backup.unlink(missing_ok=True)
+            try:
+                deleter.delete(backup)
+            except FileNotFoundError:
+                pass
         return backups
 
     def __backups(self) -> tuple[Path, ...]:

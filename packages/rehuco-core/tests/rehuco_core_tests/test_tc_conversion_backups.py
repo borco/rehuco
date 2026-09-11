@@ -8,6 +8,7 @@ from typing import Any, Final
 import pytest
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    NoTrashBinError,
     RehuDocument,
     RehuFormatError,
     conversion_backups,
@@ -284,6 +285,58 @@ def test_discard_deletes_exactly_the_backups(mocker: MockerFixture) -> None:
 
     assert discarded == BACKUPS
     assert [call.args[0] for call in mocks["unlink"].call_args_list] == list(BACKUPS)
+
+
+def test_discard_goes_through_the_given_deleter(mocker: MockerFixture) -> None:
+    """Each backup is handed to ``deleter``, not unlinked directly, so a caller's Recycle Bin choice
+    reaches it (#298).
+
+    **Test steps:**
+
+    * discard with a recording deleter
+    * verify it -- not ``Path.unlink`` -- was asked to delete exactly the backups
+    """
+    mocks = mock_environment(mocker)
+
+    class RecordingDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` that records what it was asked to delete instead of touching disk."""
+
+        def __init__(self) -> None:
+            self.deleted: list[Path] = []
+
+        def delete(self, path: Path) -> None:
+            """Record ``path`` rather than removing it."""
+            self.deleted.append(path)
+
+    deleter = RecordingDeleter()
+
+    discarded = discard_conversion_backups(REHU_PATH, deleter=deleter)
+
+    assert discarded == BACKUPS
+    assert deleter.deleted == list(BACKUPS)
+    mocks["unlink"].assert_not_called()
+
+
+def test_a_deleter_that_cannot_reach_a_bin_stops_the_discard(mocker: MockerFixture) -> None:
+    """A `NoTrashBinError` is not swallowed here -- discard is the whole point of the call, unlike a
+    conversion's own end-of-the-line cleanup (#298).
+
+    **Test steps:**
+
+    * discard with a deleter that always refuses
+    * verify the error propagates
+    """
+    mock_environment(mocker)
+
+    class RefusingDeleter:  # pylint: disable=too-few-public-methods
+        """A `~rehuco_core.Deleter` with no bin to reach, whatever it is handed."""
+
+        def delete(self, path: Path) -> None:
+            """Refuse ``path`` the way a Recycle-Bin deleter refuses an unreachable location."""
+            raise NoTrashBinError(f"No Recycle Bin is available for {path.parent}")
+
+    with pytest.raises(NoTrashBinError):
+        discard_conversion_backups(REHU_PATH, deleter=RefusingDeleter())
 
 
 # endregion

@@ -40,7 +40,7 @@
          </font>
         </property>
         <property name="text">
-         <string>Screenshot name patterns</string>
+         <string>Sidecar image name patterns</string>
         </property>
        </widget>
       </item>

@@ -414,8 +414,8 @@ What a **reference-images** resource's content *is* was settled by #197: content
   changes. A nested record's real content leaves too, but under the coverage rule rather than this one (#254): the
   subdirectory holding it is out wholesale, and a file-scoped record's same-stem siblings are its own
   ([[data-model#resource-scoping]]). **Junk** — `Thumbs.db`,
-  `ehthumbs.db`, `desktop.ini`, `.DS_Store`, `._*` by default — is the tier the `Excluded Files` settings page
-  (#226) edits, as filename globs matched case-insensitively. `Thumbs.db` earns its place because Windows still
+  `ehthumbs.db`, `desktop.ini`, `.DS_Store`, `._*` by default — is the tier the `Files` settings page
+  (#226, #298) edits, as filename globs matched case-insensitively. `Thumbs.db` earns its place because Windows still
   writes per-folder thumbnail caches on network shares ([[packaging-deployment#ts230-as-nas]]), and `._*` is the
   macOS AppleDouble residue that appears for the same reason; neither is content, and both change a size and a
   checksum without anyone touching the resource.

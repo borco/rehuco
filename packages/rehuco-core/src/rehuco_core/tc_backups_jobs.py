@@ -19,9 +19,11 @@ its whole life, which costs nothing.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Final
 
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter
 from .resource_scoping import resource_name
 from .tasks import DEFAULT_TASK_JOB_REGISTRY, JobControl, TaskJobBase
 from .tc_conversion_backups import discard_conversion_backups
@@ -35,6 +37,47 @@ into a user's queue file, never casually renamed."""
 STATE_PATH_KEY: Final = "path"
 """The key these jobs write themselves down under, read back by this module and nothing else
 ([[appendices.task-queue#lifetime]])."""
+
+
+class DeleterProvider:
+    """Where a :class:`DiscardBackupsJob` gets its deleter from, **when it runs** (#298).
+
+    Process-wide and read at run time rather than handed to a job at enqueue, because a job rebuilt from
+    the saved queue is built by the registry with no window in sight and carries only its path -- a
+    deleter given to a constructor would not survive the round trip, and a job that came back to a
+    plain unlink would not be a restore. Core's own answer is `~rehuco_core.DEFAULT_DELETER`; an app
+    :meth:`install`\\s its choice once, when it wires up its queue -- the agent installs the accessor
+    that reads its Recycle Bin setting -- so a live enqueue and a restored job resolve the same,
+    current setting, the way the images dock already reads it live.
+    """
+
+    def __init__(self) -> None:
+        self.__provider: Callable[[], Deleter] = lambda: DEFAULT_DELETER
+
+    def install(self, provider: Callable[[], Deleter]) -> None:
+        """Replace how a deleter is resolved, for every discard from now on.
+
+        :param provider: called at each run for the deleter to use.
+        """
+        self.__provider = provider
+
+    def reset(self) -> None:
+        """Go back to core's own answer, a plain unlink -- what a test that installed a provider, or
+        built a window that did, puts back so the next test is not handed its choice."""
+        self.__provider = lambda: DEFAULT_DELETER
+
+    def resolve(self) -> Deleter:
+        """The deleter a discard running now should use.
+
+        :returns: whatever the installed provider answers; a plain unlink until one is installed.
+        """
+        return self.__provider()
+
+
+DEFAULT_DELETER_PROVIDER: Final = DeleterProvider()
+"""The one :class:`DeleterProvider` every :class:`DiscardBackupsJob` reads, the process-wide singleton
+the same way `~rehuco_core.DEFAULT_RENAME_COORDINATOR` is: a job the registry rebuilt from the saved
+queue has no window to be handed anything, so the choice has to be somewhere it can reach."""
 
 
 class TcBackupsJob(TaskJobBase):
@@ -189,8 +232,13 @@ class DiscardBackupsJob(TcBackupsJob):
         """See :meth:`TcBackupsJob.perform` -- :func:`~rehuco_core.discard_conversion_backups`.
 
         :param rehu_path: the converted resource's ``.rehu`` file.
+        :raises NoTrashBinError: the deleter :data:`DEFAULT_DELETER_PROVIDER` resolved could not reach
+            a bin for one of the backups; see :func:`~rehuco_core.discard_conversion_backups`.
+            :meth:`TcBackupsJob.run` turns this into a failed status carrying the message, same as any
+            other `OSError` -- there is no window here to offer the permanent-delete fallback the images
+            dock offers for the same error (#291).
         """
-        self.__discarded = discard_conversion_backups(rehu_path)
+        self.__discarded = discard_conversion_backups(rehu_path, deleter=DEFAULT_DELETER_PROVIDER.resolve())
 
 
 DEFAULT_TASK_JOB_REGISTRY.register(TC_DISCARD_KIND, DiscardBackupsJob)
