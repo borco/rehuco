@@ -37,7 +37,7 @@ from pytest import fixture, raises
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import LOG_VIEW_ICON_RESOURCE, shared_log_bridge
-from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_TAB
+from rehuco_agent.documents.document_fields import EDITOR_MAIN_TAB, VIEWER_DESCRIPTION_TAB, VIEWER_MAIN_TAB
 from rehuco_agent.documents.document_widget import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
     CHECKSUM_ICON_RESOURCE,
@@ -167,6 +167,35 @@ def older_widget(qtbot: QtBot, older_model: RehuDocumentModel) -> DocumentWidget
     widget = DocumentWidget(older_model)
     qtbot.addWidget(widget)
     return widget
+
+
+def field_surfaces(widget: DocumentWidget) -> list[QWidget]:
+    """Every field surface's content grid -- both viewers and all three editors, whichever docks
+    happen to be hidden.
+
+    A document opens as a **reader** (#299): only the two viewer docks are shown, and QtAds reparents a
+    closed dock's content **out of** the widget's own child tree. So ``widget.findChildren`` sees the
+    viewers alone, and anything looking for an editor has to go through the docks instead -- which is
+    what this does, from the one place the private dock maps are reached.
+
+    :param widget: the document widget to inspect.
+    :returns: each viewer and editor dock's content widget, viewers first.
+    """
+    docks = {
+        **widget._DocumentWidget__viewer_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+        **widget._DocumentWidget__editor_docks,  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    }
+    return [dock.widget() for dock in docks.values()]
+
+
+def find_on_surfaces[T: QWidget](widget: DocumentWidget, kind: type[T]) -> list[T]:
+    """Every ``kind`` widget on any of the document's field surfaces (:func:`field_surfaces`).
+
+    :param widget: the document widget to inspect.
+    :param kind: the widget type to collect.
+    :returns: the matches, in surface order.
+    """
+    return [found for surface in field_surfaces(widget) for found in surface.findChildren(kind)]
 
 
 def activate_screenshot(widget: DocumentWidget, path: Path) -> None:
@@ -398,10 +427,10 @@ def test_builds_a_viewer_and_an_editor_from_the_document_field_list(widget: Docu
       as a hyperlink, not plain text, so it's checked separately) -- distinguishing them from the
       form's own row-label widgets, which show the field names, never the values
     """
-    editor_texts = {editor.text() for editor in widget.findChildren(QLineEdit)}
+    editor_texts = {editor.text() for editor in find_on_surfaces(widget, QLineEdit)}
     assert {"Foo", "Bar", "https://example.com"} <= editor_texts
 
-    viewer_texts = {label.text() for label in widget.findChildren(QLabel)}
+    viewer_texts = {label.text() for label in find_on_surfaces(widget, QLabel)}
     assert {"Foo", "Bar"} <= viewer_texts
     assert '<a href="https://example.com">https://example.com</a>' in viewer_texts
 
@@ -625,7 +654,7 @@ def test_editors_start_disabled_on_a_locked_model(qtbot: QtBot) -> None:
     locked_widget = DocumentWidget(locked_model)
     qtbot.addWidget(locked_widget)
 
-    editors = locked_widget.findChildren(QLineEdit)
+    editors = find_on_surfaces(locked_widget, QLineEdit)
     assert editors
     assert all(not editor.isEnabled() for editor in editors)
 
@@ -639,10 +668,12 @@ def test_editors_disable_and_reenable_as_locked_changes(widget: DocumentWidget, 
     * clear the reasons again and verify every editor re-enables
     """
     model.lock_reasons = [LockReason(LockReasonKind.NEWER_FORMAT, "from a newer build")]
-    assert all(not editor.isEnabled() for editor in widget.findChildren(QLineEdit))
+    editors = find_on_surfaces(widget, QLineEdit)
+    assert editors
+    assert all(not editor.isEnabled() for editor in editors)
 
     model.lock_reasons = []
-    assert all(editor.isEnabled() for editor in widget.findChildren(QLineEdit))
+    assert all(editor.isEnabled() for editor in editors)
 
 
 def test_normal_document_shows_save_revert_and_hides_convert_actions(widget: DocumentWidget) -> None:
@@ -792,20 +823,27 @@ def test_successful_convert_flips_the_toolbar_back_to_save_revert(
 
 
 def test_toggle_actions_start_checked_and_toggle_off(widget: DocumentWidget) -> None:
-    """The viewer/editor toggle actions are checkable and start checked (both docks visible).
+    """The viewer/editor toggle actions are checkable, and a document opens as a reader: the viewers
+    start checked and the editors unchecked (#299).
 
     **Test steps:**
 
     * build a widget
-    * verify both toggle actions report checked (their docks are shown by default)
-    * trigger the editor action and verify it reports unchecked
+    * verify both viewer toggles report checked and the main editor's reports unchecked
+    * trigger the editor action and verify it now reports checked
+    * trigger a viewer action and verify it reports unchecked
     """
-    assert widget.toggle_action(VIEWER_TAB).isChecked() is True
-    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
+    assert widget.toggle_action(VIEWER_MAIN_TAB).isChecked() is True
+    assert widget.toggle_action(VIEWER_DESCRIPTION_TAB).isChecked() is True
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
 
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
-    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
+
+    widget.toggle_action(VIEWER_MAIN_TAB).trigger()
+
+    assert widget.toggle_action(VIEWER_MAIN_TAB).isChecked() is False
 
 
 def test_toggle_action_raises_for_a_tab_no_dock_hosts(widget: DocumentWidget) -> None:
@@ -843,10 +881,12 @@ def test_closing_a_dock_stashes_its_splitter_sizes(widget: DocumentWidget) -> No
 
     **Test steps:**
 
-    * build a widget, then trigger the editor toggle action off (hides its dock, firing
-      ``viewToggled(False)``)
-    * verify the stash gained an entry keyed ``"editor"``
+    * build a widget and trigger the editor toggle action on -- a document opens as a reader, so its
+      editor dock starts hidden (#299) and has to be shown before hiding it means anything
+    * trigger it off again (hides the dock, firing ``viewToggled(False)``)
+    * verify the stash gained an entry keyed ``"editor:Main Editor"``
     """
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     stashed = widget._DocumentWidget__stashed_sizes  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
@@ -860,9 +900,11 @@ def test_reopening_a_toggled_dock_restores_its_splitter_sizes(widget: DocumentWi
 
     **Test steps:**
 
-    * hide the editor dock (stashes its sizes), then show it again (``viewToggled(True)``)
+    * show the editor dock (it starts hidden, #299), hide it again (stashes its sizes), then show it
+      once more (``viewToggled(True)``)
     * verify the toggle action reports checked again and the stash still holds the entry it restored from
     """
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
@@ -920,10 +962,12 @@ def test_save_state_round_trips_through_restore_state(widget: DocumentWidget) ->
 
     **Test steps:**
 
-    * hide the editor dock (so its stash and dock-manager state both reflect a change)
+    * show the editor dock (it starts hidden, #299) and hide it again, so its stash and dock-manager
+      state both reflect a change
     * save the widget's state, then restore it into a fresh widget over the same model
     * verify the restore reports success and the stash carried over
     """
+    widget.toggle_action(EDITOR_MAIN_TAB).trigger()
     widget.toggle_action(EDITOR_MAIN_TAB).trigger()
 
     state = widget.save_state()
@@ -950,8 +994,8 @@ def test_restore_state_reselects_the_dock_that_was_current(widget: DocumentWidge
     tracker = widget._DocumentWidget__tracker  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     tracker.set_current_dock(manager.findDockWidget("editor:Main Editor"))
     state = widget.save_state()
-    tracker.set_current_dock(manager.findDockWidget("viewer:Viewer"))
-    assert tracker.current_dock.objectName() == "viewer:Viewer"
+    tracker.set_current_dock(manager.findDockWidget("viewer:Description View"))
+    assert tracker.current_dock.objectName() == "viewer:Description View"
 
     assert widget.restore_state(state) is True
 
@@ -1019,14 +1063,16 @@ def test_restore_state_rejects_an_incompatible_version_and_keeps_docks_visible(w
     **Test steps:**
 
     * save the widget's real state, then strip its ``version`` key (as an older blob would lack it)
-    * verify restore reports failure and both docks stay visible
+    * verify restore reports failure and the as-built layout stands -- both viewers shown, the
+      editors still hidden behind their toggles (#299)
     """
     payload = cbor2.loads(widget.save_state())
     del payload["version"]
 
     assert widget.restore_state(cbor2.dumps(payload)) is False
-    assert widget.toggle_action(VIEWER_TAB).isChecked() is True
-    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is True
+    assert widget.toggle_action(VIEWER_MAIN_TAB).isChecked() is True
+    assert widget.toggle_action(VIEWER_DESCRIPTION_TAB).isChecked() is True
+    assert widget.toggle_action(EDITOR_MAIN_TAB).isChecked() is False
 
 
 def test_restore_state_tolerates_a_payload_without_stashed_sizes(widget: DocumentWidget) -> None:
@@ -1066,6 +1112,46 @@ def on_disk_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
     :returns: the On Disk `CDockWidget`.
     """
     return widget._DocumentWidget__on_disk_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_the_viewer_is_two_docks_split_across_the_two_areas(widget: DocumentWidget) -> None:
+    """The viewer is Main View and Description View, in different dock areas (#299).
+
+    Main View joins the editors' left area and Description View holds the right one, where the single
+    ``Viewer`` dock sat before the split -- which is what puts the two tall, scrolling halves of the old
+    surface side by side instead of stacked on one page.
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify the viewer docks are exactly the two new tabs, under their ``viewer:`` object names
+    * verify Main View shares the main editor's area and Description View does not
+    """
+    docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert list(docks) == [VIEWER_MAIN_TAB, VIEWER_DESCRIPTION_TAB]
+    assert docks[VIEWER_MAIN_TAB].objectName() == "viewer:Main View"
+    assert docks[VIEWER_DESCRIPTION_TAB].objectName() == "viewer:Description View"
+
+    editor_area = editors[EDITOR_MAIN_TAB].dockAreaWidget()
+    assert docks[VIEWER_MAIN_TAB].dockAreaWidget() is editor_area
+    assert docks[VIEWER_DESCRIPTION_TAB].dockAreaWidget() is not editor_area
+
+
+def test_a_document_opens_as_a_reader_with_every_editor_hidden(widget: DocumentWidget) -> None:
+    """Only the two viewers are shown at open; all three editor docks start hidden (#299).
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify both viewer toggles report checked and every editor toggle reports unchecked
+    """
+    viewers = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    editors = widget._DocumentWidget__editor_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+    assert all(dock.toggleViewAction().isChecked() for dock in viewers.values())
+    assert not any(dock.toggleViewAction().isChecked() for dock in editors.values())
 
 
 def test_inspection_docks_exist_and_start_hidden(widget: DocumentWidget) -> None:
@@ -1112,16 +1198,20 @@ def test_inspection_dock_toggles_are_on_the_toolbar(widget: DocumentWidget) -> N
 
 
 def test_building_the_inspection_docks_leaves_the_main_viewer_current(widget: DocumentWidget) -> None:
-    """Adding the inspection docks doesn't disturb which viewer tab is current -- the main viewer stays
-    current after both are built and hidden (#111).
+    """Adding the inspection docks doesn't disturb which viewer tab is current (#111).
+
+    They stack into the Description View's right-hand area (#299), so that is the one a just-added
+    inspection tab could steal current from -- and Main View, over in the editors' area, stays current
+    there regardless.
 
     **Test steps:**
 
-    * build a widget over the sample model (both inspection docks added, then hidden)
-    * verify the main viewer dock is the current tab in its area, not an inspection dock
+    * build a widget over the sample model (every inspection dock added, then hidden)
+    * verify both viewer docks are the current tab in their own areas, not an inspection dock
     """
-    viewer = widget._DocumentWidget__viewer_docks[VIEWER_TAB]  # type: ignore[attr-defined]  # pylint: disable=protected-access
-    assert viewer.isCurrentTab() is True  # pylint: disable=no-member  # inferred type is lost through the mangled-dict access
+    docks = widget._DocumentWidget__viewer_docks  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert docks[VIEWER_DESCRIPTION_TAB].isCurrentTab() is True
+    assert docks[VIEWER_MAIN_TAB].isCurrentTab() is True
 
 
 def test_restore_state_rejects_a_pre_inspection_dock_blob_and_keeps_them_hidden(widget: DocumentWidget) -> None:
@@ -1511,7 +1601,7 @@ def location_editor(widget: DocumentWidget) -> PathEditor:
     :param widget: the document widget to inspect.
     :returns: the location field's editor.
     """
-    editors = widget.findChildren(PathEditor)
+    editors = find_on_surfaces(widget, PathEditor)
     assert len(editors) == 1
     return editors[0]
 
@@ -1549,7 +1639,7 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
     * build a fresh widget (comma line) and restore that state
     * verify the fresh widget's authors editor opens in the rows
     """
-    editors = widget.findChildren(AuthorsEditor)
+    editors = find_on_surfaces(widget, AuthorsEditor)
     assert len(editors) == 1
     editors[0].set_advanced(True)
     state = widget.save_state()
@@ -1558,7 +1648,7 @@ def test_save_state_round_trips_the_authors_editor_mode(qtbot: QtBot, widget: Do
         RehuDocumentModel(RehuDocument({"type": "Tutorial", "sources": [{"title": "Foo", "primary": True}]}))
     )
     qtbot.addWidget(fresh)
-    fresh_editors = fresh.findChildren(AuthorsEditor)
+    fresh_editors = find_on_surfaces(fresh, AuthorsEditor)
     assert len(fresh_editors) == 1
     assert fresh_editors[0].advanced is False
 
@@ -1799,7 +1889,7 @@ def type_combo(widget: DocumentWidget) -> SingleChoiceComboBox:
     :param widget: the document widget to inspect.
     :returns: the type field's editor combo.
     """
-    combos = widget.findChildren(SingleChoiceComboBox)
+    combos = find_on_surfaces(widget, SingleChoiceComboBox)
     assert len(combos) == 1
     return combos[0]
 
@@ -3378,7 +3468,7 @@ def test_a_legacy_tc_keeps_its_images_dock_while_the_other_editors_lock(mocker: 
     widget, _model = legacy_over_images(mocker, qtbot)
 
     assert image_selector(widget).isEnabled() is True
-    editors = widget.findChildren(QLineEdit)
+    editors = find_on_surfaces(widget, QLineEdit)
     assert editors
     assert all(not editor.isEnabled() for editor in editors)
 

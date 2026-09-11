@@ -2605,7 +2605,7 @@ def test_bind_never_gives_an_unknown_field_a_property_binding(document: RehuDocu
     """
     document.set_active_field("current_count", "raw-junk")
     model = RehuDocumentModel(document)
-    tab = FieldsTab("T", ":/icons/document_viewer.svg")
+    tab = FieldsTab("T", ":/icons/document_viewer_main.svg")
 
     binding = model.bind(UnknownField("current_count", viewer_tab=tab, editor_tab=tab))
 

@@ -226,12 +226,20 @@ into, and the machinery it would be built on is `authors`' (#97).
 
 [[[plugins#viewer-editor-both]]]
 
-Each open resource has a **viewer surface** and (for now) one **editor surface**, each built by a
-`FieldsForm` over the same view-model, and each toggled independently:
+Each open resource has **viewer surfaces** and **editor surfaces**, every one built by a `FieldsForm`
+over the same view-model and toggled independently:
 
+- Two viewer surfaces — **Main View** (the type badge, the location, the type-declared record fields,
+  and the unknown-field / inactive-block fallback rows) and **Description View** (the image strip, then
+  the rendered Markdown description filling the rest of the height). They were one surface holding all
+  of it until the two tall, scrolling halves were split apart from the record fields they sat around.
+- Three editor surfaces — **Main Editor**, **Description**, and **Images**.
 - **viewer only**, **editor only**, or **both** — chosen by toggle actions; "both" is the live case
-  above.
-- The surfaces are hosted as docks inside a per-resource nested dock area ([[plugins#dock-shell]]), so "both" is two
+  above. A resource **opens as a reader**: the two viewers are shown side by side, Main View left and
+  Description View right, and every editor starts hidden behind its toggle. A user who prefers
+  otherwise saves the arrangement they want as the default layout, which every document with none of
+  its own then opens into.
+- The surfaces are hosted as docks inside a per-resource nested dock area ([[plugins#dock-shell]]), so "both" is
   arrangeable docks, not a fixed split. See [[component-decomposition]] for the containment hierarchy this produces.
 
 ### §13.2.4 Document-dock shell
@@ -246,7 +254,8 @@ focused document's area (tabbed) and makes it current — what was just opened i
 opening a file that is **already open focuses the
 existing dock** rather than opening a second. Each document dock is itself a nested dock area holding that resource's
 **sub-docks** — the word for a dock inside a document dock, three managers deep
-([[appendices.qt-ads#focus-highlighting]]): the viewer, the main editor, the description and the images, plus the
+([[appendices.qt-ads#focus-highlighting]]): the two viewers — main view and description view — the main editor,
+the description and the images editors, plus the
 hidden-by-default inspection set — save preview, on disk, log, checksums, and files ([[plugins#files-subdock]]) — with
 the images sub-dock doubling as the drop target of [[acquisition-tooling#drag-drop-aids]]. The surfaces are
 the viewer/editor pair ([[plugins#viewer-editor-both]]). This replaces the LocalEdit1 per-file window (#7) and
@@ -428,9 +437,11 @@ filter://publishers?name=Example%20Publisher
 
 The tutorial type's four surfaces, composed over the shared field toolkit ([[plugins#field-toolkit]]):
 
-- **Viewer** (triggered by double-clicking `.rehu` in File Explorer): read-only field display; rendered Markdown
-  description; horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
-  close. **Where** a clicked screenshot maximizes is a user preference (the "Images / Display" settings page,
+- **Viewer** (triggered by double-clicking `.rehu` in File Explorer), split across two docks
+  ([[plugins#viewer-editor-both]]): read-only field display on the **main view**; on the **description view**, a
+  horizontal image strip with click-to-maximize, prev/next navigation, hideable thumbnail strip, ESC to
+  close, over the rendered Markdown
+  description. **Where** a clicked screenshot maximizes is a user preference (the "Images / Display" settings page,
   [[appendices.settings-pages#category-groups]]), not a fixed choice: an overlay over the open document's own client
   area (the default — the surrounding dock chrome, menus, and toolbars stay visible), an overlay over the whole main
   window's client area, or a frameless full-screen window. The strip itself only reports *which* screenshot was

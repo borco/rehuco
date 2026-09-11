@@ -14,7 +14,8 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_MAIN_TAB,
     MODEL_AGNOSTIC_FIELD_SPECS,
-    VIEWER_TAB,
+    VIEWER_DESCRIPTION_TAB,
+    VIEWER_MAIN_TAB,
     build_document_form,
     composed_field_specs,
 )
@@ -31,6 +32,8 @@ from rehuco_agent.fields.widgets import (
     ContentCountEdit,
     DurationEdit,
     DurationMeasurementEdit,
+    ImageStrip,
+    MarkdownView,
     MeasuredValueEdit,
     SingleChoiceComboBox,
     SizeMeasurementEdit,
@@ -102,9 +105,11 @@ def viewer_tooltips(qtbot: QtBot, model: RehuDocumentModel) -> dict[str, str]:
     :returns: a ``{label text: tooltip}`` mapping of every unknown-flagged label on the viewer tab.
     """
     grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
-    qtbot.addWidget(grids[VIEWER_TAB])
+    qtbot.addWidget(grids[VIEWER_MAIN_TAB])
     return {
-        label.text(): label.toolTip() for label in grids[VIEWER_TAB].findChildren(QLabel) if label.property("unknown")
+        label.text(): label.toolTip()
+        for label in grids[VIEWER_MAIN_TAB].findChildren(QLabel)
+        if label.property("unknown")
     }
 
 
@@ -255,6 +260,62 @@ def test_the_forms_known_fields_are_not_flagged(qtbot: QtBot, model: RehuDocumen
     assert len(viewer_tooltips(qtbot, model)) == 3
 
 
+def test_the_viewer_splits_the_strip_and_the_description_off_the_record_fields(
+    qtbot: QtBot, model: RehuDocumentModel
+) -> None:
+    """``make_viewer`` emits two grids: the image strip and the rendered description on the description
+    view, everything else on the main view (#299).
+
+    The two tall, scrolling things sat around the record fields on one surface until the split, each
+    competing with the other for height.
+
+    **Test steps:**
+
+    * build the viewer surfaces over the sample model
+    * verify exactly the two viewer tabs are emitted, main view first
+    * verify the description view holds the strip and the Markdown view, and no type badge
+    * verify the main view holds the badge, and neither the strip nor the description
+    """
+    grids = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)
+    for grid in grids.values():
+        qtbot.addWidget(grid)
+
+    assert list(grids) == [VIEWER_MAIN_TAB, VIEWER_DESCRIPTION_TAB]
+
+    description = grids[VIEWER_DESCRIPTION_TAB]
+    assert description.findChild(ImageStrip) is not None
+    assert description.findChild(MarkdownView) is not None
+    assert description.findChild(TypeBadge) is None
+
+    main = grids[VIEWER_MAIN_TAB]
+    assert main.findChild(TypeBadge) is not None
+    assert main.findChild(ImageStrip) is None
+    assert main.findChild(MarkdownView) is None
+
+
+def test_the_description_viewer_fills_the_height_its_strip_leaves(qtbot: QtBot, model: RehuDocumentModel) -> None:
+    """The rendered description is the description view's filling row, so it grows with the dock
+    instead of keeping its natural height under a trailing stretch (#299).
+
+    **Test steps:**
+
+    * build the description view over the sample model
+    * verify exactly one grid row carries stretch, and that it is the one holding the Markdown view
+    """
+    grid_widget = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_DESCRIPTION_TAB]
+    qtbot.addWidget(grid_widget)
+    grid = cast(QGridLayout, grid_widget.layout())
+
+    stretched = [row for row in range(grid.rowCount()) if grid.rowStretch(row) > 0]
+    assert len(stretched) == 1
+    # a vertical row spans the whole grid width from the label column, holding its widgets in one container
+    item = grid.itemAtPosition(stretched[0], LABEL_COLUMN)
+    assert item is not None
+    container = item.widget()
+    assert container is not None
+    assert container.findChild(MarkdownView) is not None
+
+
 def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBot, model: RehuDocumentModel) -> None:
     """The type is edited by a combo on the main editor and shown as a colored badge in the viewer
     ([[plugins#plugin-blocks]], #83).
@@ -270,7 +331,7 @@ def test_the_type_is_a_combo_in_the_editor_and_a_badge_in_the_viewer(qtbot: QtBo
     """
     form = build_document_form(model, NameSuggestionModel(model))
     editor = form.make_editor(model)[EDITOR_MAIN_TAB]
-    viewer = form.make_viewer(model)[VIEWER_TAB]
+    viewer = form.make_viewer(model)[VIEWER_MAIN_TAB]
     qtbot.addWidget(editor)
     qtbot.addWidget(viewer)
 

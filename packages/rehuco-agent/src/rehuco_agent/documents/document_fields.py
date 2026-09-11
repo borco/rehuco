@@ -83,18 +83,31 @@ named here so :func:`build_document_form` can hand it both."""
 IMAGES_FIELD_NAME: Final = "hidden_images"
 """The images field's model name -- the lightbox's curated-out screenshots ([[data-model#image-meanings]])."""
 
-VIEWER_TAB: Final = FieldsTab("Viewer", ":/icons/document_viewer.svg")
-"""The document viewer surface ([[plugins#field-toolkit]]) -- the default all record fields' viewers
-are assigned to by :func:`build_document_form`."""
+VIEWER_MAIN_TAB: Final = FieldsTab("Main View", ":/icons/document_viewer_main.svg")
+"""The document's main viewer surface ([[plugins#field-toolkit]]) -- the default all record fields'
+viewers are assigned to by :func:`build_document_form`, plus the type badge, the location, and the
+unknown-field / inactive-block fallback rows.
+
+The two tall, scrolling things the single ``Viewer`` surface used to hold alongside them -- the image
+strip and the rendered description -- moved to :data:`VIEWER_DESCRIPTION_TAB` (#299), so neither
+surface has to compete with the other for height."""
+
+VIEWER_DESCRIPTION_TAB: Final = FieldsTab("Description View", ":/icons/document_viewer_description.svg")
+"""The document's description viewer surface (#299): the image strip on top, the rendered Markdown
+description taking the rest of the height below it.
+
+The strip leads it for the same reason it led the old single surface -- it is what the description is
+about -- and the description fills rather than keeping its natural height, which is what it could not do
+while the fallback rows followed it (`DescriptionField.make_viewer`)."""
 
 EDITOR_MAIN_TAB: Final = FieldsTab("Main Editor", ":/icons/document_editor_main.svg")
 """The document's main editor surface ([[plugins#field-toolkit]]); record fields' editors default here."""
 
-EDITOR_DESCRIPTION_TAB: Final = FieldsTab("Description", ":/icons/document_description.svg")
+EDITOR_DESCRIPTION_TAB: Final = FieldsTab("Description", ":/icons/document_editor_description.svg")
 """The Markdown ``description``'s own editor dock ([[plugins#viewer-editor-both]]), so its editor can be
 torn out and maximized while writing prose."""
 
-EDITOR_IMAGES_TAB: Final = FieldsTab("Images", ":/icons/document_images.svg")
+EDITOR_IMAGES_TAB: Final = FieldsTab("Images", ":/icons/document_editor_images.svg")
 """The lightbox-curation editor's own dock ([[data-model#image-meanings]], #27): the checkable
 screenshot list beside its sized preview lives here, on its own tab."""
 
@@ -109,7 +122,8 @@ class FieldSpec(NamedTuple):
     :param type: the field-type selector the registry resolves.
     :param name: the model field name to bind.
     :param kwargs: extra constructor arguments the type needs (e.g. ``multi_choice``'s ``choices``).
-    :param viewer_tab: the viewer surface this field's viewer lands on; defaults to :data:`VIEWER_TAB`.
+    :param viewer_tab: the viewer surface this field's viewer lands on; defaults to
+        :data:`VIEWER_MAIN_TAB` (the strip and the description override it to the description view).
     :param editor_tab: the editor surface this field's editor lands on; defaults to
         :data:`EDITOR_MAIN_TAB` (``description`` overrides it to its own dock).
     :param partner_name: a **second** model field this spec's type binds alongside ``name``, for a
@@ -124,7 +138,7 @@ class FieldSpec(NamedTuple):
     # the proxy makes that shared default immutable -- a mutation attempt raises rather than leaking
     # across specs. kwargs is only ever read (unpacked as ``**spec.kwargs``), so read-only suffices.
     kwargs: Mapping[str, Any] = MappingProxyType({})
-    viewer_tab: FieldsTab = VIEWER_TAB
+    viewer_tab: FieldsTab = VIEWER_MAIN_TAB
     editor_tab: FieldsTab = EDITOR_MAIN_TAB
     partner_name: str | None = None
 
@@ -288,7 +302,7 @@ def build_document_form(
         "Type",
         type_choices,
         lambda type_key: (plugins.color(type_key), plugins.text_color(type_key)),
-        viewer_tab=VIEWER_TAB,
+        viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
 
@@ -307,7 +321,7 @@ def build_document_form(
         # a lambda for the same reason ``rename_to`` is one: the lookup is deferred to render time, so
         # a test that swaps the model's answer after construction is still seen
         conflicts=lambda name: model.rename_conflicts(name),  # pylint: disable=unnecessary-lambda
-        viewer_tab=VIEWER_TAB,
+        viewer_tab=VIEWER_MAIN_TAB,
         editor_tab=EDITOR_MAIN_TAB,
     )
     # model.image_scanner is a RehuDocumentImageScanner over the legacy-.tc or the .rehu screenshot lister
@@ -320,7 +334,7 @@ def build_document_form(
         # the write side of the same directory: moving or deleting a screenshot renames files, since
         # a resource's screenshot order is its `<stem>NN` numbering and nothing else records it (#72)
         image_organizer=RehuDocumentImageOrganizer(model),
-        viewer_tab=VIEWER_TAB,
+        viewer_tab=VIEWER_DESCRIPTION_TAB,
         editor_tab=EDITOR_IMAGES_TAB,
         # the height plus its change signal, the same shape the scanner above uses: the strip is built
         # at the configured height and resizes itself when the user applies a new one (#161)
@@ -427,13 +441,13 @@ def build_document_form(
         # SimpleProperty/Signal descriptor duality trips static protocol matching (see bind_value_widget)
         rendering_settings=shared_markdown_rendering_settings(),  # type: ignore[arg-type]
         editor_settings=shared_description_editor_settings(),  # type: ignore[arg-type]
-        viewer_tab=VIEWER_TAB,
+        viewer_tab=VIEWER_DESCRIPTION_TAB,
         editor_tab=EDITOR_DESCRIPTION_TAB,
     )
     # the type selector leads the Main Editor -- it is the most fundamental choice, and re-selecting it
     # re-resolves the whole form (#83). It is editor-only, so it adds no viewer row and location's
-    # viewer still leads the viewer surface. Location follows so its editor sits right under the type;
-    # the images strip still sits high in the viewer, above the description, and its editor gets its own tab
+    # viewer still leads the main view. Location follows so its editor sits right under the type;
+    # the images strip leads the description view (#299) and its editor gets its own tab
     fields: list[Field[Any]] = [type_field, location_field, images_field]
     # a record field resolves from its (type, name) pair alone, except where its editor needs a runtime
     # callback the registry cannot build generically: every measure action reaches both the filesystem and
@@ -474,7 +488,7 @@ def build_document_form(
                 **runtime_kwargs.get(spec.name, {}),
             )
         )
-    # description trails the record fields, preserving today's viewer stacking order, even though
+    # description trails the record fields, which puts it under the strip on the description view, even though
     # it's now constructed directly above rather than resolved out of MODEL_AGNOSTIC_FIELD_SPECS
     fields.append(description_field)
     # the unknown-field fallbacks trail after the record fields, each shown labeled by provenance and
@@ -487,7 +501,7 @@ def build_document_form(
                 on_remove=lambda name=name: model.remove_unknown_field(name),
                 is_present=lambda name=name: name in model.document.active_block,
                 current_value=lambda name=name: model.document.active_field(name),
-                viewer_tab=VIEWER_TAB,
+                viewer_tab=VIEWER_MAIN_TAB,
                 editor_tab=EDITOR_MAIN_TAB,
             )
         )
@@ -508,7 +522,7 @@ def build_document_form(
                 on_remove=None if dropped else (lambda key=key: model.drop_inactive_block(key)),
                 is_present=lambda key=key: key in model.document.data,
                 current_value=lambda key=key: model.document.data.get(key),
-                viewer_tab=VIEWER_TAB,
+                viewer_tab=VIEWER_MAIN_TAB,
                 editor_tab=EDITOR_MAIN_TAB,
             )
         )
