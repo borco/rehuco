@@ -7,6 +7,7 @@ caller opts to discard backups. **No screenshot is ever backed up**: a rename is
 is lost by one, and a file whose slot is taken keeps its own name rather than being set aside (#288).
 """
 
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from .plugins import DEFAULT_UNKNOWN_USERNAME
 from .rehu_content_files import ContentUnreachableError, content_size_on_disk
 from .rehu_document import RehuDocument
 from .rehu_format import CORE_BLOCK_KEY
+from .rehu_screenshot_ordering import DEFAULT_DELETER, Deleter, NoTrashBinError
 from .tc_conversion_backups import backup_path, restore_backup
 from .tc_description import rewrite_description_images
 from .tc_document import TcDocument
@@ -27,6 +29,8 @@ from .tc_screenshots import (
     ScreenshotRename,
     scan_tc_screenshots,
 )
+
+LOG: Final = logging.getLogger(__name__)
 
 
 def originals_to_back_up(tc_path: Path, target: Path) -> list[Path]:
@@ -63,6 +67,7 @@ def convert_tc(
     username: str = DEFAULT_UNKNOWN_USERNAME,
     excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
     screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
+    deleter: Deleter = DEFAULT_DELETER,
 ) -> RehuDocument:
     """Convert ``tc_path`` into a real, unlocked ``.rehu``, renumbering its legacy screenshots.
 
@@ -81,6 +86,10 @@ def convert_tc(
         plan must agree on which files are screenshots, or converting would change the measurement.
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out (#226),
         resolved by the caller -- core never reads a setting.
+    :param deleter: how a discarded ``.orig`` backup is actually removed when ``keep_backups`` is
+        ``False``; defaults to a plain unlink (#298). A `~rehuco_core.NoTrashBinError` it raises is
+        logged and swallowed rather than undoing an otherwise-successful conversion -- see
+        :meth:`TcConverter.convert`.
     :returns: the fresh, unlocked document, already saved at the target path.
     :raises FileExistsError: the target ``.rehu`` exists and ``overwrite`` is ``False``; or a
         ``.orig`` backup sibling already exists for something about to be backed up.
@@ -92,6 +101,7 @@ def convert_tc(
         username=username,
         excluded_patterns=excluded_patterns,
         screenshot_name_patterns=screenshot_name_patterns,
+        deleter=deleter,
     ).convert()
 
 
@@ -115,6 +125,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         :func:`convert_tc`.
     :param excluded_patterns: filename globs the walk measuring ``current_size`` leaves out; see
         :func:`convert_tc`.
+    :param deleter: how a discarded ``.orig`` backup is removed; see :func:`convert_tc`.
     """
 
     # the same inputs as :func:`convert_tc`, for the same reason
@@ -128,6 +139,7 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         username: str,
         excluded_patterns: tuple[str, ...] = EXCLUDED_FILE_PATTERNS,
         screenshot_name_patterns: tuple[ScreenshotNamePattern, ...] = SCREENSHOT_NAME_PATTERNS,
+        deleter: Deleter = DEFAULT_DELETER,
     ) -> None:
         self.__tc_path: Final = tc_path
         self.__keep_backups: Final = keep_backups
@@ -135,9 +147,13 @@ class TcConverter:  # pylint: disable=too-few-public-methods
         self.__username: Final = username
         self.__excluded_patterns: Final = excluded_patterns
         self.__screenshot_name_patterns: Final = screenshot_name_patterns
+        self.__deleter: Final = deleter
 
     def convert(self) -> RehuDocument:
         """Run the full plan-then-replace sequence.
+
+        A `~rehuco_core.NoTrashBinError` from the discard at the end (:meth:`__delete_backups`) never
+        reaches here -- see there -- so this always returns once the write phase itself has succeeded.
 
         :returns: the fresh, unlocked document, already saved at the target ``.rehu`` path.
         :raises FileExistsError: see :func:`convert_tc`.
@@ -295,9 +311,21 @@ class TcConverter:  # pylint: disable=too-few-public-methods
             restore_backup(backup)
 
     def __delete_backups(self, backups: dict[Path, Path]) -> None:
-        """Delete every backup after a fully successful conversion.
+        """Delete every backup after a fully successful conversion, through :attr:`__deleter`.
+
+        Tolerates a backup already gone (a rename here backs onto a plain ``.unlink(missing_ok=True)``
+        before #298, so a `Deleter` without that option is given the same tolerance explicitly). A
+        backup the deleter cannot reach at all (`NoTrashBinError`) is logged and left in place rather
+        than raised out of an otherwise-successful conversion: this is cleanup, not the conversion
+        itself, the same distinction :meth:`__undo` draws for the mid-conversion rollback's own plain
+        unlink.
 
         :param backups: this conversion's ``{original: backup}`` map.
         """
         for backup in backups.values():
-            backup.unlink(missing_ok=True)
+            try:
+                self.__deleter.delete(backup)
+            except FileNotFoundError:
+                pass
+            except NoTrashBinError:
+                LOG.warning("Could not move %s to the Recycle Bin / Trash; left in place.", backup)

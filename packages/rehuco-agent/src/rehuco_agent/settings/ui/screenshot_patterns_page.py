@@ -1,4 +1,5 @@
-"""Screenshot Patterns settings page: how a `.tc`'s screenshots are recognized when it is converted
+"""Images / Sidecar Names settings page: the name patterns a resource's sidecar images are
+recognized by, first written for how a `.tc`'s screenshots are recognized when it is converted
 ([[acquisition-tooling#screenshot-schemes]], #53, #287).
 """
 

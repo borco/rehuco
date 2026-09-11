@@ -15,12 +15,15 @@ from typing import Any, Final
 from pytest import fixture, mark, raises
 from pytest_mock import MockerFixture
 from rehuco_core import (
+    DEFAULT_DELETER,
+    DEFAULT_DELETER_PROVIDER,
     DEFAULT_TASK_JOB_REGISTRY,
     FINISHED_JOB_STATES,
     TC_DISCARD_KIND,
     DiscardBackupsJob,
     JobState,
     JobStatus,
+    NoTrashBinError,
     TaskJobRegistry,
     TaskQueue,
     TcBackupsJob,
@@ -260,8 +263,92 @@ def test_a_discard_hands_its_resource_to_the_operation(
 
     DiscardBackupsJob(REHU_PATH).run(control)  # pyright: ignore[reportArgumentType]
 
-    discard.assert_called_once_with(REHU_PATH)
+    discard.assert_called_once_with(REHU_PATH, deleter=DEFAULT_DELETER)
     assert control.reports == [(0, 1), (1, 1)]
+
+
+def test_a_discard_resolves_its_deleter_from_the_provider_when_it_runs(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """The deleter is not the job's own: it is asked of the process-wide provider at run time, which is
+    what lets an app install its Recycle Bin choice once for every discard, enqueued or restored (#298).
+
+    **Test steps:**
+
+    * install a provider answering a recording deleter, then run a discard built with only its path
+    * check the operation was handed the provider's deleter
+    """
+    del present
+    deleter = mocker.Mock()
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=deleter)
+    discard = mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", return_value=DISCARDED)
+
+    DiscardBackupsJob(REHU_PATH).run(control)  # pyright: ignore[reportArgumentType]
+
+    discard.assert_called_once_with(REHU_PATH, deleter=deleter)
+
+
+def test_the_provider_resets_to_the_plain_unlink(mocker: MockerFixture) -> None:
+    """``reset`` is what a test that installed a provider -- or built a window that did -- puts back,
+    so the next test is not handed its choice (#298).
+
+    **Test steps:**
+
+    * install a provider answering a recording deleter, then reset
+    * check the provider answers core's `DEFAULT_DELETER` again
+    """
+    DEFAULT_DELETER_PROVIDER.install(mocker.Mock)
+
+    DEFAULT_DELETER_PROVIDER.reset()
+
+    assert DEFAULT_DELETER_PROVIDER.resolve() is DEFAULT_DELETER
+
+
+def test_a_restored_discard_resolves_the_same_deleter_as_a_fresh_one(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """A job the registry rebuilt from a saved queue has no window to be handed a deleter through, and
+    coming back to a plain unlink would be no restore -- so it reads the very same provider (#298).
+
+    **Test steps:**
+
+    * install a provider, then rebuild a discard from its saved state through the app-wide registry
+    * run it and check the operation was handed the provider's deleter, not the core default
+    """
+    del present
+    deleter = mocker.Mock()
+    mocker.patch.object(DEFAULT_DELETER_PROVIDER, "resolve", return_value=deleter)
+    discard = mocker.patch("rehuco_core.tc_backups_jobs.discard_conversion_backups", return_value=DISCARDED)
+    restored = DEFAULT_TASK_JOB_REGISTRY.create(TC_DISCARD_KIND, DiscardBackupsJob(REHU_PATH).capture_state())
+    assert restored is not None
+
+    restored.run(control)  # pyright: ignore[reportArgumentType]
+
+    discard.assert_called_once_with(REHU_PATH, deleter=deleter)
+
+
+def test_a_discard_that_cannot_reach_a_bin_fails_and_leaves_the_backups(
+    mocker: MockerFixture, control: FakeControl, present: None
+) -> None:
+    """No window means no fallback to offer -- the failure is the whole of what a `NoTrashBinError`
+    does here (#298).
+
+    **Test steps:**
+
+    * run a discard whose operation refuses with `NoTrashBinError`
+    * check it propagates, and nothing was recorded as deleted
+    """
+    del present
+    mocker.patch(
+        "rehuco_core.tc_backups_jobs.discard_conversion_backups",
+        side_effect=NoTrashBinError("No Recycle Bin is available"),
+    )
+    job = DiscardBackupsJob(REHU_PATH)
+
+    with raises(NoTrashBinError):
+        job.run(control)  # pyright: ignore[reportArgumentType]
+
+    assert job.discarded is None
 
 
 def test_a_finished_discard_holds_what_it_deleted(mocker: MockerFixture, control: FakeControl, present: None) -> None:

@@ -202,7 +202,9 @@ from .tasks import (
     TaskQueueListener,
 )
 from .tc_backups_jobs import (
+    DEFAULT_DELETER_PROVIDER,
     TC_DISCARD_KIND,
+    DeleterProvider,
     DiscardBackupsJob,
     TcBackupsJob,
 )
@@ -315,6 +317,7 @@ __all__ = [
     "DEFAULT_CONTENT_CHUNK_SIZE",
     "DEFAULT_CURRENT_USERNAME",
     "DEFAULT_DELETER",
+    "DEFAULT_DELETER_PROVIDER",
     "DEFAULT_DURATION_PROBE",
     "DEFAULT_PLUGIN_REGISTRY",
     "DEFAULT_RENAME_COORDINATOR",
@@ -325,6 +328,7 @@ __all__ = [
     "DIRECTORY_SCOPED_FILENAMES",
     "DURATION_PROBES",
     "Deleter",
+    "DeleterProvider",
     "DiscardBackupsJob",
     "DurationProbe",
     "DurationProbeError",

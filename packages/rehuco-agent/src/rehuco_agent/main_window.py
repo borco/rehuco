@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 from rehuco_core import (
+    DEFAULT_DELETER_PROVIDER,
     DEFAULT_RENAME_COORDINATOR,
     FINISHED_JOB_STATES,
     JobState,
@@ -44,6 +45,7 @@ from .dialogs.import_legacy_catalog_wizard import ImportLegacyCatalogWizard
 from .documents.confirm_and_save_dirty import confirm_and_save_dirty
 from .documents.document_widget import DocumentWidget
 from .documents.documents_dock import DocumentsDock
+from .documents.recycle_bin_deleter import configured_deleter
 from .documents.rehu_document_menu_entry import RehuDocumentMenuEntry
 from .documents.rehu_document_model import path_label
 from .documents.save_or_prompt_retry import save_or_prompt_retry
@@ -64,7 +66,7 @@ from .settings.theme_settings import ThemeSettings
 from .settings.tray_settings import shared_tray_settings
 from .settings.ui.checksums_page import ChecksumsPage
 from .settings.ui.descriptions_page import DescriptionsPage
-from .settings.ui.excluded_files_page import ExcludedFilesPage
+from .settings.ui.files_page import FilesPage
 from .settings.ui.identity_page import IdentityPage
 from .settings.ui.images_display_page import ImagesDisplayPage
 from .settings.ui.images_files_page import ImagesFilesPage
@@ -187,6 +189,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         # to re-seed from a moment later
         self.__task_queue: Final = TaskQueue()
         self.__task_queue_store: Final = TaskQueueStore(self.__task_queue)
+        # the discard job resolves its deleter when it runs, through this process-wide provider (#298):
+        # installed before the queue is restored, so a discard rebuilt from the saved queue honours the
+        # Recycle Bin setting exactly as one enqueued from the dialog does -- a job the registry rebuilt
+        # has no window to be handed a deleter through, and coming back to a plain unlink is no restore
+        DEFAULT_DELETER_PROVIDER.install(configured_deleter)
         self.__restore_task_queue()
         self.__task_queue_widget: Final = TaskQueueWidget(self.__task_queue, stylesheet_host=self.__dock_manager)
         self.__task_queue_widget.attach()
@@ -573,18 +580,29 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         sortable line.
 
         There is no **Plugins** group any more (#277): the four pages a resource type owns --
-        Descriptions, Excluded Files, Images, Videos -- are top-level rows like the rest, because
+        Descriptions, Files, Images, Videos -- are top-level rows like the rest, because
         "Videos" is findable by its own name while "Plugins" only hides it behind a word the reader has
         to know first. The reference-images extension list is a block on Images/Files rather than a
         page of its own (#222): a page holding one list, whose subject was images, is what a reader
         looking for images had to know a plugin name to find.
 
-        **Images is the one group** (#294): the grouping overload `add_page` has kept since #277 for
-        "the next tree that wants a tier" finally has one. A reader looking for "images" used to find
-        one flat page mixing how an image is *shown* with what counts as one and what happens to its
-        file on disk, and had to already know "Screenshot Patterns" was the word for a third, unrelated
-        row. "Images" now groups three children -- Display, Files, Screenshot Patterns -- each named
-        for exactly what it holds.
+        **Images is the one group in use** (#294): the grouping overload `add_page` has kept since
+        #277 for "the next tree that wants a tier" finally has one. "Images" groups three children --
+        Display, Sidecar Extensions, Sidecar Names -- the first named for how an image is
+        *shown*, the other two for the one bucket the extension list and the naming patterns both
+        describe: a resource's **sidecar images**, the files kept beside it that its thumbnail strip
+        curates from and its description references with ``![]()``. "Files"/"Screenshots" and
+        "File Extensions"/"File Names" were tried and dropped -- the first pair read as though the
+        pages covered every file or the screenshots themselves, the second lost that they are about
+        images at all. "Sidecar" is the vocabulary the specs already use, kept over a plainer word
+        because it names where these images live.
+
+        **"Files" is a flat page, not a group** (#298): the Recycle Bin choice
+        (`ScreenshotDeletionSettings`) used to sit on Images/File Extensions, but now also decides a
+        `.tc` conversion's discarded backup and a discarded conversion-backups set, not only a
+        screenshot's delete -- so it moved to its own top-level "Files" (`FilesPage`), its frame first
+        on the page, alongside the excluded-file-patterns editor (formerly the standalone "Excluded
+        Files", #226) it shares that top-level subject with.
 
         The "System Integration" page is per-platform, and **every** platform has one:
         Windows gets the `RegistryPage` wrapping ``winreg``-backed HKCU registration (#47), Linux
@@ -603,11 +621,11 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         """
         self.__settings_dialog.add_page("Checksums", ChecksumsPage())
         self.__settings_dialog.add_page("Descriptions", DescriptionsPage())
-        self.__settings_dialog.add_page("Excluded Files", ExcludedFilesPage())
+        self.__settings_dialog.add_page("Files", FilesPage())
         self.__settings_dialog.add_page("Identity", IdentityPage())
         self.__settings_dialog.add_page("Images", "Display", ImagesDisplayPage())
-        self.__settings_dialog.add_page("Images", "Files", ImagesFilesPage())
-        self.__settings_dialog.add_page("Images", "Screenshot Patterns", ScreenshotPatternsPage())
+        self.__settings_dialog.add_page("Images", "Sidecar Extensions", ImagesFilesPage())
+        self.__settings_dialog.add_page("Images", "Sidecar Names", ScreenshotPatternsPage())
         self.__settings_dialog.add_page("Logs", LogsPage())
         self.__settings_dialog.add_page("Session", SessionPage())
 

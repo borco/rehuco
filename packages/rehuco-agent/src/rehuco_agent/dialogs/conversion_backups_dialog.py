@@ -538,6 +538,11 @@ class ConversionBackupsDialog(QDialog):  # pylint: disable=too-many-instance-att
         ([[appendices.task-queue#scopes]]), which is what makes the detail behind a failed row readable
         on the resource it is about.
 
+        Nothing about *how* a discard deletes is handed over here: a `DiscardBackupsJob` resolves its
+        deleter when it runs, from the process-wide provider the window installs, so a job rebuilt from
+        the saved queue after a restart honours the Recycle Bin setting exactly as one enqueued here
+        does (#298).
+
         :param job_class: which operation to queue.
         :param rows: the resources to run it over.
         """

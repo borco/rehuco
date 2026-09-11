@@ -10,11 +10,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
-from rehuco_core import DEFAULT_DELETER, Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
+from rehuco_core import Deleter, convert_screenshot, delete_screenshot, renumber_screenshots
 
 from ..settings.screenshot_deletion_settings import shared_screenshot_deletion_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
-from .recycle_bin_deleter import RecycleBinDeleter
+from .recycle_bin_deleter import configured_deleter
 
 if TYPE_CHECKING:
     from .rehu_document_model import RehuDocumentModel
@@ -93,16 +93,8 @@ class RehuDocumentImageOrganizer:
             rearrangement was refused outright (:meth:`__location`), before anything is deleted.
         """
         directory, stem = self.__location()
-        delete_screenshot(path, deleter if deleter is not None else self.__default_deleter())
+        delete_screenshot(path, deleter if deleter is not None else configured_deleter())
         return renumber_screenshots(directory, stem, remaining)
-
-    def __default_deleter(self) -> Deleter:
-        """The deleter :meth:`remove` uses absent an explicit one, per the current setting.
-
-        :returns: a `RecycleBinDeleter` when **Move deleted images to the Recycle Bin** is on,
-            otherwise `~rehuco_core.DEFAULT_DELETER`.
-        """
-        return RecycleBinDeleter() if self.deletes_to_trash else DEFAULT_DELETER
 
     def __location(self) -> tuple[Path, str]:
         """Where this resource's screenshots live and what they are named after.

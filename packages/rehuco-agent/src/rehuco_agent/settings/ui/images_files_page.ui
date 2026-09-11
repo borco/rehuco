@@ -24,46 +24,6 @@
     <number>0</number>
    </property>
    <item>
-    <widget class="QFrame" name="deletion_frame">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="frameShape">
-      <enum>QFrame::Shape::StyledPanel</enum>
-     </property>
-     <property name="frameShadow">
-      <enum>QFrame::Shadow::Raised</enum>
-     </property>
-     <layout class="QVBoxLayout" name="deletion_frame_layout">
-      <item>
-       <widget class="QLabel" name="deletion_frame_label">
-        <property name="font">
-         <font>
-          <bold>true</bold>
-         </font>
-        </property>
-        <property name="text">
-         <string>Deleting screenshots</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QCheckBox" name="use_recycle_bin_check_box">
-        <property name="text">
-         <string>Move deleted images to the Recycle Bin</string>
-        </property>
-        <property name="toolTip">
-         <string>Deleting a screenshot from the images editor sends it to the Recycle Bin / Trash instead of removing it outright. Where no bin is reachable for a resource's location, deleting still offers a permanent delete for that one file.</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
     <widget class="QFrame" name="reference_images_frame">
      <property name="frameShape">
       <enum>QFrame::Shape::StyledPanel</enum>
@@ -80,7 +40,7 @@
          </font>
         </property>
         <property name="text">
-         <string>Reference image extensions</string>
+         <string>Sidecar image extensions</string>
         </property>
        </widget>
       </item>
@@ -94,7 +54,7 @@
       <item>
        <widget class="WrappingLabel" name="extensions_note_label">
         <property name="text">
-         <string>Which files inside a reference-images resource's archives are counted as its images. An empty list falls back to the shipped formats. Counts already computed are not recalculated by a change here.</string>
+         <string>Which files count as a sidecar image — the images kept beside a resource for its thumbnail strip and its description. Today this is what a reference-images resource counts as its images. An empty list falls back to the shipped formats. Counts already computed are not recalculated by a change here.</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

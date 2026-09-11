@@ -26,6 +26,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMessageBox, QWidget
 from rehuco_core import ConversionBackups, conversion_backups, discard_conversion_backups
 
+from .recycle_bin_deleter import configured_deleter
 from .rehu_document_model import RehuDocumentModel
 
 LOG: Final = logging.getLogger(__name__)
@@ -157,7 +158,7 @@ class ConversionBackupActions(QObject):
             return
         with LogScope.open(backups.rehu_path):
             try:
-                discarded = discard_conversion_backups(backups.rehu_path)
+                discarded = discard_conversion_backups(backups.rehu_path, deleter=configured_deleter())
             except OSError as error:
                 LOG.error("Could not discard the backups beside %s: %s", backups.rehu_path, error)
                 self.__report(DISCARD_FAILED_TITLE, str(error))

@@ -78,12 +78,12 @@ and a tree that can be scrolled out of its own viewport.
 
 [[[appendices.settings-pages#category-groups]]]
 
-**Today the tree is a flat list, in alphabetical order, with one group** (#277, #294): "Checksums"
-(`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Excluded Files" (`ExcludedFilesPage`,
-#226), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200), "Session"
-(`SessionPage`, #65), "System Integration", "Tasks" (`TasksPage`, #202) and "Videos" (`VideosPage`,
-#225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Files" (`ImagesFilesPage`) and
-"Screenshot Patterns" (`ScreenshotPatternsPage`, #53, #287).
+**Today the tree is a flat list, in alphabetical order, with one group** (#277, #294, #298):
+"Checksums" (`ChecksumsPage`, #242), "Descriptions" (`DescriptionsPage`), "Files" (`FilesPage`, #226,
+#291, #298), "Identity" (`IdentityPage`, #99), "Images" (a group, below), "Logs" (`LogsPage`, #200),
+"Session" (`SessionPage`, #65), "System Integration", "Tasks" (`TasksPage`, #202) and "Videos"
+(`VideosPage`, #225). "Images" nests three children: "Display" (`ImagesDisplayPage`), "Sidecar
+Extensions" (`ImagesFilesPage`) and "Sidecar Names" (`ScreenshotPatternsPage`, #53, #287).
 
 "System Integration" is one page on every platform with a different class behind each (`RegistryPage`
 on Windows, `DesktopIntegrationPage` on Linux, and `SystemIntegrationPage` on macOS, which registers
@@ -101,7 +101,7 @@ away from the one place that has the context to make it.
 
 **"Images" is the one group in use** (#294) — the `group=` machinery kept dormant since #277 for "the
 next tree that wants a tier" finally has one. Until #277 the four pages a resource type owns —
-Descriptions, Excluded Files, Images, Videos — nested under a **Plugins** group row. What that bought
+Descriptions, Files, Images, Videos — nested under a **Plugins** group row. What that bought
 was a word the reader has to know before they can look under it: "Videos" is findable by its own name,
 and "Plugins" only hides it behind an implementation term. So they were promoted to top-level rows —
 all but Images, which #294 puts back under a group of its own, because unlike "Plugins", "Images" is
@@ -116,14 +116,29 @@ type, and the import wizard that reads them is reached from `File` as well.
 **One page per subject, not per owner** — split along how that subject is asked about, once "Images"
 had two questions worth asking separately (#294). "Images/Display" answers how an image is *shown*:
 the viewer surface and thumbnail strips (`ImageViewerSettings`), and the width cap on an image embedded
-in a description (`MarkdownRenderingSettings`). "Images/Files" answers what an image *is*, on disk:
-which archive entries a reference-images resource counts as its images (`ReferenceImagesSettings`,
-#222), and whether deleting a screenshot goes through the Recycle Bin (`ScreenshotDeletionSettings`,
-#291). Both the width cap and the extension list arrived from elsewhere — the cap was a block on
-Descriptions, the extension list a "Reference Images" page holding nothing but that list — filed where
-the *code* owned them, so finding either meant knowing which plugin or settings object to look under,
-when what the reader had was the word "images". A page whose one block is a list is also a tree row
-that costs a click to learn it holds one thing.
+in a description (`MarkdownRenderingSettings`). The other two pages describe one bucket, a resource's
+**sidecar images** — the image files kept beside it, which its thumbnail strip curates from and its
+description references with `![]()`. "Images/Sidecar Extensions" says which files count as one
+(`ReferenceImagesSettings`, #222; today read by the reference-images count), and "Images/Sidecar
+Names" (`ScreenshotPatternsPage`, #53, #287) how their names are recognized. The width cap and the
+extension list both arrived from elsewhere — the cap was a block on Descriptions, the extension list a
+"Reference Images" page holding nothing but that list — filed where the *code* owned them, so finding
+either meant knowing which plugin or settings object to look under, when what the reader had was the
+word "images". A page whose one block is a list is also a tree row that costs a click to learn it holds
+one thing. "Files"/"Screenshots" and "File Extensions"/"File Names" were tried for the two sidecar
+pages and dropped: the first pair read as every file, or the screenshots themselves; the second lost
+that they are about images at all. "Sidecar" is the specs' own word, kept over a plainer one because it
+says where these images live.
+
+**"Files" is a flat top-level page, not a group, holding two settings objects that share no subject
+but "a file on disk"** (#226, #291, #298): whether a deleted file goes through the Recycle Bin
+(`ScreenshotDeletionSettings`), and the filename globs a content scan leaves out
+(`ExcludedFilesSettings`). The Recycle Bin choice used to be a block on Images/Sidecar Extensions, back
+when `RehuDocumentImageOrganizer`'s screenshot delete was its only consumer (#291) -- but once a `.tc`
+conversion's discarded backup and a discarded conversion-backups set started reading it too (#298), a
+name under "Images" was the wrong subject for a choice that no longer has anything to do with images.
+It moved to "Files" instead, its frame first on the page, above the excluded-file-patterns editor
+(formerly the standalone "Excluded Files" page, #226) it shares that page with now.
 
 **The whole filter state persists** across restarts — the filter text and both toggles — via
 `SettingsDialogSettings` (`settings/settings_dialog_settings.py`). The dialog restores it in
@@ -146,7 +161,7 @@ would read and overwrite the developer's real settings file, and leak toggle sta
 ### The group tier (#277, #294)
 
 Kept dormant since #277 until "Images" needed a tier of its own (#294). The tree is **two levels deep
-at most**: `add_page("Images", "Files", page)` nests the page's row under that group's row, creating
+at most**: `add_page("Images", "Sidecar Extensions", page)` nests the page's row under that group's row, creating
 the group's row on first use; the two-argument `add_page("Videos", page)` — what every other caller
 uses — leaves it a top-level row of its own. Group names are plural: a group holds pages.
 
@@ -209,12 +224,15 @@ The dialog shell dispatches, it never interprets:
 What "saved" or "dropped" actually *means* is entirely up to each page. Two shapes exist today:
 
 - **Staged-edit pages** (`DescriptionsPage`, "Descriptions"; `ImagesDisplayPage`, "Images/Display";
-  `ImagesFilesPage`, "Images/Files"; `ExcludedFilesPage`, "Excluded Files"; `VideosPage`, "Videos") —
+  `ImagesFilesPage`, "Images/Sidecar Extensions"; `FilesPage`, "Files"; `VideosPage`, "Videos") —
   edits live in local widget/draft state until `save_changes()` pushes them somewhere permanent;
   `drop_changes()` discards the draft and reloads the fields from whatever is currently saved (a
-  revert, not a no-op). `ImagesDisplayPage` and `ImagesFilesPage` between them write the **four**
-  settings objects the single "Images" page used to (#294), two apiece, each saved whole because that
-  is the unit its own `save()` takes. Writing `MarkdownRenderingSettings` on `ImagesDisplayPage`
+  revert, not a no-op). `ImagesDisplayPage` writes the **two** settings objects the single "Images"
+  page used to for how an image is shown (#294) -- the viewer surface and the description image-width
+  cap -- each saved whole because that is the unit its own `save()` takes. `FilesPage` likewise writes
+  two, but they never shared a page before #298: the Recycle Bin choice and the excluded-file
+  patterns, filed together only because both are about a file on disk rather than about any one
+  resource type. Writing `MarkdownRenderingSettings` on `ImagesDisplayPage`
   re-persists the engine and CSS unchanged: what the shared object holds is already the last-saved
   pair, so a `DescriptionsPage` edit still staged is neither picked up nor clobbered.
   `ImagesDisplayPage` writes a **reactive** singleton (`ImageViewerSettings`, §5's recipe), because applying
@@ -257,7 +275,7 @@ follow for a new staged-edit page:
 3. `settings.save(persistent_settings())` writes the now-current values to the on-disk `QSettings`
    ini.
 
-`ExcludedFilesPage` adds a fourth step to that flow, because saving can *change* what it saved: blank and
+`FilesPage`'s excluded-patterns block adds a fourth step to that flow, because saving can *change* what it saved: blank and
 duplicate patterns are dropped, and an emptied list resolves back to the shipped defaults
 ([[data-model#checksums]]). It therefore reloads itself from the saved set afterwards — a page still
 showing what was typed would disagree with what every scan actually reads, which is the same
@@ -469,7 +487,7 @@ settings a reactive `QObject` (not a plain dataclass) with `SimpleProperty` fiel
 `_changed` signals, expose it through one module-level `functools.lru_cache(maxsize=1)`-wrapped
 accessor, and have consumers subscribe to the signals they care about instead of re-reading the
 value on every use. Not every block needs this at all — `ImagesFilesPage`'s extension list is read
-only when an enumeration runs, and `ExcludedFilesPage`'s pattern list only when a size scan or a
+only when an enumeration runs, and `FilesPage`'s excluded-patterns block only when a size scan or a
 checksum run does, so a plain dataclass carries each and there is nothing to watch either change.
 `ScreenshotPatternsSettings` used to be the same shape, until an open document's image strip,
 lightbox and Markdown view started resolving screenshots with the *configured* patterns rather than

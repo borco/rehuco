@@ -69,7 +69,7 @@ ContentExclusionTier = Literal["structural", "junk"]
 
 ``structural`` -- a record, one of the files a record claims (its ``<record>NN`` screenshots, its
 manifest, a legacy record's tc4-schemed screenshots), or a retained ``.orig`` conversion backup. ``junk``
--- a caller's filename glob, the tier the ``Excluded Files`` page edits. Named rather than merely applied
+-- a caller's filename glob, the tier the ``Files`` settings page edits. Named rather than merely applied
 because a ``.checksum`` written under an older rule holds entries for such files, and a verify that drops
 one has to be able to say why (:func:`excluded_content_names`, #254).
 

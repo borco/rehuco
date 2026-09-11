@@ -37,6 +37,7 @@ from ..fields.field import Field, FieldBinding
 from ..fields.unknown_field import UnknownField
 from ..settings.excluded_files_settings import shared_excluded_files_settings
 from ..settings.screenshot_patterns_settings import shared_screenshot_patterns_settings
+from .recycle_bin_deleter import configured_deleter
 from .rehu_document_image_scanner import RehuDocumentImageScanner
 from .tc_conversion_outcomes import scan_after_conversion
 
@@ -747,7 +748,10 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
         :raises ValueError: this document isn't :attr:`~RehuDocument.legacy_tc`, or has no path.
         :raises OSError: propagated from :func:`rehuco_core.convert_tc` (``FileExistsError`` for an
             unconfirmed overwrite or a stale backup; any other ``OSError`` from the underlying file
-            operations) -- this model's ``document``/``locked``/``dirty`` are left untouched.
+            operations) -- this model's ``document``/``locked``/``dirty`` are left untouched. Not
+            raised for a discarded ``.tc`` backup the Recycle Bin cannot reach (#298): `convert_tc`
+            already logs and keeps that ``.orig`` sibling rather than undoing a successful conversion,
+            so this method's own success is unaffected by it.
         """
         if not self.__document.legacy_tc:
             raise ValueError("only a legacy .tc-backed document can be converted")
@@ -762,6 +766,7 @@ class RehuDocumentModel(QObject):  # pylint: disable=too-many-instance-attribute
                 username=self.__document.username,
                 excluded_patterns=shared_excluded_files_settings().excluded_file_patterns,
                 screenshot_name_patterns=shared_screenshot_patterns_settings().screenshot_name_patterns,
+                deleter=configured_deleter(),
             )
             LOG.info("Converted to %s", self.__document.path)
         self.__seed_from_document()

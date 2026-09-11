@@ -30,6 +30,7 @@ from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
 from rehuco_agent.app_logging import shared_log_bridge
+from rehuco_agent.documents.recycle_bin_deleter import RecycleBinDeleter
 from rehuco_agent.main_window import (
     LOG_DOCK_OBJECT_NAME,
     SETTINGS_DIALOG_OBJECT_NAME,
@@ -48,7 +49,7 @@ from rehuco_agent.settings.tasks_settings import TasksSettings
 from rehuco_agent.settings.tray_settings import shared_tray_settings
 from rehuco_agent.settings.ui.checksums_page import ChecksumsPage
 from rehuco_agent.settings.ui.descriptions_page import DescriptionsPage
-from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
+from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.identity_page import IdentityPage
 from rehuco_agent.settings.ui.images_display_page import ImagesDisplayPage
 from rehuco_agent.settings.ui.images_files_page import ImagesFilesPage
@@ -60,6 +61,7 @@ from rehuco_agent.settings.ui.videos_page import VideosPage
 from rehuco_agent.tasks import TaskQueueStatusIndicator, TaskQueueWidget
 from rehuco_agent.tray_icon import TrayIcon
 from rehuco_core import (
+    DEFAULT_DELETER_PROVIDER,
     INFO_REHU_FILENAME,
     JobControl,
     JobState,
@@ -383,13 +385,29 @@ def test_registers_the_identity_page(qtbot: QtBot) -> None:
     assert any(isinstance(page, IdentityPage) for page in pages)
 
 
-def test_registers_the_excluded_files_page(qtbot: QtBot) -> None:
-    """The Excluded Files page (#226) is registered into the settings dialog.
+def test_the_window_installs_the_configured_deleter_for_discard_jobs(qtbot: QtBot) -> None:
+    """A discard job resolves its deleter when it runs, so the window points the process-wide provider
+    at the Recycle Bin setting before the saved queue is restored -- a restored discard then honours
+    the setting exactly as a freshly enqueued one does, rather than coming back as a plain unlink (#298).
+
+    **Test steps:**
+
+    * construct a real ``MainWindow`` with the Recycle Bin setting at its default (on)
+    * verify the process-wide provider now resolves a `RecycleBinDeleter`, not core's plain unlink
+    """
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert isinstance(DEFAULT_DELETER_PROVIDER.resolve(), RecycleBinDeleter)
+
+
+def test_registers_the_files_page(qtbot: QtBot) -> None:
+    """The Files page (#226, #291, #298) is registered into the settings dialog.
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * verify the settings dialog's page stack holds an ``ExcludedFilesPage``
+    * verify the settings dialog's page stack holds a ``FilesPage``
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -399,7 +417,7 @@ def test_registers_the_excluded_files_page(qtbot: QtBot) -> None:
     # each page is shown through a scroll area of its own (#229), so read it back out of one
     stacked = [dialog_ui.page_stack.widget(index) for index in range(dialog_ui.page_stack.count())]
     pages = [area.widget() for area in stacked if isinstance(area, QScrollArea)]
-    assert any(isinstance(page, ExcludedFilesPage) for page in pages)
+    assert any(isinstance(page, FilesPage) for page in pages)
 
 
 def test_registers_the_videos_page(qtbot: QtBot) -> None:
@@ -422,8 +440,8 @@ def test_registers_the_videos_page(qtbot: QtBot) -> None:
 
 
 def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
-    """Every page is a top-level row, except the three grouped under "Images" (#277, #294), and the
-    rows are in alphabetical order.
+    """Every page is a top-level row, except the three grouped under "Images" (#277, #294, #298), and
+    the rows are in alphabetical order.
 
     The pages that used to nest under "Plugins" are among the top-level ones, so a reader looking for
     "Videos" no longer has to know it is a plugin's setting to find it. Order is registration order
@@ -436,7 +454,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     * construct a real ``MainWindow``
     * verify only the "Images" row has children, the cross-platform pages are all top-level rows,
       and the whole top-level list is sorted case-insensitively
-    * verify "Images" nests exactly Display, Files and Screenshot Patterns, in that order
+    * verify "Images" nests exactly Display, Sidecar Extensions and Sidecar Names, in that order
     """
     window = MainWindow()
     qtbot.addWidget(window)
@@ -449,7 +467,7 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
     assert set(titles) >= {
         "Checksums",
         "Descriptions",
-        "Excluded Files",
+        "Files",
         "Identity",
         "Images",
         "Logs",
@@ -457,12 +475,13 @@ def test_the_category_tree_is_one_flat_alphabetical_list(qtbot: QtBot) -> None:
         "Tasks",
         "Videos",
     }
+    assert "Excluded Files" not in titles
     assert "Screenshot Patterns" not in titles
     assert titles == sorted(titles, key=str.casefold)
 
     images_item = items[titles.index("Images")]
     child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
-    assert child_titles == ["Display", "Files", "Screenshot Patterns"]
+    assert child_titles == ["Display", "Sidecar Extensions", "Sidecar Names"]
 
 
 def test_registers_the_checksums_page(qtbot: QtBot) -> None:
@@ -488,7 +507,7 @@ def test_registers_the_checksums_page(qtbot: QtBot) -> None:
 
 def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
     """The Screenshot Patterns page (#53, #287) is registered into the settings dialog once, nested
-    under the "Images" group (#294).
+    under the "Images" group as "Sidecar Names" (#294, #298).
 
     **Test steps:**
 
@@ -507,12 +526,13 @@ def test_registers_the_screenshot_patterns_page(qtbot: QtBot) -> None:
     model = settings_dialog._SettingsDialog__model  # type: ignore[reportAttributeAccessIssue]  # pylint: disable=protected-access
     images_item = next(model.item(row) for row in range(model.rowCount()) if model.item(row).text() == "Images")
     child_titles = [images_item.child(row).text() for row in range(images_item.rowCount())]
-    assert child_titles.count("Screenshot Patterns") == 1
+    assert child_titles.count("Sidecar Names") == 1
 
 
 def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot: QtBot) -> None:
-    """The "Images" group row shows Display, Files and Screenshot Patterns together in one column
-    (#230, #294) -- so the group behaves exactly as the one flat Images page did before the split.
+    """The "Images" group row shows Display, Sidecar Extensions and Sidecar Names together in one column
+    (#230, #294, #298) -- so the group behaves exactly as the one flat Images page did before the
+    split.
 
     **Test steps:**
 
@@ -540,12 +560,12 @@ def test_selecting_the_images_group_stacks_every_block_of_its_three_pages(qtbot:
 
 def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None:
     """A term carried only by a grouped page's block finds that page, shown under the "Images" row
-    and beside no sibling (#76, #294).
+    and beside no sibling (#76, #294, #298).
 
     **Test steps:**
 
     * construct a real ``MainWindow``
-    * filter by a Screenshot Patterns term, then by a Files (extension list) term
+    * filter by a Sidecar Names (screenshot patterns) term, then by a Sidecar Extensions term
     * verify each time the visible tree is the "Images" row with exactly that one child
     """
     window = MainWindow()
@@ -563,11 +583,11 @@ def test_the_filter_finds_each_images_page_under_its_group(qtbot: QtBot) -> None
             titles.extend(visible_titles(index))
         return titles
 
-    dialog_ui.filter_edit.setText("screenshot name patterns")
-    assert visible_titles(QModelIndex()) == ["Images", "Screenshot Patterns"]
+    dialog_ui.filter_edit.setText("sidecar image name patterns")
+    assert visible_titles(QModelIndex()) == ["Images", "Sidecar Names"]
 
-    dialog_ui.filter_edit.setText("reference image extensions")
-    assert visible_titles(QModelIndex()) == ["Images", "Files"]
+    dialog_ui.filter_edit.setText("sidecar image extensions")
+    assert visible_titles(QModelIndex()) == ["Images", "Sidecar Extensions"]
 
 
 def test_registers_the_descriptions_page(qtbot: QtBot) -> None:

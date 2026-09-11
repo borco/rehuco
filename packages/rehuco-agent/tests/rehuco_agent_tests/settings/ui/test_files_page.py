@@ -1,17 +1,22 @@
-"""Tests for ExcludedFilesPage: the Excluded Files settings category page (#226)."""
+"""Tests for FilesPage: the Files settings category page (#226, #291, #298)."""
 
 from collections.abc import Iterator
 from typing import Any
 
 from borco_pyside.widgets import StringListEditor
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QCheckBox
 from pytest import fixture
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
-from rehuco_agent.settings import excluded_files_settings
+from rehuco_agent.settings import excluded_files_settings, screenshot_deletion_settings
 from rehuco_agent.settings.excluded_files_settings import ExcludedFilesSettings, shared_excluded_files_settings
-from rehuco_agent.settings.ui import excluded_files_page
-from rehuco_agent.settings.ui.excluded_files_page import ExcludedFilesPage
+from rehuco_agent.settings.screenshot_deletion_settings import (
+    ScreenshotDeletionSettings,
+    shared_screenshot_deletion_settings,
+)
+from rehuco_agent.settings.ui import files_page
+from rehuco_agent.settings.ui.files_page import FilesPage
 from rehuco_agent.settings.ui.settings_frame_filter import SettingsFrameFilter
 from rehuco_core import EXCLUDED_FILE_PATTERNS
 
@@ -49,35 +54,49 @@ class FakeSettings:  # pylint: disable=invalid-name,missing-function-docstring,r
 def fake_persistent_settings(mocker: MockerFixture) -> FakeSettings:
     """Stand in for ``persistent_settings()`` so save/load never touch real storage.
 
-    Patched on both modules that imported their own reference to it: the shared settings module
-    (used by :func:`shared_excluded_files_settings`'s lazy load) and the page module itself (used by
-    :meth:`ExcludedFilesPage.save_changes`).
+    Patched on every module holding its own reference to it: the page itself (used by
+    :meth:`FilesPage.save_changes`) and each of the two settings modules whose shared instance the
+    page reads -- the excluded-file patterns and the Recycle Bin choice (#291, #298).
     """
     fake = FakeSettings()
     mocker.patch.object(excluded_files_settings, "persistent_settings", return_value=fake)
-    mocker.patch.object(excluded_files_page, "persistent_settings", return_value=fake)
+    mocker.patch.object(screenshot_deletion_settings, "persistent_settings", return_value=fake)
+    mocker.patch.object(files_page, "persistent_settings", return_value=fake)
     return fake
 
 
 @fixture(autouse=True)
 def clear_shared_instance_cache() -> Iterator[None]:
-    """Clear the shared settings singleton before and after every test (see
-    ``test_markdown_rendering_settings.py`` for the full rationale)."""
+    """Drop every process-wide instance around each test, so none inherits another's staged state."""
     shared_excluded_files_settings.cache_clear()
+    shared_screenshot_deletion_settings.cache_clear()
     yield
     shared_excluded_files_settings.cache_clear()
+    shared_screenshot_deletion_settings.cache_clear()
 
 
-def page_ui(page: ExcludedFilesPage) -> Any:
+@fixture
+def page(qtbot: QtBot) -> FilesPage:
+    """A freshly-built page, seeded from the (isolated) shared settings.
+
+    :param qtbot: pytest-qt fixture.
+    :returns: the page under test.
+    """
+    built = FilesPage()
+    qtbot.addWidget(built)
+    return built
+
+
+def page_ui(page: FilesPage) -> Any:
     """The page's generated UI object, for reaching its widgets.
 
     :param page: the page to reach into.
-    :returns: the ``Ui_ExcludedFilesPage`` instance.
+    :returns: the ``Ui_FilesPage`` instance.
     """
-    return page._ExcludedFilesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    return page._FilesPage__ui  # type: ignore[attr-defined]  # pylint: disable=protected-access
 
 
-def patterns_editor(page: ExcludedFilesPage) -> StringListEditor:
+def patterns_editor(page: FilesPage) -> StringListEditor:
     """The page's pattern list editor.
 
     :param page: the page to reach into.
@@ -86,7 +105,7 @@ def patterns_editor(page: ExcludedFilesPage) -> StringListEditor:
     return page_ui(page).patterns_editor
 
 
-def listed_patterns(page: ExcludedFilesPage) -> tuple[str, ...]:
+def listed_patterns(page: FilesPage) -> tuple[str, ...]:
     """The patterns the page currently shows, in order.
 
     :param page: the page to read.
@@ -95,12 +114,109 @@ def listed_patterns(page: ExcludedFilesPage) -> tuple[str, ...]:
     return patterns_editor(page).values
 
 
+def recycle_bin_check_box(page: FilesPage) -> QCheckBox:
+    """The page's Recycle Bin toggle.
+
+    :param page: the page under test.
+    :returns: the check box staging whether a delete goes through the Recycle Bin.
+    """
+    box = page.findChild(QCheckBox, "use_recycle_bin_check_box")
+    assert isinstance(box, QCheckBox)
+    return box
+
+
 # endregion
 
-# region the two tiers
+# region deleting files (#291, #298)
 
 
-def test_starts_on_the_shipped_defaults_on_a_fresh_install(qtbot: QtBot) -> None:
+def test_the_page_starts_on_the_saved_recycle_bin_choice(page: FilesPage) -> None:
+    """A fresh page shows the shared settings' choice, on by default.
+
+    **Test steps:**
+
+    * build a page over settings that were never saved
+    * verify the check box is checked and nothing reads as pending
+    """
+    assert recycle_bin_check_box(page).isChecked() is True
+    assert not page.is_dirty()
+
+
+def test_restores_the_saved_recycle_bin_choice(qtbot: QtBot) -> None:
+    """A freshly-built page reflects what was saved.
+
+    **Test steps:**
+
+    * turn the setting off in the shared settings
+    * build the page
+    * verify the check box shows it unchecked and the page is clean
+    """
+    shared_screenshot_deletion_settings().use_recycle_bin = False
+    built = FilesPage()
+    qtbot.addWidget(built)
+
+    assert recycle_bin_check_box(built).isChecked() is False
+    assert not built.is_dirty()
+
+
+def test_toggling_the_recycle_bin_choice_makes_the_page_dirty(page: FilesPage) -> None:
+    """Turning the Recycle Bin off is a staged change until it is applied.
+
+    **Test steps:**
+
+    * uncheck the Recycle Bin toggle
+    * verify the page is dirty and the shared settings are untouched
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    assert page.is_dirty()
+    assert shared_screenshot_deletion_settings().use_recycle_bin is True
+
+
+def test_save_changes_pushes_the_recycle_bin_choice_into_the_shared_settings(
+    page: FilesPage, fake_persistent_settings: FakeSettings
+) -> None:
+    """Applying writes the staged choice into the shared settings and persists it.
+
+    **Test steps:**
+
+    * uncheck the Recycle Bin toggle and apply
+    * verify the shared settings hold it, the page is clean, and a reload agrees
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    page.save_changes()
+
+    assert shared_screenshot_deletion_settings().use_recycle_bin is False
+    assert not page.is_dirty()
+
+    reloaded = ScreenshotDeletionSettings()
+    reloaded.load(fake_persistent_settings)  # type: ignore[arg-type]
+    assert reloaded.use_recycle_bin is False
+
+
+def test_drop_changes_reverts_the_staged_recycle_bin_choice(page: FilesPage) -> None:
+    """Resetting the page discards a staged Recycle Bin toggle along with everything else.
+
+    **Test steps:**
+
+    * uncheck the toggle without applying, then reset
+    * verify it is back on the saved (checked) value
+    """
+    recycle_bin_check_box(page).setChecked(False)
+
+    page.drop_changes()
+
+    assert recycle_bin_check_box(page).isChecked() is True
+    assert not page.is_dirty()
+
+
+# endregion
+
+# region the two exclusion tiers
+
+
+def test_starts_on_the_shipped_defaults_on_a_fresh_install(page: FilesPage) -> None:
     """With nothing persisted, the list shows the patterns actually in force -- not an empty list.
 
     **Test steps:**
@@ -108,14 +224,11 @@ def test_starts_on_the_shipped_defaults_on_a_fresh_install(qtbot: QtBot) -> None
     * build the page against empty persistent storage
     * verify it lists the shipped defaults and is clean
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
     assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
     assert page.is_dirty() is False
 
 
-def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> None:
+def test_the_structural_exclusions_are_shown_but_not_offered(page: FilesPage) -> None:
     """The structural tier is a read-only summary: never a list entry, so it cannot be removed (#226).
 
     Those files change at any moment, so letting a user add the ``.rehu`` back would mean recomputing
@@ -128,9 +241,6 @@ def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> No
       written from the constants
     * verify none of those shapes appears in the editable list
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
     summary = page_ui(page).structural_patterns_label.text()
     assert "<record>.rehu — every resource record found while scanning" in summary
     assert "<record>NN with .jpg, .jpeg, .png, .gif, .webp" in summary
@@ -139,7 +249,7 @@ def test_the_structural_exclusions_are_shown_but_not_offered(qtbot: QtBot) -> No
     assert not any("rehu" in pattern or "sfv" in pattern for pattern in listed_patterns(page))
 
 
-def test_the_structural_summary_is_selectable(qtbot: QtBot) -> None:
+def test_the_structural_summary_is_selectable(page: FilesPage) -> None:
     """It is text the user may want to copy into a note, so it is selectable rather than inert.
 
     **Test steps:**
@@ -147,9 +257,6 @@ def test_the_structural_summary_is_selectable(qtbot: QtBot) -> None:
     * build the page
     * verify the summary label's interaction flags allow selecting the text by mouse
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
     label = page_ui(page).structural_patterns_label
     assert label.textInteractionFlags() & Qt.TextInteractionFlag.TextSelectableByMouse
 
@@ -164,11 +271,11 @@ def test_restores_the_saved_patterns(qtbot: QtBot) -> None:
     * verify it lists exactly those two and is clean
     """
     shared_excluded_files_settings().patterns = ("*.tmp", "Thumbs.db")
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
+    built = FilesPage()
+    qtbot.addWidget(built)
 
-    assert listed_patterns(page) == ("*.tmp", "Thumbs.db")
-    assert page.is_dirty() is False
+    assert listed_patterns(built) == ("*.tmp", "Thumbs.db")
+    assert built.is_dirty() is False
 
 
 # endregion
@@ -186,15 +293,15 @@ def test_the_editor_restores_the_shipped_patterns_not_an_empty_list(qtbot: QtBot
     * verify the shipped patterns are listed
     """
     shared_excluded_files_settings().patterns = ("*.tmp",)
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
+    built = FilesPage()
+    qtbot.addWidget(built)
 
-    patterns_editor(page).reset_action.trigger()
+    patterns_editor(built).reset_action.trigger()
 
-    assert listed_patterns(page) == EXCLUDED_FILE_PATTERNS
+    assert listed_patterns(built) == EXCLUDED_FILE_PATTERNS
 
 
-def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
+def test_every_editor_action_wears_one_of_this_apps_icons(page: FilesPage) -> None:
     """The widget ships none, so a page that forgot to dress it would show eight blank buttons (#231).
 
     **Test steps:**
@@ -202,8 +309,6 @@ def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
     * build the page
     * verify all eight of the editor's actions carry an icon
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
     editor = patterns_editor(page)
 
     actions = (
@@ -219,7 +324,7 @@ def test_every_editor_action_wears_one_of_this_apps_icons(qtbot: QtBot) -> None:
     assert [action.icon().isNull() for action in actions] == [False] * 8
 
 
-def test_editing_the_list_makes_the_page_dirty(qtbot: QtBot) -> None:
+def test_editing_the_list_makes_the_page_dirty(page: FilesPage) -> None:
     """Whatever the editor holds is what Save would write, so a change to it is a change to the page.
 
     **Test steps:**
@@ -227,15 +332,12 @@ def test_editing_the_list_makes_the_page_dirty(qtbot: QtBot) -> None:
     * build the page and drop a pattern out of the editor
     * verify the page went dirty
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-
     patterns_editor(page).values = EXCLUDED_FILE_PATTERNS[1:]
 
     assert page.is_dirty() is True
 
 
-def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
+def test_a_row_saving_would_drop_is_not_yet_a_change(page: FilesPage) -> None:
     """A blank insert does not make the page dirty, because applying would not change what is saved --
     and while *Apply changes as they're made* is on, the dialog commits any dirty page, which would
     tear the fresh row out from under its open cell (#53).
@@ -245,8 +347,6 @@ def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
     * insert a blank row and verify the page stays clean
     * fill it and verify the page is dirty exactly then
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
     editor = patterns_editor(page)
 
     editor.values = (*EXCLUDED_FILE_PATTERNS, "")
@@ -262,7 +362,7 @@ def test_a_row_saving_would_drop_is_not_yet_a_change(qtbot: QtBot) -> None:
 
 
 def test_save_pushes_the_staged_patterns_and_persists_them(
-    qtbot: QtBot, fake_persistent_settings: FakeSettings
+    page: FilesPage, fake_persistent_settings: FakeSettings
 ) -> None:
     """``save_changes`` writes the staged list into the shared settings and to storage (#226).
 
@@ -272,8 +372,6 @@ def test_save_pushes_the_staged_patterns_and_persists_them(
     * call ``save_changes``
     * verify the shared settings hold it, the page is clean, and a fresh load agrees
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
     patterns_editor(page).values = ("*.tmp",)
 
     page.save_changes()
@@ -286,7 +384,7 @@ def test_save_pushes_the_staged_patterns_and_persists_them(
     assert reloaded.patterns == ("*.tmp",)
 
 
-def test_saving_an_emptied_list_restores_the_defaults_on_screen(qtbot: QtBot) -> None:
+def test_saving_an_emptied_list_restores_the_defaults_on_screen(page: FilesPage) -> None:
     """Emptying the list means the shipped patterns, and the page shows that rather than a lie (#226).
 
     **Test steps:**
@@ -295,8 +393,6 @@ def test_saving_an_emptied_list_restores_the_defaults_on_screen(qtbot: QtBot) ->
     * call ``save_changes``
     * verify the shipped defaults are both in force and back on screen, and the page is clean
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
     patterns_editor(page).values = ()
 
     page.save_changes()
@@ -318,14 +414,32 @@ def test_saving_normalizes_blanks_and_duplicates_on_screen(qtbot: QtBot) -> None
     * verify what was saved and what is shown are the same de-duplicated list
     """
     shared_excluded_files_settings().patterns = ("*.tmp", "Thumbs.db")
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    patterns_editor(page).values = ("*.tmp", "", "*.tmp")
+    built = FilesPage()
+    qtbot.addWidget(built)
+    patterns_editor(built).values = ("*.tmp", "", "*.tmp")
+
+    built.save_changes()
+
+    assert shared_excluded_files_settings().patterns == ("*.tmp",)
+    assert listed_patterns(built) == ("*.tmp",)
+    assert built.is_dirty() is False
+
+
+def test_save_changes_also_persists_the_recycle_bin_choice(page: FilesPage) -> None:
+    """One ``save_changes`` writes both settings objects, since they are both this page's own (#298).
+
+    **Test steps:**
+
+    * stage a pattern-list edit and a Recycle Bin toggle together, then apply once
+    * verify both shared settings hold their staged choice
+    """
+    patterns_editor(page).values = ("*.tmp",)
+    recycle_bin_check_box(page).setChecked(False)
 
     page.save_changes()
 
-    assert shared_excluded_files_settings().patterns == ("*.tmp",)
-    assert listed_patterns(page) == ("*.tmp",)
+    assert shared_excluded_files_settings().excluded_file_patterns == ("*.tmp",)
+    assert shared_screenshot_deletion_settings().use_recycle_bin is False
     assert page.is_dirty() is False
 
 
@@ -340,14 +454,14 @@ def test_drop_changes_reverts_the_staged_list(qtbot: QtBot) -> None:
     * verify the seeded pair is back and the page is clean
     """
     shared_excluded_files_settings().patterns = ("*.tmp", "Thumbs.db")
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    patterns_editor(page).values = ("*.partial",)
+    built = FilesPage()
+    qtbot.addWidget(built)
+    patterns_editor(built).values = ("*.partial",)
 
-    page.drop_changes()
+    built.drop_changes()
 
-    assert listed_patterns(page) == ("*.tmp", "Thumbs.db")
-    assert page.is_dirty() is False
+    assert listed_patterns(built) == ("*.tmp", "Thumbs.db")
+    assert built.is_dirty() is False
 
 
 # endregion
@@ -355,7 +469,7 @@ def test_drop_changes_reverts_the_staged_list(qtbot: QtBot) -> None:
 # region the page shell
 
 
-def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None:
+def test_the_wrapping_notes_are_never_clipped_at_any_width(page: FilesPage) -> None:
     """Each note gets the height its text needs at the width it is given, and gives it back on widening.
 
     Guards the defect this page shipped with: the frames were sized from a ``sizeHint`` computed as
@@ -372,15 +486,13 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None
     * verify at every step that each note is at least as tall as its text needs
     * verify a width seen before gets exactly the heights it got the first time
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
     ui = page_ui(page)
     page.show()
 
     first_seen: dict[int, tuple[int, ...]] = {}
     for width in (320, 900, 420, 640, 320, 900):
         page.setGeometry(0, 0, width, 700)
-        page_ui(page).main_layout.activate()
+        ui.main_layout.activate()
         for label in (ui.structural_note_label, ui.patterns_note_label):
             assert label.height() >= label.heightForWidth(label.width()), (
                 f"{label.objectName()} clipped at page width {width}"
@@ -389,33 +501,40 @@ def test_the_wrapping_notes_are_never_clipped_at_any_width(qtbot: QtBot) -> None
         assert first_seen.setdefault(width, heights) == heights, f"heights ratcheted at page width {width}"
 
 
-def test_frame_filter_discovers_both_frames_independently(qtbot: QtBot) -> None:
-    """The two tiers are separate top-level frames, so each filters on its own text (#67).
+def test_frame_filter_discovers_all_three_frames_independently(page: FilesPage) -> None:
+    """The three blocks are separate top-level frames, so each filters on its own text (#67).
 
-    Guards the page's ``.ui`` frame structure: searching for the editable list must not drag the
-    read-only structural summary along with it.
+    Guards the page's ``.ui`` frame structure: searching for one block must not drag the other two
+    along with it.
 
     **Test steps:**
 
     * build a frame filter over the page
+    * filter by the deletion header and verify only that frame stays shown
     * filter by the patterns header and verify only that frame stays shown
-    * filter by the structural header and verify the other one shows instead
-    * filter by a non-matching term and verify both hide
+    * filter by the structural header and verify only that frame stays shown
+    * filter by a non-matching term and verify all three hide
     """
-    page = ExcludedFilesPage()
-    qtbot.addWidget(page)
-    frame_filter = SettingsFrameFilter(page, "Excluded Files")
+    frame_filter = SettingsFrameFilter(page, "Files")
     ui = page_ui(page)
+
+    frame_filter.apply("deleting files", show_full_on_title_match=False)
+    assert ui.deletion_frame.isVisibleTo(page) is True
+    assert ui.patterns_frame.isVisibleTo(page) is False
+    assert ui.structural_frame.isVisibleTo(page) is False
 
     frame_filter.apply("excluded file patterns", show_full_on_title_match=False)
     assert ui.patterns_frame.isVisibleTo(page) is True
+    assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.structural_frame.isVisibleTo(page) is False
 
     frame_filter.apply("always excluded", show_full_on_title_match=False)
     assert ui.structural_frame.isVisibleTo(page) is True
+    assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
 
     frame_filter.apply("no-such-term", show_full_on_title_match=False)
+    assert ui.deletion_frame.isVisibleTo(page) is False
     assert ui.patterns_frame.isVisibleTo(page) is False
     assert ui.structural_frame.isVisibleTo(page) is False
 
