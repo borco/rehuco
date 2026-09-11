@@ -31,14 +31,14 @@ from ..settings.persistent_settings import persistent_settings
 from .checksum_actions import ChecksumActions
 from .checksum_view import ChecksumView
 from .conversion_backup_actions import ConversionBackupActions
-from .document_fields import build_document_form
+from .document_fields import VIEWER_DESCRIPTION_TAB, build_document_form
 from .name_suggestion_model import NameSuggestionModel
 from .rehu_document_model import RehuDocumentModel
 from .save_or_prompt_retry import save_or_prompt_retry
 from .source_views import OnDiskView, SavePreviewView
 
 STATE_VERSION_KEY: Final = "version"
-STATE_VERSION: Final = 6
+STATE_VERSION: Final = 7
 """Schema version of :meth:`DocumentWidget.save_state`'s blob. The dock layout is keyed by dock
 object name, so any change to the docks (names, count, which tabs exist) makes an older blob
 incompatible: QtAds's ``restoreState`` would accept it and silently hide the current docks. Bump this
@@ -51,7 +51,13 @@ invents for an unknown dock, rather than the deliberately-hidden-by-default one 
 
 Bumped to 5 when this resource's own log dock was added (#200), for exactly the same reason.
 
-Bumped to 6 when the per-file checksum dock was added (#244), likewise."""
+Bumped to 6 when the per-file checksum dock was added (#244), likewise.
+
+Bumped to 7 when the single ``viewer:Viewer`` dock was split into ``viewer:Main View`` and
+``viewer:Description View`` (#299) -- the sharpest case the version exists for: a v6 blob names a dock
+that no longer exists and neither of the ones that replaced it, so every document's saved layout and the
+saved default layout are dropped on first open and rebuilt from the as-built one. That reset is accepted,
+not worked around."""
 
 STATE_DOCK_MANAGER_KEY: Final = "dock_manager"
 STATE_STASHED_SIZES_KEY: Final = "stashed_sizes"
@@ -102,12 +108,16 @@ RESET_DEFAULT_LAYOUT_LABEL: Final = "Reset default layout"
 
 
 class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attributes
-    """One open document's **viewer** and **editor**, each in its own dock ([[plugins#viewer-editor-both]]).
+    """One open document's **viewers** and **editors**, each in its own dock
+    ([[plugins#viewer-editor-both]]).
 
-    Both docks are built once, from the same :class:`RehuDocumentModel`, and stay live regardless of
+    Every dock is built once, from the same :class:`RehuDocumentModel`, and stays live regardless of
     which are currently visible -- toggling a dock only hides/shows it, so an edit in the (possibly
     hidden) editor still reaches the (possibly hidden) viewer through the model's signals, making
-    "both" work even when only one is on screen. Carries the closed-dock-size workaround
+    "both" work even when only one is on screen. A document **opens as a reader** (#299): the two
+    viewer docks -- Main View on the left, Description View on the right -- are the only ones shown,
+    with the editors and the inspection set hidden behind their toolbar toggles. Carries the
+    closed-dock-size workaround
     ([[packaging-deployment#qml-regression]]): `CDockManager.splitterSizes` are stashed on
     ``viewToggled(False)`` -- confirmed, against this QtAds version, to still fire with the area at
     its pre-hide size, unlike ``closeRequested`` (never emitted by a toggle-hide; that signal is
@@ -258,13 +268,19 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         # slot on self would never fire on its own destruction -- and it must re-read self.__form, which a
         # rebuild may have replaced.
         self.destroyed.connect(lambda: self.__form.clear_external())  # pylint: disable=unnecessary-lambda
-        # one dock per FieldsTab: editor tabs stacked on the left, viewer tabs on the right
+        # one dock per FieldsTab, in two areas: Main View leads the left one with the editor tabs behind
+        # it, Description View holds the right one where the single Viewer dock sat before the split
+        # (#299). The editors are built first so the left area exists for Main View to stack into, and
+        # hidden right after: a document opens as a **reader** -- the two viewers side by side and
+        # nothing else -- with every editor one toolbar toggle away, the same way the inspection docks
+        # have always started hidden. A user who wants the editors up at open saves that as their
+        # default layout (#62), which `DocumentsDock` applies to every document with none of its own.
         self.__editor_docks: Final = self.__add_docks(
             self.__form.make_editor(model), "editor", QtAds.LeftDockWidgetArea
         )
-        self.__viewer_docks: Final = self.__add_docks(
-            self.__form.make_viewer(model), "viewer", QtAds.RightDockWidgetArea
-        )
+        self.__viewer_docks: Final = self.__add_viewer_docks(self.__form.make_viewer(model))
+        for editor_dock in self.__editor_docks.values():
+            self.__hide_dock(editor_dock)
         self.__save_preview_dock, self.__on_disk_dock = self.__add_inspection_docks(model)
         self.__log_dock: Final = self.__add_log_dock(model)
         self.__checksum_dock: QtAds.CDockWidget | None = None
@@ -969,18 +985,25 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             QMessageBox.critical(self, "Conversion Failed", f"Could not convert the document:\n\n{exc}")
 
     def __add_docks(
-        self, grids: dict[FieldsTab, QWidget], kind: str, position: QtAds.DockWidgetArea
+        self,
+        grids: dict[FieldsTab, QWidget],
+        kind: str,
+        position: QtAds.DockWidgetArea,
+        area: QtAds.CDockAreaWidget | None = None,
     ) -> dict[FieldsTab, QtAds.CDockWidget]:
-        """Build one dock per tab, stacked together into a single area at ``position``, theming each
-        dock's toggle action from the tab's SVG icon.
+        """Build one dock per tab, stacked together into a single area, theming each dock's toggle
+        action from the tab's SVG icon.
 
         :param grids: the ``{tab: grid widget}`` mapping (from `FieldsForm`).
         :param kind: ``"viewer"`` or ``"editor"`` -- namespaces the dock object names.
-        :param position: the dock area the first tab opens into; later tabs stack into it.
+        :param position: the dock area the first tab opens into when ``area`` is ``None``; later tabs
+            stack into whichever area that turns out to be.
+        :param area: an existing area to stack every tab into instead of opening one at ``position``
+            -- how Main View joins the editors' left area rather than taking a third of the width to
+            itself (#299).
         :returns: the built docks, keyed by tab.
         """
         docks: dict[FieldsTab, QtAds.CDockWidget] = {}
-        area: QtAds.CDockAreaWidget | None = None
         for tab, widget in grids.items():
             dock = self.__make_dock(f"{kind}:{tab.text}", tab.text, widget)
             if area is None:
@@ -994,6 +1017,57 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
             next(iter(docks.values())).setAsCurrentTab()
         return docks
 
+    def __add_viewer_docks(self, grids: dict[FieldsTab, QWidget]) -> dict[FieldsTab, QtAds.CDockWidget]:
+        """Build the viewer docks across **both** areas: Description View alone on the right, every
+        other viewer tab stacked into the editors' left area (#299).
+
+        Splitting them is the point of the split: the strip and the description are the two tall,
+        scrolling things the old single surface held, and side by side they no longer compete with the
+        record fields -- or each other -- for height. Main View leads the left area (a just-added dock
+        opens as its area's current tab, and the editors behind it are hidden immediately after), so a
+        document still opens showing read-only fields on the left, exactly where the main editor's own
+        first tab used to be.
+
+        :param grids: the whole ``{tab: grid widget}`` viewer mapping (from `FieldsForm`).
+        :returns: the built docks, keyed by tab, Main View first -- the order the toolbar's toggles and
+            :meth:`toggle_action`'s lookup both read.
+        """
+        editor_area = next(iter(self.__editor_docks.values())).dockAreaWidget() if self.__editor_docks else None
+        main_grids = {tab: grid for tab, grid in grids.items() if tab is not VIEWER_DESCRIPTION_TAB}
+        description_grids = {tab: grid for tab, grid in grids.items() if tab is VIEWER_DESCRIPTION_TAB}
+        return {
+            **self.__add_docks(main_grids, "viewer", QtAds.LeftDockWidgetArea, area=editor_area),
+            **self.__add_docks(description_grids, "viewer", QtAds.RightDockWidgetArea),
+        }
+
+    def __hide_dock(self, dock: QtAds.CDockWidget) -> None:
+        """Hide ``dock`` as part of building the default layout, without the hide being mistaken for a
+        user toggle.
+
+        Guarded like a layout restore: a programmatic hide is not a user toggle, so
+        :meth:`__on_view_toggled` must not stash the (zero, area-collapsed) sizes it would see here and
+        later re-apply when the dock is shown.
+
+        :param dock: the dock to start hidden.
+        """
+        self.__restoring_layout = True
+        try:
+            dock.toggleView(False)
+        finally:
+            self.__restoring_layout = False
+
+    def __description_view_dock(self) -> QtAds.CDockWidget | None:
+        """The Description View dock -- the right-hand area's own, which every hidden inspection dock
+        stacks into and which is put back as that area's current tab afterwards (#299).
+
+        The right area is where the single ``Viewer`` dock sat before the split, so stacking there keeps
+        the inspection set exactly where revealing one has always put it.
+
+        :returns: that dock; whichever viewer dock exists when this document composes no Description
+            View, and ``None`` when it has no viewer docks at all.
+        """
+        return self.__viewer_docks.get(VIEWER_DESCRIPTION_TAB) or next(iter(self.__viewer_docks.values()), None)
+
     def __add_inspection_docks(self, model: RehuDocumentModel) -> tuple[QtAds.CDockWidget, QtAds.CDockWidget]:
         """Build the two read-only inspection docks (#111) -- the live **Save Preview** and the verbatim
         **On Disk** file -- stacked as tabs beside the viewer docks but **hidden by default**.
@@ -1001,24 +1075,20 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         Both are built once and reused for the model's lifetime rather than rebuilt per reveal, but
         neither tracks the model on the per-keystroke path while hidden: `SavePreviewView` defers its
         re-serialization until next shown, and `OnDiskView` only re-reads at file-touching seams
-        regardless of visibility. Each is stacked into the viewer area so revealing it lands among the
-        viewer tabs, then hidden -- and the main viewer is put back as the current tab by
+        regardless of visibility. Each is stacked into the Description View's right-hand area
+        (:meth:`__description_view_dock`) so revealing it lands where the single ``Viewer`` dock's tabs
+        always were, then hidden -- and that viewer is put back as the current tab by
         :meth:`__add_hidden_inspection_dock` itself, matching :meth:`__add_docks`'s own choice.
 
         :param model: the view-model both inspection views render from.
         :returns: the ``(save_preview, on_disk)`` docks (both hidden), for the toolbar to add their
             toggle actions.
         """
-        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
         save_preview = self.__add_hidden_inspection_dock(
-            SAVE_PREVIEW_DOCK_NAME,
-            SAVE_PREVIEW_DOCK_TITLE,
-            SAVE_PREVIEW_ICON_RESOURCE,
-            SavePreviewView(model, self),
-            viewer_area,
+            SAVE_PREVIEW_DOCK_NAME, SAVE_PREVIEW_DOCK_TITLE, SAVE_PREVIEW_ICON_RESOURCE, SavePreviewView(model, self)
         )
         on_disk = self.__add_hidden_inspection_dock(
-            ON_DISK_DOCK_NAME, ON_DISK_DOCK_TITLE, ON_DISK_ICON_RESOURCE, OnDiskView(model, self), viewer_area
+            ON_DISK_DOCK_NAME, ON_DISK_DOCK_TITLE, ON_DISK_ICON_RESOURCE, OnDiskView(model, self)
         )
         return save_preview, on_disk
 
@@ -1038,9 +1108,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :returns: the dock, hidden.
         """
         settings = shared_logs_settings()
-        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
         dock = self.__add_hidden_inspection_dock(
-            LOG_DOCK_NAME, LOG_DOCK_TITLE, LOG_VIEW_ICON_RESOURCE, self.__log_widget, viewer_area
+            LOG_DOCK_NAME, LOG_DOCK_TITLE, LOG_VIEW_ICON_RESOURCE, self.__log_widget
         )
         self.__log_scope = model.path
         if self.__log_scope is not None:
@@ -1060,13 +1129,8 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         :param actions: the document's checksum actions, whose checking pair the dock's toolbar shares.
         :returns: the dock, hidden.
         """
-        viewer_area = next(iter(self.__viewer_docks.values())).dockAreaWidget() if self.__viewer_docks else None
         dock = self.__add_hidden_inspection_dock(
-            CHECKSUM_DOCK_NAME,
-            CHECKSUM_DOCK_TITLE,
-            CHECKSUM_ICON_RESOURCE,
-            ChecksumView(model, actions, self),
-            viewer_area,
+            CHECKSUM_DOCK_NAME, CHECKSUM_DOCK_TITLE, CHECKSUM_ICON_RESOURCE, ChecksumView(model, actions, self)
         )
         return dock
 
@@ -1109,39 +1173,32 @@ class DocumentWidget(QMainWindow):  # pylint: disable=too-many-instance-attribut
         """This resource's own log surface (#200) -- the log of the records made about it."""
         return self.__log_widget
 
-    def __add_hidden_inspection_dock(
-        self, name: str, title: str, icon: str, content: QWidget, viewer_area: QtAds.CDockAreaWidget | None
-    ) -> QtAds.CDockWidget:
-        """Build one inspection dock, theme its toggle from ``icon``, stack it into ``viewer_area``, and
-        start it hidden (#111).
+    def __add_hidden_inspection_dock(self, name: str, title: str, icon: str, content: QWidget) -> QtAds.CDockWidget:
+        """Build one inspection dock, theme its toggle from ``icon``, stack it into the Description
+        View's area, and start it hidden (#111).
 
         :param name: the dock's object name.
         :param title: the dock's tab title.
         :param icon: the SVG resource its toggle action is themed from.
         :param content: the view widget the dock hosts.
-        :param viewer_area: the viewer dock area to stack into; ``None`` opens a fresh right-side area
-            (only when there are no viewer docks at all).
         :returns: the built dock, hidden.
         """
+        neighbour = self.__description_view_dock()
+        area = neighbour.dockAreaWidget() if neighbour is not None else None
         dock = self.__make_dock(name, title, content)
-        if viewer_area is not None:
-            self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, viewer_area)
+        if area is not None:
+            self.__dock_manager.addDockWidget(QtAds.CenterDockWidgetArea, dock, area)
         else:
+            # only reachable with no viewer docks at all, which this document's composition never is
             self.__dock_manager.addDockWidget(QtAds.RightDockWidgetArea, dock)
         ActionIconThemeHandler(dock.toggleViewAction(), icon)
-        # hidden by default: a first-run layout shows every other dock but these. Guarded like a layout
-        # restore -- this programmatic hide isn't a user toggle, so __on_view_toggled must not stash the
-        # (zero, area-collapsed) sizes it would see and later re-apply when the dock is shown.
-        self.__restoring_layout = True
-        try:
-            dock.toggleView(False)
-        finally:
-            self.__restoring_layout = False
-        # a just-added dock opens as the current tab, which would leave an arbitrary viewer tab current;
-        # put the main viewer back. Done here rather than by each caller, which is what every one of them
-        # used to do with its own copy of this guard
-        if self.__viewer_docks:
-            next(iter(self.__viewer_docks.values())).setAsCurrentTab()
+        # hidden by default: a first-run layout shows the two viewers and none of these
+        self.__hide_dock(dock)
+        # a just-added dock opens as the current tab, which would leave an arbitrary inspection tab
+        # current; put the viewer it was stacked beside back. Done here rather than by each caller,
+        # which is what every one of them used to do with its own copy of this guard
+        if neighbour is not None:
+            neighbour.setAsCurrentTab()
         return dock
 
     def __make_dock(self, name: str, title: str, widget: QWidget) -> QtAds.CDockWidget:

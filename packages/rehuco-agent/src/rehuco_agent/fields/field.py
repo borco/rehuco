@@ -55,7 +55,7 @@ class FieldsTab:
     the fields sharing a tab into one dock.
 
     :param text: the dock/tab title.
-    :param icon: the light-theme SVG qrc resource path (e.g. ``:/icons/document_viewer.svg``); the
+    :param icon: the light-theme SVG qrc resource path (e.g. ``:/icons/document_viewer_main.svg``); the
         assembler renders it theme-aware, so it is set once here and never thought about again.
     """
 

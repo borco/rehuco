@@ -22,8 +22,8 @@ package "one per open path" {
   component "RehuDocument (core)" as Core
 
   package "built once, shown/hidden independently" {
-    component "Viewer dock\n(FieldsForm.make_viewer)" as Viewer
-    component "Editor dock\n(FieldsForm.make_editor)" as Editor
+    component "Viewer docks\nmain view, description view\n(FieldsForm.make_viewer)" as Viewer
+    component "Editor docks\nmain, description, images\n(FieldsForm.make_editor)" as Editor
   }
 }
 

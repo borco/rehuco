@@ -136,10 +136,10 @@ class DescriptionField(Field[str]):
             self.__image_scanner_changed.connect(viewer.set_image_scanner)  # type: ignore[attr-defined]
         if settings is not None:
             self.__wire_rendering_settings(viewer, settings)
-        # not fill: in the viewer the description is one row among others (the unknown-field fallbacks
-        # follow it), so it keeps its natural height and the trailing stretch sits after them all --
-        # unlike the editor, where the description has its own tab and should take the whole height
-        return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True)
+        # fill, as in the editor: the description view holds the strip and this and nothing else (#299),
+        # so it takes the height the fixed-height strip above it leaves rather than keeping its natural
+        # one. It was one row among others (the unknown-field fallbacks followed it) until that split
+        return FieldViewerWidgets(self.viewer_tab, HorizontalLine(), viewer, vertical=True, fill=True)
 
     def __wire_rendering_settings(self, viewer: MarkdownView, settings: DescriptionRenderingSettings) -> None:
         """Re-render ``viewer`` with the shared Markdown-rendering settings' current values whenever

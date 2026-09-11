@@ -8,7 +8,7 @@ from pytestqt.qtbot import QtBot
 from rehuco_agent.documents.document_fields import (
     EDITOR_DESCRIPTION_TAB,
     EDITOR_MAIN_TAB,
-    VIEWER_TAB,
+    VIEWER_MAIN_TAB,
     build_document_form,
 )
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
@@ -112,7 +112,7 @@ def test_build_document_form_puts_the_record_list_rows_where_tc4_had_them(qtbot:
             }
         )
     )
-    viewer = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_TAB]
+    viewer = build_document_form(model, NameSuggestionModel(model)).make_viewer(model)[VIEWER_MAIN_TAB]
     qtbot.addWidget(viewer)
 
     labels = form_labels(viewer)
