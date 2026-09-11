@@ -167,6 +167,14 @@
     <string>S&amp;ettings</string>
    </property>
   </action>
+  <action name="documents_action">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>&amp;Documents</string>
+   </property>
+  </action>
   <action name="log_action">
    <property name="checkable">
     <bool>true</bool>

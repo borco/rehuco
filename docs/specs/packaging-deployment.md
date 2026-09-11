@@ -533,7 +533,7 @@ end-user polish on the same track as [[packaging-deployment#app-identity]], defe
 
 - [#29: single icon master in top-level design/icons](https://github.com/borco/rehuco/issues/29)
 
-Brand icons come from a **single Affinity Designer master**, `design/icons/icons.afdesign`, in a
+Brand icons come from a **single Affinity Designer master**, `design/icons/rehuco-icons-master.afdesign`, in a
 **top-level `design/icons/`** folder — discoverable, and deliberately outside both `src/` (which
 hatch ships, [[packaging-deployment#three-packages]]) and `docs_dir` (which mkdocs would otherwise bundle into the built
 site). The

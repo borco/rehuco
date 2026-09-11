@@ -21,6 +21,7 @@
         <file alias="icons/document_save.svg">../../../../design/icons/document_save.svg</file>
         <file alias="icons/document_viewer_description.svg">../../../../design/icons/document_viewer_description.svg</file>
         <file alias="icons/document_viewer_main.svg">../../../../design/icons/document_viewer_main.svg</file>
+        <file alias="icons/documents_view.svg">../../../../design/icons/documents_view.svg</file>
         <file alias="icons/expand_minus.svg">../../../../design/icons/expand_minus.svg</file>
         <file alias="icons/expand_plus.svg">../../../../design/icons/expand_plus.svg</file>
         <file alias="icons/image_previews.svg">../../../../design/icons/image_previews.svg</file>

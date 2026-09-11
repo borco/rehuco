@@ -14,9 +14,9 @@ TOOLBARS_STATE_KEY: Final = "toolbars_state"
 LOG_WIDGET_STATE_KEY: Final = "log_widget_state"
 TASK_QUEUE_STATE_KEY: Final = "task_queue_state"
 
-OUTER_DOCKS_STATE_VERSION: Final = 3
-"""Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the central
-documents dock plus any sibling dockable dialogs, e.g. #47's settings dock) is keyed by dock object
+OUTER_DOCKS_STATE_VERSION: Final = 4
+"""Schema version of :attr:`MainWindowSettings.outer_docks_state`. The outer dock set (the Documents
+dock plus its sibling docks and dockable dialogs, e.g. #47's settings dock) is keyed by dock object
 name, so any change to that set makes an older blob incompatible: ``CDockManager.restoreState``
 would accept it and silently hide docks not present in the saved layout. Bump this whenever the
 outer dock set changes; :meth:`MainWindowSettings.load` discards a blob whose version differs,
@@ -26,7 +26,13 @@ Bumped to 2 when the app-wide log dock was added (#200): a v1 blob knows nothing
 one would leave that dock in whatever state QtAds invents for a dock the layout never mentions, rather
 than the deliberately-hidden-by-default one the window builds.
 
-Bumped to 3 when the app-wide task queue dock was added (#202), for the same reason."""
+Bumped to 3 when the app-wide task queue dock was added (#202), for the same reason.
+
+Bumped to 4 when the documents area stopped being the manager's central widget and became an ordinary,
+hideable **Documents** dock (#268). This one is not merely a dock the older layout does not mention: a
+v3 blob describes a *central* area, a structure QtAds reconstructs before it places anything around it,
+so restoring one into a shell that has no central widget is not a dock left in an invented state but a
+layout rebuilt around a hole. Discarded once, and rebuilt from the window's own default."""
 
 TOOLBARS_STATE_VERSION: Final = 2
 """Version passed to Qt's own ``QMainWindow.saveState``/``restoreState`` (the toolbar-area/floating
@@ -48,8 +54,8 @@ class MainWindowSettings:
     """The window's ``saveGeometry()`` blob, or empty before any session has been saved."""
 
     outer_docks_state: bytes = field(default=b"")
-    """The outer ``CDockManager``'s ``saveState()`` blob (central documents dock + sibling dockable
-    dialogs, #47), or empty before any session has been saved or after an incompatible
+    """The outer ``CDockManager``'s ``saveState()`` blob (the Documents dock + its sibling docks and
+    dockable dialogs, #47), or empty before any session has been saved or after an incompatible
     :data:`OUTER_DOCKS_STATE_VERSION`."""
 
     toolbars_state: bytes = field(default=b"")

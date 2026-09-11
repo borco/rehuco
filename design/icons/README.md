@@ -4,11 +4,12 @@ Single source of truth for the project's brand icons. See
 [Design resources](../../docs/specs/packaging-deployment.md) ([[packaging-deployment#design-resources]])
 for the full design and rationale.
 
-`icons.afdesign` is the **Affinity Designer master**; every other file here is exported from it.
+`rehuco-icons-master.afdesign` is the **Affinity Designer master**; every other file here is exported
+from it.
 
 ## How these are managed
 
-- **Export manually from the AD master.** Open `icons.afdesign` and export the raw assets —
+- **Export manually from the AD master.** Open `rehuco-icons-master.afdesign` and export the raw assets —
   `favicon.svg`, `rehuco-agent.svg`, and `rehuco-agent.png` (1024 px). Keep SVGs square and
   pure-vector; the PNG is the master the `.ico` is downscaled from.
 - **Committed to git.** The exports are tracked so anyone can build and run the project **without
