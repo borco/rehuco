@@ -40,15 +40,19 @@ class GlyphActionIconThemeHandler(QObject):
         color_role: QPalette.ColorRole = QPalette.ColorRole.Text,
         parent: QObject | None = None,
     ) -> None:
+        # checked before super().__init__() runs at all: that call fully constructs and parents a
+        # live QObject, and raising after it would leave a half-initialized one attached to the parent
+        # with no Python reference left to it -- an object neither this constructor nor its caller can
+        # ever clean up, since the exception unwinds before either holds one
+        app = QApplication.instance()
+        if not isinstance(app, QApplication):
+            raise RuntimeError("GlyphActionIconThemeHandler requires a running QApplication")
+
         super().__init__(parent if parent is not None else action)
         self.__action: Final = action
         self.__glyph: Final = glyph
         self.__family: Final = family
         self.__color_role: Final = color_role
-
-        app = QApplication.instance()
-        if not isinstance(app, QApplication):
-            raise RuntimeError("GlyphActionIconThemeHandler requires a running QApplication")
         ApplicationPaletteChangeNotifier.for_application(app).palette_changed.connect(self.__apply_icon)
 
         self.__apply_icon()
