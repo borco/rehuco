@@ -42,6 +42,7 @@ from rehuco_agent.documents.document_widget import (
     APPLY_DEFAULT_LAYOUT_TOOLTIP,
     CHECKSUM_ICON_RESOURCE,
     DEFAULT_LAYOUT_ICON_RESOURCE,
+    FILES_ICON_RESOURCE,
     ON_DISK_ICON_RESOURCE,
     RESET_DEFAULT_LAYOUT_LABEL,
     SAVE_DEFAULT_LAYOUT_LABEL,
@@ -51,6 +52,7 @@ from rehuco_agent.documents.document_widget import (
     STATE_WIDGET_STATE_KEY,
     DocumentWidget,
 )
+from rehuco_agent.documents.files_view import FilesView
 from rehuco_agent.documents.name_suggestion_model import NameSuggestionModel
 from rehuco_agent.documents.rehu_document_model import RehuDocumentModel
 from rehuco_agent.fields import PROVENANCE_ABANDONED_TYPE, FieldsForm, FieldsTab, StatefulWidget
@@ -3622,6 +3624,135 @@ def test_a_rehu_documents_images_dock_has_no_after_conversion_column(widget: Doc
     * verify the column is hidden
     """
     assert after_conversion_column(image_selector(widget))[0] is False
+
+
+# endregion
+
+
+# region the files dock over this resource's folder (#266)
+
+
+def files_dock(widget: DocumentWidget) -> QtAds.CDockWidget:
+    """Return the widget's private Files dock.
+
+    :param widget: the document widget to inspect.
+    :returns: the Files `CDockWidget`.
+    """
+    return widget._DocumentWidget__files_dock  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
+def test_the_files_dock_exists_and_starts_hidden(widget: DocumentWidget) -> None:
+    """This resource's folder browser is built, and hidden by default like the rest of the inspection
+    set (#266).
+
+    **Test steps:**
+
+    * build a widget over the sample model
+    * verify the dock hosts a `FilesView` and its toggle reports unchecked
+    """
+    assert isinstance(files_dock(widget).widget(), FilesView)
+    assert files_dock(widget).toggleViewAction().isChecked() is False
+
+
+def test_the_files_dock_exists_without_a_queue(widget: DocumentWidget) -> None:
+    """Unlike the checksum dock, this one does not need one: a folder is a folder with no queue in
+    sight, and only the row that would enqueue a verify goes quiet (#266).
+
+    **Test steps:**
+
+    * build a widget with no task queue (the default in this suite)
+    * verify the dock is there while the checksum dock is not
+    """
+    assert widget.checksum_actions is None
+    assert isinstance(files_dock(widget).widget(), FilesView)
+
+
+def test_the_files_dock_toggle_is_on_the_toolbar_with_its_own_icon(widget: DocumentWidget) -> None:
+    """Its toggle sits beside the other inspection toggles and is themed from its own SVG (#266).
+
+    **Test steps:**
+
+    * verify the toolbar carries the dock's toggle action
+    * verify a handler on that action was built from the file-browser icon's bytes
+    """
+    action = files_dock(widget).toggleViewAction()
+    toolbar = widget.findChildren(QToolBar)[0]
+
+    assert action in toolbar.actions()
+
+    handlers = action.findChildren(ActionIconThemeHandler)
+    svgs = {handler._ActionIconThemeHandler__svg for handler in handlers}  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert read_resource_bytes(FILES_ICON_RESOURCE) in svgs
+
+
+def test_another_resource_activated_in_the_browser_is_relayed_out(qtbot: QtBot, widget: DocumentWidget) -> None:
+    """Opening a resource is the window's act, so the browser's request leaves this widget rather than
+    being served here (#266).
+
+    **Test steps:**
+
+    * emit the browser's own activation
+    * verify the widget re-emitted it with the same path
+    """
+    neighbour = Path("/fake/library/sculpting/other.rehu")
+    view = files_dock(widget).widget()
+    assert isinstance(view, FilesView)
+
+    with qtbot.waitSignal(widget.record_activated, timeout=5000) as relayed:
+        view.record_activated.emit(neighbour)
+
+    assert relayed.args == [neighbour]
+
+
+def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: DocumentWidget) -> None:
+    """The browser's set, not the curated one (#266): it is a view of the folder, so a screenshot
+    curated out of the lightbox is still openable from there.
+
+    **Test steps:**
+
+    * emit the browser's image activation with a set the curated one does not hold
+    * verify the maximized viewer opened against exactly that set
+    """
+    view = files_dock(widget).widget()
+    assert isinstance(view, FilesView)
+    folder = [Path("/fake/library/sculpting/curated-out.jpg"), Path("/fake/library/sculpting/other00.jpg")]
+
+    view.images_activated.emit(folder, folder[0])
+
+    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer is not None
+    assert viewer.images == folder
+
+
+def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidget) -> None:
+    """A viewer opened from the Files sub-dock shows the folder, and a curation edit says nothing about
+    the folder -- re-pointing it at the strip's set would silently swap what the reader was looking at
+    (#266, against #161's re-point of the curated route).
+
+    **Test steps:**
+
+    * open a viewer from the browser over a folder set
+    * report a changed curated set, as unchecking a screenshot does
+    * verify the viewer still shows the folder set, and that a viewer opened from the strip is still
+      re-pointed
+    """
+    view = files_dock(widget).widget()
+    assert isinstance(view, FilesView)
+    folder = [Path("/fake/library/sculpting/a.jpg"), Path("/fake/library/sculpting/b.jpg")]
+    curated = [Path("/fake/library/sculpting/info00.jpg")]
+
+    view.images_activated.emit(folder, folder[0])
+    widget._DocumentWidget__on_curated_images_changed(curated)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert viewer is not None
+    assert viewer.images == folder
+
+    viewer.close()
+    widget._DocumentWidget__on_image_activated(curated[0])  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    widget._DocumentWidget__on_curated_images_changed(folder)  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    strip_viewer = widget._DocumentWidget__image_viewer  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    assert strip_viewer is not None
+    assert strip_viewer.images == folder
 
 
 # endregion

@@ -1,12 +1,7 @@
 """Tests for the status-icon lookup: which glyph a row wears, and the recolored icon cache (#248)."""
 
-from typing import Any
-
-from PySide6.QtGui import QColor
-from pytest import fixture, mark
-from pytest_mock import MockerFixture
-from rehuco_agent.tasks import task_status_icons
-from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, StatusIconCache, status_icon
+from pytest import mark
+from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, status_icon
 from rehuco_core import JobState, JobStatus, StopRequest
 
 
@@ -72,65 +67,6 @@ def test_the_pending_glyphs_are_not_reused_from_the_states() -> None:
     * verify all eight are distinct
     """
     assert len(set(STATE_ICONS.values()) | set(PENDING_STOP_ICONS.values())) == len(JobState) + len(StopRequest)
-
-
-# endregion
-
-
-# region the cache
-
-
-@fixture
-def cache(qapp: object) -> StatusIconCache:
-    """A fresh cache; takes ``qapp`` because building an icon needs a `QGuiApplication`."""
-    del qapp
-    return StatusIconCache()
-
-
-def test_the_same_glyph_and_color_is_built_once(cache: StatusIconCache, mocker: MockerFixture) -> None:
-    """Recoloring rewrites an SVG and builds an icon engine, which must not happen per repaint.
-
-    **Test steps:**
-
-    * ask twice for the same glyph in the same color
-    * verify the icon was built once and the same object came back
-    """
-    built = mocker.spy(task_status_icons, "recolored_svg_icon")
-    path = STATE_ICONS[JobState.DONE]
-
-    first = cache.icon(path, QColor("red"))
-    second = cache.icon(path, QColor("red"))
-
-    assert first is second
-    built.assert_called_once()
-
-
-def test_a_second_color_is_a_second_icon(cache: StatusIconCache) -> None:
-    """A theme switch asks for colors not seen before rather than needing the cache told anything.
-
-    **Test steps:**
-
-    * ask for one glyph in two colors
-    * verify the two are distinct icons
-    """
-    path = STATE_ICONS[JobState.DONE]
-
-    assert cache.icon(path, QColor("red")) is not cache.icon(path, QColor("blue"))
-
-
-def test_the_icon_renders_in_the_color_it_was_asked_for(cache: StatusIconCache) -> None:
-    """The recoloring is real, not just a cache key.
-
-    **Test steps:**
-
-    * build a glyph in red and render it
-    * verify red pixels came out
-    """
-    pixmap = cache.icon(STATE_ICONS[JobState.DONE], QColor("red")).pixmap(32, 32)
-    image = pixmap.toImage()
-    colors: set[Any] = {image.pixelColor(x, y).name() for y in range(image.height()) for x in range(image.width())}
-
-    assert "#ff0000" in colors
 
 
 # endregion

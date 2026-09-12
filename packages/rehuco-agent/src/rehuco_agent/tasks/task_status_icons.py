@@ -14,9 +14,6 @@ deliberately keeps out of a widget, but an icon set is this app's own -- the sam
 from collections.abc import Mapping
 from typing import Final
 
-from borco_pyside.theming import recolored_svg_icon
-from borco_pyside.theming.utils import read_resource_bytes
-from PySide6.QtGui import QColor, QIcon
 from rehuco_core import JobState, JobStatus, StopRequest
 
 STATE_ICONS: Final[Mapping[JobState, str]] = {
@@ -56,33 +53,3 @@ def status_icon(status: JobStatus) -> str:
     """
     pending = PENDING_STOP_ICONS.get(status.stop_requested) if status.stop_requested is not None else None
     return pending if pending is not None else STATE_ICONS[status.state]
-
-
-# one method is the whole of it: a cache that also decided *which* icon, or what color, would be two
-# things -- those are :func:`status_icon`'s and the delegate's
-# pylint: disable-next=too-few-public-methods
-class StatusIconCache:
-    """Recolored :class:`QIcon`s for the status glyphs, built once per (icon, color) pair.
-
-    Recoloring rewrites the SVG and builds an icon engine, which is far too much to do on every
-    repaint of every row. The pairs are few and bounded -- eight glyphs against the handful of colors a theme puts
-    on a row -- so holding them all costs nothing, and a theme switch simply asks for colors not seen
-    yet rather than needing to be told anything.
-    """
-
-    def __init__(self) -> None:
-        self.__icons: dict[tuple[str, int], QIcon] = {}
-
-    def icon(self, path: str, color: QColor) -> QIcon:
-        """The glyph at ``path``, recolored to ``color``.
-
-        :param path: the icon's resource path.
-        :param color: the color to draw it in.
-        :returns: the icon, built on first ask and kept.
-        """
-        key = (path, color.rgba())
-        held = self.__icons.get(key)
-        if held is None:
-            held = recolored_svg_icon(read_resource_bytes(path), color)
-            self.__icons[key] = held  # pylint: disable=unsupported-assignment-operation
-        return held

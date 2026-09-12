@@ -33,6 +33,7 @@ from rehuco_core import (
     content_size_on_disk,
     forget_checksums,
     generate_checksums,
+    is_checksum_fresh,
     parse_checksum_entry,
     verify_checksums,
 )
@@ -65,6 +66,9 @@ LATER: Final = "2026-08-06T12:00:00Z"
 MUCH_LATER: Final = "2026-09-05T12:00:00Z"
 
 WEEK: Final = timedelta(days=7)
+
+RECORDED_AT: Final = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
+""":data:`NOW` as the moment it parses to, for the freshness rule's own tests."""
 
 
 # region Fakes
@@ -1645,6 +1649,48 @@ def test_a_parsed_entry_carries_its_algorithm_and_date() -> None:
     assert parsed.digest == "42342424"
     assert parsed.verified == datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
     assert parsed.status == "matched"
+
+
+@mark.parametrize(
+    ("dated", "elapsed", "window", "fresh"),
+    [
+        (True, timedelta(days=1), WEEK, True),
+        (True, timedelta(days=30), WEEK, False),
+        (False, timedelta(days=1), WEEK, False),
+        (True, timedelta(days=1), None, False),
+    ],
+    ids=["inside the window", "outside it", "dateless", "no window at all"],
+)
+def test_freshness_is_one_answer_for_the_run_and_for_any_surface(
+    dated: bool, elapsed: timedelta, window: timedelta | None, fresh: bool
+) -> None:
+    """The rule a run skips by is public (#266), so the file browser's *checked recently* glyph means
+    exactly *Verify Old would skip this* rather than a second opinion formed in the GUI.
+
+    A dateless entry is never fresh whatever the window -- which is what makes a claim seeded from a
+    legacy manifest self-healing -- and no window at all is how *force* is spelled, so nothing is.
+
+    **Test steps:**
+
+    * ask about an entry checked a day ago, one checked a month ago, one with no stamp, and one asked
+      with no window at all
+    """
+    raw: dict[str, object] = {"name": VIDEO, "crc32": "42342424", "status": "matched"}
+    if dated:
+        raw["verified"] = NOW
+
+    assert is_checksum_fresh(parse_checksum_entry(raw), window, RECORDED_AT + elapsed) is fresh
+
+
+def test_an_entry_this_build_cannot_read_is_never_fresh() -> None:
+    """A malformed entry has no readable stamp, and blessing it as current would be exactly the
+    laundering a verify must not do.
+
+    **Test steps:**
+
+    * ask about ``None`` -- what a malformed entry parses to -- inside a generous window
+    """
+    assert not is_checksum_fresh(None, WEEK, RECORDED_AT)
 
 
 def test_a_hash_recorded_in_upper_case_still_compares(disk: FakeDisk) -> None:

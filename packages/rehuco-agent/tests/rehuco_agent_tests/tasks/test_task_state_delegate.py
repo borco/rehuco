@@ -13,9 +13,10 @@ from PySide6.QtGui import QColor, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 from pytest import fixture
 from pytest_mock import MockerFixture
+from rehuco_agent.svg_icon_cache import SvgIconCache
 from rehuco_agent.tasks.task_queue_model import TaskQueueModel
 from rehuco_agent.tasks.task_state_delegate import STATUS_ICON_SIZE, TaskStateDelegate
-from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS, StatusIconCache
+from rehuco_agent.tasks.task_status_icons import PENDING_STOP_ICONS, STATE_ICONS
 from rehuco_core import JobState, JobStatus, StopRequest
 
 CELL: Final = QRect(0, 0, 52, 24)
@@ -68,9 +69,9 @@ def painter(qapp: Any) -> Iterator[QPainter]:
 def asked(mocker: MockerFixture) -> Any:
     """Record every ``(path, color)`` the delegate asks its icon cache for.
 
-    :returns: the patched ``StatusIconCache.icon``.
+    :returns: the patched ``SvgIconCache.icon``.
     """
-    return mocker.patch.object(StatusIconCache, "icon", autospec=True)
+    return mocker.patch.object(SvgIconCache, "icon", autospec=True)
 
 
 @fixture

@@ -23,11 +23,13 @@ from .checksum_jobs import (
 )
 from .checksum_record import (
     CHECKSUM_FILES_KEY,
+    MATCHED_STATUS,
     ChecksumEntry,
     ChecksumRecordError,
     ChecksumStatus,
     checksum_entry_name,
     checksum_record_path,
+    is_checksum_fresh,
     load_checksum_record,
     new_checksum_record,
     parse_checksum_entry,
@@ -50,6 +52,7 @@ from .checksum_seeding import (
 from .collection_entries import CollectionEntry, collection_entries, collection_records
 from .constants import (
     ARCHIVE_EXTENSIONS,
+    AUDIO_EXTENSIONS,
     CHECKSUM_MANIFEST_EXTENSIONS,
     CHECKSUM_RECORD_SUFFIX,
     CONTENT_IMAGE_EXTENSIONS,
@@ -133,6 +136,14 @@ from .rehu_document import (
     RehuFormatError,
     author_name,
     authors_comma_editable,
+)
+from .rehu_file_kinds import (
+    DirectoryClassifier,
+    DirectoryEntry,
+    DirectoryListing,
+    FileKind,
+    FileType,
+    classify_directory,
 )
 from .rehu_format import CORE_BLOCK_KEY, FORMAT_VERSION_KEY, RESERVED_KEYS
 from .rehu_parse_limits import (
@@ -253,6 +264,7 @@ from .tc_screenshots import (
     compiled_screenshot_name_patterns,
     convert_screenshot,
     is_legacy_screenshot,
+    natural_sort_key,
     scan_tc_screenshots,
     scan_unconverted_screenshots,
     screenshot_name_patterns_from_state,
@@ -270,6 +282,7 @@ __all__ = [
     "TITLE_KEY",
     "INDEX_KEY",
     "ARCHIVE_EXTENSIONS",
+    "AUDIO_EXTENSIONS",
     "AuthorEntry",
     "BACKUP_SUFFIX",
     "BUILTIN_PLUGINS",
@@ -329,6 +342,9 @@ __all__ = [
     "DURATION_PROBES",
     "Deleter",
     "DeleterProvider",
+    "DirectoryClassifier",
+    "DirectoryEntry",
+    "DirectoryListing",
     "DiscardBackupsJob",
     "DurationProbe",
     "DurationProbeError",
@@ -336,6 +352,8 @@ __all__ = [
     "FINISHED_JOB_STATES",
     "FORMAT_VERSION_KEY",
     "FfprobeDurationProbe",
+    "FileKind",
+    "FileType",
     "GenerateChecksumsJob",
     "IMAGE_EXTENSIONS",
     "INFO_REHU_FILENAME",
@@ -349,6 +367,7 @@ __all__ = [
     "LEGACY_MANIFEST_ALGORITHMS",
     "LEGACY_MANIFEST_RETIRE_KIND",
     "LEGACY_SUFFIX",
+    "MATCHED_STATUS",
     "LearningPathEntry",
     "LegacyDrop",
     "LegacySeed",
@@ -427,6 +446,7 @@ __all__ = [
     "checksum_entry_name",
     "checksum_record_path",
     "checksum_report_summary",
+    "classify_directory",
     "collection_entries",
     "collection_records",
     "compiled_screenshot_name_patterns",
@@ -448,6 +468,7 @@ __all__ = [
     "forget_checksums",
     "generate_checksums",
     "hand_over_claims",
+    "is_checksum_fresh",
     "is_conversion_backup",
     "is_directory_scoped",
     "is_directory_scoped_name",
@@ -462,6 +483,7 @@ __all__ = [
     "log_legacy_seed",
     "migrate_block_data",
     "migrate_checksum_data",
+    "natural_sort_key",
     "migrate_rehu_data",
     "new_checksum_record",
     "original_path",

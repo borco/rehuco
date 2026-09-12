@@ -237,6 +237,7 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         self.__documents_dock.document_focus_changed.connect(self.__on_document_focus_changed)
         self.__documents_dock.status_message.connect(self.__on_status_message)
         self.__documents_dock.document_path_changed.connect(self.__on_document_path_changed)
+        self.__documents_dock.open_requested.connect(self.__on_open_requested)
         self.__setup_docking_system()
         self.__ui.view_menu.aboutToShow.connect(lambda: self.__add_open_documents(self.__ui.view_menu))
         self.__setup_file_menu()
@@ -1295,6 +1296,21 @@ class MainWindow(QMainWindow):  # pylint: disable=too-many-instance-attributes
         widget = self.__documents_dock.open_archive(resolved)
         if not widget.model.document.load_failed:
             self.__recent_files.record(resolved)
+
+    def __on_open_requested(self, path: object) -> None:
+        """Open a record an already-open document asked for -- another resource double-clicked in its
+        Files sub-dock (#266).
+
+        Straight through :meth:`open_path`, which is the point of routing it up here at all: the request
+        gets the same resolve, the same reveal of the documents area and the same ``Open recents`` entry
+        as an open from the menu, and an already-open record is focused rather than opened twice
+        (:meth:`~rehuco_agent.documents.documents_dock.DocumentsDock.open_document`).
+
+        :param path: the record's path, as the object-typed relay carried it; anything else is ignored,
+            which no in-tree emitter produces.
+        """
+        if isinstance(path, Path):
+            self.open_path(path)
 
     def __on_document_path_changed(self, old_path: Path | None, new_path: Path | None) -> None:
         """Keep ``Open recents`` (#64) pointed at a document's current path when it moves -- a

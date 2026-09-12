@@ -76,6 +76,15 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
     it to the real bar. The relay mirrors :attr:`document_focus_changed`'s own ``DocumentsDock`` ->
     ``MainWindow`` hop."""
 
+    open_requested: Signal = Signal(object)
+    """Emitted with the :class:`~pathlib.Path` of a record one of the open documents asked to have
+    opened -- today, another resource double-clicked in a document's Files sub-dock (#266).
+
+    Relayed on to ``MainWindow`` rather than opened here, even though :meth:`open_document` is right
+    there: opening is more than making a dock -- the path is resolved, this area is revealed, and the
+    file joins ``Open recents`` -- and a second route that did only the middle step would be a second
+    definition of *open*. The one funnel is ``MainWindow.open_path``, which calls back into here."""
+
     document_path_changed: Signal = Signal(object, object)
     """Emitted ``(old_path, new_path)`` whenever an open document's :attr:`~RehuDocumentModel.path`
     moves -- a :meth:`~RehuDocumentModel.convert` swapping a ``.tc`` for its ``.rehu``, or a completed
@@ -503,6 +512,9 @@ class DocumentsDock(QMainWindow):  # pylint: disable=too-many-instance-attribute
         # relay this document's field status messages (the authors viewer's hovered-link URL) up to
         # MainWindow, which routes them to the real status bar (the genuine top-level window)
         dock.document_widget.status_message.connect(self.status_message)
+        # and relay its Files sub-dock's open requests the same way, up to the window that owns what
+        # "open" means (#266)
+        dock.document_widget.record_activated.connect(self.open_requested)
         dock.closeRequested.connect(self.__on_close_dock_widget_requested)
         self.__document_docks[dock] = dock.document_widget  # pylint: disable=unsupported-assignment-operation
         self.__last_known_paths[dock] = path  # pylint: disable=unsupported-assignment-operation

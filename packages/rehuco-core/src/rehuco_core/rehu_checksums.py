@@ -79,6 +79,7 @@ from .checksum_record import (
     ChecksumStatus,
     checksum_entry_name,
     checksum_record_path,
+    is_checksum_fresh,
     load_checksum_record,
     new_checksum_record,
     parse_checksum_entry,
@@ -753,12 +754,12 @@ class ChecksumRun:  # pylint: disable=too-many-instance-attributes
     def __fresh(self, entry: ChecksumEntry | None) -> bool:
         """Whether ``stale_after`` says this entry was verified recently enough to leave alone.
 
-        ``None`` -- no window -- means nothing is fresh: *force*, spelled as the absence of a skip
-        rather than as a second flag ([[data-model#checksums]], #203).
+        This run's own window and instant applied to :func:`~rehuco_core.is_checksum_fresh`, which is
+        where the rule itself lives (#266): the agent's file browser draws a glyph meaning *a new check
+        would do nothing*, and a second copy of the arithmetic is exactly how that glyph would come to
+        promise something this run does not honour.
         """
-        if self.__stale_after is None or entry is None or entry.verified is None:
-            return False
-        return self.__now - entry.verified < self.__stale_after
+        return is_checksum_fresh(entry, self.__stale_after, self.__now)
 
     def __plan(self, reads: list[ResourceLocation]) -> None:
         """Add up what the run is about to read, and say so.

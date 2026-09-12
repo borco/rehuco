@@ -96,6 +96,16 @@ agent's ``VideosSettings`` (#225) is what makes the set the user's to change. A 
 skipped by the sum rather than probed and reported as zero, so adding one is a preference change rather
 than a rebuild."""
 
+AUDIO_EXTENSIONS: Final = (".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav", ".wma")
+"""Audio file extensions to recognize, case-insensitively -- what a file browser draws an audio glyph
+for ([[plugins#files-subdock]], #266).
+
+Presentation only, and deliberately so: nothing measures, hashes or scopes a resource by it, which is
+what separates it from :data:`VIDEO_EXTENSIONS` (a duration sum, #224) and
+:data:`ARCHIVE_EXTENSIONS` (a reference-images resource's content). A lecture series ships its audio
+beside its video and a reader wants to tell them apart in the listing; that is the whole of it, so it
+is not a setting either."""
+
 EXCLUDED_FILE_PATTERNS: Final = ("Thumbs.db", "ehthumbs.db", "desktop.ini", ".DS_Store", "._*")
 """Default filename globs to leave out of a directory-scoped resource's content, matched
 case-insensitively against the *file name* ([[data-model#checksums]], #226) -- what the OS and other

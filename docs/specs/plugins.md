@@ -274,16 +274,70 @@ workaround
 
 [[[plugins#files-subdock]]]
 
-Every document dock carries a **Files** sub-dock, hidden by default beside the inspection set: a table over the
-resource's own directory — name, size, modified, and what the file is to the resource (the record, a screenshot, a
-conversion backup, content) — so what the app's own renames, conversions and drops did to the folder can be read
-without leaving it. It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this
-sub-dock — and never in between. Deliberately **not `QFileSystemModel`**: that model installs a file-system watcher
-that holds handles open on Windows, and a held handle is exactly what makes a rename or a delete of the resource's own
-files fail — the app would be locking what it is about to move. The same reasoning already keeps a watcher out of the
-node ([[mounts-and-storage#out-of-band]]). A plain listing costs one `scandir` per refresh and holds nothing between
-them. Double-clicking an image opens it maximized through the same owner-routed activation the strip uses
-([[plugins#tutorial-plugin]]); double-clicking anything else hands it to the system's default handler.
+Every document dock carries a **Files** sub-dock, hidden by default beside the inspection set: a browsable table over
+the resource's own folder — name, a checksum verdict, what the file is to the resource, size and modified — so what the
+app's own renames, conversions and drops did to the folder can be read without leaving it.
+
+**It is confined to the resource's own folder.** The root is the record's directory, and there is no way above it: a
+`..` row appears only while the reader is below the root, and both it and the toolbar's up action stop there. Going up
+would leave the resource entirely, and a general file manager is not what this is — the neighbouring folder a reader
+wants is reached by opening the resource that owns it, which is what the foreign-record rows below are for.
+
+**What a row lets you do is decided by what the file is to this resource** — the roles
+[[data-model#resource-scoping]]'s coverage rules already name, asked one directory at a time rather than as the
+recursive *is this content* the size scan and the checksums ask. Three kinds are shown but **not** actionable, each a
+deliberate refusal: the resource's **own record**, because that is the document already on screen; a **foreign
+record's sidecar**; and **content a foreign record covers**, because its screenshots are curated in *its* images dock
+and its content is covered by *its* checksums, so there is nothing here to do with either but see that it is there. The
+refusal lives in the model's own item flags, so such a row cannot be selected or activated at all rather than being
+activated and ignored.
+
+The four things a double-click *can* do are each routed out of the sub-dock rather than done in it, since it knows what
+a file **is** and none of what to do about it:
+
+- **a folder** — walked into, unless the listing is covered by a directory-scoped record that is not the browsing
+  document's, in which case everything beside it is that record's wholesale (#254) and its own row is the way in.
+  The predicate is deliberately *directory-scoped* rather than *any record*, which settles three cases at once. A
+  **directory-scoped resource browsing its own folder always keeps its subfolders**: it covers that ground, so
+  nothing sitting beside it can take them — not a file-scoped `foo.rehu`, which claims only its same-stem siblings,
+  and not a legacy `info.tc` a conversion left behind, which *is* the same resource under its old name. A folder
+  holding several file-scoped records and **no** `info.rehu` keeps its subfolders too, for the same reason read the
+  other way: no record there claims the ground. And a **file-scoped** `foo.rehu` sharing a folder with an
+  `info.rehu` does not cover it, so its subfolders belong to that record — as do those of any subdirectory holding
+  a record of its own.
+- **another resource's record** — opened, or focused if it is already open, through the **window's** ordinary open
+  route, so it is resolved, the documents area is revealed and the file joins `Open recents` exactly as a menu open
+  would ([[plugins#dock-shell]]).
+- **this resource's checksum record** — a *Verify All* over this resource, the same action its own toolbar carries
+  ([[data-model#checksums]]), so there is one definition of what that checks. Inert where the document was built with
+  no queue to enqueue a run on.
+- **an image** — opened maximized through the same owner-routed activation the strip uses
+  ([[plugins#tutorial-plugin]]), but against **every image in the browsed folder**, curated or not: this is a view of
+  the folder rather than of the lightbox's set, and a screenshot someone curated out is exactly the one they may want
+  to look at here ([[data-model#image-meanings]]).
+
+Anything else is handed to the system's default handler.
+
+**The checksum column reports what *this* record claims, and nothing else.** Five verdicts and an empty cell: nothing
+at all for the record, a sidecar, a folder, or content another record covers — this record makes no claim there, which
+is different from a claim of ignorance, and reading the neighbour's record to answer for it would make a glyph mean
+*somebody verified this*. Content this record holds no hash for says so (whether the resource has no `.checksum` at
+all or that record skips the file — both are *nothing is recorded about these bytes*, and the remedy for both is the
+same generate). The remaining four are matched-or-not crossed with fresh-or-stale, and the fresh/stale split is the
+**run's own** staleness rule rather than an opinion formed in the GUI: a *current* glyph means exactly *a verify
+would skip this file*, and a *stale* one means exactly *it would not*. One `.checksum` read per refresh, whatever the
+folder holds.
+
+It **refreshes when shown and on demand** — `F5` and a refresh button, each refreshing only this sub-dock — plus at the
+two seams that change what it is a view *of*: the document's path moving (a convert, a completed rename) and one of its
+own checksum runs finishing, which is the only way the column can change without the folder changing. Never in
+between. Deliberately **not `QFileSystemModel`**: that model installs a file-system watcher that holds handles open on
+Windows, and a held handle is exactly what makes a rename or a delete of the resource's own files fail — the app would
+be locking what it is about to move. The same reasoning already keeps a watcher out of the node
+([[mounts-and-storage#out-of-band]]). A plain listing costs one `scandir` per refresh and holds nothing between them,
+and it runs off the GUI thread: neither that nor the record read is slow, and either blocks for the share timeout when
+the mount is away ([[mounts-and-storage#offline-mounts]]) — an unreachable folder says so rather than drawing an empty
+table over it (#245).
 
 ## §13.3 Plugin blocks: keyed, versioned, single-active-type
 
