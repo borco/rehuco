@@ -15,7 +15,8 @@ from pathlib import Path
 from threading import Event
 from typing import Any, Final
 
-from PySide6.QtCore import QModelIndex, Qt
+import shiboken6
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QObject, Qt
 from pytest import fixture, mark
 from pytest_mock import MockerFixture
 from pytestqt.qtbot import QtBot
@@ -33,6 +34,7 @@ from rehuco_agent.documents.files_rows import (
     FilesRowsReader,
     FilesSortProxy,
     FilesTableModel,
+    ModelIndex,
 )
 from rehuco_core import ChecksumRecordError, DirectoryClassifier, DirectoryEntry, DirectoryListing, FileKind, FileType
 
@@ -132,6 +134,51 @@ def read(mocker: MockerFixture, directory: Path = DIRECTORY, record: Path = INFO
     del mocker
     rows = FilesRowsReader(record, ("Thumbs.db",), (), WEEK).read(directory, NOW)
     return {row.name: row for row in rows.rows}
+
+
+KEYLESS_NAMES: Final = ("zebra", "apple", "mango")
+
+
+# region Sample classes
+
+
+class KeylessModel(QAbstractTableModel):
+    """A model that answers the sort role with a plain string rather than this table's key tuple.
+
+    What :class:`~rehuco_agent.documents.files_rows.FilesSortProxy` defers to the base comparison for --
+    a foreign model being the only way to ask for that deference, since this package's own model always
+    answers a tuple.
+    """
+
+    def rowCount(self, parent: ModelIndex = QModelIndex()) -> int:  # noqa: N802  (Qt API name)
+        """How many sample rows there are, or none under a row.
+
+        :param parent: the parent index, valid only for a child of a row this model has none of.
+        :returns: the row count.
+        """
+        return 0 if parent.isValid() else len(KEYLESS_NAMES)
+
+    def columnCount(self, parent: ModelIndex = QModelIndex()) -> int:  # noqa: N802  (Qt API name)
+        """One column, the name.
+
+        :param parent: the parent index, valid only for a child of a row this model has none of.
+        :returns: the column count.
+        """
+        return 0 if parent.isValid() else 1
+
+    def data(self, index: ModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        """The row's name, for the display role and for the sort role alike.
+
+        :param index: the cell.
+        :param role: which role is being asked.
+        :returns: the name as a plain string, which is the point -- never a key tuple.
+        """
+        if role in (Qt.ItemDataRole.DisplayRole, FilesTableModel.SORT_ROLE):
+            return KEYLESS_NAMES[index.row()]
+        return None
+
+
+# endregion
 
 
 # region Which rows a reader may act on
@@ -597,7 +644,23 @@ def test_every_column_sorts_with_the_folders_still_first(table: FilesTableModel,
     assert set(names[1:3]) == {"aaa", "zzz"}
 
 
-def test_a_source_model_with_no_sort_keys_falls_back_to_the_base_comparison(table: FilesTableModel) -> None:
+def test_a_role_this_model_does_not_serve_answers_nothing(table: FilesTableModel) -> None:
+    """Four roles are answered and every other one is Qt's business, not this model's: a model that
+    fell through to its display text for, say, ``EditRole`` would offer an editor's initial value for a
+    table nothing edits.
+
+    **Test steps:**
+
+    * ask a drawn cell for a role this model does not serve
+    * verify it answers nothing
+    """
+    index = table.index(0, NAME_COLUMN)
+
+    assert index.data(Qt.ItemDataRole.EditRole) is None
+    assert index.data(Qt.ItemDataRole.DecorationRole) is None
+
+
+def test_a_source_model_with_no_sort_keys_falls_back_to_the_base_comparison() -> None:
     """The tuple comparison is this proxy's own; handed a model that answers the sort role with
     something else, it defers rather than guessing -- the deference every delegate and proxy here shows
     a foreign model.
@@ -608,14 +671,13 @@ def test_a_source_model_with_no_sort_keys_falls_back_to_the_base_comparison(tabl
     * verify it still produced an order rather than raising
     """
     proxy = FilesSortProxy()
-    proxy.setSourceModel(table)
-    # a role this model answers with a plain string rather than a key tuple
-    proxy.setSortRole(Qt.ItemDataRole.DisplayRole)
+    source = KeylessModel()
+    proxy.setSourceModel(source)
     proxy.sort(NAME_COLUMN, Qt.SortOrder.AscendingOrder)
 
     # the base's own ordering, whatever it is -- the claim is that it deferred rather than raised or
     # dropped rows, not that Qt orders strings the way this proxy's keys would
-    assert set(drawn(proxy)) == {PARENT_ROW_NAME, "aaa", "zzz", "a-2.mp4", "a-10.mp4", "b.mp4"}
+    assert set(drawn(proxy)) == set(KEYLESS_NAMES)
 
 
 def test_an_invalid_index_answers_nothing(table: FilesTableModel) -> None:
@@ -698,6 +760,35 @@ def test_a_superseded_read_is_dropped_rather_than_drawn(qtbot: QtBot, mocker: Mo
     qtbot.waitUntil(lambda: reported == [DIRECTORY / "sub"], timeout=5000)
 
     assert reported == [DIRECTORY / "sub"]
+
+
+def test_a_listing_that_answers_after_its_dock_is_gone_reports_into_nothing(mocker: MockerFixture) -> None:
+    """The same failure `ChecksumRowsLoader` documents, for the browser's own read: the loader is
+    parented to the dock, so closing a document takes its C++ half while a listing is still out on a
+    share -- and the exception that emit would raise is printed and swallowed by the pool, which is the
+    kind of failure nobody ever sees reported.
+
+    **Test steps:**
+
+    * destroy the loader's C++ object the way closing a document does, then let a read answer
+    * verify the run returned quietly rather than raising into the pool
+    """
+    mocker.patch.object(FilesRowsReader, "read", return_value=FilesRows(DIRECTORY))
+    dock = QObject()
+    loader = FilesRowsLoader(dock)
+    delivered: list[FilesRows] = []
+    # connected, because an emit with nobody listening never reaches the deleted C++ half at all --
+    # which is exactly the case this guard is *not* about
+    loader.loaded.connect(delivered.append)
+    run = loader._FilesRowsLoader__run  # type: ignore[attr-defined]  # pylint: disable=protected-access
+    shiboken6.delete(dock)
+    assert not shiboken6.isValid(loader)
+
+    # generation 0 is the one a loader that has never been started is on, so this read is current
+    # rather than superseded -- otherwise it returns before it ever tries to report
+    run(FilesRowsReader(INFO_PATH, (), (), WEEK), DIRECTORY, NOW, 0)
+
+    assert not delivered
 
 
 # endregion

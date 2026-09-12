@@ -202,6 +202,23 @@ def test_the_refresh_action_reads_again(qtbot: QtBot, view: FilesView, listing: 
     assert listing.call_count == 2
 
 
+def test_re_showing_a_current_browser_reads_nothing(qtbot: QtBot, view: FilesView, listing: Any) -> None:
+    """The other half of the deferral: a show only catches up a read that was *deferred*, so a dock
+    tabbed away from and back -- which Qt reports as a hide and a show -- does not re-list the folder
+    every time a reader glances at it.
+
+    **Test steps:**
+
+    * hide and re-show a browser whose read has already landed
+    * verify no second listing ran
+    """
+    view.hide()
+    view.show()
+    settle(qtbot, view)
+
+    assert listing.call_count == 1
+
+
 def test_a_finished_checksum_run_is_not_needed_to_read_the_folder(view: FilesView) -> None:
     """The browser is built with no queue in this suite, so the one row that would enqueue a verify is
     simply inert -- the folder itself is a folder regardless (#266).
@@ -347,6 +364,40 @@ def test_a_record_this_build_cannot_read_is_said_rather_than_hidden(
 
     assert "lesson01.mp4" in drawn(view)
     assert "newer than this build" in view.summary
+
+
+def test_a_read_landing_after_the_document_lost_its_path_says_nowhere(
+    qtbot: QtBot, view: FilesView, model: RehuDocumentModel, listing: Any
+) -> None:
+    """The one window in which a landed read can be about a folder the document no longer has: the
+    listing was started while there was a path and lands after there is not. The header is written from
+    the record's own folder, so with no record there is no relative place to name -- and naming the last
+    one would be a heading pointing at a resource this document is no longer.
+
+    **Test steps:**
+
+    * hold the listing and start a read
+    * clear the document's path while that read is still out
+    * release it, and verify the header names nowhere rather than the folder it was about
+    """
+    from threading import Event  # pylint: disable=import-outside-toplevel
+
+    release = Event()
+    quick = listing.side_effect
+
+    def held(_self: object, directory: Path) -> DirectoryListing:
+        release.wait(timeout=5)
+        return quick(_self, directory)
+
+    listing.side_effect = held
+    view.refresh_action.trigger()
+
+    model.path = None
+
+    release.set()
+    qtbot.waitUntil(lambda: view.path_label == "", timeout=TIMEOUT)
+
+    assert view.path_label == ""
 
 
 def test_the_rows_this_resource_cannot_speak_for_are_refused(view: FilesView) -> None:
@@ -500,6 +551,22 @@ def test_home_at_the_root_moves_nothing(qtbot: QtBot, view: FilesView) -> None:
     * verify the browser has not moved
     """
     view.home_action.trigger()
+    settle(qtbot, view)
+
+    assert view.directory == DIRECTORY
+
+
+def test_up_at_the_root_moves_nothing(qtbot: QtBot, view: FilesView) -> None:
+    """Home's twin guard. The action is disabled at the root, so the only trigger that can arrive there
+    is a stale one -- a click already in flight when the read that landed at the root disabled it -- and
+    walking out of the resource's own folder is the one move this browser never makes.
+
+    **Test steps:**
+
+    * deliver a trigger to the up action at the root, past its enablement
+    * verify the browser has not moved
+    """
+    view.up_action.triggered.emit()
     settle(qtbot, view)
 
     assert view.directory == DIRECTORY

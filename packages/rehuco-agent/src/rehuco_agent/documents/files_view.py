@@ -330,7 +330,7 @@ class FilesView(QWidget):
         :param index: the activated *proxy* index.
         """
         row = index.data(FilesTableModel.ROW_ROLE)
-        if not isinstance(row, FileRow):
+        if not isinstance(row, FileRow):  # pragma: no cover -- only this view's own model reaches here
             return
         if row.is_directory:
             self.__go_to(row.path)

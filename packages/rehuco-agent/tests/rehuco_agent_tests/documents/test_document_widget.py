@@ -3724,6 +3724,24 @@ def test_an_image_activated_in_the_browser_opens_against_the_folder(widget: Docu
     assert viewer.images == folder
 
 
+def test_an_activation_carrying_anything_else_opens_no_viewer(widget: DocumentWidget) -> None:
+    """The signal is typed ``object`` so Python objects marshal across the hop, which means the pair it
+    carries is checked here rather than by Qt: a viewer opened over something that is not a list of
+    paths would fail deep inside the viewer rather than at the one place that can tell.
+
+    **Test steps:**
+
+    * emit the browser's image activation with a payload that is not a set of paths
+    * verify no viewer opened
+    """
+    view = files_dock(widget).widget()
+    assert isinstance(view, FilesView)
+
+    view.images_activated.emit(None, None)
+
+    assert widget._DocumentWidget__image_viewer is None  # type: ignore[attr-defined]  # pylint: disable=protected-access
+
+
 def test_a_curation_edit_does_not_re_point_a_folder_viewer(widget: DocumentWidget) -> None:
     """A viewer opened from the Files sub-dock shows the folder, and a curation edit says nothing about
     the folder -- re-pointing it at the strip's set would silently swap what the reader was looking at
