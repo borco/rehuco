@@ -30,7 +30,9 @@
         <file alias="icons/file_browser_backup.svg">../../../../design/icons/file_browser_backup.svg</file>
         <file alias="icons/file_browser_checksum.svg">../../../../design/icons/file_browser_checksum.svg</file>
         <file alias="icons/file_browser_folder.svg">../../../../design/icons/file_browser_folder.svg</file>
+        <file alias="icons/file_browser_folder_parent.svg">../../../../design/icons/file_browser_folder_parent.svg</file>
         <file alias="icons/file_browser_generic.svg">../../../../design/icons/file_browser_generic.svg</file>
+        <file alias="icons/file_browser_home.svg">../../../../design/icons/file_browser_home.svg</file>
         <file alias="icons/file_browser_image.svg">../../../../design/icons/file_browser_image.svg</file>
         <file alias="icons/file_browser_rehu.svg">../../../../design/icons/file_browser_rehu.svg</file>
         <file alias="icons/file_browser_video.svg">../../../../design/icons/file_browser_video.svg</file>

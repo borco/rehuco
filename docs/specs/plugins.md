@@ -281,7 +281,10 @@ app's own renames, conversions and drops did to the folder can be read without l
 **It is confined to the resource's own folder.** The root is the record's directory, and there is no way above it: a
 `..` row appears only while the reader is below the root, and both it and the toolbar's up action stop there. Going up
 would leave the resource entirely, and a general file manager is not what this is — the neighbouring folder a reader
-wants is reached by opening the resource that owns it, which is what the foreign-record rows below are for.
+wants is reached by opening the resource that owns it, which is what the foreign-record rows below are for. The
+toolbar also carries **home**, the one-click jump back to the record's own directory from any depth; it and up take the
+same condition and are both greyed at the root, and greyed together for a document with no folder to go home to. Up
+and the `..` row wear one glyph, being one act reached two ways, and deliberately not the glyph the folder rows wear.
 
 **What a row lets you do is decided by what the file is to this resource** — the roles
 [[data-model#resource-scoping]]'s coverage rules already name, asked one directory at a time rather than as the

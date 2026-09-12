@@ -224,6 +224,14 @@ class FileRow:  # pylint: disable=too-many-instance-attributes
         """Whether activating this row walks into a directory -- a subdirectory, or ``..``."""
         return self.kind is FileKind.DIRECTORY
 
+    @property
+    def is_parent(self) -> bool:
+        """Whether this is the synthesized ``..`` row rather than something in the folder.
+
+        Asked here rather than compared at each place that cares -- the Kind cell, the sort group and
+        the glyph the delegate picks -- so the identity of the way-out row is decided once."""
+        return self.name == PARENT_ROW_NAME
+
 
 @dataclass(frozen=True, slots=True)
 class FilesRows:
@@ -584,7 +592,7 @@ class FilesTableModel(QAbstractTableModel):
         if column == NAME_COLUMN:
             return row.name
         if column == KIND_COLUMN:
-            return "" if row.name == PARENT_ROW_NAME else KIND_LABELS[row.kind]
+            return "" if row.is_parent else KIND_LABELS[row.kind]
         if column == SIZE_COLUMN:
             return SizeMeasurementEdit.format(row.size)
         if column == MODIFIED_COLUMN:
@@ -606,7 +614,7 @@ class FilesTableModel(QAbstractTableModel):
         :param column: which column.
         :returns: the value to sort that column on.
         """
-        group = 0 if row.name == PARENT_ROW_NAME else (1 if row.is_directory else 2)
+        group = 0 if row.is_parent else (1 if row.is_directory else 2)
         if column == KIND_COLUMN:
             return group, KIND_LABELS[row.kind], natural_sort_key(row.name)
         if column == CHECKSUM_COLUMN:

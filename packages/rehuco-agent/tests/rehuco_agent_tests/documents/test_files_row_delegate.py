@@ -18,6 +18,7 @@ from rehuco_agent.documents.files_rows import (
     KIND_COLUMN,
     MODIFIED_COLUMN,
     NAME_COLUMN,
+    PARENT_ROW_NAME,
     SIZE_COLUMN,
     FileChecksumState,
     FileRow,
@@ -265,6 +266,32 @@ def test_the_name_column_draws_its_glyph_before_its_text(delegate: FilesRowDeleg
 
     assert colors(image, QRect(0, 0, ICON_SIZE + 4, CELL.height()))
     assert colors(image, QRect(ICON_SIZE + 8, 0, CELL.width() - ICON_SIZE - 8, CELL.height()))
+
+
+def test_the_way_out_is_drawn_apart_from_the_folders_it_sits_above(
+    delegate: FilesRowDelegate, palette: QPalette
+) -> None:
+    """``..`` wears the parent-folder glyph the toolbar's Up action does, the two being one act reached
+    two ways -- and not the plain folder glyph every real folder row wears, which is what it would be
+    confused with.
+
+    Compared as two images rather than by naming a resource path: what matters is that a reader can tell
+    the way out from a folder to go into.
+
+    **Test steps:**
+
+    * paint the Name cell of the ``..`` row and of a real folder row, each with no name text
+    * verify the two glyphs differ
+    """
+    parent = sample(PARENT_ROW_NAME, FileType.DIRECTORY)
+    folder = sample(" ", FileType.DIRECTORY)
+    slot = QRect(0, 0, ICON_SIZE + 4, CELL.height())
+
+    drawn_parent = painted(delegate, palette, parent, NAME_COLUMN).copy(slot)
+    drawn_folder = painted(delegate, palette, folder, NAME_COLUMN).copy(slot)
+
+    assert colors(drawn_parent) and colors(drawn_folder)
+    assert drawn_parent != drawn_folder
 
 
 @mark.parametrize(

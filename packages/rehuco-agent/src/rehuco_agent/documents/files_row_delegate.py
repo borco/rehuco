@@ -40,6 +40,10 @@ TEXT_PADDING: Final = 4
 """Horizontal inset of a cell's text from its rect, in pixels -- the same inset the task table draws
 its own text with, so the two read as tables of one application."""
 
+PARENT_ICON_RESOURCE: Final = ":/icons/file_browser_folder_parent.svg"
+"""The glyph the ``..`` row wears -- the same one the toolbar's Up action does, the two being one act
+reached two ways, and deliberately not the plain folder glyph the real folder rows wear."""
+
 CHECKSUM_COLUMN_WIDTH: Final = 28
 """How wide the checksum column is, in pixels: one glyph and a little air.
 
@@ -96,7 +100,8 @@ class FilesRowDelegate(QStyledItemDelegate):
                 # checksum glyph gets, so the two columns' glyphs sit on one line
                 glyph = FilesRowDelegate.__centred(cell)
                 glyph.moveLeft(cell.left() + TEXT_PADDING)
-                self.__icons.icon(FILE_TYPE_ICONS[row.file_type], pen_color).paint(painter, glyph)
+                path = PARENT_ICON_RESOURCE if row.is_parent else FILE_TYPE_ICONS[row.file_type]
+                self.__icons.icon(path, pen_color).paint(painter, glyph)
                 cell = cell.adjusted(TEXT_PADDING + ICON_SIZE + ICON_TEXT_GAP, 0, 0, 0)
             alignment = Qt.AlignmentFlag.AlignRight if column == SIZE_COLUMN else Qt.AlignmentFlag.AlignLeft
             FilesRowDelegate.__paint_text(painter, cell, str(index.data() or ""), alignment)

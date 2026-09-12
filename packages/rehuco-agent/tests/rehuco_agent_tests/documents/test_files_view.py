@@ -411,6 +411,116 @@ def test_the_root_refuses_to_go_above_itself(qtbot: QtBot, view: FilesView) -> N
     assert view.directory == DIRECTORY
 
 
+def test_home_goes_back_to_the_resources_own_folder(qtbot: QtBot, view: FilesView) -> None:
+    """The longest jump the browser offers, and the only one that is a single click from any depth.
+
+    **Test steps:**
+
+    * walk into the subfolder
+    * trigger Home
+    * verify the browser is at the resource's own folder and has re-read it
+    """
+    view.activate(row_of(view, "sub"))
+    settle(qtbot, view)
+    assert view.directory == SUB
+
+    view.home_action.trigger()
+    settle(qtbot, view)
+
+    assert view.directory == DIRECTORY
+    assert view.path_label == DIRECTORY.name
+    assert "lesson01.mp4" in drawn(view)
+
+
+def test_home_and_up_are_offered_together(qtbot: QtBot, view: FilesView) -> None:
+    """The pair takes one condition: both lead back towards the resource's own folder, so at the root
+    neither has anywhere to go.
+
+    **Test steps:**
+
+    * verify both are disabled at the root
+    * walk into the subfolder and verify both are enabled
+    """
+    assert not view.home_action.isEnabled()
+    assert not view.up_action.isEnabled()
+
+    view.activate(row_of(view, "sub"))
+    settle(qtbot, view)
+
+    assert view.home_action.isEnabled()
+    assert view.up_action.isEnabled()
+
+
+def test_home_and_up_follow_the_target_before_the_read_lands(qtbot: QtBot, view: FilesView, listing: Any) -> None:
+    """Where the browser is pointed is known the moment it is pointed there, so the pair changes state
+    then -- not when the listing arrives. On a share that takes seconds to answer, a Home that stayed
+    live until then invited a second click that only re-read the same folder.
+
+    **Test steps:**
+
+    * hold the listing so no read can land
+    * walk into the subfolder and verify both are enabled at once
+    * trigger Home and verify both are disabled at once, the read still held
+    * release the read and verify nothing about the pair changes when it lands
+    """
+    from threading import Event  # pylint: disable=import-outside-toplevel
+
+    release = Event()
+    quick = listing.side_effect
+
+    def held(_self: object, directory: Path) -> DirectoryListing:
+        release.wait(timeout=5)
+        return quick(_self, directory)
+
+    listing.side_effect = held
+
+    view.activate(row_of(view, "sub"))
+    assert view.home_action.isEnabled()
+    assert view.up_action.isEnabled()
+
+    view.home_action.trigger()
+    assert not view.home_action.isEnabled()
+    assert not view.up_action.isEnabled()
+
+    release.set()
+    settle(qtbot, view)
+
+    assert view.directory == DIRECTORY
+    assert not view.home_action.isEnabled()
+    assert not view.up_action.isEnabled()
+
+
+def test_home_at_the_root_moves_nothing(qtbot: QtBot, view: FilesView) -> None:
+    """The action is disabled there, so this only guards a stale trigger -- and a re-read of the folder
+    already shown is not a move.
+
+    **Test steps:**
+
+    * trigger Home at the root
+    * verify the browser has not moved
+    """
+    view.home_action.trigger()
+    settle(qtbot, view)
+
+    assert view.directory == DIRECTORY
+
+
+def test_a_document_with_no_folder_offers_neither_jump(qtbot: QtBot) -> None:
+    """There is nowhere to go home *to*, which is the second half of the pair's one condition.
+
+    **Test steps:**
+
+    * build a browser over a path-less model
+    * verify Home and Up are both disabled
+    """
+    view = FilesView(RehuDocumentModel(RehuDocument({}, None)))
+    qtbot.addWidget(view)
+    view.show()
+
+    assert not view.home_action.isEnabled()
+    assert not view.up_action.isEnabled()
+
+
 def test_the_up_action_is_the_parent_rows_act_on_a_button(qtbot: QtBot, view: FilesView) -> None:
     """Two affordances, one move -- a reader who has walked in looks for either.
 

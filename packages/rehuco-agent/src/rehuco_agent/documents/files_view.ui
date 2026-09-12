@@ -83,6 +83,14 @@
     <string>F5</string>
    </property>
   </action>
+  <action name="home_action">
+   <property name="text">
+    <string>Home</string>
+   </property>
+   <property name="toolTip">
+    <string>Go to this resource's own folder.</string>
+   </property>
+  </action>
   <action name="up_action">
    <property name="text">
     <string>Up</string>

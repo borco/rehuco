@@ -67,9 +67,11 @@ from .files_view_ui import Ui_FilesView
 from .rehu_document_model import RehuDocumentModel
 
 REFRESH_ICON_RESOURCE: Final = ":/icons/refresh.svg"
-UP_ICON_RESOURCE: Final = ":/icons/file_browser_folder.svg"
-"""The up action wears the folder glyph: it is *go to that folder*, and the browser has no second
-drawing of a folder for it to be confused with."""
+HOME_ICON_RESOURCE: Final = ":/icons/file_browser_home.svg"
+UP_ICON_RESOURCE: Final = ":/icons/file_browser_folder_parent.svg"
+"""The up action wears the **parent-folder** glyph, which is also the ``..`` row's: the two are one act
+reached two ways, so drawing them alike is the point. Distinct from the plain folder glyph every real
+folder row wears, which is what the up action used to share with them."""
 
 LOADING_SUMMARY: Final = "Reading…"
 """What the summary line says while the listing is out.
@@ -193,7 +195,6 @@ class FilesView(QWidget):
             self.__rows.set_rows(())
             self.__ui.path_label.setText("")
             self.__ui.summary_label.setText(NO_PATH_SUMMARY)
-            self.__ui.up_action.setEnabled(False)
             return
         self.__ui.summary_label.setText(LOADING_SUMMARY)
         reader = FilesRowsReader(
@@ -223,7 +224,19 @@ class FilesView(QWidget):
         self.__rows.set_rows(rows.rows)
         self.__ui.path_label.setText(self.__relative_label(rows.directory))
         self.__ui.summary_label.setText(FilesView.__summary(rows))
-        self.__ui.up_action.setEnabled(not rows.at_root)
+
+    def __set_navigable(self, below_root: bool) -> None:
+        """Offer Home and Up exactly while there is somewhere to go.
+
+        One method for the pair because they take the **same** condition: both lead back towards the
+        resource's own folder, so at the root -- and for a never-saved document, which has no folder to
+        go home to at all -- neither has anything to do. Called from :meth:`__go_to` alone, so the
+        answer is the target's and never a landed read's.
+
+        :param below_root: whether the browser is pointed at a folder under the resource's own.
+        """
+        for action in (self.__ui.home_action, self.__ui.up_action):
+            action.setEnabled(below_root)
 
     def __relative_label(self, directory: Path) -> str:
         """Where the reader is, spelled from the resource's own folder.
@@ -270,15 +283,34 @@ class FilesView(QWidget):
 
     # region Navigating and activating
 
-    def __reset_to_root(self) -> None:
-        """Point the browser back at the resource's own folder, and read it.
+    def __go_to(self, directory: Path | None) -> None:
+        """Point the browser at ``directory`` and read it -- the one place the browser moves.
 
-        What the first read starts from, and where a path change lands: a rename or a convert moves the
-        folder this is a view of, so a subdirectory of the old one is not somewhere to stay.
+        **Home and Up follow the target, not the read.** Where the browser is pointed is known the
+        moment it is pointed there, so the pair is enabled or disabled right here rather than when the
+        listing lands: on a share that takes seconds to answer, a Home button that stayed live until then
+        invited a second click that only re-read the same folder. It also means a superseded read can
+        never mis-set them -- there is nothing left in the read's arrival that decides it.
+
+        :param directory: the folder to show, or ``None`` for a document that has no folder yet.
         """
         path = self.__model.path
-        self.__directory = None if path is None else path.parent
+        self.__directory = directory
+        self.__set_navigable(path is not None and directory is not None and directory != path.parent)
         self.refresh()
+
+    def __reset_to_root(self, *_args: object) -> None:
+        """Point the browser back at the resource's own folder.
+
+        Three callers, one act. It is what the first read starts from; where a path change lands, since a
+        rename or a convert moves the folder this is a view *of* and a subdirectory of the old one is not
+        somewhere to stay; and what the Home action does.
+
+        :param _args: whatever the triggering signal carried -- ``triggered``'s ``checked`` flag;
+            unused, the folder being re-derived from the model either way.
+        """
+        path = self.__model.path
+        self.__go_to(None if path is None else path.parent)
 
     def __on_path_changed(self, _path: Path | None) -> None:
         """Re-scope to the new folder when the document's path moves (#52's landmine, for a folder).
@@ -301,8 +333,7 @@ class FilesView(QWidget):
         if not isinstance(row, FileRow):
             return
         if row.is_directory:
-            self.__directory = row.path
-            self.refresh()
+            self.__go_to(row.path)
         elif row.kind is FileKind.FOREIGN_RECORD:
             self.record_activated.emit(row.path)
         elif row.kind is FileKind.OWN_MANIFEST:
@@ -338,17 +369,20 @@ class FilesView(QWidget):
         directory = self.__directory
         if path is None or directory is None or directory == path.parent:
             return
-        self.__directory = directory.parent
-        self.refresh()
+        self.__go_to(directory.parent)
 
     # endregion
 
     # region This dock's own actions
 
     def __setup_toolbar(self) -> None:
-        """Put the two navigation actions on the dock's own toolbar."""
+        """Put the three navigation actions on the dock's own toolbar."""
         ui = self.__ui
-        for action, icon in ((ui.up_action, UP_ICON_RESOURCE), (ui.refresh_action, REFRESH_ICON_RESOURCE)):
+        for action, icon in (
+            (ui.home_action, HOME_ICON_RESOURCE),
+            (ui.up_action, UP_ICON_RESOURCE),
+            (ui.refresh_action, REFRESH_ICON_RESOURCE),
+        ):
             ActionIconThemeHandler(action, icon)
         # scoped to this widget's own subtree, not the window: every open document has a browser of its
         # own, and a WindowShortcut would make two of them ambiguous on one key -- firing neither, the
@@ -357,9 +391,11 @@ class FilesView(QWidget):
         self.addAction(ui.refresh_action)
         ui.refresh_action.triggered.connect(self.refresh)
         ui.up_action.triggered.connect(self.__on_up_triggered)
-        ui.up_action.setEnabled(False)
+        ui.home_action.triggered.connect(self.__reset_to_root)
 
         toolbar = QToolBar(self)
+        # home first: leftmost is the longest jump, and the two are enabled and disabled together
+        toolbar.addAction(ui.home_action)
         toolbar.addAction(ui.up_action)
         toolbar.addAction(ui.refresh_action)
         ui.main_layout.insertWidget(0, toolbar)
@@ -368,6 +404,11 @@ class FilesView(QWidget):
     def refresh_action(self) -> QAction:
         """Reads this folder again; also bound to ``F5`` while the browser has focus."""
         return self.__ui.refresh_action
+
+    @property
+    def home_action(self) -> QAction:
+        """Goes back to the resource's own folder. Disabled there, and for a document with no folder."""
+        return self.__ui.home_action
 
     @property
     def up_action(self) -> QAction:
